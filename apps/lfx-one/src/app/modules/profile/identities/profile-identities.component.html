@@ -2,6 +2,29 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex w-full flex-col gap-8 pb-12" data-testid="profile-identities">
+  <!-- Auth service unavailable banner -->
+  @if (identitiesLoadError()) {
+    <lfx-message
+      severity="error"
+      title="Identity service unavailable"
+      text="Identity verification status cannot be loaded right now. Please try again in a few minutes."
+      data-testid="identities-service-error-banner" />
+  }
+
+  <!-- Already linked to another LFID banner -->
+  @if (conflictBanner()) {
+    <lfx-message severity="warn" [closable]="true" (onClose)="dismissConflictBanner()" data-testid="identities-conflict-banner">
+      <ng-template #content>
+        <p class="text-sm">
+          This identity is already linked to another LFX account. A single identity can only be linked to one account. If you believe this is an error,
+          <a href="https://jira.linuxfoundation.org/plugins/servlet/desk/portal/4" target="_blank" rel="noopener noreferrer" class="font-medium underline">
+            contact support </a
+          >.
+        </p>
+      </ng-template>
+    </lfx-message>
+  }
+
   <!-- Left Column: Identities -->
   <div class="flex flex-col gap-5">
     <!-- Header with Add Button -->

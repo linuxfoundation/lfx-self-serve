@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 import { NatsService } from './nats.service';
 
@@ -515,27 +516,38 @@ export class EmailVerificationService {
   }
 
   /**
-   * List linked identities for a user via NATS
+   * Non-throwing variant for callers that can degrade gracefully (e.g. email backfill).
+   * Returns an empty array on failure. Use listIdentities() when identity data is critical.
+   */
+  public async listIdentitiesSafe(req: Request, userIdentifier: string): Promise<Auth0Identity[]> {
+    try {
+      return await this.listIdentities(req, userIdentifier);
+    } catch (error) {
+      logger.warning(req, 'list_identities_safe', 'Identity list unavailable — continuing without it', { err: error });
+      return [];
+    }
+  }
+
+  /**
+   * List linked identities for a user via NATS.
    * @param req - Express request object for logging
    * @param userIdentifier - User's subject ID (e.g. auth0|123456789), username, or email — sent as raw string to auth-service which resolves it without JWT audience validation (same convention as getUserEmails)
    * @returns Array of Auth0 linked identities
+   * @throws {MicroserviceError} 503 when the auth service is unavailable
    */
   public async listIdentities(req: Request, userIdentifier: string): Promise<Auth0Identity[]> {
     const codec = this.natsService.getCodec();
 
     logger.debug(req, 'list_identities', 'Listing user identities via NATS');
 
+    let parsed: ListIdentitiesNatsResponse;
     try {
-      const payload = JSON.stringify({
-        user: { auth_token: userIdentifier },
-      });
-
+      const payload = JSON.stringify({ user: { auth_token: userIdentifier } });
       const response = await this.natsService.request(NatsSubjects.USER_IDENTITY_LIST, codec.encode(payload), {
         timeout: NATS_CONFIG.REQUEST_TIMEOUT,
       });
-
       const responseText = codec.decode(response.data);
-      const parsed: ListIdentitiesNatsResponse = JSON.parse(responseText);
+      parsed = JSON.parse(responseText);
 
       logger.debug(req, 'list_identities', 'Raw NATS USER_IDENTITY_LIST response', {
         raw_response: responseText,
@@ -543,25 +555,27 @@ export class EmailVerificationService {
         parsed_data: parsed.data,
         parsed_error: parsed.error,
       });
-
-      if (!parsed.success || !parsed.data) {
-        logger.warning(req, 'list_identities', 'NATS identity list returned unsuccessful', {
-          error: parsed.error,
-          message: parsed.message,
-        });
-        return [];
-      }
-
-      logger.debug(req, 'list_identities', 'Fetched identities via NATS', {
-        identity_count: parsed.data.length,
-      });
-
-      return parsed.data;
     } catch (error) {
-      logger.warning(req, 'list_identities', 'Failed to list identities via NATS, returning empty array', {
-        err: error,
-      });
-      return [];
+      logger.warning(req, 'list_identities', 'Failed to list identities via NATS', { err: error });
+      throw this.authServiceUnavailable('list_identities');
     }
+
+    if (!parsed.success || !parsed.data) {
+      logger.warning(req, 'list_identities', 'NATS identity list returned unsuccessful', {
+        error: parsed.error,
+        message: parsed.message,
+      });
+      throw this.authServiceUnavailable('list_identities');
+    }
+
+    logger.debug(req, 'list_identities', 'Fetched identities via NATS', { identity_count: parsed.data.length });
+    return parsed.data;
+  }
+
+  private authServiceUnavailable(operation: string): MicroserviceError {
+    return new MicroserviceError('Auth service temporarily unavailable', 503, 'AUTH_SERVICE_UNAVAILABLE', {
+      operation,
+      service: 'email_verification_service',
+    });
   }
 }

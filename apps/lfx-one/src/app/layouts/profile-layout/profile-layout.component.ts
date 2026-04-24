@@ -14,7 +14,18 @@ import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
+import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
+
+// Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
+// Child routes (e.g. identities) handle their own error codes — do not swallow them here.
+const PROFILE_AUTH_ERROR_CODES = new Set([
+  'profile_auth_not_configured',
+  'profile_auth_failed',
+  'token_exchange_failed',
+  'login_session_invalid',
+  'user_mismatch',
+]);
 
 /**
  * ProfileLayoutComponent serves as the shell for all profile pages.
@@ -70,16 +81,20 @@ export class ProfileLayoutComponent {
   public readonly loading = signal<boolean>(true);
 
   // Computed signals
+  public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
+
   public readonly displayName = computed(() => {
     const data = this.profileData();
     if (!data) return '';
-    return `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.username || 'User';
+    const cleanUsername = stripAuthPrefixOrNull(data.username);
+    return `${data.firstName || ''} ${data.lastName || ''}`.trim() || cleanUsername || 'User';
   });
 
   public readonly initials = computed(() => {
     const data = this.profileData();
     if (!data) return 'U';
-    return data.firstName?.charAt(0).toUpperCase() || data.username?.charAt(0).toUpperCase() || 'U';
+    const cleanUsername = stripAuthPrefixOrNull(data.username);
+    return data.firstName?.charAt(0).toUpperCase() || cleanUsername?.charAt(0).toUpperCase() || 'U';
   });
 
   public readonly jobTitle = computed(() => this.profileData()?.jobTitle || '');
@@ -133,7 +148,7 @@ export class ProfileLayoutComponent {
         this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
       }
 
-      if (params['error']) {
+      if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',

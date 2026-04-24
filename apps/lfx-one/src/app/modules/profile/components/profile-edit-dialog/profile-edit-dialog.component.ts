@@ -12,6 +12,7 @@ import { COUNTRIES, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-on
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize } from 'rxjs';
@@ -221,7 +222,7 @@ export class ProfileEditDialogComponent {
     this.profileForm.patchValue({
       given_name: profile.user.first_name || '',
       family_name: profile.user.last_name || '',
-      username: profile.user.username || '',
+      username: stripAuthPrefixOrNull(profile.user.username) ?? '',
       country: countryValue,
       state_province: profile.profile?.state_province || '',
       city: profile.profile?.city || '',

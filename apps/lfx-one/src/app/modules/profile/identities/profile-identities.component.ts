@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import {
   AddAccountDialogData,
   ConnectedIdentityFull,
@@ -19,7 +21,7 @@ import {
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { map, startWith, Subject, switchMap, take } from 'rxjs';
+import { catchError, map, of, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../components/add-account-dialog/add-account-dialog.component';
 import { RemoveIdentityDialogComponent } from '../components/remove-identity-dialog/remove-identity-dialog.component';
@@ -32,7 +34,7 @@ interface IdentitiesState {
 
 @Component({
   selector: 'lfx-profile-identities',
-  imports: [CardComponent, ButtonComponent, MenuComponent],
+  imports: [CardComponent, ButtonComponent, MenuComponent, MessageComponent],
   providers: [DialogService],
   templateUrl: './profile-identities.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -42,6 +44,17 @@ export class ProfileIdentitiesComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  public readonly identitiesLoadError = signal(false);
+  private readonly conflictDismissed = signal(false);
+  // Captured once from the URL snapshot in ngOnInit. Using a plain signal instead of
+  // toSignal(queryParams) avoids a subtle invariant: clearQueryParams() uses
+  // history.replaceState (not router.navigate), which does not emit on the Router's
+  // queryParams observable. If that ever changes to router.navigate, this approach
+  // stays correct while a queryParams-derived computed would silently break.
+  private readonly conflictDetected = signal(false);
+  public readonly conflictBanner: Signal<boolean> = computed(() => this.conflictDetected() && !this.conflictDismissed());
 
   public readonly identities: Signal<ConnectedIdentityFull[]> = computed(() =>
     this.identitiesState()
@@ -49,7 +62,9 @@ export class ProfileIdentitiesComponent implements OnInit {
       .map((enriched) => this.mapToConnectedIdentity(enriched))
   );
   public readonly loading: Signal<boolean> = computed(() => !this.identitiesState().loaded);
-  public readonly isEmpty: Signal<boolean> = computed(() => this.identitiesState().loaded && this.identitiesState().identities.length === 0);
+  public readonly isEmpty: Signal<boolean> = computed(
+    () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
+  );
 
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
@@ -65,19 +80,28 @@ export class ProfileIdentitiesComponent implements OnInit {
     if (params['success'] === 'identity_linked') {
       this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
       this.refreshTrigger$.next();
+      this.clearQueryParams();
+    } else if (params['error'] === 'already_linked') {
+      this.conflictDetected.set(true);
+      this.clearQueryParams();
     } else if (params['error']) {
       const errorMap: Record<string, string> = {
         social_auth_failed: 'Social authentication failed. Please try again.',
         invalid_state: 'Security validation failed. Please try again.',
         link_failed: 'Failed to link identity. Please try again.',
-        already_linked: 'This account is already linked to another LFX profile.',
         social_verification_failed: 'Identity verification failed. Please try again.',
         invalid_provider: 'Invalid identity provider specified.',
         no_management_token: 'Authorization expired. Please try again.',
         no_identity_token: 'No identity token received. Please try again.',
       };
       this.messageService.add({ severity: 'error', summary: 'Error', detail: errorMap[params['error']] || 'An error occurred. Please try again.' });
+      this.clearQueryParams();
     }
+  }
+
+  public dismissConflictBanner(): void {
+    this.conflictDismissed.set(true);
+    this.clearQueryParams();
   }
 
   public onVerify(identity: ConnectedIdentityFull): void {
@@ -131,6 +155,13 @@ export class ProfileIdentitiesComponent implements OnInit {
         this.refreshTrigger$.next();
       }
     });
+  }
+
+  private clearQueryParams(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Use history API instead of router.navigate to avoid triggering route re-evaluation
+    // that could destroy component state or re-run lifecycle hooks.
+    window.history.replaceState(window.history.state, '', window.location.pathname);
   }
 
   private openRemoveDialog(identity: ConnectedIdentityFull): void {
@@ -188,7 +219,17 @@ export class ProfileIdentitiesComponent implements OnInit {
     return toSignal(
       this.refreshTrigger$.pipe(
         startWith(undefined),
-        switchMap(() => this.userService.getIdentities()),
+        switchMap(() => {
+          this.identitiesLoadError.set(false);
+          return this.userService.getIdentities().pipe(
+            catchError(() => {
+              // Any load failure hides the list entirely — a missing Auth0 overlay
+              // would mis-label every CDP identity as "unverified".
+              this.identitiesLoadError.set(true);
+              return of([] as EnrichedIdentity[]);
+            })
+          );
+        }),
         map((identities): IdentitiesState => ({ identities, loaded: true }))
       ),
       { initialValue: { identities: [] as EnrichedIdentity[], loaded: false } }

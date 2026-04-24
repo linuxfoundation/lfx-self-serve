@@ -263,12 +263,7 @@ export class UserService {
    * Get user's enriched identities (CDP cross-referenced with Auth0)
    */
   public getIdentities(): Observable<EnrichedIdentity[]> {
-    return this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(
-      catchError(() => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load identities.' });
-        return of([] as EnrichedIdentity[]);
-      })
-    );
+    return this.http.get<EnrichedIdentity[]>('/api/profile/identities');
   }
 
   /**

@@ -31,6 +31,36 @@ import { UserService } from '../services/user.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
+// Maps auth-service error strings to user-facing responses. First match wins; if
+// none match, the password-change path falls back to a generic 502.
+const PASSWORD_ERROR_RULES: readonly {
+  pattern: RegExp;
+  status: number;
+  code: string;
+  message: string;
+  useUpstreamMessage?: boolean;
+}[] = [
+  {
+    pattern: /wrong password|invalid password|incorrect password/,
+    status: 400,
+    code: 'INVALID_CURRENT_PASSWORD',
+    message: 'Your current password is incorrect.',
+  },
+  {
+    pattern: /password is too weak|password policy|does not meet/,
+    status: 400,
+    code: 'PASSWORD_POLICY_VIOLATION',
+    message: 'Your new password does not meet the password policy requirements.',
+    useUpstreamMessage: true,
+  },
+  {
+    pattern: /\btoo many (attempts|requests)\b|\brate.?limit\b|\baccount (is )?blocked\b/,
+    status: 429,
+    code: 'TOO_MANY_ATTEMPTS',
+    message: 'Too many password change attempts. Please wait a few minutes and try again.',
+  },
+];
+
 /**
  * Controller for handling profile HTTP requests
  */
@@ -316,7 +346,7 @@ export class ProfileController {
 
       const [freshEmails, identities] = await Promise.all([
         this.emailVerificationService.getUserEmails(req, userSub),
-        this.emailVerificationService.listIdentities(req, userSub),
+        this.emailVerificationService.listIdentitiesSafe(req, userSub),
       ]);
 
       const primaryEmail = freshEmails?.primary_email || sessionEmail;
@@ -573,8 +603,25 @@ export class ProfileController {
       const result = await this.emailVerificationService.changePassword(req, mgmtToken, current_password, new_password);
 
       if (!result.success) {
+        const upstreamText = [result.error, result.message].filter(Boolean).join(' ').toLowerCase();
+        const match = PASSWORD_ERROR_RULES.find((rule) => rule.pattern.test(upstreamText));
+        const { status, code, message } = match
+          ? {
+              status: match.status,
+              code: match.code,
+              message: match.useUpstreamMessage ? result.message || result.error || match.message : match.message,
+            }
+          : { status: 502, code: 'AUTH_SERVICE_ERROR', message: result.message || 'Failed to change password' };
+
+        if (!match) {
+          logger.warning(req, 'change_password', 'Unclassified password change failure — upstream message format may have changed', {
+            upstream_message: result.message,
+            upstream_error: result.error,
+          });
+        }
+
         return next(
-          new MicroserviceError(result.message || 'Failed to change password', 502, 'AUTH_SERVICE_ERROR', {
+          new MicroserviceError(message, status, code, {
             operation: 'change_password',
             service: 'profile_controller',
             path: req.path,
@@ -618,14 +665,7 @@ export class ProfileController {
       // Fetch CDP identities and auth-service identities in parallel
       const [cdpIdentities, auth0Identities] = await Promise.all([
         this.cdpService.getIdentitiesForUser(req, lfid),
-        auth0Sub
-          ? this.auth0Service.getUserIdentities(req, auth0Sub).catch((err: unknown) => {
-              logger.warning(req, 'get_identities', 'Auth0 identity fetch failed, continuing without cross-reference', {
-                err,
-              });
-              return [] as Auth0Identity[];
-            })
-          : Promise.resolve([]),
+        auth0Sub ? this.auth0Service.getUserIdentities(req, auth0Sub) : Promise.resolve([]),
       ]);
 
       logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
@@ -1379,8 +1419,8 @@ export class ProfileController {
           social_sub: socialSub,
           is_already_linked: isAlreadyLinked,
         });
-        const errorParam = isAlreadyLinked ? 'already_linked' : 'link_failed';
-        res.redirect(`${returnTo}?error=${errorParam}`);
+        // Do not include the owning LFID — leaking it would enable account enumeration.
+        res.redirect(`${returnTo}?error=${isAlreadyLinked ? 'already_linked' : 'link_failed'}`);
         return;
       }
 
