@@ -288,6 +288,25 @@ export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, opti
 }
 
 /**
+ * Returns the meeting's base guest count, preferring split counts
+ * (individual + committee) when either field is enriched, falling back to
+ * `registrant_count`. Uses `??` so legitimate `0` values are preserved.
+ * Returns `undefined` when neither split counts nor `registrant_count` are present,
+ * allowing callers to distinguish "no counts provided" from "counts are truly 0".
+ */
+export function resolveMeetingBaseCount(
+  meeting: Pick<Meeting, 'individual_registrants_count' | 'committee_members_count' | 'registrant_count'>,
+): number | undefined {
+  const hasSplitCounts = meeting.individual_registrants_count != null || meeting.committee_members_count != null;
+
+  if (hasSplitCounts) {
+    return (meeting.individual_registrants_count ?? 0) + (meeting.committee_members_count ?? 0);
+  }
+
+  return meeting.registrant_count ?? undefined;
+}
+
+/**
  * Build v2 summary_data from v1 summary fields
  * @param v1Summary - V1 summary object
  * @returns V2 SummaryData object

@@ -9,7 +9,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
@@ -32,32 +32,21 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly visible: InputSignal<boolean> = input<boolean>(false);
   public readonly showAddRegistrant: InputSignal<boolean> = input<boolean>(false);
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
-  // Externally-managed mode: when the parent already owns the registrants list (e.g. on the
-  // meeting join page) it can pass it in here to avoid a duplicate fetch on drawer open. The
-  // child uses the seed as its source and emits refreshRequested when the data needs to be
-  // re-pulled (e.g. after adding a guest). Pass `null` (default) to keep the legacy self-fetch
-  // behavior used by meeting-card.
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
+  public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
 
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
+  private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<PastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
-  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() => {
-    if (this.externallyManaged()) {
-      const seed = this.initialRegistrants() ?? [];
-      return [...seed].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[];
-    }
-    return this.internalRegistrants();
-  });
+  public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
-    // Past-meeting participants are always fetched internally (parent does not prefetch them),
-    // so fall back to the internal loader regardless of externally-managed mode.
     if (this.externallyManaged() && !this.pastMeeting()) {
       return this.initialRegistrantsLoading();
     }
@@ -133,6 +122,7 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe(() => {
         this.showAddForm.set(false);
         this.addRegistrantForm.reset();
+        this.optimisticRegistrants.set([]);
       });
   }
 
@@ -169,9 +159,36 @@ export class MeetingRegistrantsDisplayComponent {
                 // Parent owns the data — request a refetch and let it bump its own optimistic count.
                 this.refreshRequested.emit(response.summary.successful);
               } else {
-                // Self-managed mode: optimistically increment locally (query indexing is async).
-                this.additionalRegistrantsCount.update((c) => c + response.summary.successful);
-                this.registrantsCountChange.emit(this.additionalRegistrantsCount());
+                // Self-managed mode: optimistically add to the displayed list immediately
+                // (query-service indexing is async; the refetch may not include them yet).
+                const optimistic: MeetingRegistrant = {
+                  uid: `optimistic-${crypto.randomUUID()}`,
+                  meeting_id: this.meeting().id,
+                  email: formValue.email ?? '',
+                  first_name: formValue.first_name ?? '',
+                  last_name: formValue.last_name ?? '',
+                  host: formValue.host ?? false,
+                  job_title: formValue.job_title || null,
+                  org_name: formValue.org_name || null,
+                  linkedin_profile: formValue.linkedin_profile || null,
+                  occurrence_id: null,
+                  org_is_member: false,
+                  org_is_project_member: false,
+                  avatar_url: null,
+                  username: null,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  type: 'direct',
+                  invite_accepted: null,
+                  attended: null,
+                };
+                const meeting = this.meeting();
+                const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+                const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
+                this.optimisticRegistrants.update((list) => [...list, optimistic]);
+                this.additionalRegistrantsCount.set(nextAdditionalCount);
+                this.registrantsCountChange.emit(nextAdditionalCount);
+                this.totalCountChange.emit(baseCount + nextAdditionalCount);
                 this.refresh$.next(true);
               }
               this.addRegistrantForm.reset();
@@ -217,12 +234,15 @@ export class MeetingRegistrantsDisplayComponent {
                 catchError(() => of([])),
                 map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
                 tap((registrants) => {
-                  const baseCount = (this.meeting().individual_registrants_count || 0) + (this.meeting().committee_members_count || 0);
-                  const fetchedAdditional = Math.max(0, (registrants?.length || 0) - baseCount);
-                  // Never decrease below the current optimistic count (async indexing may lag)
-                  const additionalCount = Math.max(fetchedAdditional, this.additionalRegistrantsCount());
+                  const meeting = this.meeting();
+                  const resolvedBaseCount = resolveMeetingBaseCount(meeting);
+                  const hasBackendBaseCount = resolvedBaseCount !== undefined;
+                  const baseCount = hasBackendBaseCount ? resolvedBaseCount : (registrants?.length ?? 0);
+                  const fetchedAdditional = Math.max(0, (registrants?.length ?? 0) - baseCount);
+                  const additionalCount = hasBackendBaseCount ? Math.max(fetchedAdditional, this.additionalRegistrantsCount()) : fetchedAdditional;
                   this.additionalRegistrantsCount.set(additionalCount);
                   this.registrantsCountChange.emit(additionalCount);
+                  this.totalCountChange.emit(baseCount + additionalCount);
                 }),
                 finalize(() => this.internalLoading.set(false))
               );
@@ -252,6 +272,23 @@ export class MeetingRegistrantsDisplayComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initRegistrants(): Signal<MeetingRegistrant[]> {
+    return computed(() => {
+      let list: MeetingRegistrant[];
+      if (this.externallyManaged()) {
+        const seed = this.initialRegistrants() ?? [];
+        list = [...seed].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[];
+      } else {
+        list = this.internalRegistrants();
+      }
+      const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
+      const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
+      return pending.length
+        ? ([...pending, ...list].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[])
+        : list;
+    });
   }
 
   private initGroupFilterOptions() {

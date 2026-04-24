@@ -38,6 +38,7 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   COMMITTEE_LABEL,
+  resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   Meeting,
@@ -123,6 +124,7 @@ export class MeetingCardComponent implements OnInit {
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public drawerGuestCount: WritableSignal<number> = signal(0);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
   public materialsDrawerVisible = signal(false);
 
@@ -158,6 +160,7 @@ export class MeetingCardComponent implements OnInit {
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)
   public readonly canToggleRsvpView: Signal<boolean> = computed(() => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting());
+  public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
@@ -484,6 +487,7 @@ export class MeetingCardComponent implements OnInit {
         take(1),
         tap((meeting) => {
           this.additionalRegistrantsCount.set(0);
+          this.drawerGuestCount.set(0);
           this.meeting.set(meeting);
         })
       )
@@ -705,6 +709,15 @@ export class MeetingCardComponent implements OnInit {
   private initHasAiCompanion(): Signal<boolean> {
     return computed(() => {
       return this.meeting().zoom_config?.ai_companion_enabled || false;
+    });
+  }
+
+  private initGuestCount(): Signal<number> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
+      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
+      return Math.max(meetingTotalCount, this.drawerGuestCount());
     });
   }
 
