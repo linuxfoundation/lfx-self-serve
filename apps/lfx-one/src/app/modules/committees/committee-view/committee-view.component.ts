@@ -97,28 +97,30 @@ export class CommitteeViewComponent {
 
   // -- Writable signals --
   public loading = signal<boolean>(true);
+  // Tracks any in-flight committee fetch (initial OR silent refresh). Distinct from
+  // `loading`, which only gates the full-page spinner on the initial fetch.
+  public committeeRefreshing = signal<boolean>(false);
   public error = signal<boolean>(false);
   public errorType = signal<'not-found' | 'server-error' | null>(null);
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
-  public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
 
-  // Derive membership from already-fetched members list + current user email
-  public myMember: Signal<CommitteeMember | null> = computed(() => {
-    const members = this.members();
-    const email = this.userService.user()?.email?.toLowerCase();
-    if (!email || !members.length) return null;
-    return members.find((m) => m.email?.toLowerCase() === email) ?? null;
-  });
-  public myRole: Signal<string | null> = computed(() => this.myMember()?.role?.name ?? null);
-  public myMemberUid: Signal<string | null> = computed(() => this.myMember()?.uid ?? null);
-  public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.membersLoading());
+  // Membership identity comes from server-enriched fields on the committee record,
+  // resolved via the username-tagged membership query so visibility doesn't depend
+  // on the caller's authenticated email matching their member row.
+  public myRole: Signal<string | null> = computed(() => this.committee()?.my_role ?? null);
+  public myMemberUid: Signal<string | null> = computed(() => this.committee()?.my_member_uid ?? null);
+  // Track the committee request itself (initial + silent refresh) so the join/leave CTA
+  // doesn't flash the wrong state in the window between a join action and the refreshed
+  // committee response carrying the new my_role.
+  public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
+  public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
 
   public categorySeverity: Signal<TagSeverity> = computed(() => {
     const category = this.committee()?.category;
@@ -222,11 +224,15 @@ export class CommitteeViewComponent {
   public refreshMembers(): void {
     this.membersLoading.set(true);
     this.membersRefresh.update((v) => v + 1);
+    // The caller's role lives on the committee payload (not the members list), so any
+    // member-mutation that triggers a members refresh must also refetch the committee
+    // — otherwise role-gated UI (CTAs, banners, tabs) keeps a stale `my_role` until the
+    // user navigates away and back. Cheap: the committee GET is a single round-trip.
+    this.refreshCommittee();
   }
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
-    this.refreshCommittee();
   }
 
   public handleTabNavigation(tabWithContext: string): void {
@@ -457,10 +463,13 @@ export class CommitteeViewComponent {
           this.error.set(false);
           this.errorType.set(null);
 
-          // Only show full loading spinner on initial load, not on silent refreshes
+          // Only show full loading spinner on initial load, not on silent refreshes.
+          // `committeeRefreshing` flips for both, so role-based UI (CTAs, banners) stays
+          // accurate during silent refreshes after join/leave actions.
           if (!this.committee()) {
             this.loading.set(true);
           }
+          this.committeeRefreshing.set(true);
 
           return this.committeeService.getCommittee(committeeId).pipe(
             catchError((err) => {
@@ -478,7 +487,10 @@ export class CommitteeViewComponent {
               });
               return of(null);
             }),
-            finalize(() => this.loading.set(false))
+            finalize(() => {
+              this.loading.set(false);
+              this.committeeRefreshing.set(false);
+            })
           );
         })
       ),

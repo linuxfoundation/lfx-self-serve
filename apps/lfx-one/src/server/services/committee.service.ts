@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   Committee,
   CommitteeCreateData,
@@ -161,9 +162,17 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches a single committee by ID
+   * Fetches a single committee by ID.
+   *
+   * @param options.includeMembership When true, enriches the response with the caller's
+   *   `my_role` / `my_member_uid` resolved via a username-tagged membership query. Costs
+   *   one or more extra `/query/resources` calls (typically one — paginates only if upstream
+   *   returns >50 matching rows for the caller, which should be rare for a single committee),
+   *   so default is `false`. Enable only on user-facing reads (e.g. the GET /committees/:id
+   *   controller), not on internal validation reads (member CRUD, meeting fan-out) where
+   *   the caller-membership fields are unused.
    */
-  public async getCommitteeById(req: Request, committeeId: string): Promise<Committee> {
+  public async getCommitteeById(req: Request, committeeId: string, options: { includeMembership?: boolean } = {}): Promise<Committee> {
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
     if (!committee) {
@@ -174,18 +183,18 @@ export class CommitteeService {
       });
     }
 
-    // Fetch committee settings for enrichment.
-    // Settings (GET /committees/:uid/settings) is the authoritative source for writers/auditors —
-    // CommitteeFull (GET /committees/:uid) does not consistently return them in practice.
-    const settings = await this.getCommitteeSettings(req, committeeId);
+    // Fetch settings, optional caller membership, and access in parallel
+    const [settings, membership, withAccess] = await Promise.all([
+      this.getCommitteeSettings(req, committeeId),
+      options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
+      this.accessCheckService.addAccessToResource(req, committee, 'committee'),
+    ]);
 
-    const committeeWithEnrichment = {
-      ...committee,
+    return {
+      ...withAccess,
       ...settings,
+      ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
     };
-
-    // Add writer access field to the committee
-    return await this.accessCheckService.addAccessToResource(req, committeeWithEnrichment, 'committee');
   }
 
   /**
@@ -560,13 +569,32 @@ export class CommitteeService {
       membership_count: memberships.length,
     });
 
-    // Build a map of committee_uid → membership metadata for quick lookup
-    const membershipMap = new Map<string, { role: string; member_uid: string; committee_category?: string }>();
+    const membershipsByCommittee = new Map<string, CommitteeMember[]>();
     for (const m of memberships) {
-      membershipMap.set(m.committee_uid, {
-        role: m.role?.name || 'Member',
-        member_uid: m.uid,
-        committee_category: m.committee_category,
+      if (!m.committee_uid) continue;
+      const bucket = membershipsByCommittee.get(m.committee_uid);
+      if (bucket) {
+        bucket.push(m);
+      } else {
+        membershipsByCommittee.set(m.committee_uid, [m]);
+      }
+    }
+
+    const membershipMap = new Map<string, { role: CommitteeMemberRole | 'Member'; member_uid: string; committee_category?: string }>();
+    for (const [committeeUid, rows] of membershipsByCommittee) {
+      if (rows.length > 1) {
+        logger.warning(req, 'get_my_committees', 'Multiple membership rows for (username, committee_uid); picking highest-privilege role', {
+          committee_uid: committeeUid,
+          row_count: rows.length,
+        });
+      }
+      const best = this.pickBestMembership(rows);
+      if (!best) continue;
+      const roleName = best.role?.name;
+      membershipMap.set(committeeUid, {
+        role: !roleName || roleName === CommitteeMemberRole.NONE ? 'Member' : roleName,
+        member_uid: best.uid,
+        committee_category: best.committee_category,
       });
     }
 
@@ -792,6 +820,96 @@ export class CommitteeService {
       committee_uid: committeeId,
       document_uid: documentId,
       document_type: documentType,
+    });
+  }
+
+  /**
+   * Fetches the caller's membership row for a single committee, or null if none.
+   * Uses the username-tagged query so visibility is independent of which email
+   * the caller authenticated with — matching the pattern used by
+   * {@link getMyCommittees} / {@link getMyCommitteeUids} for the same `committee_member`
+   * resource type.
+   *
+   * Reuses {@link getCommitteeMembers} (which paginates via `fetchAllQueryResources`)
+   * to keep the read pattern consistent with the rest of the service and with
+   * {@link meeting.helper.ts} which uses the same `(username, committee_uid)` lookup.
+   */
+  private async getCallerMembership(req: Request, committeeId: string): Promise<{ role: CommitteeMemberRole | 'Member'; member_uid: string } | null> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return null;
+    }
+
+    try {
+      const memberships = await this.getCommitteeMembers(req, committeeId, { tags_all: [`username:${username}`] });
+      if (memberships.length === 0) {
+        return null;
+      }
+
+      // Defensive: if upstream ever returns multiples (duplicate index entry, multi-account
+      // edge case), prefer the highest-privilege role so the UI doesn't randomly downgrade.
+      if (memberships.length > 1) {
+        logger.warning(req, 'get_caller_membership', 'Multiple membership rows for (username, committee_uid); picking highest-privilege role', {
+          committee_uid: committeeId,
+          row_count: memberships.length,
+        });
+      }
+
+      const best = this.pickBestMembership(memberships);
+      if (!best) {
+        return null;
+      }
+
+      const roleName = best.role?.name;
+      return {
+        role: !roleName || roleName === CommitteeMemberRole.NONE ? 'Member' : roleName,
+        member_uid: best.uid,
+      };
+    } catch (error) {
+      logger.warning(req, 'get_caller_membership', 'Failed to resolve caller membership, treating as non-member', {
+        committee_uid: committeeId,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Numeric priority for committee roles, used to deterministically pick the "best"
+   * row when multiple membership rows exist for the same caller. Higher = more privileged.
+   *
+   * Any named role outranks `None`/missing so a real membership row is never tied with
+   * a placeholder row. Chair / Vice Chair are explicitly elevated above the rest.
+   */
+  private rolePriority(role: CommitteeMemberRole | undefined): number {
+    if (role === CommitteeMemberRole.CHAIR) return 3;
+    if (role === CommitteeMemberRole.VICE_CHAIR) return 2;
+    if (!role || role === CommitteeMemberRole.NONE) return 0;
+    return 1;
+  }
+
+  /**
+   * Selects the highest-privilege membership row from a set of duplicates for the
+   * same `(username, committee_uid)` pair. Shared between {@link getCallerMembership}
+   * and {@link getMyCommittees} so the detail and dashboard endpoints surface the
+   * same `my_role` / `my_member_uid` for a given group when upstream returns
+   * multiple rows (duplicate index entry, multi-account edge case).
+   *
+   * Ties on role priority are broken deterministically by lexicographically smallest
+   * `uid`, so repeated requests pick the same row regardless of upstream ordering.
+   */
+  private pickBestMembership(memberships: CommitteeMember[]): CommitteeMember | null {
+    if (memberships.length === 0) {
+      return null;
+    }
+    return memberships.reduce((best, current) => {
+      const currentPriority = this.rolePriority(current.role?.name);
+      const bestPriority = this.rolePriority(best.role?.name);
+      if (currentPriority !== bestPriority) {
+        return currentPriority > bestPriority ? current : best;
+      }
+      // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
+      return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
   }
 

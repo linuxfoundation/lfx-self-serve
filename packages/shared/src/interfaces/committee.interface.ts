@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
-import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
 
@@ -204,15 +204,27 @@ export interface Committee {
   writers?: CommitteeUser[];
   /** Users with audit (review) access to this committee */
   auditors?: CommitteeUser[];
+
+  /**
+   * Caller's role in this committee, when they are a member. Absent for non-members.
+   * Falls back to the literal 'Member' when the upstream membership row exists but
+   * either carries no role or uses the placeholder `CommitteeMemberRole.NONE` value.
+   */
+  my_role?: CommitteeMemberRole | 'Member';
+  /** Caller's member UID in this committee. Absent for non-members. */
+  my_member_uid?: string;
 }
 
 /**
- * Committee with the current user's membership info
- * @description Extends Committee with the user's role and member UID for join/leave actions
+ * Committee with the current user's membership info.
+ *
+ * @description Extends {@link Committee}, narrowing `my_role` to required for endpoints
+ * that guarantee the caller is a member (e.g. `GET /committees/my-committees`). No new
+ * fields beyond the optional ones already declared on `Committee`.
  */
 export interface MyCommittee extends Committee {
   /** User's role in this committee (e.g., "Chair", "Member", "Observer") */
-  my_role: string;
+  my_role: CommitteeMemberRole | 'Member';
   /** User's member UID in this committee (needed for leave action) */
   my_member_uid?: string;
 }

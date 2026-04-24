@@ -111,8 +111,9 @@ export class CommitteeController {
         return;
       }
 
-      // Get the committee by ID
-      const committee = await this.committeeService.getCommitteeById(req, id);
+      // Get the committee by ID — include caller membership so the UI can render
+      // visitor / member / chair states without a second round-trip.
+      const committee = await this.committeeService.getCommitteeById(req, id, { includeMembership: true });
 
       // Log the success
       logger.success(req, 'get_committee_by_id', startTime, {

@@ -19,13 +19,18 @@
         }
       </div>
       <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
-        {{
-          isMeLens()
-            ? project()?.uid
-              ? committeeLabel.plural + ' you are a member of in this ' + (isFoundationContext() ? 'foundation' : 'project') + '.'
-              : committeeLabel.plural + ' you are a member of across all foundations and projects.'
-            : 'Manage ' + committeeLabel.plural.toLowerCase() + ' and governance for your project.'
-        }}
+        @if (isMeLens()) {
+          @if (projectFilter() || foundationFilter()) {
+            {{ committeeLabel.plural }} you are a member of in the selected scope.
+          } @else {
+            {{ committeeLabel.plural }} you are a member of across all foundations and projects.
+            @if (showFoundationFilter() || showProjectFilter()) {
+              <span class="text-gray-400">Use the filters above to narrow the view.</span>
+            }
+          }
+        } @else {
+          Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
+        }
       </p>
     </div>
 

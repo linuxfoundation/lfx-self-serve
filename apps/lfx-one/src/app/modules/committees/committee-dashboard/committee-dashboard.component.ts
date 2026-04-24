@@ -66,7 +66,7 @@ export class CommitteeDashboardComponent {
 
   // Lens & permissions
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
-  public readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
+  private readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
   protected readonly canWrite = this.projectContextService.canWrite;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
@@ -187,16 +187,15 @@ export class CommitteeDashboardComponent {
     const isMeLens$ = toObservable(this.isMeLens);
 
     // Resolve the active scope for "my committees":
-    // - Me lens with no selected context → fetch across all foundations and projects.
-    // - Otherwise → scope to the active foundation or project context.
-    // Reset per-page filters only when the actual scope changes (mode flip or UID change),
-    // not on every refresh button click.
+    // - Me lens → fetch across all foundations and projects; in-page dropdowns narrow the view.
+    // - Project lens → scope to the active foundation or project.
+    // Reset per-page filters only when the actual scope changes (mode flip or UID change).
     const scope$ = combineLatest([project$, isFoundationContext$, isMeLens$]).pipe(
       map(([project, isFoundation, isMeLens]) => {
-        const uid = project?.uid ?? '';
-        if (isMeLens && !uid) {
+        if (isMeLens) {
           return { mode: 'all' as const, uid: '', key: 'all' };
         }
+        const uid = project?.uid ?? '';
         const mode = isFoundation ? ('foundation' as const) : ('project' as const);
         return { mode, uid, key: `${mode}:${uid}` };
       }),
