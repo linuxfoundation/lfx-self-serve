@@ -8,6 +8,8 @@ export const environment = {
     support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
     pcc: 'https://projectadmin.lfx.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
+    mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
+    crowdfunding: 'https://crowdfunding.lfx.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

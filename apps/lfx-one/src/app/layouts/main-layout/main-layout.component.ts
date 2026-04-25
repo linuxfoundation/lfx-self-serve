@@ -19,6 +19,8 @@ import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, map, of, startWith, switchMap, take } from 'rxjs';
 
+import { environment } from '@environments/environment';
+
 import { ButtonComponent } from '@components/button/button.component';
 
 @Component({
@@ -124,7 +126,12 @@ export class MainLayoutComponent {
         {
           label: 'Mentorships',
           icon: 'fa-light fa-chalkboard-teacher',
-          routerLink: '/me/mentorships',
+          url: environment.urls.mentorship,
+        },
+        {
+          label: 'Crowdfunding',
+          icon: 'fa-light fa-circle-dollar',
+          url: environment.urls.crowdfunding,
         },
         {
           label: 'Badges',
