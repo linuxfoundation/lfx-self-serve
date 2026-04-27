@@ -164,7 +164,7 @@ Many controllers and services read the user's email/username from `req.oidc.user
 | `getEffectiveUsername(req)` | Impersonated username or OIDC nickname        |
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                  |
 
-These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, persona detection).
+These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 
 **Exception:** The profile controller always uses `req.oidc.user` directly because profile operations (change password, update metadata, link identities) must act on the real user's account.
 
