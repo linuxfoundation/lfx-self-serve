@@ -8,8 +8,8 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
-import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import { LensItem, NavLens, PersonaType, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
@@ -17,6 +17,13 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
+
+const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
+  'executive-director': 'fa-light fa-briefcase',
+  'board-member': 'fa-light fa-building-columns',
+  'maintainer': 'fa-light fa-code',
+  'contributor': 'fa-light fa-code',
+};
 
 @Component({
   selector: 'lfx-sidebar',
@@ -48,7 +55,7 @@ export class SidebarComponent {
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
-  protected readonly personaLabel: Signal<string> = this.initPersonaLabel();
+  protected readonly personaLabels: Signal<{ label: string; icon: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 
@@ -100,11 +107,22 @@ export class SidebarComponent {
     });
   }
 
-  private initPersonaLabel(): Signal<string> {
+  private initPersonaLabels(): Signal<{ label: string; icon: string }[]> {
     return computed(() => {
-      const persona = this.personaService.currentPersona();
-      const option = PERSONA_OPTIONS.find((o) => o.value === persona);
-      return option?.label ?? toTitleCase(persona);
+      const toTag = (p: PersonaType) => {
+        const option = PERSONA_OPTIONS.find((o) => o.value === p);
+        return { label: option?.label ?? toTitleCase(p), icon: PERSONA_ICONS[p] ?? 'fa-light fa-user' };
+      };
+
+      if (this.activeLens() === 'me') {
+        const priorityMap = new Map(PERSONA_PRIORITY.map((p, i) => [p, i]));
+        const sorted = [...this.personaService.allPersonas()].sort(
+          (a, b) => (priorityMap.get(a) ?? Number.MAX_SAFE_INTEGER) - (priorityMap.get(b) ?? Number.MAX_SAFE_INTEGER),
+        );
+        return sorted.slice(0, 3).map(toTag);
+      }
+
+      return [toTag(this.personaService.currentPersona())];
     });
   }
 
