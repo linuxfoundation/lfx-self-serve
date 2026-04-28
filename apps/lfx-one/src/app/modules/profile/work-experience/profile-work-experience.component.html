@@ -33,18 +33,16 @@
   } @else {
     <!-- Review Banner + Table (connected when banner is shown) -->
     <div class="flex flex-col [&>lfx-table]:block">
-      @if (hasReviewable()) {
-        <div class="-mb-px flex items-center gap-2 rounded-t-xl border border-blue-200 bg-blue-50 px-3 py-2.5" data-testid="work-experience-review-banner">
-          <i class="fa-light fa-circle-info text-sm text-blue-600"></i>
-          <span class="text-xs text-blue-700">Some work experiences need your review. Please confirm or update the details below.</span>
-        </div>
-      }
+      <div class="-mb-px flex items-center gap-2 rounded-t-xl border border-blue-200 bg-blue-50 px-3 py-2.5" data-testid="work-experience-review-banner">
+        <i class="fa-light fa-circle-info text-sm text-blue-600"></i>
+        <span class="text-xs text-blue-700">Your contributions are automatically attributed based on your verified identities and work history.</span>
+      </div>
 
       <!-- Work Experience Table -->
       <lfx-table
         [value]="sortedExperience()"
         dataKey="id"
-        [styleClass]="hasReviewable() ? 'rounded-b-xl border border-gray-200' : 'rounded-xl border border-gray-200'"
+        styleClass="rounded-b-xl border border-gray-200"
         data-testid="work-experience-table">
         <ng-template #header>
           <tr class="border-b border-slate-100 bg-white">
@@ -71,7 +69,6 @@
             class="transition-colors hover:bg-slate-50/50"
             [class.border-b]="rowIndex < sortedExperience().length - 1"
             [class.border-slate-100]="rowIndex < sortedExperience().length - 1"
-            [class]="item.needsReview ? 'bg-blue-50/30' : ''"
             [attr.data-row-index]="rowIndex"
             [attr.data-testid]="'work-experience-row-' + item.id">
             <!-- Organization -->
@@ -110,28 +107,17 @@
 
             <!-- Actions -->
             <td class="px-5 py-3.5 text-right">
-              @if (item.needsReview) {
+              <div class="relative inline-block">
                 <lfx-button
-                  label="Review"
-                  icon="fa-light fa-clipboard-check"
-                  severity="primary"
-                  [outlined]="true"
+                  icon="fa-solid fa-ellipsis-vertical"
+                  [text]="true"
+                  [rounded]="true"
                   size="small"
-                  (onClick)="onReview(item)"
-                  [attr.data-testid]="'work-experience-review-' + item.id" />
-              } @else {
-                <div class="relative inline-block">
-                  <lfx-button
-                    icon="fa-solid fa-ellipsis-vertical"
-                    [text]="true"
-                    [rounded]="true"
-                    size="small"
-                    styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                    (onClick)="actionMenu.toggle($event)"
-                    [attr.data-testid]="'work-experience-menu-' + item.id" />
-                  <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
-                </div>
-              }
+                  styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                  (onClick)="actionMenu.toggle($event)"
+                  [attr.data-testid]="'work-experience-menu-' + item.id" />
+                <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
+              </div>
             </td>
           </tr>
         </ng-template>

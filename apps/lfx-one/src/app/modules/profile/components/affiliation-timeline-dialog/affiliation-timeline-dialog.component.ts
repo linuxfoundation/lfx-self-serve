@@ -177,7 +177,6 @@ export class AffiliationTimelineDialogComponent {
     const orgMap = new Map<string, AffiliationEditOrg>();
 
     for (const we of weEntries) {
-      if (we.needsReview) continue;
       orgMap.set(we.organization, {
         organization: we.organization,
         organizationLogo: we.organizationLogo,

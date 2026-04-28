@@ -173,7 +173,7 @@ export class ProfileAffiliationsComponent {
     void this.router.navigate(['/profile', 'identities']);
   }
 
-  private openSingleProjectTimeline(project: ProjectGroup): void {
+  protected openSingleProjectTimeline(project: ProjectGroup): void {
     const timelineProjects: TimelineProjectData[] = [
       {
         projectName: project.projectName,
@@ -208,27 +208,7 @@ export class ProfileAffiliationsComponent {
       const idx = groups.findIndex((g) => g.projectName === updated.projectName);
       if (idx === -1) continue;
 
-      if (updated.segments.length > 0) {
-        groups[idx] = { ...groups[idx], segments: updated.segments };
-      } else {
-        const originalSegments = groups[idx].segments;
-        const earliest = originalSegments.reduce((min, seg) => (seg.startDate < min ? seg.startDate : min), originalSegments[0]?.startDate || 'Jan 2020');
-        groups[idx] = {
-          ...groups[idx],
-          segments: [
-            {
-              id: `${groups[idx].id}-independent`,
-              role: 'Contributor' as const,
-              roleSource: 'user-overridden' as const,
-              organization: 'Independent',
-              startDate: earliest,
-              sourceLabel: 'Confirmed by user' as const,
-              sourceType: 'user-overridden' as const,
-              needsConfirmation: false,
-            },
-          ],
-        };
-      }
+      groups[idx] = { ...groups[idx], segments: updated.segments };
     }
     this.projectGroups.set(groups);
   }
@@ -261,9 +241,7 @@ export class ProfileAffiliationsComponent {
       const cdpProject = cdpAffiliations.find((p) => p.projectName === updated.projectName);
       if (!cdpProject) continue;
 
-      const affiliations: CdpProjectAffiliationEntry[] = updated.segments
-        .filter((seg) => seg.organization !== 'Independent')
-        .map((seg) => {
+      const affiliations: CdpProjectAffiliationEntry[] = updated.segments.map((seg) => {
           const orgMeta = orgLookup.get(seg.organization);
           const isTemporaryId = !seg.id || seg.id.startsWith('period-') || seg.id.endsWith('-independent');
 
@@ -341,14 +319,25 @@ export class ProfileAffiliationsComponent {
       for (let g = 0; g < groups.length; g++) {
         const group = groups[g];
         const isLastGroup = g === groups.length - 1;
-        for (let i = 0; i < group.segments.length; i++) {
+        if (group.segments.length === 0) {
           rows.push({
             group,
-            segment: group.segments[i],
-            isFirstSegment: i === 0,
-            isLastSegmentInGroup: i === group.segments.length - 1,
+            segment: { id: `${group.id}-empty`, role: 'Contributor', roleSource: 'cdp-detected', organization: '', startDate: '', sourceLabel: 'Derived from work experience', sourceType: 'inferred', needsConfirmation: false },
+            isFirstSegment: true,
+            isLastSegmentInGroup: true,
             isLastGroup,
+            isPlaceholder: true,
           });
+        } else {
+          for (let i = 0; i < group.segments.length; i++) {
+            rows.push({
+              group,
+              segment: group.segments[i],
+              isFirstSegment: i === 0,
+              isLastSegmentInGroup: i === group.segments.length - 1,
+              isLastGroup,
+            });
+          }
         }
       }
       return rows;
@@ -390,14 +379,13 @@ export class ProfileAffiliationsComponent {
     return computed(() => {
       const map = new Map<string, MenuItem[]>();
       for (const project of this.sortedProjectGroups()) {
-        for (const segment of project.segments) {
-          map.set(segment.id, [
-            {
-              label: 'Edit Affiliation',
-              icon: 'fa-light fa-pencil',
-              command: () => this.openSingleProjectTimeline(project),
-            },
-          ]);
+        const editItem = [{ label: 'Edit Affiliation', icon: 'fa-light fa-pencil', command: () => this.openSingleProjectTimeline(project) }];
+        if (project.segments.length === 0) {
+          map.set(`${project.id}-empty`, editItem);
+        } else {
+          for (const segment of project.segments) {
+            map.set(segment.id, editItem);
+          }
         }
       }
       return map;
@@ -433,7 +421,7 @@ export class ProfileAffiliationsComponent {
 
     const verifiedOrgIds = new Set(
       this.workExperience()
-        .filter((we) => !we.needsReview && we.organizationId)
+        .filter((we) => we.organizationId)
         .map((we) => we.organizationId!)
     );
 
@@ -448,42 +436,18 @@ export class ProfileAffiliationsComponent {
           (aff) => aff.type === 'project' && (aff.verifiedBy === lfid || verifiedOrgIds.has(aff.organizationId))
         );
 
-        const segments: AffiliationSegment[] =
-          projectAffiliations.length > 0
-            ? projectAffiliations.map((aff) => {
-                return {
-                  id: aff.id ?? '',
-                  role,
-                  roleSource,
-                  organization: aff.organizationName,
-                  organizationLogo: aff.organizationLogo || undefined,
-                  startDate: isoDateToMonthYear(aff.startDate),
-                  endDate: aff.endDate ? isoDateToMonthYear(aff.endDate) : undefined,
-                  sourceLabel: aff.verified ? ('Confirmed by user' as const) : ('Derived from work experience' as const),
-                  sourceType: aff.verified ? ('user-confirmed' as const) : ('inferred' as const),
-                  needsConfirmation: !aff.verified && role === 'Maintainer' && roleSource === 'cdp-detected',
-                };
-              })
-            : (() => {
-                const allStartDates = project.affiliations.map((a) => a.startDate).filter(Boolean);
-                const allEndDates = project.affiliations.map((a) => a.endDate).filter((d): d is string => !!d);
-                const earliestStart = allStartDates.length > 0 ? allStartDates.sort()[0] : undefined;
-                const latestEnd = allEndDates.length > 0 ? allEndDates.sort().reverse()[0] : undefined;
-
-                return [
-                  {
-                    id: `${project.id}-independent`,
-                    role,
-                    roleSource,
-                    organization: 'Independent',
-                    startDate: earliestStart ? isoDateToMonthYear(earliestStart) : 'Unknown',
-                    endDate: latestEnd ? isoDateToMonthYear(latestEnd) : undefined,
-                    sourceLabel: 'Derived from work experience' as const,
-                    sourceType: 'inferred' as const,
-                    needsConfirmation: false,
-                  },
-                ];
-              })();
+        const segments: AffiliationSegment[] = projectAffiliations.map((aff) => ({
+          id: aff.id ?? '',
+          role,
+          roleSource,
+          organization: aff.organizationName,
+          organizationLogo: aff.organizationLogo || undefined,
+          startDate: isoDateToMonthYear(aff.startDate),
+          endDate: aff.endDate ? isoDateToMonthYear(aff.endDate) : undefined,
+          sourceLabel: aff.verified ? ('Confirmed by user' as const) : ('Derived from work experience' as const),
+          sourceType: aff.verified ? ('user-confirmed' as const) : ('inferred' as const),
+          needsConfirmation: !aff.verified && role === 'Maintainer' && roleSource === 'cdp-detected',
+        }));
 
         const enabledOrgIds = new Set(projectAffiliations.map((aff) => aff.organizationId));
         const disabledOrgSuggestions = this.buildDisabledOrgSuggestions(project, enabledOrgIds, lfid);

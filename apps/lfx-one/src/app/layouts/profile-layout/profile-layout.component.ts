@@ -12,7 +12,7 @@ import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, U
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
@@ -280,21 +280,12 @@ export class ProfileLayoutComponent {
 
   private initTabNotifications(): Signal<Map<string, boolean>> {
     return toSignal(
-      combineLatest([
-        this.userService.getWorkExperiences().pipe(
-          map((entries) => entries.some((e) => e.needsReview)),
-          catchError(() => of(false)),
-          startWith(false)
-        ),
-        this.userService.getIdentities().pipe(
-          map((identities) => identities.some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified')),
-          catchError(() => of(false)),
-          startWith(false)
-        ),
-      ]).pipe(
-        map(([hasReviewable, hasUnverified]) => {
+      this.userService.getIdentities().pipe(
+        map((identities) => identities.some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified')),
+        catchError(() => of(false)),
+        startWith(false),
+        map((hasUnverified) => {
           const notifications = new Map<string, boolean>();
-          notifications.set('attribution', hasReviewable);
           notifications.set('identities', hasUnverified);
           return notifications;
         })

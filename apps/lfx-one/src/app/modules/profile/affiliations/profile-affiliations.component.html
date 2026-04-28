@@ -162,38 +162,45 @@
             </div>
           </div>
 
-          <!-- Separator -->
-          <div class="mt-3 border-t border-slate-200"></div>
-
           <!-- Company rows -->
-          @for (segment of group.segments; track segment.id; let lastSeg = $last) {
-            <div
-              class="flex items-center py-3"
-              [class.border-b]="!lastSeg"
-              [class.border-slate-100]="!lastSeg"
-              [attr.data-testid]="'compact-segment-' + segment.id">
-              <div class="flex items-center gap-2.5">
-                <!-- Company logo -->
-                @if (segment.organization === 'Independent') {
-                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200">
-                    <i class="fa-solid fa-user text-[10px] text-slate-500"></i>
-                  </div>
-                } @else if (segment.organizationLogo) {
-                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
-                    <img [src]="segment.organizationLogo" [alt]="segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
-                  </div>
-                } @else {
-                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
-                    <i class="fa-light fa-building text-[10px] text-slate-400"></i>
-                  </div>
-                }
+          @if (group.segments.length === 0) {
+            <div class="flex items-center pt-3" [attr.data-testid]="'compact-empty-' + group.id">
+              <button
+                class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
+                (click)="openSingleProjectTimeline(group)"
+                [attr.data-testid]="'compact-add-affiliation-' + group.id">
+                <i class="fa-light fa-plus-circle text-base"></i>
+                <span>No project specific affiliation set — add one</span>
+              </button>
+            </div>
+          } @else {
+            <!-- Separator -->
+            <div class="mt-3 border-t border-slate-200"></div>
+            @for (segment of group.segments; track segment.id; let lastSeg = $last) {
+              <div
+                class="flex items-center py-3"
+                [class.border-b]="!lastSeg"
+                [class.border-slate-100]="!lastSeg"
+                [attr.data-testid]="'compact-segment-' + segment.id">
+                <div class="flex items-center gap-2.5">
+                  <!-- Company logo -->
+                  @if (segment.organizationLogo) {
+                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
+                      <img [src]="segment.organizationLogo" [alt]="segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
+                    </div>
+                  } @else {
+                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
+                      <i class="fa-light fa-building text-[10px] text-slate-400"></i>
+                    </div>
+                  }
 
-                <div class="flex flex-col">
-                  <span class="text-sm font-bold text-slate-900">{{ segment.organization }}</span>
-                  <span class="text-sm text-slate-500">{{ segment.startDate }} – {{ segment.endDate || 'Present' }}</span>
+                  <div class="flex flex-col">
+                    <span class="text-sm font-bold text-slate-900">{{ segment.organization }}</span>
+                    <span class="text-sm text-slate-500">{{ segment.startDate }} – {{ segment.endDate || 'Present' }}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            }
           }
         </div>
       }
@@ -332,28 +339,34 @@
           <!-- Affiliation Column -->
           <td class="px-5 py-3.5">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2.5">
-                <!-- Org Logo -->
-                @if (row.segment.organization === 'Independent') {
-                  <div class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200">
-                    <i class="fa-solid fa-user text-xs text-slate-500"></i>
-                  </div>
-                } @else if (row.segment.organizationLogo) {
-                  <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
-                    <img [src]="row.segment.organizationLogo" [alt]="row.segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
-                  </div>
-                } @else {
-                  <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
-                    <i class="fa-light fa-building text-xs text-slate-400"></i>
-                  </div>
-                }
+              @if (row.isPlaceholder) {
+                <button
+                  class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
+                  (click)="openSingleProjectTimeline(row.group)"
+                  [attr.data-testid]="'add-affiliation-' + row.group.id">
+                  <i class="fa-light fa-plus-circle text-base"></i>
+                  <span>No project specific affiliation set — add one</span>
+                </button>
+              } @else {
+                <div class="flex items-center gap-2.5">
+                  <!-- Org Logo -->
+                  @if (row.segment.organizationLogo) {
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
+                      <img [src]="row.segment.organizationLogo" [alt]="row.segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
+                    </div>
+                  } @else {
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
+                      <i class="fa-light fa-building text-xs text-slate-400"></i>
+                    </div>
+                  }
 
-                <!-- Org Name & Dates -->
-                <div class="flex flex-col">
-                  <span class="text-sm font-medium text-slate-700">{{ row.segment.organization }}</span>
-                  <span class="text-[10px] text-slate-400">{{ row.segment.startDate }} – {{ row.segment.endDate || 'Present' }}</span>
+                  <!-- Org Name & Dates -->
+                  <div class="flex flex-col">
+                    <span class="text-sm font-medium text-slate-700">{{ row.segment.organization }}</span>
+                    <span class="text-[10px] text-slate-400">{{ row.segment.startDate }} – {{ row.segment.endDate || 'Present' }}</span>
+                  </div>
                 </div>
-              </div>
+              }
 
               <!-- 3-dot menu -->
               <div class="relative">

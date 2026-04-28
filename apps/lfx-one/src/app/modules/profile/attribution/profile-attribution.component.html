@@ -18,18 +18,12 @@
             data-testid="add-work-experience-header-btn" />
         }
       </div>
-      <p class="mb-4 text-[13px] leading-normal text-slate-500">
-        Work experiences determine which organization receives credit for your contributions during each time period.
-      </p>
       <lfx-profile-work-experience [hideHeader]="true" (workExperienceChanged)="onWorkExperienceChanged()" />
     </div>
 
     <!-- Right Column: Project Involvement -->
     <div class="flex w-[360px] flex-col gap-3">
       <h2>Project Involvement</h2>
-      <p class="text-[13px] leading-normal text-slate-500">
-        Your contributions are automatically attributed based on your verified identities and work history.
-      </p>
       <lfx-profile-affiliations [hideHeader]="true" [compact]="true" (addWorkExperience)="onAddWorkExperience()" />
     </div>
   </div>

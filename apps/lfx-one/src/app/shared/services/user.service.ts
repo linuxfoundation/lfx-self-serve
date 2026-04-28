@@ -283,13 +283,6 @@ export class UserService {
   }
 
   /**
-   * Confirm a work experience (mark as verified) via CDP
-   */
-  public confirmWorkExperience(id: string): Observable<{ success: boolean }> {
-    return this.http.patch<{ success: boolean }>(`/api/profile/work-experiences/${id}`, {});
-  }
-
-  /**
    * Delete a work experience via CDP
    */
   public deleteWorkExperience(id: string): Observable<{ success: boolean }> {

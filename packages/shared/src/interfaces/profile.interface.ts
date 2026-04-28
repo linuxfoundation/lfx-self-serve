@@ -171,6 +171,7 @@ export interface FlatAffiliationRow {
   isFirstSegment: boolean;
   isLastSegmentInGroup: boolean;
   isLastGroup: boolean;
+  isPlaceholder?: boolean;
 }
 
 /**
