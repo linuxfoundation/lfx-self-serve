@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ProjectItem } from './components.interface';
 import type { ProjectTableRow } from './dashboard-metric.interface';
 
 /**
@@ -120,72 +119,6 @@ export interface UserCodeCommitsResponse {
    * Number of days with data
    */
   totalDays: number;
-}
-
-/**
- * User Project Contribution row from Snowflake USER_PROJECT_CONTRIBUTIONS_DAILY table
- * Represents daily contribution activity for a user's projects
- */
-export interface UserProjectContributionRow {
-  /**
-   * Project unique identifier
-   */
-  PROJECT_ID: string;
-
-  /**
-   * Project display name
-   */
-  PROJECT_NAME: string;
-
-  /**
-   * Project URL slug
-   */
-  PROJECT_SLUG: string;
-
-  /**
-   * Project logo URL
-   */
-  PROJECT_LOGO: string | null;
-
-  /**
-   * Date of the activity (YYYY-MM-DD format)
-   */
-  ACTIVITY_DATE: string;
-
-  /**
-   * Whether the user is a maintainer of this project
-   */
-  IS_MAINTAINER: boolean;
-
-  /**
-   * User's affiliation/organization name
-   */
-  AFFILIATION: string | null;
-
-  /**
-   * Code-related activities for this date
-   */
-  DAILY_CODE_ACTIVITIES: number;
-
-  /**
-   * Non-code-related activities for this date
-   */
-  DAILY_NON_CODE_ACTIVITIES: number;
-}
-
-/**
- * API response for User Projects query
- */
-export interface UserProjectsResponse {
-  /**
-   * Array of projects with activity data
-   */
-  data: ProjectItem[];
-
-  /**
-   * Total number of projects
-   */
-  totalProjects: number;
 }
 
 /**

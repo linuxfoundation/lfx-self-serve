@@ -7,12 +7,11 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
-import { MyProjectsComponent } from '../components/my-projects/my-projects.component';
 import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
 
 @Component({
   selector: 'lfx-project-dashboard',
-  imports: [RecentProgressComponent, MyMeetingsComponent, MyProjectsComponent, SkeletonModule, DashboardQuicklinksComponent],
+  imports: [RecentProgressComponent, MyMeetingsComponent, SkeletonModule, DashboardQuicklinksComponent],
   templateUrl: './project-dashboard.component.html',
   styleUrl: './project-dashboard.component.scss',
 })

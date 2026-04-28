@@ -120,36 +120,6 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /api/analytics/my-projects
-   * Get user's projects with activity data
-   */
-  public async getMyProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_my_projects');
-
-    try {
-      // Get LF username from OIDC context
-      const lfUsername = await getUsernameFromAuth(req);
-
-      if (!lfUsername) {
-        throw new AuthenticationError('User username not found in authentication context', {
-          operation: 'get_my_projects',
-        });
-      }
-
-      const response = await this.userService.getMyProjects(lfUsername);
-
-      logger.success(req, 'get_my_projects', startTime, {
-        returned_projects: response.data.length,
-        total_projects: response.totalProjects,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * GET /api/analytics/certified-employees
    * Get certified employees data for an organization with monthly trend data
    * Query params: accountId (required) - Organization account ID, foundationSlug (required) - Foundation slug

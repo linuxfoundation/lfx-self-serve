@@ -529,38 +529,6 @@ export interface MeetingItem {
 }
 
 /**
- * Project item for project list
- * @description Structure for project information from USER_PROJECT_CONTRIBUTIONS_DAILY
- */
-export interface ProjectItem {
-  /** Project name */
-  name: string;
-  /** Project URL slug */
-  slug: string;
-  /** Project logo URL */
-  logo?: string;
-  /** User's role in project (Maintainer or Contributor) */
-  role: 'Maintainer' | 'Contributor';
-  /** User's affiliations (comma-separated if multiple) */
-  affiliations: string[];
-  /** Code activity data for chart (daily values) */
-  codeActivities: number[];
-  /** Non-code activity data for chart (daily values) */
-  nonCodeActivities: number[];
-}
-
-/**
- * Project item with pre-generated chart data for dashboard
- * @description Extended project item with Chart.js line chart configurations
- */
-export interface ProjectItemWithCharts extends ProjectItem {
-  /** Chart.js data configuration for code activities line chart */
-  codeActivitiesChartData: ChartData<'line'>;
-  /** Chart.js data configuration for non-code activities line chart */
-  nonCodeActivitiesChartData: ChartData<'line'>;
-}
-
-/**
  * Dashboard meeting card feature flags
  * @description Enabled features for a meeting displayed on dashboard
  */

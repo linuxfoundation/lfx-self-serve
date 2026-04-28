@@ -21,15 +21,12 @@ import {
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
-  ProjectItem,
   QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
   UserMetadataUpdateRequest,
   UserMetadataUpdateResponse,
-  UserProjectContributionRow,
-  UserProjectsResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
   Vote,
@@ -364,96 +361,6 @@ export class UserService {
       data: result.rows,
       totalCommits,
       totalDays: result.rows.length,
-    };
-  }
-
-  /**
-   * Get user's projects with activity data
-   * Queries USER_PROJECT_CONTRIBUTIONS_DAILY table filtered by LF username
-   * @param lfUsername - Linux Foundation username from OIDC
-   * @returns All projects with activity data for the user
-   */
-  public async getMyProjects(lfUsername: string): Promise<UserProjectsResponse> {
-    // Get all projects with their activity data
-    // Aggregates affiliations per project and sums activities by date
-    const query = `
-      WITH UserProjects AS (
-        SELECT PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO,
-               MAX(IS_MAINTAINER) AS IS_MAINTAINER
-        FROM ANALYTICS.PLATINUM_LFX_ONE.USER_PROJECT_CONTRIBUTIONS_DAILY
-        WHERE SUB = ?
-        GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO
-        ORDER BY PROJECT_NAME, PROJECT_ID
-      ),
-      ProjectAffiliations AS (
-        SELECT PROJECT_ID, LISTAGG(DISTINCT AFFILIATION, ', ') WITHIN GROUP (ORDER BY AFFILIATION) AS AFFILIATIONS
-        FROM ANALYTICS.PLATINUM_LFX_ONE.USER_PROJECT_CONTRIBUTIONS_DAILY
-        WHERE SUB = ?
-          AND AFFILIATION IS NOT NULL
-          AND AFFILIATION != ''
-        GROUP BY PROJECT_ID
-      ),
-      DailyActivities AS (
-        SELECT PROJECT_ID, ACTIVITY_DATE,
-               SUM(DAILY_CODE_ACTIVITIES) AS DAILY_CODE_ACTIVITIES,
-               SUM(DAILY_NON_CODE_ACTIVITIES) AS DAILY_NON_CODE_ACTIVITIES
-        FROM ANALYTICS.PLATINUM_LFX_ONE.USER_PROJECT_CONTRIBUTIONS_DAILY
-        WHERE SUB = ?
-        GROUP BY PROJECT_ID, ACTIVITY_DATE
-      )
-      SELECT
-        p.PROJECT_ID,
-        p.PROJECT_NAME,
-        p.PROJECT_SLUG,
-        p.PROJECT_LOGO,
-        p.IS_MAINTAINER,
-        COALESCE(pa.AFFILIATIONS, '') AS AFFILIATION,
-        a.ACTIVITY_DATE,
-        a.DAILY_CODE_ACTIVITIES,
-        a.DAILY_NON_CODE_ACTIVITIES
-      FROM UserProjects p
-      LEFT JOIN ProjectAffiliations pa ON p.PROJECT_ID = pa.PROJECT_ID
-      LEFT JOIN DailyActivities a ON p.PROJECT_ID = a.PROJECT_ID
-      ORDER BY p.PROJECT_NAME, p.PROJECT_ID, a.ACTIVITY_DATE ASC
-    `;
-
-    const result = await this.snowflakeService.execute<UserProjectContributionRow>(query, [lfUsername, lfUsername, lfUsername]);
-
-    // Group rows by PROJECT_ID and transform into ProjectItem[]
-    const projectsMap = new Map<string, ProjectItem>();
-
-    for (const row of result.rows) {
-      if (!projectsMap.has(row.PROJECT_ID)) {
-        // Parse affiliations from comma-separated string
-        const affiliations = row.AFFILIATION ? row.AFFILIATION.split(', ').filter((a) => a.trim()) : [];
-
-        // Initialize new project
-        projectsMap.set(row.PROJECT_ID, {
-          name: row.PROJECT_NAME,
-          slug: row.PROJECT_SLUG,
-          logo: row.PROJECT_LOGO || undefined,
-          role: row.IS_MAINTAINER ? 'Maintainer' : 'Contributor',
-          affiliations,
-          codeActivities: [],
-          nonCodeActivities: [],
-        });
-      }
-
-      // Add daily activity values to arrays (if there's activity data)
-      if (row.ACTIVITY_DATE) {
-        const project = projectsMap.get(row.PROJECT_ID)!;
-        project.codeActivities.push(row.DAILY_CODE_ACTIVITIES || 0);
-        project.nonCodeActivities.push(row.DAILY_NON_CODE_ACTIVITIES || 0);
-      }
-    }
-
-    // Convert map to array; ROOT is an administrative pseudo-project used only for persona
-    // detection and must never surface in user-facing project lists.
-    const projects = Array.from(projectsMap.values()).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-
-    return {
-      data: projects,
-      totalProjects: projects.length,
     };
   }
 

@@ -46,7 +46,6 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UserCodeCommitsResponse,
-  UserProjectsResponse,
   UserPullRequestsResponse,
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
@@ -131,21 +130,6 @@ export class AnalyticsService {
           data: [],
           totalCommits: 0,
           totalDays: 0,
-        });
-      })
-    );
-  }
-
-  /**
-   * Get user's projects with activity data
-   * @returns Observable of user projects response
-   */
-  public getMyProjects(): Observable<UserProjectsResponse> {
-    return this.http.get<UserProjectsResponse>('/api/analytics/my-projects').pipe(
-      catchError(() => {
-        return of({
-          data: [],
-          totalProjects: 0,
         });
       })
     );
