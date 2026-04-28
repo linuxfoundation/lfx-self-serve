@@ -488,6 +488,10 @@ export interface PendingActionItem {
   buttonLink?: string;
   /** Optional date string for display (e.g., "Jan 15, 2025 at 10:00 AM") */
   date?: string;
+  /** Meeting UID (set on RSVP action types today; Agenda may populate this in a follow-up). Used by the dashboard to lazy-load the Meeting and render the RSVP button group inline without leaving the page. */
+  meetingUid?: string;
+  /** Occurrence ID for recurring meetings (set on RSVP action types today). Passed to RsvpButtonGroupComponent so the scope picker (single / this_and_following / all) can scope the response correctly. */
+  occurrenceId?: string;
 }
 
 /**

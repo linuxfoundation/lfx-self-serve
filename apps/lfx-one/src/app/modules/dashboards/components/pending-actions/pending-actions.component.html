@@ -16,7 +16,7 @@
     <div
       class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200 max-h-[30rem] overflow-y-auto"
       data-testid="dashboard-pending-actions-list">
-      @for (item of visibleActions(); track item.buttonLink ?? item.type + '-' + item.text) {
+      @for (item of visibleActions(); track getRowKey(item)) {
         <div
           class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
@@ -24,13 +24,58 @@
           <div class="shrink-0 sm:w-1/5">
             <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
           </div>
-          <!-- Description — 60% on sm+ -->
-          <p class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
-            {{ item.text }}
-          </p>
+          <!-- Description — 60% on sm+. For RSVP rows the title doubles as a "view meeting"
+               affordance: clicking it opens the meeting detail page in a new tab without
+               dismissing the row, so the user can drill in for context and still come back to
+               RSVP inline. Non-RSVP rows render a plain <p> — their action button already opens
+               the link. -->
+          @if (isRsvpInline(item) && item.buttonLink) {
+            <a
+              [href]="item.buttonLink"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:px-4 hover:text-blue-600 hover:underline inline-flex items-center gap-1.5"
+              [attr.title]="item.text"
+              [attr.aria-label]="'Open meeting in new tab: ' + item.text"
+              data-testid="dashboard-pending-actions-title">
+              <span class="sm:truncate">{{ item.text }}</span>
+              <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0" aria-hidden="true"></i>
+            </a>
+          } @else {
+            <p
+              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4"
+              [attr.title]="item.text"
+              data-testid="dashboard-pending-actions-title">
+              {{ item.text }}
+            </p>
+          }
           <!-- Action button — 20% on sm+, right-aligned -->
           <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-            @if (item.buttonLink) {
+            @if (isRsvpInline(item)) {
+              @if (isExpanded(item)) {
+                @let meeting = getMeetingForItem(item);
+                @if (isLoadingForItem(item) || !meeting) {
+                  <lfx-button
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    [disabled]="true"
+                    [label]="item.buttonText"
+                    icon="fa-light fa-spinner-third fa-spin"
+                    data-testid="dashboard-pending-actions-rsvp-loading" />
+                } @else {
+                  <div data-testid="dashboard-pending-actions-rsvp-buttons">
+                    <lfx-rsvp-button-group
+                      [meeting]="meeting"
+                      [showHeader]="false"
+                      [occurrenceId]="item.occurrenceId"
+                      (rsvpChanged)="handleRsvpChanged(item)" />
+                  </div>
+                }
+              } @else {
+                <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
+              }
+            } @else if (item.buttonLink) {
               <lfx-button
                 size="small"
                 severity="secondary"
