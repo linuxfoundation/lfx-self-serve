@@ -11,12 +11,12 @@
     <div class="flex-1 border-t border-gray-200 self-center"></div>
   </div>
 
-  @if (visibleActions().length > 0) {
+  @if (decoratedActions().length > 0) {
     <!-- Unified card with divider rows -->
     <div
       class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200 max-h-[30rem] overflow-y-auto"
       data-testid="dashboard-pending-actions-list">
-      @for (item of visibleActions(); track getRowKey(item)) {
+      @for (item of decoratedActions(); track item.rowKey) {
         <div
           class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
@@ -24,12 +24,8 @@
           <div class="shrink-0 sm:w-1/5">
             <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
           </div>
-          <!-- Description — 60% on sm+. For RSVP rows the title doubles as a "view meeting"
-               affordance: clicking it opens the meeting detail page in a new tab without
-               dismissing the row, so the user can drill in for context and still come back to
-               RSVP inline. Non-RSVP rows render a plain <p> — their action button already opens
-               the link. -->
-          @if (isRsvpInline(item) && item.buttonLink) {
+          <!-- Description — 60% on sm+; for RSVP rows the title links to the meeting page in a new tab. -->
+          @if (item.isRsvpInlineLink) {
             <a
               [href]="item.buttonLink"
               target="_blank"
@@ -51,10 +47,9 @@
           }
           <!-- Action button — 20% on sm+, right-aligned -->
           <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-            @if (isRsvpInline(item)) {
-              @if (isExpanded(item)) {
-                @let meeting = getMeetingForItem(item);
-                @if (isLoadingForItem(item) || !meeting) {
+            @if (item.isRsvpInline) {
+              @if (item.isExpanded) {
+                @if (item.isLoading || !item.meeting) {
                   <lfx-button
                     size="small"
                     severity="secondary"
@@ -66,7 +61,7 @@
                 } @else {
                   <div data-testid="dashboard-pending-actions-rsvp-buttons">
                     <lfx-rsvp-button-group
-                      [meeting]="meeting"
+                      [meeting]="item.meeting"
                       [showHeader]="false"
                       [occurrenceId]="item.occurrenceId"
                       (rsvpChanged)="handleRsvpChanged(item)" />
