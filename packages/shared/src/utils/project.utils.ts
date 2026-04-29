@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectFunding } from '../enums/project-funding.enum';
+import { ProjectStage } from '../enums/project-stage.enum';
 import type { EnrichedPersonaProject, LensItem, Project, ProjectContext } from '../interfaces';
 
 export function toProjectContext(project: EnrichedPersonaProject): ProjectContext {
@@ -35,7 +36,11 @@ export function isFoundationProject(project: EnrichedPersonaProject): boolean {
 // PCC test-project override (lfx-pcc helper.ts) — kept in sync with hasHealthMetricDashboard.
 const FOUNDATION_NAME_OVERRIDES = new Set(['Test Project Group IT', 'Test Project IT']);
 
-/** Active, membership-funded foundation (Funding === 'Funded'), not an Internal Allocation. PCC test projects also qualify. */
+/**
+ * Membership-funded foundation (Funding === 'Funded'), not an Internal Allocation.
+ * Includes both live (Active) and pre-launch (Formation - Engaged) foundations.
+ * PCC test projects also qualify.
+ */
 export function computeIsFoundation(project: Project | null): boolean {
   if (!project) {
     return false;
@@ -46,7 +51,7 @@ export function computeIsFoundation(project: Project | null): boolean {
   }
 
   return (
-    project.stage === 'Active' &&
+    (project.stage === ProjectStage.Active || project.stage === ProjectStage.FormationEngaged) &&
     project.legal_entity_type !== 'Internal Allocation' &&
     project.funding === ProjectFunding.Funded &&
     Array.isArray(project.funding_model) &&

@@ -63,7 +63,7 @@ export const NAV_LENSES: readonly NavLens[] = ['foundation', 'project'] as const
 
 export const LENS_PERSONA_MAP: Readonly<Record<NavLens, readonly PersonaType[]>> = {
   foundation: ['board-member', 'executive-director'],
-  project: ['contributor', 'maintainer'],
+  project: ['contributor', 'maintainer', 'executive-director'],
 } as const;
 
 export const NAV_MIN_ITEMS_PER_RESPONSE = 15;

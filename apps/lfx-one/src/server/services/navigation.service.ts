@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LENS_PERSONA_MAP, NAV_MAX_UPSTREAM_ITERATIONS, NAV_MIN_ITEMS_PER_RESPONSE } from '@lfx-one/shared/constants';
-import { ProjectFunding } from '@lfx-one/shared/enums';
+import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import {
   EnrichedPersonaProject,
   GetLensItemsParams,
@@ -21,6 +21,9 @@ import { Request } from 'express';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+
+/** Stages eligible for the project lens — Active plus supported pre-launch formation stages. */
+const PROJECT_LENS_ALLOWED_STAGES = new Set<string>([ProjectStage.Active, ProjectStage.FormationEngaged, ProjectStage.FormationExploratory]);
 
 /** Powers the foundation/project lens dropdown. Root writers bypass the persona filter. */
 export class NavigationService {
@@ -168,8 +171,11 @@ export class NavigationService {
       const project = response?.resources?.[0]?.data;
       if (!project) return null;
       // Mirror the main-pipeline contract so an archived selection doesn't get re-injected.
-      if (project.stage !== 'Active') return null;
-      if (lens === 'foundation' && !computeIsFoundation(project)) return null;
+      if (lens === 'foundation') {
+        if (!computeIsFoundation(project)) return null;
+      } else {
+        if (!PROJECT_LENS_ALLOWED_STAGES.has(project.stage)) return null;
+      }
       return this.toLensItem(project);
     } catch (error) {
       logger.warning(req, 'fetch_selected_item', 'Failed to fetch selected lens item', { err: error, uid, lens });
@@ -191,8 +197,17 @@ export class NavigationService {
 
   private buildQuery(lens: NavLens, pageToken: string | undefined, name: string | undefined): LensItemsQuery {
     // legal_entity_type negation is post-filtered (filter grammar has no exclusions).
-    const filters = lens === 'foundation' ? ['stage:Active', `funding:${ProjectFunding.Funded}`, 'funding_model:Membership'] : ['stage:Active'];
-    const base: LensItemsQuery = { type: 'project', filters, sort: 'name_asc' };
+    const base: LensItemsQuery = { type: 'project', filters: [], sort: 'name_asc' };
+    if (lens === 'foundation') {
+      // Funding + membership required (AND); Active or Formation - Engaged accepted (OR).
+      // This ensures pre-launch foundations appear in the dropdown before they go Active.
+      base.filters = [`funding:${ProjectFunding.Funded}`, 'funding_model:Membership'];
+      base.filters_or = [`stage:${ProjectStage.Active}`, `stage:${ProjectStage.FormationEngaged}`];
+    } else {
+      // Include active projects plus supported pre-launch formation stages so
+      // persona-eligible pre-launch projects appear in the project dropdown.
+      base.filters_or = [...PROJECT_LENS_ALLOWED_STAGES].map((stage) => `stage:${stage}`);
+    }
 
     if (pageToken) base.page_token = pageToken;
     if (name) base.name = name;

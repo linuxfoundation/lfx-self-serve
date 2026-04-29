@@ -52,7 +52,10 @@ export interface GetLensItemsParams {
 /** Upstream query-service params for lens-item lookups. */
 export interface LensItemsQuery {
   type: 'project';
+  /** AND — all terms must match (e.g. `['funding:Funded', 'funding_model:Membership']`). */
   filters: string[];
+  /** OR — at least one term must match (e.g. `['stage:Active', 'stage:Formation - Engaged']`). Combined with `filters` via AND. */
+  filters_or?: string[];
   sort: 'name_asc';
   page_token?: string;
   name?: string;

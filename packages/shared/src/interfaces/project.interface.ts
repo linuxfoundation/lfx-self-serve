@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectFunding } from '../enums/project-funding.enum';
+import { ProjectStage } from '../enums/project-stage.enum';
 
 export interface Project {
   uid: string;
@@ -12,7 +13,7 @@ export interface Project {
   writer?: boolean;
   public: boolean;
   parent_uid: string;
-  stage: string;
+  stage: ProjectStage | string;
   category: string;
   /** Upstream Goa enum — optional to tolerate records indexed before the attribute was rolled out. */
   funding?: ProjectFunding;
