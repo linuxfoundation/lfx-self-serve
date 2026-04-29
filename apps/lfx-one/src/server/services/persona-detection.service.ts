@@ -372,8 +372,10 @@ export class PersonaDetectionService {
       personas.add('contributor');
     }
 
-    // Drop contributor when a more specific role is present.
-    if (personas.size > 1 && personas.has('contributor')) {
+    // Drop contributor only when maintainer is present — the true upgrade
+    // of the same domain. Board-member / executive-director are orthogonal
+    // foundation roles and must not cause contributor to be dropped.
+    if (personas.has('contributor') && personas.has('maintainer')) {
       personas.delete('contributor');
     }
 

@@ -101,8 +101,7 @@ export class NavigationService {
     // other lenses (e.g., Me → Open) doesn't get overridden by the default picker.
     if (selectedUid && !pageToken) {
       const alreadyIncluded = accumulated.some((item) => item.uid === selectedUid);
-      const allowedByPersona = !eligibleUids || eligibleUids.has(selectedUid);
-      if (!alreadyIncluded && allowedByPersona) {
+      if (!alreadyIncluded) {
         const selectedItem = await this.fetchSelectedItem(req, lens, selectedUid);
         if (selectedItem) {
           accumulated.unshift(selectedItem);
