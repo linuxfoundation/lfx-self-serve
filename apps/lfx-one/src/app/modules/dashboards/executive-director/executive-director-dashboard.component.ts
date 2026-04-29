@@ -70,9 +70,7 @@ export class ExecutiveDirectorDashboardComponent {
             return of([]);
           }
 
-          return this.projectService.getPendingActions(project.slug, project.uid, 'executive-director').pipe(
-            catchError(() => of([]))
-          );
+          return this.projectService.getPendingActions(project.slug, project.uid, 'executive-director').pipe(catchError(() => of([])));
         })
       ),
       { initialValue: [] }

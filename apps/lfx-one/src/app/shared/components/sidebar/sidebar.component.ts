@@ -21,8 +21,8 @@ import { SkeletonModule } from 'primeng/skeleton';
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
   'board-member': 'fa-light fa-building-columns',
-  'maintainer': 'fa-light fa-code',
-  'contributor': 'fa-light fa-code',
+  maintainer: 'fa-light fa-code',
+  contributor: 'fa-light fa-code',
 };
 
 @Component({
@@ -117,7 +117,7 @@ export class SidebarComponent {
       if (this.activeLens() === 'me') {
         const priorityMap = new Map(PERSONA_PRIORITY.map((p, i) => [p, i]));
         const sorted = [...this.personaService.allPersonas()].sort(
-          (a, b) => (priorityMap.get(a) ?? Number.MAX_SAFE_INTEGER) - (priorityMap.get(b) ?? Number.MAX_SAFE_INTEGER),
+          (a, b) => (priorityMap.get(a) ?? Number.MAX_SAFE_INTEGER) - (priorityMap.get(b) ?? Number.MAX_SAFE_INTEGER)
         );
         return sorted.slice(0, 3).map(toTag);
       }

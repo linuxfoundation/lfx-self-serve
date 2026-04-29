@@ -5,10 +5,7 @@
   <div class="flex items-center gap-2 text-sm" data-testid="dashboard-quicklinks">
     <span class="text-surface-400 font-medium">Quick links:</span>
     @for (link of links; track link.testId; let last = $last) {
-      <a
-        [routerLink]="link.route"
-        class="flex items-center gap-1.5 text-primary hover:underline"
-        [attr.data-testid]="'dashboard-quicklink-' + link.testId">
+      <a [routerLink]="link.route" class="flex items-center gap-1.5 text-primary hover:underline" [attr.data-testid]="'dashboard-quicklink-' + link.testId">
         <i [class]="link.icon" aria-hidden="true"></i>
         {{ link.label }}
       </a>

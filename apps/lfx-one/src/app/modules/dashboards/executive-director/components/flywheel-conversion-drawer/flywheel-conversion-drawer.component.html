@@ -63,7 +63,9 @@
 
     <!-- FIRST FOLD: Needs Your Attention -->
     @if (attentionActions().length > 0 || attentionInsights().length > 0) {
-      <div class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden" data-testid="flywheel-conversion-drawer-attention">
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+        data-testid="flywheel-conversion-drawer-attention">
         <div class="flex items-center gap-2 px-4 pt-4 pb-2">
           <i class="fa-light fa-triangle-exclamation text-red-600"></i>
           <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
@@ -94,7 +96,9 @@
 
     <!-- SECOND FOLD: Performing Well -->
     @if (performingActions().length > 0 || performingInsights().length > 0) {
-      <div class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden" data-testid="flywheel-conversion-drawer-performing">
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+        data-testid="flywheel-conversion-drawer-performing">
         <div class="flex items-center gap-2 px-4 pt-4 pb-2">
           <i class="fa-light fa-check text-green-600"></i>
           <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>

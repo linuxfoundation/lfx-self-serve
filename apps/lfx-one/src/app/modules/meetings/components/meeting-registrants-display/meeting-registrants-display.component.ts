@@ -285,9 +285,7 @@ export class MeetingRegistrantsDisplayComponent {
       }
       const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
       const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
-      return pending.length
-        ? ([...pending, ...list].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[])
-        : list;
+      return pending.length ? ([...pending, ...list].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]) : list;
     });
   }
 

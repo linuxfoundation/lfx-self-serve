@@ -18,7 +18,14 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 
 @Component({
   selector: 'lfx-board-member-dashboard',
-  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent, SkeletonModule, DashboardQuicklinksComponent],
+  imports: [
+    OrganizationInvolvementComponent,
+    PendingActionsComponent,
+    MyMeetingsComponent,
+    FoundationHealthComponent,
+    SkeletonModule,
+    DashboardQuicklinksComponent,
+  ],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',
 })
@@ -61,9 +68,7 @@ export class BoardMemberDashboardComponent {
               }
 
               // Fetch all pending actions from unified backend endpoint
-              return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(
-                catchError(() => of([]))
-              );
+              return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(catchError(() => of([])));
             })
           );
         })

@@ -39,11 +39,7 @@
       </div>
 
       <!-- Work Experience Table -->
-      <lfx-table
-        [value]="sortedExperience()"
-        dataKey="id"
-        styleClass="rounded-b-xl border border-gray-200"
-        data-testid="work-experience-table">
+      <lfx-table [value]="sortedExperience()" dataKey="id" styleClass="rounded-b-xl border border-gray-200" data-testid="work-experience-table">
         <ng-template #header>
           <tr class="border-b border-slate-100 bg-white">
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Organization</th>

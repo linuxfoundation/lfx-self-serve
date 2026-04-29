@@ -242,22 +242,22 @@ export class ProfileAffiliationsComponent {
       if (!cdpProject) continue;
 
       const affiliations: CdpProjectAffiliationEntry[] = updated.segments.map((seg) => {
-          const orgMeta = orgLookup.get(seg.organization);
-          const isTemporaryId = !seg.id || seg.id.startsWith('period-') || seg.id.endsWith('-independent');
+        const orgMeta = orgLookup.get(seg.organization);
+        const isTemporaryId = !seg.id || seg.id.startsWith('period-') || seg.id.endsWith('-independent');
 
-          return {
-            id: isTemporaryId ? '' : seg.id,
-            organizationLogo: seg.organizationLogo || orgMeta?.organizationLogo || '',
-            organizationId: orgMeta?.organizationId || '',
-            organizationName: seg.organization,
-            verified: true,
-            verifiedBy: lfid,
-            source: orgMeta?.source || LFX_ONE_WORK_EXPERIENCE_SOURCE,
-            startDate: abbreviatedMonthYearToIsoDate(seg.startDate),
-            endDate: seg.endDate ? abbreviatedMonthYearToIsoDate(seg.endDate) : null,
-            type: 'project',
-          };
-        });
+        return {
+          id: isTemporaryId ? '' : seg.id,
+          organizationLogo: seg.organizationLogo || orgMeta?.organizationLogo || '',
+          organizationId: orgMeta?.organizationId || '',
+          organizationName: seg.organization,
+          verified: true,
+          verifiedBy: lfid,
+          source: orgMeta?.source || LFX_ONE_WORK_EXPERIENCE_SOURCE,
+          startDate: abbreviatedMonthYearToIsoDate(seg.startDate),
+          endDate: seg.endDate ? abbreviatedMonthYearToIsoDate(seg.endDate) : null,
+          type: 'project',
+        };
+      });
 
       const body: ProjectAffiliationPatchBody = {
         id: cdpProject.id,
@@ -322,7 +322,16 @@ export class ProfileAffiliationsComponent {
         if (group.segments.length === 0) {
           rows.push({
             group,
-            segment: { id: `${group.id}-empty`, role: 'Contributor', roleSource: 'cdp-detected', organization: '', startDate: '', sourceLabel: 'Derived from work experience', sourceType: 'inferred', needsConfirmation: false },
+            segment: {
+              id: `${group.id}-empty`,
+              role: 'Contributor',
+              roleSource: 'cdp-detected',
+              organization: '',
+              startDate: '',
+              sourceLabel: 'Derived from work experience',
+              sourceType: 'inferred',
+              needsConfirmation: false,
+            },
             isFirstSegment: true,
             isLastSegmentInGroup: true,
             isLastGroup,
