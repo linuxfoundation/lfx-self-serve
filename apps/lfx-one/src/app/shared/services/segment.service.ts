@@ -31,12 +31,16 @@ export class SegmentService {
   private analyticsReady = false;
   private analytics?: LfxSegmentAnalytics;
   private identifyQueue: { user: unknown }[] = [];
+  private impersonating = false;
+
+  public setImpersonating(isImpersonating: boolean): void {
+    this.impersonating = isImpersonating;
+  }
 
   /**
    * Initialize the analytics service - should be called from app component
    */
   public initialize(): void {
-    // SSR-safe initialization using afterNextRender
     afterNextRender(() => {
       this.loadSegmentScript();
       this.setupRouteTracking();
@@ -49,7 +53,7 @@ export class SegmentService {
    * @param properties Optional page properties
    */
   public trackPage(pageName: string, properties?: Record<string, unknown>): void {
-    if (!this.analyticsReady || !this.analytics) {
+    if (this.impersonating || !this.analyticsReady || !this.analytics) {
       return;
     }
 
@@ -66,7 +70,7 @@ export class SegmentService {
    * @param properties Event properties
    */
   public trackEvent(eventName: string, properties?: Record<string, unknown>): void {
-    if (!this.analyticsReady || !this.analytics) {
+    if (this.impersonating || !this.analyticsReady || !this.analytics) {
       return;
     }
 
@@ -82,7 +86,7 @@ export class SegmentService {
    * @param auth0User Auth0 user object
    */
   public identifyUser(auth0User: unknown): void {
-    if (!auth0User) {
+    if (!auth0User || this.impersonating) {
       return;
     }
 

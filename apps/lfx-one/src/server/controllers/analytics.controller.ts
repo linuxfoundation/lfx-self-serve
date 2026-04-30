@@ -9,7 +9,7 @@ import { logger } from '../services/logger.service';
 import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;

@@ -6,7 +6,6 @@ import {
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
-  ROOT_PROJECT_SLUG,
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
