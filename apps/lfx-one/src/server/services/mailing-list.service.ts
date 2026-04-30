@@ -372,7 +372,6 @@ export class MailingListService {
       memberQueries.push(
         fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            v: '1',
             type: 'groupsio_member',
             tags_all: [`email:${email}`],
             ...(pageToken && { page_token: pageToken }),
@@ -385,7 +384,6 @@ export class MailingListService {
       memberQueries.push(
         fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            v: '1',
             type: 'groupsio_member',
             tags_all: [`username:${username}`],
             ...(pageToken && { page_token: pageToken }),
@@ -765,7 +763,6 @@ export class MailingListService {
           req,
           (pageToken) =>
             this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              v: '1',
               type: 'committee',
               filters_or: batch.map((uid) => `uid:${uid}`),
               page_size: 500,

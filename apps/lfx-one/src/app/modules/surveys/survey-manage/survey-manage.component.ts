@@ -30,7 +30,6 @@ import { SurveyEmailDraftComponent } from '../components/survey-email-draft/surv
 import { SurveyReviewComponent } from '../components/survey-review/survey-review.component';
 import { SurveyTimingRemindersComponent } from '../components/survey-timing-reminders/survey-timing-reminders.component';
 
-
 @Component({
   selector: 'lfx-survey-manage',
   imports: [
@@ -412,9 +411,7 @@ Thank you,
 
         const scheduledDateValid = distributionMethod === 'scheduled' ? !!scheduledDate : true;
 
-        const effectiveSendDate = distributionMethod === 'immediate'
-          ? new Date(Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS)
-          : scheduledDate;
+        const effectiveSendDate = distributionMethod === 'immediate' ? new Date(Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS) : scheduledDate;
         const cutoffDateValid = !!cutoffDate && (!effectiveSendDate || cutoffDate > effectiveSendDate);
 
         const reminderTypeValid = !!form.get('reminderType')?.valid;

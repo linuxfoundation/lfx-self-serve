@@ -485,7 +485,6 @@ export class CommitteeService {
 
   public async getCommitteeMembersByCategory(req: Request, username: string, userEmail: string, category: string): Promise<CommitteeMember[]> {
     const params = {
-      v: '1',
       type: 'committee_member',
       tags_all: [`username:${username}`, `committee_category:${category}`],
     };
@@ -528,7 +527,6 @@ export class CommitteeService {
 
     const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'committee_member',
         tags_all: tagsAll,
         ...(pageToken && { page_token: pageToken }),
@@ -553,7 +551,6 @@ export class CommitteeService {
 
     const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'committee_member',
         tags_all: tagsAll,
         ...(pageToken && { page_token: pageToken }),
@@ -937,7 +934,6 @@ export class CommitteeService {
             req,
             (pageToken) =>
               this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                v: '1',
                 type: 'committee',
                 filters_or: batch.map((uid) => `uid:${uid}`),
                 ...(pageToken && { page_token: pageToken }),

@@ -5088,7 +5088,6 @@ export class ProjectService {
         '/query/resources',
         'GET',
         {
-          v: '1',
           type: 'project',
           parent: `project:${foundationUid}`,
         }

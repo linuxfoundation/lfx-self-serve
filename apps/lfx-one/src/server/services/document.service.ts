@@ -170,10 +170,8 @@ export class DocumentService {
     const filtersOr = myCommittees.map((c) => `committee_uid:${c.uid}`);
 
     // Fetch committee link documents (links and folders) via filters_or
-    // We use v=1 for the new filters_or param (requires query service PR #41)
     const linkAttachments = await fetchAllQueryResources<CommitteeLinkQueryResult>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'committee_link',
         filters_or: filtersOr,
         ...(pageToken && { page_token: pageToken }),
@@ -365,7 +363,6 @@ export class DocumentService {
 
     return fetchAllQueryResources<MeetingAttachment>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'v1_meeting_attachment',
         filters_or: filtersOr,
         ...(projectUid && { tags: `project_uid:${projectUid}` }),
@@ -437,7 +434,6 @@ export class DocumentService {
 
     return fetchAllQueryResources<PastMeetingAttachment>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'v1_past_meeting_attachment',
         filters_or: filtersOr,
         ...(projectUid && { tags: `project_uid:${projectUid}` }),
@@ -488,7 +484,6 @@ export class DocumentService {
 
     return fetchAllQueryResources<PastMeetingRecordingQueryResult>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecordingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'v1_past_meeting_recording',
         filters_or: filtersOr,
         ...(projectUid && { tags: `project_uid:${projectUid}` }),
@@ -541,7 +536,6 @@ export class DocumentService {
 
     return fetchAllQueryResources<PastMeetingTranscriptQueryResult>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscriptQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'v1_past_meeting_transcript',
         filters_or: filtersOr,
         ...(projectUid && { tags: `project_uid:${projectUid}` }),
@@ -593,7 +587,6 @@ export class DocumentService {
 
     return fetchAllQueryResources<PastMeetingSummaryQueryResult>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummaryQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'v1_past_meeting_summary',
         filters_or: filtersOr,
         ...(projectUid && { tags: `project_uid:${projectUid}` }),

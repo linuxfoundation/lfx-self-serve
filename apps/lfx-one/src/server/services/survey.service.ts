@@ -17,7 +17,6 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
 
-
 /**
  * Service for handling survey business logic with microservice proxy
  */

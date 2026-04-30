@@ -21,7 +21,6 @@ export class SearchService {
    */
   public async searchUsers(req: Request, params: UserSearchParams): Promise<UserSearchResponse> {
     const queryParams = {
-      v: '1',
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
       type: params.type,
