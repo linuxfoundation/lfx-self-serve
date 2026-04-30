@@ -13,13 +13,49 @@
   <p class="text-sm text-gray-600">Enter the email or username of the user you want to view the app as.</p>
   <div class="flex flex-col gap-1" (keydown.enter)="submit()">
     <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
-    <lfx-input-text
-      size="small"
-      [form]="targetUserForm"
-      control="targetUser"
-      placeholder="e.g. jdoe or jdoe@example.com"
-      id="targetUser"
-      dataTest="impersonation-target-input" />
+    @if (recentImpersonations().length > 0) {
+      <lfx-autocomplete
+        [form]="targetUserForm"
+        control="targetUser"
+        [suggestions]="suggestions()"
+        placeholder="e.g. jdoe or jdoe@example.com"
+        optionLabel="email"
+        [minLength]="0"
+        [showEmptyMessage]="false"
+        [dropdown]="true"
+        dropdownMode="blank"
+        size="small"
+        appendTo="body"
+        styleClass="w-full"
+        inputId="targetUser"
+        dataTestId="impersonation-target-input"
+        (completeMethod)="onSearchComplete($event)"
+        (onSelect)="onSuggestionSelected($event)">
+        <ng-template #item let-entry>
+          <div class="flex w-full items-center gap-2">
+            @if (entry.picture) {
+              <img [src]="entry.picture" [alt]="entry.name || entry.email" class="h-7 w-7 rounded-full object-cover" />
+            } @else {
+              <div class="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                <i class="fa-light fa-user text-xs"></i>
+              </div>
+            }
+            <div class="flex min-w-0 flex-col">
+              <span class="truncate text-sm">{{ entry.name || entry.username || entry.email }}</span>
+              <span class="truncate text-xs text-gray-500">{{ entry.email }}</span>
+            </div>
+          </div>
+        </ng-template>
+      </lfx-autocomplete>
+    } @else {
+      <lfx-input-text
+        size="small"
+        [form]="targetUserForm"
+        control="targetUser"
+        placeholder="e.g. jdoe or jdoe@example.com"
+        id="targetUser"
+        dataTest="impersonation-target-input" />
+    }
   </div>
   <div class="flex flex-col gap-1">
     <label for="personaContext" class="text-sm font-medium text-gray-700">Context (optional)</label>

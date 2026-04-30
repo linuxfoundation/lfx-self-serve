@@ -28,6 +28,7 @@ export class AutocompleteComponent {
   public delay = input<number>(300);
   public minLength = input<number>(1);
   public dataTestId = input<string>();
+  public inputId = input<string>();
   public optionLabel = input<string>();
   public optionValue = input<string>();
   public autoOptionFocus = input<boolean>(false);
@@ -39,6 +40,8 @@ export class AutocompleteComponent {
   public dataKey = input<string>();
   public showClear = input<boolean>(false);
   public forceSelection = input<boolean>(false);
+  public showEmptyMessage = input<boolean>(true);
+  public size = input<'small' | 'large'>('small');
 
   public readonly completeMethod = output<AutoCompleteCompleteEvent>();
   public readonly onSelect = output<AutoCompleteSelectEvent>();

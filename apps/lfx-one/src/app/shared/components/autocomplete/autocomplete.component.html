@@ -17,6 +17,7 @@
     (onClear)="onClear.emit()"
     (onBlur)="onBlur.emit()"
     [attr.data-testid]="dataTestId()"
+    [inputId]="inputId()"
     [autoOptionFocus]="autoOptionFocus()"
     [completeOnFocus]="completeOnFocus()"
     [panelStyleClass]="panelStyleClass()"
@@ -26,7 +27,9 @@
     [dataKey]="dataKey()"
     [appendTo]="appendTo()"
     [showClear]="showClear()"
-    [forceSelection]="forceSelection()">
+    [forceSelection]="forceSelection()"
+    [showEmptyMessage]="showEmptyMessage()"
+    [size]="size()">
     <!-- Empty message template -->
     @if (emptyTemplate) {
       <ng-template #empty>

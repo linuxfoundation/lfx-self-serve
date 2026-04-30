@@ -61,3 +61,16 @@ export interface ImpersonationStartResponse {
   impersonating: boolean;
   targetUser: ImpersonationUser;
 }
+
+/**
+ * A previously impersonated profile, persisted client-side for quick re-selection.
+ */
+export interface RecentImpersonation {
+  targetUser: string;
+  email: string;
+  username: string;
+  name?: string;
+  picture?: string;
+  personaContext?: PersonaType | null;
+  lastUsedAt: number;
+}
