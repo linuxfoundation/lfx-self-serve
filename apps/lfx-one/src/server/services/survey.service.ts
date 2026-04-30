@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { CreateSurveyRequest, QueryServiceResponse, Survey } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -9,11 +10,13 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
+
 
 /**
  * Service for handling survey business logic with microservice proxy
@@ -198,14 +201,30 @@ export class SurveyService {
     }
 
     // Query survey_response records using filters_or (OR logic on data fields)
-    const responses = await fetchAllQueryResources<{ survey_uid: string }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ survey_uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
-        type: 'survey_response',
-        filters_or: filtersOr,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const responses = await fetchAllQueryResources<{ survey_uid: string; survey_link?: string }>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ survey_uid: string; survey_link?: string }>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'survey_response',
+          filters_or: filtersOr,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      )
     );
+
+    const surveyLinkMap = new Map<string, string>();
+    for (const r of responses) {
+      if (!r.survey_uid || !r.survey_link || surveyLinkMap.has(r.survey_uid)) {
+        continue;
+      }
+      const validatedLink = validateAndSanitizeUrl(r.survey_link.trim(), SURVEY_LINK_ALLOWLIST);
+      if (validatedLink) {
+        surveyLinkMap.set(r.survey_uid, validatedLink);
+      }
+    }
 
     // Extract unique survey UIDs
     const surveyUids = [...new Set(responses.filter((r) => r.survey_uid).map((r) => r.survey_uid))];
@@ -269,6 +288,7 @@ export class SurveyService {
       return {
         ...s,
         project_uid: projectUids.length === 1 ? projectUids[0] : '',
+        survey_link: surveyLinkMap.get(s.uid),
       };
     });
 

@@ -6,7 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { SelectComponent } from '@components/select/select.component';
-import { SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS, SURVEY_DISTRIBUTION_OPTIONS, SURVEY_REMINDER_TYPE_OPTIONS } from '@lfx-one/shared/constants';
+import { SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS, SURVEY_DISTRIBUTION_OPTIONS, SURVEY_IMMEDIATE_SEND_OFFSET_MS, SURVEY_REMINDER_TYPE_OPTIONS } from '@lfx-one/shared/constants';
 import { SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
 import { map, startWith, switchMap, of } from 'rxjs';
 
@@ -123,16 +123,20 @@ export class SurveyTimingRemindersComponent {
   }
 
   private initMinCutoffDate(): Signal<Date> {
-    // Uses scheduledDate signal (not form control value directly) to establish proper
-    // signal dependency. This ensures minCutoffDate re-evaluates when scheduledDate changes.
     return computed(() => {
       if (this.isScheduled()) {
         const scheduledDate = this.scheduledDate();
         if (scheduledDate) {
-          return scheduledDate;
+          const nextDay = new Date(scheduledDate);
+          nextDay.setDate(nextDay.getDate() + 1);
+          nextDay.setHours(0, 0, 0, 0);
+          return nextDay;
         }
       }
-      return this.todayDate;
+      const sendAt = new Date(Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS);
+      sendAt.setDate(sendAt.getDate() + 1);
+      sendAt.setHours(0, 0, 0, 0);
+      return sendAt;
     });
   }
 }

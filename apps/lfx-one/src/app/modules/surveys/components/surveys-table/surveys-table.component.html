@@ -165,6 +165,17 @@
                       [disabled]="isDeleting()"
                       [attr.data-testid]="'surveys-delete-' + survey.uid">
                     </lfx-button>
+                  } @else if (!hasPMOAccess() && survey.displayStatus === SurveyStatus.OPEN && survey.survey_link) {
+                    <lfx-button
+                      label="Take Survey"
+                      severity="primary"
+                      size="small"
+                      [text]="true"
+                      [href]="survey.survey_link"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.data-testid]="'surveys-take-' + survey.uid">
+                    </lfx-button>
                   } @else if (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED) {
                     <lfx-button
                       label="Results"

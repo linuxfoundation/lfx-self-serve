@@ -112,6 +112,21 @@ export const SURVEY_TYPE_LABELS = {
 // ============================================================================
 
 /**
+ * Delay before an "immediate" survey send_date to satisfy the upstream future-date requirement.
+ */
+export const SURVEY_IMMEDIATE_SEND_OFFSET_MS = 5 * 60 * 1000;
+
+/**
+ * Allowed origins for survey response links surfaced to members.
+ */
+export const SURVEY_LINK_ALLOWLIST: string[] = [
+  'https://www.surveymonkey.com',
+  'https://linuxfoundation.surveymonkey.com',
+  'https://www.research.net',
+  'https://linuxfoundation.research.net',
+];
+
+/**
  * Step titles for the survey creation/edit stepper
  * @description Array of human-readable titles for each step in the survey form
  */

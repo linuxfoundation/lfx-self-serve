@@ -10,6 +10,7 @@ import {
   SCHEDULE_SURVEY_CONFIRMATION,
   SEND_SURVEY_CONFIRMATION,
   SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS,
+  SURVEY_IMMEDIATE_SEND_OFFSET_MS,
   SURVEY_LABEL,
   SURVEY_MANAGE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
@@ -29,8 +30,6 @@ import { SurveyEmailDraftComponent } from '../components/survey-email-draft/surv
 import { SurveyReviewComponent } from '../components/survey-review/survey-review.component';
 import { SurveyTimingRemindersComponent } from '../components/survey-timing-reminders/survey-timing-reminders.component';
 
-/** Upstream requires survey_send_date in the future — offset for "immediate" sends. */
-const IMMEDIATE_SEND_OFFSET_MS = 5 * 60 * 1000;
 
 @Component({
   selector: 'lfx-survey-manage',
@@ -244,12 +243,13 @@ export class SurveyManageComponent {
     const committees = formData.committees as CommitteeReference[];
     const distributionMethod = formData.distributionMethod as SurveyDistributionMethod;
     const isImmediate = distributionMethod === 'immediate';
+    const immediateSendAtMs = Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS;
 
     const surveyData: CreateSurveyRequest = {
       survey_monkey_id: formData.surveyTemplate,
       survey_title: committees[0]?.name ? `${committees[0].name} Survey` : 'New Survey',
       send_immediately: isImmediate,
-      survey_send_date: isImmediate ? new Date(Date.now() + IMMEDIATE_SEND_OFFSET_MS).toISOString() : new Date(formData.scheduledDate).toISOString(),
+      survey_send_date: isImmediate ? new Date(immediateSendAtMs).toISOString() : new Date(formData.scheduledDate).toISOString(),
       survey_cutoff_date: new Date(formData.cutoffDate).toISOString(),
       survey_reminder_rate_days: parseInt(formData.reminderFrequency, 10) || 7,
       email_subject: formData.emailSubject,
@@ -407,13 +407,18 @@ Thank you,
         const distributionMethod = form.get('distributionMethod')?.value as SurveyDistributionMethod;
         const distributionMethodValid = !!form.get('distributionMethod')?.valid;
 
-        // Scheduled date is required only when distribution method is 'scheduled'
-        const scheduledDateValid = distributionMethod === 'scheduled' ? !!form.get('scheduledDate')?.value : true;
+        const scheduledDate = form.get('scheduledDate')?.value as Date | null;
+        const cutoffDate = form.get('cutoffDate')?.value as Date | null;
 
-        const cutoffDateValid = !!form.get('cutoffDate')?.value;
+        const scheduledDateValid = distributionMethod === 'scheduled' ? !!scheduledDate : true;
+
+        const effectiveSendDate = distributionMethod === 'immediate'
+          ? new Date(Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS)
+          : scheduledDate;
+        const cutoffDateValid = !!cutoffDate && (!effectiveSendDate || cutoffDate > effectiveSendDate);
+
         const reminderTypeValid = !!form.get('reminderType')?.valid;
 
-        // Reminder frequency is required only when reminder type is 'automatic'
         const reminderType = form.get('reminderType')?.value as SurveyReminderType;
         const reminderFrequencyValid = reminderType === 'automatic' ? !!form.get('reminderFrequency')?.valid : true;
 
