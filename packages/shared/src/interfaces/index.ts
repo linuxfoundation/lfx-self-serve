@@ -54,6 +54,7 @@ export * from './user-statistics.interface';
 
 // Analytics interfaces
 export * from './segment.interface';
+export * from './plausible.interface';
 export * from './analytics-data.interface';
 
 // Persona interfaces

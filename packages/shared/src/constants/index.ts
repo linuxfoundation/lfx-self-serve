@@ -23,6 +23,7 @@ export * from './dashboard-metrics.constants';
 export * from './snowflake.constant';
 export * from './accounts.constants';
 export * from './analytics.constants';
+export * from './plausible.constants';
 export * from './chart.constants';
 export * from './chart-options.constants';
 export * from './cookie.constants';
