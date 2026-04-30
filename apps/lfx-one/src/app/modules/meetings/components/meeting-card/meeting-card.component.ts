@@ -202,12 +202,6 @@ export class MeetingCardComponent implements OnInit {
           return of(null);
         }
 
-        // Use public_link directly if available (e.g. for legacy meetings with link from query service)
-        if (meeting.public_link) {
-          return of(meeting.public_link);
-        }
-
-        // Otherwise fetch join URL from API for authenticated users
         if (authenticated && user?.email) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.link, user)),

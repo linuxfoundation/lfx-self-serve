@@ -210,8 +210,6 @@ export interface Meeting {
   // Fields NOT in API - likely response-only
   /** Invited to meeting (response only) */
   invited: boolean;
-  /** Meeting public link (join URL) */
-  public_link?: string;
   /** Total registrant count from API */
   registrant_count?: number;
   /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */

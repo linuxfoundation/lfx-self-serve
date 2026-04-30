@@ -95,10 +95,6 @@ export class DashboardMeetingCardComponent {
           return of(null);
         }
 
-        if (meeting.public_link) {
-          return of(meeting.public_link);
-        }
-
         if (authenticated && user?.email) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.link, user)),
