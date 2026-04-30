@@ -1812,7 +1812,11 @@ export class ProfileController {
       // Google uses email as its value — skip CDP create if the same email is already a verified email identity
       const isEmailAlreadyVerified = enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid);
 
-      if (!isEmailAlreadyVerified) {
+      // Skip CDP create for LinkedIn — Auth0 returns the user's email as the identity value,
+      // but CDP expects a vanity username, so a synthetic POST would write bad data.
+      const skipCdpCreate = cdpPlatform === 'linkedin';
+
+      if (!isEmailAlreadyVerified && !skipCdpCreate) {
         // Fire-and-forget: persist auth-service identity to CDP
         const isEmailType = cdpPlatform === 'email' || cdpPlatform === 'google';
         const cdpPostPlatform = isEmailType ? 'custom' : cdpPlatform;
