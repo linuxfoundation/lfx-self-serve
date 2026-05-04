@@ -40,11 +40,12 @@
     @switch (card.customContentType) {
       @case ('dual-signal') {
         <!-- Dual-Signal Card (Brand Reach, Brand Health, Revenue Impact) -->
-        <div [pTooltip]="card.tooltipText!" tooltipPosition="top" class="flex-shrink-0">
+        <div class="flex-shrink-0">
           <lfx-metric-card
             [title]="card.title"
             [icon]="card.icon"
             [description]="card.description"
+            [infoTooltip]="card.tooltipText"
             [testId]="card.testId"
             [chartType]="card.chartType"
             [clickable]="!!card.drawerType"
@@ -96,11 +97,12 @@
       }
       @case ('funnel') {
         <!-- Funnel Card (Flywheel Conversion) -->
-        <div [pTooltip]="card.tooltipText!" tooltipPosition="top" class="flex-shrink-0">
+        <div class="flex-shrink-0">
           <lfx-metric-card
             [title]="card.title"
             [icon]="card.icon"
             [description]="card.description"
+            [infoTooltip]="card.tooltipText"
             [testId]="card.testId"
             [chartType]="card.chartType"
             [clickable]="!!card.drawerType"
@@ -147,11 +149,12 @@
       }
       @default {
         <!-- Standard Single-Signal Card -->
-        <div [pTooltip]="card.tooltipText!" tooltipPosition="top" class="flex-shrink-0">
+        <div class="flex-shrink-0">
           <lfx-metric-card
             [title]="card.title"
             [icon]="card.icon"
             [description]="card.description"
+            [infoTooltip]="card.tooltipText"
             [testId]="card.testId"
             [chartType]="card.chartType"
             [chartData]="card.chartData"

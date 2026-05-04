@@ -21,6 +21,7 @@ export class MetricCardComponent {
   public readonly title = input.required<string>();
   public readonly icon = input<string>();
   public readonly description = input<string>();
+  public readonly infoTooltip = input<string>();
   public readonly testId = input<string>();
 
   // Chart inputs
