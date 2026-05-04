@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { DatePipe, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformServer, NgClass } from '@angular/common';
+import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -117,6 +117,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
@@ -765,6 +766,11 @@ export class MeetingJoinComponent implements OnInit {
 
           // Reset error state
           this.joinUrlError.set(null);
+
+          if (isPlatformServer(this.platformId)) {
+            this.isLoadingJoinUrl.set(false);
+            return of(undefined);
+          }
 
           // Only fetch when meeting is joinable and we have necessary user info
           if (!canJoin || !meeting?.id) {
