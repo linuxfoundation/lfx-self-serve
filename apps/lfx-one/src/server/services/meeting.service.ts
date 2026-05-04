@@ -39,7 +39,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix, usernameMatches } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -889,26 +889,32 @@ export class MeetingService {
     });
 
     try {
-      // Match by email first (always populated on RSVP records); fall back to username for safety.
-      const normalizedEmail = getEffectiveEmail(req)?.toLowerCase() ?? null;
-      const username = await getUsernameFromAuth(req);
+      // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
+      // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
+      // unlike username which is often null on RSVP records.
+      // Use getEffectiveUsername (returns LFID nickname) rather than getUsernameFromAuth
+      // (returns OIDC `sub`) since registrant.username stores the plain LFID.
+      const email = getEffectiveEmail(req) ?? undefined;
+      const username = getEffectiveUsername(req) ?? undefined;
 
-      if (!normalizedEmail && !username) {
+      if (!email && !username) {
         logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
           meeting_id: meetingUid,
         });
         return null;
       }
 
-      // Fetch all RSVPs for this meeting via query service
-      const allRsvps = await this.getMeetingRsvps(req, meetingUid);
+      const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
+      if (registrants.length === 0) {
+        return null;
+      }
+      // A user can have multiple registrant rows for the same meeting (occurrence-specific
+      // invites or re-registrations). Match RSVPs against any of them so all the user's
+      // responses are visible.
+      const registrantIds = new Set(registrants.map((r) => r.uid));
 
-      // Filter RSVPs for current user — RSVP records carry email reliably; username is often absent.
-      const userRsvps = allRsvps.filter((rsvp) => {
-        if (normalizedEmail && rsvp.email?.toLowerCase() === normalizedEmail) return true;
-        if (username && rsvp.username && usernameMatches(username, rsvp.username)) return true;
-        return false;
-      });
+      const allRsvps = await this.getMeetingRsvps(req, meetingUid);
+      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
 
       if (occurrenceId) {
         // First try to find an occurrence-specific RSVP (takes precedence)

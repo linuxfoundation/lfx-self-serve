@@ -142,6 +142,7 @@ export class MeetingJoinComponent implements OnInit {
   public fetchedJoinUrl: Signal<string | undefined>;
   public isLoadingJoinUrl: WritableSignal<boolean> = signal<boolean>(false);
   public joinUrlError: WritableSignal<string | null> = signal<string | null>(null);
+  public joinUrlErrorCode: WritableSignal<string | null> = signal<string | null>(null);
   public attachments: Signal<MeetingAttachment[]>;
   public messageSeverity: Signal<'success' | 'info' | 'warn'>;
   public messageIcon: Signal<string>;
@@ -346,6 +347,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public onEmailErrorClick(): void {
     this.joinUrlError.set(null);
+    this.joinUrlErrorCode.set(null);
     this.showGuestForm.set(true);
   }
 
@@ -766,6 +768,7 @@ export class MeetingJoinComponent implements OnInit {
 
           // Reset error state
           this.joinUrlError.set(null);
+          this.joinUrlErrorCode.set(null);
 
           if (isPlatformServer(this.platformId)) {
             this.isLoadingJoinUrl.set(false);
@@ -833,6 +836,7 @@ export class MeetingJoinComponent implements OnInit {
       catchError((error) => {
         this.isLoadingJoinUrl.set(false);
         this.joinUrlError.set(error?.error?.error || 'Failed to load meeting join URL. Please try again.');
+        this.joinUrlErrorCode.set(error?.error?.code ?? null);
         return of(undefined);
       })
     );
@@ -1005,9 +1009,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeEmailError(): Signal<boolean> {
-    return computed(() => {
-      return this.joinUrlError()?.toLowerCase().includes('email address is not registered for this restricted meeting') ?? false;
-    });
+    return computed(() => this.joinUrlErrorCode() === 'NOT_REGISTERED_FOR_MEETING');
   }
 
   private initializeIsPastMeeting(): Signal<boolean> {

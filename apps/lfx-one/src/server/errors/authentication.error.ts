@@ -28,8 +28,10 @@ export class AuthorizationError extends BaseApiError {
       operation?: string;
       service?: string;
       path?: string;
+      code?: string;
     } = {}
   ) {
-    super(message, 403, 'AUTHORIZATION_REQUIRED', options);
+    const { code, ...rest } = options;
+    super(message, 403, code ?? 'AUTHORIZATION_REQUIRED', rest);
   }
 }

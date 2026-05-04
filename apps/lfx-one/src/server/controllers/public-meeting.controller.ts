@@ -3,7 +3,7 @@
 
 import { Meeting } from '@lfx-one/shared';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
-import { CreateMeetingRegistrantRequest } from '@lfx-one/shared/interfaces';
+import { CreateMeetingRegistrantRequest, MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -13,7 +13,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -253,6 +253,7 @@ export class PublicMeetingController {
     const { password } = req.query;
     const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
     const email: string = bodyEmail || getEffectiveEmail(req) || '';
+    const username = getEffectiveUsername(req);
     const startTime = logger.startOperation(req, 'post_meeting_link', {
       meeting_id: id,
     });
@@ -292,18 +293,23 @@ export class PublicMeetingController {
         return;
       }
 
-      // Check that the user has access to the meeting by validating they were invited to the meeting
-      // Restricted meetings require an email to be provided
+      // For restricted meetings, validate the user is registered. Match by email OR username
+      // so accounts whose auth email differs from their invited registrant email still resolve.
+      // The matched registrant's stored email is then used for the upstream join_link call.
+      let joinEmail = email;
       if (meeting.restricted) {
-        await this.restrictedMeetingCheck(req, next, email, id);
+        const matchedRegistrant = await this.restrictedMeetingCheck(req, email, username, id);
+        if (matchedRegistrant.email) {
+          joinEmail = matchedRegistrant.email;
+        }
       }
 
-      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id, email);
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id, joinEmail);
 
       // Log the success
       logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
-        email: email,
+        email: joinEmail,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -495,40 +501,56 @@ export class PublicMeetingController {
     return now >= earliestJoinTime;
   }
 
-  private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string): Promise<void> {
+  private async restrictedMeetingCheck(req: Request, email: string, username: string | null, id: string): Promise<MeetingRegistrant> {
     const helperStartTime = logger.startOperation(req, 'restricted_meeting_check', {
       meeting_id: id,
       has_email: !!email,
+      has_username: !!username,
     });
 
-    // Check that the user has access to the meeting by validating they were invited to the meeting
-    if (!email) {
-      // Create a validation error (error handler will log)
-      const validationError = ServiceValidationError.forField('email', 'Email is required', {
+    if (!email && !username) {
+      throw ServiceValidationError.forField('email', 'Email or authenticated user identity is required', {
         operation: 'post_meeting_link',
         service: 'public_meeting_controller',
         path: req.path,
       });
-
-      next(validationError);
-      return;
     }
 
-    // Query the meeting registrants filtered by the user's email to validate if the user was invited to the meeting
-    const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
+    // Username is the primary check — it's the auth-provider-verified identity and survives
+    // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
+    // no username is available.
+    let registrants: MeetingRegistrant[] = [];
+    let matchedBy: 'username' | 'email' | null = null;
+    if (username) {
+      registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
+      if (registrants.length > 0) {
+        matchedBy = 'username';
+      }
+    }
+    if (registrants.length === 0 && email) {
+      registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
+      if (registrants.length > 0) {
+        matchedBy = 'email';
+      }
+    }
+
     if (registrants.length === 0) {
-      const authError = new AuthorizationError('The email address is not registered for this restricted meeting', {
+      // Specific code so the frontend can show the "join with a different email" affordance
+      // without coupling to the human-readable message text.
+      throw new AuthorizationError('You are not registered for this restricted meeting', {
         operation: 'post_meeting_link',
         service: 'public_meeting_controller',
         path: `/itx/meetings/${id}`,
+        code: 'NOT_REGISTERED_FOR_MEETING',
       });
-      throw authError;
     }
 
     logger.success(req, 'restricted_meeting_check', helperStartTime, {
       meeting_id: id,
-      email,
       registrant_count: registrants.length,
+      matched_by: matchedBy,
     });
+
+    return registrants[0];
   }
 }
