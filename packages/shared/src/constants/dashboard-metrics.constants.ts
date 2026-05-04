@@ -895,7 +895,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'memberships',
       testId: 'ed-evo-engaged-community',
-      description: 'Unique individuals active across 7 channels — Slack, Discord, GitHub, mailing lists, training, web, and code — in the last 90 days.',
+      description:
+        'Unique individuals active across 7 channels — community, working groups, newsletter, training, code, web, and certified — in the last 90 days.',
       value: formatNumber(engagedCommunity.totalMembers),
       changePercentage: formatMomChange(engagedCommunity.changePercentage),
       trend: normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend),
@@ -905,7 +906,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Unique individuals active across Slack, Discord, GitHub, mailing lists, training, web, and code in the last 90 days.',
+      tooltipText: 'Unique individuals active across community, working groups, newsletter, training, code, web, and certified in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
     } as DashboardMetricCard,
     {
