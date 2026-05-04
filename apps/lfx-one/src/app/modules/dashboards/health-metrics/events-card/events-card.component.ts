@@ -72,7 +72,7 @@ export class EventsCardComponent {
 
   protected readonly formattedProgressLabel = computed(() => {
     const pct = Math.round(this.summaryData().sponsorshipProgressPct);
-    return `${pct}% of goal`;
+    return pct > 999 ? '>999% of goal' : `${pct}% of goal`;
   });
 
   protected readonly formattedRevenue = computed(() => {
