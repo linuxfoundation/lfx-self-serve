@@ -66,13 +66,13 @@ test.describe('Marketing Overview Section', () => {
     await expect(section).toBeVisible();
 
     const heading = section.locator('h2');
-    await expect(heading).toContainText('Marketing Metrics');
+    await expect(heading).toContainText('Marketing Overview');
 
     const subtitle = section.locator('p');
     await expect(subtitle).toContainText('North Star KPIs');
   });
 
-  test('renders Foundation Health before Marketing Metrics', async ({ page }) => {
+  test('renders Foundation Health before Marketing Overview', async ({ page }) => {
     const healthSection = page.locator('[data-testid="foundation-health-section"]');
     const edSection = page.locator('[data-testid="ed-evolution-section"]');
 
@@ -80,7 +80,7 @@ test.describe('Marketing Overview Section', () => {
     await expect(healthSection).toBeVisible();
     await expect(edSection).toBeVisible();
 
-    // Foundation Health should appear before Marketing Metrics in the DOM
+    // Foundation Health should appear before Marketing Overview in the DOM
     const healthBox = await healthSection.boundingBox();
     const edBox = await edSection.boundingBox();
     expect(healthBox!.y).toBeLessThan(edBox!.y);
