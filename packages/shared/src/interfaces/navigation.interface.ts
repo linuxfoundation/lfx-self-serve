@@ -56,7 +56,8 @@ export interface LensItemsQuery {
   filters: string[];
   /** OR — at least one term must match (e.g. `['stage:Active', 'stage:Formation - Engaged']`). Combined with `filters` via AND. */
   filters_or?: string[];
-  sort: 'name_asc';
+  /** `best_match` opts into upstream `_score` (TF/IDF + bool_prefix) ordering — meaningful only with `name`. */
+  sort: 'name_asc' | 'best_match';
   page_token?: string;
   name?: string;
 }

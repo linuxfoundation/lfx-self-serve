@@ -196,8 +196,13 @@ export class NavigationService {
   }
 
   private buildQuery(lens: NavLens, pageToken: string | undefined, name: string | undefined): LensItemsQuery {
+    // Normalize once: whitespace-only `name` (e.g. ?name=%20) shouldn't flip sort to best_match
+    // or forward a meaningless query upstream. Treat empty-after-trim as no search.
+    const trimmedName = name?.trim();
     // legal_entity_type negation is post-filtered (filter grammar has no exclusions).
-    const base: LensItemsQuery = { type: 'project', filters: [], sort: 'name_asc' };
+    // Switch to relevance ordering whenever the user is searching — alphabetical sort would bury
+    // an exact match (e.g. "LF Products") under every other prefix-matching project.
+    const base: LensItemsQuery = { type: 'project', filters: [], sort: trimmedName ? 'best_match' : 'name_asc' };
     if (lens === 'foundation') {
       // Funding + membership required (AND); Active or Formation - Engaged accepted (OR).
       // This ensures pre-launch foundations appear in the dropdown before they go Active.
@@ -210,7 +215,7 @@ export class NavigationService {
     }
 
     if (pageToken) base.page_token = pageToken;
-    if (name) base.name = name;
+    if (trimmedName) base.name = trimmedName;
 
     return base;
   }
