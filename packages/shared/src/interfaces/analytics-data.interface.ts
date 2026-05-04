@@ -2978,11 +2978,12 @@ export interface EventGrowthTopEvent {
 }
 
 /**
- * Presentation-ready event row with pre-formatted revenue string
- * Used by the drawer component to avoid calling formatters from templates
+ * Presentation-ready event row with pre-formatted revenue and past/upcoming status.
+ * Used by the drawer component to avoid calling formatters from templates.
  */
 export interface EventGrowthTopEventView extends EventGrowthTopEvent {
   formattedRevenue: string;
+  isPast: boolean;
 }
 
 /**

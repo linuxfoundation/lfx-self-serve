@@ -102,11 +102,16 @@ export class EventGrowthDrawerComponent {
   }
 
   private initSortedTopEvents(): Signal<EventGrowthTopEventView[]> {
-    return computed(() =>
-      [...this.data().topEvents]
+    return computed(() => {
+      const today = new Date().toISOString().slice(0, 10);
+      return [...this.data().topEvents]
         .sort((a, b) => a.date.localeCompare(b.date))
-        .map((event) => ({ ...event, formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue) }))
-    );
+        .map((event) => ({
+          ...event,
+          formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue),
+          isPast: !!event.date && event.date < today,
+        }));
+    });
   }
 
   private initMonthlyChartData(): Signal<ChartData<'bar'>> {
