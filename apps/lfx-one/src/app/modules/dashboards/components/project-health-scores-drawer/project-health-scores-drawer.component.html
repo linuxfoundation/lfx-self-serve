@@ -17,10 +17,10 @@
         <p class="text-sm text-gray-500">Board Member · Organization view</p>
       </div>
 
-      <!-- Total Projects Badge -->
+      <!-- Projects Scored Badge -->
       @if (hasData()) {
         <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total">
-          <span class="text-sm font-medium text-gray-700">{{ totalProjects().toLocaleString() }} projects</span>
+          <span class="text-sm font-medium text-gray-700">{{ totalProjects().toLocaleString() }} projects scored</span>
         </div>
       }
 

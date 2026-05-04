@@ -530,12 +530,13 @@ export class FoundationHealthComponent {
 
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
+    const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
 
     return {
       ...metric,
       loading: this.healthScoresLoading(),
       value: '',
-      subtitle: '',
+      subtitle: scored > 0 ? `${scored} projects scored` : '',
       healthScores: data,
     };
   }
