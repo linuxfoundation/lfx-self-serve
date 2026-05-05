@@ -40,7 +40,7 @@ Tracing activates only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — leaving it 
 
 ## What gets instrumented
 
-- **HTTP** (`HttpInstrumentation`) — incoming and outgoing HTTP requests, with `/health`, `/api/health`, and `/.well-known/*` excluded so health checks don't flood spans.
+- **HTTP** (`HttpInstrumentation`) — incoming and outgoing HTTP requests, with `/livez`, `/readyz`, and `/.well-known/*` excluded so health checks don't flood spans.
 - **Express** (`ExpressInstrumentation`) — per-middleware spans so you can see which middleware runs for a given request.
 - **Undici** (`UndiciInstrumentation`) — spans for `fetch` / `undici` calls (used by `api-client.service.ts` for microservice calls). Content-type headers are captured.
 - **Propagators** — W3C Trace Context + W3C Baggage (`traceparent`, `tracestate`, `baggage` headers) so spans correlate across the NATS boundary and into downstream microservices.

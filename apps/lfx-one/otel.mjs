@@ -105,7 +105,7 @@ if (!otlpEndpoint) {
       new HttpInstrumentation({
         ignoreIncomingRequestHook: (req) => {
           const url = req.url || '';
-          return url === '/health' || url === '/api/health' || url.startsWith('/.well-known');
+          return url === '/livez' || url === '/readyz' || url.startsWith('/.well-known');
         },
         applyCustomAttributesOnSpan: (span, request, response) => {
           const req = 'req' in response ? response.req : undefined;

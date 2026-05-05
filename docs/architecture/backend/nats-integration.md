@@ -245,8 +245,8 @@ logger.info(undefined, 'nats_connect', 'Connecting to NATS server on demand', { 
 ### Health Check Integration
 
 ```typescript
-// Health endpoint includes NATS status
-app.get('/api/health', (req, res) => {
+// Readiness endpoint includes NATS status
+app.get('/readyz', (req, res) => {
   const healthStatus = {
     nats: {
       connected: natsService.isConnected(),

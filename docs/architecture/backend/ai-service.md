@@ -321,8 +321,8 @@ serverLogger.error('Failed to generate meeting agenda', { error });
 ### Health Monitoring
 
 ```typescript
-// Health check integration
-app.get('/api/health', (req, res) => {
+// Readiness check integration
+app.get('/readyz', (req, res) => {
   const healthStatus = {
     ai_service: {
       configured: !!process.env['AI_PROXY_URL'] && !!process.env['AI_API_KEY'],

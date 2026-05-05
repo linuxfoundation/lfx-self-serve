@@ -672,22 +672,25 @@ logger.success(req, 'user_login', startTime, {
 
 ## 📊 Health Check Filtering
 
-Health check endpoints are excluded from automatic HTTP logging:
+Liveness and readiness endpoints are excluded from automatic HTTP logging by being registered before the `pino-http` middleware:
 
 ```typescript
-// Health check endpoint (added before logger middleware)
-app.get('/health', (_req: Request, res: Response) => {
+// Liveness and readiness endpoints (registered before logger middleware)
+app.get('/livez', (_req: Request, res: Response) => {
   res.send('OK');
 });
+app.get('/readyz', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ready' });
+});
 
-// HTTP logger middleware (added after health endpoint)
+// HTTP logger middleware (added after probe endpoints)
 app.use(httpLogger);
 ```
 
 URLs excluded from logging:
 
-- `/health`
-- `/api/health`
+- `/livez`
+- `/readyz`
 - `/.well-known/*`
 
 ## 🎯 Best Practices

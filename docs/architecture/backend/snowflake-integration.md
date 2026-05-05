@@ -774,8 +774,8 @@ Track these metrics for operational visibility:
 ### Health Check Integration
 
 ```typescript
-// Add to server health endpoint
-app.get('/health', (req, res) => {
+// Add to server liveness endpoint
+app.get('/livez', (req, res) => {
   const snowflakeStats = snowflakeService.getPoolStats();
   const lockStats = snowflakeService.getLockStats();
 

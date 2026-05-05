@@ -17,8 +17,9 @@ const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
  * Ordered by specificity - more specific patterns should come first
  */
 const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
-  // Health check - completely public
-  { pattern: '/health', type: 'api', auth: 'public' },
+  // Liveness and readiness probes - completely public
+  { pattern: '/livez', type: 'api', auth: 'public' },
+  { pattern: '/readyz', type: 'api', auth: 'public' },
 
   // Public API routes - optional authentication with token benefits
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },

@@ -152,6 +152,53 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Startup probe — gates liveness and readiness during the initial startup window.
+# Once it succeeds, Kubernetes hands off to livenessProbe and readinessProbe.
+# Budget: 10s initial delay + (10s × 30 failures) = 310s (~5 min) maximum,
+# giving headroom over the observed ~4 min cold-start time.
+# Set to null to disable: startupProbe: null
+startupProbe:
+  httpGet:
+    path: /livez
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 30
+
+# Liveness probe — restarts the pod if it becomes unresponsive at runtime.
+# startupProbe handles the startup window, so initialDelaySeconds is 0 here.
+# Targets GET /livez (plain text "OK"), registered before logging, auth, and
+# rate-limit middleware so it is always reachable if the process is alive.
+# Set to null to disable: livenessProbe: null
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe — controls when the pod receives traffic from the Service.
+# startupProbe handles the startup window, so initialDelaySeconds is 0 here.
+# Targets GET /readyz (JSON {"status":"ready"}) which is registered before
+# pino-http so probes don't pollute request logs. The endpoint confirms that
+# Express is listening and the Angular SSR engine loaded; it intentionally
+# does not probe lazy-initialized clients (NATS, Snowflake) because those
+# report not-connected at startup even when most SSR pages render fine without
+# them. See apps/lfx-one/src/server/server.ts for implementation details.
+# Set to null to disable: readinessProbe: null
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
 # Environment variables for the application
 # Uses map/object format for deep merging support
 environment:

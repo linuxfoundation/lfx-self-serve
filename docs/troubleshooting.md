@@ -118,8 +118,8 @@ yarn build
 # Check server logs
 yarn start:server
 
-# Test health endpoint (SSR server defaults to PORT 4000; override via $PORT)
-curl http://localhost:4000/health
+# Test liveness endpoint (SSR server defaults to PORT 4000; override via $PORT)
+curl http://localhost:4000/livez
 
 # Check environment variables
 echo $NODE_ENV
@@ -300,8 +300,8 @@ pm2 restart lfx-one
 ### Health Checks
 
 ```bash
-# Application health
-curl http://localhost:4200/health
+# Application health (yarn start serves on 4200; production SSR server on 4000)
+curl http://localhost:4200/livez
 
 # Check Angular build
 yarn build
@@ -415,7 +415,7 @@ yarn start
 
 ```bash
 # Check microservice connectivity
-curl -I $LFX_V2_SERVICE/health
+curl -I $LFX_V2_SERVICE/livez
 
 # Test NATS connection
 # Check NATS_URL environment variable

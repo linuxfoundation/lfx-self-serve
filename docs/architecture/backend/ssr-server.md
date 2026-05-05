@@ -205,7 +205,7 @@ The server supports distributed tracing via OpenTelemetry. Tracing is **opt-in**
 
 ### Instrumentations
 
-- **HTTP** — traces incoming requests (excludes `/health`, `/api/health`, `/.well-known`)
+- **HTTP** — traces incoming requests (excludes `/livez`, `/readyz`, `/.well-known`)
 - **Express** — traces Express route and middleware execution
 - **Undici** — traces outgoing `fetch()` requests with header propagation
 

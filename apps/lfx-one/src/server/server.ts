@@ -73,6 +73,30 @@ app.use(
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+// Liveness and readiness endpoints registered before the static handler,
+// logger, auth, and rate-limit middleware so:
+//   - probes are served directly with no filesystem lookup (no I/O overhead
+//     on frequent Kubernetes probe traffic)
+//   - probe traffic is not request-logged
+//   - endpoints are always reachable unauthenticated
+// auth.middleware.ts lists /livez and /readyz as public.
+app.get('/livez', (_req: Request, res: Response) => {
+  res.send('OK');
+});
+
+// Readiness endpoint for Kubernetes (LFXV2-1640).
+// Signals that this pod can accept HTTP traffic: Express is listening and the
+// Angular SSR engine loaded successfully (constructed at module load above —
+// a load failure crashes the process before reaching this point).
+// Intentionally does NOT probe NATS / Snowflake / microservice-proxy: those
+// clients are lazy-initialized and report not-connected at startup even
+// though many SSR pages render fine without them. Per-feature dependency
+// failures are handled at the route level, not by pulling the whole pod out
+// of the Service endpoints list.
+app.get('/readyz', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ready' });
+});
+
 app.get(
   '**',
   express.static(browserDistFolder, {
@@ -80,11 +104,6 @@ app.get(
     index: false,
   })
 );
-
-// Health endpoint before logger middleware so health checks aren't logged.
-app.get('/health', (_req: Request, res: Response) => {
-  res.send('OK');
-});
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
