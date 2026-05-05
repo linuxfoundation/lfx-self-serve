@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   Committee,
@@ -129,6 +129,30 @@ export class CommitteeService {
 
   public createCommitteeDocument(committeeId: string, data: CreateCommitteeDocumentRequest): Observable<CommitteeDocument> {
     return this.http.post<CommitteeDocument>(`/api/committees/${committeeId}/documents`, data).pipe(take(1));
+  }
+
+  /**
+   * Uploads a file document to a committee. Sends the raw file as the request body
+   * with metadata as query params. The BFF forwards as multipart/form-data to the
+   * upstream committee service.
+   */
+  public uploadCommitteeDocument(committeeId: string, file: File, metadata: { name: string; description?: string }): Observable<CommitteeDocument> {
+    let params = new HttpParams()
+      .set('name', metadata.name)
+      .set('file_name', file.name)
+      .set('content_type', file.type || 'application/octet-stream')
+      .set('file_size', file.size.toString());
+
+    if (metadata.description) {
+      params = params.set('description', metadata.description);
+    }
+
+    return this.http
+      .post<CommitteeDocument>(`/api/committees/${committeeId}/documents/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
+      })
+      .pipe(take(1));
   }
 
   public deleteCommitteeDocument(committeeId: string, documentId: string, documentType: CommitteeDocumentType): Observable<void> {

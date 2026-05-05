@@ -116,4 +116,21 @@ export interface MyDocumentItem {
   summaryContent?: string;
   /** Summary record UID — used by the preview dialog to support edit/approve actions */
   summaryUid?: string;
+  /** Parent folder UID — present for committee links/files that live inside a folder */
+  parentUid?: string;
+  /** When true, the row is rendered with an indent to indicate it sits inside a parent folder */
+  isChild?: boolean;
+  /**
+   * When true, the row represents a folder (container). The table renders the name as a
+   * clickable button that emits `folderOpen` instead of opening a URL.
+   */
+  isFolder?: boolean;
+  /** Number of items inside this folder — shown next to the folder name when isFolder is true */
+  childCount?: number;
+  /**
+   * Direct BFF download endpoint for files served by lfx-v2-ui itself (with proper
+   * Content-Disposition). When set, the download button navigates here instead of routing
+   * through the generic /api/documents/download proxy that fetches external URLs.
+   */
+  downloadUrl?: string;
 }

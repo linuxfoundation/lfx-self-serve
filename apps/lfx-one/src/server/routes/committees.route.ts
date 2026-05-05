@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import express, { Router } from 'express';
 
 import { CommitteeController } from '../controllers/committee.controller';
 
@@ -28,9 +28,15 @@ router.delete('/:id/members/:memberId', (req, res, next) => committeeController.
 // ── Sub-groups route ───────────────────────────────────────────────────────
 router.get('/:id/children', (req, res, next) => committeeController.getCommitteeChildren(req, res, next));
 
-// ── Document routes (folders + links) ─────────────────────────────────────
+// ── Document routes (folders + links + file uploads) ─────────────────────
 router.get('/:id/documents', (req, res, next) => committeeController.getCommitteeDocuments(req, res, next));
 router.post('/:id/documents', (req, res, next) => committeeController.createCommitteeDocument(req, res, next));
+// Upload a file document — receives raw binary, BFF forwards multipart/form-data to upstream
+router.post('/:id/documents/upload', express.raw({ type: '*/*', limit: '100mb' }), (req, res, next) =>
+  committeeController.uploadCommitteeDocument(req, res, next)
+);
+// Stream a committee document file binary back to the browser with Content-Disposition.
+router.get('/:id/documents/:documentId/download', (req, res, next) => committeeController.downloadCommitteeDocument(req, res, next));
 router.delete('/:id/documents/:documentId', (req, res, next) => committeeController.deleteCommitteeDocument(req, res, next));
 
 // ── Join / Leave / Application routes ────────────────────────────────────────

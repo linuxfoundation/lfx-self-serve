@@ -2,7 +2,59 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-  @if (isLink()) {
+  @if (isFile()) {
+    <!-- File picker -->
+    <div>
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1"> File <span class="text-red-500">*</span> </label>
+      @if (!selectedFile()) {
+        <lfx-file-upload
+          [multiple]="false"
+          [accept]="acceptString"
+          [maxFileSize]="MAX_FILE_SIZE_BYTES"
+          (onSelect)="onFileSelect($event)"
+          [customUpload]="true"
+          [showUploadButton]="false"
+          [showCancelButton]="false"
+          chooseLabel="Click to upload a file or drag and drop"
+          dataTest="document-form-file-upload">
+        </lfx-file-upload>
+      } @else {
+        <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50" data-testid="document-form-selected-file">
+          <div class="flex items-center gap-2 min-w-0">
+            <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 truncate">{{ selectedFile()!.name }}</span>
+          </div>
+          <button
+            type="button"
+            class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+            aria-label="Clear selected file"
+            title="Clear selected file"
+            (click)="clearSelectedFile()"
+            data-testid="document-form-clear-file">
+            <i class="fa-light fa-xmark"></i>
+          </button>
+        </div>
+      }
+      @if (fileError()) {
+        <p class="mt-1 text-xs text-red-600">{{ fileError() }}</p>
+      }
+    </div>
+
+    <!-- Name -->
+    <div>
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="name"
+        placeholder="Display name for the document"
+        styleClass="w-full"
+        dataTest="document-form-name"></lfx-input-text>
+      @if (form.get('name')?.errors?.['required'] && form.get('name')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Name is required</p>
+      }
+    </div>
+  } @else if (isLink()) {
     <!-- Link URL -->
     <div>
       <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Link URL <span class="text-red-500">*</span></label>
@@ -68,15 +120,15 @@
     </div>
   }
 
-  <!-- Description (both modes) -->
+  <!-- Description (all modes) -->
   <div>
     <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Description (optional)</label>
     <lfx-textarea
       [form]="form"
       control="description"
       [rows]="3"
-      [maxlength]="500"
-      [placeholder]="isLink() ? 'Brief description' : 'Brief description of what this folder contains'"
+      [maxlength]="2000"
+      [placeholder]="descriptionPlaceholder()"
       [autoResize]="true"
       styleClass="!w-full"
       dataTest="document-form-description"></lfx-textarea>

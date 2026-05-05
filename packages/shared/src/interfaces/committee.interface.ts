@@ -469,8 +469,18 @@ export interface CommitteeEngagementMetrics {
 /** Type of a committee document entry */
 export type CommitteeDocumentType = 'file' | 'link' | 'folder';
 
-/** Subset of document types that can be created via the BFF (excludes 'file' — meeting attachments only) */
+/**
+ * Document types accepted by the JSON `POST /committees/:id/documents` create endpoint.
+ * Files are uploaded via a separate multipart endpoint, not this one — keep this union
+ * narrow so misuse (sending `type: 'file'` to the JSON endpoint) is caught at compile time.
+ */
 export type CreateCommitteeDocumentType = 'link' | 'folder';
+
+/**
+ * Mode discriminator for the shared document form dialog. A superset of
+ * `CreateCommitteeDocumentType` because the file mode dispatches to the upload endpoint.
+ */
+export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 
 /**
  * A document or resource link associated with a committee.
@@ -511,6 +521,33 @@ export interface CreateCommitteeDocumentRequest {
   parent_uid?: string;
   /** Display name of the creator (populated by BFF from session) */
   created_by_name?: string;
+}
+
+/**
+ * Multipart upload payload for a committee file document.
+ * The actual `File` is sent separately via FormData / raw body — this interface
+ * captures the metadata sent alongside it.
+ */
+export interface UploadCommitteeDocumentRequest {
+  /** Display name for the document (max 500 chars) */
+  name: string;
+  /** Original file name (max 500 chars) */
+  file_name: string;
+  /** MIME type of the uploaded file */
+  content_type: string;
+  /**
+   * File size in bytes. **BFF-only** — used to validate the request body
+   * length against the client-reported size. Not forwarded to upstream
+   * (upstream `UploadCommitteeDocumentRequestBody` has no `file_size` field).
+   */
+  file_size: number;
+  /** Optional description (max 2000 chars) */
+  description?: string;
+  /**
+   * TODO: add once upstream `POST /committees/{uid}/documents` accepts `folder_uid`.
+   * Until then, all uploaded files land at the committee root.
+   */
+  folder_uid?: string;
 }
 
 /** Attachment enriched with meeting context for display. */

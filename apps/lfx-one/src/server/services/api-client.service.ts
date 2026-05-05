@@ -75,6 +75,108 @@ export class ApiClientService {
     return this.executeRequest<Buffer>(fullUrl, requestInit, { binary: true });
   }
 
+  /**
+   * Make a streaming request that returns the raw fetch Response so the caller
+   * can pipe `response.body` directly to an Express response (or any writable
+   * stream) without buffering the payload in memory. Use this for large file
+   * downloads where holding the whole payload in RAM would create memory
+   * pressure under concurrent load.
+   *
+   * Throws `MicroserviceError` on non-2xx upstream responses (matching
+   * `executeRequest` behavior) so callers can rely on the same error semantics.
+   */
+  public async streamRequest(
+    type: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    bearerToken?: string,
+    query?: Record<string, any>,
+    customHeaders?: Record<string, string>
+  ): Promise<Response> {
+    const fullUrl = this.getFullUrl(url, query);
+
+    const headers: Record<string, string> = {
+      ['User-Agent']: 'LFX-PCC-Server/1.0',
+    };
+
+    if (bearerToken) {
+      headers['Authorization'] = `Bearer ${bearerToken}`;
+    }
+
+    if (customHeaders) {
+      Object.assign(headers, customHeaders);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(fullUrl, {
+        method: type,
+        headers,
+        signal: AbortSignal.timeout(this.config.timeout),
+        redirect: 'error',
+      });
+    } catch (error: unknown) {
+      // Mirror executeRequest() transport-error classification for consistent MicroserviceError types.
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
+            operation: 'api_client_stream_timeout',
+            service: 'api_client_service',
+            path: url,
+          });
+        }
+
+        const errorWithCause = error as Error & { cause?: { code?: string } };
+        if (errorWithCause.cause?.code) {
+          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+            operation: 'api_client_stream_network_error',
+            service: 'api_client_service',
+            path: url,
+            originalError: error,
+          });
+        }
+
+        // Fallback for any other Error subclass — keep all transport failures classified.
+        throw new MicroserviceError(`Request failed: ${error.message}`, 500, 'NETWORK_ERROR', {
+          operation: 'api_client_stream_network_error',
+          service: 'api_client_service',
+          path: url,
+          originalError: error,
+        });
+      }
+      throw error;
+    }
+
+    if (!response.ok) {
+      // Read body once for error context.
+      let errorBody: any = null;
+      try {
+        const errorText = await response.text();
+        if (errorText) {
+          errorBody = JSON.parse(errorText);
+        }
+      } catch {
+        // Non-JSON error body is fine — we already have status + statusText.
+      }
+      const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
+      throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
+        operation: 'api_client_stream_request',
+        service: 'api_client_service',
+        path: url,
+        errorBody,
+      });
+    }
+
+    if (!response.body) {
+      throw new MicroserviceError('Upstream returned no response body', 502, 'BAD_GATEWAY', {
+        operation: 'api_client_stream_request',
+        service: 'api_client_service',
+        path: url,
+      });
+    }
+
+    return response;
+  }
+
   private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     // Check if data is FormData (from form-data package for Node.js)
     const isFormData = data && typeof data === 'object' && typeof data.append === 'function' && typeof data.getHeaders === 'function';

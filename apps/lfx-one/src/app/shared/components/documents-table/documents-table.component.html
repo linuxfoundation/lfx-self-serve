@@ -28,11 +28,34 @@
 
   <ng-template #body let-doc let-rowIndex="rowIndex">
     <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="testIdPrefix() + '-row-' + doc.id">
-      <!-- Name column -->
+      <!-- Name column — folders are clickable (drill-in); children are indented -->
       <td>
-        <div class="flex items-center gap-2 min-w-0">
-          <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')" class="text-base shrink-0"></i>
-          @if (doc.source === 'summary' && doc.summaryContent) {
+        <div class="flex items-center gap-2 min-w-0" [class.pl-6]="doc.isChild">
+          @if (doc.isChild) {
+            <i class="fa-light fa-arrow-turn-down-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
+          }
+          @if (doc.isFolder) {
+            <i class="fa-light fa-folder text-amber-500 text-base shrink-0" aria-hidden="true"></i>
+          } @else {
+            <i
+              [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')"
+              class="text-base shrink-0"
+              aria-hidden="true"></i>
+          }
+          @if (doc.isFolder) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
+              (click)="onFolderClick(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-folder-' + doc.id">
+              {{ doc.name }}
+              @if (doc.childCount && doc.childCount > 0) {
+                <span class="ml-1 text-gray-500 font-normal">({{ doc.childCount }})</span>
+              }
+            </button>
+          } @else if (doc.source === 'summary' && doc.summaryContent) {
             <button
               type="button"
               class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
@@ -110,6 +133,17 @@
               (onClick)="downloadDocument(doc)"
               [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
               tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.source === 'link' && doc.url) {
+            <lfx-button
+              icon="fa-solid fa-arrow-up-right-from-square"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
+              tooltip="Open link"
               tooltipPosition="top">
             </lfx-button>
           } @else if (doc.source === 'recording' && doc.url) {

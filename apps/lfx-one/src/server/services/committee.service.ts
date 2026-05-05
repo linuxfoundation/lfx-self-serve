@@ -16,8 +16,10 @@ import {
   MyCommittee,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
+import FormData from 'form-data';
 
 import { ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -51,6 +53,49 @@ interface CommitteeLink {
   created_by_name?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+/** Upstream response shape for committee document file uploads */
+interface CommitteeDocumentUpstreamResponse {
+  uid: string;
+  name: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  description?: string;
+  committee_uid?: string;
+  created_at?: string;
+  updated_at?: string;
+  uploaded_by_username?: string;
+}
+
+/**
+ * Query-service shape for an indexed `committee_document` resource. Files are not exposed
+ * via a list endpoint upstream; they're discovered via the indexer (subject
+ * `lfx.index.committee_document`).
+ *
+ * Per `CommitteeDocument.Tags()` in lfx-v2-committee-service, every committee_document
+ * resource is indexed with the following tags:
+ *   - the bare uid                          → `{uid}`
+ *   - `committee_document_uid:{uid}`        — single-document lookup (returns at most 1)
+ *   - `committee_uid:{committeeUID}`        — list all documents for a committee
+ *   - `content_type:{contentType}`          — filter by MIME type
+ *   - `uploaded_by:{uploadedByUsername}`    — filter by uploader
+ *
+ * Use `committee_uid:` for listing and `committee_document_uid:` for single-document lookups
+ * to avoid scanning every file in the committee.
+ */
+interface CommitteeDocumentQueryResult {
+  uid: string;
+  name: string;
+  file_name?: string;
+  file_size?: number;
+  content_type?: string;
+  description?: string;
+  committee_uid?: string;
+  created_at?: string;
+  updated_at?: string;
+  uploaded_by_username?: string;
 }
 
 /**
@@ -673,25 +718,39 @@ export class CommitteeService {
   // ── Committee Documents ────────────────────────────────────────────────────
 
   public async getCommitteeDocuments(req: Request, committeeId: string): Promise<CommitteeDocument[]> {
-    logger.debug(req, 'get_committee_documents', 'Fetching committee folders and links', {
+    logger.debug(req, 'get_committee_documents', 'Fetching committee folders, links, and files', {
       committee_uid: committeeId,
     });
 
-    // Fetch folders and links in parallel
-    const [folders, links] = await Promise.all([
+    // No upstream LIST endpoint for files — query the indexer by `committee_uid` tag.
+    const [folders, links, files] = await Promise.all([
       this.microserviceProxy.proxyRequest<CommitteeFolder[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/folders`, 'GET').catch((err) => {
         logger.warning(req, 'get_committee_documents', 'Failed to fetch committee folders, returning empty list', {
           committee_uid: committeeId,
-          error: err instanceof Error ? err.message : 'Unknown error',
+          err,
         });
         return [] as CommitteeFolder[];
       }),
       this.microserviceProxy.proxyRequest<CommitteeLink[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/links`, 'GET').catch((err) => {
         logger.warning(req, 'get_committee_documents', 'Failed to fetch committee links, returning empty list', {
           committee_uid: committeeId,
-          error: err instanceof Error ? err.message : 'Unknown error',
+          err,
         });
         return [] as CommitteeLink[];
+      }),
+      // Follows page_token across all pages so large committees aren't truncated.
+      fetchAllQueryResources<CommitteeDocumentQueryResult>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_document',
+          tags: `committee_uid:${committeeId}`,
+          ...(pageToken && { page_token: pageToken }),
+        })
+      ).catch((err) => {
+        logger.warning(req, 'get_committee_documents', 'Failed to fetch committee files via query service, returning empty list', {
+          committee_uid: committeeId,
+          err,
+        });
+        return [] as CommitteeDocumentQueryResult[];
       }),
     ]);
 
@@ -722,7 +781,21 @@ export class CommitteeService {
       committee_uid: l.committee_uid,
     }));
 
-    return [...folderDocs, ...linkDocs];
+    // Normalize uploaded files → CommitteeDocument
+    const fileDocs: CommitteeDocument[] = (files || []).map((f) => ({
+      uid: f.uid,
+      type: 'file' as const,
+      name: f.name,
+      description: f.description,
+      file_size: f.file_size,
+      mime_type: f.content_type,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      uploaded_by: f.uploaded_by_username,
+      committee_uid: f.committee_uid,
+    }));
+
+    return [...folderDocs, ...linkDocs, ...fileDocs];
   }
 
   /**
@@ -798,6 +871,125 @@ export class CommitteeService {
       parent_uid: link.folder_uid,
       committee_uid: link.committee_uid,
     };
+  }
+
+  /**
+   * Uploads a file document to a committee via multipart/form-data.
+   */
+  public async uploadCommitteeDocument(
+    req: Request,
+    committeeId: string,
+    fileBuffer: Buffer,
+    uploadData: UploadCommitteeDocumentRequest
+  ): Promise<CommitteeDocument> {
+    logger.debug(req, 'upload_committee_document', 'Uploading file to committee service', {
+      committee_uid: committeeId,
+      file_name: uploadData.file_name,
+      file_size: uploadData.file_size,
+    });
+
+    // file_size is intentionally omitted — upstream UploadCommitteeDocumentRequestBody
+    // only declares name, file_name, content_type, file, description. Goa silently
+    // drops unknown multipart fields.
+    // TODO: append folder_uid once upstream accepts it (LFXV2-1632).
+    const formData = new FormData();
+    formData.append('file', fileBuffer, {
+      filename: uploadData.file_name,
+      contentType: uploadData.content_type,
+    });
+    formData.append('name', uploadData.name);
+    formData.append('file_name', uploadData.file_name);
+    formData.append('content_type', uploadData.content_type);
+    if (uploadData.description) {
+      formData.append('description', uploadData.description);
+    }
+
+    const result = await this.microserviceProxy.proxyRequest<CommitteeDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/documents`,
+      'POST',
+      undefined,
+      formData
+    );
+
+    logger.info(req, 'upload_committee_document', 'Committee document uploaded successfully', {
+      committee_uid: committeeId,
+      document_uid: result.uid,
+      file_name: result.file_name,
+      file_size: result.file_size,
+    });
+
+    return {
+      uid: result.uid,
+      type: 'file',
+      name: result.name,
+      description: result.description,
+      file_size: result.file_size,
+      mime_type: result.content_type,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+      uploaded_by: result.uploaded_by_username,
+      committee_uid: result.committee_uid,
+    };
+  }
+
+  /**
+   * Fetches the indexed metadata for a single committee document file so the
+   * controller can set `Content-Type` and `Content-Disposition` headers before
+   * streaming the binary back.
+   *
+   * Queries by `committee_document_uid:{documentId}` AND `committee_uid:{committeeId}`
+   * — every committee document is indexed with both tags (per CommitteeDocument.Tags()
+   * in the upstream service). Using `tags_all` ensures a document UID from one committee
+   * can't return metadata for a document owned by another. The query returns at most
+   * one resource, keeping the lookup O(1) regardless of file count.
+   *
+   * Falls back to safe defaults if the metadata fetch fails or returns nothing so a
+   * download attempt is never blocked by a stale or unavailable index.
+   */
+  public async getCommitteeDocumentMetadata(req: Request, committeeId: string, documentId: string): Promise<{ contentType: string; fileName: string }> {
+    logger.debug(req, 'get_committee_document_metadata', 'Fetching document metadata from indexer', {
+      committee_uid: committeeId,
+      document_uid: documentId,
+    });
+
+    // Scope by committee_uid in addition to committee_document_uid so a leaked or guessed
+    // documentId can't surface metadata for a document belonging to a different committee.
+    const metadata = await this.microserviceProxy
+      .proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_document',
+        tags_all: [`committee_document_uid:${documentId}`, `committee_uid:${committeeId}`],
+      })
+      .then((resp) => resp.resources?.[0]?.data ?? null)
+      .catch((err) => {
+        logger.warning(req, 'get_committee_document_metadata', 'Failed to fetch document metadata, using fallback values', {
+          document_uid: documentId,
+          err,
+        });
+        return null;
+      });
+
+    return {
+      contentType: metadata?.content_type || 'application/octet-stream',
+      fileName: metadata?.file_name || `${documentId}.bin`,
+    };
+  }
+
+  /**
+   * Opens a streaming HTTP request against the upstream document download
+   * endpoint and returns the raw fetch Response. The caller is expected to
+   * pipe `response.body` directly to its own Express response — buffering the
+   * whole file would create memory pressure under concurrent downloads given
+   * the 100MB upload limit.
+   */
+  public async getCommitteeDocumentStream(req: Request, committeeId: string, documentId: string): Promise<Response> {
+    logger.debug(req, 'get_committee_document_stream', 'Opening upstream stream for committee document', {
+      committee_uid: committeeId,
+      document_uid: documentId,
+    });
+
+    return this.microserviceProxy.proxyStreamRequest(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/documents/${documentId}/download`, 'GET');
   }
 
   /**

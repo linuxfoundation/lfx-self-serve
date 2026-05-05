@@ -1,21 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
 import {
   CommitteeCreateData,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
+  UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
+import { isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
+import { Readable } from 'node:stream';
+import { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import { pipeline } from 'node:stream/promises';
 
 import { ServiceValidationError } from '../errors';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
+
+/**
+ * Build an RFC 5987 compliant `Content-Disposition: attachment` header value
+ * with both an ASCII fallback (`filename=`) and a UTF-8 encoded variant
+ * (`filename*=UTF-8''...`). The ASCII fallback strips non-ASCII characters and
+ * neutralizes quotes / backslashes / control chars to prevent header injection
+ * (CR/LF) and broken responses. Mirrors the pattern in `document.controller.ts`.
+ */
+function contentDispositionAttachment(fileName: string): string {
+  const safeAscii = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  const encoded = encodeURIComponent(fileName);
+  return `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`;
+}
 
 /**
  * Controller for handling committee HTTP requests
@@ -595,6 +615,229 @@ export class CommitteeController {
 
       res.status(201).json(newDocument);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/documents/upload
+   *
+   * Receives a raw binary file body, forwards as multipart/form-data to the
+   * committee service. Metadata passed as query params: name, file_name,
+   * content_type, file_size, description?
+   */
+  public async uploadCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    // Prevents type confusion via repeated query-string keys (e.g. file_size[]=1).
+    const name = getStringQueryParam(req, 'name');
+    const fileName = getStringQueryParam(req, 'file_name');
+    const contentType = getStringQueryParam(req, 'content_type');
+    const fileSize = getStringQueryParam(req, 'file_size');
+    const description = getStringQueryParam(req, 'description');
+
+    const startTime = logger.startOperation(req, 'upload_committee_document', {
+      committee_id: id,
+      file_name: fileName,
+      file_size: fileSize,
+      content_type: contentType,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
+          operation: 'upload_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Trim before validating so whitespace-only strings fail the required-field check.
+      const trimmedName = name?.trim();
+      const trimmedFileName = fileName?.trim();
+
+      const fieldErrors: Record<string, string> = {};
+      if (!trimmedName) fieldErrors['name'] = 'Document name is required';
+      if (!trimmedFileName) fieldErrors['file_name'] = 'File name is required';
+      if (!contentType) fieldErrors['content_type'] = 'Content type is required';
+      if (!fileSize) fieldErrors['file_size'] = 'File size is required';
+
+      if (Object.keys(fieldErrors).length > 0) {
+        const validationError = ServiceValidationError.fromFieldErrors(fieldErrors, 'Upload request validation failed', {
+          operation: 'upload_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const fileBuffer = req.body as Buffer;
+      const fileSizeNum = parseInt(fileSize!, 10);
+
+      if (isNaN(fileSizeNum) || fileSizeNum <= 0) {
+        const validationError = ServiceValidationError.forField('file_size', 'File size must be a positive number', {
+          operation: 'upload_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+        const validationError = ServiceValidationError.forField('body', 'Request body must contain file data', {
+          operation: 'upload_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Reject if reported size doesn't match the actual body length.
+      if (fileSizeNum !== fileBuffer.length) {
+        const validationError = ServiceValidationError.forField(
+          'file_size',
+          `Reported file_size (${fileSizeNum}) does not match request body length (${fileBuffer.length})`,
+          {
+            operation: 'upload_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
+      // Server-side allowlist check — frontend allowlist can be bypassed by direct API calls.
+      // Uses the same ALLOWED_FILE_TYPES + extension fallback as the file-upload component.
+      if (!isFileTypeAllowed(contentType!, trimmedFileName!, ALLOWED_FILE_TYPES)) {
+        next(
+          ServiceValidationError.forField('content_type', `File type "${contentType}" is not allowed`, {
+            operation: 'upload_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Reject path-traversal patterns in the filename so upstream can't be tricked into
+      // writing or referencing files outside the committee scope. Frontend strips these
+      // already; the server enforces the same rule for direct callers.
+      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+        next(
+          ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
+            operation: 'upload_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const uploadData: UploadCommitteeDocumentRequest = {
+        name: trimmedName!,
+        file_name: trimmedFileName!,
+        content_type: contentType!,
+        file_size: fileSizeNum,
+        ...(description && { description }),
+      };
+
+      const result = await this.committeeService.uploadCommitteeDocument(req, id, fileBuffer, uploadData);
+
+      logger.success(req, 'upload_committee_document', startTime, {
+        committee_id: id,
+        document_uid: result.uid,
+        file_name: trimmedFileName,
+        file_size: fileSizeNum,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/:id/documents/:documentId/download
+   *
+   * Streams the file binary from the upstream committee service straight to the
+   * browser with `Content-Disposition: attachment` (RFC 5987 encoded) so the
+   * browser triggers a download without the BFF buffering the whole payload in
+   * memory — important under concurrent downloads given the 100MB upload limit.
+   */
+  public async downloadCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, documentId } = req.params;
+    const startTime = logger.startOperation(req, 'download_committee_document', {
+      committee_id: id,
+      document_id: documentId,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
+          operation: 'download_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!documentId) {
+        const validationError = ServiceValidationError.forField('documentId', 'Document ID is required', {
+          operation: 'download_committee_document',
+          service: 'committee_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Fetch metadata and open the upstream stream in parallel.
+      const [{ contentType, fileName }, upstream] = await Promise.all([
+        this.committeeService.getCommitteeDocumentMetadata(req, id, documentId),
+        this.committeeService.getCommitteeDocumentStream(req, id, documentId),
+      ]);
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      const upstreamLength = upstream.headers.get('content-length');
+      if (upstreamLength) {
+        res.setHeader('Content-Length', upstreamLength);
+      }
+
+      // pipeline() propagates stream errors to the catch block instead of hanging.
+      await pipeline(Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>), res);
+
+      logger.success(req, 'download_committee_document', startTime, {
+        committee_id: id,
+        document_uid: documentId,
+        file_name: fileName,
+      });
+    } catch (error) {
+      // Headers already committed — can only end the stream.
+      if (res.headersSent) {
+        logger.error(req, 'download_committee_document', startTime, error, {
+          committee_id: id,
+          document_uid: documentId,
+          stage: 'streaming',
+        });
+        if (!res.writableEnded) {
+          res.end();
+        }
+        return;
+      }
       next(error);
     }
   }
