@@ -1,31 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LENS_PERSONA_MAP, NAV_MAX_UPSTREAM_ITERATIONS, NAV_MIN_ITEMS_PER_RESPONSE } from '@lfx-one/shared/constants';
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
-import {
-  EnrichedPersonaProject,
-  GetLensItemsParams,
-  LensItem,
-  LensItemsQuery,
-  LensItemsResponse,
-  NavLens,
-  PersonaApiResponse,
-  PersonaType,
-  Project,
-  QueryServiceResponse,
-} from '@lfx-one/shared/interfaces';
+import { GetLensItemsParams, LensItem, LensItemsQuery, LensItemsResponse, NavLens, Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** Stages eligible for the project lens — Active plus supported pre-launch formation stages. */
 const PROJECT_LENS_ALLOWED_STAGES = new Set<string>([ProjectStage.Active, ProjectStage.FormationEngaged, ProjectStage.FormationExploratory]);
 
-/** Powers the foundation/project lens dropdown. Root writers bypass the persona filter. */
+/** Powers the foundation/project lens dropdown. Access is gated entirely by the user's bearer token via the query service. */
 export class NavigationService {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -36,114 +23,45 @@ export class NavigationService {
   public async getLensItems(req: Request, params: GetLensItemsParams): Promise<LensItemsResponse> {
     const { lens, pageToken, name, selectedUid } = params;
 
-    // Parallel: root-writer check + first upstream page. Deferring persona fetch saves the
-    // NATS roundtrip for admins (the hot path).
-    const [bypassActive, firstPage] = await Promise.all([personaDetectionService.checkRootWriter(req), this.fetchUpstreamPage(req, lens, pageToken, name)]);
+    const firstPage = await this.fetchUpstreamPage(req, lens, pageToken, name);
 
-    let persona: PersonaApiResponse | null = null;
-    let personaFetchFailed = false;
-    if (!bypassActive) {
-      const personaResult = await this.fetchPersona(req);
-      persona = personaResult.persona;
-      personaFetchFailed = personaResult.failed;
-    }
-
-    // Fail closed: a persona-fetch failure must not fall through to unfiltered lens items.
-    // The frontend surfaces the "Unable to load" toast when items is empty + persona_fetch_failed.
-    if (!bypassActive && personaFetchFailed) {
-      logger.warning(req, 'build_lens_items', 'Persona fetch failed, returning empty lens items to fail closed', { lens });
+    if (firstPage.failed || !firstPage.response) {
       return {
         items: [],
         next_page_token: null,
-        bypass_active: false,
-        persona_fetch_failed: true,
-        upstream_failed: firstPage.failed,
+        upstream_failed: true,
         lens,
       };
     }
 
-    const shouldFilter = !bypassActive && !!persona;
-    const eligibleUids = shouldFilter && persona ? this.collectEligibleProjectUids(persona.projects, LENS_PERSONA_MAP[lens]) : null;
-
-    // targetCount=0 when filtering with no eligible projects skips the loop body entirely.
-    const targetCount = eligibleUids ? eligibleUids.size : NAV_MIN_ITEMS_PER_RESPONSE;
-
-    const accumulated: LensItem[] = [];
-    let iterations = 0;
-    let lastToken: string | null = null;
-    let upstreamFailed = firstPage.failed;
-    let currentResponse: QueryServiceResponse<Project> | null = firstPage.response;
-
-    while (currentResponse && accumulated.length < targetCount && iterations < NAV_MAX_UPSTREAM_ITERATIONS) {
-      iterations += 1;
-      const pageItems = this.filterPageResources(currentResponse.resources, lens, eligibleUids);
-      accumulated.push(...pageItems.map((p) => this.toLensItem(p)));
-      lastToken = currentResponse.page_token ?? null;
-
-      if (!lastToken || accumulated.length >= targetCount) break;
-
-      const next = await this.fetchUpstreamPage(req, lens, lastToken, name);
-      if (next.failed) {
-        upstreamFailed = true;
-        lastToken = null;
-        break;
-      }
-      currentResponse = next.response;
-    }
-
-    // With persona filtering, only suppress next-page token when we've proven completeness.
-    // If the loop exited due to the iteration cap, keep the token so the client can continue.
-    if (eligibleUids) {
-      const fullyCollected = accumulated.length >= eligibleUids.size;
-      if (fullyCollected || upstreamFailed) {
-        lastToken = null;
-      }
-    }
+    const projects = this.filterPageResources(firstPage.response.resources, lens);
+    const items: LensItem[] = projects.map((p) => this.toLensItem(p));
+    const nextPageToken: string | null = firstPage.response.page_token ?? null;
 
     // Ensure the selected project is in the first-page response so navigation from
     // other lenses (e.g., Me → Open) doesn't get overridden by the default picker.
     if (selectedUid && !pageToken) {
-      const alreadyIncluded = accumulated.some((item) => item.uid === selectedUid);
+      const alreadyIncluded = items.some((item) => item.uid === selectedUid);
       if (!alreadyIncluded) {
         const selectedItem = await this.fetchSelectedItem(req, lens, selectedUid);
         if (selectedItem) {
-          accumulated.unshift(selectedItem);
+          items.unshift(selectedItem);
         }
       }
     }
 
     logger.debug(req, 'build_lens_items', 'Built lens items', {
       lens,
-      item_count: accumulated.length,
-      upstream_iterations: iterations,
-      bypass_active: bypassActive,
-      persona_fetch_failed: personaFetchFailed,
-      upstream_failed: upstreamFailed,
-      has_next_page: !!lastToken,
+      item_count: items.length,
+      has_next_page: !!nextPageToken,
     });
 
     return {
-      items: accumulated,
-      next_page_token: lastToken,
-      bypass_active: bypassActive,
-      persona_fetch_failed: personaFetchFailed,
-      upstream_failed: upstreamFailed,
+      items,
+      next_page_token: nextPageToken,
+      upstream_failed: false,
       lens,
     };
-  }
-
-  private async fetchPersona(req: Request): Promise<{ persona: PersonaApiResponse | null; failed: boolean }> {
-    try {
-      const persona = await personaDetectionService.getPersonas(req);
-      if (persona.error) {
-        logger.warning(req, 'fetch_persona', 'Persona fetch returned error, falling back to lens-scoped results only', { error: persona.error });
-        return { persona: null, failed: true };
-      }
-      return { persona, failed: false };
-    } catch (error) {
-      logger.warning(req, 'fetch_persona', 'Persona fetch failed, falling back to lens-scoped results only', { err: error });
-      return { persona: null, failed: true };
-    }
   }
 
   private async fetchUpstreamPage(
@@ -183,14 +101,11 @@ export class NavigationService {
     }
   }
 
-  private filterPageResources(resources: QueryServiceResponse<Project>['resources'], lens: NavLens, eligibleUids: Set<string> | null): Project[] {
+  private filterPageResources(resources: QueryServiceResponse<Project>['resources'], lens: NavLens): Project[] {
     let projects = resources.map((r) => r.data);
     // legal_entity_type negation isn't supported by the filter grammar — re-check locally.
     if (lens === 'foundation') {
       projects = projects.filter((p) => computeIsFoundation(p));
-    }
-    if (eligibleUids) {
-      projects = projects.filter((p) => eligibleUids.has(p.uid));
     }
     return projects;
   }
@@ -210,7 +125,7 @@ export class NavigationService {
       base.filters_or = [`stage:${ProjectStage.Active}`, `stage:${ProjectStage.FormationEngaged}`];
     } else {
       // Include active projects plus supported pre-launch formation stages so
-      // persona-eligible pre-launch projects appear in the project dropdown.
+      // pre-launch projects appear in the project dropdown.
       base.filters_or = [...PROJECT_LENS_ALLOWED_STAGES].map((stage) => `stage:${stage}`);
     }
 
@@ -218,16 +133,6 @@ export class NavigationService {
     if (trimmedName) base.name = trimmedName;
 
     return base;
-  }
-
-  private collectEligibleProjectUids(projects: EnrichedPersonaProject[], allowedPersonas: readonly PersonaType[]): Set<string> {
-    const uids = new Set<string>();
-    for (const project of projects) {
-      if (project.personas.some((p) => allowedPersonas.includes(p))) {
-        uids.add(project.projectUid);
-      }
-    }
-    return uids;
   }
 
   private toLensItem(project: Project): LensItem {

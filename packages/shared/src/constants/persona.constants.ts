@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BOARD_SCOPED_PERSONAS, DevPersonaPreset, PersonaOption, PersonaType } from '../interfaces';
+import { BOARD_SCOPED_PERSONAS, DevPersonaPreset, PersonaOption, PersonaType, PROJECT_SCOPED_PERSONAS } from '../interfaces';
 
 export const PERSONA_COOKIE_KEY = 'lfx-active-persona-preset';
 
@@ -15,6 +15,9 @@ export const PERSONA_PRIORITY: readonly PersonaType[] = ['executive-director', '
 
 /** Board-scoped personas in priority order. Used to pick a default foundation on lens entry. */
 export const BOARD_SCOPED_PERSONA_PRIORITY: readonly PersonaType[] = PERSONA_PRIORITY.filter((p) => BOARD_SCOPED_PERSONAS.has(p));
+
+/** Project-scoped personas in priority order. Used to pick a default project on lens entry. */
+export const PROJECT_SCOPED_PERSONA_PRIORITY: readonly PersonaType[] = PERSONA_PRIORITY.filter((p) => PROJECT_SCOPED_PERSONAS.has(p));
 
 /** Role label priority for dashboard sorting, highest first. */
 export const ROLE_PRIORITY: readonly string[] = [

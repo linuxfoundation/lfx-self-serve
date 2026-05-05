@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type { Lens, LensOption, NavLens } from '../interfaces';
-import type { PersonaType } from '../interfaces/persona.interface';
 
 export const LENS_COOKIE_KEY = 'lfx-active-lens';
 
@@ -61,11 +60,4 @@ export const DUAL_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'project
 /** Lenses backed by the nav API (me/org are not). */
 export const NAV_LENSES: readonly NavLens[] = ['foundation', 'project'] as const;
 
-export const LENS_PERSONA_MAP: Readonly<Record<NavLens, readonly PersonaType[]>> = {
-  foundation: ['board-member', 'executive-director'],
-  project: ['contributor', 'maintainer', 'executive-director'],
-} as const;
-
-export const NAV_MIN_ITEMS_PER_RESPONSE = 15;
-export const NAV_MAX_UPSTREAM_ITERATIONS = 10;
 export const NAV_SEARCH_DEBOUNCE_MS = 300;

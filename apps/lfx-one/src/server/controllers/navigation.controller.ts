@@ -44,8 +44,6 @@ export class NavigationController {
       logger.success(req, 'get_lens_items', startTime, {
         lens: result.lens,
         item_count: result.items.length,
-        bypass_active: result.bypass_active,
-        persona_fetch_failed: result.persona_fetch_failed,
       });
 
       res.json(result);
