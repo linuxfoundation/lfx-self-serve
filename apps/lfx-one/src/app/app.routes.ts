@@ -5,6 +5,7 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
+import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 
 export const routes: Routes = [
   {
@@ -55,32 +56,116 @@ export const routes: Routes = [
         data: { lens: 'org' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
+      // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens)
+      {
+        path: 'foundation/meetings',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
+      },
+      {
+        path: 'foundation/events',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
+      },
+      {
+        path: 'foundation/mailing-lists',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
+      },
+      {
+        path: 'foundation/groups',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
+      },
+      {
+        path: 'foundation/documents',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      {
+        path: 'foundation/votes',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
+      },
+      {
+        path: 'foundation/surveys',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
+      },
+      {
+        path: 'foundation/settings',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
+      },
+      // Project Lens — feature routes (lens-tagged so deep links restore the project lens)
+      {
+        path: 'project/meetings',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
+      },
+      {
+        path: 'project/mailing-lists',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
+      },
+      {
+        path: 'project/groups',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
+      },
+      {
+        path: 'project/documents',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      {
+        path: 'project/votes',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
+      },
+      {
+        path: 'project/surveys',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
+      },
+      {
+        path: 'project/settings',
+        data: { lens: 'project' },
+        loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
+      },
       {
         path: 'meetings',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'groups',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'votes',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'documents',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       {
         path: 'settings',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
@@ -101,6 +186,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
+        canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
