@@ -15,7 +15,7 @@
         }"
         [attr.data-testid]="'foundation-events-tab-' + tab.id">
         {{ tab.label }}
-        @if (tab.countKey && !upcomingEventsLoading() && !pastEventsLoading()) {
+        @if (tab.countKey && !countLoading()[tab.countKey]) {
           <span>({{ tabCounts()[tab.countKey] }})</span>
         }
       </button>
@@ -32,6 +32,15 @@
       (pageChange)="onUpcomingPageChange($event)"
       (sortChange)="onUpcomingSortChange($event)"
       data-testid="foundation-events-upcoming-table" />
+  } @else if (activeTab() === 'registration-open') {
+    <lfx-foundation-events-table
+      [eventsResponse]="registrationOpenEvents()"
+      [loading]="registrationOpenEventsLoading()"
+      [sortField]="registrationOpenSortField()"
+      [sortOrder]="registrationOpenSortOrder()"
+      (pageChange)="onRegistrationOpenPageChange($event)"
+      (sortChange)="onRegistrationOpenSortChange($event)"
+      data-testid="foundation-events-registration-open-table" />
   } @else {
     <lfx-foundation-events-table
       [eventsResponse]="pastEvents()"

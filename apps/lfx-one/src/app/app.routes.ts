@@ -38,6 +38,11 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
       },
+      {
+        path: 'foundation/events',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
+      },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
       {
         path: 'project/overview',

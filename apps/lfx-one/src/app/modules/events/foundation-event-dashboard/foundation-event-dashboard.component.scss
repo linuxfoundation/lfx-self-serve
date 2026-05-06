@@ -1,2 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+:host ::ng-deep .foundation-events-stats-card.p-card {
+  @apply hover:border-gray-200;
+}

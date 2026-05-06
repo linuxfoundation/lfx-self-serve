@@ -6,21 +6,29 @@
     <!-- Page Header -->
     <div class="flex items-start justify-between mt-3">
       <div class="flex flex-col gap-1">
-        <h1 class="font-display font-light text-2xl" data-testid="foundation-event-page-title">Events</h1>
+        <h1 class="font-display font-light text-2xl" data-testid="foundation-event-page-title">Foundation Events</h1>
+        @let foundation = userFoundation();
+        <p class="text-sm text-gray-500" data-testid="foundation-event-page-subtitle">
+          @if (foundation) {
+            Events hosted by {{ foundation }} and its ecosystem.
+          } @else {
+            Events hosted across this foundation portfolio.
+          }
+        </p>
       </div>
       <lfx-discover-events-button testId="foundation-event-discover-button" />
     </div>
 
     <!-- Summary Stat Cards -->
     <div data-testid="foundation-events-stats">
-      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
-        <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+      <lfx-card styleClass="foundation-events-stats-card [&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+        <div class="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
           <div class="flex items-center gap-3 p-4">
-            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">
               <i class="fa-light fa-ticket text-xl"></i>
             </div>
             <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
+              @if (eventsList.upcomingEventsLoading() || eventsList.pastEventsLoading()) {
                 <p class="text-xl font-medium text-gray-400">&mdash;</p>
               } @else {
                 <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().upcoming + eventsList.tabCounts().past }}</p>
@@ -29,29 +37,42 @@
             </div>
           </div>
           <div class="flex items-center gap-3 p-4">
-            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
-              <i class="fa-light fa-calendar-check text-xl"></i>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
-                <p class="text-xl font-medium text-gray-400">&mdash;</p>
-              } @else {
-                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().past }}</p>
-              }
-              <p class="text-sm font-normal text-gray-900">Past Events</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-3 p-4">
-            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
               <i class="fa-light fa-calendar-plus text-xl"></i>
             </div>
             <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
+              @if (eventsList.upcomingEventsLoading()) {
                 <p class="text-xl font-medium text-gray-400">&mdash;</p>
               } @else {
                 <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().upcoming }}</p>
               }
               <p class="text-sm font-normal text-gray-900">Upcoming Events</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+              <i class="fa-light fa-ticket text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (eventsList.registrationOpenEventsLoading()) {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().registrationOpen }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Registration Open</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+              <i class="fa-light fa-calendar-check text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (eventsList.pastEventsLoading()) {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().past }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Past Events</p>
             </div>
           </div>
         </div>
@@ -62,7 +83,9 @@
     <div class="bg-white rounded-lg border border-gray-200 p-4">
       <lfx-events-top-bar
         [showRoleFilter]="false"
+        [showStatusFilter]="eventsList.activeTab() !== 'registration-open'"
         [statusOptions]="foundationStatusOptions"
+        searchPlaceholder="Search foundation events..."
         (searchQueryChange)="onSearchQueryChange($event)"
         (statusChange)="onStatusChange($event)" />
     </div>

@@ -168,7 +168,7 @@ export interface PageChangeEvent {
 /**
  * Tab identifier for the events list component
  */
-export type EventTabId = 'upcoming' | 'past' | 'visa-letters' | 'travel-funding';
+export type EventTabId = 'upcoming' | 'registration-open' | 'past' | 'visa-letters' | 'travel-funding';
 
 /**
  * Tab definition for the events list component
@@ -176,7 +176,7 @@ export type EventTabId = 'upcoming' | 'past' | 'visa-letters' | 'travel-funding'
 export interface EventTab {
   id: EventTabId;
   label: string;
-  countKey?: 'upcoming' | 'past';
+  countKey?: 'upcoming' | 'registrationOpen' | 'past';
 }
 
 /**

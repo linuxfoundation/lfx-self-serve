@@ -43,12 +43,11 @@
           Location <i [class]="sortIcons()['EVENT_CITY']"></i>
         </button>
       </th>
+      <th scope="col" data-testid="header-status">Registration Status</th>
       @if (isPastEvents()) {
         <th scope="col" data-testid="header-attendees">Attendees</th>
-      } @else {
-        <th scope="col" data-testid="header-status">Status</th>
       }
-      <th>Action</th>
+      <th scope="col">Action</th>
     </tr>
   </ng-template>
 
@@ -80,19 +79,24 @@
         <span class="text-xs text-gray-700">{{ event.location }}</span>
       </td>
 
+      <!-- Registration Status -->
+      <td>
+        @if (event.displayStatus) {
+          <lfx-tag
+            [value]="event.displayStatus"
+            [severity]="statusSeverityMap[event.displayStatus] ?? 'secondary'"
+            [attr.data-testid]="'event-status-' + event.id" />
+        } @else {
+          <span class="text-xs text-gray-400">—</span>
+        }
+      </td>
+
       <!-- Attendees -->
       @if (isPastEvents()) {
         <td>
           <span class="text-xs text-gray-700" [attr.data-testid]="'event-attendees-' + event.id">
             {{ event.attendees !== null ? (event.attendees | number) : '—' }}
           </span>
-        </td>
-      } @else {
-        <td>
-          <lfx-tag
-            [value]="event.displayStatus"
-            [severity]="statusSeverityMap[event.displayStatus] ?? 'secondary'"
-            [attr.data-testid]="'event-status-' + event.id" />
         </td>
       }
 
@@ -102,7 +106,7 @@
           [label]="event.actionLabel"
           severity="primary"
           [outlined]="event.isOutlined"
-          [href]="isPastEvents() ? event.url : (event.registrationUrl ?? event.url)"
+          [href]="event.url"
           target="_blank"
           rel="noopener noreferrer"
           size="small"
@@ -114,7 +118,7 @@
 
   <ng-template #emptymessage>
     <tr>
-      <td [attr.colspan]="6" class="text-center py-10">
+      <td [attr.colspan]="isPastEvents() ? 7 : 6" class="text-center py-10">
         <div class="flex items-center justify-center p-16">
           <div class="text-center max-w-md">
             <div class="text-gray-400 mb-4">

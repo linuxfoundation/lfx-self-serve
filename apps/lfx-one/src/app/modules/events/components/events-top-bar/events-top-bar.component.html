@@ -56,15 +56,17 @@
   }
 
   <!-- Status Filter Dropdown -->
-  <div class="w-full sm:w-40">
-    <lfx-select
-      [form]="searchForm"
-      control="status"
-      size="small"
-      [options]="statusOptions()"
-      placeholder="Status"
-      [showClear]="true"
-      styleClass="w-full"
-      data-testid="events-status-filter"></lfx-select>
-  </div>
+  @if (showStatusFilter()) {
+    <div class="w-full sm:w-40">
+      <lfx-select
+        [form]="searchForm"
+        control="status"
+        size="small"
+        [options]="statusOptions()"
+        placeholder="Status"
+        [showClear]="true"
+        styleClass="w-full"
+        data-testid="events-status-filter"></lfx-select>
+    </div>
+  }
 </div>

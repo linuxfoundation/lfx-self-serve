@@ -21,6 +21,7 @@ export class EventsTopBarComponent {
 
   public readonly isFoundationFilter = input<boolean>(false);
   public readonly showRoleFilter = input<boolean>(true);
+  public readonly showStatusFilter = input<boolean>(true);
   public readonly projectName = input<string | undefined>(undefined);
   /** When true, foundation options are scoped to the user's registered past events */
   public readonly isPast = input<boolean>(false);
@@ -81,6 +82,16 @@ export class EventsTopBarComponent {
       .subscribe((show) => {
         if (!show) {
           this.searchForm.get('role')?.setValue(null);
+        }
+      });
+
+    // Clear status when the status filter is hidden so a stale selection
+    // doesn't continue to filter the active tab once it's no longer visible.
+    toObservable(this.showStatusFilter)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe((show) => {
+        if (!show) {
+          this.searchForm.get('status')?.setValue(null);
         }
       });
 

@@ -48,8 +48,8 @@ export class EventsTableComponent {
       return {
         ...event,
         displayStatus,
-        actionLabel: isPast ? 'View Recap' : this.resolveActionLabel(displayStatus),
-        isOutlined: !isPast && displayStatus === FoundationEventStatus.COMING_SOON,
+        actionLabel: isPast ? 'View Recap' : 'View Details',
+        isOutlined: !isPast,
       };
     });
   });
@@ -60,17 +60,6 @@ export class EventsTableComponent {
 
   protected onHeaderClick(field: string): void {
     this.sortChange.emit({ field });
-  }
-
-  private resolveActionLabel(displayStatus: string | null): string {
-    switch (displayStatus) {
-      case FoundationEventStatus.COMING_SOON:
-        return 'Notify Me';
-      case FoundationEventStatus.COMPLETED:
-        return 'View Recap';
-      default:
-        return 'Register';
-    }
   }
 
   private mapFoundationEventStatus(raw: string | null): string | null {
