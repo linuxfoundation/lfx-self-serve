@@ -18,7 +18,8 @@
       data-testid="dashboard-pending-actions-list">
       @for (item of decoratedActions(); track item.rowKey) {
         <div
-          class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
+          class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 transition-colors duration-300"
+          [class]="item.rowClass"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
           <!-- Label — 20% on sm+ -->
           <div class="shrink-0 sm:w-1/5">

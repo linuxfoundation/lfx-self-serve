@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG, PENDING_ACTION_SURVEYS_ROW_LIMIT, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import { NATS_CONFIG, PENDING_ACTION_SEVERITY, PENDING_ACTION_SURVEYS_ROW_LIMIT, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   BoardMeetingInviteeRow,
@@ -1034,7 +1034,7 @@ export class ProjectService {
         badge: row.PROJECT_NAME,
         text: `${row.SURVEY_TITLE} is due ${formattedDate}`,
         icon: 'fa-regular fa-clipboard-list',
-        severity: 'warn',
+        severity: PENDING_ACTION_SEVERITY.Survey,
         buttonText: 'Submit Survey',
         buttonLink: row.SURVEY_LINK,
         date: `Due ${displayDate}`,

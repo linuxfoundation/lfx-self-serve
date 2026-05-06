@@ -6,6 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { stableKeyParity } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { MessageService } from 'primeng/api';
@@ -33,12 +34,17 @@ export class PendingActionsComponent {
   // Cookie-backed dismissals live outside the signal graph; bumping forces the computed to recompute.
   private readonly hiddenActionsVersion = signal(0);
   protected readonly expandedRsvpKey = signal<string | null>(null);
+  protected readonly dismissingRowKeys = signal<ReadonlySet<string>>(new Set());
   private readonly loadingMeetingUid = signal<string | null>(null);
   private readonly rsvpMeetingCache = signal<Record<string, Meeting>>({});
+  // Pinned through the 1.5s post-RSVP cue window so a parent re-emit can't filter the row out
+  // before the confirmation tint renders.
+  private readonly frozenDismissingKeys = signal<ReadonlySet<string>>(new Set());
 
   private readonly visibleActions: Signal<PendingActionItem[]> = computed(() => {
     this.hiddenActionsVersion();
-    const unhidden = this.pendingActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
+    const frozen = this.frozenDismissingKeys();
+    const unhidden = this.pendingActions().filter((item) => frozen.has(this.getRowKey(item)) || !this.hiddenActionsService.isActionHidden(item));
     const limit = this.displayLimit();
     // `slice(0, -1)` would silently drop the last item, so clamp non-finite/negative limits.
     const safeLimit = Number.isFinite(limit) ? Math.max(0, limit) : 5;
@@ -59,18 +65,37 @@ export class PendingActionsComponent {
   }
 
   protected handleRsvpChanged(item: DecoratedPendingAction): void {
-    // Skip `actionClick` emit so the parent dashboard doesn't refresh and skeleton-flash sibling rows.
-    // Defer the dismiss so the chosen response and toast register before the row vanishes.
-    // Guard the collapse on rowKey so A's timer can't collapse B if the user moved on.
+    // Skip `actionClick` so the parent dashboard doesn't refresh and skeleton-flash siblings.
+    // Persist SYNCHRONOUSLY (before the timer) so an unmount inside the 1.5s window can't
+    // cancel the cookie write via `takeUntilDestroyed` and resurrect the row on next visit.
+    this.hiddenActionsService.hideAction(item);
+
+    // Per-row sets let concurrent RSVPs each keep their emerald tint until their own timer fires.
     const rowKey = this.getRowKey(item);
+    this.dismissingRowKeys.update((keys) => new Set(keys).add(rowKey));
+    this.frozenDismissingKeys.update((keys) => new Set(keys).add(rowKey));
     timer(1500)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         if (this.expandedRsvpKey() === rowKey) {
           this.expandedRsvpKey.set(null);
         }
-        this.hiddenActionsService.hideAction(item);
-        this.hiddenActionsVersion.update((v) => v + 1);
+        this.frozenDismissingKeys.update((keys) => {
+          if (!keys.has(rowKey)) return keys;
+          const next = new Set(keys);
+          next.delete(rowKey);
+          return next;
+        });
+        const wasDismissing = this.dismissingRowKeys().has(rowKey);
+        this.dismissingRowKeys.update((keys) => {
+          if (!keys.has(rowKey)) return keys;
+          const next = new Set(keys);
+          next.delete(rowKey);
+          return next;
+        });
+        if (wasDismissing) {
+          this.hiddenActionsVersion.update((v) => v + 1);
+        }
       });
   }
 
@@ -78,7 +103,7 @@ export class PendingActionsComponent {
     return item.type === 'RSVP' && !!item.meetingUid;
   }
 
-  // Prefer intrinsic IDs; fall back to a composite for action types that don't carry IDs yet.
+  // Composite fallback for action types that don't carry intrinsic IDs yet.
   private getRowKey(item: PendingActionItem): string {
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
@@ -91,11 +116,20 @@ export class PendingActionsComponent {
       const expandedKey = this.expandedRsvpKey();
       const loadingUid = this.loadingMeetingUid();
       const cache = this.rsvpMeetingCache();
+      const dismissing = this.dismissingRowKeys();
 
       return this.visibleActions().map((item) => {
         const rowKey = this.getRowKey(item);
         const isRsvpInline = this.isRsvpInline(item);
         const meeting = item.meetingUid ? (cache[item.meetingUid] ?? null) : null;
+        let rowClass: string;
+        if (dismissing.has(rowKey)) {
+          rowClass = 'bg-emerald-50/60';
+        } else if (item.type === 'RSVP') {
+          rowClass = 'bg-amber-50/60';
+        } else {
+          rowClass = stableKeyParity(rowKey) === 0 ? 'bg-white' : 'bg-gray-50/60';
+        }
         return {
           ...item,
           rowKey,
@@ -104,6 +138,7 @@ export class PendingActionsComponent {
           isExpanded: expandedKey === rowKey,
           isLoading: !!item.meetingUid && loadingUid === item.meetingUid,
           meeting,
+          rowClass,
         };
       });
     });
@@ -124,7 +159,6 @@ export class PendingActionsComponent {
       .subscribe({
         next: (meeting) => {
           this.rsvpMeetingCache.update((cache) => ({ ...cache, [meetingUid]: meeting }));
-          // Only clear loading if this is still the in-flight request — guards against stale row swaps.
           if (this.loadingMeetingUid() === meetingUid) {
             this.loadingMeetingUid.set(null);
           }

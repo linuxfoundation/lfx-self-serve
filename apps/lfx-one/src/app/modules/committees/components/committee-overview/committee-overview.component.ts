@@ -7,9 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import { Committee, CommitteeMember, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
+import { getSurveyDisplayStatus, stableKeyParity } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -159,7 +160,7 @@ export class CommitteeOverviewComponent {
   public pendingSurveys: Signal<Survey[]> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN));
   public hasPendingActions: Signal<boolean> = computed(() => this.pendingVotes().length > 0 || this.pendingSurveys().length > 0);
 
-  public pendingActionItems: Signal<PendingActionItem[]> = this.initPendingActionItems();
+  public pendingActionItems: Signal<CommitteePendingActionRow[]> = this.initPendingActionItems();
   public pendingActionsViewAllTab: Signal<'votes' | 'surveys'> = this.initPendingActionsViewAllTab();
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
@@ -345,14 +346,14 @@ export class CommitteeOverviewComponent {
     );
   }
 
-  private initPendingActionItems(): Signal<PendingActionItem[]> {
+  private initPendingActionItems(): Signal<CommitteePendingActionRow[]> {
     return computed(() => {
       const voteItems: PendingActionItem[] = this.pendingVotes().map((vote) => ({
         type: 'Vote',
         badge: this.committee().name,
         text: vote.name,
         icon: 'fa-light fa-check-to-slot',
-        severity: 'warn' as const,
+        severity: PENDING_ACTION_SEVERITY.Vote,
         buttonText: 'Review and Vote',
         buttonLink: vote.uid,
         date: vote.end_time
@@ -364,13 +365,19 @@ export class CommitteeOverviewComponent {
         badge: this.committee().name,
         text: survey.survey_title,
         icon: 'fa-light fa-chart-simple',
-        severity: 'warn' as const,
+        severity: PENDING_ACTION_SEVERITY.Survey,
         buttonText: 'Submit Survey',
         date: survey.survey_cutoff_date
           ? `Deadline: ${new Date(survey.survey_cutoff_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
           : undefined,
       }));
-      return [...voteItems, ...surveyItems];
+      return [...voteItems, ...surveyItems].map((item, index) => {
+        const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
+        // Parity from `rowKey` (not list index) so future row removals (e.g., a vote closing)
+        // don't flip following rows' stripes mid-`transition-colors`.
+        const rowClass = stableKeyParity(rowKey) === 0 ? 'bg-white' : 'bg-gray-50/60';
+        return { ...item, rowKey, rowClass };
+      });
     });
   }
 

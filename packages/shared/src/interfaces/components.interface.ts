@@ -470,12 +470,18 @@ export interface ProgressItemWithChart extends ProgressItem {
 }
 
 /**
+ * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
+ * without value-vs-key reverse-mapping footguns.
+ */
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda';
+
+/**
  * Pending action item for task list
  * @description Structure for pending action items
  */
 export interface PendingActionItem {
-  /** Action type (e.g., Issue, PR, Review) */
-  type: string;
+  /** Action type — drives the per-type tag tone via `PENDING_ACTION_SEVERITY`. */
+  type: PendingActionType;
   /** Project or repository badge */
   badge: string;
   /** Action description text */
@@ -513,6 +519,19 @@ export interface DecoratedPendingAction extends PendingActionItem {
   isLoading: boolean;
   /** Lazily-loaded Meeting passed to RsvpButtonGroupComponent; null until fetched */
   meeting: Meeting | null;
+  /** Tailwind background class for the row — encodes zebra striping, RSVP amber tint, and post-RSVP emerald confirmation */
+  rowClass: string;
+}
+
+/**
+ * Lighter pending-action row used by committee-overview's static list (no inline RSVP, no meeting fetch).
+ * Carries only the row identity + computed background class needed for stable @for tracking and zebra striping.
+ */
+export interface CommitteePendingActionRow extends PendingActionItem {
+  /** Stable row identifier used for `@for ... track` */
+  rowKey: string;
+  /** Tailwind background class — zebra stripe via `stableKeyParity(rowKey)` */
+  rowClass: string;
 }
 
 /**

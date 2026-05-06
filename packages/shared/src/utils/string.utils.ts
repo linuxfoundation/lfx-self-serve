@@ -64,3 +64,14 @@ export function toTitleCase(value: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
 }
+
+/**
+ * Stable 0/1 parity for zebra-striping by row identity (not list position): positional
+ * `index % 2` flips when a list filters and produces a `transition-colors` cross-fade on rows
+ * the user didn't touch. Trade-off: adjacency isn't guaranteed alternating.
+ */
+export function stableKeyParity(key: string): 0 | 1 {
+  let sum = 0;
+  for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
+  return (sum & 1) as 0 | 1;
+}
