@@ -1,0 +1,31 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: Bug Report
+description: Create a report to help us improve
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        ⚠️ This repository is public. Please remove secrets and personal/sensitive data (API keys, tokens, passwords, emails, internal hostnames, customer IDs) before submitting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command / Request
+      description: Command or request that led to the error. This will be automatically formatted into code, so no need for backticks.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste relevant errors/stack traces after redacting secrets and personal/sensitive data. This will be automatically formatted into code, so no need for backticks.
+      render: shell

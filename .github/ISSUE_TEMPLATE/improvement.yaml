@@ -1,0 +1,35 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: Improvement
+description: Help us improve the product, website, and/or documentation
+labels: ["type:improvement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement!
+  - type: input
+    id: link
+    attributes:
+      label: Link
+      description: Add a link to the page which needs improvement (if relevant)
+  - type: textarea
+    id: problem
+    attributes:
+      label: Describe the problem
+      description: Is the documentation missing, or what is confusing? Why is it confusing?
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Describe the improvement
+      description: A clear and concise description of the improvement.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context or screenshots that help clarify the improvement.
