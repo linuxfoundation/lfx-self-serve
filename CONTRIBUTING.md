@@ -18,7 +18,7 @@ Thank you for your interest in contributing to LFX One! This document provides g
 
 ## Code of Conduct
 
-By participating in this project, you agree to abide by the [Linux Foundation Code of Conduct](https://www.linuxfoundation.org/code-of-conduct/).
+By participating in this project, you agree to abide by the [Linux Foundation Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting Started
 
