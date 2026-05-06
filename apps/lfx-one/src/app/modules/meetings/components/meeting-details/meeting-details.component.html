@@ -191,14 +191,13 @@
       @if (form().get('duration')?.value === 'custom') {
         <div>
           <label for="custom-duration" class="block text-neutral-950 mb-2"> Custom Duration (minutes) <span class="text-red-500">*</span> </label>
-          <lfx-input-text
+          <lfx-input-number
             [form]="form()"
             control="customDuration"
             id="custom-duration"
             placeholder="Enter minutes (5-480)"
-            type="number"
             styleClass="w-full"
-            data-testid="meeting-details-custom-duration"></lfx-input-text>
+            data-testid="meeting-details-custom-duration"></lfx-input-number>
           @if (form().get('customDuration')?.errors?.['required'] && form().get('customDuration')?.touched) {
             <p class="mt-1 text-sm text-red-600">Custom duration is required</p>
           }
@@ -238,15 +237,14 @@
             tooltipPosition="right"
             tooltipStyleClass="text-xs max-w-xs"></i>
         </label>
-        <lfx-input-text
+        <lfx-input-number
           [form]="form()"
           control="early_join_time_minutes"
           size="small"
           id="early-join-time"
           placeholder="10"
-          type="number"
           styleClass="w-full"
-          data-testid="meeting-details-early-join"></lfx-input-text>
+          data-testid="meeting-details-early-join"></lfx-input-number>
         @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
           <p class="mt-1 text-sm text-red-600">Early join time must be at least 10 minutes</p>
         }

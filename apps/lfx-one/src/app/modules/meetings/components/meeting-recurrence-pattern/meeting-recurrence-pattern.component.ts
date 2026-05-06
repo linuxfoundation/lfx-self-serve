@@ -5,7 +5,7 @@ import { Component, computed, DestroyRef, inject, input, OnInit, signal, Signal 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -19,7 +19,7 @@ import { getWeekOfMonth } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-meeting-recurrence-pattern',
-  imports: [ReactiveFormsModule, CalendarComponent, InputTextComponent, RadioButtonComponent, SelectComponent],
+  imports: [ReactiveFormsModule, CalendarComponent, InputNumberComponent, RadioButtonComponent, SelectComponent],
   templateUrl: './meeting-recurrence-pattern.component.html',
 })
 export class MeetingRecurrencePatternComponent implements OnInit {

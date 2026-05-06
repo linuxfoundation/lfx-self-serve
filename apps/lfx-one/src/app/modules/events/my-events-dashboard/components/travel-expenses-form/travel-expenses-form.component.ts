@@ -6,13 +6,14 @@ import { ChangeDetectionStrategy, Component, computed, inject, output } from '@a
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { startWith } from 'rxjs';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TravelFundExpenses } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-travel-expenses-form',
-  imports: [ReactiveFormsModule, InputTextComponent, MessageComponent, CurrencyPipe],
+  imports: [ReactiveFormsModule, InputNumberComponent, InputTextComponent, MessageComponent, CurrencyPipe],
   templateUrl: './travel-expenses-form.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

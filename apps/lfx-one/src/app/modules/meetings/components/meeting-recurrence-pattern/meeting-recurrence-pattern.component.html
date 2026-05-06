@@ -17,14 +17,13 @@
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-sm text-gray-600">Repeat every</span>
 
-        <lfx-input-text
+        <lfx-input-number
           [form]="recurrenceForm()"
           control="repeat_interval"
-          type="number"
           placeholder="1"
           styleClass="w-20"
           data-testid="recurrence-interval-input">
-        </lfx-input-text>
+        </lfx-input-number>
 
         <lfx-select [form]="form()" control="patternTypeUI" [options]="patternTypeOptions" styleClass="min-w-24" data-testid="recurrence-pattern-type-select">
         </lfx-select>
@@ -70,14 +69,13 @@
           @if (monthlyType() === 'dayOfMonth') {
             <div class="flex items-center gap-2 flex-wrap pl-6">
               <span class="text-sm text-gray-600">On day</span>
-              <lfx-input-text
+              <lfx-input-number
                 [form]="recurrenceForm()"
                 control="monthly_day"
-                type="number"
                 placeholder="1"
                 styleClass="w-16"
                 data-testid="recurrence-monthly-day">
-              </lfx-input-text>
+              </lfx-input-number>
               <span class="text-sm text-gray-600">of the month</span>
             </div>
           }
@@ -146,14 +144,13 @@
       @if (endType() === 'occurrences') {
         <div class="flex items-center gap-2 flex-wrap pl-6">
           <span class="text-sm text-gray-600">After</span>
-          <lfx-input-text
+          <lfx-input-number
             [form]="recurrenceForm()"
             control="end_times"
-            type="number"
             placeholder="10"
             styleClass="w-20"
             data-testid="recurrence-end-occurrences">
-          </lfx-input-text>
+          </lfx-input-number>
           <span class="text-sm text-gray-600">occurrence(s)</span>
         </div>
       }

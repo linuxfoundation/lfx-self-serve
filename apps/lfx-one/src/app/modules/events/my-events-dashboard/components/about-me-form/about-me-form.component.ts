@@ -6,6 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { UserService } from '@app/shared/services/user.service';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -16,7 +17,7 @@ import { OrgSearchFieldComponent } from '../org-search-field/org-search-field.co
 
 @Component({
   selector: 'lfx-about-me-form',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, CheckboxComponent, OrgSearchFieldComponent],
+  imports: [ReactiveFormsModule, InputNumberComponent, InputTextComponent, SelectComponent, TextareaComponent, CheckboxComponent, OrgSearchFieldComponent],
   templateUrl: './about-me-form.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

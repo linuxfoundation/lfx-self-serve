@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  @if (icon()) {
+    <p-iconfield>
+      <p-inputicon [class]="icon()" />
+      <input
+        pInputText
+        type="number"
+        [id]="id()"
+        [formControlName]="control()"
+        [pSize]="size()!"
+        [placeholder]="placeholder()"
+        [class]="styleClass()"
+        class="w-full"
+        [autocomplete]="autocomplete()"
+        [attr.data-test]="dataTest()" />
+    </p-iconfield>
+  } @else {
+    <input
+      pInputText
+      type="number"
+      [id]="id()"
+      [formControlName]="control()"
+      [pSize]="size()!"
+      [placeholder]="placeholder()"
+      [class]="styleClass()"
+      class="w-full"
+      [autocomplete]="autocomplete()"
+      [attr.data-test]="dataTest()" />
+  }
+</ng-container>
