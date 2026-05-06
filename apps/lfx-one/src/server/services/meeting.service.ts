@@ -640,7 +640,8 @@ export class MeetingService {
   }
 
   /**
-   * Fetches past meeting participants by past meeting UID
+   * Fetches past meeting participants by past meeting UID.
+   * Deduplicates by email — the query service can emit multiple records per person.
    */
   public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
@@ -652,12 +653,39 @@ export class MeetingService {
       tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
-    return fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
+    const raw = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
         ...(pageToken && { page_token: pageToken }),
       })
     );
+
+    const seen = new Map<string, PastMeetingParticipant>();
+    for (const participant of raw) {
+      const normalizedEmail = participant.email?.trim().toLowerCase();
+      const key = normalizedEmail || participant.uid;
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, participant);
+        continue;
+      }
+      const preferred = participant.is_attended && !existing.is_attended ? participant : existing;
+      const other = preferred === participant ? existing : participant;
+      seen.set(key, {
+        ...preferred,
+        is_attended: existing.is_attended || participant.is_attended,
+        is_invited: existing.is_invited || participant.is_invited,
+        host: existing.host || participant.host,
+        org_is_member: existing.org_is_member || participant.org_is_member,
+        org_is_project_member: existing.org_is_project_member || participant.org_is_project_member,
+        avatar_url: preferred.avatar_url ?? other.avatar_url,
+        job_title: preferred.job_title ?? other.job_title,
+        org_name: preferred.org_name ?? other.org_name,
+        username: preferred.username ?? other.username,
+      });
+    }
+
+    return [...seen.values()];
   }
 
   /**
