@@ -56,7 +56,11 @@ export class MainLayoutComponent {
       case 'foundation':
         return this.foundationLensItems();
       case 'project':
-        return this.personaService.isBoardScoped() ? this.projectLensItems : this.projectLensItemsWithGovernance;
+        // Governance (Votes / Surveys / Permissions) is always surfaced under Project lens —
+        // matching Foundation lens behavior. Authorization for write actions (add user,
+        // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
+        // implemented; pre-existing gaps in those gates are tracked separately.
+        return this.projectLensItemsWithGovernance;
       case 'org':
         return this.orgLensItems;
       default:
