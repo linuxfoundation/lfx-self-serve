@@ -133,14 +133,14 @@ export class CommitteeDocumentsComponent {
       data: {
         mode: 'file',
         committeeId: this.committee().uid,
+        folders: this.folderOptions(),
+        defaultParentUid: this.currentFolderUid(),
       },
     });
 
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          // Upload API doesn't accept folder_uid yet — pop to root so the new file is visible.
-          this.currentFolderUid.set(null);
           this.refreshTrigger.update((v) => v + 1);
         }
       },

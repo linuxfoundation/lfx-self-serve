@@ -89,6 +89,7 @@ export class DocumentFormComponent {
         .uploadCommitteeDocument(this.committeeId, file, {
           name: formValue.name,
           description: formValue.description || undefined,
+          folder_uid: formValue.parent_uid || undefined,
         })
         .subscribe({
           next: () => {
@@ -210,6 +211,7 @@ export class DocumentFormComponent {
       return new FormGroup({
         name: new FormControl('', [Validators.required]),
         description: new FormControl(''),
+        parent_uid: new FormControl<string | null>(this.defaultParentUid),
       });
     }
 

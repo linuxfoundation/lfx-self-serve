@@ -136,7 +136,11 @@ export class CommitteeService {
    * with metadata as query params. The BFF forwards as multipart/form-data to the
    * upstream committee service.
    */
-  public uploadCommitteeDocument(committeeId: string, file: File, metadata: { name: string; description?: string }): Observable<CommitteeDocument> {
+  public uploadCommitteeDocument(
+    committeeId: string,
+    file: File,
+    metadata: { name: string; description?: string; folder_uid?: string }
+  ): Observable<CommitteeDocument> {
     let params = new HttpParams()
       .set('name', metadata.name)
       .set('file_name', file.name)
@@ -145,6 +149,9 @@ export class CommitteeService {
 
     if (metadata.description) {
       params = params.set('description', metadata.description);
+    }
+    if (metadata.folder_uid) {
+      params = params.set('folder_uid', metadata.folder_uid);
     }
 
     return this.http

@@ -54,6 +54,23 @@
         <p class="mt-1 text-xs text-red-600">Name is required</p>
       }
     </div>
+
+    <!-- Folder (optional) -->
+    @if (folderOptions?.length > 0) {
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Folder (optional)</label>
+        <lfx-select
+          size="small"
+          [form]="form"
+          control="parent_uid"
+          [options]="folderOptions"
+          placeholder="No folder"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="document-form-folder"></lfx-select>
+        <p class="mt-1 text-[11px] text-gray-400">Place this file inside a folder</p>
+      </div>
+    }
   } @else if (isLink()) {
     <!-- Link URL -->
     <div>
@@ -88,7 +105,7 @@
     </div>
 
     <!-- Folder (optional) -->
-    @if (folderOptions.length > 0) {
+    @if (folderOptions?.length > 0) {
       <div>
         <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Folder (optional)</label>
         <lfx-select

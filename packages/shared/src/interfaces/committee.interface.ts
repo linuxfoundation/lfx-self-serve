@@ -544,8 +544,8 @@ export interface UploadCommitteeDocumentRequest {
   /** Optional description (max 2000 chars) */
   description?: string;
   /**
-   * TODO: add once upstream `POST /committees/{uid}/documents` accepts `folder_uid`.
-   * Until then, all uploaded files land at the committee root.
+   * Optional folder UID to nest the file inside a committee folder.
+   * When omitted, the file lands at the committee root.
    */
   folder_uid?: string;
 }
