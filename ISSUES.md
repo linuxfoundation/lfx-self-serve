@@ -67,7 +67,7 @@ Use this type when you want to **propose new functionality or a meaningful enhan
 
 **A high-quality feature request includes:**
 
-- **Problem Statement** — Describe the problem or limitation you're facing. Focus on the *why*, not just the *what*.
+- **Problem Statement** — Describe the problem or limitation you're facing. Focus on the _why_, not just the _what_.
 - **Proposed Solution** — Describe the behavior or interface you'd like to see.
 - **Alternatives Considered** — List any workarounds or alternative approaches you've explored and why they fall short.
 - **Use Case / Impact** — Explain who benefits and how frequently this situation
@@ -111,15 +111,15 @@ upgrades, CI/CD improvements, or technical debt paydown.
 
 ## Writing Good Issues: Universal Best Practices
 
-| Practice | Why It Matters |
-| :-------- | :--------------- |
-| **One issue, one concern** | Bundled issues are hard to track, assign, and close cleanly. |
-| **Be specific in the title** | Vague titles like "It's broken" are hard to search and triage. |
-| **Use code blocks for code and logs** | Unformatted output is hard to read and easy to misinterpret. |
-| **Avoid editorializing** | Describe facts, not frustrations. Maintainers are volunteers. |
-| **Provide context, not conclusions** | "X is wrong" is less useful than "X produces Y, but I expected Z because of W." |
-| **Follow up if asked** | If a maintainer requests more information, respond promptly or the issue may be closed. |
-| **Respect the Code of Conduct** | All interactions must comply with this project's Code of Conduct. |
+| Practice                              | Why It Matters                                                                          |
+| :------------------------------------ | :-------------------------------------------------------------------------------------- |
+| **One issue, one concern**            | Bundled issues are hard to track, assign, and close cleanly.                            |
+| **Be specific in the title**          | Vague titles like "It's broken" are hard to search and triage.                          |
+| **Use code blocks for code and logs** | Unformatted output is hard to read and easy to misinterpret.                            |
+| **Avoid editorializing**              | Describe facts, not frustrations. Maintainers are volunteers.                           |
+| **Provide context, not conclusions**  | "X is wrong" is less useful than "X produces Y, but I expected Z because of W."         |
+| **Follow up if asked**                | If a maintainer requests more information, respond promptly or the issue may be closed. |
+| **Respect the Code of Conduct**       | All interactions must comply with this project's Code of Conduct.                       |
 
 ## Issue Lifecycle
 
@@ -166,4 +166,4 @@ Pull requests automatically request review from the code owners listed in
 - 🤝 [Contributing Guide](CONTRIBUTING.md)
 - 📜 [Code of Conduct](CODE_OF_CONDUCT.md)
 
-*Thank you for your patience and for contributing to the health of this project.*
+_Thank you for your patience and for contributing to the health of this project._

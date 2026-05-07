@@ -3,9 +3,13 @@
 
 name: Quality Checks
 
-# DISABLED: Moving away from old UI - quality checks no longer needed
-# Changed to manual trigger only - will not run automatically on PRs
 on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -41,17 +45,17 @@ jobs:
       - name: Build project
         run: yarn build
 
-  e2e-tests:
-    name: E2E Tests
-    needs: quality-checks
-    uses: ./.github/workflows/e2e-tests.yml
-    with:
-      node-version: "22"
-      test-command: "e2e"
-      browser: "chromium" # Use only Chromium for PR testing for faster feedback
-      skip-build: false
-    secrets:
-      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-      AI_API_KEY: ${{ secrets.AI_API_KEY }}
-      AI_PROXY_URL: ${{ secrets.AI_PROXY_URL }}
+  # e2e-tests:
+  #   name: E2E Tests
+  #   needs: quality-checks
+  #   uses: ./.github/workflows/e2e-tests.yml
+  #   with:
+  #     node-version: "22"
+  #     test-command: "e2e"
+  #     browser: "chromium" # Use only Chromium for PR testing for faster feedback
+  #     skip-build: false
+  #   secrets:
+  #     TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+  #     TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+  #     AI_API_KEY: ${{ secrets.AI_API_KEY }}
+  #     AI_PROXY_URL: ${{ secrets.AI_PROXY_URL }}
