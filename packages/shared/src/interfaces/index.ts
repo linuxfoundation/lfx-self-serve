@@ -144,3 +144,6 @@ export * from './supabase.interface';
 
 // Stat card interfaces
 export * from './stat-card.interface';
+
+// Changelog interfaces
+export * from './changelog.interface';

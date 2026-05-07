@@ -1,0 +1,43 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Selectors target `lfx-changelog` directly so the variables override the widget's
+// internal `:host` defaults via document-cascade ordering (inheritance loses to `:host`).
+.changelog-host lfx-changelog {
+  --lfx-changelog-font-family: inherit;
+  --lfx-changelog-font-size-base: 0.8125rem;
+  --lfx-changelog-font-size-sm: 0.6875rem;
+  --lfx-changelog-font-size-lg: 0.875rem;
+  --lfx-changelog-font-size-xl: 1rem;
+  --lfx-changelog-line-height: 1.5;
+  --lfx-changelog-text-primary: #0f172b;
+  --lfx-changelog-text-secondary: #45556c;
+  --lfx-changelog-text-muted: #62748e;
+  --lfx-changelog-text-link: #0082d9;
+  --lfx-changelog-text-link-hover: #0061a3;
+  --lfx-changelog-accent: #0082d9;
+  --lfx-changelog-accent-bg: #ecf4ff;
+
+  // Flatten the widget's outer card chrome so it doesn't double-card with the drawer body.
+  --lfx-changelog-bg-surface: transparent;
+  --lfx-changelog-bg-surface-alt: transparent;
+  --lfx-changelog-border-color: transparent;
+  --lfx-changelog-border-radius: 0;
+  --lfx-changelog-card-padding: 0;
+
+  // Drawer header already renders the title.
+  &::part(header) {
+    display: none;
+  }
+
+  // Re-introduce entry separators (the shared border-color is now transparent).
+  &::part(card) {
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  &::part(footer) {
+    padding-top: 1rem;
+  }
+}

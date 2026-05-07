@@ -97,6 +97,28 @@
 
     <!-- Footer -->
     <div class="flex flex-col items-center gap-3 mt-auto">
+      <!-- Changelog (What's New) -->
+      <button
+        type="button"
+        (click)="openChangelogDrawer()"
+        data-testid="lens-changelog-button"
+        aria-label="What's New"
+        pTooltip="What's New"
+        tooltipPosition="right"
+        class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/70 hover:text-white">
+        <div class="relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+          <i class="fa-light fa-clock-rotate-left text-xl"></i>
+          @if (unseenChangelogCount() > 0) {
+            <lfx-badge
+              [value]="unseenChangelogCount()"
+              severity="danger"
+              size="small"
+              styleClass="!absolute -top-1 -right-1"
+              data-testid="lens-changelog-badge" />
+          }
+        </div>
+      </button>
+
       <!-- LFX Insights -->
       <a
         [href]="insightsUrl"
@@ -166,15 +188,6 @@
           <span>My profile</span>
         </button>
         <a
-          [href]="changelogUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="lens-changelog"
-          class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-          <i class="fa-light fa-clock-rotate-left w-4 text-gray-400"></i>
-          <span>Changelog</span>
-        </a>
-        <a
           href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
           target="_blank"
           rel="noopener noreferrer"
@@ -194,4 +207,7 @@
       </div>
     </ng-template>
   </p-popover>
+
+  <!-- Changelog Drawer -->
+  <lfx-changelog-drawer [(visible)]="changelogDrawerVisible" />
 }

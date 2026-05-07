@@ -20,6 +20,7 @@ import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import badgesRouter from './routes/badges.route';
+import changelogRouter from './routes/changelog.route';
 import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
 import documentsRouter from './routes/documents.route';
@@ -194,6 +195,7 @@ app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/transactions', transactionRouter);
+app.use('/api/changelog', changelogRouter);
 
 app.use('/api/*', apiErrorHandler);
 

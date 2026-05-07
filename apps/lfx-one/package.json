@@ -40,7 +40,7 @@
     "@fullcalendar/daygrid": "6.1.20",
     "@fullcalendar/timegrid": "6.1.20",
     "@lfx-one/shared": "workspace:*",
-    "@linuxfoundation/lfx-ui-core": "^0.1.0",
+    "@linuxfoundation/lfx-ui-core": "^0.2.0",
     "@openfeature/core": "^1.9.1",
     "@openfeature/launchdarkly-client-provider": "^0.3.3",
     "@openfeature/web-sdk": "1.7.2",

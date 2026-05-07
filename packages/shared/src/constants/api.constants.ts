@@ -51,6 +51,19 @@ export const NATS_CONFIG = {
 } as const;
 
 /**
+ * Changelog (lfx-changelog) configuration constants
+ * @description Configuration for the LFX Changelog API used for unread tracking against
+ * the self-serve product changelog feed.
+ */
+export const CHANGELOG_CONFIG = {
+  DEFAULT_API_URL: 'https://changelog.lfx.dev',
+  ENDPOINTS: {
+    UNSEEN: '/api/changelogs/views/unseen',
+    MARK_VIEWED: '/api/changelogs/views/mark-viewed',
+  },
+} as const;
+
+/**
  * CDP (Community Data Platform) configuration constants
  * @description Configuration for CDP API used for identity and work history data
  */
