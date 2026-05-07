@@ -3,7 +3,9 @@
 
 import {
   CreateVoteRequest,
+  CreateVoteResponseRequest,
   IndexedVote,
+  IndexedVoteResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateVoteRequest,
@@ -244,6 +246,57 @@ export class VoteService {
     });
 
     return results;
+  }
+
+  /**
+   * Submits a ballot via POST /vote_responses using the user's bearer token (no M2M),
+   * then polls until the query service indexes the response as 'submitted'.
+   */
+  public async createVoteResponse(req: Request, payload: CreateVoteResponseRequest): Promise<void> {
+    logger.debug(req, 'create_vote_response', 'Submitting vote response', {
+      vote_uid: payload.vote_uid,
+      vote_response_uid: payload.vote_response_uid,
+      abstain: payload.abstain,
+      answer_count: payload.user_vote_content?.length ?? 0,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload, {
+      ['X-Sync']: 'true',
+    });
+
+    logger.debug(req, 'create_vote_response', 'Ballot accepted by upstream voting service, polling query service', {
+      vote_uid: payload.vote_uid,
+      vote_response_uid: payload.vote_response_uid,
+    });
+
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'create_vote_response_poll',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote_response',
+            filter_grants: 'direct',
+            filters: [`vote_uid:${payload.vote_uid}`],
+          }
+        );
+        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === 'submitted');
+      },
+      maxRetries: 5,
+      retryDelayMs: 1000,
+      metadata: { vote_uid: payload.vote_uid, vote_response_uid: payload.vote_response_uid },
+    });
+
+    if (!resolved) {
+      logger.warning(req, 'create_vote_response', 'Vote response not yet indexed, client may see stale state', {
+        vote_uid: payload.vote_uid,
+        vote_response_uid: payload.vote_response_uid,
+      });
+    }
   }
 
   // ============================================

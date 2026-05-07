@@ -228,6 +228,29 @@ export interface IndexedVote extends Omit<Vote, 'uid'> {
 }
 
 /**
+ * Vote response row from the query service indexer (`lfx.index.vote_response`).
+ * Tagged by `vote_uid` (not `vote_response_uid`); use `filter_grants=direct` to
+ * scope to the current user's rows. `vote_status` is `string` — the indexer's
+ * vocabulary is broader than the UI enums.
+ */
+export interface IndexedVoteResponse {
+  /** Vote response (ballot) identifier — the row's own primary key */
+  uid?: string;
+  /** Parent poll identifier (v2). Indexer tag key. */
+  vote_uid?: string;
+  /** V1 fallback for the parent poll identifier */
+  vote_id?: string;
+  /** V1 alias for `vote_id` carried by older indexer versions */
+  poll_id?: string;
+  /** V2 project UID the response belongs to */
+  project_uid?: string;
+  /** Upstream submission status (e.g. `'submitted'`, `'awaiting_response'`) */
+  vote_status?: string;
+  /** Whether the voter has been removed from the poll's eligible list */
+  voter_removed?: boolean;
+}
+
+/**
  * Individual Vote entity from query service
  * @description Represents a user's participation record from lfx.index.individual_vote
  */
@@ -561,6 +584,48 @@ export interface CreateVoteRequest {
   quorum_percentage?: number;
   /** Winning threshold percentage required */
   winning_threshold_percentage?: number;
+}
+
+/**
+ * Ranked choice submission for a single choice in a ranked-choice question
+ * @description Aligns with upstream RankedChoiceInput
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface RankedChoiceInput {
+  /** Choice identifier (UUID) */
+  choice_id: string;
+  /** 1-based rank assigned to the choice */
+  choice_rank: number;
+}
+
+/**
+ * Voter's answer to a single question on a ballot submission
+ * @description Aligns with upstream VoteAnswerInput
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface VoteAnswerInput {
+  /** Question identifier (UUID) */
+  question_id: string;
+  /** Selected choice IDs for generic / single-choice / multi-choice questions */
+  choice_ids?: string[];
+  /** Ranked choices for ranked-choice voting questions */
+  ranked_choices?: RankedChoiceInput[];
+}
+
+/**
+ * Request body for submitting a vote response (ballot)
+ * @description Aligns with upstream POST /vote_responses
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface CreateVoteResponseRequest {
+  /** Client-generated vote response identifier (UUID) */
+  vote_response_uid: string;
+  /** Vote/poll identifier this response belongs to (UUID) */
+  vote_uid: string;
+  /** Whether the voter is abstaining */
+  abstain: boolean;
+  /** Voter's answers — required when not abstaining */
+  user_vote_content?: VoteAnswerInput[];
 }
 
 /**

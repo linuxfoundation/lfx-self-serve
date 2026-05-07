@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateVoteRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
+import { CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { validateUidParameter } from '../helpers/validation.helper';
+import { ServiceValidationError } from '../errors';
+import { validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -230,6 +231,90 @@ export class VoteController {
       });
 
       res.json(results);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /votes/responses
+   */
+  public async createVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const payload: CreateVoteResponseRequest = req.body;
+    const startTime = logger.startOperation(req, 'create_vote_response', {
+      vote_uid: payload?.vote_uid,
+      vote_response_uid: payload?.vote_response_uid,
+      abstain: payload?.abstain,
+    });
+
+    try {
+      const validationContext = { operation: 'create_vote_response', service: 'vote_controller' } as const;
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(payload.vote_uid, 'vote_uid', req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(payload.vote_response_uid, 'vote_response_uid', req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof payload.abstain !== 'boolean') {
+        throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
+      }
+
+      // Build the upstream payload immutably: when abstaining we drop user_vote_content entirely;
+      // when not abstaining we validate each answer and forward the original content.
+      let upstreamPayload: CreateVoteResponseRequest;
+
+      if (payload.abstain) {
+        upstreamPayload = {
+          vote_uid: payload.vote_uid,
+          vote_response_uid: payload.vote_response_uid,
+          abstain: true,
+        };
+      } else {
+        if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
+          throw ServiceValidationError.forField('user_vote_content', 'user_vote_content is required when not abstaining', validationContext);
+        }
+
+        for (const [index, answer] of payload.user_vote_content.entries()) {
+          if (!answer || typeof answer !== 'object') {
+            throw ServiceValidationError.forField(`user_vote_content[${index}]`, 'Each answer must be a non-null object', validationContext);
+          }
+
+          if (!answer.question_id || typeof answer.question_id !== 'string') {
+            throw ServiceValidationError.forField(`user_vote_content[${index}].question_id`, 'question_id is required for each answer', validationContext);
+          }
+
+          const hasChoiceIds = Array.isArray(answer.choice_ids) && answer.choice_ids.length > 0;
+          const hasRankedChoices = Array.isArray(answer.ranked_choices) && answer.ranked_choices.length > 0;
+
+          if (!hasChoiceIds && !hasRankedChoices) {
+            throw ServiceValidationError.forField(
+              `user_vote_content[${index}]`,
+              'Each answer must include either choice_ids or ranked_choices',
+              validationContext
+            );
+          }
+        }
+
+        upstreamPayload = payload;
+      }
+
+      await this.voteService.createVoteResponse(req, upstreamPayload);
+
+      logger.success(req, 'create_vote_response', startTime, {
+        vote_uid: upstreamPayload.vote_uid,
+        vote_response_uid: upstreamPayload.vote_response_uid,
+        abstain: upstreamPayload.abstain,
+        status_code: 204,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

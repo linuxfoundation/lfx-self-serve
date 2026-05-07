@@ -18,6 +18,11 @@ router.get('/count', (req, res, next) => voteController.getVotesCount(req, res, 
 // GET /votes/my-votes - get votes the current user has been invited to
 router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, next));
 
+// POST /votes/responses - submit a vote response (ballot)
+// Note: literal-segment routes must precede '/:uid' handlers so Express
+// doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
+router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
+
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
 
