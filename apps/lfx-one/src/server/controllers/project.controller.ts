@@ -1,14 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AddUserToProjectRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
+import { AddUserToProjectRequest, CreateProjectDocumentRequest, UpdateUserRoleRequest, UploadProjectDocumentRequest } from '@lfx-one/shared/interfaces';
+import { isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
+
+const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Controller for handling project HTTP requests
@@ -406,6 +414,430 @@ export class ProjectController {
       });
 
       res.json(pendingActions);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── Document Endpoints ──────────────────────────────────────────────────
+
+  /**
+   * GET /projects/:uid/documents
+   */
+  public async getProjectDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_project_documents', {
+      project_id: uid,
+    });
+
+    try {
+      if (!uid) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID is required', {
+            operation: 'get_project_documents',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const documents = await this.projectService.getProjectDocuments(req, uid);
+
+      logger.success(req, 'get_project_documents', startTime, {
+        project_id: uid,
+        document_count: documents.length,
+      });
+
+      res.json(documents);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /projects/:uid/documents
+   * JSON body — folder or link only. File uploads use the /upload endpoint.
+   */
+  public async createProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'create_project_document', {
+      project_id: uid,
+      document_data: logger.sanitize(req.body),
+    });
+
+    try {
+      if (!uid) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID is required', {
+            operation: 'create_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Reject null / array / primitive bodies before mutating — otherwise the
+      // `data.created_by_name = ...` assignment below would 500 instead of returning a
+      // typed validation error.
+      if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'create_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Build a fresh object so we don't mutate `req.body`. Always override
+      // `created_by_name` from the OIDC session — never trust client-provided values.
+      const data: CreateProjectDocumentRequest = {
+        ...(req.body as CreateProjectDocumentRequest),
+        created_by_name: (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '',
+      };
+
+      const validDocTypes = ['link', 'folder'];
+      const fieldErrors: Record<string, string> = {};
+      if (!data.name?.trim()) {
+        fieldErrors['name'] = 'Document name is required';
+      }
+      if (!data.type) {
+        fieldErrors['type'] = 'Document type is required';
+      } else if (!validDocTypes.includes(data.type)) {
+        fieldErrors['type'] = `Document type must be one of: ${validDocTypes.join(', ')}`;
+      }
+      if (data.type === 'link' && !data.url?.trim()) {
+        fieldErrors['url'] = 'URL is required for link documents';
+      }
+      // Validate parent_uid shape so upstream can't be sent a malformed identifier.
+      // Mirrors the check in uploadProjectDocument (folder_uid query param).
+      const trimmedParentUid = data.parent_uid?.trim();
+      if (trimmedParentUid && !FOLDER_UID_PATTERN.test(trimmedParentUid)) {
+        fieldErrors['parent_uid'] = 'parent_uid must be a valid UUID';
+      }
+      // Normalize back to the trimmed value so upstream receives the canonical UUID,
+      // not whitespace-padded input. Empty/undefined stays untouched.
+      data.parent_uid = trimmedParentUid || undefined;
+
+      if (Object.keys(fieldErrors).length > 0) {
+        next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+            operation: 'create_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const newDocument = await this.projectService.createProjectDocument(req, uid, data);
+
+      logger.success(req, 'create_project_document', startTime, {
+        project_id: uid,
+        document_uid: newDocument.uid,
+      });
+
+      res.status(201).json(newDocument);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /projects/:uid/documents/upload
+   *
+   * Receives a raw binary file body, forwards as multipart/form-data to the
+   * project service. Metadata passed as query params: name, file_name,
+   * content_type, file_size, description?, folder_uid?
+   */
+  public async uploadProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    // Prevents type confusion via repeated query-string keys (e.g. file_size[]=1).
+    const name = getStringQueryParam(req, 'name');
+    const fileName = getStringQueryParam(req, 'file_name');
+    const contentType = getStringQueryParam(req, 'content_type');
+    const fileSize = getStringQueryParam(req, 'file_size');
+    const description = getStringQueryParam(req, 'description');
+    const folderUid = getStringQueryParam(req, 'folder_uid');
+
+    const startTime = logger.startOperation(req, 'upload_project_document', {
+      project_id: uid,
+      file_name: fileName,
+      file_size: fileSize,
+      content_type: contentType,
+      folder_uid: folderUid,
+    });
+
+    try {
+      if (!uid) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID is required', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Trim before validating so whitespace-only strings fail the required-field check.
+      const trimmedName = name?.trim();
+      const trimmedFileName = fileName?.trim();
+
+      const fieldErrors: Record<string, string> = {};
+      if (!trimmedName) fieldErrors['name'] = 'Document name is required';
+      if (!trimmedFileName) fieldErrors['file_name'] = 'File name is required';
+      if (!contentType) fieldErrors['content_type'] = 'Content type is required';
+      if (!fileSize) fieldErrors['file_size'] = 'File size is required';
+
+      if (Object.keys(fieldErrors).length > 0) {
+        next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Upload request validation failed', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const fileBuffer = req.body as Buffer;
+      const fileSizeNum = parseInt(fileSize!, 10);
+
+      if (isNaN(fileSizeNum) || fileSizeNum <= 0) {
+        next(
+          ServiceValidationError.forField('file_size', 'File size must be a positive number', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+        next(
+          ServiceValidationError.forField('body', 'Request body must contain file data', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Reject if reported size doesn't match the actual body length.
+      if (fileSizeNum !== fileBuffer.length) {
+        next(
+          ServiceValidationError.forField('file_size', `Reported file_size (${fileSizeNum}) does not match request body length (${fileBuffer.length})`, {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Server-side allowlist check — frontend allowlist can be bypassed by direct API calls.
+      if (!isFileTypeAllowed(contentType!, trimmedFileName!, ALLOWED_FILE_TYPES)) {
+        next(
+          ServiceValidationError.forField('content_type', `File type "${contentType}" is not allowed`, {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Reject path-traversal patterns in the filename so upstream can't be tricked into
+      // writing or referencing files outside the project scope.
+      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+        next(
+          ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Validate folder_uid shape so upstream can't be sent a malformed identifier.
+      const trimmedFolderUid = folderUid?.trim();
+      if (trimmedFolderUid && !FOLDER_UID_PATTERN.test(trimmedFolderUid)) {
+        next(
+          ServiceValidationError.forField('folder_uid', 'folder_uid must be a valid UUID', {
+            operation: 'upload_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const uploadData: UploadProjectDocumentRequest = {
+        name: trimmedName!,
+        file_name: trimmedFileName!,
+        content_type: contentType!,
+        file_size: fileSizeNum,
+        ...(description && { description }),
+        ...(trimmedFolderUid && { folder_uid: trimmedFolderUid }),
+      };
+
+      const result = await this.projectService.uploadProjectDocument(req, uid, fileBuffer, uploadData);
+
+      logger.success(req, 'upload_project_document', startTime, {
+        project_id: uid,
+        document_uid: result.uid,
+        file_name: trimmedFileName,
+        file_size: fileSizeNum,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /projects/:uid/documents/:documentId/download
+   *
+   * Streams the file binary from the upstream project service straight to the
+   * browser with `Content-Disposition: attachment` (RFC 5987 encoded). The BFF
+   * never buffers the whole payload — important under concurrent downloads given
+   * the 100MB upload limit.
+   */
+  public async downloadProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, documentId } = req.params;
+    const startTime = logger.startOperation(req, 'download_project_document', {
+      project_id: uid,
+      document_id: documentId,
+    });
+
+    try {
+      if (!uid) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID is required', {
+            operation: 'download_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentId) {
+        next(
+          ServiceValidationError.forField('documentId', 'Document ID is required', {
+            operation: 'download_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Fetch metadata and open the upstream stream in parallel.
+      const [{ contentType, fileName }, upstream] = await Promise.all([
+        this.projectService.getProjectDocumentMetadata(req, uid, documentId),
+        this.projectService.getProjectDocumentStream(req, uid, documentId),
+      ]);
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      const upstreamLength = upstream.headers.get('content-length');
+      if (upstreamLength) {
+        res.setHeader('Content-Length', upstreamLength);
+      }
+
+      // pipeline() propagates stream errors to the catch block instead of hanging.
+      await pipeline(Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>), res);
+
+      logger.success(req, 'download_project_document', startTime, {
+        project_id: uid,
+        document_uid: documentId,
+        file_name: fileName,
+      });
+    } catch (error) {
+      // Headers already committed — can only end the stream.
+      if (res.headersSent) {
+        logger.error(req, 'download_project_document', startTime, error, {
+          project_id: uid,
+          document_uid: documentId,
+          stage: 'streaming',
+        });
+        if (!res.writableEnded) {
+          res.end();
+        }
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /projects/:uid/documents/:documentId?type=folder|link
+   */
+  public async deleteProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, documentId } = req.params;
+    // Use getStringQueryParam so repeated `?type=folder&type=link` keys can't slip through
+    // as an array and bypass the validation below.
+    const documentType = getStringQueryParam(req, 'type');
+    const validDeleteTypes = ['link', 'folder'];
+    const startTime = logger.startOperation(req, 'delete_project_document', {
+      project_id: uid,
+      document_id: documentId,
+      document_type: documentType,
+    });
+
+    try {
+      if (!uid) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID is required', {
+            operation: 'delete_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentId) {
+        next(
+          ServiceValidationError.forField('documentId', 'Document ID is required', {
+            operation: 'delete_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentType || !validDeleteTypes.includes(documentType)) {
+        const message = !documentType ? 'Document type query parameter is required' : `Document type must be one of: ${validDeleteTypes.join(', ')}`;
+        next(
+          ServiceValidationError.forField('type', message, {
+            operation: 'delete_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.projectService.deleteProjectDocument(req, uid, documentId, documentType);
+
+      logger.success(req, 'delete_project_document', startTime, {
+        project_id: uid,
+        document_id: documentId,
+        document_type: documentType,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

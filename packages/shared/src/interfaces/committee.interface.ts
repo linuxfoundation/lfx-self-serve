@@ -482,6 +482,9 @@ export type CreateCommitteeDocumentType = 'link' | 'folder';
  */
 export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 
+/** Which resource type the shared document form dialog operates against. Drives service dispatch + copy. */
+export type DocumentFormEntityType = 'committee' | 'project';
+
 /**
  * A document or resource link associated with a committee.
  */

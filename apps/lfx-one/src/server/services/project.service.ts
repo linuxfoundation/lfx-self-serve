@@ -14,6 +14,7 @@ import {
   CodeCommitsDailyResponse,
   CodeContributionRange,
   CodeContributionSummaryResponse,
+  CreateProjectDocumentRequest,
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   EventGrowthResponse,
@@ -75,6 +76,9 @@ import {
   PerFoundationAnalytics,
   Project,
   ProjectCodeCommitsDailyRow,
+  ProjectDocument,
+  ProjectDocumentQueryResult,
+  ProjectDocumentUpstreamResponse,
   ProjectHealthEventsMonthlyRow,
   ProjectHealthMetricsDailyRow,
   ProjectIssuesResolutionAggregatedRow,
@@ -95,13 +99,17 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
+  UploadProjectDocumentRequest,
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import FormData from 'form-data';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { cleanUserDisplayName } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
@@ -111,6 +119,67 @@ import { SnowflakeService } from './snowflake.service';
 
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
+
+/** Upstream response shape for project folders (POST response) */
+interface ProjectFolder {
+  uid: string;
+  project_uid?: string;
+  name: string;
+  created_by_uid?: string;
+  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by_username?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Upstream response shape for project links (POST response) */
+interface ProjectLink {
+  uid: string;
+  project_uid?: string;
+  name: string;
+  url?: string;
+  description?: string;
+  folder_uid?: string;
+  created_by_uid?: string;
+  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by_username?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Query-service shape for an indexed `project_folder` resource.
+ * Upstream `GET /projects/{uid}/folders` returns 403 in prod (LIST endpoint
+ * not yet authorized for callers), so reads happen via the indexer instead.
+ */
+interface ProjectFolderQueryResult {
+  uid: string;
+  name: string;
+  project_uid?: string;
+  created_by_uid?: string;
+  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by_username?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Query-service shape for an indexed `project_link` resource.
+ * Same rationale as ProjectFolderQueryResult — LIST endpoint is 403.
+ */
+interface ProjectLinkQueryResult {
+  uid: string;
+  name: string;
+  url?: string;
+  description?: string;
+  folder_uid?: string;
+  project_uid?: string;
+  created_by_uid?: string;
+  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by_username?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 /**
  * Service for handling project business logic
@@ -5211,6 +5280,384 @@ export class ProjectService {
     });
 
     return { aggregated, perFoundation };
+  }
+
+  // ── Project Documents ──────────────────────────────────────────────────────
+
+  public async getProjectDocuments(req: Request, projectId: string): Promise<ProjectDocument[]> {
+    logger.debug(req, 'get_project_documents', 'Fetching project folders, links, and files via indexer', {
+      project_uid: projectId,
+    });
+
+    // All three resource types come from the indexer:
+    // - project_document (files): no upstream LIST endpoint exists.
+    // - project_folder / project_link: upstream GET /projects/{uid}/folders and /links return
+    //   403 (LIST endpoints not authorized for callers in prod). Indexer reads work because
+    //   project_folder / project_link writes publish to NATS index subjects on every create.
+    const [folders, links, files] = await Promise.all([
+      fetchAllQueryResources<ProjectFolderQueryResult>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectFolderQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project_folder',
+          tags: `project_uid:${projectId}`,
+          ...(pageToken && { page_token: pageToken }),
+        })
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch project folders via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as ProjectFolderQueryResult[];
+      }),
+      fetchAllQueryResources<ProjectLinkQueryResult>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project_link',
+          tags: `project_uid:${projectId}`,
+          ...(pageToken && { page_token: pageToken }),
+        })
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch project links via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as ProjectLinkQueryResult[];
+      }),
+      fetchAllQueryResources<ProjectDocumentQueryResult>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project_document',
+          tags: `project_uid:${projectId}`,
+          ...(pageToken && { page_token: pageToken }),
+        })
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch project files via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as ProjectDocumentQueryResult[];
+      }),
+    ]);
+
+    const folderDocs: ProjectDocument[] = (folders || []).map((f) => ({
+      uid: f.uid,
+      type: 'folder' as const,
+      name: f.name,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      created_by: f.created_by_uid,
+      uploaded_by: cleanUserDisplayName(f.created_by_username),
+      project_uid: f.project_uid,
+    }));
+
+    const linkDocs: ProjectDocument[] = (links || []).map((l) => ({
+      uid: l.uid,
+      type: 'link' as const,
+      name: l.name,
+      url: l.url,
+      description: l.description,
+      created_at: l.created_at,
+      updated_at: l.updated_at,
+      created_by: l.created_by_uid,
+      uploaded_by: cleanUserDisplayName(l.created_by_username),
+      parent_uid: l.folder_uid,
+      project_uid: l.project_uid,
+    }));
+
+    const fileDocs: ProjectDocument[] = (files || []).map((f) => ({
+      uid: f.uid,
+      type: 'file' as const,
+      name: f.name,
+      description: f.description,
+      file_size: f.file_size,
+      mime_type: f.content_type,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      uploaded_by: cleanUserDisplayName(f.uploaded_by_username),
+      parent_uid: f.folder_uid,
+      project_uid: f.project_uid,
+    }));
+
+    return [...folderDocs, ...linkDocs, ...fileDocs];
+  }
+
+  /**
+   * Creates a new folder or link for a project.
+   * Routes to the correct upstream endpoint based on type.
+   */
+  public async createProjectDocument(req: Request, projectId: string, data: CreateProjectDocumentRequest): Promise<ProjectDocument> {
+    if (data.type !== 'folder' && data.type !== 'link') {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${data.type}. Only 'link' and 'folder' are supported.`, {
+        operation: 'create_project_document',
+        service: 'project_service',
+      });
+    }
+
+    if (data.type === 'folder') {
+      // X-Sync=true blocks until the upstream indexer ACKs the publish, preventing stale list reads.
+      const folder = await this.microserviceProxy.proxyRequest<ProjectFolder>(
+        req,
+        'LFX_V2_SERVICE',
+        `/projects/${projectId}/folders`,
+        'POST',
+        undefined,
+        {
+          name: data.name,
+          created_by_name: data.created_by_name,
+        },
+        { 'X-Sync': 'true' }
+      );
+
+      logger.debug(req, 'create_project_folder', 'Project folder created successfully', {
+        project_uid: projectId,
+        folder_uid: folder.uid,
+      });
+
+      // Poll the indexer until the new folder is visible — list reads use the indexer
+      // because the upstream LIST endpoint is 403'd in prod.
+      await pollEndpoint({
+        req,
+        operation: 'create_project_folder_index_poll',
+        pollFn: async () => {
+          const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'project_folder',
+              tags: `project_folder_uid:${folder.uid}`,
+            }
+          );
+          return (resources?.length ?? 0) > 0;
+        },
+        maxRetries: 5,
+        retryDelayMs: 400,
+        metadata: { project_uid: projectId, folder_uid: folder.uid },
+      });
+
+      return {
+        uid: folder.uid,
+        type: 'folder',
+        name: folder.name,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
+        created_by: folder.created_by_uid,
+        uploaded_by: cleanUserDisplayName(folder.created_by_username),
+        project_uid: folder.project_uid,
+      };
+    }
+
+    // Link
+    const link = await this.microserviceProxy.proxyRequest<ProjectLink>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectId}/links`,
+      'POST',
+      undefined,
+      {
+        name: data.name,
+        url: data.url,
+        description: data.description,
+        folder_uid: data.parent_uid,
+        created_by_name: data.created_by_name,
+      },
+      { 'X-Sync': 'true' }
+    );
+
+    logger.debug(req, 'create_project_link', 'Project link created successfully', {
+      project_uid: projectId,
+      link_uid: link.uid,
+    });
+
+    await pollEndpoint({
+      req,
+      operation: 'create_project_link_index_poll',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'project_link',
+            tags: `project_link_uid:${link.uid}`,
+          }
+        );
+        return (resources?.length ?? 0) > 0;
+      },
+      maxRetries: 5,
+      retryDelayMs: 400,
+      metadata: { project_uid: projectId, link_uid: link.uid },
+    });
+
+    return {
+      uid: link.uid,
+      type: 'link',
+      name: link.name,
+      url: link.url,
+      description: link.description,
+      created_at: link.created_at,
+      updated_at: link.updated_at,
+      created_by: link.created_by_uid,
+      uploaded_by: cleanUserDisplayName(link.created_by_username),
+      parent_uid: link.folder_uid,
+      project_uid: link.project_uid,
+    };
+  }
+
+  /**
+   * Uploads a file document to a project via multipart/form-data.
+   */
+  public async uploadProjectDocument(req: Request, projectId: string, fileBuffer: Buffer, uploadData: UploadProjectDocumentRequest): Promise<ProjectDocument> {
+    logger.debug(req, 'upload_project_document', 'Uploading file to project service', {
+      project_uid: projectId,
+      file_name: uploadData.file_name,
+      file_size: uploadData.file_size,
+    });
+
+    // file_size is intentionally omitted — upstream UploadProjectDocumentRequestBody declares
+    // name, file_name, content_type, file, description, folder_uid. Goa drops unknown fields.
+    const formData = new FormData();
+    formData.append('file', fileBuffer, {
+      filename: uploadData.file_name,
+      contentType: uploadData.content_type,
+    });
+    formData.append('name', uploadData.name);
+    formData.append('file_name', uploadData.file_name);
+    formData.append('content_type', uploadData.content_type);
+    if (uploadData.description) {
+      formData.append('description', uploadData.description);
+    }
+    if (uploadData.folder_uid) {
+      formData.append('folder_uid', uploadData.folder_uid);
+    }
+
+    // X-Sync=true blocks until the upstream indexer ACKs the publish, preventing stale list reads.
+    const result = await this.microserviceProxy.proxyRequest<ProjectDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectId}/documents`,
+      'POST',
+      undefined,
+      formData,
+      { 'X-Sync': 'true' }
+    );
+
+    logger.info(req, 'upload_project_document', 'Project document uploaded successfully', {
+      project_uid: projectId,
+      document_uid: result.uid,
+      file_name: result.file_name,
+      file_size: result.file_size,
+    });
+
+    // Poll until the query service sees the new doc — indexer is async to the upstream write.
+    await pollEndpoint({
+      req,
+      operation: 'upload_project_document_index_poll',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'project_document',
+            tags: `project_document_uid:${result.uid}`,
+          }
+        );
+        return (resources?.length ?? 0) > 0;
+      },
+      maxRetries: 5,
+      retryDelayMs: 400,
+      metadata: { project_uid: projectId, document_uid: result.uid },
+    });
+
+    return {
+      uid: result.uid,
+      type: 'file',
+      name: result.name,
+      description: result.description,
+      file_size: result.file_size,
+      mime_type: result.content_type,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+      uploaded_by: cleanUserDisplayName(result.uploaded_by_username),
+      project_uid: result.project_uid,
+    };
+  }
+
+  /**
+   * Fetches indexed metadata for a single project document file. Used by the controller
+   * to set Content-Type / Content-Disposition headers before streaming the binary back.
+   * Scoped by both `project_document_uid` AND `project_uid` so a leaked or guessed
+   * documentId can't surface metadata for a doc owned by another project.
+   */
+  public async getProjectDocumentMetadata(req: Request, projectId: string, documentId: string): Promise<{ contentType: string; fileName: string }> {
+    logger.debug(req, 'get_project_document_metadata', 'Fetching document metadata from indexer', {
+      project_uid: projectId,
+      document_uid: documentId,
+    });
+
+    const metadata = await this.microserviceProxy
+      .proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project_document',
+        tags_all: [`project_document_uid:${documentId}`, `project_uid:${projectId}`],
+      })
+      .then((resp) => resp.resources?.[0]?.data ?? null)
+      .catch((err) => {
+        logger.warning(req, 'get_project_document_metadata', 'Failed to fetch document metadata, using fallback values', {
+          document_uid: documentId,
+          err,
+        });
+        return null;
+      });
+
+    return {
+      contentType: metadata?.content_type || 'application/octet-stream',
+      fileName: metadata?.file_name || `${documentId}.bin`,
+    };
+  }
+
+  /**
+   * Opens a streaming HTTP request against the upstream document download endpoint
+   * and returns the raw fetch Response. Caller pipes `response.body` directly to its
+   * Express response — buffering would cause memory pressure under concurrent
+   * downloads given the 100MB upload limit.
+   */
+  public async getProjectDocumentStream(req: Request, projectId: string, documentId: string): Promise<Response> {
+    logger.debug(req, 'get_project_document_stream', 'Opening upstream stream for project document', {
+      project_uid: projectId,
+      document_uid: documentId,
+    });
+
+    return this.microserviceProxy.proxyStreamRequest(req, 'LFX_V2_SERVICE', `/projects/${projectId}/documents/${documentId}/download`, 'GET');
+  }
+
+  /**
+   * Deletes a project folder or link using ETag for concurrency control.
+   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   */
+  public async deleteProjectDocument(req: Request, projectId: string, documentId: string, documentType: string): Promise<void> {
+    // Defense-in-depth: controller validates this too, but a typo like `type=file` should
+    // never silently fall through to the link path on a destructive route.
+    if (documentType !== 'folder' && documentType !== 'link') {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Only 'folder' and 'link' are supported.`, {
+        operation: 'delete_project_document',
+        service: 'project_service',
+      });
+    }
+
+    const resourcePath = documentType === 'folder' ? `/projects/${projectId}/folders/${documentId}` : `/projects/${projectId}/links/${documentId}`;
+
+    // Step 1: Fetch resource with ETag
+    const { etag } = await this.etagService.fetchWithETag<ProjectDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_project_document');
+
+    // Step 2: Delete resource with ETag
+    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', resourcePath, etag, 'delete_project_document');
+
+    logger.debug(req, 'delete_project_document', `Project ${documentType} deleted successfully`, {
+      project_uid: projectId,
+      document_uid: documentId,
+      document_type: documentType,
+    });
   }
 
   // Runs one IN-clause Snowflake query per source table instead of 4 queries per slug, so a 25-foundation summary fires 4 queries rather than 100.

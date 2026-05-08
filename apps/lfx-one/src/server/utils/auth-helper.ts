@@ -15,6 +15,20 @@ export function stripAuthPrefix(username: string): string {
 }
 
 /**
+ * Normalizes a stored display-name value coming from upstream services. When the
+ * upstream captured the raw OIDC `sub` (e.g. "auth0|manishdixitlfx") instead of a
+ * friendly name claim, strip the provider prefix so the table shows "manishdixitlfx"
+ * rather than the OAuth-style identifier. Returns undefined for empty / missing input.
+ *
+ * Note: this does not resolve to a full display name (e.g. "Manish Dixit"); doing so
+ * requires a user-profile lookup which lives in a separate service.
+ */
+export function cleanUserDisplayName(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return stripAuthPrefix(value);
+}
+
+/**
  * Gets the username from the current authentication context
  * Supports both Authelia token authentication and OIDC claims authentication
  */

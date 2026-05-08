@@ -17,25 +17,13 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 
 import { ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
-
-/**
- * Build an RFC 5987 compliant `Content-Disposition: attachment` header value
- * with both an ASCII fallback (`filename=`) and a UTF-8 encoded variant
- * (`filename*=UTF-8''...`). The ASCII fallback strips non-ASCII characters and
- * neutralizes quotes / backslashes / control chars to prevent header injection
- * (CR/LF) and broken responses. Mirrors the pattern in `document.controller.ts`.
- */
-function contentDispositionAttachment(fileName: string): string {
-  const safeAscii = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
-  const encoded = encodeURIComponent(fileName);
-  return `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`;
-}
 
 const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

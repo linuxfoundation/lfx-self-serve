@@ -133,4 +133,6 @@ export interface MyDocumentItem {
    * through the generic /api/documents/download proxy that fetches external URLs.
    */
   downloadUrl?: string;
+  /** Display name of the user who shared/uploaded the document, when available. */
+  uploadedBy?: string;
 }

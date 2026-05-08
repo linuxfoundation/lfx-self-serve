@@ -15,7 +15,7 @@ import { CommitteeService } from '@services/committee.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, startWith, switchMap, take } from 'rxjs';
 
-import { DocumentFormComponent } from '../document-form/document-form.component';
+import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
 @Component({
   selector: 'lfx-committee-documents',
@@ -74,7 +74,8 @@ export class CommitteeDocumentsComponent {
       closable: true,
       data: {
         mode: 'link',
-        committeeId: this.committee().uid,
+        entityType: 'committee',
+        entityId: this.committee().uid,
         folders: this.folderOptions(),
         // Pre-select the folder the user is currently inside so the new link lands here
         defaultParentUid: this.currentFolderUid(),
@@ -111,7 +112,8 @@ export class CommitteeDocumentsComponent {
       closable: true,
       data: {
         mode: 'folder',
-        committeeId: this.committee().uid,
+        entityType: 'committee',
+        entityId: this.committee().uid,
       },
     });
 
@@ -132,7 +134,8 @@ export class CommitteeDocumentsComponent {
       closable: true,
       data: {
         mode: 'file',
-        committeeId: this.committee().uid,
+        entityType: 'committee',
+        entityId: this.committee().uid,
         folders: this.folderOptions(),
         defaultParentUid: this.currentFolderUid(),
       },
@@ -282,6 +285,7 @@ export class CommitteeDocumentsComponent {
       parentUid: doc.parent_uid,
       isChild,
       downloadUrl: isFile && ownerCommitteeUid ? `/api/committees/${ownerCommitteeUid}/documents/${doc.uid}/download` : undefined,
+      uploadedBy: doc.uploaded_by,
     };
   }
 

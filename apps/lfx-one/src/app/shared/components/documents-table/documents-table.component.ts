@@ -31,7 +31,7 @@ export class DocumentsTableComponent {
   /** Emitted when a row with `isFolder: true` is clicked. Consumers use this to drill into the folder. */
   public readonly folderOpen = output<MyDocumentItem>();
 
-  protected readonly colSpan = computed(() => (this.showFoundation() ? 6 : 5));
+  protected readonly colSpan = computed(() => (this.showFoundation() ? 7 : 6));
   protected readonly hasDocuments = computed(() => this.documents().length > 0);
 
   protected onFolderClick(doc: MyDocumentItem): void {

@@ -15,13 +15,14 @@
   [attr.data-testid]="testIdPrefix() + '-table'">
   <ng-template #header>
     <tr>
-      <th [class]="showFoundation() ? 'w-[35%]' : 'w-[50%]'">Name</th>
+      <th [class]="showFoundation() ? 'w-[28%]' : 'w-[40%]'">Name</th>
       @if (showFoundation()) {
-        <th class="w-[20%]">Foundation</th>
+        <th class="w-[17%]">Foundation</th>
       }
-      <th class="w-[20%]">Group / Meeting</th>
+      <th [class]="showFoundation() ? 'w-[17%]' : 'w-[20%]'">Group / Meeting</th>
       <th class="w-[10%]">Source</th>
-      <th class="w-[10%]">Date</th>
+      <th class="w-[12%]">Shared By</th>
+      <th class="w-[11%]">Date</th>
       <th class="w-[5%]">Actions</th>
     </tr>
   </ng-template>
@@ -107,13 +108,20 @@
         <span class="text-xs text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
       </td>
 
-      <!-- Source column -->
+      <!-- Source column — folders are containers, not content; suppress the tag. -->
       <td>
-        <lfx-tag
-          [value]="doc.source | myDocumentSourceTag: 'label'"
-          [severity]="doc.source | myDocumentSourceTag: 'severity'"
-          [attr.data-testid]="testIdPrefix() + '-source-tag-' + doc.id">
-        </lfx-tag>
+        @if (!doc.isFolder) {
+          <lfx-tag
+            [value]="doc.source | myDocumentSourceTag: 'label'"
+            [severity]="doc.source | myDocumentSourceTag: 'severity'"
+            [attr.data-testid]="testIdPrefix() + '-source-tag-' + doc.id">
+          </lfx-tag>
+        }
+      </td>
+
+      <!-- Shared By column -->
+      <td>
+        <span class="text-xs text-gray-700">{{ doc.uploadedBy || '—' }}</span>
       </td>
 
       <!-- Date column -->

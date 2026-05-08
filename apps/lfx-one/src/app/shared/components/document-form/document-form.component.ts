@@ -10,9 +10,18 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import { CreateCommitteeDocumentRequest, CreateCommitteeDocumentType, DocumentFormMode } from '@lfx-one/shared/interfaces';
+import {
+  CreateCommitteeDocumentRequest,
+  CreateCommitteeDocumentType,
+  CreateProjectDocumentRequest,
+  CreateProjectDocumentType,
+  DocumentFormEntityType,
+  DocumentFormMode,
+} from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { ProjectService } from '@services/project.service';
+import { Observable } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -27,6 +36,7 @@ export class DocumentFormComponent {
   private readonly config = inject(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly committeeService = inject(CommitteeService);
+  private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
 
   // === Constants ===
@@ -39,10 +49,13 @@ export class DocumentFormComponent {
   public fileError = signal<string | null>(null);
 
   // Config-based properties
-  public readonly committeeId: string;
+  /** Resource type this dialog targets — drives service dispatch + uniqueness scope copy. */
+  public readonly entityType: DocumentFormEntityType;
+  /** UID of the committee or project the document belongs to. */
+  public readonly entityId: string;
   /** Pre-set mode: 'link', 'folder', or 'file' — determines which form fields are shown */
   public readonly mode: DocumentFormMode;
-  /** Available folders for the folder selector (links only) */
+  /** Available folders for the folder selector (links + files) */
   public readonly folderOptions: { label: string; value: string }[];
   /** Default parent folder UID — used to pre-select the folder when opening from inside a folder view */
   public readonly defaultParentUid: string | null;
@@ -57,10 +70,13 @@ export class DocumentFormComponent {
   public descriptionPlaceholder: Signal<string> = this.initDescriptionPlaceholder();
 
   public constructor() {
-    this.committeeId = this.config.data?.committeeId;
-    this.mode = this.config.data?.mode || 'link';
-    this.folderOptions = this.config.data?.folders || [];
-    this.defaultParentUid = this.config.data?.defaultParentUid ?? null;
+    // Backwards-compat: older callers pass `committeeId`. New callers pass `entityType` + `entityId`.
+    const data = this.config.data ?? {};
+    this.entityType = (data.entityType as DocumentFormEntityType) ?? 'committee';
+    this.entityId = (data.entityId as string) ?? (data.committeeId as string);
+    this.mode = data.mode || 'link';
+    this.folderOptions = data.folders || [];
+    this.defaultParentUid = data.defaultParentUid ?? null;
 
     this.form = this.createForm();
   }
@@ -84,39 +100,44 @@ export class DocumentFormComponent {
         return;
       }
 
+      const metadata = {
+        name: formValue.name,
+        description: formValue.description || undefined,
+        folder_uid: formValue.parent_uid || undefined,
+      };
+
       this.submitting.set(true);
-      this.committeeService
-        .uploadCommitteeDocument(this.committeeId, file, {
-          name: formValue.name,
-          description: formValue.description || undefined,
-          folder_uid: formValue.parent_uid || undefined,
-        })
-        .subscribe({
-          next: () => {
-            this.submitting.set(false);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: 'File uploaded successfully',
-            });
-            this.dialogRef.close(true);
-          },
-          error: (err: HttpErrorResponse) => {
-            this.submitting.set(false);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: this.extractErrorMessage(err, 'Failed to upload file'),
-            });
-          },
-        });
+      const upload$: Observable<unknown> =
+        this.entityType === 'project'
+          ? this.projectService.uploadProjectDocument(this.entityId, file, metadata)
+          : this.committeeService.uploadCommitteeDocument(this.entityId, file, metadata);
+
+      upload$.subscribe({
+        next: () => {
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: 'File uploaded successfully',
+          });
+          this.dialogRef.close(true);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: this.extractErrorMessage(err, 'Failed to upload file'),
+          });
+        },
+      });
       return;
     }
 
     this.submitting.set(true);
 
-    const createType = this.mode as CreateCommitteeDocumentType;
-    const createData: CreateCommitteeDocumentRequest = {
+    const createType = this.mode as CreateCommitteeDocumentType & CreateProjectDocumentType;
+    const createDataBase = {
       type: createType,
       name: formValue.name,
       ...(this.isLink() && { url: formValue.url }),
@@ -124,7 +145,12 @@ export class DocumentFormComponent {
       ...(this.isLink() && formValue.parent_uid && { parent_uid: formValue.parent_uid }),
     };
 
-    this.committeeService.createCommitteeDocument(this.committeeId, createData).subscribe({
+    const create$: Observable<unknown> =
+      this.entityType === 'project'
+        ? this.projectService.createProjectDocument(this.entityId, createDataBase as CreateProjectDocumentRequest)
+        : this.committeeService.createCommitteeDocument(this.entityId, createDataBase as CreateCommitteeDocumentRequest);
+
+    create$.subscribe({
       next: () => {
         this.submitting.set(false);
         this.messageService.add({
@@ -187,12 +213,13 @@ export class DocumentFormComponent {
    * 2. `err.error.message` — alternate shape some endpoints use.
    * 3. The provided fallback.
    *
-   * 409 conflicts get rewritten to a friendlier message because every committee document
-   * write enforces unique-name-per-committee at the upstream layer.
+   * 409 conflicts get rewritten to a friendlier message because every document write
+   * enforces unique-name-per-{committee|project} at the upstream layer.
    */
   private extractErrorMessage(err: HttpErrorResponse, fallback: string): string {
     if (err.status === 409) {
-      return 'A document with this name already exists in this committee. Please pick a different name.';
+      const scope = this.entityType === 'project' ? 'project' : 'committee';
+      return `A document with this name already exists in this ${scope}. Please pick a different name.`;
     }
     return err.error?.error || err.error?.message || fallback;
   }
@@ -215,10 +242,10 @@ export class DocumentFormComponent {
       });
     }
 
-    // Folder form — just name + description
+    // Folder form — name only. Upstream Goa types (ProjectFolder / CommitteeFolder) have
+    // no description field, so collecting one would just be silently dropped at the BFF.
     return new FormGroup({
       name: new FormControl('', [Validators.required]),
-      description: new FormControl(''),
     });
   }
 

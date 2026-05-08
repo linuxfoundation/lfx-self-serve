@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { PendingActionItem, Project } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, Observable, of, shareReplay, tap } from 'rxjs';
+import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { BehaviorSubject, catchError, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -96,5 +96,55 @@ export class ProjectService {
         return of([]);
       })
     );
+  }
+
+  // ── Project Documents ─────────────────────────────────────────────────────
+
+  public getProjectDocuments(projectUid: string): Observable<ProjectDocument[]> {
+    return this.http.get<ProjectDocument[]>(`/api/projects/${projectUid}/documents`).pipe(catchError(() => of([])));
+  }
+
+  public createProjectDocument(projectUid: string, data: CreateProjectDocumentRequest): Observable<ProjectDocument> {
+    return this.http.post<ProjectDocument>(`/api/projects/${projectUid}/documents`, data).pipe(take(1));
+  }
+
+  /**
+   * Uploads a file document to a project. Sends the raw file as the request body
+   * with metadata as query params. The BFF forwards as multipart/form-data to the
+   * upstream project service.
+   */
+  public uploadProjectDocument(
+    projectUid: string,
+    file: File,
+    metadata: { name: string; description?: string; folder_uid?: string }
+  ): Observable<ProjectDocument> {
+    let params = new HttpParams()
+      .set('name', metadata.name)
+      .set('file_name', file.name)
+      .set('content_type', file.type || 'application/octet-stream')
+      .set('file_size', file.size.toString());
+
+    if (metadata.description) {
+      params = params.set('description', metadata.description);
+    }
+    if (metadata.folder_uid) {
+      params = params.set('folder_uid', metadata.folder_uid);
+    }
+
+    return this.http
+      .post<ProjectDocument>(`/api/projects/${projectUid}/documents/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
+      })
+      .pipe(take(1));
+  }
+
+  /**
+   * Deletes a project folder or link. Files are not deletable via this endpoint
+   * — the BFF only accepts `'folder'` and `'link'` for the `type` parameter.
+   */
+  public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
+    const params = new HttpParams().set('type', documentType);
+    return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
   }
 }

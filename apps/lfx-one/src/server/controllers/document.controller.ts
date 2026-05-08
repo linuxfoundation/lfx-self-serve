@@ -7,6 +7,7 @@ import { Readable } from 'stream';
 import { URL } from 'url';
 
 import { ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { logger } from '../services/logger.service';
 import { DocumentService } from '../services/document.service';
 
@@ -102,12 +103,8 @@ export class DocumentController {
       const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
       const contentLength = upstream.headers.get('content-length');
 
-      // RFC 5987: emit both ASCII fallback filename= and filename*=UTF-8'' for full Unicode support.
-      // Strip quotes and control characters from the ASCII fallback to keep the header safe.
-      const safeAscii = filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
-      const encoded = encodeURIComponent(filename);
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`);
+      res.setHeader('Content-Disposition', contentDispositionAttachment(filename));
       if (contentLength) res.setHeader('Content-Length', contentLength);
 
       // Use pipeline() so stream errors propagate and connections aren't left hanging.
