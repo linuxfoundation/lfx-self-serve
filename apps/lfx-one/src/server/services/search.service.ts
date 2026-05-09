@@ -35,7 +35,7 @@ export class SearchService {
     );
 
     // Transform the resources to UserSearchResult format
-    const results: UserSearchResult[] = resources.map((resource) => {
+    const mapped: UserSearchResult[] = resources.map((resource) => {
       const data = resource.data;
 
       if (params.type === 'meeting_registrant') {
@@ -77,6 +77,32 @@ export class SearchService {
         type: 'committee_member',
         username: member.username || null,
       };
+    });
+
+    // Deduplicate by username (LFID — stable across registrations) or email
+    // (fallback) — the upstream query service returns one row per registration
+    // or committee membership, so the same person can appear many times.
+    // NOTE: r.uid is the per-row record ID (not a user ID), so it cannot be
+    // used as a dedup key — two rows for the same person always have different uids.
+    // NOTE: searchUsers() issues a single upstream call, so `seen` correctly covers
+    // the full result set. If this endpoint ever walks multiple pages (page_token),
+    // `seen` must be hoisted to span all pages — otherwise duplicates can reappear
+    // at page boundaries.
+    const seen = new Set<string>();
+    const results = mapped.filter((r) => {
+      const username = r.username?.trim().toLowerCase();
+      const email = r.email?.trim().toLowerCase();
+      let key: string;
+      if (username) {
+        key = `username:${username}`;
+      } else if (email) {
+        key = `email:${email}`;
+      } else {
+        return true; // no stable identifier to deduplicate on, keep the entry
+      }
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 
     return {
