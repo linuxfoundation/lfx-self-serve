@@ -22,11 +22,13 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, TabConfigEntry } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
@@ -86,6 +88,8 @@ export class CommitteeViewComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly lensService = inject(LensService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
 
@@ -127,7 +131,7 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.myRole() !== null ? 'My Groups' : 'Groups'));
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
 
@@ -348,6 +352,25 @@ export class CommitteeViewComponent {
     const parent = this.parentGroup();
     if (parent?.uid) {
       this.router.navigate(['/', 'groups', parent.uid]);
+    }
+  }
+
+  public navigateToParentProject(): void {
+    const c = this.committee();
+    if (!c?.project_uid || !c.project_slug) return;
+    const context: ProjectContext = {
+      uid: c.project_uid,
+      name: c.project_name || c.foundation_name || c.project_slug,
+      slug: c.project_slug,
+    };
+    if (c.is_foundation) {
+      this.projectContextService.setFoundation(context);
+      this.lensService.setLens('foundation');
+      this.router.navigate(['/foundation/overview']);
+    } else {
+      this.projectContextService.setProject(context);
+      this.lensService.setLens('project');
+      this.router.navigate(['/project/overview']);
     }
   }
 
