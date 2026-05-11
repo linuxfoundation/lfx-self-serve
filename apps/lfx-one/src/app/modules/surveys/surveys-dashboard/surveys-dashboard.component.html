@@ -48,6 +48,7 @@
       [surveys]="isMeLens() ? filteredMySurveys() : surveys()"
       [hasPMOAccess]="!isMeLens() && canWrite()"
       [loading]="isMeLens() ? mySurveysLoading() : loading()"
+      [isMeLens]="isMeLens()"
       [foundationOptions]="foundationOptions()"
       [projectOptions]="projectOptions()"
       [showFoundationFilter]="showFoundationFilter()"
@@ -72,3 +73,7 @@
   (closeSurvey)="onCloseSurvey($event)"
   data-testid="survey-results-drawer">
 </lfx-survey-results-drawer>
+
+<!-- My Response Drawer (Me lens) -->
+<lfx-my-response-drawer [(visible)]="myResponseDrawerVisible" [surveyId]="selectedSurveyId()" [survey]="selectedListSurvey()" data-testid="my-response-drawer">
+</lfx-my-response-drawer>

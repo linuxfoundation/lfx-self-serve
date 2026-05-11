@@ -85,8 +85,9 @@ export interface Survey {
   survey_title: string;
   /** Current status of the survey */
   survey_status: string;
-  /** Survey deadline/cutoff date */
-  survey_cutoff_date: string;
+  /** Survey deadline/cutoff date. May be null when the upstream detail fetch
+   * fails and the row is rendered from a stub (see getMySurveys fallback). */
+  survey_cutoff_date: string | null;
   /** Whether this is an NPS survey */
   is_nps_survey: boolean;
   /** Whether this is a project-level survey */
@@ -127,6 +128,42 @@ export interface Survey {
   num_detractors?: number;
   /** Personalized SurveyMonkey response link for the current user (present only in the Me lens; populated from survey_response records) */
   survey_link?: string;
+}
+
+/**
+ * A single choice/free-text answer selected by the respondent for a question.
+ * @description Shape mirrors the v2-indexed SurveyMonkeyAnswer published by lfx-v2-survey-service.
+ */
+export interface MySurveyAnswer {
+  choice_id?: string;
+  text?: string;
+}
+
+/**
+ * A question + the respondent's answers for that question.
+ */
+export interface MySurveyQuestionAnswer {
+  question_id?: string;
+  question_text?: string;
+  question_family?: string;
+  question_subtype?: string;
+  answers?: MySurveyAnswer[];
+}
+
+/**
+ * The current user's submitted response to a survey. Read-only payload backing
+ * the "View My Response" drawer on the Me lens.
+ */
+export interface MySurveyResponse {
+  uid: string;
+  survey_uid: string;
+  response_datetime?: string;
+  /** Personalized SurveyMonkey link — used for "Update Response" on an open survey */
+  survey_link?: string;
+  /** Populated for NPS surveys */
+  nps_value?: number;
+  /** Populated for standard SurveyMonkey surveys */
+  survey_monkey_question_answers?: MySurveyQuestionAnswer[];
 }
 
 /**

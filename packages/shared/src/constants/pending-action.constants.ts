@@ -11,6 +11,7 @@ import { PendingActionType, TagSeverity } from '../interfaces/components.interfa
 export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   RSVP: 'warn', // amber — most common row + matches the row's amber background tint
   Vote: 'info', // blue
-  Survey: 'success', // green
+  Survey: 'warn', // amber — pending survey, action needed
   Agenda: 'secondary', // gray — informational read-before-meeting cue
+  Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
 };

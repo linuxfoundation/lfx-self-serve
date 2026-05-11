@@ -473,7 +473,7 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted';
 
 /**
  * Pending action item for task list

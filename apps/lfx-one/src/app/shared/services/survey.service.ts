@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CreateSurveyRequest, Survey } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, MySurveyResponse, Survey } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 @Injectable({
@@ -40,6 +40,20 @@ export class SurveyService {
   /** Returns surveys for the current user; foundation/project filtering is applied client-side. */
   public getMySurveys(): Observable<Survey[]> {
     return this.http.get<Survey[]>('/api/surveys/my-surveys').pipe(catchError(() => of([])));
+  }
+
+  /** Returns the current user's submitted response for a survey, or null if none. Used by the Me lens "View My Response" drawer. */
+  public getMyResponse(surveyUid: string): Observable<MySurveyResponse | null> {
+    return this.http.get<MySurveyResponse>(`/api/surveys/${surveyUid}/my-response`).pipe(
+      catchError((error) => {
+        // 404 here means "no response on file" — that's a normal empty state, not an error.
+        // Log non-404s so transient backend issues surface in DevTools without breaking the drawer.
+        if (error?.status !== 404) {
+          console.error(`Failed to load my-response for survey ${surveyUid}:`, error);
+        }
+        return of(null);
+      })
+    );
   }
 
   public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {

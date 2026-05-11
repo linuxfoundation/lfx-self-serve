@@ -84,13 +84,13 @@
           data-testid="surveys-table">
           <ng-template #header>
             <tr>
-              <th class="w-[23%]">{{ surveyLabel.singular }} Name</th>
+              <th class="w-[26%]">{{ surveyLabel.singular }} Name</th>
               <th class="w-[15%]">Survey Type</th>
               <th class="w-[16%]">Group</th>
               <th class="w-[11%]">Responses</th>
               <th class="w-[12%]">Due</th>
-              <th class="w-[11%]">Status</th>
-              <th class="w-[12%]"></th>
+              <th class="w-[8%] text-right">Status</th>
+              <th class="w-[12%] whitespace-nowrap"></th>
             </tr>
           </ng-template>
 
@@ -146,8 +146,13 @@
                 }
               </td>
 
-              <td>
-                <lfx-tag [value]="survey | surveyStatusLabel" [severity]="survey | surveyStatusSeverity"></lfx-tag>
+              <td class="text-right">
+                @let isResponded = survey.response_status?.toLowerCase() === 'responded';
+                @let openResponded = survey.displayStatus === SurveyStatus.OPEN && isResponded;
+                @let openUnresponded = survey.displayStatus === SurveyStatus.OPEN && !isResponded;
+                <lfx-tag
+                  [value]="openResponded ? 'Submitted' : (survey | surveyStatusLabel)"
+                  [severity]="openResponded ? 'success' : openUnresponded ? 'warn' : (survey | surveyStatusSeverity)"></lfx-tag>
               </td>
 
               <td>
@@ -166,20 +171,31 @@
                       [attr.data-testid]="'surveys-delete-' + survey.uid">
                     </lfx-button>
                   } @else if (!hasPMOAccess() && survey.displayStatus === SurveyStatus.OPEN && survey.survey_link) {
+                    @let actionIsResponded = survey.response_status?.toLowerCase() === 'responded';
                     <lfx-button
-                      label="Take Survey"
-                      severity="primary"
+                      [label]="actionIsResponded ? 'Update' : 'Take Survey'"
+                      [severity]="actionIsResponded ? 'secondary' : 'primary'"
                       size="small"
                       [text]="true"
                       [href]="survey.survey_link"
                       target="_blank"
                       rel="noopener noreferrer"
-                      [attr.data-testid]="'surveys-take-' + survey.uid">
+                      [attr.data-testid]="(actionIsResponded ? 'surveys-update-' : 'surveys-take-') + survey.uid">
                     </lfx-button>
-                  } @else if (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED) {
+                  } @else if (isMeLens() && survey.displayStatus === SurveyStatus.CLOSED) {
+                    <lfx-button
+                      label="View"
+                      severity="secondary"
+                      size="small"
+                      [text]="true"
+                      styleClass=""
+                      (onClick)="onViewResults(survey.uid)"
+                      [attr.data-testid]="'surveys-view-' + survey.uid">
+                    </lfx-button>
+                  } @else if (!isMeLens() && (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED)) {
                     <lfx-button
                       label="Results"
-                      severity="primary"
+                      severity="secondary"
                       size="small"
                       [text]="true"
                       styleClass=""

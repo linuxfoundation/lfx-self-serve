@@ -67,6 +67,7 @@ export class SurveysTableComponent {
   public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
+  public readonly isMeLens = input<boolean>(false);
 
   // === Outputs ===
   public readonly viewResults = output<string>();

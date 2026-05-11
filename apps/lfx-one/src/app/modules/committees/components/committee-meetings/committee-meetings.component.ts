@@ -299,7 +299,7 @@ export class CommitteeMeetingsComponent {
     return {
       id: `survey-${survey.uid}`,
       title: `Survey: ${survey.survey_title}`,
-      start: survey.survey_cutoff_date,
+      start: survey.survey_cutoff_date ?? undefined,
       allDay: true,
       backgroundColor: SURVEY_COLOR.bg,
       borderColor: SURVEY_COLOR.border,

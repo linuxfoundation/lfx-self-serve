@@ -1,0 +1,105 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full my-response-drawer"
+  data-testid="my-response-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between gap-2 w-full pr-4">
+      <div class="flex flex-col gap-1 flex-1 min-w-0">
+        <h1 class="text-lg sm:text-xl font-semibold text-slate-900 truncate" data-testid="my-response-drawer-title">
+          {{ survey()?.survey_title ?? 'Your Response' }}
+        </h1>
+        @if (response()?.response_datetime; as submitted) {
+          <span class="text-xs text-slate-500" data-testid="my-response-drawer-submitted-at"> Submitted {{ submitted | date: 'MMM d, y, h:mm a' }} </span>
+        }
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        aria-label="Close"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+        data-testid="my-response-drawer-close">
+        <i class="fa-light fa-xmark text-xl" aria-hidden="true"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-5">
+    @if (loading()) {
+      <div class="flex flex-col gap-3">
+        <p-skeleton height="2.5rem" width="60%"></p-skeleton>
+        <p-skeleton height="1.5rem" width="80%"></p-skeleton>
+        <p-skeleton height="1.5rem" width="70%"></p-skeleton>
+      </div>
+    } @else if (response(); as resp) {
+      @if (isNps()) {
+        <div class="flex flex-col gap-2 p-5 bg-slate-50 rounded-lg" data-testid="my-response-drawer-nps">
+          <span class="text-sm text-slate-600">Your score</span>
+          <span class="text-5xl font-semibold text-slate-900">{{ resp.nps_value }}</span>
+          <span class="text-xs text-slate-500">on a scale of 0–10</span>
+        </div>
+      } @else if (hasQuestionAnswers()) {
+        <div class="flex flex-col gap-4" data-testid="my-response-drawer-questions">
+          @for (qa of resp.survey_monkey_question_answers; track qa.question_id ?? $index) {
+            <div class="flex flex-col gap-2 p-4 border border-slate-200 rounded-lg">
+              <span class="text-sm font-medium text-slate-900">{{ qa.question_text }}</span>
+              @if ((qa.answers?.length ?? 0) === 0) {
+                <span class="text-sm text-slate-400 italic">No answer</span>
+              } @else {
+                <ul class="flex flex-col gap-1 list-disc list-inside">
+                  @for (a of qa.answers; track $index) {
+                    <li class="text-sm text-slate-700">{{ a.text ?? a.choice_id ?? '—' }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="text-sm text-slate-500" data-testid="my-response-drawer-no-answers">
+          Your response is on file but the detailed answers aren't available yet. Try again later or use the survey link to review your submission.
+        </div>
+      }
+
+      @if (canUpdate()) {
+        <div class="flex justify-end pt-2 border-t border-slate-200">
+          <a
+            [href]="resp.survey_link"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-[#0061A3] hover:underline font-medium"
+            data-testid="my-response-drawer-update-link">
+            Update your response
+            <i class="fa-light fa-arrow-up-right-from-square ml-1"></i>
+          </a>
+        </div>
+      }
+    } @else if (isOpenUnresponded()) {
+      <div class="flex flex-col gap-2 p-5 bg-slate-50 rounded-lg" data-testid="my-response-drawer-open-unresponded">
+        <span class="text-sm font-medium text-slate-900">You haven't responded yet.</span>
+        <span class="text-xs text-slate-500">This survey is still accepting responses.</span>
+        @if (surveyLink(); as link) {
+          <a
+            [href]="link"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-[#0061A3] hover:underline font-medium mt-2"
+            data-testid="my-response-drawer-take-link">
+            Take the survey
+            <i class="fa-light fa-arrow-up-right-from-square ml-1" aria-hidden="true"></i>
+          </a>
+        }
+      </div>
+    } @else {
+      <div class="flex flex-col gap-2 p-5 bg-slate-50 rounded-lg" data-testid="my-response-drawer-empty">
+        <span class="text-sm font-medium text-slate-900">You didn't respond to this survey.</span>
+        <span class="text-xs text-slate-500">You were invited but didn't submit a response before the survey closed.</span>
+      </div>
+    }
+  </div>
+</p-drawer>

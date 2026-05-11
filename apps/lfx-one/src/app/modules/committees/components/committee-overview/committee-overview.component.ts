@@ -157,7 +157,12 @@ export class CommitteeOverviewComponent {
   });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
-  public pendingSurveys: Signal<Survey[]> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN));
+  public pendingSurveys: Signal<Survey[]> = computed(() =>
+    this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN && s.response_status?.toLowerCase() !== 'responded')
+  );
+  public respondedSurveys: Signal<Survey[]> = computed(() =>
+    this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN && s.response_status?.toLowerCase() === 'responded')
+  );
   public hasPendingActions: Signal<boolean> = computed(() => this.pendingVotes().length > 0 || this.pendingSurveys().length > 0);
 
   public pendingActionItems: Signal<CommitteePendingActionRow[]> = this.initPendingActionItems();
@@ -360,18 +365,42 @@ export class CommitteeOverviewComponent {
           ? `Deadline: ${new Date(vote.end_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
           : undefined,
       }));
-      const surveyItems: PendingActionItem[] = this.pendingSurveys().map((survey) => ({
-        type: 'Survey',
+      const surveyItems: PendingActionItem[] = this.pendingSurveys().map((survey) => {
+        const sentDate = survey.created_at ? new Date(survey.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+        const dueDate = survey.survey_cutoff_date
+          ? new Date(survey.survey_cutoff_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : null;
+        const dateParts: string[] = [];
+        if (sentDate) dateParts.push(`Sent: ${sentDate}`);
+        if (dueDate) dateParts.push(`Due: ${dueDate}`);
+
+        return {
+          type: 'Survey',
+          badge: this.committee().name,
+          text: survey.survey_title,
+          icon: 'fa-light fa-chart-simple',
+          severity: PENDING_ACTION_SEVERITY.Survey,
+          buttonText: 'Submit Survey',
+          date: dateParts.length > 0 ? dateParts.join(' · ') : undefined,
+        };
+      });
+      const respondedSurveyItems: PendingActionItem[] = this.respondedSurveys().map((survey) => ({
+        type: 'Submitted',
         badge: this.committee().name,
         text: survey.survey_title,
-        icon: 'fa-light fa-chart-simple',
-        severity: PENDING_ACTION_SEVERITY.Survey,
-        buttonText: 'Submit Survey',
-        date: survey.survey_cutoff_date
-          ? `Deadline: ${new Date(survey.survey_cutoff_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-          : undefined,
+        icon: 'fa-light fa-circle-check',
+        severity: PENDING_ACTION_SEVERITY.Submitted,
+        // No buttonLink: the committee surveys query does not populate the per-user
+        // SurveyMonkey link (survey_link is Me-lens-only data on /api/surveys/my-surveys),
+        // and handlePendingActionClick falls through to tabNavigated('surveys') for
+        // non-Vote items. The label reflects what actually happens on click — navigation
+        // to the surveys tab. To re-enable an in-place "Update" CTA, the committee
+        // surveys endpoint would need to enrich each row with the current user's
+        // survey_response.survey_link.
+        buttonText: 'View',
+        date: undefined,
       }));
-      return [...voteItems, ...surveyItems].map((item, index) => {
+      return [...voteItems, ...surveyItems, ...respondedSurveyItems].map((item, index) => {
         const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
         // Parity from `rowKey` (not list index) so future row removals (e.g., a vote closing)
         // don't flip following rows' stripes mid-`transition-colors`.
