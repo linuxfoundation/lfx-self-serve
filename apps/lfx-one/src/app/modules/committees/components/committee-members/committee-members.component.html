@@ -7,6 +7,21 @@
     @if (!isMembersVisible()) {
       <div class="text-sm text-gray-500 text-center py-6" data-testid="members-hidden-placeholder">Member list is not publicly visible for this group.</div>
     } @else {
+      <!-- Quick Filter Chips -->
+      <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="members-filter-chips">
+        @for (chip of chipConfig(); track chip.key) {
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+            [attr.aria-pressed]="memberFilterChip() === chip.key"
+            [class]="memberFilterChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+            (click)="selectChip(chip.key)"
+            [attr.data-testid]="'members-chip-' + chip.key">
+            {{ chip.label }} ({{ chip.count }})
+          </button>
+        }
+      </div>
+
       <!-- Search, Filter Controls, and Add Member -->
       <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6">
         <!-- Search Input -->
