@@ -53,6 +53,9 @@ export class WebsiteVisitsDrawerComponent {
   protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
+
+  protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
+
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly domainChartData: Signal<ChartData<'bar'>> = this.initDomainChartData();
 
@@ -134,6 +137,13 @@ export class WebsiteVisitsDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initHasNoData(): Signal<boolean> {
+    return computed(() => {
+      const { totalSessions, dailyData } = this.drawerData();
+      return totalSessions === 0 && (dailyData.length === 0 || dailyData.every((v) => v === 0));
+    });
+  }
+
   private initDrawerData(): Signal<WebActivitiesSummaryResponse> {
     const defaultValue: WebActivitiesSummaryResponse = {
       totalSessions: 0,
@@ -175,7 +185,7 @@ export class WebsiteVisitsDrawerComponent {
       const { totalSessions, totalPageViews, domainGroups, dailyData } = this.drawerData();
       const actions: MarketingRecommendedAction[] = [];
 
-      if (totalSessions === 0 && dailyData.length === 0) {
+      if (this.hasNoData()) {
         return actions;
       }
 
@@ -226,12 +236,11 @@ export class WebsiteVisitsDrawerComponent {
         }
       }
 
-      if (actions.length === 0) {
+      if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Continue current strategy',
           description: `${formatNumber(totalSessions)} sessions with healthy traffic distribution`,
           priority: 'low',
-
           actionType: 'growth',
         });
       }
@@ -245,7 +254,7 @@ export class WebsiteVisitsDrawerComponent {
       const { totalSessions, totalPageViews, domainGroups, dailyData } = this.drawerData();
       const insights: MarketingKeyInsight[] = [];
 
-      if (totalSessions === 0 && dailyData.length === 0) {
+      if (this.hasNoData()) {
         return insights;
       }
 
