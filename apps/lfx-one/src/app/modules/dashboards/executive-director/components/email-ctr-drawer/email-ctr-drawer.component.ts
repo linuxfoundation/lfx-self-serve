@@ -54,6 +54,12 @@ export class EmailCtrDrawerComponent {
   protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
+
+  // True once all three data sources have resolved (not still loading)
+  private readonly dataResolved: Signal<boolean> = computed(() => !this.drawerLoading() && this.paidDataResolved() && this.attributionDataResolved());
+
+  protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
+
   protected readonly expandedTypes = signal<Set<string>>(new Set());
 
   protected readonly emailTotalSends: Signal<string> = computed(() => {
@@ -212,6 +218,23 @@ export class EmailCtrDrawerComponent {
     return channel.sessions > 0 ? `$${(channel.linearRevenue / channel.sessions).toFixed(2)}` : '—';
   }
 
+  private initHasNoData(): Signal<boolean> {
+    return computed(() => {
+      if (!this.dataResolved()) {
+        return false;
+      }
+      const email = this.drawerData();
+      const paid = this.paidData();
+      const attribution = this.attributionData();
+      const hasEmailActivity = email.currentCtr > 0 || email.monthlySends.some((s) => s > 0);
+      const hasPaidActivity = paid.totalReach > 0 || paid.totalSpend > 0;
+      const hasAttributionActivity =
+        attribution.channels.length > 0 &&
+        attribution.channels.some((c) => c.sessions > 0 || c.linearRevenue > 0 || c.firstTouchRevenue > 0 || c.lastTouchRevenue > 0 || c.timeDecayRevenue > 0);
+      return !hasEmailActivity && !hasPaidActivity && !hasAttributionActivity;
+    });
+  }
+
   private initDrawerData(): Signal<EmailCtrResponse> {
     const defaultValue: EmailCtrResponse = {
       currentCtr: 0,
@@ -255,7 +278,7 @@ export class EmailCtrDrawerComponent {
     return computed(() => {
       // Gate on all three data sources having resolved — avoid misleading
       // "Maintain current momentum" while paid/attribution are still in-flight.
-      if (this.drawerLoading() || !this.paidDataResolved() || !this.attributionDataResolved()) {
+      if (!this.dataResolved()) {
         return [];
       }
 
@@ -392,7 +415,7 @@ export class EmailCtrDrawerComponent {
       // Combine — 1 per section, max 3
       const actions = [...attrActions.slice(0, 1), ...paidActions.slice(0, 1), ...emailActions.slice(0, 1)];
 
-      if (actions.length === 0) {
+      if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Maintain current momentum',
           description: 'All channels performing well — continue current strategy and monitor for shifts',
@@ -408,7 +431,7 @@ export class EmailCtrDrawerComponent {
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
       // Gate on all three data sources — same rationale as initRecommendedActions.
-      if (this.drawerLoading() || !this.paidDataResolved() || !this.attributionDataResolved()) {
+      if (!this.dataResolved()) {
         return [];
       }
 
