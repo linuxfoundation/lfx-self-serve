@@ -2,22 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_MEMBERSHIP_CHURN_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { formatValueLost } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 
 import type { HealthMetricsRange, MembershipChurnDisplayTierRow, MembershipChurnPerTierSummaryResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-membership-churn-tier-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './membership-churn-tier-card.component.html',
   styleUrl: './membership-churn-tier-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -30,9 +31,16 @@ export class MembershipChurnTierCardComponent {
   private readonly elementRef = inject(ElementRef);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<MembershipChurnPerTierSummaryResponse>(HEALTH_METRICS_MEMBERSHIP_CHURN_DEFAULT_SUMMARY);
+
+  protected readonly hasData = computed(() => {
+    const data = this.summaryData();
+    const period = data.currentPeriod;
+    return (data.tiers ?? []).length > 0 || period.valueLost > 0 || period.membersLost > 0 || period.churnRatePct > 0;
+  });
 
   protected readonly currentPeriod = computed(() => this.summaryData().currentPeriod);
   protected readonly previousYear = computed(() => this.summaryData().previousYear);
@@ -87,6 +95,7 @@ export class MembershipChurnTierCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

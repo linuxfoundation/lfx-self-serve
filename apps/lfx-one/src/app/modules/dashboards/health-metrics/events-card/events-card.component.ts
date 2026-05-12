@@ -2,20 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_EVENTS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import type { EventsSummaryResponse, HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './events-card.component.html',
   styleUrl: './events-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -28,9 +29,12 @@ export class EventsCardComponent {
   private readonly elementRef = inject(ElementRef);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<EventsSummaryResponse>(HEALTH_METRICS_EVENTS_DEFAULT_SUMMARY);
+
+  protected readonly hasData = computed(() => this.summaryData().totalEvents > 0 || this.summaryData().upcomingEvents > 0);
 
   protected readonly formattedTotalEvents = computed(() => {
     return this.summaryData().totalEvents.toLocaleString();
@@ -99,6 +103,7 @@ export class EventsCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

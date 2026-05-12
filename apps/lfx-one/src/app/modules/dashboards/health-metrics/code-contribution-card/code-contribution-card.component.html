@@ -5,14 +5,16 @@
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="code-contribution-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Code Contribution</h3>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download card as image"
-      data-testid="code-contribution-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download card as image"
+        data-testid="code-contribution-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -48,10 +50,13 @@
       </div>
     </div>
   } @else if (!hasContributorData()) {
-    <!-- No Data State -->
-    <div class="flex items-center justify-center py-8" data-testid="code-contribution-card-no-data">
-      <p class="text-sm text-gray-500">No Contribution Data Available</p>
-    </div>
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-code"
+      title="No code contribution data yet"
+      description="Code contribution data appears once repositories are linked to this foundation."
+      action="Connect repositories via the LFX Project Control Center to track contribution activity."
+      data-testid="code-contribution-card-empty-state" />
   } @else {
     <!-- Metrics Row -->
     <div class="flex gap-8" data-testid="code-contribution-card-metrics">

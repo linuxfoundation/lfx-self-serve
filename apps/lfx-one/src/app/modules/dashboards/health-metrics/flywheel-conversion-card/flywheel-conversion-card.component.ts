@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import type { Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -16,8 +16,10 @@ import { buildFlywheelCardSummary, buildFlywheelFunnelStages, formatNumber, sele
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
+import { emitHasDataOnLoad } from '@shared/utils/health-metrics-data.util';
 import { catchError, filter, finalize, map, of, switchMap, tap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -33,7 +35,7 @@ const CONVERSION_PRECISION = HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES;
 @Component({
   selector: 'lfx-flywheel-conversion-card',
   standalone: true,
-  imports: [ChartComponent, SkeletonModule],
+  imports: [ChartComponent, SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './flywheel-conversion-card.component.html',
   styleUrl: './flywheel-conversion-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -42,11 +44,13 @@ export class FlywheelConversionCardComponent {
   private readonly elementRef = inject(ElementRef);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // === Inputs ===
+  // === Inputs / Outputs ===
   // TODO: wire range through to server once dbt NORTH_STAR_FLYWHEEL_CONVERSION supports range columns
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   // === Internal State ===
   protected readonly loading = signal(true);
@@ -150,6 +154,10 @@ export class FlywheelConversionCardComponent {
   });
 
   // === Protected Methods ===
+  public constructor() {
+    emitHasDataOnLoad(this.loading, this.hasFlywheelData, this.hasDataChange, this.destroyRef);
+  }
+
   protected downloadCard(): void {
     if (this.loading() || !this.hasFlywheelData()) return;
     downloadCardAsImage(this.elementRef.nativeElement, 'flywheel-conversion-rate');

@@ -6,21 +6,25 @@
   <div class="flex items-center justify-between" data-testid="outstanding-balance-card-header">
     <div class="flex items-center gap-2">
       <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Outstanding Balance</h3>
-      <span
-        class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
-        aria-label="Watch status badge"
-        data-testid="outstanding-balance-card-watch-badge"
-        >Watch</span
-      >
+      @if (hasData()) {
+        <span
+          class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+          aria-label="Watch status badge"
+          data-testid="outstanding-balance-card-watch-badge"
+          >Watch</span
+        >
+      }
     </div>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download card as image"
-      data-testid="outstanding-balance-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download card as image"
+        data-testid="outstanding-balance-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -32,6 +36,14 @@
       <p-skeleton width="12rem" height="0.875rem" />
       <p-skeleton width="100%" height="2.5rem" />
     </div>
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-file-invoice-dollar"
+      title="No outstanding balances yet"
+      description="Outstanding balances appear when member organizations have unpaid invoices issued through LFX."
+      action="Set up membership invoicing to start tracking outstanding balances."
+      data-testid="outstanding-balance-card-empty-state" />
   } @else {
     <!-- Primary Metric -->
     <div class="flex flex-col gap-1" data-testid="outstanding-balance-card-primary-metric">

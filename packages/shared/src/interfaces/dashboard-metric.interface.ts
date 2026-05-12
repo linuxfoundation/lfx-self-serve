@@ -628,6 +628,21 @@ export interface EventsSummaryResponse {
 export type HealthMetricsRange = 'YTD' | 'COMPLETED_YEAR' | 'COMPLETED_YEAR_2' | 'COMPLETED_YEAR_3' | 'COMPLETED_YEAR_4';
 
 /**
+ * Identifier for each individual Health Metrics card.
+ * Used by the parent page to track per-card empty-state reporting in a type-safe map.
+ */
+export type HealthMetricCardName =
+  | 'events'
+  | 'nps'
+  | 'outstanding-balance'
+  | 'membership-churn'
+  | 'participating-orgs'
+  | 'training'
+  | 'code-contribution'
+  | 'flywheel'
+  | 'board-meeting';
+
+/**
  * Year filter option for the Health Metrics page year-range selector.
  */
 export interface HealthMetricsYearOption {

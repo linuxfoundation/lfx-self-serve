@@ -5,15 +5,17 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Participating Organizations</h3>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download participating organizations card"
-      title="Download participating organizations card"
-      data-testid="participating-orgs-download">
-      <i class="fa-solid fa-arrow-down-to-bracket"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download participating organizations card"
+        title="Download participating organizations card"
+        data-testid="participating-orgs-download">
+        <i class="fa-solid fa-arrow-down-to-bracket"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -37,6 +39,14 @@
         </div>
       </div>
     </div>
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-building"
+      title="No participating organizations yet"
+      description="Member organizations appear here once they join the foundation."
+      action="Add member organizations to start tracking engagement and growth."
+      data-testid="participating-orgs-empty-state" />
   } @else {
     <!-- Alert Banner -->
     @if (dominantSegment()) {

@@ -6,21 +6,21 @@
   <div class="flex items-center justify-between" data-testid="nps-card-header">
     <div class="flex flex-col">
       <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Net Promoter Score</h3>
-      @if (loading()) {
-        <p-skeleton width="6rem" height="0.75rem" />
-      } @else {
+      @if (hasData()) {
         <span class="text-xs text-gray-500">Last Updated: {{ summaryData().lastUpdatedLabel }}</span>
       }
     </div>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download NPS card"
-      title="Download NPS card"
-      data-testid="nps-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download NPS card"
+        title="Download NPS card"
+        data-testid="nps-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -46,6 +46,14 @@
         </div>
       </div>
     </div>
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-star"
+      title="No NPS responses yet"
+      description="NPS data appears here once member survey responses are collected."
+      action="Send a member satisfaction survey to start collecting NPS responses."
+      data-testid="nps-card-empty-state" />
   } @else {
     <!-- SVG Gauge (filled-arc style) -->
     <div class="flex flex-col items-center" data-testid="nps-card-gauge">

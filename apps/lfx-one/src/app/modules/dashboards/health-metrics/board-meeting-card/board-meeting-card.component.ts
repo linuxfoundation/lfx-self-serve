@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import {
   HEALTH_METRICS_BOARD_MEETING_DEFAULT_SUMMARY,
   HEALTH_METRICS_BOARD_MEETING_JOB_TITLE_MAX_LENGTH,
@@ -11,8 +11,9 @@ import {
 import { parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 
 import { environment } from '@environments/environment';
 
@@ -29,7 +30,7 @@ import type {
 @Component({
   selector: 'lfx-board-meeting-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './board-meeting-card.component.html',
   styleUrl: './board-meeting-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,6 +42,7 @@ export class BoardMeetingCardComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly pccUrl = environment.urls.pcc;
 
@@ -54,10 +56,9 @@ export class BoardMeetingCardComponent {
   protected readonly hasData = computed(() => this.summaryData().dataAvailable);
   protected readonly hasInvitees = computed(() => this.summaryData().invitees.length > 0);
 
-  protected readonly addPastMeetingUrl = computed(() => {
+  protected readonly addPastMeetingUrl = computed<string | null>(() => {
     const id = this.projectId();
-    if (!id) return '';
-    return `${this.pccUrl}/project/${id}/collaboration/meetings/manage-meeting?isPast=true`;
+    return id ? `${this.pccUrl}/project/${id}/collaboration/meetings/manage-meeting?isPast=true` : null;
   });
 
   protected readonly formattedAvgAttendance = computed(() => {
@@ -146,6 +147,7 @@ export class BoardMeetingCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected onSort(field: BoardMeetingSortField): void {

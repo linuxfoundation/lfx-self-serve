@@ -5,7 +5,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between gap-4" data-testid="board-meeting-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase" data-testid="board-meeting-title">Board Meeting Participation</h3>
-    @if (addPastMeetingUrl()) {
+    @if (addPastMeetingUrl() && hasData()) {
       <div class="text-xs text-gray-500">
         Missing a meeting?
         <a
@@ -37,10 +37,15 @@
       <p-skeleton width="100%" height="12rem" />
     </div>
   } @else if (!hasData()) {
-    <!-- No Data State (slug not resolved) -->
-    <div class="flex items-center justify-center py-8" data-testid="board-meeting-card-no-data">
-      <p class="text-sm text-gray-500">No Board Meeting Participation Data Available</p>
-    </div>
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-users"
+      title="No board meeting data yet"
+      description="Board meeting participation appears here once meetings are recorded."
+      action="Missing a meeting?"
+      actionLinkLabel="Add past meeting"
+      [actionLinkHref]="addPastMeetingUrl()"
+      data-testid="board-meeting-card-empty-state" />
   } @else {
     <!-- Metrics Row -->
     <div class="flex gap-12" data-testid="board-meeting-card-metrics">

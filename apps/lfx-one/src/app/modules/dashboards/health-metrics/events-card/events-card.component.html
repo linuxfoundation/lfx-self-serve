@@ -5,14 +5,16 @@
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="events-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Events</h3>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download card as image"
-      data-testid="events-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download card as image"
+        data-testid="events-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -41,6 +43,14 @@
         <p-skeleton width="6rem" height="0.75rem" />
       </div>
     </div>
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-calendar-days"
+      title="No events yet"
+      description="Events appear here once they are scheduled for this foundation."
+      action="Create events to start tracking attendance and sponsorship."
+      data-testid="events-card-empty-state" />
   } @else {
     <!-- Metrics Row: Total Events | Upcoming | Past -->
     <div class="flex gap-6" data-testid="events-card-metrics">

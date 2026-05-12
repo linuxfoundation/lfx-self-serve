@@ -2,21 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
+import { emitHasDataOnLoad } from '@shared/utils/health-metrics-data.util';
 import type { OutstandingBalanceSummaryResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-outstanding-balance-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './outstanding-balance-card.component.html',
   styleUrl: './outstanding-balance-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -28,8 +30,13 @@ export class OutstandingBalanceCardComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly elementRef = inject(ElementRef);
 
+  public readonly hasDataChange = output<boolean>();
+
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<OutstandingBalanceSummaryResponse>(HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY);
+
+  protected readonly hasData = computed(() => this.summaryData().totalOutstandingBalance > 0 || this.summaryData().totalMembersAtRisk > 0);
+
   protected readonly formattedBalance = computed(() => {
     const value = this.summaryData().totalOutstandingBalance;
     return `$${value.toLocaleString()}`;
@@ -68,6 +75,7 @@ export class OutstandingBalanceCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

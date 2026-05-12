@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DestroyRef, InputSignal, WritableSignal } from '@angular/core';
+import { DestroyRef, InputSignal, OutputEmitterRef, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ProjectContextService } from '@services/project-context.service';
 import { combineLatest, filter, map, Observable, switchMap, tap } from 'rxjs';
@@ -44,4 +44,21 @@ export function initializeRangeDataFetching<T>(options: RangeDataFetchingOptions
         options.loading.set(false);
       },
     });
+}
+
+/**
+ * Emit the `hasData` value through an output whenever `loading` transitions to false.
+ *
+ * Centralises the invariant that every health-metrics card must report its data
+ * state to the parent on every fetch cycle, so the parent's `allCardsEmpty`
+ * gate resolves deterministically. Call once from a card's constructor.
+ */
+export function emitHasDataOnLoad(loading: Signal<boolean>, hasData: Signal<boolean>, output: OutputEmitterRef<boolean>, destroyRef: DestroyRef): void {
+  toObservable(loading)
+    .pipe(
+      filter((isLoading) => !isLoading),
+      map(() => hasData()),
+      takeUntilDestroyed(destroyRef)
+    )
+    .subscribe((value) => output.emit(value));
 }

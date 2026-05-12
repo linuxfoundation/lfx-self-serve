@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_PARTICIPATING_ORGS_DEFAULT_SUMMARY, lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 
 import type { EngagementSegment, HealthMetricsRange, ParticipatingOrgsSummaryResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-participating-orgs-card',
   standalone: true,
-  imports: [NgClass, SkeletonModule],
+  imports: [NgClass, SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './participating-orgs-card.component.html',
   styleUrl: './participating-orgs-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,6 +30,7 @@ export class ParticipatingOrgsCardComponent {
   private readonly elementRef = inject(ElementRef);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<ParticipatingOrgsSummaryResponse>(HEALTH_METRICS_PARTICIPATING_ORGS_DEFAULT_SUMMARY);
@@ -37,6 +39,8 @@ export class ParticipatingOrgsCardComponent {
     const data = this.summaryData();
     return data.highEngagement + data.medEngagement + data.lowEngagement;
   });
+
+  protected readonly hasData = computed(() => this.totalEngagement() > 0 || this.summaryData().totalActiveMembers > 0);
 
   protected readonly segments = computed((): EngagementSegment[] => {
     const data = this.summaryData();
@@ -123,6 +127,7 @@ export class ParticipatingOrgsCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

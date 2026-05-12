@@ -19,12 +19,14 @@
   </div>
 
   <!-- Description -->
-  <div class="rounded-md bg-gray-50 px-4 py-3" data-testid="health-metrics-flywheel-description">
-    <p class="text-xs text-gray-500">
-      Percentage of event attendees who engage with newsletter, community, or working groups within 90 days after an event. This metric reflects the latest
-      monthly window and is not affected by the page year filter.
-    </p>
-  </div>
+  @if (hasFlywheelData()) {
+    <div class="rounded-md bg-gray-50 px-4 py-3" data-testid="health-metrics-flywheel-description">
+      <p class="text-xs text-gray-500">
+        Percentage of event attendees who engage with newsletter, community, or working groups within 90 days after an event. This metric reflects the latest
+        monthly window and is not affected by the page year filter.
+      </p>
+    </div>
+  }
 
   @if (loading()) {
     <!-- Loading Skeleton -->
@@ -44,10 +46,13 @@
       <p-skeleton width="100%" height="3rem" borderRadius="8px" />
     </div>
   } @else if (!hasFlywheelData()) {
-    <!-- No Data State -->
-    <div class="flex items-center justify-center py-10" data-testid="health-metrics-flywheel-no-data">
-      <p class="text-sm text-gray-500">No Flywheel Conversion Data Available</p>
-    </div>
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-arrows-rotate"
+      title="No flywheel conversion data yet"
+      description="Flywheel conversion appears once this foundation has recorded event attendance and 90 days have elapsed to measure follow-on engagement."
+      action="Host events and encourage attendee participation to build conversion signals."
+      data-testid="health-metrics-flywheel-empty-state" />
   } @else {
     <!-- Summary Row -->
     @if (summary(); as summaryView) {

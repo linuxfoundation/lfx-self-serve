@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 
 import type { CodeContributionSummaryResponse, HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-code-contribution-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './code-contribution-card.component.html',
   styleUrl: './code-contribution-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,11 +30,13 @@ export class CodeContributionCardComponent {
   private readonly elementRef = inject(ElementRef);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<CodeContributionSummaryResponse>(HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY);
 
   protected readonly hasContributorData = computed(() => this.summaryData().dataAvailable);
+  protected readonly hasData = this.hasContributorData;
 
   protected readonly formattedTotalContributors = computed(() => {
     return this.abbreviateCount(this.summaryData().totalContributors);
@@ -126,6 +129,7 @@ export class CodeContributionCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

@@ -5,37 +5,41 @@
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="training-certification-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Training &amp; Certification</h3>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download card as image"
-      data-testid="training-certification-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download card as image"
+        data-testid="training-certification-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
   </div>
 
   <!-- Toggle -->
-  <div class="flex items-center gap-1 rounded-full bg-gray-100 p-0.5 w-fit" data-testid="training-certification-card-toggle">
-    <button
-      class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
-      [class.bg-blue-600]="activeMode() === 'enrollment'"
-      [class.text-white]="activeMode() === 'enrollment'"
-      [class.text-gray-600]="activeMode() !== 'enrollment'"
-      (click)="setMode('enrollment')"
-      data-testid="training-certification-card-toggle-enrollment">
-      Enrollment
-    </button>
-    <button
-      class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
-      [class.bg-blue-600]="activeMode() === 'revenue'"
-      [class.text-white]="activeMode() === 'revenue'"
-      [class.text-gray-600]="activeMode() !== 'revenue'"
-      (click)="setMode('revenue')"
-      data-testid="training-certification-card-toggle-revenue">
-      Revenue
-    </button>
-  </div>
+  @if (hasData()) {
+    <div class="flex items-center gap-1 rounded-full bg-gray-100 p-0.5 w-fit" data-testid="training-certification-card-toggle">
+      <button
+        class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+        [class.bg-blue-600]="activeMode() === 'enrollment'"
+        [class.text-white]="activeMode() === 'enrollment'"
+        [class.text-gray-600]="activeMode() !== 'enrollment'"
+        (click)="setMode('enrollment')"
+        data-testid="training-certification-card-toggle-enrollment">
+        Enrollment
+      </button>
+      <button
+        class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+        [class.bg-blue-600]="activeMode() === 'revenue'"
+        [class.text-white]="activeMode() === 'revenue'"
+        [class.text-gray-600]="activeMode() !== 'revenue'"
+        (click)="setMode('revenue')"
+        data-testid="training-certification-card-toggle-revenue">
+        Revenue
+      </button>
+    </div>
+  }
 
   @if (loading()) {
     <!-- Loading Skeletons -->
@@ -50,6 +54,14 @@
         }
       </div>
     </div>
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-graduation-cap"
+      title="No training or certification data yet"
+      description="Training and certification data appears once programs are linked to this foundation."
+      action="Link training or certification programs to this foundation to track enrollment."
+      data-testid="training-certification-card-empty-state" />
   } @else {
     <!-- Mode Label -->
     <span class="text-xs text-gray-500" data-testid="training-certification-card-mode-label">{{ activeModeLabel() }}</span>

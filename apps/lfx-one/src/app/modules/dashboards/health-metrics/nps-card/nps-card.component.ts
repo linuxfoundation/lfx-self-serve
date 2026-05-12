@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
+import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
+import { emitHasDataOnLoad, initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 
 import type { NpsSummaryResponse, HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-nps-card',
   standalone: true,
-  imports: [SkeletonModule],
+  imports: [SkeletonModule, HealthMetricsCardEmptyStateComponent],
   templateUrl: './nps-card.component.html',
   styleUrl: './nps-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,9 +30,12 @@ export class NpsCardComponent {
   private readonly elementRef = inject(ElementRef);
 
   public readonly range = input<HealthMetricsRange>('YTD');
+  public readonly hasDataChange = output<boolean>();
 
   protected readonly loading = signal(true);
   protected readonly summaryData = signal<NpsSummaryResponse>(HEALTH_METRICS_NPS_DEFAULT_SUMMARY);
+
+  protected readonly hasData = computed(() => this.summaryData().responses > 0);
 
   private static readonly arcLength = Math.PI * 80;
 
@@ -61,6 +65,7 @@ export class NpsCardComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.initializeDataFetching();
     }
+    emitHasDataOnLoad(this.loading, this.hasData, this.hasDataChange, this.destroyRef);
   }
 
   protected downloadCard(): void {

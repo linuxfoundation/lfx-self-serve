@@ -5,15 +5,17 @@
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="membership-churn-tier-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Membership Churn Per Tier</h3>
-    <button
-      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-      [disabled]="loading()"
-      (click)="downloadCard()"
-      aria-label="Download Membership Churn Per Tier card as image"
-      title="Download Membership Churn Per Tier card as image"
-      data-testid="membership-churn-tier-card-download">
-      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
-    </button>
+    @if (hasData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="loading()"
+        (click)="downloadCard()"
+        aria-label="Download Membership Churn Per Tier card as image"
+        title="Download Membership Churn Per Tier card as image"
+        data-testid="membership-churn-tier-card-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
   </div>
 
   @if (loading()) {
@@ -41,6 +43,14 @@
     <p-skeleton width="100%" height="0.0625rem" />
     <p-skeleton width="60%" height="0.875rem" />
     <p-skeleton width="60%" height="0.875rem" />
+  } @else if (!hasData()) {
+    <!-- Empty State -->
+    <lfx-health-metrics-card-empty-state
+      icon="fa-light fa-arrow-trend-down"
+      title="No membership churn data yet"
+      description="Churn is calculated automatically as member organizations renew, downgrade, or let their membership lapse."
+      action="Data appears automatically once the first membership renewal cycle completes."
+      data-testid="membership-churn-tier-card-empty-state" />
   } @else {
     <!-- Headline Metrics Row -->
     <div class="flex gap-6" data-testid="membership-churn-tier-card-metrics">

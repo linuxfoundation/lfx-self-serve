@@ -18,8 +18,9 @@ import { TrainingCertificationCardComponent } from './training-certification-car
 import { CodeContributionCardComponent } from './code-contribution-card/code-contribution-card.component';
 import { BoardMeetingCardComponent } from './board-meeting-card/board-meeting-card.component';
 import { FlywheelConversionCardComponent } from './flywheel-conversion-card/flywheel-conversion-card.component';
+import { HealthMetricsFullPageEmptyStateComponent } from './health-metrics-full-page-empty-state/health-metrics-full-page-empty-state.component';
 
-import type { HealthMetricsData, DisplayCard, HealthMetricsRange } from '@lfx-one/shared/interfaces';
+import type { DisplayCard, HealthMetricCardName, HealthMetricsData, HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 const DEFAULT_DATA: HealthMetricsData = {
   totalValue: null,
@@ -43,6 +44,7 @@ const DEFAULT_DATA: HealthMetricsData = {
     CodeContributionCardComponent,
     BoardMeetingCardComponent,
     FlywheelConversionCardComponent,
+    HealthMetricsFullPageEmptyStateComponent,
   ],
   templateUrl: './health-metrics.component.html',
   styleUrl: './health-metrics.component.scss',
@@ -58,7 +60,38 @@ export class HealthMetricsComponent {
   protected readonly statusCount = HEALTH_METRICS_STATUS_COUNT;
   protected readonly selectedRange = signal<HealthMetricsRange>('YTD');
 
+  private readonly cardDataStates = signal<Partial<Record<HealthMetricCardName, boolean>>>({});
+
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
+
+  private readonly cardNames: readonly HealthMetricCardName[] = [
+    'events',
+    'nps',
+    'outstanding-balance',
+    'membership-churn',
+    'participating-orgs',
+    'training',
+    'code-contribution',
+    'flywheel',
+    'board-meeting',
+  ];
+
+  protected readonly allCardsEmpty = computed(() => {
+    if (this.loading()) return false;
+
+    // Filter-independent totals: show cards even if the current period is empty.
+    const data = this.metricsData();
+    const hasFoundationTotals =
+      (data.totalValue?.totalValue ?? 0) > 0 || (data.totalProjects?.totalProjects ?? 0) > 0 || (data.totalMembers?.totalMembers ?? 0) > 0;
+    if (hasFoundationTotals) return false;
+
+    // Wait for all cards to report before deciding the page is empty (avoids flicker).
+    const states = this.cardDataStates();
+    const allReported = this.cardNames.every((name) => name in states);
+    if (!allReported) return false;
+
+    return this.cardNames.every((name) => states[name] === false);
+  });
 
   protected readonly yearOptions = computed(() => buildHealthMetricsYearOptions());
 
@@ -112,6 +145,10 @@ export class HealthMetricsComponent {
     this.selectedRange.set(range);
   }
 
+  protected updateCardDataState(name: HealthMetricCardName, hasData: boolean): void {
+    this.cardDataStates.update((s) => ({ ...s, [name]: hasData }));
+  }
+
   private initializeDataFetching(): void {
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
@@ -120,6 +157,8 @@ export class HealthMetricsComponent {
         tap(() => {
           this.loading.set(true);
           this.metricsData.set(DEFAULT_DATA);
+          // Reset so stale per-card states don't trigger the full-page empty state while cards re-fetch.
+          this.cardDataStates.set({});
         }),
         switchMap((slug) =>
           forkJoin({
