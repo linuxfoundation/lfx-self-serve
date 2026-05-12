@@ -13,14 +13,14 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "lfx-v2-ui.fullname" . }}
+  name: {{ include "lfx-self-serve.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "lfx-v2-ui.labels" . | nindent 4 }}
+    {{- include "lfx-self-serve.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      {{- include "lfx-v2-ui.selectorLabels" . | nindent 6 }}
+      {{- include "lfx-self-serve.selectorLabels" . | nindent 6 }}
   {{- if $hasMin }}
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- end }}

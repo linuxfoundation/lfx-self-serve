@@ -186,7 +186,7 @@ docker run \
   -e LD_CLIENT_ID=prod-client-id \
   -e DD_RUM_CLIENT_ID=prod-rum-token \
   -e DD_RUM_APPLICATION_ID=prod-rum-app-id \
-  ghcr.io/linuxfoundation/lfx-v2-ui:latest
+  ghcr.io/linuxfoundation/lfx-self-serve:latest
 ```
 
 ### Kubernetes Deployment

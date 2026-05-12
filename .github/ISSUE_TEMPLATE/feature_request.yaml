@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 name: Feature request
-description: Suggest a new feature for lfx-v2-ui
+description: Suggest a new feature for lfx-self-serve
 labels: ["type:enhancement"]
 body:
   - type: textarea

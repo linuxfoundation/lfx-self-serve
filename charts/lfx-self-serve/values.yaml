@@ -11,7 +11,7 @@ podDisruptionBudget:
   # maxUnavailable: 1
 
 image:
-  repository: ghcr.io/linuxfoundation/lfx-v2-ui
+  repository: ghcr.io/linuxfoundation/lfx-self-serve
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -40,7 +40,7 @@ externalSecrets:
   #     auth:
   #       jwt:
   #         serviceAccountRef:
-  #           name: lfx-v2-ui-sa
+  #           name: lfx-self-serve-sa
   provider: {}
 
   # Annotations to add to ExternalSecret resources
@@ -92,7 +92,7 @@ externalSecrets:
   #   dataFrom:
   #     - find:
   #         tags:
-  #           service: "lfx-v2-ui"
+  #           service: "lfx-self-serve"
   #       rewrite:
   #         - merge: {}
   dataFrom:

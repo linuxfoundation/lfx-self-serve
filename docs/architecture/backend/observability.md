@@ -18,7 +18,7 @@ The LFX One backend ships with OpenTelemetry-based distributed tracing that acti
 
 ```typescript
 // apps/lfx-one/src/server/server-tracer.ts
-export const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] || 'lfx-v2-ui';
+export const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] || 'lfx-self-serve';
 export const tracer = trace.getTracer(SERVICE_NAME);
 ```
 
@@ -29,7 +29,7 @@ The `SERVICE_NAME` constant is also consumed by `server-logger.ts` so log entrie
 | Env var                       | Default                                          | Purpose                                                                                                         |
 | ----------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → tracing off)_                          | Required to turn tracing on. Points at the OTLP collector (HTTP or gRPC).                                       |
-| `OTEL_SERVICE_NAME`           | `lfx-v2-ui`                                      | Identifier that appears on every span and in log metadata.                                                      |
+| `OTEL_SERVICE_NAME`           | `lfx-self-serve`                                 | Identifier that appears on every span and in log metadata.                                                      |
 | `APP_VERSION`                 | `development` (otel.mjs) / `1.0.0` (pino logger) | Tagged onto the `service.version` resource attribute (otel.mjs) and the log `version` field (server-logger.ts). |
 | `NODE_ENV`                    | `development`                                    | Drives `deployment.environment` resource attribute (`dev`, `stage`, `prod`).                                    |
 | `OTEL_LOG_LEVEL`              | `info`                                           | Passed through to the OTel SDK diagnostics logger.                                                              |

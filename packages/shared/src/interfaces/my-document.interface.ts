@@ -128,7 +128,7 @@ export interface MyDocumentItem {
   /** Number of items inside this folder — shown next to the folder name when isFolder is true */
   childCount?: number;
   /**
-   * Direct BFF download endpoint for files served by lfx-v2-ui itself (with proper
+   * Direct BFF download endpoint for files served by lfx-self-serve itself (with proper
    * Content-Disposition). When set, the download button navigates here instead of routing
    * through the generic /api/documents/download proxy that fetches external URLs.
    */

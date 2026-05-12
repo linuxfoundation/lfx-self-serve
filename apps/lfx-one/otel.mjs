@@ -43,7 +43,7 @@ if (!otlpEndpoint) {
     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
   }
 
-  const serviceName = process.env['OTEL_SERVICE_NAME'] || 'lfx-v2-ui';
+  const serviceName = process.env['OTEL_SERVICE_NAME'] || 'lfx-self-serve';
   const serviceVersion = process.env['APP_VERSION'] || 'development';
 
   const resource = resourceFromAttributes({

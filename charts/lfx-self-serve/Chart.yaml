@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 ---
 apiVersion: v2
-name: lfx-v2-ui
-description: A Helm chart for LFX v2 UI - Angular SSR application with Express backend
+name: lfx-self-serve
+description: A Helm chart for LFX Self Serve - Angular SSR application with Express backend
 type: application
 # This version should not be incremented, as it is dynamically replaced with the release version during the chart build
 # job.
@@ -13,6 +13,6 @@ keywords:
   - lfx
   - project-control-center
   - ui
-home: https://github.com/linuxfoundation/lfx-v2-ui
+home: https://github.com/linuxfoundation/lfx-self-serve
 sources:
-  - https://github.com/linuxfoundation/lfx-v2-ui
+  - https://github.com/linuxfoundation/lfx-self-serve

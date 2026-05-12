@@ -99,14 +99,14 @@ environment:
 
 ### Application Parameters
 
-| Parameter           | Description        | Default                             |
-| ------------------- | ------------------ | ----------------------------------- |
-| `replicaCount`      | Number of replicas | `1`                                 |
-| `image.registry`    | Image registry     | `""`                                |
-| `image.repository`  | Image repository   | `ghcr.io/linuxfoundation/lfx-v2-ui` |
-| `image.tag`         | Image tag          | `"latest"`                          |
-| `image.pullPolicy`  | Image pull policy  | `IfNotPresent`                      |
-| `image.pullSecrets` | Image pull secrets | `[]`                                |
+| Parameter           | Description        | Default                                  |
+| ------------------- | ------------------ | ---------------------------------------- |
+| `replicaCount`      | Number of replicas | `1`                                      |
+| `image.registry`    | Image registry     | `""`                                     |
+| `image.repository`  | Image repository   | `ghcr.io/linuxfoundation/lfx-self-serve` |
+| `image.tag`         | Image tag          | `"latest"`                               |
+| `image.pullPolicy`  | Image pull policy  | `IfNotPresent`                           |
+| `image.pullSecrets` | Image pull secrets | `[]`                                     |
 
 ### Environment Variables
 
@@ -323,13 +323,13 @@ externalSecrets:
       auth:
         jwt:
           serviceAccountRef:
-            name: lfx-v2-ui-sa # ServiceAccount with IRSA annotation
+            name: lfx-self-serve-sa # ServiceAccount with IRSA annotation
   target:
-    name: lfx-v2-ui
+    name: lfx-self-serve
   dataFrom:
     - find:
         tags:
-          service: lfx-v2-ui
+          service: lfx-self-serve
       rewrite:
         - merge: {}
 ```
@@ -349,6 +349,6 @@ environment:
   PCC_AUTH0_CLIENT_SECRET:
     valueFrom:
       secretKeyRef:
-        name: lfx-v2-ui # Or your custom target name
+        name: lfx-self-serve # Or your custom target name
         key: PCC_AUTH0_CLIENT_SECRET
 ```

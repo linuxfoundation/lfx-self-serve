@@ -197,7 +197,7 @@ The server supports distributed tracing via OpenTelemetry. Tracing is **opt-in**
 | Variable                      | Default                      | Description                                                                                                                                |
 | ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset — tracing disabled)_ | OTLP collector endpoint (e.g., `http://localhost:4318`)                                                                                    |
-| `OTEL_SERVICE_NAME`           | `lfx-v2-ui`                  | Service name reported in traces                                                                                                            |
+| `OTEL_SERVICE_NAME`           | `lfx-self-serve`             | Service name reported in traces                                                                                                            |
 | `OTEL_TRACES_SAMPLER`         | `parentbased_always_on`      | Sampler strategy: `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, `parentbased_traceidratio` |
 | `OTEL_TRACES_SAMPLER_ARG`     | `1.0`                        | Sampling ratio (0.0–1.0), clamped and validated                                                                                            |
 | `OTEL_LOG_LEVEL`              | `info`                       | Diagnostic log level: `none`, `error`, `warn`, `info`, `debug`, `verbose`, `all`                                                           |

@@ -28,7 +28,7 @@ If not already cloned:
 
 ```bash
 git clone <repository-url>
-cd lfx-v2-ui
+cd lfx-self-serve
 ```
 
 If already in the repo, confirm the working directory:

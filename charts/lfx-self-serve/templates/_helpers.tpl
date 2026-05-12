@@ -4,7 +4,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "lfx-v2-ui.name" -}}
+{{- define "lfx-self-serve.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -13,7 +13,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "lfx-v2-ui.fullname" -}}
+{{- define "lfx-self-serve.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -29,16 +29,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "lfx-v2-ui.chart" -}}
+{{- define "lfx-self-serve.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "lfx-v2-ui.labels" -}}
-helm.sh/chart: {{ include "lfx-v2-ui.chart" . }}
-{{ include "lfx-v2-ui.selectorLabels" . }}
+{{- define "lfx-self-serve.labels" -}}
+helm.sh/chart: {{ include "lfx-self-serve.chart" . }}
+{{ include "lfx-self-serve.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -51,17 +51,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "lfx-v2-ui.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "lfx-v2-ui.name" . }}
+{{- define "lfx-self-serve.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "lfx-self-serve.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "lfx-v2-ui.serviceAccountName" -}}
+{{- define "lfx-self-serve.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "lfx-v2-ui.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "lfx-self-serve.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
@@ -70,7 +70,7 @@ Create the name of the service account to use
 {{/*
 Create the image name with tag
 */}}
-{{- define "lfx-v2-ui.image" -}}
+{{- define "lfx-self-serve.image" -}}
 {{- $tag := .Values.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
@@ -78,7 +78,7 @@ Create the image name with tag
 {{/*
 Common annotations
 */}}
-{{- define "lfx-v2-ui.annotations" -}}
+{{- define "lfx-self-serve.annotations" -}}
 {{- with .Values.annotations }}
 {{ toYaml . }}
 {{- end }}
@@ -87,7 +87,7 @@ Common annotations
 {{/*
 Pod annotations
 */}}
-{{- define "lfx-v2-ui.podAnnotations" -}}
+{{- define "lfx-self-serve.podAnnotations" -}}
 {{- with .Values.podAnnotations }}
 {{ toYaml . }}
 {{- end }}
@@ -99,15 +99,15 @@ Pod annotations
 {{/*
 Create the name of the external secrets secretstore to use
 */}}
-{{- define "lfx-v2-ui.secretStoreName" -}}
-{{- default (include "lfx-v2-ui.fullname" .) .Values.externalSecrets.secretStore.name }}
+{{- define "lfx-self-serve.secretStoreName" -}}
+{{- default (include "lfx-self-serve.fullname" .) .Values.externalSecrets.secretStore.name }}
 {{- end }}
 
 {{/*
 Create the name of the external secret to use
 */}}
-{{- define "lfx-v2-ui.externalSecretName" -}}
-{{- default (include "lfx-v2-ui.fullname" .) .Values.externalSecrets.name }}
+{{- define "lfx-self-serve.externalSecretName" -}}
+{{- default (include "lfx-self-serve.fullname" .) .Values.externalSecrets.name }}
 {{- end }}
 
 {{/*
@@ -115,7 +115,7 @@ SecretStore annotations
 Merges global annotations with externalSecrets.secretStore.annotations
 SecretStore-specific annotations override global ones on key conflicts
 */}}
-{{- define "lfx-v2-ui.secretStoreAnnotations" -}}
+{{- define "lfx-self-serve.secretStoreAnnotations" -}}
 {{- $notations := dict -}}
 {{- if .Values.annotations }}
 {{- $notations = merge $notations .Values.annotations }}
@@ -136,7 +136,7 @@ ExternalSecret annotations
 Merges global annotations with externalSecrets.annotations
 ExternalSecret-specific annotations override global ones on key conflicts
 */}}
-{{- define "lfx-v2-ui.externalSecretAnnotations" -}}
+{{- define "lfx-self-serve.externalSecretAnnotations" -}}
 {{- $notations := dict -}}
 {{- if .Values.annotations }}
 {{- $notations = merge $notations .Values.annotations }}

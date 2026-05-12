@@ -74,7 +74,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 ## Directory Structure
 
 ```text
-lfx-v2-ui/
+lfx-self-serve/
 ├── apps/
 │   └── lfx-one/          # Angular 20 SSR application
 │       ├── src/app/      # Feature modules, layouts, shared components/services

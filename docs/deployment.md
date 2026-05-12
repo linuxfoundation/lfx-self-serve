@@ -241,7 +241,7 @@ AI_API_KEY=your-ai-api-key
 # OpenTelemetry Tracing (Optional)
 # Set OTEL_EXPORTER_OTLP_ENDPOINT to enable tracing; omit to disable
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_SERVICE_NAME=lfx-v2-ui
+OTEL_SERVICE_NAME=lfx-self-serve
 OTEL_TRACES_SAMPLER=parentbased_always_on             # Sampler: always_on, always_off, traceidratio, parentbased_*
 OTEL_TRACES_SAMPLER_ARG=1.0                         # Sampling ratio 0.0-1.0, clamped (default: 1.0)
 OTEL_LOG_LEVEL=info                                 # Log level: none, error, warn, info, debug, verbose, all

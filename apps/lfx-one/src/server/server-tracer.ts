@@ -3,6 +3,6 @@
 
 import { trace } from '@opentelemetry/api';
 
-export const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] || 'lfx-v2-ui';
+export const SERVICE_NAME = process.env['OTEL_SERVICE_NAME'] || 'lfx-self-serve';
 
 export const tracer = trace.getTracer(SERVICE_NAME);
