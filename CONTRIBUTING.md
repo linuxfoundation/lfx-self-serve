@@ -235,15 +235,23 @@ middleware with proper token refresh handling.
 Closes #123
 ```
 
-### Sign-off
+### Sign-off and GPG Signing
 
-All commits must be signed off:
+All commits must be both DCO-signed and GPG-signed:
 
 ```bash
-git commit --signoff
+git commit --signoff -S
 ```
 
-This adds a `Signed-off-by` line to your commit message.
+- `--signoff` adds the `Signed-off-by:` trailer required by the DCO check in CI.
+- `-S` adds a GPG signature; configure your signing key once and Git will pick it up for every commit:
+
+  ```bash
+  git config --global user.signingkey <KEY_ID>
+  git config --global commit.gpgsign true
+  ```
+
+See `.claude/rules/commit-workflow.md` for the canonical signing policy and instructions for verifying your branch's commits before pushing.
 
 ## Pull Request Process
 

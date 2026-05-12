@@ -231,7 +231,7 @@ Every backend endpoint must follow: **service** → **controller** → **route**
 - [ ] **License headers** on ALL source files (`.ts`, `.html`, `.scss`)
 - [ ] **yarn only** — never npx or other package runners
 - [ ] **`docker compose`** not `docker-compose`
-- [ ] **Git commits signed off** with `--signoff`
+- [ ] **Git commits signed off AND GPG-signed** with `--signoff -S` (both required per repo policy — see `.claude/rules/commit-workflow.md`)
 - [ ] **No Claude co-author** in commits
 - [ ] **Linting errors fixed** after changes
 

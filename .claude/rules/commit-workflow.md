@@ -15,6 +15,32 @@ globs: '*'
   - `feat(auth): add OAuth2 integration`
   - `fix(ui): resolve mobile button alignment`
 
+## Commit Signing
+
+All commits must be both DCO-signed and GPG-signed:
+
+- **DCO sign-off (`--signoff`)** — required by repo policy; validated by the Probot DCO check in CI. The `Signed-off-by: Name <email>` trailer is appended automatically when you pass `--signoff` (or `-s`).
+- **GPG signature (`-S`)** — required by repo policy; commits must have a valid GPG signature attached. Configure a signing key once and Git will pick it up for every commit:
+
+  ```bash
+  git config --global user.signingkey <KEY_ID>
+  git config --global commit.gpgsign true
+  ```
+
+Standard commit command:
+
+```bash
+git commit --signoff -S -m "<type>(<scope>): <subject>"
+```
+
+If signing fails, fix the underlying issue — do not push unsigned commits. To verify signature status on a branch's commits:
+
+```bash
+git log --format='%G? %h %s' origin/main..HEAD
+```
+
+Acceptable `%G?` codes: `G` (good signature) or `U` (good signature, signing key isn't in your local trust db — fine for policy purposes). Codes `N` (no signature), `B` (bad signature), or `E` (cannot check — e.g., missing public key locally) need investigation. Note that the authoritative GPG check is GitHub's **Verified** badge on each commit after push — if your signing key isn't registered with GitHub, the local check can pass while GitHub still marks the commit as unverified.
+
 ## Branch Naming
 
 - Branch names follow commit types followed by the JIRA ticket number
