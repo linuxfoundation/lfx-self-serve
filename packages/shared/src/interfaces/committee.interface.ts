@@ -30,6 +30,14 @@ export type OversightSubType = 'governance' | 'advisory';
  */
 export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
 
+/** Display metadata for a behavioral class — used by filter chips and badges. */
+export interface BehavioralClassDisplayConfig {
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+}
+
 // ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
 
 /**
@@ -128,6 +136,10 @@ export interface Committee {
   writer?: boolean;
   /** Committee category/type (e.g., "Technical", "Legal", "Board") */
   category: string;
+  /** Behavioral class derived from category — populated by the UI before binding to list views to avoid per-row function calls in templates. */
+  behavioralClass?: GroupBehavioralClass;
+  /** Resolved display metadata for behavioralClass — populated by the UI alongside behavioralClass so templates read pure properties. */
+  classDisplay?: BehavioralClassDisplayConfig;
   /** Optional description of the committee's purpose */
   description?: string;
   /** UID of parent committee for hierarchical structures */

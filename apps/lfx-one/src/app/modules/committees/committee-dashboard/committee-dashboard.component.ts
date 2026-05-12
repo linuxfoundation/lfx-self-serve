@@ -8,8 +8,8 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { Committee, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, getGroupBehavioralClass } from '@lfx-one/shared/constants';
+import { Committee, GroupBehavioralClass, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -45,6 +45,10 @@ export class CommitteeDashboardComponent {
   public refresh = signal(0);
   public foundationFilter = signal<string | null>(null);
   public projectFilter = signal<string | null>(null);
+  public behavioralClassFilter = signal<GroupBehavioralClass | null>(null);
+
+  protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
+  protected readonly behavioralClassKeys = Object.keys(BEHAVIORAL_CLASS_CONFIG) as GroupBehavioralClass[];
 
   // ── Forms ─────────────────────────────────────────────────────────────────
   public searchForm: FormGroup;
@@ -54,10 +58,8 @@ export class CommitteeDashboardComponent {
   public myCommittees: Signal<MyCommittee[]>;
   public filteredMyCommittees: Signal<MyCommittee[]>;
   public myCommitteeUids: Signal<Set<string>>;
-  public categories: Signal<{ label: string; value: string | null }[]>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
-  public categoryFilter: Signal<string | null>;
   public votingStatusFilter: Signal<string | null>;
 
   // Foundation and project filter options (separate dropdowns)
@@ -82,11 +84,17 @@ export class CommitteeDashboardComponent {
   public myPublicGroups: Signal<number>;
   public myActiveVoting: Signal<number>;
 
+  public behavioralClassCounts: Signal<Record<GroupBehavioralClass, number>>;
+
   // Stat card arrays for the shared <lfx-stat-card-grid> component
   public foundationStatCards: Signal<StatCardItem[]>;
   public myStatCards: Signal<StatCardItem[]>;
 
   private searchTerm: Signal<string>;
+
+  // Decorated source signals — depend only on the raw committees lists, so decoration runs once per source change rather than on every filter change.
+  private decoratedCommittees: Signal<Committee[]>;
+  private decoratedMyCommittees: Signal<MyCommittee[]>;
 
   public constructor() {
     // Initialize project context
@@ -96,15 +104,15 @@ export class CommitteeDashboardComponent {
     this.committees = this.initializeCommittees();
     this.myCommittees = this.initializeMyCommittees();
     this.myCommitteeUids = computed(() => new Set(this.myCommittees().map((c) => c.uid)));
+    this.decoratedCommittees = this.initializeDecoratedCommittees();
+    this.decoratedMyCommittees = this.initializeDecoratedMyCommittees();
 
     // Initialize search form
     this.searchForm = this.initializeSearchForm();
     this.searchTerm = this.initializeSearchTerm();
-    this.categoryFilter = this.initializeCategoryFilter();
     this.votingStatusFilter = this.initializeVotingStatusFilter();
 
     // Initialize filters
-    this.categories = this.initializeCategories();
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
@@ -136,6 +144,8 @@ export class CommitteeDashboardComponent {
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
     ]);
+
+    this.behavioralClassCounts = this.initializeBehavioralClassCounts();
   }
 
   public openCreateDialog(): void {
@@ -163,6 +173,10 @@ export class CommitteeDashboardComponent {
     });
   }
 
+  public selectBehavioralClass(cls: GroupBehavioralClass | null): void {
+    this.behavioralClassFilter.set(cls);
+  }
+
   public onFoundationFilterChange(value: string | null): void {
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
@@ -176,6 +190,7 @@ export class CommitteeDashboardComponent {
   private resetScopeFilters(): void {
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
+    this.behavioralClassFilter.set(null);
     this.searchForm?.get('foundationFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('projectFilter')?.setValue(null, { emitEvent: false });
   }
@@ -224,7 +239,6 @@ export class CommitteeDashboardComponent {
   private initializeSearchForm(): FormGroup {
     return new FormGroup({
       search: new FormControl<string>(''),
-      category: new FormControl<string | null>(null),
       votingStatus: new FormControl<string | null>(null),
       foundationFilter: new FormControl<string | null>(null),
       projectFilter: new FormControl<string | null>(null),
@@ -233,10 +247,6 @@ export class CommitteeDashboardComponent {
 
   private initializeSearchTerm(): Signal<string> {
     return toSignal(this.searchForm.get('search')!.valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()), { initialValue: '' });
-  }
-
-  private initializeCategoryFilter(): Signal<string | null> {
-    return toSignal(this.searchForm.get('category')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
   }
 
   private initializeVotingStatusFilter(): Signal<string | null> {
@@ -268,30 +278,6 @@ export class CommitteeDashboardComponent {
       ),
       { initialValue: [] }
     );
-  }
-
-  private initializeCategories(): Signal<{ label: string; value: string | null }[]> {
-    return computed(() => {
-      const committeesData = this.isMeLens() ? this.myCommittees() : this.committees();
-
-      // Count committees by category, falling back to 'Other' when category is absent
-      const categoryCounts = new Map<string, number>();
-      committeesData.forEach((committee) => {
-        const cat = committee.category || 'Other';
-        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
-      });
-
-      // Get unique categories and sort them
-      const uniqueCategories = Array.from(categoryCounts.keys()).sort((a, b) => a.localeCompare(b));
-
-      // Create options with counts
-      const categoryOptions = uniqueCategories.map((cat) => ({
-        label: `${cat} (${categoryCounts.get(cat)})`,
-        value: cat,
-      }));
-
-      return [{ label: 'All', value: null }, ...categoryOptions];
-    });
   }
 
   private initializeVotingStatusOptions(): Signal<{ label: string; value: string | null }[]> {
@@ -342,11 +328,28 @@ export class CommitteeDashboardComponent {
     });
   }
 
+  private initializeDecoratedCommittees(): Signal<Committee[]> {
+    return computed(() =>
+      this.committees().map((c) => {
+        const behavioralClass = getGroupBehavioralClass(c.category);
+        return { ...c, behavioralClass, classDisplay: BEHAVIORAL_CLASS_CONFIG[behavioralClass] };
+      })
+    );
+  }
+
+  private initializeDecoratedMyCommittees(): Signal<MyCommittee[]> {
+    return computed(() =>
+      this.myCommittees().map((c) => {
+        const behavioralClass = getGroupBehavioralClass(c.category);
+        return { ...c, behavioralClass, classDisplay: BEHAVIORAL_CLASS_CONFIG[behavioralClass] };
+      })
+    );
+  }
+
   private initializeFilteredCommittees(): Signal<Committee[]> {
     return computed(() => {
-      let filtered = this.committees();
+      let filtered: Committee[] = this.decoratedCommittees();
 
-      // Apply search filter
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
       if (searchTerm) {
         filtered = filtered.filter(
@@ -357,20 +360,16 @@ export class CommitteeDashboardComponent {
         );
       }
 
-      // Apply category filter
-      const category = this.categoryFilter();
-      if (category) {
-        filtered = filtered.filter((committee) => (committee.category || 'Other') === category);
+      const behavioralClass = this.behavioralClassFilter();
+      if (behavioralClass) {
+        filtered = filtered.filter((committee) => committee.behavioralClass === behavioralClass);
       }
 
-      // Apply voting status filter
       const votingStatus = this.votingStatusFilter();
-      if (votingStatus) {
-        if (votingStatus === 'enabled') {
-          filtered = filtered.filter((committee) => committee.enable_voting === true);
-        } else if (votingStatus === 'disabled') {
-          filtered = filtered.filter((committee) => committee.enable_voting === false);
-        }
+      if (votingStatus === 'enabled') {
+        filtered = filtered.filter((committee) => committee.enable_voting === true);
+      } else if (votingStatus === 'disabled') {
+        filtered = filtered.filter((committee) => committee.enable_voting === false);
       }
 
       return filtered;
@@ -379,9 +378,8 @@ export class CommitteeDashboardComponent {
 
   private initializeFilteredMyCommittees(): Signal<MyCommittee[]> {
     return computed(() => {
-      let filtered: MyCommittee[] = this.myCommittees();
+      let filtered: MyCommittee[] = this.decoratedMyCommittees();
 
-      // Apply foundation/project filter (client-side)
       const project = this.projectFilter();
       const foundation = this.foundationFilter();
       if (project) {
@@ -390,7 +388,6 @@ export class CommitteeDashboardComponent {
         filtered = filtered.filter((c) => c.project_uid === foundation || (c.parent_project_uid === foundation && !c.is_foundation));
       }
 
-      // Apply search filter
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
       if (searchTerm) {
         filtered = filtered.filter(
@@ -402,13 +399,11 @@ export class CommitteeDashboardComponent {
         );
       }
 
-      // Apply category filter
-      const category = this.categoryFilter();
-      if (category) {
-        filtered = filtered.filter((c) => (c.category || 'Other') === category);
+      const behavioralClass = this.behavioralClassFilter();
+      if (behavioralClass) {
+        filtered = filtered.filter((c) => c.behavioralClass === behavioralClass);
       }
 
-      // Apply voting status filter
       const votingStatus = this.votingStatusFilter();
       if (votingStatus === 'enabled') {
         filtered = filtered.filter((c) => c.enable_voting === true);
@@ -417,6 +412,24 @@ export class CommitteeDashboardComponent {
       }
 
       return filtered;
+    });
+  }
+
+  private initializeBehavioralClassCounts(): Signal<Record<GroupBehavioralClass, number>> {
+    return computed(() => {
+      const source = this.isMeLens() ? this.decoratedMyCommittees() : this.decoratedCommittees();
+      const counts: Record<GroupBehavioralClass, number> = {
+        'governing-board': 0,
+        'oversight-committee': 0,
+        'working-group': 0,
+        'special-interest-group': 0,
+        'ambassador-program': 0,
+        other: 0,
+      };
+      source.forEach((c) => {
+        counts[c.behavioralClass ?? 'other']++;
+      });
+      return counts;
     });
   }
 }

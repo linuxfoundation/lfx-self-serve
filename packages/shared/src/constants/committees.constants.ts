@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import { BehavioralClassDisplayConfig, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -552,4 +552,43 @@ export const CATEGORY_BEHAVIORAL_CLASS: Record<string, GroupBehavioralClass> = {
   // ── other (catch-all) ──
   Other: 'other',
   Committee: 'other',
+};
+
+export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralClassDisplayConfig> = {
+  'governing-board': {
+    label: 'Boards',
+    icon: 'fa-light fa-gavel',
+    color: 'text-violet-700',
+    bgColor: 'bg-violet-50',
+  },
+  'oversight-committee': {
+    label: 'Oversight',
+    icon: 'fa-light fa-shield-check',
+    color: 'text-emerald-700',
+    bgColor: 'bg-emerald-50',
+  },
+  'working-group': {
+    label: 'Working Groups',
+    icon: 'fa-light fa-users-gear',
+    color: 'text-amber-700',
+    bgColor: 'bg-amber-50',
+  },
+  'special-interest-group': {
+    label: 'SIGs',
+    icon: 'fa-light fa-comments',
+    color: 'text-blue-700',
+    bgColor: 'bg-blue-50',
+  },
+  'ambassador-program': {
+    label: 'Ambassadors',
+    icon: 'fa-light fa-megaphone',
+    color: 'text-rose-700',
+    bgColor: 'bg-rose-50',
+  },
+  other: {
+    label: 'Other',
+    icon: 'fa-light fa-layer-group',
+    color: 'text-gray-700',
+    bgColor: 'bg-gray-50',
+  },
 };

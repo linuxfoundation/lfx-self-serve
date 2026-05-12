@@ -44,6 +44,39 @@
       <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" data-testid="committees-me-stats" />
     }
 
+    @let totalForChips = isMeLens() ? myCommittees().length : committees().length;
+    @if (totalForChips > 0) {
+      <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter groups by behavioral class" data-testid="groups-behavioral-class-chips">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+          [class]="behavioralClassFilter() === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+          [attr.aria-pressed]="behavioralClassFilter() === null"
+          (click)="selectBehavioralClass(null)"
+          data-testid="groups-chip-all">
+          All ({{ totalForChips }})
+        </button>
+        @for (key of behavioralClassKeys; track key) {
+          @if (behavioralClassCounts()[key] > 0) {
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              [class]="
+                behavioralClassFilter() === key
+                  ? 'bg-blue-600 text-white'
+                  : behavioralClassConfig[key].bgColor + ' ' + behavioralClassConfig[key].color + ' hover:opacity-80'
+              "
+              [attr.aria-pressed]="behavioralClassFilter() === key"
+              (click)="selectBehavioralClass(key)"
+              [attr.data-testid]="'groups-chip-' + key">
+              <i [class]="behavioralClassConfig[key].icon" aria-hidden="true"></i>
+              {{ behavioralClassConfig[key].label }} ({{ behavioralClassCounts()[key] }})
+            </button>
+          }
+        }
+      </div>
+    }
+
     <!-- My Groups Table (Me lens) -->
     @if (isMeLens()) {
       @if (myCommitteesLoading()) {
@@ -69,7 +102,6 @@
           [hasItems]="myCommittees().length > 0"
           [myCommitteeUids]="myCommitteeUids()"
           [searchForm]="searchForm"
-          [categoryOptions]="categories()"
           [votingStatusOptions]="votingStatusOptions()"
           [showFoundationFilter]="showFoundationFilter()"
           [showProjectFilter]="showProjectFilter()"
@@ -77,6 +109,7 @@
           [projectOptions]="projectOptions()"
           (foundationFilterChange)="onFoundationFilterChange($event)"
           (projectFilterChange)="onProjectFilterChange($event)"
+          (resetRequested)="selectBehavioralClass(null)"
           (refresh)="refreshCommittees()"
           (rowClick)="onCommitteeClick($event)"
           data-testid="committees-me-table">
@@ -87,29 +120,18 @@
     @if (!isMeLens()) {
       <!-- All Groups Section -->
       @if (committeesLoading()) {
-        <div class="flex flex-col gap-4">
-          <div class="flex items-center gap-2">
-            <p-skeleton width="6rem" height="1.25rem" borderRadius="4px" />
-            <p-skeleton width="1.5rem" height="1.25rem" borderRadius="1rem" />
+        <lfx-card>
+          <div class="flex flex-col gap-4 p-4">
+            @for (_ of [1, 2, 3, 4, 5]; track _) {
+              <div class="flex items-center gap-6">
+                <p-skeleton width="25%" height="0.875rem" />
+                <p-skeleton width="20%" height="0.875rem" />
+                <p-skeleton width="15%" height="0.875rem" />
+                <p-skeleton width="10%" height="0.875rem" />
+              </div>
+            }
           </div>
-          <lfx-card>
-            <div class="flex flex-col gap-4 p-4">
-              @for (_ of [1, 2, 3, 4, 5]; track _) {
-                <div class="flex items-center gap-6">
-                  <p-skeleton width="25%" height="0.875rem" />
-                  <p-skeleton width="20%" height="0.875rem" />
-                  <p-skeleton width="15%" height="0.875rem" />
-                  <p-skeleton width="10%" height="0.875rem" />
-                </div>
-              }
-            </div>
-          </lfx-card>
-        </div>
-      } @else if (committees().length > 0) {
-        <div class="flex items-center gap-2">
-          <h2 class="text-lg font-semibold text-gray-900">All {{ committeeLabel.plural }}</h2>
-          <span class="text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{{ totalCommittees() }}</span>
-        </div>
+        </lfx-card>
       }
 
       <!-- Content Area - Table or Cards -->
@@ -130,8 +152,8 @@
               [canManageCommittee]="canWrite()"
               [myCommitteeUids]="myCommitteeUids()"
               [searchForm]="searchForm"
-              [categoryOptions]="categories()"
               [votingStatusOptions]="votingStatusOptions()"
+              (resetRequested)="selectBehavioralClass(null)"
               (refresh)="refreshCommittees()"
               (rowClick)="onCommitteeClick($event)">
             </lfx-committee-table>

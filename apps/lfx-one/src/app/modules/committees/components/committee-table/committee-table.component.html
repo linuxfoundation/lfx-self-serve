@@ -2,16 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
-  <!-- Type Tabs (hidden when no categories are recognized) -->
-  @if (categoryTabOptions().length > 1) {
-    <lfx-card-tabs-bar
-      [options]="categoryTabOptions()"
-      [selectedFilter]="categoryTab()"
-      (filterChange)="onCategoryTabChange($event)"
-      data-testid="committee-type-tabs">
-    </lfx-card-tabs-bar>
-  }
-
   <!-- Filter Bar -->
   @if (hasItems()) {
     <div class="px-5 pt-4 pb-3">
@@ -102,6 +92,7 @@
             <tr>
               <th>Name</th>
               <th>Type</th>
+              <th>Class</th>
               <th class="min-w-[200px]">Description</th>
               <th>Members</th>
               <th>Channels</th>
@@ -131,6 +122,14 @@
               <td>
                 @let category = committee.category || 'Other';
                 <lfx-tag [value]="category" styleClass="tag-neutral"></lfx-tag>
+              </td>
+              <td>
+                <span
+                  class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                  [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color">
+                  <i [class]="committee.classDisplay.icon + ' text-[10px]'" aria-hidden="true"></i>
+                  {{ committee.classDisplay.label }}
+                </span>
               </td>
               <td class="min-w-[200px]">
                 <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
