@@ -699,6 +699,11 @@ export interface DescriptionDialogData {
   description: string;
 }
 
+export interface IcalSubscribeDialogData {
+  feedUrl: string;
+  committeeName: string;
+}
+
 export interface EditChairsDialogData {
   members: { label: string; value: string }[];
   currentChairUid: string | null;

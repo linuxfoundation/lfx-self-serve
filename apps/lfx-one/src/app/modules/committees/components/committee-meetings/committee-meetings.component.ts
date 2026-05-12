@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -20,17 +19,18 @@ import { addMinutesToDate } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
 import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
+
+import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
 
 @Component({
   selector: 'lfx-committee-meetings',
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    ClipboardModule,
     ButtonComponent,
     CardComponent,
     InputTextComponent,
@@ -39,6 +39,7 @@ import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJ
     MeetingCardComponent,
     FullCalendarComponent,
   ],
+  providers: [DialogService],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,8 +49,7 @@ export class CommitteeMeetingsComponent {
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
   private readonly router = inject(Router);
-  private readonly clipboard = inject(Clipboard);
-  private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Inputs
@@ -130,16 +130,27 @@ export class CommitteeMeetingsComponent {
       .subscribe((v) => this.searchForm.get('timeFilter')?.setValue(v, { emitEvent: false }));
   }
 
-  /** Copies the committee's calendar subscribe URL to clipboard and shows a confirmation toast. */
+  /** Opens the iCal Subscribe modal — copy URL + Google/Outlook/Apple deep links. */
   public onSubscribe(): void {
-    const uid = this.committee().uid;
-    const url = `${environment.urls.home}/public/api/committees/${uid}/calendar.ics`;
-    this.clipboard.copy(url);
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Subscribe URL copied!',
-      detail: 'Add this to Google Calendar, Outlook, or Apple Calendar.',
-      life: 5000,
+    const committee = this.committee();
+    if (!committee?.uid) {
+      console.warn('Subscribe clicked with no committee uid; aborting dialog open');
+      return;
+    }
+
+    const feedUrl = `${environment.urls.home}/public/api/committees/${committee.uid}/calendar.ics`;
+    const committeeName = committee.name ?? 'Committee';
+
+    this.dialogService.open(IcalSubscribeDialogComponent, {
+      header: `Subscribe — ${committeeName}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: {
+        feedUrl,
+        committeeName,
+      },
     });
   }
 
