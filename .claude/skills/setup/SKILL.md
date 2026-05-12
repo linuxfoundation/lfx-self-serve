@@ -108,6 +108,22 @@ If the contributor encounters issues, help them debug:
 - **Missing dependencies:** Run `yarn install` again
 - **Corepack issues:** Run `corepack enable && corepack prepare yarn@4.9.2 --activate`
 
+### Local auth gotchas (Authelia)
+
+The local stack uses **Authelia** at `https://auth.k8s.orb.local` (not Auth0 — Auth0 is prod/staging only).
+
+- `NODE_TLS_REJECT_UNAUTHORIZED=0` is required for local Authelia because the cert is self-signed. See README.
+- Local-mode detection: the server checks `issuerBaseUrl.includes('auth.k8s.orb.local')` in `m2m-token.util.ts`, `auth.middleware.ts`, and `profile.controller.ts`.
+- **Login broken?** Most common cause is stale cookies or a rotated client secret. Clear browser cookies for `localhost:4200`, then re-fetch the Authelia client secret and update `.env`:
+
+  ```bash
+  kubectl get secrets authelia-clients -n lfx \
+    -o jsonpath='{.data.lfx}' | base64 --decode
+  ```
+
+- **Inspect the current session** (after login): `http://localhost:4200/api/profile` (the server-registered route backed by `profileController.getCurrentUserProfile` — there is no `/api/auth/me`)
+- If the `lfx` Authelia client doesn't exist in the cluster, the `authelia-clients` secret will be missing — the local k8s stack needs `helmfile sync` to recreate it.
+
 ## Done
 
 Once the app loads successfully, the contributor is ready to start development.

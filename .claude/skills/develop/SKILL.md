@@ -14,6 +14,16 @@ You are helping a contributor build within the LFX One codebase. This skill hand
 
 **Important:** You are integrating features within existing architecture — not making architectural decisions. If the work requires changes to routing, auth, middleware, or infrastructure, flag it for a code owner.
 
+## Pre-edit hygiene
+
+Before every meaningful edit:
+
+1. **Re-read the file with `view`** — do not trust prior conversation history. Files change; context drifts.
+2. **Run `yarn check-types` after multi-file changes** to catch type drift early.
+3. **Stop and ask** if the request conflicts with conventions in `CLAUDE.md` or `.claude/rules/`.
+
+Default to small, atomic changes. If a request spans more than one module or touches both client and SSR server, surface that and ask whether to split.
+
 ## Step 1: Start from Latest Main & Track Work
 
 Follow the "Starting New Work" rule in `development-rules.md` — checkout `main`, pull latest, and create a feature branch before writing any code.

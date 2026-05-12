@@ -1,6 +1,7 @@
 ---
-description: Commit conventions, branch naming, PR format, PR size guidelines, and JIRA tracking workflow
-globs: '*'
+description: Commit conventions, branch naming, PR format, PR size guidelines, sign-off + GPG signing, and JIRA tracking workflow
+paths:
+  - '*'
 ---
 
 # Commit & PR Workflow

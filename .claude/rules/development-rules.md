@@ -1,6 +1,7 @@
 ---
 description: General development rules — shared package conventions, license headers, testing, formatting, layout patterns
-globs: '*'
+paths:
+  - '*'
 ---
 
 # Development Rules

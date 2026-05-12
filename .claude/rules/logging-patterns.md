@@ -1,6 +1,7 @@
 ---
 description: Pino structured logging patterns — logger service API, layer responsibilities, log levels, code examples
-globs: '**/server/**'
+paths:
+  - '**/server/**'
 ---
 
 # Logging System

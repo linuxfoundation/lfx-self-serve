@@ -1,6 +1,7 @@
 ---
-description: Angular component organization pattern — signal initialization, structure order, model signals
-globs: '**/*.component.ts'
+description: Angular component organization pattern — signal initialization, structure order, model signals, DELETE → CREATE rule
+paths:
+  - '**/*.component.ts'
 ---
 
 # Component Organization Pattern
@@ -117,3 +118,15 @@ import { RelativeDateInfo } from '@lfx-one/shared/interfaces';
 
 - **`ChangeDetectionStrategy.OnPush`** is NOT required. With zoneless change detection and signals, OnPush is unnecessary. Do not flag its absence.
 - **`standalone: true`** is NOT required on components, directives, or pipes. Angular defaults components, directives, and pipes to standalone. Do not flag its absence.
+
+## 7. DELETE → CREATE for full component replacement
+
+When _fully replacing_ a component (architectural rewrite, breaking API change, or change in core responsibilities), delete the old file and create the new one. The intent change is clearer in review than a sprawling in-place rewrite.
+
+Does **not** apply to:
+
+- Small tweaks, bug fixes, or cosmetic changes — edit in place
+- Refactors that preserve the public API — edit in place
+- Renames or moves — use `git mv` (preserves blame continuity), then edit
+
+For borderline cases, prefer in-place edits — they keep `git blame` and review history more useful.

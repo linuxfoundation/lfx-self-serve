@@ -2,9 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Auto-loaded by Claude Code at session start. Read this first.
+
 ## Project Overview
 
 LFX One is a Turborepo monorepo containing an Angular 20 SSR application with stable zoneless change detection and Express.js server.
+
+## Working mode
+
+You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/develop` skill.
+
+## Domain language
+
+Use these naturally — do not paraphrase:
+
+- **PCC** — Project Control Center
+- **ED** — Executive Director
+- **Admin Mode** — privileged view variant for EDs and admins
+- **Affiliation** — contributor's company/org link
+- **L2** — second-level navigation pattern
+- **Personas** — Contributor, Maintainer, ED, Board Member
+
+When a feature affects multiple personas differently, flag it explicitly.
 
 ## Quick Start
 
@@ -31,6 +50,16 @@ All commands run from the repo root via Turborepo:
 | `yarn commitlint`   | Validate commit message against Angular conventions |
 
 > For manual commands, prefer `yarn` over `npx` — the repo pins Yarn 4.x through `packageManager`, so `npx` can resolve to the wrong binary. Repo-managed tooling (e.g. `.husky/pre-commit` invokes `npx lint-staged`) may still use `npx` where already configured.
+
+### Reset / cleanup
+
+```bash
+yarn ng cache clean        # Angular CLI cache (uses the workspace-local ng)
+yarn turbo clean           # Turborepo build cache (turbo is a local devDep)
+rm -rf node_modules && yarn install   # nuclear
+```
+
+Hot reload silent? Likely `inotify` watcher limit — `sudo sysctl fs.inotify.max_user_watches=524288`.
 
 ## Monorepo Structure
 
@@ -131,6 +160,8 @@ Utilities split into **generic** helpers (date/time, string, url, file, form, ht
 - Pre-commit runs `./check-headers.sh`, `npx lint-staged` (prettier + lint on staged files), then repo-wide `yarn format:check`, `yarn lint:check`, and `yarn check-types`. Only `lint-staged` is scoped to staged files — the rest run on the whole repo. You don't need to run `yarn format` manually; `lint-staged` already prettifies staged files. If a commit fails, fix the reported issue and retry.
 - See `.claude/rules/commit-workflow.md` for PR title / sizing / JIRA details.
 
+For missing sign-off recovery (single-commit amend, or older commits / cherry-picks / rebases), invoke the `/dco` skill.
+
 ### Source hygiene
 
 - Every source file needs the MIT license header — `./check-headers.sh` validates and the pre-commit hook enforces.
@@ -148,17 +179,47 @@ Utilities split into **generic** helpers (date/time, string, url, file, form, ht
 
 - Don't restart the dev server on code changes — hot reload handles it. Check logs instead.
 
+## Design source of truth
+
+Design lives as HTML in a separate GitHub design repo, generated via Cowork sessions. **Not Figma.**
+
+When implementing from a design:
+
+1. Fetch the HTML from the design repo at the specified commit
+2. Treat the markup as the visual spec — markup-faithful conversion expected
+3. Convert to Angular component preserving structure
+4. Add what HTML doesn't capture:
+   - ARIA roles, focus management
+   - Signals / `@Input` / state
+   - Interactive states: hover, active, loading, error, empty
+   - Responsive breakpoints
+   - SSR safety (see `.claude/rules/ssr-safety.md`)
+
+The HTML is the **visual** spec. Behavior needs explicit input.
+
+For local auth issues (Authelia at `auth.k8s.orb.local`, broken cookies, client-secret fetch, session inspection), invoke the `/setup` skill.
+
+## Source of truth, in order
+
+1. **Code on disk** — re-view; don't trust history
+2. **`apps/lfx-one/src/app/`** — the running app
+3. **`packages/shared/`** — types and contracts shared with backend
+4. **The design repo** — for visual spec
+5. **This file + `.claude/rules/`** — for conventions
+
 ## Rule Files
 
-Detailed patterns are in `.claude/rules/` and loaded contextually based on file globs:
+Detailed patterns are in `.claude/rules/` and loaded contextually based on the `paths:` frontmatter in each file:
 
-| Rule File                   | Glob                | Topics                                                                      |
-| --------------------------- | ------------------- | --------------------------------------------------------------------------- |
-| `component-organization.md` | `**/*.component.ts` | Signal initialization, component structure order, model signals, interfaces |
-| `logging-patterns.md`       | `**/server/**`      | Logger service API, layer responsibilities, log levels, code examples       |
-| `development-rules.md`      | `*`                 | Shared package, license headers, testing, formatting, doc maintenance       |
-| `commit-workflow.md`        | `*`                 | Commit conventions, branch naming, PR format, PR sizing, JIRA tracking      |
-| `skill-guidance.md`         | `*`                 | Guides Claude to suggest `/setup`, `/develop`, `/preflight` skills          |
+| Rule File                   | Paths                                                                       | Topics                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `component-organization.md` | `**/*.component.ts`                                                         | Signal initialization, component structure order, model signals, interfaces, DELETE → CREATE rule     |
+| `logging-patterns.md`       | `**/server/**`                                                              | Logger service API, layer responsibilities, log levels, code examples                                 |
+| `ssr-safety.md`             | `**/*.component.ts`, `**/*.service.ts`, `**/*.directive.ts`, `**/server/**` | `isPlatformBrowser` guard, browser-only API rules, lazy-loading third-party libs                      |
+| `styling.md`                | `**/*.html`, `**/*.scss`, `**/*.component.ts`                               | Brand color scales (`lfxColors`), Tailwind config, no hard-coded hex                                  |
+| `development-rules.md`      | `*`                                                                         | Shared package, license headers, testing, formatting, doc maintenance                                 |
+| `commit-workflow.md`        | `*`                                                                         | Commit conventions, branch naming, PR format, PR sizing, JIRA tracking, sign-off + GPG signing policy |
+| `skill-guidance.md`         | `*`                                                                         | Guides Claude to suggest `/setup`, `/develop`, `/preflight` skills                                    |
 
 ## Architecture Documentation
 
@@ -186,3 +247,19 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on file 
 | [Shared Package](docs/architecture/shared/package-architecture.md)             | Types, interfaces, utilities, validators                         |
 | [E2E Testing](docs/architecture/testing/e2e-testing.md)                        | Dual architecture testing                                        |
 | [Testing Best Practices](docs/architecture/testing/testing-best-practices.md)  | Testing patterns and guide                                       |
+
+## What NOT to do
+
+- ❌ Edit a file without re-reading it if 5+ turns have passed
+- ❌ Replace components in place — for full component replacements use DELETE → CREATE (in-place edits remain fine for non-breaking changes; see `.claude/rules/component-organization.md`)
+- ❌ Hard-code brand hex values (reference `lfxColors` scales)
+- ❌ Reference browser-only APIs without `isPlatformBrowser`
+- ❌ Mix module concerns in one change
+- ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
+- ❌ Commit and claim "done" before `yarn build` passes
+- ❌ Re-introduce Figma references — design source is HTML/GitHub
+- ❌ Edit `CLAUDE.md` or other `lfx-preflight` protected files without code-owner review
+
+## Pre-PR validation
+
+Before saying "I'm done", invoke the `/preflight` skill — it runs license-header, format, lint, build, protected-file, and commit-signoff checks against this repo's specific rules.

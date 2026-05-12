@@ -1,6 +1,7 @@
 ---
 description: Guides Claude to suggest the right skill based on user intent
-globs: '*'
+paths:
+  - '*'
 ---
 
 # Available Skills
