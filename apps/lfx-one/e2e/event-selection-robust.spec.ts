@@ -55,6 +55,8 @@ async function openDialogWithEmptyEvents(
   routeOptions: { probeTotal?: number; mainStatus?: number } = {}
 ) {
   await mockEventRoutes(page, routeOptions);
+  // Ensure "me" lens is active so lensRedirectGuard doesn't redirect to /foundation/events
+  await page.context().addCookies([{ name: 'lfx-active-lens', value: 'me', domain: 'localhost', path: '/' }]);
   await page.goto('/me/events', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.getByTestId(`filter-pill-${tab}`).click();
