@@ -131,6 +131,21 @@
         </div>
       }
 
+      @if (hasNoData()) {
+        <div
+          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+          role="status"
+          data-testid="social-media-drawer-no-data">
+          <div class="flex items-start gap-4 px-4 py-4">
+            <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
+              <h3 class="text-sm font-semibold text-gray-900">No social media activity detected</h3>
+              <p class="text-sm text-gray-500">No follower or engagement data is currently available for this foundation</p>
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- Platform Breakdown Table -->
       <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-platforms-section">
         <div class="flex flex-col gap-1">
