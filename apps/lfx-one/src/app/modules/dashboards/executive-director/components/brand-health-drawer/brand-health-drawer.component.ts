@@ -82,6 +82,8 @@ export class BrandHealthDrawerComponent {
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
+  protected readonly hasNoData: Signal<boolean> = computed(() => this.data().totalMentions === 0);
+
   protected readonly formattedSentimentMom: Signal<string> = computed(() => {
     const v = this.data().sentimentMomChangePp;
     return (v > 0 ? '+' : '') + v.toFixed(1);

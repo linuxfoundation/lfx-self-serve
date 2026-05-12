@@ -143,6 +143,22 @@
       </div>
     }
 
+    @if (hasNoData()) {
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-400 bg-white overflow-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="brand-health-drawer-no-data">
+        <div class="flex items-start gap-4 px-4 py-4">
+          <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <span class="text-sm font-semibold text-gray-900">No brand mention data available</span>
+            <p class="text-sm text-gray-500">No brand mentions are currently available for this foundation</p>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Mentions Trend -->
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-health-drawer-mentions-trend">
       <div class="flex flex-col gap-1">
