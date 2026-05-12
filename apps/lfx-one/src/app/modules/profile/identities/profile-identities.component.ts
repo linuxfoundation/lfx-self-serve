@@ -216,6 +216,13 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   private initIdentitiesState(): Signal<IdentitiesState> {
+    // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's
+    // session cookie reliably, so it tends to fail and renders the load-error
+    // banner into the SSR HTML — producing a red-banner flash on hydration
+    // before the browser's authenticated fetch resolves.
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal({ identities: [] as EnrichedIdentity[], loaded: false });
+    }
     return toSignal(
       this.refreshTrigger$.pipe(
         startWith(undefined),

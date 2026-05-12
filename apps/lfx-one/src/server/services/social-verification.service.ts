@@ -30,20 +30,34 @@ interface SocialTokenResponse {
  * - The `github`, `google-oauth2`, and `linkedin` social connections must be enabled on the Auth0 tenant
  */
 export class SocialVerificationService {
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly issuerBaseUrl: string;
-  private readonly baseUrl: string;
-  private readonly redirectUri: string;
+  // Resolved lazily on first access so dotenv has finished loading,
+  // then memoized — env is stable after startup.
+  private _clientId: string | undefined;
+  private _clientSecret: string | undefined;
+  private _issuerBaseUrl: string | undefined;
+  private _baseUrl: string | undefined;
+  private _redirectUri: string | undefined;
 
   private static readonly validProviders: readonly SocialProvider[] = ['github', 'google', 'linkedin'];
 
-  public constructor() {
-    this.clientId = process.env['PROFILE_CLIENT_ID'] || '';
-    this.clientSecret = process.env['PROFILE_CLIENT_SECRET'] || '';
-    this.issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    this.baseUrl = process.env['PCC_BASE_URL'] || 'http://localhost:4000';
-    this.redirectUri = process.env['SOCIAL_REDIRECT_URI'] || `${this.baseUrl}/social/callback`;
+  private get clientId(): string {
+    return (this._clientId ??= process.env['PROFILE_CLIENT_ID'] || '');
+  }
+
+  private get clientSecret(): string {
+    return (this._clientSecret ??= process.env['PROFILE_CLIENT_SECRET'] || '');
+  }
+
+  private get issuerBaseUrl(): string {
+    return (this._issuerBaseUrl ??= (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, ''));
+  }
+
+  private get baseUrl(): string {
+    return (this._baseUrl ??= process.env['PCC_BASE_URL'] || 'http://localhost:4000');
+  }
+
+  private get redirectUri(): string {
+    return (this._redirectUri ??= process.env['SOCIAL_REDIRECT_URI'] || `${this.baseUrl}/social/callback`);
   }
 
   /**

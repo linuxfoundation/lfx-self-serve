@@ -22,22 +22,42 @@ interface TokenResponse {
  * update:current_user_metadata and update:current_user_identities scopes.
  */
 export class ProfileAuthService {
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly audience: string;
-  private readonly scope: string;
-  private readonly issuerBaseUrl: string;
-  private readonly baseUrl: string;
-  private readonly redirectUri: string;
+  // Resolved lazily on first access so dotenv has finished loading,
+  // then memoized — env is stable after startup.
+  private _clientId: string | undefined;
+  private _clientSecret: string | undefined;
+  private _audience: string | undefined;
+  private _scope: string | undefined;
+  private _issuerBaseUrl: string | undefined;
+  private _baseUrl: string | undefined;
+  private _redirectUri: string | undefined;
 
-  public constructor() {
-    this.clientId = process.env['PROFILE_CLIENT_ID'] || '';
-    this.clientSecret = process.env['PROFILE_CLIENT_SECRET'] || '';
-    this.audience = process.env['PROFILE_AUDIENCE'] || '';
-    this.scope = process.env['PROFILE_SCOPE'] || '';
-    this.issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    this.baseUrl = process.env['PCC_BASE_URL'] || 'http://localhost:4000';
-    this.redirectUri = process.env['PROFILE_REDIRECT_URI'] || `${this.baseUrl}/passwordless/callback`;
+  private get clientId(): string {
+    return (this._clientId ??= process.env['PROFILE_CLIENT_ID'] || '');
+  }
+
+  private get clientSecret(): string {
+    return (this._clientSecret ??= process.env['PROFILE_CLIENT_SECRET'] || '');
+  }
+
+  private get audience(): string {
+    return (this._audience ??= process.env['PROFILE_AUDIENCE'] || '');
+  }
+
+  private get scope(): string {
+    return (this._scope ??= process.env['PROFILE_SCOPE'] || '');
+  }
+
+  private get issuerBaseUrl(): string {
+    return (this._issuerBaseUrl ??= (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, ''));
+  }
+
+  private get baseUrl(): string {
+    return (this._baseUrl ??= process.env['PCC_BASE_URL'] || 'http://localhost:4000');
+  }
+
+  private get redirectUri(): string {
+    return (this._redirectUri ??= process.env['PROFILE_REDIRECT_URI'] || `${this.baseUrl}/passwordless/callback`);
   }
 
   /**
