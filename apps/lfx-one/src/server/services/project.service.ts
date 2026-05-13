@@ -102,7 +102,7 @@ import {
   UploadProjectDocumentRequest,
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, nullifyEmptyStrings } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -453,31 +453,8 @@ export class ProjectService {
     }
     // For 'remove' operation, user is already removed from both arrays above
 
-    // Step 3: Clean up empty avatar fields before sending to API
-    // The API validation doesn't accept empty strings for avatar URLs
-    updatedSettings.writers = updatedSettings.writers.map((user) => {
-      const cleanUser: any = {
-        name: user.name,
-        email: user.email,
-        username: user.username,
-      };
-      if (user.avatar && user.avatar.trim() !== '') {
-        cleanUser.avatar = user.avatar;
-      }
-      return cleanUser;
-    });
-
-    updatedSettings.auditors = updatedSettings.auditors.map((user) => {
-      const cleanUser: any = {
-        name: user.name,
-        email: user.email,
-        username: user.username,
-      };
-      if (user.avatar && user.avatar.trim() !== '') {
-        cleanUser.avatar = user.avatar;
-      }
-      return cleanUser;
-    });
+    // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
+    const sanitizedSettings = nullifyEmptyStrings(updatedSettings);
 
     // Step 4: Update settings with ETag
     const startTime = logger.startOperation(req, `${operation}_user_project_permissions`, {
@@ -491,7 +468,7 @@ export class ProjectService {
       'LFX_V2_SERVICE',
       `/projects/${uid}/settings`,
       etag,
-      updatedSettings,
+      sanitizedSettings,
       `${operation}_user_project_permissions`
     );
 
