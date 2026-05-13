@@ -184,7 +184,6 @@ Construct the Agent prompt with the full context below. The enforcer runs in par
 > - Missing `ChangeDetectionStrategy.OnPush` — not required; the app uses stable zoneless change detection
 > - Missing `standalone: true` — Angular 20+ defaults to standalone
 > - `provideZonelessChangeDetection()` as experimental — it is stable in Angular 20
-> - Suggesting that the PR add a "Test plan" section — the user's global config explicitly disables this
 >
 > **Cross-check every finding against the actual rule text before emitting it.** If you cannot quote the rule from one of the loaded rule files, hook, checklist, or architecture doc, drop the finding. Hallucinated rules are worse than missed ones.
 
@@ -232,9 +231,7 @@ Validates PR metadata against `commit-workflow.md` and the project's global conv
 
 4. **External repo references** — if the PR touches new or modified upstream proxy calls under `apps/lfx-one/src/server/`, the PR body should link to the corresponding upstream PR / commit in the microservice repo. Flag SHOULD FIX if an upstream endpoint looks new but no external link is given.
 
-5. **No test plans in PR body** — if the PR body contains `## Test plan`, `## Testing`, or `Test plan:` sections, flag as NIT (the project convention is no test plans in PR descriptions).
-
-6. **Branch rebased on main** — check whether the PR branch includes `origin/main`:
+5. **Branch rebased on main** — check whether the PR branch includes `origin/main`:
 
    ```bash
    git merge-base --is-ancestor origin/main origin/<headRefName>
@@ -242,7 +239,7 @@ Validates PR metadata against `commit-workflow.md` and the project's global conv
 
    If the exit code is non-zero, flag SHOULD FIX: the branch needs a rebase.
 
-7. **PR size** — if `additions > 1000`, emit a review-body note per `commit-workflow.md`'s 1000-line target. (Also covered in Additional Rules below.)
+6. **PR size** — if `additions > 1000`, emit a review-body note per `commit-workflow.md`'s 1000-line target. (Also covered in Additional Rules below.)
 
 Build a findings table like:
 
@@ -253,7 +250,6 @@ Build a findings table like:
 | Branch name     | PASS   | `feat/LFXV2-1234`                  |
 | JIRA ticket     | PASS   | Found LFXV2-1234 in commits        |
 | External refs   | N/A    | No new upstream endpoints          |
-| No test plan    | FAIL   | PR body contains `## Test plan`    |
 | Branch rebased  | PASS   | origin/main is an ancestor         |
 | PR size         | PASS   | 342 additions                      |
 ```
@@ -330,7 +326,6 @@ Before passing any finding to `/review`, drop it if it matches any of these know
 - **Missing `ChangeDetectionStrategy.OnPush`** — not required; the app uses stable zoneless change detection.
 - **Missing `standalone: true`** — Angular 20+ defaults to standalone.
 - **`provideZonelessChangeDetection()` flagged as experimental** — it is stable in Angular 20.
-- **Suggesting the PR add a "Test plan" section** — the project's global config explicitly disables this.
 - **Hallucinated rules** — if the finding's `rule` field cannot be located by string match in the loaded rule files, hook, or checklists, drop it.
 
 ---

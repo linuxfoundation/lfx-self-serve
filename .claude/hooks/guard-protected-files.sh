@@ -58,8 +58,6 @@ case "$FILE_PATH" in
     warn "Supabase service — changes affect user profile data management." ;;
   apps/lfx-one/src/server/services/ai.service.ts)
     warn "AI integration service — changes affect AI-powered features." ;;
-  apps/lfx-one/src/server/services/project.service.ts)
-    warn "Project service — core business logic for project management." ;;
   apps/lfx-one/src/server/services/etag.service.ts)
     warn "ETag caching service — changes affect HTTP caching behavior." ;;
   apps/lfx-one/src/server/helpers/error-serializer.ts)
@@ -70,12 +68,6 @@ esac
 if [[ "$FILE_PATH" == apps/lfx-one/src/server/middleware/* ]]; then
   warn "Middleware files — changes affect request processing for all routes."
 fi
-
-# ── Frontend App Configuration ─────────────────────────────────
-case "$FILE_PATH" in
-  apps/lfx-one/src/app/app.routes.ts)
-    warn "Main app routing — changes affect navigation for the entire application." ;;
-esac
 
 # ── Build & Config Files ──────────────────────────────────────
 if [[ "$FILE_PATH" == .husky/* ]]; then
@@ -89,7 +81,7 @@ case "$FILE_PATH" in
     warn "Prettier configuration — changes affect code formatting standards." ;;
   turbo.json)
     warn "Turborepo config — changes affect monorepo build pipeline." ;;
-  angular.json)
+  apps/lfx-one/angular.json)
     warn "Angular CLI config — changes affect build, serve, and test configuration." ;;
   CLAUDE.md)
     warn "Project instructions — changes affect AI assistant behavior for all users." ;;
