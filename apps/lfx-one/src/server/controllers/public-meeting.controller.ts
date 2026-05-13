@@ -59,8 +59,27 @@ export class PublicMeetingController {
         });
       }
 
-      // Fetch project and invited status in parallel (both depend only on meeting data)
       const isAuthenticated = req.oidc?.isAuthenticated();
+
+      // Strict private gate: anonymous viewers of a private meeting get only the minimum needed to
+      // render the sign-in gate. Password-on-URL is intentionally NOT sufficient — LFX login is
+      // required. Run BEFORE the project / invited / organizer lookups so a transient project
+      // upstream failure doesn't convert a valid private meeting into a 404 for the anonymous
+      // viewer; they still get the sign-in CTA.
+      if (meeting.visibility === MeetingVisibility.PRIVATE && !isAuthenticated) {
+        logger.success(req, 'get_public_meeting_by_id', startTime, {
+          meeting_id: id,
+          project_uid: meeting.project_uid,
+          redacted: true,
+        });
+        res.json({
+          meeting: { id: meeting.id, visibility: meeting.visibility },
+          project: null,
+        });
+        return;
+      }
+
+      // Fetch project and invited status in parallel (both depend only on meeting data)
       const [project, meetingWithInvited] = await Promise.all([
         this.projectService.getProjectById(req, meeting.project_uid, false),
         isAuthenticated
@@ -171,6 +190,26 @@ export class PublicMeetingController {
       // Fetch past meeting (throws ResourceNotFoundError if not found)
       const meeting = await this.meetingService.getPastMeetingById(req, id);
 
+      const isAuthenticated = req.oidc?.isAuthenticated();
+
+      // Strict private gate: anonymous viewers of a private past meeting get only the minimum
+      // needed to render the sign-in gate. Run BEFORE the project / organizer / fullAccess
+      // lookups so a transient project upstream failure doesn't convert a valid private meeting
+      // into a 404 for the anonymous viewer; they still get the sign-in CTA.
+      if (meeting.visibility === MeetingVisibility.PRIVATE && !isAuthenticated) {
+        logger.success(req, 'get_public_past_meeting_by_id', startTime, {
+          past_meeting_id: id,
+          project_uid: meeting.project_uid,
+          redacted: true,
+        });
+        res.json({
+          meeting: { id: meeting.id, visibility: meeting.visibility },
+          project: null,
+          full_access: false,
+        });
+        return;
+      }
+
       // Fetch project
       const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
       if (!project) {
@@ -183,7 +222,6 @@ export class PublicMeetingController {
 
       // Check organizer status for authenticated users using user token
       let isOrganizer = false;
-      const isAuthenticated = req.oidc?.isAuthenticated();
       if (isAuthenticated && originalToken !== undefined) {
         req.bearerToken = originalToken;
         try {
@@ -215,7 +253,9 @@ export class PublicMeetingController {
         meeting.organizer = isOrganizer;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI
+      // For non-full-access users, return only the fields needed for the basic UI. The
+      // private + anonymous case has already been redacted-and-returned above, so this
+      // branch only handles authenticated non-members on a private/restricted past meeting.
       const meetingResponse = fullAccess
         ? meeting
         : {
@@ -271,6 +311,16 @@ export class PublicMeetingController {
           operation: 'post_meeting_link',
           service: 'public_meeting_controller',
           path: `/itx/meetings/${id}`,
+        });
+      }
+
+      // Anonymous viewers cannot fetch a join URL for a private meeting, even with a valid
+      // password URL. LFX login is required to join.
+      if (meeting.visibility === MeetingVisibility.PRIVATE && !req.oidc?.isAuthenticated()) {
+        throw new AuthorizationError('Sign in is required to join a private meeting', {
+          operation: 'post_meeting_link',
+          service: 'public_meeting_controller',
+          path: req.path,
         });
       }
 

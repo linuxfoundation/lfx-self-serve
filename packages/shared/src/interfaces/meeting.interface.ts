@@ -1008,14 +1008,46 @@ export interface UrlMetadataResponse {
 }
 
 /**
+ * Project context returned alongside a public meeting response. Limited to the fields a
+ * non-authenticated viewer is allowed to see (no internals like description, status, etc.).
+ */
+export type PublicMeetingProject = {
+  name: string;
+  slug: string;
+  logo_url: string;
+  uid: string;
+  parent_uid: string;
+};
+
+/**
+ * Redacted meeting shape returned for `visibility === 'private'` + unauthenticated viewers.
+ * Only the bare minimum needed for the page to know "a meeting with this id exists, and it is
+ * private — render the sign-in gate." All sensitive fields (title, agenda, materials, join
+ * info, etc.) are intentionally omitted at the server. LFX sign-in is required to view more.
+ */
+export type RedactedMeeting = Pick<Meeting, 'id' | 'visibility'>;
+export type RedactedPastMeeting = Pick<PastMeeting, 'id' | 'visibility'>;
+
+/**
+ * Response from the public meeting-by-id endpoint (GET /public/api/meetings/:id).
+ * `meeting` is the full record for public / authenticated-private viewers, or redacted for
+ * private + anonymous viewers. `project` is null when the meeting is redacted.
+ */
+export interface PublicMeetingResponse {
+  meeting: Meeting | RedactedMeeting;
+  project: PublicMeetingProject | null;
+}
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
- * via the existing authenticated endpoints
+ * via the existing authenticated endpoints. `meeting` is redacted and `project` is null for
+ * the `visibility === 'private'` + anonymous case (full_access will also be false then).
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
-  project: { name: string; slug: string; logo_url: string; uid: string; parent_uid: string };
+  meeting: PastMeeting | RedactedPastMeeting;
+  project: PublicMeetingProject | null;
   full_access: boolean;
 }
 
