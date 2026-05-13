@@ -64,6 +64,7 @@ export class FlywheelConversionDrawerComponent {
   // === Computed Signals ===
   protected readonly formattedEventAttendees: Signal<string> = computed(() => formatNumber(this.data().funnel.eventAttendees));
   protected readonly reengagement: Signal<NonNullable<FlywheelConversionResponse['reengagement']>> = computed(() => getFlywheelReengagement(this.data()));
+  protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly reengagementRate: Signal<string> = computed(() => `${this.reengagement().reengagementRate.toFixed(1)}%`);
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = computed(() => buildFlywheelRecommendedActions(this.data()));
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = computed(() => buildFlywheelKeyInsights(this.data()));
@@ -151,6 +152,13 @@ export class FlywheelConversionDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initHasNoData(): Signal<boolean> {
+    return computed(() => {
+      const { conversionRate, funnel, monthlyData } = this.data();
+      return conversionRate === 0 && funnel.eventAttendees === 0 && monthlyData.length === 0;
+    });
+  }
+
   private initTrendChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
       const { monthlyData } = this.data();

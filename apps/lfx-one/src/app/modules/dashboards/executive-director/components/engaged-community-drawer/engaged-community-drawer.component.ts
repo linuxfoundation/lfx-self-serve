@@ -53,6 +53,7 @@ export class EngagedCommunityDrawerComponent {
     weeklyTrend: [],
   });
   // === Computed Signals ===
+  protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly formattedTotalMembers: Signal<string> = computed(() => formatNumber(this.data().totalMembers));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
@@ -189,6 +190,13 @@ export class EngagedCommunityDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initHasNoData(): Signal<boolean> {
+    return computed(() => {
+      const { totalMembers, monthlyData } = this.data();
+      return totalMembers === 0 && monthlyData.length === 0;
+    });
+  }
+
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
       const { totalMembers, changePercentage, breakdown, monthlyData } = this.data();
