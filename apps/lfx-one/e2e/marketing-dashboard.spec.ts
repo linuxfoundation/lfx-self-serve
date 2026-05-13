@@ -223,7 +223,7 @@ test.describe('Email CTR Drawer', () => {
   test('shows stats and chart sections', async ({ page }) => {
     await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
     await expect(page.locator('[data-testid="email-ctr-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.locator('[data-testid="email-ctr-drawer-chart-section"]')).toBeVisible();
+    await expect(page.locator('[data-testid="email-ctr-drawer-email-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
