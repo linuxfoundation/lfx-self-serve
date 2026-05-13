@@ -452,12 +452,23 @@ export interface CdpResolveResponse {
 }
 
 /**
+ * CDP identity type — distinguishes whether the identity's value is an email
+ * address or a platform username/handle. Returned by the CDP identities API
+ * and required on create.
+ */
+export type CdpIdentityType = 'email' | 'username';
+
+/**
  * Raw identity from CDP API response
  */
 export interface CdpIdentityRaw {
   id: string;
   value: string;
   platform: string;
+  // Optional to tolerate legacy CDP rows that pre-date the field; backend
+  // derives a fallback by inspecting the value's shape (email vs username)
+  // in cdp.service.ts when absent.
+  type?: CdpIdentityType;
   verified: boolean;
   verifiedBy?: string | null;
   source: string;
@@ -478,7 +489,7 @@ export interface CdpIdentitiesResponse {
 export interface CdpCreateIdentityRequest {
   value: string;
   platform: string;
-  type: string;
+  type: CdpIdentityType;
   source: string;
   verified: boolean;
   verifiedBy: string;
@@ -490,6 +501,7 @@ export interface CdpCreateIdentityRequest {
 export interface CdpIdentity {
   id: string;
   platform: string;
+  type: CdpIdentityType;
   value: string;
   verified: boolean;
   verifiedBy?: string | null;

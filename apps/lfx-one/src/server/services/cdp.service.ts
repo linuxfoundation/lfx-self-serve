@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CDP_CONFIG } from '@lfx-one/shared/constants';
+import { isEmailShape } from '@lfx-one/shared/utils';
 import {
   CdpCreateIdentityRequest,
   CdpIdentity,
@@ -343,9 +344,17 @@ export class CdpService {
 
       const identities: CdpIdentity[] = rawIdentities.map((raw) => {
         const platform = raw.platform === 'custom' ? 'email' : raw.platform;
+        // CDP rows that pre-date the `type` field fall back to inferring from
+        // the value's shape via the shared isEmailShape util — a strict
+        // local@host.tld match → 'email', otherwise 'username'. Platform
+        // alone is not a reliable signal here: CDP_PLATFORM_TO_TYPE_MAP is
+        // the POST default per platform (reflecting what Auth0 gives us),
+        // not a guarantee about what's stored in any given row.
+        const type = raw.type ?? (isEmailShape(raw.value) ? 'email' : 'username');
         return {
           id: raw.id,
           platform,
+          type,
           value: raw.value,
           verified: raw.verified,
           verifiedBy: raw.verifiedBy ?? null,

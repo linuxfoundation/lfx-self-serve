@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
+import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
 
 /**
  * Profile tab configuration
@@ -67,12 +67,6 @@ export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
 ];
 
 /**
- * Platforms that the UI supports verification for.
- * Only identities on these platforms are returned to the frontend.
- */
-export const IDENTITY_DISPLAY_PLATFORMS: readonly string[] = ['github', 'google', 'linkedin', 'email'];
-
-/**
  * Maps Auth0 identity provider names to CDP platform names
  * Used to cross-reference Auth0 linked identities with CDP identities
  */
@@ -94,6 +88,33 @@ export const AUTH0_TO_CDP_PROVIDER_MAP: Record<string, string> = {
 export const CDP_TO_AUTH0_PROVIDER_MAP: Record<string, string> = Object.fromEntries(
   Object.entries(AUTH0_TO_CDP_PROVIDER_MAP).map(([auth0, cdp]) => [cdp, auth0])
 );
+
+/**
+ * Default mapping from CDP platform → identity type, used when LFX One POSTs
+ * new identities to CDP from auth-service (where the value's shape is known
+ * because we control it — Auth0 always gives us email for LinkedIn, nickname
+ * for GitHub, etc.). NOT used as a GET-side fallback for legacy CDP rows
+ * missing `type`; that path infers from the value's shape directly (see
+ * cdp.service.ts).
+ */
+export const CDP_PLATFORM_TO_TYPE_MAP: Readonly<Record<string, CdpIdentityType | undefined>> = {
+  github: 'username',
+  gitlab: 'username',
+  lfid: 'username',
+  google: 'email',
+  linkedin: 'email',
+  email: 'email',
+  custom: 'email',
+};
+
+/**
+ * Allowlist of (platform, type) combos that LFX One supports surfacing in the
+ * profile identities UI and syncing to CDP from auth-service. Applied AFTER
+ * the `custom → email` remap in cdp.service.ts, so email-style entries appear
+ * here as `email + email`. LFID is handled by a dedicated auto-verify branch
+ * and intentionally excluded from this allowlist.
+ */
+export const CDP_DISPLAYABLE_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']);
 
 /**
  * CDP platform to icon class mapping

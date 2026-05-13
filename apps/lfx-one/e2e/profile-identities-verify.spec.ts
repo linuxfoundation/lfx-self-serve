@@ -27,7 +27,10 @@ test.describe('Identities Verify Flow', () => {
 
       // Unverified identities
       await expect(page.getByTestId('identity-row-idf-2')).toContainText('jdoe@company.org');
-      await expect(page.getByTestId('identity-row-idf-6')).toContainText('john-doe-engineer');
+      // LinkedIn identifier now comes from Auth0 profileData.email (the pd.name
+      // fallback was removed). Assert email-shape rather than a literal value
+      // so the test isn't brittle to the test user's specific LinkedIn email.
+      await expect(page.getByTestId('identity-row-idf-6')).toContainText(/[^\s@]+@[^\s@.]+\.[^\s@]+/);
     });
 
     test('should show unverified identities in unverified section', async ({ page }) => {
@@ -84,7 +87,8 @@ test.describe('Identities Verify Flow', () => {
       await expect(dialog).toBeVisible({ timeout: 5000 });
 
       await expect(dialog).toContainText('LinkedIn');
-      await expect(dialog).toContainText('john-doe-engineer');
+      // Identifier is now the LinkedIn pd.email value, not the dropped pd.name.
+      await expect(dialog).toContainText(/[^\s@]+@[^\s@.]+\.[^\s@]+/);
     });
 
     test('should show "Verify identity" as dialog header', async ({ page }) => {

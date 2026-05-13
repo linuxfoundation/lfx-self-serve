@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUTH0_TO_CDP_PROVIDER_MAP, CDP_PLATFORM_ICONS, CDP_TO_AUTH0_PROVIDER_MAP, IDENTITY_DISPLAY_PLATFORMS } from '@lfx-one/shared/constants';
+import {
+  AUTH0_TO_CDP_PROVIDER_MAP,
+  CDP_DISPLAYABLE_IDENTITY_COMBOS,
+  CDP_PLATFORM_ICONS,
+  CDP_PLATFORM_TO_TYPE_MAP,
+  CDP_TO_AUTH0_PROVIDER_MAP,
+} from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   CdpIdentity,
@@ -673,9 +679,10 @@ export class ProfileController {
         auth_service_identities: auth0Identities,
       });
 
-      // Reconcile CDP identities with auth-service identities and filter to display platforms
-      const { enriched, notInCdpCount } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
-      const displayIdentities = enriched.filter((id) => IDENTITY_DISPLAY_PLATFORMS.includes(id.platform));
+      // Reconcile CDP identities with auth-service identities and filter to the
+      // (platform, type) combos LFX One can surface for verification via Auth0.
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
+      const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
 
       logger.success(req, 'get_identities', startTime, {
         lfid,
@@ -683,7 +690,7 @@ export class ProfileController {
         auth_service_count: auth0Identities.length,
         display_count: displayIdentities.length,
         hidden_count: enriched.filter((i) => i.displayState === 'hidden').length,
-        not_in_cdp_count: notInCdpCount,
+        cdp_posts_queued: cdpPostsQueued,
       });
 
       res.json(displayIdentities);
@@ -1692,7 +1699,9 @@ export class ProfileController {
    * Truth table:
    * 1. In auth-service AND CDP, verified=true & verifiedBy=lfid → VERIFIED (already reconciled)
    * 2. In auth-service AND CDP, verified=false OR verifiedBy≠lfid → VERIFIED (auto-verify via PATCH)
-   * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry, TODO: POST to CDP)
+   * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry + fire-and-forget POST to CDP,
+   *    skipping the POST when a `custom` row for the same email value has already been written
+   *    in this loop or already exists as a CDP custom-email row owned by this user (verifiedBy=lfid))
    * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
    * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
    */
@@ -1701,7 +1710,7 @@ export class ProfileController {
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
     lfid: string
-  ): { enriched: EnrichedIdentity[]; notInCdpCount: number } {
+  ): { enriched: EnrichedIdentity[]; cdpPostsQueued: number } {
     // Build a map of "platform:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
@@ -1775,8 +1784,9 @@ export class ProfileController {
       const isCdpVerifiedWithOwner = cdp.verified && !!cdp.verifiedBy;
       let displayState: IdentityDisplayState;
 
-      if (cdp.platform === 'linkedin') {
-        // LinkedIn identities must be linked via auth-service — ignore CDP-only entries
+      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdp.platform}+${cdp.type}`)) {
+        // Combo not surfaceable via Auth0 (e.g. linkedin+username, gitlab+username) —
+        // we have no way to help the user verify it, so hide.
         displayState = 'hidden';
       } else if (isCdpVerifiedWithOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
@@ -1789,7 +1799,15 @@ export class ProfileController {
     });
 
     // Process auth-service identities NOT in CDP — create synthetic entries
-    let notInCdpCount = 0;
+    let cdpPostsQueued = 0;
+    // Tracks values we've POSTed to CDP as platform='custom' within this loop.
+    // Google + email auth-service providers both POST as platform='custom' for
+    // back-compat, so a user with BOTH providers for the same email would
+    // otherwise generate two duplicate custom rows. Iteration order of
+    // authServiceMap is not guaranteed to put 'email' first, and synthetic
+    // entries pushed for the first iter use platform='google'|'email' (not
+    // 'custom'), so the enriched-array-only check below misses them.
+    const postedCustomEmails = new Set<string>();
     for (const [, authId] of authServiceMap) {
       const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
       const value = this.getAuth0IdentityValue(authId);
@@ -1802,29 +1820,34 @@ export class ProfileController {
         continue;
       }
 
-      // Skip non-display platforms (e.g., lfid, gitlab)
-      if (!IDENTITY_DISPLAY_PLATFORMS.includes(cdpPlatform)) {
+      const type = CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username';
+
+      // Skip combos LFX One can't surface for verification (e.g. lfid, gitlab)
+      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdpPlatform}+${type}`)) {
         continue;
       }
 
-      notInCdpCount++;
+      // Google/email POST to CDP as platform='custom'. Suppress the create when
+      // it would duplicate an existing CDP custom-email row (either a manually-
+      // verified one already in `enriched`, or one we POSTed earlier in this
+      // same loop for the other provider). LinkedIn POSTs as platform='linkedin',
+      // a distinct row from an email identity with the same value — never
+      // suppressed by this guard.
+      const cdpPostPlatform = cdpPlatform === 'email' || cdpPlatform === 'google' ? 'custom' : cdpPlatform;
+      const wouldDuplicateCustomEmail =
+        cdpPostPlatform === 'custom' &&
+        (postedCustomEmails.has(value) || enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid));
 
-      // Google uses email as its value — skip CDP create if the same email is already a verified email identity
-      const isEmailAlreadyVerified = enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid);
-
-      // Skip CDP create for LinkedIn — Auth0 returns the user's email as the identity value,
-      // but CDP expects a vanity username, so a synthetic POST would write bad data.
-      const skipCdpCreate = cdpPlatform === 'linkedin';
-
-      if (!isEmailAlreadyVerified && !skipCdpCreate) {
-        // Fire-and-forget: persist auth-service identity to CDP
-        const isEmailType = cdpPlatform === 'email' || cdpPlatform === 'google';
-        const cdpPostPlatform = isEmailType ? 'custom' : cdpPlatform;
+      if (!wouldDuplicateCustomEmail) {
+        cdpPostsQueued++;
+        if (cdpPostPlatform === 'custom') {
+          postedCustomEmails.add(value);
+        }
         this.cdpService
           .createIdentityForUser(req, [lfid], {
             value,
             platform: cdpPostPlatform,
-            type: isEmailType ? 'email' : 'username',
+            type,
             source: 'lfxOne',
             verified: true,
             verifiedBy: lfid,
@@ -1842,6 +1865,7 @@ export class ProfileController {
       enriched.push({
         id: `auth0:${authId.user_id}`,
         platform: cdpPlatform,
+        type,
         value,
         verified: true,
         verifiedBy: lfid,
@@ -1855,7 +1879,7 @@ export class ProfileController {
       });
     }
 
-    return { enriched, notInCdpCount };
+    return { enriched, cdpPostsQueued };
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {
@@ -1888,7 +1912,9 @@ export class ProfileController {
       case 'google-oauth2':
         return pd.email ?? null;
       case 'linkedin':
-        return pd.email ?? pd.name ?? null;
+        // No name fallback: with type='email' on POST, persisting pd.name (a display name,
+        // not an email) would corrupt CDP. Skip the identity if Auth0 didn't give us an email.
+        return pd.email ?? null;
       default:
         return null;
     }
