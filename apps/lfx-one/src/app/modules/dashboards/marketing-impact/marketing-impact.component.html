@@ -1,0 +1,143 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6" data-testid="marketing-impact-page">
+  <!-- Header -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-xl font-semibold text-gray-900" data-testid="marketing-impact-title">Marketing Impact</h2>
+      <p class="text-sm text-gray-500">How are we helping grow and engage?</p>
+      @if (hasFoundation() && contextLabel()) {
+        <p class="text-xs text-gray-400" data-testid="marketing-impact-context">{{ contextLabel() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-3">
+      <lfx-button
+        label="Export PDF"
+        icon="fa-light fa-file-pdf"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="true"
+        ariaLabel="Export report as PDF (coming soon)"
+        data-testid="marketing-impact-export-pdf" />
+      <lfx-select
+        [form]="headerForm"
+        control="month"
+        [options]="monthOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select month"
+        ariaLabel="Select reporting month"
+        styleClass="w-[180px]"
+        data-testid="marketing-impact-month-picker" />
+    </div>
+  </div>
+
+  @if (!hasFoundation()) {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="marketing-impact-empty-state">
+      <p class="text-sm text-gray-500">Select a foundation to view marketing impact.</p>
+    </div>
+  } @else {
+    <!-- Focus filter bar -->
+    <div class="flex items-center gap-3" data-testid="marketing-impact-focus-bar">
+      <span class="text-xs font-semibold tracking-wide text-gray-500">FOCUS</span>
+      <lfx-filter-pills
+        [options]="focusOptions"
+        [selectedFilter]="selectedFocus()"
+        (filterChange)="onFocusChange($event)"
+        data-testid="marketing-impact-focus-pills" />
+    </div>
+
+    <!-- Section tabs -->
+    <div class="flex gap-6 border-b border-gray-200" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.id]="'mi-tab-' + tab.id"
+          [attr.aria-controls]="'mi-panel-' + tab.id"
+          (click)="onTabChange(tab.id)"
+          [attr.aria-selected]="selectedTab() === tab.id"
+          [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
+          [class]="
+            selectedTab() === tab.id
+              ? 'pb-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 -mb-px'
+              : 'pb-2 text-sm font-medium text-gray-500 hover:text-gray-700 -mb-px'
+          "
+          [attr.data-testid]="'marketing-impact-tab-' + tab.id">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <!-- Tab content -->
+    <div class="flex flex-col gap-6" role="tabpanel" [attr.id]="'mi-panel-' + selectedTab()" [attr.aria-labelledby]="'mi-tab-' + selectedTab()">
+      @if (selectedTab() === 'overview') {
+        <!-- Performance summary header -->
+        <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between" data-testid="marketing-impact-summary-header">
+          <div class="flex flex-col gap-0.5">
+            <h3 class="text-base font-semibold text-gray-900">Performance summary</h3>
+            <p class="text-xs text-gray-500">Linear attribution · {{ foundationName() }}</p>
+          </div>
+          <lfx-button
+            label="View executive summary"
+            icon="fa-light fa-file-lines"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="true"
+            ariaLabel="View executive summary (coming soon)"
+            data-testid="marketing-impact-exec-summary-btn" />
+        </div>
+
+        <!-- KPI cards grid -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="marketing-impact-kpi-grid">
+          @if (loading()) {
+            <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="marketing-impact-kpi-skeleton">
+              <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+              <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+              <div class="h-3 w-20 animate-pulse rounded bg-gray-200"></div>
+            </div>
+          } @else {
+            @for (kpi of performanceSummaryKpis(); track kpi.id) {
+              <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'marketing-impact-kpi-' + kpi.id">
+                <!-- Label row -->
+                <div class="flex items-center gap-2">
+                  <div class="flex h-7 w-7 items-center justify-center rounded-full" [class]="kpi.iconClass">
+                    <i [class]="kpi.icon + ' text-sm'" aria-hidden="true"></i>
+                  </div>
+                  <span class="text-sm font-medium text-gray-600">{{ kpi.label }}</span>
+                </div>
+                <!-- Value -->
+                <span class="text-2xl font-semibold text-gray-900">{{ kpi.value }}</span>
+                <!-- MoM change -->
+                <div class="flex items-center gap-1.5">
+                  @if (kpi.trend === 'up') {
+                    <i class="fa-solid fa-arrow-up text-xs text-green-600" aria-hidden="true"></i>
+                  } @else if (kpi.trend === 'down') {
+                    <i class="fa-solid fa-arrow-down text-xs text-red-600" aria-hidden="true"></i>
+                  } @else {
+                    <i class="fa-solid fa-minus text-xs text-gray-500" aria-hidden="true"></i>
+                  }
+                  <span class="text-xs font-medium" [class]="kpi.trendClass">
+                    {{ kpi.momChange }}
+                  </span>
+                  <span class="text-xs text-gray-400">{{ kpi.previousLabel }}</span>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      } @else {
+        <!-- Non-overview tab placeholder -->
+        <div
+          class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-16"
+          data-testid="marketing-impact-tab-placeholder">
+          <div class="flex flex-col items-center gap-2 text-center">
+            <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+            <p class="text-sm text-gray-500">{{ selectedTabLabel() }} data coming soon.</p>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

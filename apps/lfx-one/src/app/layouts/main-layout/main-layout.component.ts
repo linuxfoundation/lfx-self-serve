@@ -272,6 +272,12 @@ export class MainLayoutComponent {
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
           },
+          {
+            label: 'Marketing Impact',
+            icon: 'fa-light fa-bullhorn',
+            routerLink: '/foundation/marketing-impact',
+            testId: 'sidebar-metrics-marketing-impact',
+          },
         ],
       });
     }

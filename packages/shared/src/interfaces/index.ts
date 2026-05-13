@@ -147,3 +147,6 @@ export * from './stat-card.interface';
 
 // Changelog interfaces
 export * from './changelog.interface';
+
+// Marketing Impact interfaces
+export * from './marketing-impact.interface';
