@@ -27,14 +27,14 @@ export class IcalSubscribeDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly feedUrl = this.dialogConfig.data?.feedUrl ?? '';
-  public readonly committeeName = this.dialogConfig.data?.committeeName ?? 'Committee';
+  public readonly name = this.dialogConfig.data?.name ?? 'Calendar';
 
   public readonly googleCalendarUrl = this.feedUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(toWebcal(this.feedUrl))}` : '';
   public readonly outlookLiveUrl = this.feedUrl
-    ? `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.committeeName)}`
+    ? `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.name)}`
     : '';
   public readonly outlook365Url = this.feedUrl
-    ? `https://outlook.office.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.committeeName)}`
+    ? `https://outlook.office.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.name)}`
     : '';
   public readonly webcalUrl = this.feedUrl ? toWebcal(this.feedUrl) : '';
 

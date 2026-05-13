@@ -713,7 +713,7 @@ export interface DescriptionDialogData {
 
 export interface IcalSubscribeDialogData {
   feedUrl: string;
-  committeeName: string;
+  name: string;
 }
 
 export interface EditChairsDialogData {

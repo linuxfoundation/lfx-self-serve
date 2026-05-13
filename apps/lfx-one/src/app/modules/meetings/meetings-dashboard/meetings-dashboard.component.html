@@ -186,8 +186,64 @@
     </div>
   </div>
 
+  <div class="flex items-center justify-end gap-2 mb-4" data-testid="meetings-view-actions">
+    <div role="group" aria-label="Meetings view" class="flex items-center gap-2" data-testid="meetings-view-toggle">
+      <lfx-button
+        label="List"
+        icon="fa-light fa-list-ul"
+        size="small"
+        [severity]="isListView() ? 'info' : 'secondary'"
+        [outlined]="!isListView()"
+        [ariaLabel]="'List view' + (isListView() ? ' (active)' : '')"
+        (onClick)="viewMode.set('list')"
+        data-testid="meetings-list-btn"></lfx-button>
+      @if (canShowCalendarView()) {
+        <lfx-button
+          label="Calendar"
+          icon="fa-light fa-calendar-days"
+          size="small"
+          [severity]="isCalendarView() ? 'info' : 'secondary'"
+          [outlined]="!isCalendarView()"
+          [ariaLabel]="'Calendar view' + (isCalendarView() ? ' (active)' : '')"
+          (onClick)="viewMode.set('calendar')"
+          data-testid="meetings-calendar-btn"></lfx-button>
+      }
+    </div>
+    @if (canShowCalendarView()) {
+      <lfx-button
+        label="Subscribe"
+        icon="fa-light fa-calendar-arrow-down"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Subscribe to calendar"
+        (onClick)="onSubscribe()"
+        data-testid="meetings-subscribe-btn"></lfx-button>
+    }
+  </div>
+
   <div class="min-h-[400px]">
-    @if ((timeFilter() === 'upcoming' && meetingsLoading()) || (timeFilter() === 'past' && pastMeetingsLoading())) {
+    @if (isCalendarView()) {
+      <div class="flex flex-col gap-4" data-testid="meetings-calendar-view">
+        <div class="flex items-center gap-4 flex-wrap px-1 text-sm text-gray-500">
+          <span class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>
+            Meeting (default)
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block"></span>
+            Cancelled
+          </span>
+        </div>
+        @if (calendarLoading()) {
+          <div class="flex items-center justify-center py-20">
+            <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+          </div>
+        } @else {
+          <lfx-fullcalendar [events]="calendarEvents()" (eventClick)="onCalendarEventClick($event)" data-testid="meetings-calendar"></lfx-fullcalendar>
+        }
+      </div>
+    } @else if ((timeFilter() === 'upcoming' && meetingsLoading()) || (timeFilter() === 'past' && pastMeetingsLoading())) {
       <div class="flex flex-col gap-4">
         @for (item of [0, 1, 2]; track item) {
           <div class="bg-white border border-gray-200 rounded-lg p-6 animate-pulse">

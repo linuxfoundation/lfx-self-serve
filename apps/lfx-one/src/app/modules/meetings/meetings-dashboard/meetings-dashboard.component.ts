@@ -5,19 +5,24 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
+import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { Lens, Meeting, PageResult, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
-import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
+import { environment } from '@environments/environment';
+import { EventClickArg, EventInput } from '@fullcalendar/core';
+import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
+import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
+import { DialogService } from 'primeng/dynamicdialog';
 import {
   BehaviorSubject,
   catchError,
@@ -42,7 +47,8 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective, EmptyStateComponent],
+  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective, EmptyStateComponent, FullCalendarComponent],
+  providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })
@@ -55,8 +61,21 @@ export class MeetingsDashboardComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly dialogService = inject(DialogService);
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
+
+  public viewMode = signal<ViewMode>('list');
+  public isListView = computed(() => this.viewMode() === 'list');
+  // Calendar view is only supported on foundation/project lenses (matches the Subscribe button gate).
+  // The Me lens skips the project/foundation raw fetch, so its meetings/pastMeetings loading flags
+  // never settle — switching to calendar there would show the spinner indefinitely. Gating on lens
+  // here keeps `viewMode` user-state intact across lens switches (no forced reset) while making the
+  // calendar surface a no-op outside its supported context.
+  public canShowCalendarView = computed(() => this.activeLens() === 'foundation' || this.activeLens() === 'project');
+  public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
+  public calendarEvents: Signal<EventInput[]>;
+  public calendarLoading: Signal<boolean>;
 
   public meetingsLoading: WritableSignal<boolean>;
   public pastMeetingsLoading: WritableSignal<boolean>;
@@ -191,12 +210,55 @@ export class MeetingsDashboardComponent {
 
     // Sentinel is placed at 50% of the list to trigger auto-load as user scrolls
     this.autoLoadTriggerIndex = computed(() => Math.floor(this.filteredMeetings().length / 2));
+
+    // Sourced from non-paginated raw signals so the calendar doesn't silently miss meetings the user hasn't scrolled to yet.
+    this.calendarEvents = this.initCalendarEvents();
+    // Mirrors whichever raw source backs calendarEvents (FP signals on FP lens, user signals on Me) so the spinner reflects the calendar's real loading state.
+    this.calendarLoading = computed(() =>
+      this.activeLens() === 'me' ? this.meetingsLoading() || this.pastMeetingsLoading() : this.fpUpcomingLoading() || this.fpPastLoading()
+    );
   }
 
   public refreshMeetings(): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
     this.refresh$.next();
+  }
+
+  /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
+  public onCalendarEventClick(arg: EventClickArg): void {
+    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
+    if (props.cancelled) return;
+    if (props.type === 'meeting' && props.meetingId) {
+      void this.router.navigate(['/meetings', props.meetingId]);
+    }
+  }
+
+  /** Opens iCal Subscribe modal — foundation/project lenses only; me/org lenses tracked separately. */
+  public onSubscribe(): void {
+    const lens = this.activeLens();
+    const projectCtx = this.project();
+
+    if (lens !== 'foundation' && lens !== 'project') {
+      console.warn(`Subscribe is not supported on the "${lens}" lens; aborting dialog open`);
+      return;
+    }
+    if (!projectCtx?.uid) {
+      console.warn(`Subscribe clicked on ${lens} lens with no uid; aborting dialog open`);
+      return;
+    }
+
+    const feedUrl = `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectCtx.uid)}/calendar.ics`;
+    const name = projectCtx.name ?? (lens === 'foundation' ? 'Foundation' : 'Project');
+
+    this.dialogService.open(IcalSubscribeDialogComponent, {
+      header: `Subscribe — ${name}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { feedUrl, name },
+    });
   }
 
   public onMeetingTypeChange(value: string | null): void {
@@ -710,5 +772,66 @@ export class MeetingsDashboardComponent {
     return computed(
       () => !!this.debouncedSearchQuery() || !!this.meetingTypeFilter() || !!this.foundationFilter() || !!this.projectFilter() || this.pendingRsvpOnly()
     );
+  }
+
+  private initCalendarEvents(): Signal<EventInput[]> {
+    return computed(() => {
+      const lens = this.activeLens();
+      const search = this.debouncedSearchQuery();
+      const meetingType = this.meetingTypeFilter();
+      // Me lens: apply the same filters as the list view (foundation/project/pendingRsvp); FP lens raw signals are already scoped, only search+type apply.
+      const filtered =
+        lens === 'me'
+          ? this.filterMeLensMeetings(
+              [...this.rawUserMeetings(), ...this.rawUserPastMeetings()],
+              search,
+              meetingType,
+              this.foundationFilter(),
+              this.projectFilter(),
+              this.pendingRsvpOnly()
+            )
+          : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
+      return filtered.flatMap((m) => this.meetingToEvents(m));
+    });
+  }
+
+  private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
+    const typeKey = (meeting.meeting_type ?? 'default').toLowerCase();
+    const colors = MEETING_TYPE_COLORS[typeKey] ?? MEETING_TYPE_COLORS['default'];
+
+    if (meeting.occurrences && meeting.occurrences.length > 0) {
+      return meeting.occurrences.map((occ) => {
+        const isCancelled = occ.status === 'cancel';
+        const c = isCancelled ? CANCELLED_COLOR : colors;
+        return {
+          id: `${meeting.id}-${occ.occurrence_id}`,
+          title: occ.title || meeting.title,
+          start: occ.start_time,
+          end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
+          backgroundColor: c.bg,
+          borderColor: c.border,
+          textColor: '#ffffff',
+          display: 'block',
+          // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
+          classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
+          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
+        };
+      });
+    }
+
+    return [
+      {
+        id: meeting.id,
+        title: meeting.title,
+        start: meeting.start_time,
+        end: addMinutesToDate(meeting.start_time, meeting.duration).toISOString(),
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        textColor: '#ffffff',
+        display: 'block',
+        classNames: ['meeting-event'],
+        extendedProps: { type: 'meeting', meetingId: meeting.id },
+      },
+    ];
   }
 }

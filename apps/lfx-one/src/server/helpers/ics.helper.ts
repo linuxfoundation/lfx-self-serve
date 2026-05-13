@@ -105,10 +105,8 @@ export function meetingsToVEvents(meetings: Meeting[]): string[] {
 /**
  * Wraps VEVENT strings in a VCALENDAR envelope and returns the complete ICS string.
  */
-export function buildVCalendar(events: string[]): string {
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LFX//Committee Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events, 'END:VCALENDAR'].join(
-    '\r\n'
-  );
+export function buildVCalendar(events: string[], prodId = '-//LFX//Calendar//EN'): string {
+  return [`BEGIN:VCALENDAR`, `VERSION:2.0`, `PRODID:${prodId}`, `CALSCALE:GREGORIAN`, `METHOD:PUBLISH`, ...events, `END:VCALENDAR`].join('\r\n');
 }
 
 const MAX_PAGES = 50;

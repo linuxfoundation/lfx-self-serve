@@ -149,14 +149,15 @@ export class CommitteeMeetingsComponent {
       dismissableMask: true,
       data: {
         feedUrl,
-        committeeName,
+        name: committeeName,
       },
     });
   }
 
-  /** Handles FullCalendar event click — navigates to meeting detail for meeting events. */
+  /** Handles FullCalendar event click — navigates to meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string };
+    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
+    if (props.cancelled) return;
     if (props.type === 'meeting' && props.meetingId) {
       void this.router.navigate(['/meetings', props.meetingId]);
     }
@@ -271,6 +272,8 @@ export class CommitteeMeetingsComponent {
           borderColor: c.border,
           textColor: '#ffffff',
           display: 'block',
+          // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
+          classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
           extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
         };
       });
@@ -287,6 +290,7 @@ export class CommitteeMeetingsComponent {
         borderColor: colors.border,
         textColor: '#ffffff',
         display: 'block',
+        classNames: ['meeting-event'],
         extendedProps: { type: 'meeting', meetingId: meeting.id },
       },
     ];

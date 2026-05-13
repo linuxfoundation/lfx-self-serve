@@ -36,6 +36,7 @@ import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import surveysRouter from './routes/surveys.route';
@@ -172,6 +173,7 @@ app.use('/login', authRateLimiter);
 
 app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
+app.use('/public/api/projects', publicProjectsRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);

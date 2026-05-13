@@ -55,7 +55,8 @@ export class FullCalendarComponent {
       displayEventTime: true,
       eventOrder: 'start',
       nowIndicator: true,
-      scrollTime: new Date().getHours() + ':00:00',
+      // Scroll to 6am — "now" overshoots when checking after lunch; most meetings are in the morning.
+      scrollTime: '06:00:00',
     };
   }
 

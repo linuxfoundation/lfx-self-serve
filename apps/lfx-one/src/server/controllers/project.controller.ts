@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
+import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { AddUserToProjectRequest, CreateProjectDocumentRequest, UpdateUserRoleRequest, UploadProjectDocumentRequest } from '@lfx-one/shared/interfaces';
 import { isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -11,10 +12,13 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
+import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,6 +27,8 @@ const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
  */
 export class ProjectController {
   private projectService: ProjectService = new ProjectService();
+  // Injected here (not on ProjectService) to avoid circular dependency — mirrors CommitteeController.
+  private meetingService: MeetingService = new MeetingService();
 
   /**
    * GET /projects
@@ -838,6 +844,51 @@ export class ProjectController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /public/api/projects/:id/calendar.ics — PUBLIC non-restricted meetings; serves both foundation and project lenses. */
+  public async getProjectCalendar(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_project_calendar', { project_id: id });
+
+    // Validate UID before using in query tags and Content-Disposition header
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      next(ServiceValidationError.forField('id', 'Invalid project ID', { operation: 'get_project_calendar' }));
+      return;
+    }
+
+    try {
+      // Public route has no session — obtain M2M token so meeting service calls succeed.
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      const query = { tags: `project_uid:${id}` };
+
+      // Fetch all pages — first-page-only would silently drop meetings beyond the default page size.
+      const [upcoming, past] = await Promise.all([
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+      ]);
+
+      // Filter PRIVATE/restricted meetings from the public feed (mirrors PublicMeetingController visibility guard).
+      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC && !m.restricted);
+      const events = meetingsToVEvents(allMeetings);
+      const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN');
+
+      logger.success(req, 'get_project_calendar', startTime, {
+        project_id: id,
+        event_count: events.length,
+        filtered_out: upcoming.length + past.length - allMeetings.length,
+      });
+
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="project-${id}.ics"`);
+      res.setHeader('Cache-Control', 'public, max-age=900'); // 15 minutes — reduces load from calendar clients polling every 15-60 minutes
+      res.send(ics);
     } catch (error) {
       next(error);
     }

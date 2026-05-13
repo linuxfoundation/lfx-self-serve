@@ -21,8 +21,9 @@
       }
 
       .fc-timegrid {
+        // Scope dimming to .meeting-event only — generic events use inline backgroundColor; !important override would hide their text.
         .fc-timegrid-col-events {
-          .fc-timegrid-event {
+          .fc-timegrid-event.meeting-event {
             &:not(.fc-event-future) {
               @apply bg-gray-100 #{!important};
             }
@@ -84,6 +85,15 @@
 
         &:hover {
           @apply -translate-y-0.5 shadow-md;
+        }
+
+        // Explicit !important needed — .fc-event specificity beats Tailwind's .cursor-default alone.
+        &.cursor-default {
+          cursor: default !important;
+
+          &:hover {
+            @apply translate-y-0 shadow-none;
+          }
         }
 
         &.meeting-event {
