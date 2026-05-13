@@ -29,10 +29,6 @@
       @apply bg-purple-500;
     }
 
-    &[data-role='Counsel'] {
-      @apply bg-red-400;
-    }
-
     &[data-role='Maintainer'] {
       @apply bg-blue-500;
     }
@@ -70,10 +66,6 @@
 
   &[data-role='Secretary'] {
     @apply border-purple-200 bg-purple-50 text-purple-700;
-  }
-
-  &[data-role='Counsel'] {
-    @apply border-red-200 bg-red-50 text-red-600;
   }
 
   &[data-role='Maintainer'] {

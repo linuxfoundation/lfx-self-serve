@@ -6,7 +6,6 @@
  */
 export enum CommitteeMemberRole {
   CHAIR = 'Chair',
-  COUNSEL = 'Counsel',
   DEVELOPER_SEAT = 'Developer Seat',
   TAC_TOC_REPRESENTATIVE = 'TAC/TOC Representative',
   DIRECTOR = 'Director',

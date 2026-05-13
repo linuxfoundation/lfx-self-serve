@@ -26,7 +26,6 @@ export const ROLE_PRIORITY: readonly string[] = [
   'Vice Chair',
   'Treasurer',
   'Secretary',
-  'Counsel',
   'Director',
   'Lead',
   'TAC/TOC Representative',

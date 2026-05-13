@@ -227,7 +227,6 @@ export const FILTERED_COMMITTEE_CATEGORIES = [
  */
 export const MEMBER_ROLES = [
   { label: 'Chair', value: CommitteeMemberRole.CHAIR },
-  { label: 'Counsel', value: CommitteeMemberRole.COUNSEL },
   { label: 'Developer Seat', value: CommitteeMemberRole.DEVELOPER_SEAT },
   { label: 'Director', value: CommitteeMemberRole.DIRECTOR },
   { label: 'Lead', value: CommitteeMemberRole.LEAD },
