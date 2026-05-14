@@ -6,8 +6,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { PLAUSIBLE_DOMAIN, PLAUSIBLE_SRC } from '@lfx-one/shared/constants';
-import { PlausibleCall } from '@lfx-one/shared/interfaces';
+import { PlausibleCall, PlausiblePageviewContext } from '@lfx-one/shared/interfaces';
 import { filter } from 'rxjs';
+
+import { LensService } from './lens.service';
+import { ProjectContextService } from './project-context.service';
 
 /**
  * Plausible analytics service for privacy-friendly page and event tracking.
@@ -19,6 +22,11 @@ import { filter } from 'rxjs';
 export class PlausibleService {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly lensService = inject(LensService);
+
+  // Routes whose owning component fires `trackPage()` itself once async context resolves.
+  private static readonly deferredPageviewPattern = /^\/meetings\/\d+(-\d{13})?$/;
 
   private scriptLoaded = false;
   private analyticsReady = false;
@@ -47,20 +55,41 @@ export class PlausibleService {
     });
   }
 
-  /**
-   * Track a page view
-   * @param properties Optional page properties
-   */
-  public trackPage(properties?: Record<string, unknown>): void {
+  // Auto-prepends sanitized path/url/title — callers only supply context.
+  public trackPage(context?: PlausiblePageviewContext): void {
     if (typeof window === 'undefined' || this.impersonating || !this.analyticsReady || !window.plausible) {
       return;
     }
 
     try {
-      window.plausible('pageview', { u: this.getSanitizedUrl(), props: properties });
+      const url = this.getSanitizedUrl();
+      const props: Record<string, unknown> = {
+        path: this.getSanitizedPath(window.location.pathname),
+        url,
+        title: typeof document !== 'undefined' ? document.title : undefined,
+        ...(context as Record<string, unknown> | undefined),
+      };
+      window.plausible('pageview', { u: url, props });
     } catch (error) {
       console.error('Error tracking page with Plausible:', error);
     }
+  }
+
+  // Single owner of the pageview custom-prop schema — keep new dimensions here, not at callsites.
+  public static buildPageviewContext(input: {
+    foundationSlug?: string | null;
+    foundationName?: string | null;
+    projectSlug?: string | null;
+    projectName?: string | null;
+    lens?: string | null;
+  }): PlausiblePageviewContext {
+    const context: PlausiblePageviewContext = {};
+    if (input.foundationSlug) context.foundation = input.foundationSlug;
+    if (input.foundationName) context.foundation_name = input.foundationName;
+    if (input.projectSlug) context.project = input.projectSlug;
+    if (input.projectName) context.project_name = input.projectName;
+    if (input.lens) context.lens = input.lens;
+    return context;
   }
 
   /**
@@ -117,7 +146,10 @@ export class PlausibleService {
       // only after the bundle has executed and replaced the queue stub.
       script.onload = () => {
         this.analyticsReady = true;
-        this.trackPage();
+        if (PlausibleService.deferredPageviewPattern.test(window.location.pathname)) {
+          return;
+        }
+        this.trackPage(this.buildContextProps());
       };
 
       script.onerror = (error) => {
@@ -149,12 +181,25 @@ export class PlausibleService {
         if (typeof document === 'undefined') {
           return;
         }
-        this.trackPage({
-          path: this.getSanitizedPath(event.urlAfterRedirects),
-          url: this.getSanitizedUrl(),
-          title: document.title,
-        });
+        const path = this.getSanitizedPath(event.urlAfterRedirects);
+        if (PlausibleService.deferredPageviewPattern.test(path)) {
+          return;
+        }
+        this.trackPage(this.buildContextProps());
       });
+  }
+
+  // Foundation/project read independently (not via activeContext) so the project lens emits both.
+  private buildContextProps(): PlausiblePageviewContext {
+    const foundation = this.projectContextService.selectedFoundation();
+    const project = this.projectContextService.selectedProject();
+    return PlausibleService.buildPageviewContext({
+      foundationSlug: foundation?.slug,
+      foundationName: foundation?.name,
+      projectSlug: project?.slug,
+      projectName: project?.name,
+      lens: this.lensService.activeLens(),
+    });
   }
 
   /**

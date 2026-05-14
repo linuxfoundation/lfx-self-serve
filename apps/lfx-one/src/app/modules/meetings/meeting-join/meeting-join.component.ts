@@ -44,6 +44,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -115,6 +116,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly plausibleService = inject(PlausibleService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -297,6 +299,7 @@ export class MeetingJoinComponent implements OnInit {
     this.registrants = this.initializeRegistrants();
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
+    this.initializePublicMeetingPageviewTracking();
   }
 
   public ngOnInit(): void {
@@ -1126,6 +1129,46 @@ export class MeetingJoinComponent implements OnInit {
       ),
       { initialValue: null }
     );
+  }
+
+  // PlausibleService defers the auto-pageview for /meetings/:id — fire it here once context lands.
+  private initializePublicMeetingPageviewTracking(): void {
+    if (isPlatformServer(this.platformId)) {
+      return;
+    }
+    // Caps the parent foundation fetch so ROOT_PROJECT_SLUG → null (mapped in initializeParentProject)
+    // doesn't block the pageview forever. Sub-projects whose parent doesn't land in time record
+    // project_* correctly and leave foundation_* empty (see buildPageviewContext callsite below).
+    const PARENT_FETCH_TIMEOUT_MS = 2000;
+    toObservable(this.project)
+      .pipe(
+        filter((p): p is Partial<Project> => !!p?.slug),
+        switchMap((project) => {
+          if (!project.parent_uid) {
+            return of({ project, parent: null as Project | null });
+          }
+          return merge(
+            toObservable(this.parentProject).pipe(
+              filter((parent): parent is Project => !!parent),
+              map((parent) => ({ project, parent: parent as Project | null }))
+            ),
+            timer(PARENT_FETCH_TIMEOUT_MS).pipe(map(() => ({ project, parent: null as Project | null })))
+          );
+        }),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ project, parent }) => {
+        const isTopLevel = !project.parent_uid;
+        this.plausibleService.trackPage(
+          PlausibleService.buildPageviewContext({
+            foundationSlug: isTopLevel ? project.slug : parent?.slug,
+            foundationName: isTopLevel ? project.name : parent?.name,
+            projectSlug: isTopLevel ? undefined : project.slug,
+            projectName: isTopLevel ? undefined : project.name,
+          })
+        );
+      });
   }
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {

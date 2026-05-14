@@ -13,6 +13,15 @@ export interface PlausibleConfig {
   enabled: boolean;
 }
 
+// Custom-prop schema attached to Plausible pageviews — keys omitted when unknown.
+export interface PlausiblePageviewContext {
+  foundation?: string;
+  foundation_name?: string;
+  project?: string;
+  project_name?: string;
+  lens?: string;
+}
+
 /**
  * One queued Plausible call captured by the upstream snippet's queue stub
  * before the real script loads. Each entry is the full argument tuple the
