@@ -21,7 +21,12 @@ export class LensService {
 
   /** Active lens clamped to the current persona's allowed set; falls back to default if disallowed. */
   public readonly activeLens: Signal<Lens> = this.initActiveLens();
+  /** Full set of lenses the current persona is authorised to use — drives routing and downstream visibility filters. */
   public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
+  /** Lenses shown in the sidebar switcher. Mirrors {@link availableLenses} except for hybrid personas, who get a merged project entry instead of separate foundation + project buttons. */
+  public readonly displayLenses: Signal<LensOption[]> = this.initDisplayLenses();
+  /** True when the user holds both a board role (ED/Board Member) AND a project role (Maintainer/Contributor). */
+  public readonly isHybridPersona: Signal<boolean> = computed(() => this.personaService.hasBoardRole() && this.personaService.hasProjectRole());
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -49,9 +54,14 @@ export class LensService {
   }
 
   private initAvailableLenses(): Signal<LensOption[]> {
+    return computed(() => this.getAllowedLensIds().map((id) => ALL_LENSES[id]));
+  }
+
+  private initDisplayLenses(): Signal<LensOption[]> {
     return computed(() => {
-      const lensIds = this.getAllowedLensIds();
-      return lensIds.map((id) => ALL_LENSES[id]);
+      const lenses = this.availableLenses();
+      // For hybrid personas the 'project' button serves as the merged entry — hide the separate foundation button.
+      return this.isHybridPersona() ? lenses.filter((option) => option.id !== 'foundation') : lenses;
     });
   }
 

@@ -19,9 +19,10 @@
           } @else {
             <lfx-project-selector
               [lens]="lens"
+              [hybridMode]="isHybridPersona()"
               [selectedProject]="selectedProject()"
-              [searchPlaceholder]="lens === 'foundation' ? 'Search foundations...' : 'Search projects...'"
-              [emptyMessage]="lens === 'foundation' ? 'No foundations found' : 'No projects found'"
+              [searchPlaceholder]="isHybridPersona() ? 'Search...' : lens === 'foundation' ? 'Search foundations...' : 'Search projects...'"
+              [emptyMessage]="isHybridPersona() ? 'No results found' : lens === 'foundation' ? 'No foundations found' : 'No projects found'"
               [(isPanelOpen)]="selectorPanelOpen"
               (itemSelected)="onItemSelected($event)"></lfx-project-selector>
           }
@@ -34,14 +35,37 @@
           <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
           <div class="flex flex-col gap-1 grow min-w-0">
             <p class="font-semibold text-base text-gray-900 leading-5 tracking-tight line-clamp-2">{{ user()?.name }}</p>
-            @if (showPersonaBadge()) {
-              <div class="flex flex-wrap gap-1">
-                @for (tag of personaLabels(); track $index) {
-                  <span class="inline-flex items-center gap-1 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
-                    <i [ngClass]="tag.icon" class="text-[10px]" aria-hidden="true"></i>{{ tag.label }}
-                  </span>
-                }
-              </div>
+            @if (showPersonaBadge() && personaLabels().length > 0) {
+              @if (personaLabels().length === 1) {
+                <span class="inline-flex items-center text-xs font-normal text-gray-400 leading-none">
+                  <i [ngClass]="personaLabels()[0].icon" class="mr-1" aria-hidden="true"></i>{{ personaLabels()[0].label }}
+                </span>
+              } @else {
+                <div class="flex flex-wrap gap-1">
+                  @for (tag of personaLabels(); track $index) {
+                    <ng-template #personaTooltipContent>
+                      <div class="font-semibold">{{ tag.label }}</div>
+                      @if (tag.names.length > 0) {
+                        <ul class="mt-1 pl-4 list-disc font-normal text-gray-300">
+                          @for (name of tag.names; track $index) {
+                            <li>{{ name }}</li>
+                          }
+                        </ul>
+                      }
+                    </ng-template>
+                    <span
+                      tabindex="0"
+                      role="img"
+                      [attr.aria-label]="tag.ariaLabel"
+                      [pTooltip]="personaTooltipContent"
+                      tooltipPosition="top"
+                      tooltipStyleClass="persona-tooltip"
+                      class="inline-flex items-center justify-center size-6 rounded-full bg-white border border-gray-200 text-gray-700 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                      <i [ngClass]="tag.icon" class="text-[10px]" aria-hidden="true"></i>
+                    </span>
+                  }
+                </div>
+              }
             }
           </div>
         </div>

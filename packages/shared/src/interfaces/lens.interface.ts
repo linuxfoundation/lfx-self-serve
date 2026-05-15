@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { LensItem } from './navigation.interface';
+
 /**
  * Navigation lens types
  * Each lens represents a top-level navigation context that determines sidebar content
@@ -25,4 +27,22 @@ export interface LensOption {
   defaultRoute: string;
   /** Test ID for the lens button */
   testId: string;
+}
+
+/**
+ * Tab options for the project selector in hybrid persona mode
+ */
+export type SelectorTab = 'all' | 'foundations' | 'projects';
+
+/**
+ * Precomputed per-row state for the project selector dropdown.
+ * All fields are derived once in the displayedItems computed so the template binds to plain
+ * values — no functions in template bindings (signals-first / zoneless memoization).
+ */
+export interface DisplayLensItem {
+  item: LensItem;
+  isNested: boolean;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
 }

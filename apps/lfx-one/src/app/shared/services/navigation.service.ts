@@ -36,7 +36,16 @@ export class NavigationService {
       map((lens): NavLens | null => (lens === 'foundation' || lens === 'project' ? lens : null)),
       distinctUntilChanged(),
       filter((lens): lens is NavLens => lens !== null),
-      tap((lens) => this.resetAndReload(lens))
+      tap((lens) => {
+        this.resetAndReload(lens);
+        // For hybrid personas, preload the sibling lens so the merged dropdown has both sets ready.
+        // preloadSibling() skips default-selection side effects so it can't overwrite the active
+        // lens's context/URL, and it bails out if the sibling is already loaded or in flight.
+        if (this.lensService.isHybridPersona()) {
+          const sibling: NavLens = lens === 'foundation' ? 'project' : 'foundation';
+          this.preloadSibling(sibling);
+        }
+      })
     ),
     { initialValue: null }
   );
@@ -50,6 +59,24 @@ export class NavigationService {
       skip(1),
       filter(() => this.lensService.activeLens() === 'project'),
       tap(() => this.resetAndReload('project'))
+    ),
+    { initialValue: false }
+  );
+
+  // Persona refresh can promote a user to hybrid without changing activeLens — in that case the
+  // activeLensPreloader doesn't re-run, leaving the sibling lens unloaded and the merged tabs empty.
+  private readonly hybridTransitionPreloader = toSignal(
+    toObservable(this.lensService.isHybridPersona).pipe(
+      distinctUntilChanged(),
+      skip(1),
+      filter((isHybrid) => isHybrid),
+      tap(() => {
+        const active = this.lensService.activeLens();
+        if (active === 'foundation' || active === 'project') {
+          const sibling: NavLens = active === 'foundation' ? 'project' : 'foundation';
+          this.preloadSibling(sibling);
+        }
+      })
     ),
     { initialValue: false }
   );
@@ -90,6 +117,16 @@ export class NavigationService {
   public resetAndReload(lens: NavLens): void {
     const state = this.getState(lens);
     state.pendingDefaultSelection.set(true);
+    state.reload$.next();
+  }
+
+  private preloadSibling(lens: NavLens): void {
+    const state = this.getState(lens);
+    if (state.loaded() || state.loading()) {
+      return;
+    }
+    // Deliberately do NOT set pendingDefaultSelection — preload must not race with the active
+    // lens's selection and can't be allowed to overwrite the URL/context.
     state.reload$.next();
   }
 

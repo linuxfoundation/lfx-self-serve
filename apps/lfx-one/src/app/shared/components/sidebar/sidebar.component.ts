@@ -17,6 +17,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
@@ -27,7 +28,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
 
 @Component({
   selector: 'lfx-sidebar',
-  imports: [NgClass, NgTemplateOutlet, RouterModule, AvatarComponent, BadgeComponent, ProjectSelectorComponent, SkeletonModule],
+  imports: [NgClass, NgTemplateOutlet, RouterModule, AvatarComponent, BadgeComponent, ProjectSelectorComponent, SkeletonModule, TooltipModule],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
@@ -49,13 +50,14 @@ export class SidebarComponent {
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
+  protected readonly isHybridPersona = this.lensService.isHybridPersona;
   protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.activeContext());
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
-  protected readonly personaLabels: Signal<{ label: string; icon: string }[]> = this.initPersonaLabels();
+  protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 
@@ -82,12 +84,16 @@ export class SidebarComponent {
 
   protected onItemSelected(item: LensItem): void {
     const context = lensItemToProjectContext(item);
-    const lens = this.lensService.activeLens();
-
-    if (lens === 'foundation') {
+    // Project-only users still see foundations in their project list (NavigationService only filters
+    // foundations out when the foundation lens is visible). Treat a foundation row as a project context
+    // for those users — setLens('foundation') would be a no-op and the selection would silently fail.
+    const foundationAllowed = this.lensService.availableLenses().some((option) => option.id === 'foundation');
+    if (item.isFoundation && foundationAllowed) {
       this.projectContextService.setFoundation(context);
-    } else if (lens === 'project') {
+      this.lensService.setLens('foundation');
+    } else {
       this.projectContextService.setProject(context);
+      this.lensService.setLens('project');
     }
   }
 
@@ -107,11 +113,16 @@ export class SidebarComponent {
     });
   }
 
-  private initPersonaLabels(): Signal<{ label: string; icon: string }[]> {
+  private initPersonaLabels(): Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> {
     return computed(() => {
+      const personaProjects = this.personaService.personaProjects();
       const toTag = (p: PersonaType) => {
         const option = PERSONA_OPTIONS.find((o) => o.value === p);
-        return { label: option?.label ?? toTitleCase(p), icon: PERSONA_ICONS[p] ?? 'fa-light fa-user' };
+        const label = option?.label ?? toTitleCase(p);
+        const icon = PERSONA_ICONS[p] ?? 'fa-light fa-user';
+        const names = (personaProjects[p] ?? []).map((proj) => proj.projectName).filter((n): n is string => !!n);
+        const ariaLabel = names.length ? `Role: ${label} (${names.join(', ')})` : `Role: ${label}`;
+        return { label, icon, names, ariaLabel };
       };
 
       if (this.activeLens() === 'me') {

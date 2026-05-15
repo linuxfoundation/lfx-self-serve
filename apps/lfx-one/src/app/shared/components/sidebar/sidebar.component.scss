@@ -14,3 +14,11 @@
   height: 1rem;
   width: auto;
 }
+
+// Tooltip used by the persona role circles in the Me lens.
+// Override PrimeNG defaults so the tooltip width hugs its content and bullet rows don't wrap.
+::ng-deep .persona-tooltip .p-tooltip-text {
+  max-width: none;
+  width: max-content;
+  white-space: nowrap;
+}

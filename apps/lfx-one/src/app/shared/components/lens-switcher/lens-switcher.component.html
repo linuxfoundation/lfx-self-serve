@@ -4,13 +4,14 @@
 @if (mobile()) {
   <div class="flex items-center gap-1 px-3 py-2" data-testid="lens-switcher-mobile">
     @for (lens of lenses(); track lens.id) {
+      @let isActive = activeLensId() === lens.id;
       <button
         type="button"
         (click)="setLens(lens.id)"
         [attr.data-testid]="lens.testId + '-mobile'"
         class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-        [ngClass]="activeLens() === lens.id ? 'bg-indigo-900 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'">
-        <i [ngClass]="activeLens() === lens.id ? lens.activeIcon : lens.icon" class="text-sm"></i>
+        [ngClass]="isActive ? 'bg-indigo-900 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'">
+        <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-sm"></i>
         <span>{{ lens.shortLabel }}</span>
       </button>
     }
@@ -65,7 +66,7 @@
     <!-- Lens Buttons -->
     <div class="flex flex-col items-center gap-3 flex-1">
       @for (lens of lenses(); track lens.id) {
-        @let isActive = activeLens() === lens.id;
+        @let isActive = activeLensId() === lens.id;
         <button
           type="button"
           (click)="setLens(lens.id)"
