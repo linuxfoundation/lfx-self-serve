@@ -37,5 +37,8 @@ nav:
       - Overview: architecture/testing/README.md
       - E2E Testing: architecture/testing/e2e-testing.md
       - Testing Best Practices: architecture/testing/testing-best-practices.md
+  - Migration:
+    - Individual Memberships: migration/individual-memberships.md
+    - Linux.com Email Forwarder: migration/linux-com-email-forwarder.md
 plugins:
   - techdocs-core
