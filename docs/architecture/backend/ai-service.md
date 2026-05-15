@@ -26,20 +26,32 @@ Frontend Request → Meeting API → AI Service → LiteLLM Proxy → Claude Son
 
 ### AI Service Configuration
 
+`MeetingController` constructs `AiService` at **class field initialization** time (during ESM import), which runs **before** `dotenv.config()` in `server.ts`. Reading `process.env` in the constructor or in `readonly` field initializers can therefore capture empty values. `AiService` follows the same pattern as `CdpService`: **lazy private getters** memoized with `??=` on first access (after dotenv has loaded).
+
 ```typescript
 export class AiService {
-  private readonly aiProxyUrl: string;
-  private readonly model = AI_MODEL; // 'us.anthropic.claude-sonnet-4-20250514-v1:0'
-  private readonly aiKey = process.env['AI_API_KEY'] || '';
+  private readonly model = AI_MODEL;
 
-  public constructor() {
-    this.aiProxyUrl = process.env['AI_PROXY_URL'] || '';
-    if (!this.aiProxyUrl || !this.aiKey) {
-      throw new Error('AI configuration environment variables are required');
-    }
+  // Resolved lazily on first access so dotenv has finished loading,
+  // then memoized — env is stable after startup.
+  private _aiProxyUrl: string | undefined;
+  private _aiKey: string | undefined;
+
+  private get aiProxyUrl(): string {
+    return (this._aiProxyUrl ??= process.env['AI_PROXY_URL'] || '');
+  }
+
+  private get aiKey(): string {
+    return (this._aiKey ??= process.env['AI_API_KEY'] || '');
+  }
+
+  public isAiConfigured(): boolean {
+    return !!this.aiProxyUrl && !!this.aiKey;
   }
 }
 ```
+
+Defaults are empty strings, not placeholder URLs/keys — so missing env never silently routes to a wrong endpoint or sends a fake key. `generateMeetingAgenda` checks `isAiConfigured()` up front and throws `"AI service not configured: AI_PROXY_URL and AI_API_KEY environment variables are required"` when either variable is unset; `makeAiRequest` repeats the guard as defense-in-depth. The thrown error is a plain `Error`, so the default `apiErrorHandler` branch surfaces it to API clients as a generic `500 INTERNAL_ERROR` — by design, since env-var details should not leak to end users. The specific message is logged server-side (CloudWatch) with the request context for ops to act on. Production and CI must set `AI_PROXY_URL` and `AI_API_KEY` to real values (see `.env.example`).
 
 ### Request/Response Schema
 
@@ -306,7 +318,7 @@ serverLogger.error('Failed to generate meeting agenda', { error });
 1. **Authentication**: All AI endpoints require valid authentication
 2. **Input Sanitization**: Sanitize user inputs to prevent prompt injection
 3. **Response Validation**: Validate AI responses against expected schemas
-4. **API Key Management**: Secure storage and rotation of AI API keys
+4. **API Key Management**: Secure storage and rotation of AI API keys; never ship real keys in source. Unset env vars produce empty defaults and a clean runtime failure — no placeholder keys in code.
 5. **Audit Logging**: Log all AI requests for audit and debugging purposes
 
 ## 📊 Performance & Monitoring
