@@ -3,7 +3,7 @@
 
 import { SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -223,91 +223,75 @@ export class SurveyService {
     }
 
     // Query survey_response records using filters_or (OR logic on data fields).
-    // response_datetime distinguishes invited-only (empty) from submitted (populated).
-    const responses = await fetchAllQueryResources<{ survey_uid: string; survey_link?: string; response_datetime?: string }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ survey_uid: string; survey_link?: string; response_datetime?: string }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'survey_response',
-          filters_or: filtersOr,
-          ...(pageToken && { page_token: pageToken }),
-        }
-      )
+    // The response records carry denormalized survey-level fields so we can build
+    // Survey objects directly without a secondary /surveys/{uid} fetch.
+    // Respondents don't hold survey:{uid}:viewer, so that fetch would 403 for them.
+    const responses = await fetchAllQueryResources<SurveyResponseRecord>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<SurveyResponseRecord>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'survey_response',
+        filters_or: filtersOr,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
 
-    const surveyLinkMap = new Map<string, string>();
-    const respondedSurveyUids = new Set<string>();
-    for (const r of responses) {
-      if (!r.survey_uid) continue;
-      if (r.response_datetime && r.response_datetime.trim() !== '') {
-        respondedSurveyUids.add(r.survey_uid);
-      }
-      if (r.survey_link && !surveyLinkMap.has(r.survey_uid)) {
-        const validatedLink = validateAndSanitizeUrl(r.survey_link.trim(), SURVEY_LINK_ALLOWLIST);
-        if (validatedLink) {
-          surveyLinkMap.set(r.survey_uid, validatedLink);
-        }
-      }
-    }
+    const validResponses = responses.filter((r) => !!r.survey_uid);
 
-    // Extract unique survey UIDs
-    const surveyUids = [...new Set(responses.filter((r) => r.survey_uid).map((r) => r.survey_uid))];
-
-    if (surveyUids.length === 0) {
+    if (validResponses.length === 0) {
       return [];
     }
 
     logger.debug(req, 'get_my_surveys', 'Found user survey responses', {
-      response_count: responses.length,
-      unique_survey_count: surveyUids.length,
+      response_count: validResponses.length,
     });
 
-    // Fetch survey details in parallel via the survey microservice, then stamp
-    // response_status based on whether the user's survey_response row has a populated
-    // response_datetime. The UI consumes response_status to open the per-user response
-    // drawer on the Me lens and switch the action button to 'Update' (vs 'Take Survey')
-    // while the survey is still open.
-    // When the detail fetch fails (404 / transient upstream error), keep the row in
-    // the list with a stub Survey built from the response record so the user can still
-    // see they were invited — silently dropping invited surveys hides the user's history.
-    const surveys = await Promise.all(
-      surveyUids.map(async (uid) => {
-        try {
-          const survey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${uid}`, 'GET');
-          if (survey && respondedSurveyUids.has(uid)) {
-            return { ...survey, response_status: 'responded' };
-          }
-          return survey;
-        } catch (error) {
-          logger.warning(req, 'get_my_surveys', 'Survey detail unavailable — rendering stub', {
-            survey_uid: uid,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-          const stub: Survey = {
-            uid,
-            survey_title: 'Survey (details unavailable)',
-            survey_status: 'closed',
-            // null instead of '' so Angular's DatePipe doesn't choke on an
-            // invalid empty-string input when the table renders the Due column.
-            survey_cutoff_date: null,
-            is_nps_survey: false,
-            is_project_survey: false,
-            committees: [],
-            committee_category: '',
-            total_responses: 0,
-            total_recipients: 0,
-            created_at: '',
-            last_modified_at: '',
-            creator_name: '',
-          };
-          if (respondedSurveyUids.has(uid)) stub.response_status = 'responded';
-          return stub;
-        }
-      })
-    );
+    // Build one Survey row per response record — one per survey × committee so the
+    // user can act on (or take) each committee invitation independently.
+    const surveys: Survey[] = [];
+    for (const r of validResponses) {
+      const isResponded = !!(r.response_datetime && r.response_datetime.trim() !== '');
+      const surveyLink = r.survey_link ? validateAndSanitizeUrl(r.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : undefined;
+
+      const survey: Survey = {
+        uid: r.survey_uid,
+        response_uid: r.uid,
+        survey_title: r.survey_title || '',
+        survey_status: r.survey_status || '',
+        // Keep null (not empty string) when absent so Angular's DatePipe doesn't choke.
+        survey_cutoff_date: r.survey_cutoff_date || null,
+        is_nps_survey: r.is_nps_survey ?? false,
+        is_project_survey: r.is_project_survey ?? false,
+        committees: r.committee_name
+          ? [
+              {
+                committee_id: r.committee_id || '',
+                committee_uid: r.committee_uid || '',
+                committee_name: r.committee_name,
+                project_id: r.project?.id || '',
+                project_uid: r.project?.project_uid || '',
+                project_name: r.project?.name || '',
+                // Committee-scoped totals from this response record, not survey-wide aggregates.
+                total_recipients: r.total_recipients ?? 0,
+                total_responses: r.total_responses ?? 0,
+                nps_value: 0,
+                num_detractors: 0,
+                num_passives: 0,
+                num_promoters: 0,
+              },
+            ]
+          : [],
+        committee_category: r.committee_category || '',
+        creator_name: r.creator_name || '',
+        created_at: r.survey_created_at || '',
+        last_modified_at: r.survey_last_modified_at || '',
+        // Committee-scoped totals from this response record — not survey-wide aggregates; not surfaced in the Me lens.
+        total_responses: r.total_responses ?? 0,
+        total_recipients: r.total_recipients ?? 0,
+        project_uid: r.project?.project_uid || '',
+        ...(surveyLink && { survey_link: surveyLink }),
+        ...(isResponded && { response_status: 'responded' }),
+      };
+      surveys.push(survey);
+    }
 
     // Sort: effectively-open surveys first, then by cutoff date descending.
     // Use the shared helper so SENT-past-cutoff and uppercase API values are
@@ -338,28 +322,22 @@ export class SurveyService {
       })
       .map((entry) => entry.survey);
 
-    // Flatten project_uid from committees to top level for enrichment
-    const withProjectUid = sorted.map((s) => {
-      const projectUids = [...new Set((s.committees ?? []).map((c) => c.project_uid).filter(Boolean))];
-      return {
-        ...s,
-        project_uid: projectUids.length === 1 ? projectUids[0] : '',
-        survey_link: surveyLinkMap.get(s.uid),
-      };
-    });
-
-    return this.projectService.enrichWithProjectData(req, withProjectUid);
+    // Cast is safe: every row in sorted has project_uid set to a string in the loop above.
+    // Survey.project_uid is typed as optional but enrichWithProjectData requires the field present.
+    return this.projectService.enrichWithProjectData(req, sorted as (Survey & { project_uid: string })[]) as Promise<Survey[]>;
   }
 
   /**
    * Returns the current user's submitted response for a survey, or null if no response exists.
    * Used by the Me lens "View My Response" drawer. Queries type=survey_response filtered by
-   * the user's email/username (via filters_or) and matches survey_uid in-memory after the
-   * query returns, since the index has no native survey_uid filter on this resource type.
+   * the user's email/username (via filters_or) and matches in-memory. When responseUid is
+   * provided (Me lens one-row-per-committee), it is used to match the exact invitation record
+   * so the correct survey_link is returned for the selected row. Falls back to matching by
+   * survey_uid when responseUid is absent.
    * Only returns a record whose response_datetime is populated — invitation-only rows are
    * treated as "not yet responded" and return null.
    */
-  public async getMyResponse(req: Request, surveyUid: string): Promise<MySurveyResponse | null> {
+  public async getMyResponse(req: Request, surveyUid: string, responseUid?: string): Promise<MySurveyResponse | null> {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
     const email = getEffectiveEmail(req);
@@ -378,7 +356,14 @@ export class SurveyService {
       })
     );
 
-    const match = responses.find((r) => r?.survey_uid === surveyUid && r.response_datetime && r.response_datetime.trim() !== '');
+    // When responseUid is present (Me-lens one-row-per-committee), match only the
+    // exact record — no fallback to survey_uid. A fallback would return a different
+    // committee's response when the selected invitation hasn't been submitted yet,
+    // causing the drawer to show the wrong state. The survey_uid cross-check
+    // prevents a tampered query param from leaking another survey's response.
+    const match = responseUid
+      ? responses.find((r) => r?.uid === responseUid && r.survey_uid === surveyUid && r.response_datetime && r.response_datetime.trim() !== '')
+      : responses.find((r) => r?.survey_uid === surveyUid && r.response_datetime && r.response_datetime.trim() !== '');
     if (!match) return null;
 
     // Defense-in-depth: validate survey_link against the same allowlist getMySurveys uses

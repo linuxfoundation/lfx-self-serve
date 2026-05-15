@@ -70,7 +70,7 @@ export class SurveysTableComponent {
   public readonly isMeLens = input<boolean>(false);
 
   // === Outputs ===
-  public readonly viewResults = output<string>();
+  public readonly viewResults = output<Survey>();
   public readonly refresh = output<void>();
   public readonly rowClick = output<Survey>();
   public readonly foundationFilterChange = output<string | null>();
@@ -118,8 +118,8 @@ export class SurveysTableComponent {
     this.rowClick.emit(event.data);
   }
 
-  protected onViewResults(surveyId: string): void {
-    this.viewResults.emit(surveyId);
+  protected onViewResults(survey: Survey): void {
+    this.viewResults.emit(survey);
   }
 
   protected resetFilters(): void {

@@ -36,9 +36,8 @@ export class CommitteeSurveysComponent {
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
 
-  public viewSurveyResults(surveyUid: string): void {
-    const survey = this.surveys().find((s) => s.uid === surveyUid) || null;
-    this.selectedSurveyId.set(surveyUid);
+  public viewSurveyResults(survey: Survey): void {
+    this.selectedSurveyId.set(survey.uid);
     this.selectedSurvey.set(survey);
     this.resultsDrawerVisible.set(true);
   }

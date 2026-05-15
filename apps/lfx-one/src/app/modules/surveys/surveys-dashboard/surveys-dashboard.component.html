@@ -75,5 +75,10 @@
 </lfx-survey-results-drawer>
 
 <!-- My Response Drawer (Me lens) -->
-<lfx-my-response-drawer [(visible)]="myResponseDrawerVisible" [surveyId]="selectedSurveyId()" [survey]="selectedListSurvey()" data-testid="my-response-drawer">
+<lfx-my-response-drawer
+  [(visible)]="myResponseDrawerVisible"
+  [surveyId]="selectedSurveyId()"
+  [responseUid]="selectedResponseUid()"
+  [survey]="selectedListSurvey()"
+  data-testid="my-response-drawer">
 </lfx-my-response-drawer>

@@ -91,13 +91,15 @@ export class SurveyController {
    */
   public async getMyResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
     const surveyUid = req.params['uid'];
+    const rawResponseUid = typeof req.query['response_uid'] === 'string' ? req.query['response_uid'].trim() : undefined;
+    const responseUid = rawResponseUid !== '' ? rawResponseUid : undefined;
     const startTime = logger.startOperation(req, 'get_my_response', { survey_uid: surveyUid });
 
     try {
       const validationContext = { operation: 'get_my_response', service: 'survey_controller' };
       if (!validateUidParameter(surveyUid, req, next, validationContext)) return;
 
-      const response = await this.surveyService.getMyResponse(req, surveyUid);
+      const response = await this.surveyService.getMyResponse(req, surveyUid, responseUid);
 
       if (!response) {
         // Throw ResourceNotFoundError so apiErrorHandler emits a structured

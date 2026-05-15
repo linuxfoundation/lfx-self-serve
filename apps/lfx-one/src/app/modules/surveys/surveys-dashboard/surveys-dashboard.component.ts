@@ -45,6 +45,7 @@ export class SurveysDashboardComponent {
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly myResponseDrawerVisible = signal<boolean>(false);
   protected readonly selectedSurveyId = signal<string | null>(null);
+  protected readonly selectedResponseUid = signal<string | null>(null);
   protected readonly mySurveysLoading = signal<boolean>(true);
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
@@ -63,8 +64,11 @@ export class SurveysDashboardComponent {
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
   protected readonly filteredMySurveys: Signal<Survey[]> = this.initFilteredMySurveys();
 
-  protected onViewResults(surveyId: string): void {
-    this.selectedSurveyId.set(surveyId);
+  protected onViewResults(survey: Survey): void {
+    this.selectedSurveyId.set(survey.uid);
+    // Preserve the response_uid so initSelectedListSurvey can pick the exact row
+    // when the Me lens has multiple rows for the same survey (one per committee).
+    this.selectedResponseUid.set(survey.response_uid ?? null);
     // Me lens: open the per-user drawer (response data scoped to the current user).
     // All other lenses: open the aggregate results drawer (gated by participant access upstream).
     // Explicitly close the non-target drawer so a mid-session lens switch can't leave both
@@ -79,7 +83,7 @@ export class SurveysDashboardComponent {
   }
 
   protected onRowClick(survey: Survey): void {
-    this.onViewResults(survey.uid);
+    this.onViewResults(survey);
   }
 
   protected onFoundationFilterChange(value: string | null): void {
@@ -144,6 +148,12 @@ export class SurveysDashboardComponent {
       const surveyId = this.selectedSurveyId();
       if (!surveyId) return null;
       const source = this.isMeLens() ? this.mySurveys() : this.surveys();
+      // Me lens rows are one-per-committee: prefer an exact response_uid match so
+      // the drawer receives the correct survey_link for the selected row.
+      const responseUid = this.selectedResponseUid();
+      if (this.isMeLens() && responseUid) {
+        return source.find((s) => s.response_uid === responseUid) ?? source.find((s) => s.uid === surveyId) ?? null;
+      }
       return source.find((s) => s.uid === surveyId) ?? null;
     });
   }

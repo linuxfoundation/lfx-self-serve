@@ -22,8 +22,11 @@ export class MyResponseDrawerComponent {
   private readonly surveyService = inject(SurveyService);
 
   public readonly surveyId = input<string | null>(null);
+  public readonly responseUid = input<string | null>(null);
   public readonly survey = input<Survey | null>(null);
   public readonly visible = model<boolean>(false);
+
+  protected readonly SurveyStatus = SurveyStatus;
 
   protected readonly loading = signal<boolean>(false);
   protected readonly response: Signal<MySurveyResponse | null> = this.initResponse();
@@ -45,13 +48,15 @@ export class MyResponseDrawerComponent {
     return !!this.response()?.survey_link;
   });
 
+  protected readonly displayStatus: Signal<SurveyStatus | null> = computed(() => {
+    const s = this.survey();
+    return s ? getSurveyDisplayStatus(s) : null;
+  });
+
   // True when the drawer is opened for an open-but-unresponded survey. The empty-state
   // copy needs to differ from the closed-survey case ("haven't responded yet" vs
   // "didn't respond before the survey closed").
-  protected readonly isOpenUnresponded: Signal<boolean> = computed(() => {
-    const s = this.survey();
-    return !!s && getSurveyDisplayStatus(s) === SurveyStatus.OPEN;
-  });
+  protected readonly isOpenUnresponded: Signal<boolean> = computed(() => this.displayStatus() === SurveyStatus.OPEN);
 
   // The personalized SurveyMonkey link on the parent Survey (Me-lens-only).
   // Surfaced through a computed so the empty-state template can offer a "Take Survey"
@@ -71,7 +76,8 @@ export class MyResponseDrawerComponent {
             return of(null);
           }
           this.loading.set(true);
-          return this.surveyService.getMyResponse(id).pipe(finalize(() => this.loading.set(false)));
+          const responseUid = this.responseUid();
+          return this.surveyService.getMyResponse(id, responseUid ?? undefined).pipe(finalize(() => this.loading.set(false)));
         })
       ),
       { initialValue: null }

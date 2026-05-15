@@ -128,6 +128,8 @@ export interface Survey {
   num_detractors?: number;
   /** Personalized SurveyMonkey response link for the current user (present only in the Me lens; populated from survey_response records) */
   survey_link?: string;
+  /** survey_response UID — present only in the Me lens; identifies the specific response record this row was built from (one row per survey × committee) */
+  response_uid?: string;
 }
 
 /**
@@ -164,6 +166,39 @@ export interface MySurveyResponse {
   nps_value?: number;
   /** Populated for standard SurveyMonkey surveys */
   survey_monkey_question_answers?: MySurveyQuestionAnswer[];
+}
+
+/**
+ * A survey_response record as returned by the query service, including
+ * survey-level fields denormalized onto responses at index time. Respondents
+ * don't hold survey:{uid}:viewer so a secondary /surveys/{uid} fetch would
+ * 403 for them — these fields make the My Surveys list renderable from a
+ * single query service call.
+ */
+export interface SurveyResponseRecord {
+  uid: string;
+  survey_uid: string;
+  response_datetime?: string;
+  survey_link?: string;
+  survey_title: string;
+  survey_status: string;
+  survey_cutoff_date?: string;
+  is_nps_survey: boolean;
+  is_project_survey: boolean;
+  committee_category: string;
+  committee_name: string;
+  creator_name: string;
+  survey_created_at: string;
+  survey_last_modified_at: string;
+  total_responses: number;
+  total_recipients: number;
+  project?: {
+    project_uid?: string;
+    id?: string;
+    name?: string;
+  };
+  committee_uid?: string;
+  committee_id?: string;
 }
 
 /**

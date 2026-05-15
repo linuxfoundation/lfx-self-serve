@@ -8,7 +8,7 @@
       [hasPMOAccess]="canEdit()"
       [loading]="loading()"
       (viewResults)="viewSurveyResults($event)"
-      (rowClick)="viewSurveyResults($event.uid)">
+      (rowClick)="viewSurveyResults($event)">
       @if (canEdit()) {
         <lfx-button
           tableActions

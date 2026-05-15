@@ -43,8 +43,9 @@ export class SurveyService {
   }
 
   /** Returns the current user's submitted response for a survey, or null if none. Used by the Me lens "View My Response" drawer. */
-  public getMyResponse(surveyUid: string): Observable<MySurveyResponse | null> {
-    return this.http.get<MySurveyResponse>(`/api/surveys/${surveyUid}/my-response`).pipe(
+  public getMyResponse(surveyUid: string, responseUid?: string): Observable<MySurveyResponse | null> {
+    const params = responseUid ? new HttpParams().set('response_uid', responseUid) : undefined;
+    return this.http.get<MySurveyResponse>(`/api/surveys/${surveyUid}/my-response`, { params }).pipe(
       catchError((error) => {
         // 404 here means "no response on file" — that's a normal empty state, not an error.
         // Log non-404s so transient backend issues surface in DevTools without breaking the drawer.
