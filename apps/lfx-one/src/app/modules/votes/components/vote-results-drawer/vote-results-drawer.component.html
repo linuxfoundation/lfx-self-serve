@@ -9,10 +9,8 @@
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
   data-testid="vote-results-drawer">
   @if (vote(); as voteData) {
-    <!-- Header Section -->
     <ng-template #header>
       <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
-        <!-- Title Row with Close Button -->
         <div class="flex items-center justify-between gap-2">
           <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-results-drawer-title">
             {{ voteData.name }}
@@ -26,38 +24,30 @@
           </button>
         </div>
 
-        <!-- Status and Meta Info -->
         <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-          <!-- Committee Badge -->
           <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
             {{ voteData.committee_name || 'Unknown' }}
           </span>
           <span class="text-slate-400">•</span>
-          <!-- Status -->
           <lfx-tag
             [value]="voteData.status | pollStatusLabel"
             [severity]="voteData.status | pollStatusSeverity"
             data-testid="vote-results-drawer-status"></lfx-tag>
           <span class="text-slate-400">•</span>
-          <!-- Close Date -->
           @if (isVoteClosed()) {
             <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
           } @else {
             <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
           }
           <span class="text-slate-400">•</span>
-          <!-- Voting Method -->
           <span>{{ votingMethodText() }}</span>
         </div>
       </div>
     </ng-template>
 
-    <!-- Content Section -->
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
       @if (isLoading()) {
-        <!-- Loading Skeleton -->
         <div class="flex flex-col gap-6">
-          <!-- Participation Stats Skeleton -->
           <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3">
             <div class="flex items-center justify-between">
               <p-skeleton width="80px" height="40px"></p-skeleton>
@@ -67,7 +57,6 @@
             <p-skeleton width="100%" height="8px"></p-skeleton>
           </div>
 
-          <!-- Questions Skeleton -->
           <div class="flex flex-col gap-4">
             <p-skeleton width="150px" height="24px"></p-skeleton>
             @for (i of [1, 2, 3]; track i) {
@@ -79,40 +68,113 @@
           </div>
         </div>
       } @else if (!isGenericPoll()) {
-        <!-- Non-Generic Poll - Redirect to PCC -->
-        <div class="flex flex-col items-center justify-center py-12 px-6 text-center" data-testid="vote-results-pcc-redirect">
-          <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-6">
-            <i class="fa-light fa-arrow-up-right-from-square text-2xl text-blue-600"></i>
+        <div class="flex flex-col gap-6" data-testid="vote-results-ranked">
+          <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-start gap-3" data-testid="vote-results-ranked-method">
+            <i class="fa-light fa-list-ol text-2xl text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-slate-900">{{ votingMethodText() }}</h3>
+              <p class="text-xs text-slate-600">{{ rankedMethodDescription() }}</p>
+            </div>
           </div>
 
-          <h2 class="text-xl font-semibold text-slate-900 mb-3">Advanced Voting Method</h2>
+          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-ranked-participation">
+            <div class="flex items-center justify-between text-sm text-slate-600">
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Total Participants</p>
+                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
+              </div>
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Total Responses</p>
+                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
+              </div>
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Response Rate</p>
+                <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+              </div>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+            </div>
+          </div>
 
-          <p class="text-sm text-slate-600 mb-6 max-w-md">
-            This vote uses <span class="font-medium">{{ votingMethodText() }}</span
-            >, an advanced voting method. Results for this vote type are available in the Project Control Center.
-          </p>
+          @if (rankedQuestions().length > 0) {
+            @for (q of rankedQuestions(); track q.questionId) {
+              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4" [attr.data-testid]="'vote-results-ranked-question-' + q.questionId">
+                <h4 class="text-sm font-semibold text-slate-900">{{ q.prompt }}</h4>
 
-          <a [href]="pccVotingUrl()" target="_blank" rel="noopener noreferrer" class="inline-block">
-            <lfx-button
-              label="View in Project Control Center"
-              icon="fa-light fa-arrow-up-right-from-square"
-              severity="primary"
-              data-testid="vote-results-pcc-link"></lfx-button>
-          </a>
+                <div class="flex flex-col gap-3">
+                  @for (row of q.choiceDistributions; track row.choiceId) {
+                    <div class="flex flex-col gap-2" [attr.data-testid]="'vote-results-ranked-choice-' + row.choiceId">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm font-medium text-slate-800">{{ row.choiceText }}</span>
+                        <span class="text-xs text-slate-500">{{ row.totalRanked }} {{ row.totalRanked === 1 ? 'voter' : 'voters' }}</span>
+                      </div>
 
-          <!-- Vote Details Section for non-generic polls -->
+                      @if (row.rankCounts.length > 0) {
+                        <div class="flex flex-col gap-1">
+                          @for (rc of row.rankCounts; track rc.rank) {
+                            <div class="flex items-center gap-2 text-xs">
+                              <span class="w-14 text-slate-600 flex-shrink-0">Rank {{ rc.rank }}</span>
+                              <div class="flex-1 bg-slate-100 rounded h-2 overflow-hidden">
+                                <div class="bg-blue-500 h-full rounded" [style.width.%]="rc.percentage"></div>
+                              </div>
+                              <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
+                              <span class="w-12 text-right text-slate-600 flex-shrink-0">{{ rc.percentage }}%</span>
+                            </div>
+                          }
+                        </div>
+                      } @else {
+                        <p class="text-xs text-slate-500 italic">No rankings recorded yet.</p>
+                      }
+                    </div>
+                  } @empty {
+                    <p class="text-sm text-gray-500 italic" [attr.data-testid]="'vote-results-ranked-question-empty-' + q.questionId">
+                      No ranked results recorded yet for this question.
+                    </p>
+                  }
+                </div>
+
+                @if (q.hasRoundSummary) {
+                  <div
+                    class="rounded-md border border-slate-200 bg-slate-50 p-3 flex items-center gap-2"
+                    [attr.data-testid]="'vote-results-ranked-rounds-' + q.questionId">
+                    <i class="fa-light fa-arrows-rotate text-slate-500" aria-hidden="true"></i>
+                    <p class="text-xs text-slate-600">Round-by-round details available from the voting service. Detailed round visualization is coming soon.</p>
+                  </div>
+                }
+              </div>
+            }
+          } @else {
+            <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="vote-results-ranked-empty">
+              <p class="text-sm text-gray-500">No ranked results recorded yet.</p>
+            </div>
+          }
+
+          @if (commentResults().length > 0) {
+            <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
+              <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
+              @for (commentResult of commentResults(); track $index) {
+                <div class="flex flex-col gap-2">
+                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
+                  @for (comment of commentResult.comments; track $index) {
+                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <p class="text-sm text-slate-700">{{ comment }}</p>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+
           @if (voteData.description) {
-            <div class="w-full mt-8 pt-6 border-t border-slate-200 text-left" data-testid="vote-results-details">
-              <h3 class="text-base font-semibold text-slate-900 mb-2">Vote Details</h3>
-              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
+            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" data-testid="vote-results-details">
+              <h4 class="text-sm font-semibold text-slate-900">Vote Details</h4>
               <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
             </div>
           }
         </div>
       } @else if (!isVoteClosed()) {
-        <!-- Live/Active Vote - Simplified Layout -->
         <div class="flex flex-col gap-6">
-          <!-- Vote Details Section (at top for live votes) -->
           @if (voteData.description) {
             <div class="flex flex-col gap-4" data-testid="vote-results-details">
               <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
@@ -121,18 +183,15 @@
             </div>
           }
 
-          <!-- Live Results -->
           <div class="flex flex-col gap-6" data-testid="vote-results-questions">
             <h2 class="text-lg font-semibold text-slate-900">Live Results</h2>
 
             @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
               <div class="flex flex-col gap-4">
-                <!-- Question Header (only show for multi-question) -->
                 @if (questionsWithResults().length > 1) {
                   <h3 class="text-base font-semibold text-slate-900">Q{{ idx + 1 }}. {{ question.question }}</h3>
                 }
 
-                <!-- Options with horizontal bars -->
                 <div class="flex flex-col gap-3">
                   @for (option of question.options; track option.choiceId) {
                     <div class="flex flex-col gap-1.5" [attr.data-testid]="'vote-results-option-' + option.choiceId">
@@ -158,7 +217,6 @@
             }
           </div>
 
-          <!-- Participation Summary (at bottom for live votes) -->
           <div class="pt-4 border-t border-slate-200 flex flex-col gap-4">
             <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
               <div class="flex items-center justify-between text-sm text-slate-600">
@@ -176,13 +234,11 @@
                 </div>
               </div>
 
-              <!-- Participation Progress Bar -->
               <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                 <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
               </div>
             </div>
 
-            <!-- Admin Governance Note -->
             <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p class="text-sm text-blue-800">
                 As the creator, you can monitor live results and close the vote when ready. Final results will be available after the vote closes.
@@ -190,11 +246,10 @@
             </div>
           </div>
 
-          <!-- Comments Section -->
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track commentResult.prompt) {
+              @for (commentResult of commentResults(); track $index) {
                 <div class="flex flex-col gap-2">
                   <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
                   @for (comment of commentResult.comments; track $index) {
@@ -208,12 +263,9 @@
           }
         </div>
       } @else {
-        <!-- Closed Vote - Final Results Layout -->
         <div class="flex flex-col gap-6">
-          <!-- Title -->
           <h2 class="text-xl font-semibold text-slate-900">Final Results</h2>
 
-          <!-- Participation Bar (at top for closed votes) -->
           <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
             <div class="flex items-center justify-between text-sm text-slate-600">
               <div class="text-center flex-1">
@@ -230,17 +282,14 @@
               </div>
             </div>
 
-            <!-- Participation Progress Bar -->
             <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
               <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
             </div>
           </div>
 
-          <!-- Question Results -->
           <div class="flex flex-col gap-6 mt-2" data-testid="vote-results-questions">
             @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
               <div class="flex flex-col gap-4">
-                <!-- Question Header -->
                 <h3 class="text-base font-semibold text-slate-900">
                   @if (questionsWithResults().length > 1) {
                     Q{{ idx + 1 }}.
@@ -248,7 +297,6 @@
                   {{ question.question }}
                 </h3>
 
-                <!-- Options with Vote Results -->
                 <div class="flex flex-col gap-3">
                   @for (option of question.options; track option.choiceId) {
                     <div
@@ -300,7 +348,6 @@
                         </div>
                       </div>
 
-                      <!-- Progress Bar -->
                       <div class="w-full bg-white rounded-full h-2 overflow-hidden">
                         <div
                           class="h-full transition-all"
@@ -317,11 +364,10 @@
           </div>
         </div>
 
-        <!-- Comments Section -->
         @if (commentResults().length > 0) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
             <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-            @for (commentResult of commentResults(); track commentResult.prompt) {
+            @for (commentResult of commentResults(); track $index) {
               <div class="flex flex-col gap-2">
                 <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
                 @for (comment of commentResult.comments; track $index) {
@@ -334,7 +380,6 @@
           </div>
         }
 
-        <!-- Vote Details Section (at bottom for closed votes) -->
         @if (voteData.description) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-details">
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>

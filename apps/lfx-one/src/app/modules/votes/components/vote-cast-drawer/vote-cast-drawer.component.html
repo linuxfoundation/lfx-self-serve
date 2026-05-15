@@ -54,14 +54,6 @@
             </div>
           }
         </div>
-      } @else if (!isGenericPoll()) {
-        <div class="flex flex-col items-center justify-center py-12 px-6 text-center" data-testid="vote-cast-drawer-unsupported">
-          <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-6">
-            <i class="fa-light fa-hourglass-half text-2xl text-blue-600"></i>
-          </div>
-          <h2 class="text-xl font-semibold text-slate-900 mb-3">Coming soon</h2>
-          <p class="text-sm text-slate-600 max-w-md">Ballot casting for ranked-choice voting methods is on the way and will be available here shortly.</p>
-        </div>
       } @else if (questions().length === 0) {
         <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="vote-cast-drawer-no-questions">
           <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
@@ -78,13 +70,56 @@
             <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
               <div class="flex flex-col gap-1">
                 <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
-                @if (question.type === 'multiple_choice') {
+                @if (isRankedPoll()) {
+                  <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
+                } @else if (question.type === 'multiple_choice') {
                   <p class="text-xs text-slate-500">Select all that apply.</p>
                 }
               </div>
 
               <div class="flex flex-col gap-2">
-                @if (question.type === 'single_choice') {
+                @if (isRankedPoll()) {
+                  <div
+                    cdkDropList
+                    [cdkDropListDisabled]="abstain()"
+                    (cdkDropListDropped)="onRankedDrop(question.question_id, $event)"
+                    class="flex flex-col gap-2"
+                    [class.opacity-60]="abstain()">
+                    @for (choice of rankedOrderByQuestion().get(question.question_id) ?? question.choices; track choice.choice_id; let i = $index) {
+                      <div
+                        cdkDrag
+                        [cdkDragDisabled]="abstain()"
+                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                        [class.cursor-move]="!abstain()"
+                        [class.cursor-not-allowed]="abstain()"
+                        [attr.data-testid]="'vote-cast-rank-' + choice.choice_id">
+                        <i cdkDragHandle class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
+                        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
+                          {{ i + 1 }}
+                        </span>
+                        <span class="flex-1 text-sm text-slate-800">{{ choice.choice_text }}</span>
+                        <button
+                          type="button"
+                          (click)="moveRank(question.question_id, i, i - 1)"
+                          [disabled]="i === 0 || abstain()"
+                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                          [attr.data-testid]="'vote-cast-rank-up-' + choice.choice_id"
+                          [attr.aria-label]="'Move ' + choice.choice_text + ' up'">
+                          <i class="fa-light fa-arrow-up" aria-hidden="true"></i>
+                        </button>
+                        <button
+                          type="button"
+                          (click)="moveRank(question.question_id, i, i + 1)"
+                          [disabled]="i === question.choices.length - 1 || abstain()"
+                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                          [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
+                          [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
+                          <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
+                        </button>
+                      </div>
+                    }
+                  </div>
+                } @else if (question.type === 'single_choice') {
                   @for (choice of question.choices; track choice.choice_id) {
                     <lfx-radio-button
                       [form]="form"

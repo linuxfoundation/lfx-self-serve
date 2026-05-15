@@ -4,11 +4,17 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { environment } from '@environments/environment';
 import { PollStatus, PollType } from '@lfx-one/shared';
-import { PollCommentResult, Vote, VoteParticipationStats, VoteResultsOption, VoteResultsQuestion, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import {
+  PollCommentResult,
+  RankedQuestionView,
+  Vote,
+  VoteParticipationStats,
+  VoteResultsOption,
+  VoteResultsQuestion,
+  VoteResultsResponse,
+} from '@lfx-one/shared/interfaces';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -18,7 +24,7 @@ import { catchError, finalize, of, shareReplay, startWith, switchMap } from 'rxj
 
 @Component({
   selector: 'lfx-vote-results-drawer',
-  imports: [DrawerModule, TagComponent, ButtonComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule],
+  imports: [DrawerModule, TagComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
 })
@@ -46,13 +52,14 @@ export class VoteResultsDrawerComponent {
 
   // === Computed Signals ===
   protected readonly isGenericPoll: Signal<boolean> = this.initIsGenericPoll();
-  protected readonly pccVotingUrl: Signal<string> = this.initPccVotingUrl();
   protected readonly isLoading: Signal<boolean> = computed(() => this.loadingVoteDetails() || this.loadingVoteResults());
   protected readonly participationStats: Signal<VoteParticipationStats> = this.initParticipationStats();
   protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
+  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
+  protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -106,19 +113,9 @@ export class VoteResultsDrawerComponent {
   private initIsGenericPoll(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
-      return v?.poll_type === PollType.GENERIC;
-    });
-  }
-
-  private initPccVotingUrl(): Signal<string> {
-    return computed(() => {
-      const v = this.vote();
-      if (!v) return '';
-
-      const pccBaseUrl = environment.urls.pcc;
-      // Remove trailing slash if present
-      const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-      return `${baseUrl}/project/${v.project_uid}/collaboration/voting`;
+      if (!v) return false;
+      // Missing poll_type defaults to GENERIC (matches initVotingMethodText) so the plurality branch renders.
+      return (v.poll_type ?? PollType.GENERIC) === PollType.GENERIC;
     });
   }
 
@@ -196,6 +193,41 @@ export class VoteResultsDrawerComponent {
     });
   }
 
+  /** Derives the ranked-choice per-question view model — round-summary payload is untyped upstream so detailed visualization is deferred to a placeholder banner. */
+  private initRankedQuestions(): Signal<RankedQuestionView[]> {
+    return computed(() => {
+      const results = this.voteResults();
+      if (!results?.poll_results?.length) return [];
+
+      return results.poll_results.map((pr) => {
+        // Choice text: prefer winner_info.poll_choices, fall back to question.choices.
+        const choiceTextById = new Map((pr.ranked_choice_winner_info?.poll_choices ?? pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
+
+        const choiceDistributions = (pr.ranked_choice_votes ?? []).map((rcv) => {
+          const totalRanked = rcv.rank_counts.reduce((sum, rc) => sum + rc.count, 0);
+          const rankCounts = rcv.rank_counts.map((rc) => ({
+            rank: rc.rank,
+            count: rc.count,
+            percentage: totalRanked > 0 ? Math.round((rc.count / totalRanked) * 100) : 0,
+          }));
+          return {
+            choiceId: rcv.choice_id,
+            choiceText: choiceTextById.get(rcv.choice_id) ?? rcv.choice_id,
+            totalRanked,
+            rankCounts,
+          };
+        });
+
+        return {
+          questionId: pr.question.question_id,
+          prompt: pr.question.prompt,
+          choiceDistributions,
+          hasRoundSummary: !!pr.irv_round_summary || !!pr.meek_stv_round_summary,
+        };
+      });
+    });
+  }
+
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
       const results = this.voteResults();
@@ -227,6 +259,22 @@ export class VoteResultsDrawerComponent {
 
       const pollType = v.poll_type ?? PollType.GENERIC;
       return methodLabels[pollType] || pollType;
+    });
+  }
+
+  private initRankedMethodDescription(): Signal<string> {
+    return computed(() => {
+      const pollType = this.vote()?.poll_type;
+      switch (pollType) {
+        case PollType.CONDORCET_IRV:
+          return 'Voters ranked the choices in order of preference. Condorcet IRV first looks for a candidate who would beat every other candidate in head-to-head pairwise comparisons; if no such Condorcet winner exists, it falls back to instant-runoff elimination.';
+        case PollType.INSTANT_RUNOFF_VOTE:
+          return 'Voters ranked the choices in order of preference. Instant-runoff voting tallies first-preference votes and eliminates the lowest-ranked choice each round, reallocating those ballots until a candidate has a majority.';
+        case PollType.MEEK_STV:
+          return 'Voters ranked the choices in order of preference. Meek STV is a multi-winner single-transferable-vote method that elects candidates as they meet a quota and proportionally redistributes surplus and eliminated ballots.';
+        default:
+          return 'Voters ranked the choices in order of preference. The configured ranked-choice algorithm determines the winner (or winners).';
+      }
     });
   }
 }

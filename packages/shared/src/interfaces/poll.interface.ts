@@ -675,3 +675,26 @@ export interface UpdateVoteRequest {
   /** Winning threshold percentage required */
   winning_threshold_percentage?: number;
 }
+
+/** Per-rank distribution row for a ranked-choice question (drawer-side projection of RankedChoiceVoteResult.rank_counts). */
+export interface RankCountDistribution {
+  rank: number;
+  count: number;
+  percentage: number;
+}
+
+/** Per-choice rank distribution for a ranked-choice question (drawer-side projection of PollQuestionResult.ranked_choice_votes). */
+export interface RankedChoiceDistribution {
+  choiceId: string;
+  choiceText: string;
+  totalRanked: number;
+  rankCounts: RankCountDistribution[];
+}
+
+/** Drawer-side view model for a ranked-choice question — projection of PollQuestionResult assembled by VoteResultsDrawerComponent.initRankedQuestions. */
+export interface RankedQuestionView {
+  questionId: string;
+  prompt: string;
+  choiceDistributions: RankedChoiceDistribution[];
+  hasRoundSummary: boolean;
+}
