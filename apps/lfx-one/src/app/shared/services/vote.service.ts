@@ -1,10 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateVoteRequest, PaginatedResponse, QueryServiceCountResponse, UpdateVoteRequest, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap } from 'rxjs';
+import {
+  CreateVoteRequest,
+  CreateVoteResponseRequest,
+  MyVoteResponse,
+  PaginatedResponse,
+  QueryServiceCountResponse,
+  UpdateVoteRequest,
+  Vote,
+  VoteResultsResponse,
+} from '@lfx-one/shared/interfaces';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -118,5 +127,23 @@ export class VoteService {
 
   public enableVote(voteUid: string): Observable<Vote> {
     return this.http.put<Vote>(`/api/votes/${voteUid}/enable`, {}).pipe(take(1));
+  }
+
+  public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
+    return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
+  }
+
+  public getMyVoteResponse(voteUid: string): Observable<MyVoteResponse | null> {
+    return this.http.get<MyVoteResponse | null>(`/api/votes/${voteUid}/my-response`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        // 404 = the user genuinely has no invitation row for this vote — return null so
+        // callers can surface the "no invitation" UX. Any other error (500, network, etc.)
+        // is rethrown so the submit flow can show a generic "Unable to submit" toast
+        // instead of misreporting it as "Unable to find your invitation".
+        if (err?.status === 404) return of(null);
+        console.error(`Failed to load my-response for vote ${voteUid}:`, err);
+        return throwError(() => err);
+      })
+    );
   }
 }

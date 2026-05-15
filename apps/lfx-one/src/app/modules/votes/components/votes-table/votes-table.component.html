@@ -191,11 +191,12 @@
                     }
                   } @else {
                     @if (vote.status === PollStatus.ACTIVE) {
+                      @let awaiting = vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
                       <lfx-button
-                        label="Review"
-                        icon="fa-light fa-clipboard"
+                        [label]="awaiting ? 'Vote' : 'Review'"
+                        [icon]="awaiting ? 'fa-light fa-check-to-slot' : 'fa-light fa-clipboard'"
                         severity="primary"
-                        [outlined]="true"
+                        [outlined]="!awaiting"
                         size="small"
                         styleClass="whitespace-nowrap"
                         (onClick)="onViewVote(vote.uid)"

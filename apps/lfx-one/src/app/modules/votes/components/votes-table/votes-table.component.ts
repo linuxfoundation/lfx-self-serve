@@ -14,7 +14,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, VOTE_LABEL } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -58,6 +58,7 @@ export class VotesTableComponent {
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
+  protected readonly VoteResponseStatus = VoteResponseStatus;
   protected readonly statusTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: PollStatus.ACTIVE, label: 'Active' },

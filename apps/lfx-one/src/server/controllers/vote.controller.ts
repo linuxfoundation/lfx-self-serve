@@ -4,7 +4,7 @@
 import { CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
@@ -231,6 +231,41 @@ export class VoteController {
       });
 
       res.json(results);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-response — pre-allocated vote_response row whose uid the cast drawer uses as vote_response_uid on submit. */
+  public async getMyVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_vote_response', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_vote_response',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const response = await this.voteService.getMyVoteResponse(req, uid);
+
+      if (!response) {
+        // Mirrors SurveyController.getMyResponse — structured 404 lets clients distinguish "no invitation" from upstream failure.
+        return next(
+          new ResourceNotFoundError('Vote response', uid, {
+            operation: 'get_my_vote_response',
+            service: 'vote_controller',
+            path: `/votes/${uid}/my-response`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_vote_response', startTime, { vote_uid: uid, found: true });
+      res.json(response);
     } catch (error) {
       next(error);
     }

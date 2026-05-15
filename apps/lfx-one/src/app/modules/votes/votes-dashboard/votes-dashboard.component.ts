@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { VOTE_LABEL } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { Committee, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -16,12 +16,13 @@ import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
 
+import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 
 @Component({
   selector: 'lfx-votes-dashboard',
-  imports: [LowerCasePipe, ButtonComponent, VotesTableComponent, VoteResultsDrawerComponent, RouterLink, EmptyStateComponent],
+  imports: [LowerCasePipe, ButtonComponent, VotesTableComponent, VoteResultsDrawerComponent, VoteCastDrawerComponent, RouterLink, EmptyStateComponent],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
 })
@@ -47,6 +48,7 @@ export class VotesDashboardComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly resultsDrawerVisible = signal<boolean>(false);
+  protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly selectedVoteId = signal<string | null>(null);
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
@@ -87,12 +89,29 @@ export class VotesDashboardComponent {
 
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
-    this.resultsDrawerVisible.set(true);
+
+    // Look up the picked vote synchronously — selectedListVote() hasn't re-derived yet.
+    const source = this.isMeLens() ? this.myVotes() : this.votes();
+    const picked = source.find((v) => v.uid === voteId) ?? null;
+
+    if (picked && this.shouldOpenCastDrawerFor(picked)) {
+      this.resultsDrawerVisible.set(false);
+      this.castDrawerVisible.set(true);
+    } else {
+      this.castDrawerVisible.set(false);
+      this.resultsDrawerVisible.set(true);
+    }
   }
 
   protected onViewResults(voteId: string): void {
     this.selectedVoteId.set(voteId);
+    this.castDrawerVisible.set(false);
     this.resultsDrawerVisible.set(true);
+  }
+
+  // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
+  protected onVoteSubmitted(): void {
+    this.refresh$.next();
   }
 
   protected refreshVotes(): void {
@@ -329,5 +348,16 @@ export class VotesDashboardComponent {
 
       return filtered;
     });
+  }
+
+  // Me lens routes all active-awaiting votes to the cast drawer (regardless of poll_type):
+  // - GENERIC renders the real ballot form
+  // - Advanced types (CONDORCET_IRV, INSTANT_RUNOFF_VOTE, MEEK_STV) render the "Coming soon"
+  //   placeholder inside the cast drawer
+  // Either way no PCC link is shown in Me lens. Project / Foundation / Organization lenses
+  // continue to open the read-only results drawer (existing behaviour) where the PCC link
+  // still lives for ops/admin workflows.
+  private shouldOpenCastDrawerFor(vote: Vote): boolean {
+    return this.isMeLens() && vote.status === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
   }
 }

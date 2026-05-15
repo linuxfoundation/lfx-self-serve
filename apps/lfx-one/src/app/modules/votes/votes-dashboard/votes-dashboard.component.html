@@ -65,3 +65,11 @@
   [voteId]="selectedVoteId()"
   [listVote]="selectedListVote()"
   data-testid="votes-results-drawer"></lfx-vote-results-drawer>
+
+<!-- Vote Cast Drawer — opens for active GENERIC votes the user has not yet responded to (Me lens). -->
+<lfx-vote-cast-drawer
+  [(visible)]="castDrawerVisible"
+  [voteId]="selectedVoteId()"
+  [listVote]="selectedListVote()"
+  (voteSubmitted)="onVoteSubmitted()"
+  data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>

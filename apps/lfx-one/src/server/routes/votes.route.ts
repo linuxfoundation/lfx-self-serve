@@ -23,6 +23,9 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
 router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
 
+// GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
+router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
+
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
 

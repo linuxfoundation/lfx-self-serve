@@ -1,0 +1,141 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-cast-drawer"
+  data-testid="vote-cast-drawer">
+  @if (vote(); as voteData) {
+    <ng-template #header>
+      <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-cast-drawer-header">
+        <div class="flex items-center justify-between gap-2">
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-cast-drawer-title">
+            {{ voteData.name }}
+          </h1>
+          <button
+            type="button"
+            (click)="onClose()"
+            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+            data-testid="vote-cast-drawer-close"
+            aria-label="Close panel">
+            <i class="fa-light fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          @if (voteData.committee_name) {
+            <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
+              {{ voteData.committee_name }}
+            </span>
+            <span class="text-slate-400">•</span>
+          }
+          <lfx-tag
+            [value]="voteData.status | pollStatusLabel"
+            [severity]="voteData.status | pollStatusSeverity"
+            data-testid="vote-cast-drawer-status"></lfx-tag>
+          <span class="text-slate-400">•</span>
+          <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+        </div>
+      </div>
+    </ng-template>
+
+    <div class="flex flex-col gap-6" data-testid="vote-cast-drawer-content">
+      @if (loadingVote()) {
+        <div class="flex flex-col gap-4">
+          <p-skeleton width="60%" height="24px"></p-skeleton>
+          @for (i of [1, 2, 3]; track i) {
+            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+              <p-skeleton width="80%" height="16px"></p-skeleton>
+              <p-skeleton width="40%" height="12px"></p-skeleton>
+              <p-skeleton width="40%" height="12px"></p-skeleton>
+            </div>
+          }
+        </div>
+      } @else if (!isGenericPoll()) {
+        <div class="flex flex-col items-center justify-center py-12 px-6 text-center" data-testid="vote-cast-drawer-unsupported">
+          <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-6">
+            <i class="fa-light fa-hourglass-half text-2xl text-blue-600"></i>
+          </div>
+          <h2 class="text-xl font-semibold text-slate-900 mb-3">Coming soon</h2>
+          <p class="text-sm text-slate-600 max-w-md">Ballot casting for ranked-choice voting methods is on the way and will be available here shortly.</p>
+        </div>
+      } @else if (questions().length === 0) {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="vote-cast-drawer-no-questions">
+          <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
+        </div>
+      } @else {
+        @if (voteData.description) {
+          <div class="text-sm text-slate-700 whitespace-pre-line" data-testid="vote-cast-drawer-description">
+            {{ voteData.description }}
+          </div>
+        }
+
+        <form [formGroup]="form" class="flex flex-col gap-6">
+          @for (question of questions(); track question.question_id) {
+            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
+              <div class="flex flex-col gap-1">
+                <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
+                @if (question.type === 'multiple_choice') {
+                  <p class="text-xs text-slate-500">Select all that apply.</p>
+                }
+              </div>
+
+              <div class="flex flex-col gap-2">
+                @if (question.type === 'single_choice') {
+                  @for (choice of question.choices; track choice.choice_id) {
+                    <lfx-radio-button
+                      [form]="form"
+                      [control]="question.question_id"
+                      [name]="question.question_id"
+                      [value]="choice.choice_id"
+                      [inputId]="'vote-cast-choice-' + choice.choice_id"
+                      [label]="choice.choice_text"
+                      [attr.data-testid]="'vote-cast-choice-' + choice.choice_id"></lfx-radio-button>
+                  }
+                } @else if (question.type === 'multiple_choice') {
+                  @for (choice of question.choices; track choice.choice_id) {
+                    <div class="flex items-center gap-2" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
+                      <p-checkbox
+                        [formControlName]="question.question_id"
+                        [value]="choice.choice_id"
+                        [binary]="false"
+                        [inputId]="'vote-cast-choice-' + choice.choice_id" />
+                      <label [for]="'vote-cast-choice-' + choice.choice_id" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        {{ choice.choice_text }}
+                      </label>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+          }
+        </form>
+
+        @if (allowAbstain()) {
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
+            <div class="flex items-center gap-2" data-testid="vote-cast-abstain-toggle">
+              <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
+              <label for="vote-cast-abstain" class="text-sm font-medium text-gray-700 cursor-pointer">Abstain from this vote</label>
+            </div>
+            <p class="text-xs text-slate-500">An abstention is recorded as a non-vote and overrides any selections above.</p>
+          </div>
+        }
+
+        <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
+          <lfx-button label="Cancel" severity="secondary" (onClick)="onClose()" [disabled]="submitting()" data-testid="vote-cast-cancel-button"></lfx-button>
+          <lfx-button
+            label="Submit Vote"
+            icon="fa-light fa-check"
+            severity="primary"
+            [disabled]="submitDisabled()"
+            [loading]="submitting()"
+            (onClick)="onSubmit()"
+            data-testid="vote-cast-submit-button"></lfx-button>
+        </div>
+      }
+    </div>
+  }
+</p-drawer>
