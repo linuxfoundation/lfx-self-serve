@@ -10,6 +10,7 @@ import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
+import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -25,6 +26,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
     FoundationHealthComponent,
     SkeletonModule,
     DashboardQuicklinksComponent,
+    DashboardCastDrawerHostComponent,
   ],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',
@@ -49,6 +51,10 @@ export class BoardMemberDashboardComponent {
   }
 
   public handleActionClick(): void {
+    this.refresh$.next();
+  }
+
+  protected handleVoteSubmitted(): void {
     this.refresh$.next();
   }
 

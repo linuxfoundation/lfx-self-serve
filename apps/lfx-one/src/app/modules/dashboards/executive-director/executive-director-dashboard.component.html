@@ -109,7 +109,11 @@
 
     <!-- Pending Actions -->
     @defer (on idle) {
-      <lfx-pending-actions [pendingActions]="pendingActions()" [displayLimit]="2" (actionClick)="handleActionClick()" />
+      <lfx-pending-actions
+        [pendingActions]="pendingActions()"
+        [displayLimit]="2"
+        (actionClick)="handleActionClick()"
+        (castVoteRequested)="castDrawerHost.open($event)" />
     } @placeholder {
       <section class="flex flex-col flex-1" data-testid="ed-dashboard-pending-actions-placeholder">
         <div class="flex items-center justify-between mb-4 px-2 h-8">
@@ -164,3 +168,6 @@
     }
   </div>
 </div>
+
+<!-- Inline ballot cast drawer launched from a Vote pending action — same drawer used on /votes. -->
+<lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="handleVoteSubmitted()" />

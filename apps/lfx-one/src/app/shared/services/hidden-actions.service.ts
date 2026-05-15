@@ -52,16 +52,14 @@ export class HiddenActionsService {
     return this.cookieService.check(cookieName);
   }
 
-  /**
-   * Generate a unique identifier for an action.
-   * Always combines type, badge, and text — and appends buttonLink when present — so siblings
-   * that share a destination URL (e.g., multiple pending votes linking to /votes) still get
-   * distinct cookies. Using buttonLink alone would cause dismissing one to hide all siblings.
-   *
-   * @param item The pending action item
-   * @returns A unique string identifier
-   */
+  // Prefer intrinsic IDs (meetingUid, voteUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.
   private getActionIdentifier(item: PendingActionItem): string {
+    if (item.meetingUid) {
+      return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
+    }
+    if (item.voteUid) {
+      return `${item.type}-${item.voteUid}`;
+    }
     const base = `${item.type}-${item.badge}-${item.text}`;
     return item.buttonLink ? `${base}|${item.buttonLink}` : base;
   }

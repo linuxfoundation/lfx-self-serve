@@ -9,6 +9,7 @@ import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
+import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
@@ -16,7 +17,7 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-user-dashboard',
-  imports: [FoundationHealthComponent, RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, SkeletonModule],
+  imports: [FoundationHealthComponent, RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, SkeletonModule, DashboardCastDrawerHostComponent],
   templateUrl: './user-dashboard.component.html',
   styleUrl: './user-dashboard.component.scss',
 })
@@ -47,6 +48,10 @@ export class UserDashboardComponent {
   public readonly pendingActions: Signal<PendingActionItem[]> = this.initPendingActions();
 
   public handleActionClick(): void {
+    this.refresh$.next();
+  }
+
+  protected handleVoteSubmitted(): void {
     this.refresh$.next();
   }
 

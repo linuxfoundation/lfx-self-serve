@@ -98,6 +98,9 @@ export class VoteCastDrawerComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((questions) => this.rebuildForm(questions));
 
+    // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
+    this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
+
     // Abstain toggle disables answer controls without losing their values.
     this.abstainControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((isAbstaining) => {
       if (isAbstaining) this.form.disable({ emitEvent: false });

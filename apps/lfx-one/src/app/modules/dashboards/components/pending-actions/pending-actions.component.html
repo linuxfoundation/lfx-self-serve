@@ -71,6 +71,14 @@
               } @else {
                 <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
               }
+            } @else if (item.isVoteInline) {
+              <lfx-button
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="handleActionClick(item)"
+                [label]="item.buttonText"
+                data-testid="dashboard-pending-actions-vote-button" />
             } @else if (item.buttonLink) {
               <lfx-button
                 size="small"

@@ -30,6 +30,8 @@ export class PendingActionsComponent {
   public readonly displayLimit = input<number>(5);
 
   public readonly actionClick = output<PendingActionItem>();
+  // Emits the voteUid when a Vote pending-action is clicked, so the parent dashboard can open the cast drawer inline instead of navigating to /votes.
+  public readonly castVoteRequested = output<string>();
 
   // Cookie-backed dismissals live outside the signal graph; bumping forces the computed to recompute.
   private readonly hiddenActionsVersion = signal(0);
@@ -56,6 +58,12 @@ export class PendingActionsComponent {
   protected handleActionClick(item: DecoratedPendingAction): void {
     if (this.isRsvpInline(item)) {
       this.loadMeetingForRsvp(item);
+      return;
+    }
+
+    if (this.isVoteInline(item) && item.voteUid) {
+      // Vote rows: just open the drawer; hide-on-success happens via the parent dashboard's handleVoteSubmitted path, so cancel/error leaves the row in place.
+      this.castVoteRequested.emit(item.voteUid);
       return;
     }
 
@@ -103,10 +111,17 @@ export class PendingActionsComponent {
     return item.type === 'RSVP' && !!item.meetingUid;
   }
 
-  // Composite fallback for action types that don't carry intrinsic IDs yet.
+  private isVoteInline(item: PendingActionItem): boolean {
+    return item.type === 'Vote' && !!item.voteUid;
+  }
+
+  // Intrinsic IDs first (meetingUid for RSVP/Agenda, voteUid for Vote); composite fallback for action types without one. Distinct intrinsic IDs prevent two same-titled votes from colliding on the hidden-actions cookie.
   private getRowKey(item: PendingActionItem): string {
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
+    }
+    if (item.voteUid) {
+      return `${item.type}-${item.voteUid}`;
     }
     return `${item.type}-${item.text}-${item.buttonLink ?? ''}`;
   }
@@ -121,6 +136,7 @@ export class PendingActionsComponent {
       return this.visibleActions().map((item) => {
         const rowKey = this.getRowKey(item);
         const isRsvpInline = this.isRsvpInline(item);
+        const isVoteInline = this.isVoteInline(item);
         const meeting = item.meetingUid ? (cache[item.meetingUid] ?? null) : null;
         let rowClass: string;
         if (dismissing.has(rowKey)) {
@@ -134,6 +150,7 @@ export class PendingActionsComponent {
           ...item,
           rowKey,
           isRsvpInline,
+          isVoteInline,
           isRsvpInlineLink: isRsvpInline && !!item.buttonLink,
           isExpanded: expandedKey === rowKey,
           isLoading: !!item.meetingUid && loadingUid === item.meetingUid,

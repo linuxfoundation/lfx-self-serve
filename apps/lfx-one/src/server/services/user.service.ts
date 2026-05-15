@@ -14,6 +14,7 @@ import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
+  IndexedVote,
   IndexedVoteResponse,
   Meeting,
   MeetingOccurrence,
@@ -1307,6 +1308,8 @@ export class UserService {
         month: 'short',
         day: 'numeric',
       });
+      // fetchPendingVotes returns raw indexer-shaped docs typed as Vote — at runtime they carry vote_uid, not uid. Fall back so voteUid is always populated.
+      const voteUid = vote.uid ?? (vote as unknown as IndexedVote).vote_uid;
       return {
         type: 'Vote',
         badge,
@@ -1314,7 +1317,9 @@ export class UserService {
         icon: 'fa-regular fa-check-to-slot',
         severity: PENDING_ACTION_SEVERITY.Vote,
         buttonText: 'Cast Vote',
+        // Inline launch is the active path (template branches on isVoteInline when voteUid is set); buttonLink kept for the older Survey/Agenda code path and any future caller that hasn't migrated.
         buttonLink: '/votes',
+        voteUid,
         date: `Closes ${formattedEnd}`,
       };
     });

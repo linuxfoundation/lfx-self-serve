@@ -500,6 +500,8 @@ export interface PendingActionItem {
   meetingUid?: string;
   /** Occurrence ID for recurring meetings (set on RSVP action types today). Passed to RsvpButtonGroupComponent so the scope picker (single / this_and_following / all) can scope the response correctly. */
   occurrenceId?: string;
+  /** Vote UID (set on Vote action types so the dashboard can lazy-open the cast drawer inline without leaving the page). Populated by user.service.ts transformVotesToActions. */
+  voteUid?: string;
 }
 
 /**
@@ -511,6 +513,8 @@ export interface DecoratedPendingAction extends PendingActionItem {
   rowKey: string;
   /** True when the action is an RSVP that should expand inline (RSVP type with a meetingUid) */
   isRsvpInline: boolean;
+  /** True when the action is a Vote with a voteUid; drives the inline cast-drawer launch path in the template (mirrors isRsvpInline for RSVPs) */
+  isVoteInline: boolean;
   /** True when the row's title should render as an external meeting link */
   isRsvpInlineLink: boolean;
   /** True when this row's inline RSVP button group is currently visible */

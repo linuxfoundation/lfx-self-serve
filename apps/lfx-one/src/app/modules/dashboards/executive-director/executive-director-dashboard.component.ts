@@ -10,6 +10,7 @@ import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
+import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -28,6 +29,7 @@ import { MarketingOverviewComponent } from './components/marketing-overview/mark
     OrganizationInvolvementComponent,
     SkeletonModule,
     DashboardQuicklinksComponent,
+    DashboardCastDrawerHostComponent,
   ],
   templateUrl: './executive-director-dashboard.component.html',
 })
@@ -56,6 +58,10 @@ export class ExecutiveDirectorDashboardComponent {
 
   // === Public Methods ===
   public handleActionClick(): void {
+    this.refresh$.next();
+  }
+
+  protected handleVoteSubmitted(): void {
     this.refresh$.next();
   }
 

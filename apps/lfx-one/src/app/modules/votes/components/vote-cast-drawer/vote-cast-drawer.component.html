@@ -172,5 +172,28 @@
         </div>
       }
     </div>
+  } @else if (!loadingVote()) {
+    <ng-template #header>
+      <div class="flex items-center justify-end w-full pr-4">
+        <button
+          type="button"
+          (click)="onClose()"
+          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+          data-testid="vote-cast-drawer-close-error"
+          aria-label="Close panel">
+          <i class="fa-light fa-xmark text-xl"></i>
+        </button>
+      </div>
+    </ng-template>
+    <div class="flex flex-col items-center justify-center py-12 px-6 text-center gap-4" data-testid="vote-cast-drawer-error">
+      <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-red-600" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-xl font-semibold text-slate-900">Couldn't load this vote</h2>
+      <p class="text-sm text-slate-600 max-w-md">
+        The vote details didn't load. Please close this panel and try again, or open the vote from the My Votes page.
+      </p>
+      <lfx-button label="Close" severity="secondary" (onClick)="onClose()" data-testid="vote-cast-drawer-error-close"></lfx-button>
+    </div>
   }
 </p-drawer>

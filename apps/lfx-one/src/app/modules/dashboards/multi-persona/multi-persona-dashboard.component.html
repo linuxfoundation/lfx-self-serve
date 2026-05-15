@@ -42,7 +42,7 @@
       </section>
     } @else {
       @defer (on idle) {
-        <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" />
+        <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" (castVoteRequested)="castDrawerHost.open($event)" />
       } @placeholder {
         <section class="flex flex-1 flex-col" data-testid="multi-persona-pending-actions-placeholder">
           <div class="mb-4 flex h-8 items-center gap-2">
@@ -226,3 +226,6 @@
     </section>
   </div>
 </div>
+
+<!-- Inline ballot cast drawer launched from a Vote pending action — same drawer used on /votes. -->
+<lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="handleVoteSubmitted()" />
