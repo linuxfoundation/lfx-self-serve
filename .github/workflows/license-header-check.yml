@@ -11,6 +11,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   license-header-check:
     uses: linuxfoundation/lfx-public-workflows/.github/workflows/license-header-check.yml@main
