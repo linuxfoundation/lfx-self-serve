@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2 border-l border-gray-200 pl-4" [attr.data-testid]="'overview-tab-kpi-' + kpi().id">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-1.5">
+      <i [class]="kpi().icon + ' text-xs text-gray-400'" aria-hidden="true"></i>
+      <span class="text-xs font-medium text-gray-500">{{ kpi().label }}</span>
+    </div>
+    @if (kpi().badge) {
+      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600" [attr.data-testid]="'overview-tab-badge-' + kpi().id">
+        {{ kpi().badge }}
+      </span>
+    }
+  </div>
+
+  <span class="text-2xl font-semibold text-gray-900">{{ kpi().value }}</span>
+
+  <div class="flex items-center gap-3">
+    @if (kpi().momChange) {
+      <div class="flex items-center gap-1">
+        @if (kpi().momTrend === 'up') {
+          <i class="fa-solid fa-arrow-up text-[10px] text-green-600" aria-hidden="true"></i>
+        } @else if (kpi().momTrend === 'down') {
+          <i class="fa-solid fa-arrow-down text-[10px] text-red-600" aria-hidden="true"></i>
+        }
+        <span class="text-xs font-medium" [ngClass]="kpi().momTrendClass">{{ kpi().momChange }}</span>
+      </div>
+    }
+
+    @if (kpi().yoyChange) {
+      <div class="flex items-center gap-1">
+        @if (kpi().yoyTrend === 'up') {
+          <i class="fa-solid fa-arrow-up text-[10px] text-green-600" aria-hidden="true"></i>
+        } @else if (kpi().yoyTrend === 'down') {
+          <i class="fa-solid fa-arrow-down text-[10px] text-red-600" aria-hidden="true"></i>
+        }
+        <span class="text-xs font-medium" [ngClass]="kpi().yoyTrendClass">{{ kpi().yoyChange }}</span>
+      </div>
+    }
+  </div>
+
+  @if (kpi().comparisonLine) {
+    <span class="text-[11px] text-gray-400">{{ kpi().comparisonLine }}</span>
+  }
+</div>
