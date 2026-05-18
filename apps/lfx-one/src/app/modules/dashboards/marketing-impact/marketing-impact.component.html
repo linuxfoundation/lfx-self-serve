@@ -89,13 +89,17 @@
         <lfx-email-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-email-tab" />
       } @else if (selectedTab() === 'web-activity') {
         <lfx-web-activity-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-web-activity-tab" />
+      } @else if (selectedTab() === 'social-accounts') {
+        <lfx-social-accounts-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-social-accounts-tab" />
+      } @else if (selectedTab() === 'social-listening') {
+        <lfx-social-listening-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-social-listening-tab" />
       } @else {
         <div
           class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-16"
           data-testid="marketing-impact-tab-placeholder">
           <div class="flex flex-col items-center gap-2 text-center">
             <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-            <p class="text-sm text-gray-500">{{ selectedTabLabel() }} data coming soon.</p>
+            <p class="text-sm text-gray-500">This section is coming soon.</p>
           </div>
         </div>
       }

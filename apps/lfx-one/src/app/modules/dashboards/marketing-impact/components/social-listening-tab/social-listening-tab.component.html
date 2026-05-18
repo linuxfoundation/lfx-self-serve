@@ -1,0 +1,114 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="social-listening-tab">
+  <!-- Header -->
+  <div class="flex flex-col gap-1">
+    <h3 class="text-base font-semibold text-gray-900">Social listening</h3>
+    <p class="text-xs text-gray-500">Brand mentions &amp; sentiment · {{ foundationName() || 'All foundations' }}</p>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="social-listening-kpi-grid">
+    @if (loading()) {
+      @for (i of [1, 2, 3]; track i) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="social-listening-kpi-skeleton">
+          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    } @else {
+      @for (kpi of kpiCards(); track kpi.id) {
+        <lfx-sparkline-kpi-card [kpi]="kpi" />
+      }
+    }
+  </div>
+
+  @if (!loading()) {
+    <!-- Sentiment breakdown bar -->
+    @if (sentimentBar(); as bar) {
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="social-listening-sentiment-bar">
+        <h4 class="text-sm font-semibold text-gray-900">Sentiment breakdown</h4>
+        <div class="flex h-3 w-full overflow-hidden rounded-full">
+          <div class="bg-green-500" [style.width.%]="bar.positive"></div>
+          <div class="bg-gray-300" [style.width.%]="bar.neutral"></div>
+          <div class="bg-red-500" [style.width.%]="bar.negative"></div>
+        </div>
+        <div class="flex items-center gap-4 text-xs text-gray-500">
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full bg-green-500"></span>
+            Positive {{ bar.positiveLabel }}
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full bg-gray-300"></span>
+            Neutral {{ bar.neutralLabel }}
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full bg-red-500"></span>
+            Negative {{ bar.negativeLabel }}
+          </span>
+        </div>
+      </div>
+    }
+
+    <!-- Top projects by mentions -->
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="social-listening-projects">
+      <h4 class="text-sm font-semibold text-gray-900">Mentions by project</h4>
+
+      @if (hasTopProjects()) {
+        <div class="flex flex-col gap-0" data-testid="social-listening-projects-table">
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
+            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400">PROJECT</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">MENTIONS</span>
+          </div>
+
+          @for (project of topProjects(); track project.name) {
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'social-listening-project-' + project.name">
+              <span class="flex-1 truncate text-xs font-medium text-gray-700">{{ project.name }}</span>
+              <span class="w-24 text-right text-xs text-gray-900">{{ project.mentions }}</span>
+            </div>
+          }
+        </div>
+      } @else {
+        <div
+          class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8"
+          data-testid="social-listening-projects-empty">
+          <p class="text-sm text-gray-500">No project mention data available.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Top mentions -->
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="social-listening-mentions">
+      <h4 class="text-sm font-semibold text-gray-900">Top mentions</h4>
+
+      @if (hasTopMentions()) {
+        <div class="flex flex-col gap-3" data-testid="social-listening-mentions-list">
+          @for (mention of topMentions(); track $index) {
+            <div class="flex flex-col gap-1 rounded-lg border border-gray-100 p-3" [attr.data-testid]="'social-listening-mention-' + mention.author">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium text-gray-700">{{ mention.author }}</span>
+                <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">{{ mention.sourcePlatform }}</span>
+                @if (mention.sentiment === 'positive') {
+                  <span class="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">positive</span>
+                } @else if (mention.sentiment === 'negative') {
+                  <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">negative</span>
+                } @else {
+                  <span class="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">neutral</span>
+                }
+              </div>
+              <p class="line-clamp-2 text-xs text-gray-600">{{ mention.title || mention.body }}</p>
+            </div>
+          }
+        </div>
+      } @else {
+        <div
+          class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8"
+          data-testid="social-listening-mentions-empty">
+          <p class="text-sm text-gray-500">No mention data available.</p>
+        </div>
+      }
+    </div>
+  }
+</div>

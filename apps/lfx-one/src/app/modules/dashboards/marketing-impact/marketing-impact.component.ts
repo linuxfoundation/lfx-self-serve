@@ -24,6 +24,8 @@ import { AttributionSectionComponent } from './components/attribution-section/at
 import { EmailTabComponent } from './components/email-tab/email-tab.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
 import { PerformanceMarketingTabComponent } from './components/performance-marketing-tab/performance-marketing-tab.component';
+import { SocialAccountsTabComponent } from './components/social-accounts-tab/social-accounts-tab.component';
+import { SocialListeningTabComponent } from './components/social-listening-tab/social-listening-tab.component';
 import { WebActivityTabComponent } from './components/web-activity-tab/web-activity-tab.component';
 
 @Component({
@@ -38,6 +40,8 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
     PerformanceMarketingTabComponent,
     EmailTabComponent,
     WebActivityTabComponent,
+    SocialAccountsTabComponent,
+    SocialListeningTabComponent,
   ],
   templateUrl: './marketing-impact.component.html',
   styleUrl: './marketing-impact.component.scss',
@@ -65,7 +69,6 @@ export class MarketingImpactComponent {
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
   protected readonly foundationName = computed(() => this.projectContextService.selectedFoundation()?.name ?? '');
   protected readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug);
-  protected readonly selectedTabLabel = computed(() => this.tabs.find((t) => t.id === this.selectedTab())?.label ?? '');
   protected readonly selectedMonth: Signal<string> = this.initSelectedMonth();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
 

@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import type { PerformanceSummaryKpi, WebActivitiesSummaryResponse, WebActivityDomainRow } from '@lfx-one/shared/interfaces';
 
@@ -46,7 +46,10 @@ export class WebActivityTabComponent {
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getWebActivitiesSummary(slug).pipe(finalize(() => this.loading.set(false)));
+          return this.analyticsService.getWebActivitiesSummary(slug).pipe(
+            catchError(() => of(null)),
+            finalize(() => this.loading.set(false))
+          );
         })
       ),
       { initialValue: null }
