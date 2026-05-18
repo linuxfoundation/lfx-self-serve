@@ -85,3 +85,33 @@ export interface PaidProjectRow {
   performance: PaidProjectPerformance;
   performanceClass: string;
 }
+
+/** View-model row for the email type breakdown table. */
+export interface EmailTypeRow {
+  emailType: string;
+  campaignCount: number;
+  sends: string;
+  opens: string;
+  openRate: string;
+  ctr: string;
+}
+
+/** View-model row for the top campaigns table. */
+export interface TopCampaignRow {
+  name: string;
+  type: string;
+  sends: string;
+  opens: string;
+  openRate: string;
+  ctr: string;
+}
+
+/** View-model row for the web activity domain table. */
+export interface WebActivityDomainRow {
+  domain: string;
+  sessions: string;
+  pageViews: string;
+  pagesPerSession: string;
+  sessionShare: number;
+  sessionShareFormatted: string;
+}

@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="web-activity-tab">
+  <!-- Header -->
+  <div class="flex flex-col gap-1">
+    <h3 class="text-base font-semibold text-gray-900">Web activity</h3>
+    <p class="text-xs text-gray-500">Website engagement metrics · {{ foundationName() || 'All foundations' }}</p>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="web-activity-kpi-grid">
+    @if (loading()) {
+      @for (i of [1, 2, 3]; track $index) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="web-activity-kpi-skeleton">
+          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    } @else {
+      @for (kpi of kpiCards(); track kpi.id) {
+        <lfx-sparkline-kpi-card [kpi]="kpi" />
+      }
+    }
+  </div>
+
+  <!-- Domain breakdown table -->
+  @if (!loading()) {
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="web-activity-domains">
+      <h4 class="text-sm font-semibold text-gray-900">Web activity by domain</h4>
+
+      @if (hasDomains()) {
+        <div class="flex flex-col gap-0" data-testid="web-activity-table">
+          <!-- Table header -->
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
+            <span class="w-44 text-[11px] font-semibold tracking-wide text-gray-400">DOMAIN</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">SESSIONS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">PAGE VIEWS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">PAGES/SESSION</span>
+            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400">SESSION SHARE</span>
+          </div>
+
+          <!-- Rows -->
+          @for (row of domainRows(); track row.domain) {
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'web-activity-row-' + row.domain">
+              <span class="w-44 truncate text-xs font-medium text-gray-700">{{ row.domain }}</span>
+              <span class="w-24 text-right text-xs text-gray-900">{{ row.sessions }}</span>
+              <span class="w-24 text-right text-xs text-gray-900">{{ row.pageViews }}</span>
+              <span class="w-24 text-right text-xs text-gray-500">{{ row.pagesPerSession }}</span>
+              <div class="flex flex-1 items-center gap-2">
+                <div class="h-2 flex-1 rounded-full bg-gray-100">
+                  <div class="h-2 rounded-full bg-blue-500" [style.width.%]="row.sessionShare"></div>
+                </div>
+                <span class="w-10 text-right text-[11px] text-gray-500">{{ row.sessionShareFormatted }}</span>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="web-activity-empty">
+          <p class="text-sm text-gray-500">No web activity data available.</p>
+        </div>
+      }
+    </div>
+  }
+</div>

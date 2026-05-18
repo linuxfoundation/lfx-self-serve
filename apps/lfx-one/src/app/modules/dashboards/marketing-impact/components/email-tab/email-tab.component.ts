@@ -1,0 +1,193 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { catchError, finalize, of, switchMap } from 'rxjs';
+
+import type { EmailCtrResponse, EmailTypeRow, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
+
+import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
+
+@Component({
+  selector: 'lfx-email-tab',
+  imports: [SparklineKpiCardComponent],
+  templateUrl: './email-tab.component.html',
+  styleUrl: './email-tab.component.scss',
+})
+export class EmailTabComponent {
+  // === Services ===
+  private readonly analyticsService = inject(AnalyticsService);
+
+  // === Inputs ===
+  public readonly foundationSlug = input<string | undefined>();
+  public readonly foundationName = input<string>('');
+
+  // === WritableSignals ===
+  protected readonly loading = signal(false);
+
+  // === Computed Signals ===
+  protected readonly emailData: Signal<EmailCtrResponse | null> = this.initEmailData();
+  protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
+  protected readonly emailTypeRows: Signal<EmailTypeRow[]> = this.initEmailTypeRows();
+  protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
+  protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
+  protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
+
+  // === Private Initializers ===
+  private initEmailData(): Signal<EmailCtrResponse | null> {
+    const slug$ = toObservable(this.foundationSlug);
+
+    return toSignal(
+      slug$.pipe(
+        switchMap((slug) => {
+          if (!slug) {
+            this.loading.set(false);
+            return of(null);
+          }
+          this.loading.set(true);
+          return this.analyticsService.getEmailCtr(slug).pipe(
+            finalize(() => this.loading.set(false)),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initKpiCards(): Signal<PerformanceSummaryKpi[]> {
+    return computed(() => {
+      const data = this.emailData();
+      if (!data) return [];
+
+      const totalSends = data.monthlySends?.reduce((s, v) => s + v, 0) ?? 0;
+      const totalOpens = data.monthlyOpens?.reduce((s, v) => s + v, 0) ?? 0;
+      const changePct = data.changePercentage;
+
+      const sendsMom = this.computeMomPct(data.monthlySends);
+      const opensMom = this.computeMomPct(data.monthlyOpens);
+
+      const sends = data.monthlySends ?? [];
+      const opens = data.monthlyOpens ?? [];
+      const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
+      const prevSends = sends.length > 1 ? sends[sends.length - 2] : undefined;
+      const lastOpens = sends.length > 0 ? (opens[opens.length - 1] ?? 0) : 0;
+      const prevOpens = sends.length > 1 ? (opens[opens.length - 2] ?? 0) : 0;
+
+      const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : 0;
+      const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : 0;
+      const openRateMom = prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
+
+      return [
+        {
+          id: 'total-sends',
+          label: 'Total Sends',
+          icon: 'fa-light fa-paper-plane',
+          iconClass: 'bg-blue-100 text-blue-600',
+          value: formatNumber(totalSends),
+          momChange: formatChangePct(sendsMom, 'MoM'),
+          momTrend: trendDirection(sendsMom),
+          momTrendClass: trendColorClass(sendsMom),
+          yoyChange: null,
+          yoyTrend: 'neutral' as const,
+          yoyTrendClass: 'text-gray-500',
+          comparisonLine: '',
+        },
+        {
+          id: 'total-opens',
+          label: 'Total Opens',
+          icon: 'fa-light fa-envelope-open',
+          iconClass: 'bg-green-100 text-green-600',
+          value: formatNumber(totalOpens),
+          momChange: formatChangePct(opensMom, 'MoM'),
+          momTrend: trendDirection(opensMom),
+          momTrendClass: trendColorClass(opensMom),
+          yoyChange: null,
+          yoyTrend: 'neutral' as const,
+          yoyTrendClass: 'text-gray-500',
+          comparisonLine: '',
+        },
+        {
+          id: 'open-rate',
+          label: 'Open Rate',
+          icon: 'fa-light fa-chart-simple',
+          iconClass: 'bg-amber-100 text-amber-600',
+          value: `${currentOpenRate.toFixed(1)}%`,
+          momChange: formatChangePct(openRateMom, 'MoM'),
+          momTrend: trendDirection(openRateMom),
+          momTrendClass: trendColorClass(openRateMom),
+          yoyChange: null,
+          yoyTrend: 'neutral' as const,
+          yoyTrendClass: 'text-gray-500',
+          comparisonLine: '',
+        },
+        {
+          id: 'ctr',
+          label: 'Click-Through Rate',
+          icon: 'fa-light fa-arrow-pointer',
+          iconClass: 'bg-violet-100 text-violet-600',
+          value: `${data.currentCtr.toFixed(2)}%`,
+          momChange: formatChangePct(changePct, 'vs avg'),
+          momTrend: trendDirection(changePct),
+          momTrendClass: trendColorClass(changePct),
+          yoyChange: null,
+          yoyTrend: 'neutral' as const,
+          yoyTrendClass: 'text-gray-500',
+          comparisonLine: '',
+        },
+      ];
+    });
+  }
+
+  private initEmailTypeRows(): Signal<EmailTypeRow[]> {
+    return computed(() => {
+      const data = this.emailData();
+      if (!data?.emailTypeBreakdown?.length) return [];
+
+      return data.emailTypeBreakdown.map(
+        (et): EmailTypeRow => ({
+          emailType: et.emailType,
+          campaignCount: et.campaignCount,
+          sends: formatNumber(et.totalSends),
+          opens: formatNumber(et.totalOpens),
+          openRate: `${et.openRate.toFixed(1)}%`,
+          ctr: `${et.ctr.toFixed(2)}%`,
+        })
+      );
+    });
+  }
+
+  private initTopCampaigns(): Signal<TopCampaignRow[]> {
+    return computed(() => {
+      const data = this.emailData();
+      if (!data?.emailTypeBreakdown?.length) return [];
+
+      const allCampaigns = data.emailTypeBreakdown.flatMap((et) => et.campaigns ?? []);
+      return allCampaigns
+        .sort((a, b) => b.sends - a.sends)
+        .slice(0, 5)
+        .map(
+          (c): TopCampaignRow => ({
+            name: c.campaignName,
+            type: c.emailType,
+            sends: formatNumber(c.sends),
+            opens: formatNumber(c.opens),
+            openRate: `${c.openRate.toFixed(1)}%`,
+            ctr: `${c.ctr.toFixed(2)}%`,
+          })
+        );
+    });
+  }
+
+  // === Private Helpers ===
+  private computeMomPct(arr: number[] | undefined): number | null {
+    if (!arr || arr.length < 2) return null;
+    const current = arr.at(-1) ?? 0;
+    const previous = arr.at(-2) ?? 0;
+    if (previous === 0) return null;
+    return ((current - previous) / previous) * 100;
+  }
+}

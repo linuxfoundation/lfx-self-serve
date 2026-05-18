@@ -21,8 +21,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { AttributionSectionComponent } from './components/attribution-section/attribution-section.component';
+import { EmailTabComponent } from './components/email-tab/email-tab.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
 import { PerformanceMarketingTabComponent } from './components/performance-marketing-tab/performance-marketing-tab.component';
+import { WebActivityTabComponent } from './components/web-activity-tab/web-activity-tab.component';
 
 @Component({
   selector: 'lfx-marketing-impact',
@@ -34,6 +36,8 @@ import { PerformanceMarketingTabComponent } from './components/performance-marke
     OverviewTabComponent,
     AttributionSectionComponent,
     PerformanceMarketingTabComponent,
+    EmailTabComponent,
+    WebActivityTabComponent,
   ],
   templateUrl: './marketing-impact.component.html',
   styleUrl: './marketing-impact.component.scss',

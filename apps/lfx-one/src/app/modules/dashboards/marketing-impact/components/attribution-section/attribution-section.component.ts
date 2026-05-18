@@ -21,6 +21,13 @@ import type { AttributionChannelRow, AttributionModel, AttributionModelOption, M
   styleUrl: './attribution-section.component.scss',
 })
 export class AttributionSectionComponent {
+  private static readonly revenueKeyByModel: Record<AttributionModel, 'linearRevenue' | 'firstTouchRevenue' | 'lastTouchRevenue' | 'timeDecayRevenue'> = {
+    linear: 'linearRevenue',
+    firstTouch: 'firstTouchRevenue',
+    lastTouch: 'lastTouchRevenue',
+    timeDecay: 'timeDecayRevenue',
+  };
+
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
   private readonly fb = inject(FormBuilder);
@@ -35,14 +42,6 @@ export class AttributionSectionComponent {
   });
 
   protected readonly modelOptions: AttributionModelOption[] = ATTRIBUTION_MODEL_OPTIONS;
-
-  // === Static ===
-  private static readonly revenueKeyByModel: Record<AttributionModel, 'linearRevenue' | 'firstTouchRevenue' | 'lastTouchRevenue' | 'timeDecayRevenue'> = {
-    linear: 'linearRevenue',
-    firstTouch: 'firstTouchRevenue',
-    lastTouch: 'lastTouchRevenue',
-    timeDecay: 'timeDecayRevenue',
-  };
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
