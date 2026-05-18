@@ -22,10 +22,19 @@ import type {
 
 import { AttributionSectionComponent } from './components/attribution-section/attribution-section.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
+import { PerformanceMarketingTabComponent } from './components/performance-marketing-tab/performance-marketing-tab.component';
 
 @Component({
   selector: 'lfx-marketing-impact',
-  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent, FilterPillsComponent, OverviewTabComponent, AttributionSectionComponent],
+  imports: [
+    ReactiveFormsModule,
+    SelectComponent,
+    ButtonComponent,
+    FilterPillsComponent,
+    OverviewTabComponent,
+    AttributionSectionComponent,
+    PerformanceMarketingTabComponent,
+  ],
   templateUrl: './marketing-impact.component.html',
   styleUrl: './marketing-impact.component.scss',
 })

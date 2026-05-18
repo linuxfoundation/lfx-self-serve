@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="performance-marketing-tab">
+  <!-- Header + funnel filter -->
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+      <div class="flex flex-col gap-0.5">
+        <h3 class="text-base font-semibold text-gray-900">Performance marketing</h3>
+        <p class="text-xs text-gray-500">Paid campaign metrics · {{ foundationName() || 'All foundations' }}</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-semibold tracking-wide text-gray-500">FUNNEL</span>
+      <lfx-filter-pills
+        [options]="funnelOptions"
+        [selectedFilter]="selectedFunnel()"
+        (filterChange)="onFunnelChange($event)"
+        data-testid="performance-marketing-funnel-pills" />
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="performance-marketing-kpi-grid">
+    @if (loading()) {
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="performance-marketing-kpi-skeleton">
+          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    } @else {
+      @for (kpi of kpiCards(); track kpi.id) {
+        <lfx-sparkline-kpi-card [kpi]="kpi" />
+      }
+    }
+  </div>
+
+  <!-- Project breakdown table -->
+  @if (!loading()) {
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="performance-marketing-projects">
+      <h4 class="text-sm font-semibold text-gray-900">Campaign performance by project</h4>
+
+      @if (hasProjects()) {
+        <div class="flex flex-col gap-0" role="table" aria-label="Campaign performance by project" data-testid="performance-marketing-table">
+          <!-- Table header -->
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="w-40 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PROJECT</span>
+            <span class="w-20 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">STAGE</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
+            <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PERF.</span>
+          </div>
+
+          <!-- Rows -->
+          @for (row of projectRows(); track row.name) {
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'performance-marketing-row-' + row.name">
+              <span class="w-40 truncate text-xs font-medium text-gray-700" role="cell">{{ row.name }}</span>
+              <span class="w-20 truncate text-[11px] text-gray-500" role="cell">{{ row.funnelStage }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.revenue }}</span>
+              <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
+              <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.impressions }}</span>
+              <div class="flex flex-1 justify-end" role="cell">
+                <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="row.performanceClass">
+                  {{ row.performance }}
+                </span>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="performance-marketing-empty">
+          <p class="text-sm text-gray-500">No project data available for the selected filter.</p>
+        </div>
+      }
+    </div>
+  }
+</div>

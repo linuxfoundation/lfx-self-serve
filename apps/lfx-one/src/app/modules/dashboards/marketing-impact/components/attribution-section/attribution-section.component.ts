@@ -89,11 +89,11 @@ export class AttributionSectionComponent {
       if (!data?.channels?.length) return [];
 
       const revenueKey = this.getRevenueKey(model);
-      const total = data.channels.reduce((sum, ch) => sum + ch[revenueKey], 0);
+      const total = data.channels.reduce((sum, ch) => sum + (ch[revenueKey] ?? 0), 0);
 
       return data.channels
         .map((ch): AttributionChannelRow => {
-          const revenue = ch[revenueKey];
+          const revenue = ch[revenueKey] ?? 0;
           return {
             channel: ch.channel,
             revenue,

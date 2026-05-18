@@ -48,7 +48,7 @@
       }
     </div>
   } @else if (hasData()) {
-    <div class="flex flex-col gap-0" data-testid="attribution-table" role="table" aria-label="Marketing attribution by channel">
+    <div class="flex flex-col gap-0" role="table" aria-label="Marketing attribution by channel" data-testid="attribution-table">
       <!-- Table header -->
       <div class="flex items-center gap-4 border-b border-gray-200 pb-2" role="row">
         <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CHANNEL</span>
@@ -59,7 +59,7 @@
 
       <!-- Rows -->
       @for (row of channelRows(); track row.channel) {
-        <div class="flex items-center gap-4 border-b border-gray-100 py-2.5" [attr.data-testid]="'attribution-row-' + row.channel" role="row">
+        <div class="flex items-center gap-4 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'attribution-row-' + row.channel">
           <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.channel }}</span>
           <div class="flex flex-1 items-center gap-2" role="cell">
             <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
@@ -69,7 +69,7 @@
                 [attr.aria-valuenow]="row.sharePercent"
                 aria-valuemin="0"
                 aria-valuemax="100"
-                [attr.aria-label]="row.channel + ' revenue share'"
+                [attr.aria-label]="row.channel + ' revenue share: ' + (row.sharePercent | number: '1.0-0') + '%'"
                 [style.width.%]="row.sharePercent"></div>
             </div>
             <span class="w-10 text-right text-[11px] text-gray-500">{{ row.sharePercent | number: '1.0-0' }}%</span>

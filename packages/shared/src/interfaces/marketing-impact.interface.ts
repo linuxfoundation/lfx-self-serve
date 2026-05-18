@@ -67,3 +67,21 @@ export interface AttributionChannelRow {
   sessionsFormatted: string;
   raw: MarketingAttributionChannel;
 }
+
+/** Funnel stage identifier for the performance marketing filter. */
+export type FunnelStage = 'all' | 'tofu' | 'mofu' | 'bofu';
+
+/** Performance rating for paid project campaigns. */
+export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'POOR' | 'NO REVENUE';
+
+/** View-model row for the performance marketing project table. */
+export interface PaidProjectRow {
+  name: string;
+  funnelStage: string;
+  spend: string;
+  revenue: string;
+  roas: string;
+  impressions: string;
+  performance: PaidProjectPerformance;
+  performanceClass: string;
+}

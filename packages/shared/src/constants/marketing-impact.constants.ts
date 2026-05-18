@@ -31,3 +31,11 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
   { label: 'Last Touch', value: 'lastTouch' },
   { label: 'Time Decay', value: 'timeDecay' },
 ];
+
+/** Funnel stage filter options for the Performance Marketing tab. */
+export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [
+  { id: 'all', label: 'All stages' },
+  { id: 'tofu', label: 'Top of funnel' },
+  { id: 'mofu', label: 'Middle of funnel' },
+  { id: 'bofu', label: 'Bottom of funnel' },
+];
