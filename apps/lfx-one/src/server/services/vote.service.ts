@@ -252,7 +252,7 @@ export class VoteService {
 
   /**
    * Submits a ballot via POST /vote_responses using the user's bearer token (no M2M),
-   * then polls until the query service indexes the response as 'submitted'.
+   * then polls until the query service indexes the response as 'responded'.
    */
   public async createVoteResponse(req: Request, payload: CreateVoteResponseRequest): Promise<void> {
     logger.debug(req, 'create_vote_response', 'Submitting vote response', {
@@ -286,7 +286,7 @@ export class VoteService {
             filters: [`vote_uid:${payload.vote_uid}`],
           }
         );
-        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.SUBMITTED);
+        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.RESPONDED);
       },
       maxRetries: 5,
       retryDelayMs: 1000,
@@ -344,7 +344,7 @@ export class VoteService {
 
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.SUBMITTED) respondedVoteUids.add(r.vote_uid);
+      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(r.vote_uid);
     }
 
     // Extract unique vote UIDs

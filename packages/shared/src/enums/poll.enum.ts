@@ -37,8 +37,11 @@ export enum IndividualVoteStatus {
   RESPONDED = 'responded',
 }
 
-/** Raw `vote_status` values written by the v2 indexer to `vote_response` rows. */
+/** Raw `vote_status` values written by the legacy ITX system into `vote_response` rows.
+ *  `lfx-v2-voting-service` forwards these unchanged. */
 export enum IndexedVoteResponseStatus {
   AWAITING_RESPONSE = 'awaiting_response',
-  SUBMITTED = 'submitted',
+  RESPONDED = 'responded',
+  ENDED = 'ended',
+  AWAITING_RESPONSE_BUT_POLL_ENDED = 'awaiting_response_but_poll_ended',
 }

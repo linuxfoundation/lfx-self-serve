@@ -215,7 +215,7 @@ export interface Vote {
   total_voting_request_invitations?: number;
   /** Number of responses received */
   num_response_received?: number;
-  /** Server-decorated by getMyVotes (Me-lens only) — RESPONDED iff the indexed vote_response row has IndexedVoteResponseStatus.SUBMITTED. Absent on raw upstream Vote responses. */
+  /** Server-decorated by getMyVotes (Me-lens only) — RESPONDED iff the indexed vote_response row has IndexedVoteResponseStatus.RESPONDED. Absent on raw upstream Vote responses. */
   response_status?: VoteResponseStatus;
 }
 
@@ -254,7 +254,7 @@ export interface IndexedVoteResponse {
   poll_id?: string;
   /** V2 project UID the response belongs to */
   project_uid?: string;
-  /** Upstream submission status (e.g. `'submitted'`, `'awaiting_response'`) */
+  /** Upstream submission status (e.g. `'responded'`, `'awaiting_response'`, `'ended'`, `'awaiting_response_but_poll_ended'`) */
   vote_status?: string;
   /** Whether the voter has been removed from the poll's eligible list */
   voter_removed?: boolean;
