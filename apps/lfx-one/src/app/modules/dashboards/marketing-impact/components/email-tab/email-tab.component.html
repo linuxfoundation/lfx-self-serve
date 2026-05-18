@@ -26,74 +26,98 @@
   </div>
 
   <!-- Email type breakdown table -->
-  @if (!loading()) {
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-type-breakdown">
-      <h4 class="text-sm font-semibold text-gray-900">Performance by email type</h4>
+  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-type-breakdown">
+    <h4 class="text-sm font-semibold text-gray-900">Performance by email type</h4>
 
-      @if (hasEmailTypes()) {
-        <div class="flex flex-col gap-0" data-testid="email-type-table">
-          <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
-            <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400">TYPE</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400">CAMPAIGNS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">SENDS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">OPENS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400">OPEN RATE</span>
-            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400">CTR</span>
-          </div>
-
-          <!-- Rows -->
-          @for (row of emailTypeRows(); track row.emailType; let idx = $index) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'email-type-row-' + idx">
-              <span class="w-36 truncate text-xs font-medium text-gray-700">{{ row.emailType }}</span>
-              <span class="w-20 text-right text-xs text-gray-500">{{ row.campaignCount }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.sends }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.opens }}</span>
-              <span class="w-20 text-right text-xs text-gray-500">{{ row.openRate }}</span>
-              <span class="flex-1 text-right text-xs font-medium text-gray-900">{{ row.ctr }}</span>
-            </div>
+    @if (loading()) {
+      <div class="flex flex-col gap-0" data-testid="email-type-skeleton">
+        <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
+          @for (i of [1, 2, 3, 4, 5, 6]; track i) {
+            <div class="h-3 w-20 animate-pulse rounded bg-gray-200"></div>
           }
         </div>
-      } @else {
-        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-type-empty">
-          <p class="text-sm text-gray-500">No email type data available.</p>
-        </div>
-      }
-    </div>
-
-    <!-- Top campaigns table -->
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-top-campaigns">
-      <h4 class="text-sm font-semibold text-gray-900">Top campaigns by sends</h4>
-
-      @if (hasTopCampaigns()) {
-        <div class="flex flex-col gap-0" data-testid="email-campaigns-table">
-          <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
-            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400">CAMPAIGN</span>
-            <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400">TYPE</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400">SENDS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400">OPENS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400">OPEN RATE</span>
-            <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400">CTR</span>
+        @for (i of [1, 2, 3]; track i) {
+          <div class="flex items-center gap-3 border-b border-gray-100 py-2.5">
+            @for (j of [1, 2, 3, 4, 5, 6]; track j) {
+              <div class="h-3 w-20 animate-pulse rounded bg-gray-100"></div>
+            }
           </div>
+        }
+      </div>
+    } @else if (hasEmailTypes()) {
+      <div class="flex flex-col gap-0" role="table" aria-label="Performance by email type" data-testid="email-type-table">
+        <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+          <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+          <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGNS</span>
+          <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
+          <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
+          <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
+          <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
+        </div>
 
-          <!-- Rows -->
-          @for (row of topCampaigns(); track row.type + '|' + row.name; let idx = $index) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'email-campaign-row-' + idx">
-              <span class="flex-1 truncate text-xs font-medium text-gray-700">{{ row.name }}</span>
-              <span class="w-24 truncate text-[11px] text-gray-500">{{ row.type }}</span>
-              <span class="w-20 text-right text-xs text-gray-900">{{ row.sends }}</span>
-              <span class="w-20 text-right text-xs text-gray-900">{{ row.opens }}</span>
-              <span class="w-20 text-right text-xs text-gray-500">{{ row.openRate }}</span>
-              <span class="w-16 text-right text-xs font-medium text-gray-900">{{ row.ctr }}</span>
-            </div>
+        @for (row of emailTypeRows(); track row.emailType; let idx = $index) {
+          <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-type-row-' + idx">
+            <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.emailType }}</span>
+            <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.campaignCount }}</span>
+            <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
+            <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
+            <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
+            <span class="flex-1 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-type-empty">
+        <p class="text-sm text-gray-500">No email type data available.</p>
+      </div>
+    }
+  </div>
+
+  <!-- Top campaigns table -->
+  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-top-campaigns">
+    <h4 class="text-sm font-semibold text-gray-900">Top campaigns by sends</h4>
+
+    @if (loading()) {
+      <div class="flex flex-col gap-0" data-testid="email-campaigns-skeleton">
+        <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
+          @for (i of [1, 2, 3, 4, 5, 6]; track i) {
+            <div class="h-3 w-20 animate-pulse rounded bg-gray-200"></div>
           }
         </div>
-      } @else {
-        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
-          <p class="text-sm text-gray-500">No campaign data available.</p>
+        @for (i of [1, 2, 3]; track i) {
+          <div class="flex items-center gap-3 border-b border-gray-100 py-2.5">
+            @for (j of [1, 2, 3, 4, 5, 6]; track j) {
+              <div class="h-3 w-20 animate-pulse rounded bg-gray-100"></div>
+            }
+          </div>
+        }
+      </div>
+    } @else if (hasTopCampaigns()) {
+      <div class="flex flex-col gap-0" role="table" aria-label="Top campaigns by sends" data-testid="email-campaigns-table">
+        <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+          <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
+          <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+          <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
+          <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
+          <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
+          <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
         </div>
-      }
-    </div>
-  }
+
+        @for (row of topCampaigns(); track row.type + '|' + row.name; let idx = $index) {
+          <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
+            <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell">{{ row.name }}</span>
+            <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>
+            <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
+            <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
+            <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
+            <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
+        <p class="text-sm text-gray-500">No campaign data available.</p>
+      </div>
+    }
+  </div>
 </div>

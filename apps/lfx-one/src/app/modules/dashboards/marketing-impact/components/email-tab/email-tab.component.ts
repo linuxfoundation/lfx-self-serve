@@ -72,14 +72,15 @@ export class EmailTabComponent {
 
       const sends = data.monthlySends ?? [];
       const opens = data.monthlyOpens ?? [];
-      const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
-      const prevSends = sends.length > 1 ? sends[sends.length - 2] : undefined;
-      const lastOpens = sends.length > 0 ? (opens[opens.length - 1] ?? 0) : 0;
-      const prevOpens = sends.length > 1 ? (opens[opens.length - 2] ?? 0) : 0;
+      const minLen = Math.min(sends.length, opens.length);
+      const lastSends = minLen > 0 ? sends[minLen - 1] : undefined;
+      const prevSends = minLen > 1 ? sends[minLen - 2] : undefined;
+      const lastOpens = minLen > 0 ? (opens[minLen - 1] ?? 0) : 0;
+      const prevOpens = minLen > 1 ? (opens[minLen - 2] ?? 0) : 0;
 
       const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : 0;
       const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : 0;
-      const openRateMom = prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
+      const openRateMom = this.computeMomPctFromValues(currentOpenRate, prevOpenRate);
 
       return [
         {
@@ -185,8 +186,10 @@ export class EmailTabComponent {
   // === Private Helpers ===
   private computeMomPct(arr: number[] | undefined): number | null {
     if (!arr || arr.length < 2) return null;
-    const current = arr.at(-1) ?? 0;
-    const previous = arr.at(-2) ?? 0;
+    return this.computeMomPctFromValues(arr.at(-1) ?? 0, arr.at(-2) ?? 0);
+  }
+
+  private computeMomPctFromValues(current: number, previous: number): number | null {
     if (previous === 0) return null;
     return ((current - previous) / previous) * 100;
   }
