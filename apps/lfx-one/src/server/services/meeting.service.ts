@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { RECURRENCE_NO_END_SENTINEL_DATE } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
@@ -33,7 +32,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
+import { buildRecurrenceNeverEndDate, mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -1323,9 +1322,9 @@ export class MeetingService {
    * Ensures a recurrence object always has an end condition.
    * Zoom's recurrence API (via the itx adapter) requires either end_date_time or
    * end_times; the Goa schema marks both optional but Zoom rejects payloads where
-   * neither is set. When neither is present, we stamp RECURRENCE_NO_END_SENTINEL_DATE
-   * so the upstream call succeeds. The client recognises this sentinel and renders
-   * the meeting as "never ends" rather than showing a specific end date.
+   * neither is set. When neither is present, we stamp a date ~100 years from now
+   * so the upstream call succeeds. The client recognises this as a "never ends"
+   * placeholder via `isRecurrenceNeverEndSentinel` and renders it accordingly.
    */
   private normalizeRecurrence(req: Request, recurrence: MeetingRecurrence): MeetingRecurrence {
     const hasValidEndDateTime = typeof recurrence.end_date_time === 'string' && recurrence.end_date_time.trim().length > 0;
@@ -1334,10 +1333,11 @@ export class MeetingService {
     if (hasValidEndDateTime || hasValidEndTimes) {
       return recurrence;
     }
-    logger.debug(req, 'normalize_recurrence', 'Stamping never-end sentinel — recurrence has no end condition', {
-      end_date_time: RECURRENCE_NO_END_SENTINEL_DATE,
+    const neverEndDate = buildRecurrenceNeverEndDate();
+    logger.debug(req, 'normalize_recurrence', 'Stamping never-end placeholder — recurrence has no end condition', {
+      end_date_time: neverEndDate,
       recurrence_type: recurrence.type,
     });
-    return { ...recurrence, end_date_time: RECURRENCE_NO_END_SENTINEL_DATE };
+    return { ...recurrence, end_date_time: neverEndDate };
   }
 }

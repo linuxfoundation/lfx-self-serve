@@ -3,7 +3,7 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_NO_END_SENTINEL_DATE, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -16,16 +16,33 @@ import {
   V1SummaryDetail,
 } from '../interfaces';
 
+const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
+const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
+
 /**
- * Whether the recurrence end_date_time matches the "never ends" sentinel.
- * Compares via Date.getTime() so equivalent ISO variants (e.g. '...59Z' vs '...59.000Z')
- * are treated as equal.
+ * Produces an ISO string ~100 years from `now`, used as the "never ends"
+ * placeholder on outgoing recurrence payloads. Stays well below year 2286
+ * (where Unix-timestamp strings grow a digit and break lexicographic sorts
+ * in the upstream meeting-service — see LFXV2-1855).
+ */
+export function buildRecurrenceNeverEndDate(now: Date = new Date()): string {
+  const d = new Date(now);
+  d.setFullYear(d.getFullYear() + RECURRENCE_NEVER_ENDS_YEARS_OFFSET);
+  return d.toISOString();
+}
+
+/**
+ * Whether `endDateTime` is one of our "never ends" placeholders.
+ * Returns true for any date ≥ 50 years from now — covers both new records
+ * stamped by `buildRecurrenceNeverEndDate` (~100 years out) and legacy
+ * records persisted with `2999-12-31` before LFXV2-1855. Real user-selected
+ * end dates never reach this far out.
  */
 export function isRecurrenceNeverEndSentinel(endDateTime: string | null | undefined): boolean {
   if (!endDateTime) return false;
   const end = new Date(endDateTime).getTime();
-  const sentinel = new Date(RECURRENCE_NO_END_SENTINEL_DATE).getTime();
-  return Number.isFinite(end) && Number.isFinite(sentinel) && end === sentinel;
+  if (!Number.isFinite(end)) return false;
+  return end - Date.now() >= FIFTY_YEARS_MS;
 }
 
 /**
