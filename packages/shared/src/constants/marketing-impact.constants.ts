@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
+import type { AttributionModelOption, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
 
 /** Focus program filter options for the Marketing Impact FOCUS bar. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
@@ -22,4 +22,12 @@ export const MARKETING_IMPACT_TABS: MarketingImpactTabOption[] = [
   { id: 'web-activity', label: 'Web Activity' },
   { id: 'social-accounts', label: 'Social Accounts' },
   { id: 'social-listening', label: 'Social Listening' },
+];
+
+/** Attribution model options for the model selector dropdown. */
+export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
+  { label: 'Linear', value: 'linear' },
+  { label: 'First Touch', value: 'firstTouch' },
+  { label: 'Last Touch', value: 'lastTouch' },
+  { label: 'Time Decay', value: 'timeDecay' },
 ];

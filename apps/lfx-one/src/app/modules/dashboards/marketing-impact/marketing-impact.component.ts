@@ -20,11 +20,12 @@ import type {
   MarketingImpactTabOption,
 } from '@lfx-one/shared/interfaces';
 
+import { AttributionSectionComponent } from './components/attribution-section/attribution-section.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
 
 @Component({
   selector: 'lfx-marketing-impact',
-  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent, FilterPillsComponent, OverviewTabComponent],
+  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent, FilterPillsComponent, OverviewTabComponent, AttributionSectionComponent],
   templateUrl: './marketing-impact.component.html',
   styleUrl: './marketing-impact.component.scss',
 })

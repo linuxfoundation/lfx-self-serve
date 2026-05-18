@@ -32,7 +32,13 @@
     } @else {
       @for (kpi of performanceSummaryKpis(); track kpi.id) {
         <lfx-sparkline-kpi-card [kpi]="kpi" />
+      } @empty {
+        <div class="col-span-full text-center py-8 text-sm text-gray-500" data-testid="overview-tab-kpi-empty">
+          No performance data available for this period.
+        </div>
       }
     }
   </div>
 </div>
+
+<lfx-attribution-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="overview-tab-attribution-section" />

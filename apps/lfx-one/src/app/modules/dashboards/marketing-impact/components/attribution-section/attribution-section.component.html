@@ -1,0 +1,95 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="attribution-section">
+  <!-- Header -->
+  <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+    <div class="flex flex-col gap-0.5">
+      <h3 class="text-base font-semibold text-gray-900">Marketing attribution</h3>
+      <p class="text-xs text-gray-500">Revenue by channel · {{ foundationName() || 'All foundations' }}</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <lfx-select
+        [form]="modelForm"
+        control="model"
+        [options]="modelOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select model"
+        ariaLabel="Select attribution model"
+        styleClass="w-[150px]"
+        data-testid="attribution-model-select" />
+      <lfx-button
+        label="Open detail"
+        icon="fa-light fa-arrow-up-right-from-square"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="true"
+        ariaLabel="Open attribution detail (coming soon)"
+        data-testid="attribution-open-detail-btn" />
+    </div>
+  </div>
+
+  <!-- Alert banner -->
+  <div class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2" data-testid="attribution-alert">
+    <i class="fa-light fa-triangle-exclamation mt-0.5 text-sm text-amber-600" aria-hidden="true"></i>
+    <p class="text-xs text-amber-800">Attribution data is directional. Models assign credit differently — compare models to validate insights.</p>
+  </div>
+
+  <!-- Table -->
+  @if (loading()) {
+    <div class="flex flex-col gap-3" data-testid="attribution-skeleton">
+      @for (i of [1, 2, 3, 4, 5]; track i) {
+        <div class="flex items-center gap-4">
+          <div class="h-4 w-28 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-4 flex-1 animate-pulse rounded bg-gray-100"></div>
+          <div class="h-4 w-20 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    </div>
+  } @else if (hasData()) {
+    <div class="flex flex-col gap-0" data-testid="attribution-table" role="table" aria-label="Marketing attribution by channel">
+      <!-- Table header -->
+      <div class="flex items-center gap-4 border-b border-gray-200 pb-2" role="row">
+        <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CHANNEL</span>
+        <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE SHARE</span>
+        <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
+        <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SESSIONS</span>
+      </div>
+
+      <!-- Rows -->
+      @for (row of channelRows(); track row.channel) {
+        <div class="flex items-center gap-4 border-b border-gray-100 py-2.5" [attr.data-testid]="'attribution-row-' + row.channel" role="row">
+          <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.channel }}</span>
+          <div class="flex flex-1 items-center gap-2" role="cell">
+            <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+              <div
+                class="h-full rounded-full bg-blue-500"
+                role="progressbar"
+                [attr.aria-valuenow]="row.sharePercent"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                [attr.aria-label]="row.channel + ' revenue share'"
+                [style.width.%]="row.sharePercent"></div>
+            </div>
+            <span class="w-10 text-right text-[11px] text-gray-500">{{ row.sharePercent | number: '1.0-0' }}%</span>
+          </div>
+          <span class="w-24 text-right text-xs font-medium text-gray-900" role="cell">{{ row.revenueFormatted }}</span>
+          <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.sessionsFormatted }}</span>
+        </div>
+      }
+
+      <!-- Footer total -->
+      <div class="flex items-center gap-4 pt-2" role="row">
+        <span class="w-36 text-xs font-semibold text-gray-900" role="cell">Total</span>
+        <div class="flex-1" role="cell"></div>
+        <span class="w-24 text-right text-xs font-semibold text-gray-900" role="cell">{{ totalRevenue() }}</span>
+        <span class="w-20" role="cell"></span>
+      </div>
+    </div>
+  } @else {
+    <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="attribution-empty">
+      <p class="text-sm text-gray-500">No attribution data available.</p>
+    </div>
+  }
+</div>
