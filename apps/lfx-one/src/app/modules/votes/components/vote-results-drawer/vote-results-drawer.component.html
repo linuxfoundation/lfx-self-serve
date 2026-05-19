@@ -19,34 +19,275 @@
             type="button"
             (click)="onClose()"
             class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+            aria-label="Close panel"
             data-testid="vote-results-drawer-close">
-            <i class="fa-light fa-xmark text-xl"></i>
+            <i class="fa-light fa-xmark text-xl pointer-events-none"></i>
           </button>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-          <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
-            {{ voteData.committee_name || 'Unknown' }}
-          </span>
-          <span class="text-slate-400">•</span>
-          <lfx-tag
-            [value]="voteData.status | pollStatusLabel"
-            [severity]="voteData.status | pollStatusSeverity"
-            data-testid="vote-results-drawer-status"></lfx-tag>
-          <span class="text-slate-400">•</span>
-          @if (isVoteClosed()) {
-            <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
-          } @else {
-            <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
-          }
-          <span class="text-slate-400">•</span>
-          <span>{{ votingMethodText() }}</span>
-        </div>
+        @if (audience() === 'voter') {
+          <!-- Voter header — four pills with distinct visual treatments per semantic category. -->
+          <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600" data-testid="vote-results-drawer-voter-meta">
+            <!-- Group pill: neutral slate chip -->
+            <span class="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded font-medium" data-testid="vote-results-drawer-group-pill">
+              {{ voteData.committee_name || 'Unknown' }}
+            </span>
+            <span class="text-slate-400">•</span>
+            <!-- Status pill: semantic color via lfx-tag. State B overrides to "Submitted" so the active vote reads as the voter's own state. -->
+            @if (voterState() === 'submitted') {
+              <lfx-tag value="Submitted" severity="success" data-testid="vote-results-drawer-voter-status"></lfx-tag>
+            } @else {
+              <lfx-tag
+                [value]="voteData.status | pollStatusLabel"
+                [severity]="voteData.status | pollStatusSeverity"
+                data-testid="vote-results-drawer-voter-status"></lfx-tag>
+            }
+            <span class="text-slate-400">•</span>
+            <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
+            @if (voterState() === 'closed') {
+              <span data-testid="vote-results-drawer-voter-close-date">Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+            } @else if (closeDateDisplay().isCountdown) {
+              <span
+                class="bg-amber-50 text-amber-700 border border-amber-200 text-xs px-2.5 py-1 rounded font-medium"
+                [pTooltip]="closeDateDisplay().absolute"
+                tooltipPosition="top"
+                data-testid="vote-results-drawer-voter-countdown">
+                {{ closeDateDisplay().chip }}
+              </span>
+            } @else {
+              <span data-testid="vote-results-drawer-voter-close-date">{{ closeDateDisplay().chip }}</span>
+            }
+            <!-- Vote-type pill intentionally omitted in voter scope — voters cast in the cast drawer where the ballot UX is self-evident; the method label is creator-side metadata. -->
+          </div>
+        } @else {
+          <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
+              {{ voteData.committee_name || 'Unknown' }}
+            </span>
+            <span class="text-slate-400">•</span>
+            <lfx-tag
+              [value]="voteData.status | pollStatusLabel"
+              [severity]="voteData.status | pollStatusSeverity"
+              data-testid="vote-results-drawer-status"></lfx-tag>
+            <span class="text-slate-400">•</span>
+            @if (isVoteClosed()) {
+              <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+            } @else {
+              <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+            }
+            <span class="text-slate-400">•</span>
+            <span>{{ votingMethodText() }}</span>
+          </div>
+        }
       </div>
     </ng-template>
 
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
-      @if (isLoading()) {
+      @if (audience() === 'voter') {
+        <!-- VOTER PANEL (LFXV2-1917) — blind results until close, no creator note, no stats card.
+             State A (not_voted) is a defensive fallback: the dashboard normally routes ACTIVE+AWAITING
+             voters to lfx-vote-cast-drawer instead. State D guards deep-links to non-participant votes. -->
+        @if (isLoading()) {
+          <div class="flex flex-col gap-4" data-testid="vote-results-drawer-voter-loading">
+            <p-skeleton width="60%" height="20px"></p-skeleton>
+            <p-skeleton width="100%" height="80px"></p-skeleton>
+            <p-skeleton width="40%" height="16px"></p-skeleton>
+          </div>
+        } @else if (voterState() === 'access_denied') {
+          <!-- State D — empty-state card. Triggered when myResponse is null OR voter_removed=true. -->
+          <div
+            class="flex flex-col items-center justify-center py-12 px-6 text-center border border-slate-200 rounded-lg"
+            data-testid="vote-results-voter-access-denied">
+            <div class="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+              <i class="fa-light fa-lock text-2xl text-slate-500" aria-hidden="true"></i>
+            </div>
+            <h2 class="text-base font-semibold text-slate-900 mb-2">You don't have access to this vote</h2>
+            <p class="text-sm text-slate-600 max-w-sm">You're not listed as a participant, or you've been removed from this vote.</p>
+          </div>
+        } @else if (voterState() === 'submitted') {
+          <!-- State B — confirmation block. NO live tallies, NO edit/resubmit controls. -->
+          @if (voteData.description) {
+            <div class="flex flex-col gap-2" data-testid="vote-results-voter-description">
+              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
+          <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-5 flex flex-col gap-2" data-testid="vote-results-voter-confirmation">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-circle-check text-emerald-600 text-lg" aria-hidden="true"></i>
+              @if ((voteData.poll_questions?.length ?? 0) > 1) {
+                <span class="text-sm font-semibold text-emerald-900">Your responses to {{ voteData.poll_questions?.length }} questions have been recorded</span>
+              } @else {
+                <span class="text-sm font-semibold text-emerald-900">Your vote has been recorded</span>
+              }
+            </div>
+            <p class="text-xs text-emerald-800">Results will be available after the vote closes.</p>
+          </div>
+          <!-- TODO LFXV2-1917 follow-up: "View your ballot" disclosure when upstream surfaces the submitted ballot content -->
+        } @else if (voterState() === 'closed') {
+          <!-- State C — final results, no stats card. -->
+          @if (myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
+            <p class="text-sm text-slate-700" data-testid="vote-results-voter-you-voted">You voted on this motion.</p>
+          }
+          @if (isGenericPoll()) {
+            <div class="flex flex-col gap-6" data-testid="vote-results-voter-final">
+              <h2 class="text-lg font-semibold text-slate-900">Final Results</h2>
+              @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-base font-semibold text-slate-900">
+                    @if (questionsWithResults().length > 1) {
+                      Q{{ idx + 1 }}.
+                    }
+                    {{ question.question }}
+                  </h3>
+                  <div class="flex flex-col gap-3">
+                    @for (option of question.options; track option.choiceId) {
+                      <div
+                        class="rounded-lg border p-4 transition-all"
+                        [class.border-green-300]="option.isWinner"
+                        [class.bg-green-50]="option.isWinner"
+                        [class.border-amber-300]="option.isTied"
+                        [class.bg-amber-50]="option.isTied"
+                        [class.border-slate-200]="!option.isWinner && !option.isTied"
+                        [class.bg-slate-50]="!option.isWinner && !option.isTied"
+                        [attr.data-testid]="'vote-results-voter-option-' + option.choiceId">
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="text-sm font-medium"
+                              [class.text-green-900]="option.isWinner"
+                              [class.text-amber-900]="option.isTied"
+                              [class.text-slate-900]="!option.isWinner && !option.isTied">
+                              {{ option.text }}
+                            </span>
+                            @if (option.isWinner) {
+                              <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                <i class="fa-solid fa-check text-[10px]"></i>
+                                Winner
+                              </span>
+                            }
+                            @if (option.isTied) {
+                              <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                                <i class="fa-solid fa-equals text-[10px]"></i>
+                                Tied
+                              </span>
+                            }
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="text-sm font-semibold"
+                              [class.text-green-700]="option.isWinner"
+                              [class.text-amber-700]="option.isTied"
+                              [class.text-slate-700]="!option.isWinner && !option.isTied">
+                              {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+                            </span>
+                            <span
+                              class="text-sm"
+                              [class.text-green-600]="option.isWinner"
+                              [class.text-amber-600]="option.isTied"
+                              [class.text-slate-600]="!option.isWinner && !option.isTied">
+                              ({{ option.percentage }}%)
+                            </span>
+                          </div>
+                        </div>
+                        <!-- Faint slate-100 track so 0% rows still read as a track, not empty space. -->
+                        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            class="h-full transition-all"
+                            [class.bg-green-500]="option.isWinner"
+                            [class.bg-amber-500]="option.isTied"
+                            [class.bg-slate-400]="!option.isWinner && !option.isTied"
+                            [style.width.%]="option.percentage"></div>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              @if (voteResultsError()) {
+                <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
+              } @else if (hasZeroVotes()) {
+                <p class="text-sm text-slate-500" data-testid="vote-results-voter-zero-responses">No votes were submitted.</p>
+              }
+            </div>
+          } @else {
+            <!-- Ranked closed view for voter — reuses the ranked rendering without the stats card. -->
+            <div class="flex flex-col gap-6" data-testid="vote-results-voter-final-ranked">
+              <h2 class="text-lg font-semibold text-slate-900">Final Results</h2>
+              @for (q of rankedQuestions(); track q.questionId) {
+                <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4">
+                  <h4 class="text-sm font-semibold text-slate-900">{{ q.prompt }}</h4>
+                  <div class="flex flex-col gap-3">
+                    @for (row of q.choiceDistributions; track row.choiceId) {
+                      <div class="flex flex-col gap-2">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-sm font-medium text-slate-800">{{ row.choiceText }}</span>
+                          <span class="text-xs text-slate-500">{{ row.totalRanked }} {{ row.totalRanked === 1 ? 'voter' : 'voters' }}</span>
+                        </div>
+                        @if (row.rankCounts.length > 0) {
+                          <div class="flex flex-col gap-1">
+                            @for (rc of row.rankCounts; track rc.rank) {
+                              <div class="flex items-center gap-2 text-xs">
+                                <span class="w-14 text-slate-600 flex-shrink-0">Rank {{ rc.rank }}</span>
+                                <div class="flex-1 bg-slate-100 rounded h-2 overflow-hidden">
+                                  <div class="bg-blue-500 h-full rounded" [style.width.%]="rc.percentage"></div>
+                                </div>
+                                <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
+                                <span class="w-12 text-right text-slate-600 flex-shrink-0">{{ rc.percentage }}%</span>
+                              </div>
+                            }
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              @if (voteResultsError()) {
+                <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
+              } @else if (rankedQuestions().length === 0) {
+                <p class="text-sm text-slate-500" data-testid="vote-results-voter-zero-responses">No votes were submitted.</p>
+              }
+            </div>
+          }
+          @if (commentResults().length > 0) {
+            <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-voter-comments">
+              <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
+              @for (commentResult of commentResults(); track $index) {
+                <div class="flex flex-col gap-2">
+                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
+                  @for (comment of commentResult.comments; track $index) {
+                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <p class="text-sm text-slate-700">{{ comment }}</p>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+          @if (voteData.description) {
+            <div class="flex flex-col gap-2 pt-4 border-t border-slate-200" data-testid="vote-results-voter-description">
+              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
+        } @else {
+          <!-- State A — defensive fallback. The dashboard's shouldOpenCastDrawerFor() should have routed
+               Me-lens ACTIVE + AWAITING_RESPONSE voters into lfx-vote-cast-drawer; if we land here it
+               means the routing condition didn't fire (typically response_status absent on the row).
+               Me-lens contract: NEVER show a PCC link here. Send the user back to the list to retry. -->
+          @if (voteData.description) {
+            <div class="flex flex-col gap-2" data-testid="vote-results-voter-description">
+              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-5 flex flex-col gap-2" data-testid="vote-results-voter-empty">
+            <p class="text-sm text-slate-700">You haven't responded to this vote yet.</p>
+            <p class="text-xs text-slate-500">Use the Vote button on the My Votes list to cast your ballot. Live results are hidden until the vote closes.</p>
+          </div>
+        }
+      } @else if (isLoading()) {
         <div class="flex flex-col gap-6">
           <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3">
             <div class="flex items-center justify-between">
