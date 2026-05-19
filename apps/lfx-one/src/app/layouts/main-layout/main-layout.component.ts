@@ -261,24 +261,38 @@ export class MainLayoutComponent {
     );
 
     if (this.personaService.currentPersona() === 'executive-director') {
+      const metricsItems: SidebarMenuItem[] = [
+        {
+          label: 'Health Metrics',
+          icon: 'fa-light fa-chart-line-up',
+          routerLink: '/foundation/health-metrics',
+          testId: 'sidebar-metrics-health-metrics',
+        },
+        {
+          label: 'Marketing Impact',
+          icon: 'fa-light fa-bullhorn',
+          routerLink: '/foundation/marketing-impact',
+          testId: 'sidebar-metrics-marketing-impact',
+        },
+      ];
+
+      const foundationUid = this.projectContextService.selectedFoundation()?.uid;
+      if (foundationUid) {
+        metricsItems.push({
+          label: 'Social Listening',
+          icon: 'fa-light fa-ear-listen',
+          url: `${environment.urls.pcc}/project/${foundationUid}/reports/social-listening`,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          testId: 'sidebar-metrics-social-listening',
+        });
+      }
+
       items.push({
         label: 'Metrics',
         isSection: true,
         expanded: true,
-        items: [
-          {
-            label: 'Health Metrics',
-            icon: 'fa-light fa-chart-line-up',
-            routerLink: '/foundation/health-metrics',
-            testId: 'sidebar-metrics-health-metrics',
-          },
-          {
-            label: 'Marketing Impact',
-            icon: 'fa-light fa-bullhorn',
-            routerLink: '/foundation/marketing-impact',
-            testId: 'sidebar-metrics-marketing-impact',
-          },
-        ],
+        items: metricsItems,
       });
     }
 
