@@ -51,7 +51,7 @@
       <!-- ════════════════════════════════════ -->
       <div id="email-settings" class="flex flex-col gap-6 scroll-mt-20" data-testid="section-email-settings">
         <div>
-          <h2 class="text-base font-bold text-slate-900 mb-1" data-testid="email-settings-heading">Email Settings</h2>
+          <h2 id="email-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="email-settings-heading">Email Settings</h2>
           <p class="text-sm text-slate-500 leading-normal">Manage your email addresses. All email addresses are verified before they can be used.</p>
         </div>
 
@@ -222,7 +222,7 @@
       <!-- ════════════════════════════════════ -->
       <div id="password" class="flex flex-col gap-6 pt-8 border-t border-slate-200 scroll-mt-20" data-testid="section-password">
         <div>
-          <h2 class="text-base font-bold text-slate-900 mb-1" data-testid="password-heading">Password</h2>
+          <h2 id="password-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="password-heading">Password</h2>
           <p class="text-sm text-slate-500 leading-normal">Keep your account secure by using a strong password and enabling two-factor authentication.</p>
         </div>
 
@@ -459,7 +459,7 @@
       <!-- ════════════════════════════════════ -->
       <div id="developer-settings" class="flex flex-col gap-6 pt-8 border-t border-slate-200 scroll-mt-20" data-testid="section-developer-settings">
         <div>
-          <h2 class="text-base font-bold text-slate-900 mb-1" data-testid="developer-settings-heading">Developer Settings</h2>
+          <h2 id="developer-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="developer-settings-heading">Developer Settings</h2>
           <p class="text-sm text-slate-500 leading-normal">Your API token provides programmatic access to LFX services.</p>
         </div>
 
@@ -530,6 +530,7 @@
           }
         </div>
       </div>
+      <div id="scroll-end-sentinel" data-testid="scroll-end-sentinel" class="h-px" aria-hidden="true"></div>
     </div>
   </div>
 </div>

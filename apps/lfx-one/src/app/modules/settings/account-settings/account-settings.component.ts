@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -43,6 +43,7 @@ export class AccountSettingsComponent {
 
   // ── TOC active section ──
   public activeSection = signal('email-settings');
+  private scrollSpyObserver?: IntersectionObserver;
 
   // ══════════════════════════════════════════
   // EMAIL SETTINGS
@@ -141,6 +142,10 @@ export class AccountSettingsComponent {
       });
 
     this.loadDeveloperToken();
+
+    afterNextRender(() => {
+      this.setupScrollSpy();
+    });
   }
 
   // ══════════════════════════════════════════
@@ -467,5 +472,66 @@ export class AccountSettingsComponent {
       if (!newPassword || !confirmPassword || !confirmPassword.value) return null;
       return newPassword.value !== confirmPassword.value ? { passwordMismatch: true } : null;
     };
+  }
+
+  private setupScrollSpy(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    // Observe the section heading rows (sentinels) rather than the full section divs.
+    // A heading is short enough that at most one fits in the activation band, which
+    // avoids two sections being considered active during the transition.
+    const sectionIds = ['email-settings', 'password', 'developer-settings'];
+    const headingByElement = new Map<Element, string>();
+    for (const id of sectionIds) {
+      const heading = document.getElementById(`${id}-heading`);
+      if (heading) headingByElement.set(heading, id);
+    }
+
+    if (headingByElement.size === 0) return;
+
+    const intersecting = new Set<string>();
+    const lastSectionId = sectionIds[sectionIds.length - 1];
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = headingByElement.get(entry.target);
+          if (!id) continue;
+          if (entry.isIntersecting) intersecting.add(id);
+          else intersecting.delete(id);
+        }
+        const activeId = sectionIds.find((id) => intersecting.has(id));
+        if (activeId) this.activeSection.set(activeId);
+      },
+      { rootMargin: '-80px 0px -70% 0px', threshold: 0 }
+    );
+    this.scrollSpyObserver = observer;
+
+    headingByElement.forEach((_, heading) => observer.observe(heading));
+
+    // The last section is short enough that its heading never enters the activation
+    // band. Observe an invisible sentinel at the bottom of the content column so we
+    // can snap to the last section without a scroll listener or magic pixel values.
+    const sentinel = document.getElementById('scroll-end-sentinel');
+    const lastHeading = document.getElementById(`${lastSectionId}-heading`);
+    const endObserver = new IntersectionObserver(
+      ([entry]) => {
+        // Only override when the user has actually scrolled past the last heading
+        // (its bottom has cleared the 80px header offset). On viewports tall enough
+        // to show the whole page without scrolling the sentinel is already intersecting
+        // from initial paint — this guard prevents pinning the TOC to the last section
+        // before the user has reached it.
+        if (entry.isIntersecting && lastHeading && lastHeading.getBoundingClientRect().bottom <= 80) {
+          this.activeSection.set(lastSectionId);
+        }
+      },
+      { threshold: 0 }
+    );
+    if (sentinel) endObserver.observe(sentinel);
+
+    this.destroyRef.onDestroy(() => {
+      endObserver.disconnect();
+      this.scrollSpyObserver?.disconnect();
+    });
   }
 }
