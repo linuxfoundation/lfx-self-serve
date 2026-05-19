@@ -10,6 +10,7 @@ export const environment = {
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
     crowdfunding: 'https://crowdfunding.lfx.linuxfoundation.org/',
+    enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

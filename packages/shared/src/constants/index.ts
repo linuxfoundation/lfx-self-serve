@@ -52,3 +52,4 @@ export * from './rewards.constants';
 export * from './regex.constants';
 export * from './foundation-projects.constants';
 export * from './marketing-impact.constants';
+export * from './individual-enrollment-catalog';

@@ -41,6 +41,7 @@ import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
+import enrollmentRouter from './routes/enrollment.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
@@ -196,6 +197,7 @@ app.use('/api/badges', badgesRouter);
 app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
+app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 

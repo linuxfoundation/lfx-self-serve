@@ -23,6 +23,12 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
 
+      // Individual Enrollment tab
+      {
+        path: 'individual-enrollment',
+        loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+      },
+
       // Direct-URL-only routes (no tab, but still accessible)
       {
         path: 'password',
