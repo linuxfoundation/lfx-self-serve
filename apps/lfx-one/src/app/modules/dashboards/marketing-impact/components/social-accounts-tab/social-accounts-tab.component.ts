@@ -63,7 +63,7 @@ export class SocialAccountsTabComponent {
 
       const totalImpressions = data.platforms.reduce((sum, p) => sum + p.impressions, 0);
       const totalPosts = data.platforms.reduce((sum, p) => sum + p.postsLast30Days, 0);
-      const avgEngagement = data.platforms.length > 0 ? data.platforms.reduce((sum, p) => sum + p.engagementRate, 0) / data.platforms.length : 0;
+      const avgEngagement = totalImpressions > 0 ? data.platforms.reduce((sum, p) => sum + p.engagementRate * p.impressions, 0) / totalImpressions : 0;
       const changePct = data.changePercentage;
 
       return [

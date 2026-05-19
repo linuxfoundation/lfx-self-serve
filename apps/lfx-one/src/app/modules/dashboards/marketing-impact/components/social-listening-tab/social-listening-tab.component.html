@@ -20,7 +20,7 @@
       }
     } @else {
       @for (kpi of kpiCards(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" />
+        <lfx-sparkline-kpi-card [kpi]="kpi" section="social-listening" />
       }
     }
   </div>
@@ -57,16 +57,16 @@
       <h4 class="text-sm font-semibold text-gray-900">Mentions by project</h4>
 
       @if (hasTopProjects()) {
-        <div class="flex flex-col gap-0" data-testid="social-listening-projects-table">
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
-            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400">PROJECT</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">MENTIONS</span>
+        <div class="flex flex-col gap-0" role="table" aria-label="Mentions by project" data-testid="social-listening-projects-table">
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PROJECT</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">MENTIONS</span>
           </div>
 
           @for (project of topProjects(); track project.name) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'social-listening-project-' + project.name">
-              <span class="flex-1 truncate text-xs font-medium text-gray-700">{{ project.name }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ project.mentions }}</span>
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'social-listening-project-' + project.name">
+              <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell">{{ project.name }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ project.mentions }}</span>
             </div>
           }
         </div>

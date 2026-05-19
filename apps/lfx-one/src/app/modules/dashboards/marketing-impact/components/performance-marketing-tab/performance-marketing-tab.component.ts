@@ -5,9 +5,9 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { FUNNEL_STAGE_OPTIONS } from '@lfx-one/shared/constants';
-import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, of, switchMap, tap } from 'rxjs';
+import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -87,11 +87,8 @@ export class PerformanceMarketingTabComponent {
           }
           this.loading.set(true);
           return this.analyticsService.getSocialReach(slug).pipe(
-            tap(() => this.loading.set(false)),
-            catchError(() => {
-              this.loading.set(false);
-              return of(null);
-            })
+            catchError(() => of(null)),
+            finalize(() => this.loading.set(false))
           );
         })
       ),
@@ -105,7 +102,8 @@ export class PerformanceMarketingTabComponent {
       if (!data) return [];
 
       const roasMomPct = data.changePercentage;
-      const impressionsMomPct = this.computeMomPct(data.monthlyData);
+      const completedMonths = data.monthlyData?.slice(0, -1);
+      const impressionsMomPct = computeMomPct(completedMonths);
 
       const cards: PerformanceSummaryKpi[] = [
         {
@@ -176,11 +174,11 @@ export class PerformanceMarketingTabComponent {
         .filter((p) => {
           if (funnel === 'all') return true;
           const stage = p.funnelStage?.toLowerCase() ?? '';
-          if (stage === 'unknown') return false;
+          if (!stage || stage === 'unknown') return false;
           if (funnel === 'tofu') return stage.startsWith('tofu');
           if (funnel === 'mofu') return stage === 'mofu';
           if (funnel === 'bofu') return stage === 'bofu';
-          return true;
+          return false;
         })
         .map(
           (p): PaidProjectRow => ({
@@ -286,13 +284,5 @@ export class PerformanceMarketingTabComponent {
     if (roas >= 1) return 'GOOD';
     if (roas > 0) return 'AVERAGE';
     return 'EMERGING';
-  }
-
-  private computeMomPct(arr: number[] | undefined): number | null {
-    if (!arr || arr.length < 2) return null;
-    const current = arr.at(-1) ?? 0;
-    const previous = arr.at(-2) ?? 0;
-    if (previous === 0) return null;
-    return ((current - previous) / previous) * 100;
   }
 }

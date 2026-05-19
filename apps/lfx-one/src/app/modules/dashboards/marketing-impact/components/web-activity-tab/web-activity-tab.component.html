@@ -20,7 +20,7 @@
       }
     } @else {
       @for (kpi of kpiCards(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" />
+        <lfx-sparkline-kpi-card [kpi]="kpi" section="web-activity" />
       }
     }
   </div>
@@ -31,24 +31,24 @@
       <h4 class="text-sm font-semibold text-gray-900">Web activity by domain</h4>
 
       @if (hasDomains()) {
-        <div class="flex flex-col gap-0" data-testid="web-activity-table">
+        <div class="flex flex-col gap-0" role="table" aria-label="Web activity by domain" data-testid="web-activity-table">
           <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
-            <span class="w-44 text-[11px] font-semibold tracking-wide text-gray-400">DOMAIN</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">SESSIONS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">PAGE VIEWS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">PAGES/SESSION</span>
-            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400">SESSION SHARE</span>
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="w-44 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">DOMAIN</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SESSIONS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PAGE VIEWS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PAGES/SESSION</span>
+            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SESSION SHARE</span>
           </div>
 
           <!-- Rows -->
           @for (row of domainRows(); track row.domain) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'web-activity-row-' + row.domain">
-              <span class="w-44 truncate text-xs font-medium text-gray-700">{{ row.domain }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.sessions }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.pageViews }}</span>
-              <span class="w-24 text-right text-xs text-gray-500">{{ row.pagesPerSession }}</span>
-              <div class="flex flex-1 items-center gap-2">
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'web-activity-row-' + row.domain">
+              <span class="w-44 truncate text-xs font-medium text-gray-700" role="cell">{{ row.domain }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.sessions }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.pageViews }}</span>
+              <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.pagesPerSession }}</span>
+              <div class="flex flex-1 items-center gap-2" role="cell">
                 <div class="h-2 flex-1 rounded-full bg-gray-100">
                   <div class="h-2 rounded-full bg-blue-500" [style.width.%]="row.sessionShare"></div>
                 </div>

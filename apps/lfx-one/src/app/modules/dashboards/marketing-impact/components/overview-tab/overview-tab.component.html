@@ -31,7 +31,7 @@
       }
     } @else {
       @for (kpi of performanceSummaryKpis(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" />
+        <lfx-sparkline-kpi-card [kpi]="kpi" section="overview" />
       } @empty {
         <div class="col-span-full text-center py-8 text-sm text-gray-500" data-testid="overview-tab-kpi-empty">
           No performance data available for this period.

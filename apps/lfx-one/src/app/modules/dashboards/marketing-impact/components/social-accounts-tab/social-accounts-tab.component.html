@@ -20,7 +20,7 @@
       }
     } @else {
       @for (kpi of kpiCards(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" />
+        <lfx-sparkline-kpi-card [kpi]="kpi" section="social-accounts" />
       }
     }
   </div>
@@ -31,24 +31,24 @@
       <h4 class="text-sm font-semibold text-gray-900">Social accounts performance</h4>
 
       @if (hasPlatforms()) {
-        <div class="flex flex-col gap-0" data-testid="social-accounts-table">
+        <div class="flex flex-col gap-0" role="table" aria-label="Social accounts performance" data-testid="social-accounts-table">
           <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2">
-            <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400">PLATFORM</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">FOLLOWERS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400">IMPRESSIONS</span>
-            <span class="w-28 text-right text-[11px] font-semibold tracking-wide text-gray-400">ENGAGEMENT</span>
-            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400">POSTS (30D)</span>
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PLATFORM</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">FOLLOWERS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+            <span class="w-28 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ENGAGEMENT</span>
+            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">POSTS (30D)</span>
           </div>
 
           <!-- Rows -->
           @for (row of platformRows(); track row.platform) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" [attr.data-testid]="'social-account-row-' + row.platform">
-              <span class="w-36 truncate text-xs font-medium text-gray-700">{{ row.platform }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.followers }}</span>
-              <span class="w-24 text-right text-xs text-gray-900">{{ row.impressions }}</span>
-              <span class="w-28 text-right text-xs text-gray-500">{{ row.engagementRate }}</span>
-              <span class="flex-1 text-right text-xs text-gray-500">{{ row.posts }}</span>
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'social-account-row-' + row.platform">
+              <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.platform }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.followers }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.impressions }}</span>
+              <span class="w-28 text-right text-xs text-gray-500" role="cell">{{ row.engagementRate }}</span>
+              <span class="flex-1 text-right text-xs text-gray-500" role="cell">{{ row.posts }}</span>
             </div>
           }
         </div>

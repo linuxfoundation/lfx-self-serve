@@ -130,7 +130,7 @@ export class EmailTabComponent {
           label: 'Click-Through Rate',
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
-          value: `${data.currentCtr.toFixed(2)}%`,
+          value: `${(data.currentCtr ?? 0).toFixed(2)}%`,
           momChange: formatChangePct(changePct, 'vs avg'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),

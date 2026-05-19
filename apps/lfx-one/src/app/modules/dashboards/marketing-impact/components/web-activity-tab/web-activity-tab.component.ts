@@ -83,7 +83,7 @@ export class WebActivityTabComponent {
           id: 'total-page-views',
           label: 'Total Page Views',
           icon: 'fa-light fa-file-lines',
-          iconClass: 'bg-emerald-100 text-emerald-600',
+          iconClass: 'bg-green-100 text-green-600',
           value: formatNumber(totalPageViews),
           momChange: null,
           momTrend: 'neutral' as const,
