@@ -78,5 +78,80 @@
         </div>
       }
     </div>
+
+    <!-- Platform performance table -->
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="performance-marketing-platforms">
+      <h4 class="text-sm font-semibold text-gray-900">Platform performance</h4>
+      <p class="text-[11px] text-gray-400">Revenue and ROAS use last-touch attribution</p>
+
+      @if (hasPlatforms()) {
+        <div class="overflow-x-auto">
+          <div class="min-w-[900px]">
+            <div class="flex flex-col gap-0" role="table" aria-label="Platform performance" data-testid="platform-performance-table">
+              <!-- Table header -->
+              <div class="flex items-center gap-2 border-b border-gray-200 pb-2" role="row">
+                <span class="w-32 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PLATFORM</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
+                <span class="w-14 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
+                <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CLICKS</span>
+                <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+                <span class="w-14 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
+                <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CPC</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV. RATE</span>
+                <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONVERSIONS</span>
+                <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PERFORMANCE</span>
+              </div>
+
+              <!-- Rows -->
+              @for (row of platformRows(); track row.platform) {
+                <div class="flex items-center gap-2 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'platform-row-' + row.platform">
+                  <span class="w-32 truncate text-xs font-medium text-gray-700" role="cell">{{ row.platform }}</span>
+                  <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
+                  <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.revenue }}</span>
+                  <span class="w-14 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
+                  <span class="w-16 text-right text-xs text-gray-500" role="cell">{{ row.clicks }}</span>
+                  <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.impressions }}</span>
+                  <span class="w-14 text-right text-xs text-gray-500" role="cell">{{ row.ctr }}</span>
+                  <span class="w-16 text-right text-xs text-gray-500" role="cell">{{ row.cpc }}</span>
+                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.convRate }}</span>
+                  <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.conversions }}</span>
+                  <div class="flex flex-1 justify-end" role="cell">
+                    <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="row.performanceClass">
+                      {{ row.performance }}
+                    </span>
+                  </div>
+                </div>
+              }
+
+              <!-- Total row -->
+              @if (platformTotals(); as totals) {
+                <div class="flex items-center gap-2 bg-gray-50 py-2.5" role="row" data-testid="platform-row-total">
+                  <span class="w-32 text-xs font-semibold text-gray-900" role="cell">{{ totals.platform }}</span>
+                  <span class="w-20 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.spend }}</span>
+                  <span class="w-20 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.revenue }}</span>
+                  <span class="w-14 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.roas }}</span>
+                  <span class="w-16 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.clicks }}</span>
+                  <span class="w-24 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.impressions }}</span>
+                  <span class="w-14 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.ctr }}</span>
+                  <span class="w-16 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.cpc }}</span>
+                  <span class="w-20 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.convRate }}</span>
+                  <span class="w-24 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.conversions }}</span>
+                  <div class="flex flex-1 justify-end" role="cell">
+                    <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="totals.performanceClass">
+                      {{ totals.performance }}
+                    </span>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="platform-performance-empty">
+          <p class="text-sm text-gray-500">No platform data available.</p>
+        </div>
+      }
+    </div>
   }
 </div>

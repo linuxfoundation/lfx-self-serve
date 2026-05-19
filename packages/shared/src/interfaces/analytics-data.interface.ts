@@ -3,6 +3,9 @@
 
 import type { ProjectTableRow } from './dashboard-metric.interface';
 
+/** Performance rating for paid project campaigns. */
+export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'EMERGING';
+
 /**
  * Active Weeks Streak row from Snowflake ACTIVE_WEEKS_STREAK table
  * Represents a single week's activity data for a user
@@ -2675,9 +2678,7 @@ export interface PaidCampaignPerformance {
   clicks: number;
 }
 
-/**
- * Project-level paid performance breakdown
- */
+/** Project-level paid performance breakdown. */
 export interface PaidProjectBreakdown {
   projectName: string;
   funnelStage: string;
@@ -2690,8 +2691,23 @@ export interface PaidProjectBreakdown {
   sessions: number;
   impressions: number;
   clicks: number;
-  performance: string;
+  performance: PaidProjectPerformance;
   campaigns: PaidCampaignPerformance[];
+}
+
+/** Platform-level paid performance breakdown aggregated by ad channel. */
+export interface PaidPlatformBreakdown {
+  platform: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  convRate: number;
+  conversions: number;
+  performance: PaidProjectPerformance;
 }
 
 /**
@@ -2709,6 +2725,7 @@ export interface SocialReachResponse {
   monthlyRoas: number[];
   channelGroups: SocialReachChannelGroup[];
   projectBreakdown?: PaidProjectBreakdown[];
+  platformBreakdown?: PaidPlatformBreakdown[];
 }
 
 // ============================================

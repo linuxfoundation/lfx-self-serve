@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { BrandReachResponse, EmailCtrResponse, MarketingAttributionChannel, RevenueImpactResponse } from './analytics-data.interface';
+import type {
+  BrandReachResponse,
+  EmailCtrResponse,
+  MarketingAttributionChannel,
+  PaidProjectPerformance,
+  RevenueImpactResponse,
+} from './analytics-data.interface';
 
 /** Month option for the Marketing Impact page month picker. */
 export interface MarketingImpactMonthOption {
@@ -71,9 +77,6 @@ export interface AttributionChannelRow {
 /** Funnel stage identifier for the performance marketing filter. */
 export type FunnelStage = 'all' | 'tofu' | 'mofu' | 'bofu';
 
-/** Performance rating for paid project campaigns. */
-export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'POOR' | 'NO REVENUE';
-
 /** View-model row for the performance marketing project table. */
 export interface PaidProjectRow {
   name: string;
@@ -133,4 +136,20 @@ export interface WebActivityDomainRow {
   pagesPerSession: string;
   sessionShare: number;
   sessionShareFormatted: string;
+}
+
+/** View-model row for the platform performance table. */
+export interface PlatformPerformanceRow {
+  platform: string;
+  spend: string;
+  revenue: string;
+  roas: string;
+  clicks: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  convRate: string;
+  conversions: string;
+  performance: PaidProjectPerformance;
+  performanceClass: string;
 }

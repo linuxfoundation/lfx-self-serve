@@ -102,6 +102,7 @@ import {
   UploadProjectDocumentRequest,
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
+import type { PaidProjectPerformance } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, nullifyEmptyStrings } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
@@ -2194,59 +2195,54 @@ export class ProjectService {
 
     try {
       // Block 1: Total impressions, spend, revenue (last 6 months)
+      // Uses LAST_TOUCH_REVENUE as the default attribution model across all blocks
       const impressionsQuery = `
-      SELECT SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS, SUM(SPEND) AS TOTAL_SPEND, SUM(FIRST_TOUCH_REVENUE) AS TOTAL_REVENUE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
+      SELECT SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS, SUM(SPEND) AS TOTAL_SPEND, SUM(LAST_TOUCH_REVENUE) AS TOTAL_REVENUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
     `;
 
-      // Block 2: ROAS KPI — latest completed month
+      // Block 2: ROAS KPI — last two completed months for MoM (last-touch attribution)
       const roasKpiQuery = `
-      SELECT FIRST_TOUCH_ROAS AS ROAS, ROAS_MOM_PCT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
+      SELECT
+        CAMPAIGN_MONTH,
+        ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), NULLIF(SUM(SPEND), 0)), 2) AS ROAS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
         AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', CURRENT_DATE())
-      QUALIFY ROW_NUMBER() OVER (ORDER BY CAMPAIGN_MONTH DESC) = 1
+        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -2, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      GROUP BY CAMPAIGN_MONTH
+      ORDER BY CAMPAIGN_MONTH DESC
     `;
 
-      // Block 3: Monthly ROAS trend (bar chart, last 6 months)
+      // Block 3: Monthly ROAS trend (bar chart, last 6 months, last-touch attribution)
       const monthlyRoasQuery = `
-      SELECT CAMPAIGN_MONTH, FIRST_TOUCH_ROAS AS ROAS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
+      SELECT CAMPAIGN_MONTH, ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), NULLIF(SUM(SPEND), 0)), 2) AS ROAS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
+      GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
     `;
 
       // Block 4: Monthly impressions (bar chart, last 6 months)
       const monthlyImpressionsQuery = `
-      SELECT CAMPAIGN_MONTH, IMPRESSIONS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
-      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
-        AND FOUNDATION_SLUG = ?
-      ORDER BY CAMPAIGN_MONTH
-    `;
-
-      // Block 5: Impressions by channel (horizontal bar chart, last 6 months)
-      const channelQuery = `
-      SELECT CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
+      SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
-      GROUP BY CHANNEL
-      ORDER BY IMPRESSIONS DESC
+      GROUP BY CAMPAIGN_MONTH
+      ORDER BY CAMPAIGN_MONTH
     `;
 
-      // Block 6: Project + campaign level performance breakdown (last 6 months)
-      // Uses LINEAR_REVENUE (not FIRST_TOUCH) — the per-campaign drill-down uses linear
-      // attribution to distribute credit fairly across touchpoints, while the top-level
-      // KPI (Blocks 1–2) uses first-touch for the headline ROAS.
+      // Block 5: Project + campaign level performance breakdown (last 6 months)
+      // All blocks use LAST_TOUCH_REVENUE as the default attribution model
       const projectPerfQuery = `
       SELECT
         PROJECT_NAME, CAMPAIGN_NAME, FUNNEL_STAGE,
-        SUM(SPEND) AS SPEND, SUM(LINEAR_REVENUE) AS REVENUE,
-        ROUND(DIV0(SUM(LINEAR_REVENUE), SUM(SPEND)), 2) AS ROAS,
+        SUM(SPEND) AS SPEND, SUM(LAST_TOUCH_REVENUE) AS REVENUE,
+        ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), SUM(SPEND)), 2) AS ROAS,
         SUM(CONV) AS CONVERSIONS,
         ROUND(DIV0(SUM(CONV), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
         ROUND(DIV0(SUM(SPEND), NULLIF(SUM(CLICKS), 0)), 2) AS CPC,
@@ -2260,12 +2256,32 @@ export class ProjectService {
       ORDER BY SPEND DESC
     `;
 
-      const [impressionsResult, roasKpiResult, monthlyRoasResult, monthlyImpressionsResult, channelResult, projectPerfResult] = await Promise.all([
+      // Block 6: Platform-level performance breakdown (aggregated by CHANNEL)
+      // All blocks use LAST_TOUCH_REVENUE as the default attribution model
+      // Also used to derive channelGroups (impressions by channel) — eliminates a separate query
+      const platformPerfQuery = `
+      SELECT
+        CHANNEL,
+        SUM(SPEND) AS SPEND, SUM(LAST_TOUCH_REVENUE) AS REVENUE,
+        ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), SUM(SPEND)), 2) AS ROAS,
+        SUM(CLICKS) AS CLICKS,
+        SUM(IMPRESSIONS) AS IMPRESSIONS,
+        ROUND(DIV0(SUM(CLICKS), NULLIF(SUM(IMPRESSIONS), 0)) * 100, 2) AS CTR,
+        ROUND(DIV0(SUM(SPEND), NULLIF(SUM(CLICKS), 0)), 2) AS CPC,
+        ROUND(DIV0(SUM(CONV), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
+        SUM(CONV) AS CONVERSIONS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
+      WHERE FOUNDATION_SLUG = ?
+        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      GROUP BY CHANNEL
+      ORDER BY SPEND DESC
+    `;
+
+      const [impressionsResult, roasKpiResult, monthlyRoasResult, monthlyImpressionsResult, projectPerfResult, platformPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ TOTAL_IMPRESSIONS: number; TOTAL_SPEND: number; TOTAL_REVENUE: number }>(impressionsQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ ROAS: number; ROAS_MOM_PCT: number }>(roasKpiQuery, [foundationSlug]),
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(roasKpiQuery, [foundationSlug]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, [foundationSlug]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ CHANNEL: string; IMPRESSIONS: number }>(channelQuery, [foundationSlug]),
         this.snowflakeService
           .execute<{
             PROJECT_NAME: string;
@@ -2303,13 +2319,48 @@ export class ProjectService {
               }[],
             };
           }),
+        this.snowflakeService
+          .execute<{
+            CHANNEL: string;
+            SPEND: number;
+            REVENUE: number;
+            ROAS: number;
+            CLICKS: number;
+            IMPRESSIONS: number;
+            CTR: number;
+            CPC: number;
+            CONV_RATE: number;
+            CONVERSIONS: number;
+          }>(platformPerfQuery, [foundationSlug])
+          .catch((error) => {
+            logger.warning(undefined, 'get_social_reach', 'Optional platform breakdown query failed, degrading gracefully', {
+              foundation_slug: foundationSlug,
+              err: error,
+            });
+            return {
+              rows: [] as {
+                CHANNEL: string;
+                SPEND: number;
+                REVENUE: number;
+                ROAS: number;
+                CLICKS: number;
+                IMPRESSIONS: number;
+                CTR: number;
+                CPC: number;
+                CONV_RATE: number;
+                CONVERSIONS: number;
+              }[],
+            };
+          }),
       ]);
 
       const totalReach = impressionsResult.rows[0]?.TOTAL_IMPRESSIONS ?? 0;
       const totalSpend = impressionsResult.rows[0]?.TOTAL_SPEND ?? 0;
       const totalRevenue = impressionsResult.rows[0]?.TOTAL_REVENUE ?? 0;
-      const roas = roasKpiResult.rows[0]?.ROAS ?? 0;
-      const roasMomPct = roasKpiResult.rows[0]?.ROAS_MOM_PCT ?? 0;
+      const currentRoas = roasKpiResult.rows[0]?.ROAS ?? 0;
+      const previousRoas = roasKpiResult.rows[1]?.ROAS ?? 0;
+      const roas = currentRoas;
+      const roasMomPct = previousRoas > 0 ? ((currentRoas - previousRoas) / previousRoas) * 100 : 0;
 
       if (monthlyImpressionsResult.rows.length === 0) {
         return {
@@ -2323,6 +2374,8 @@ export class ProjectService {
           monthlyLabels: [],
           monthlyRoas: [],
           channelGroups: [],
+          projectBreakdown: [],
+          platformBreakdown: [],
         };
       }
 
@@ -2333,10 +2386,12 @@ export class ProjectService {
         return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       });
 
-      const channelGroups = channelResult.rows.map((row) => ({
-        channel: row.CHANNEL,
-        totalImpressions: row.IMPRESSIONS,
-      }));
+      const channelGroups = platformPerfResult.rows
+        .map((row) => ({
+          channel: row.CHANNEL,
+          totalImpressions: row.IMPRESSIONS,
+        }))
+        .sort((a, b) => b.totalImpressions - a.totalImpressions);
 
       // Shape project breakdown with nested campaigns
       const projectMap = new Map<
@@ -2376,11 +2431,11 @@ export class ProjectService {
         projectMap.set(row.PROJECT_NAME, existing);
       }
 
-      const getPaidPerformance = (projectRoas: number): string => {
+      const getPaidPerformance = (projectRoas: number): PaidProjectPerformance => {
         if (projectRoas >= 2) return 'EXCELLENT';
         if (projectRoas >= 1) return 'GOOD';
-        if (projectRoas > 0) return 'POOR';
-        return 'NO REVENUE';
+        if (projectRoas > 0) return 'AVERAGE';
+        return 'EMERGING';
       };
 
       const formatFunnel = (stages: Set<string>): string => {
@@ -2430,6 +2485,20 @@ export class ProjectService {
         })
         .sort((a, b) => b.spend - a.spend);
 
+      const platformBreakdown = platformPerfResult.rows.map((row) => ({
+        platform: row.CHANNEL,
+        spend: Math.round((row.SPEND ?? 0) * 100) / 100,
+        revenue: Math.round((row.REVENUE ?? 0) * 100) / 100,
+        roas: row.ROAS ?? 0,
+        clicks: row.CLICKS ?? 0,
+        impressions: row.IMPRESSIONS ?? 0,
+        ctr: row.CTR ?? 0,
+        cpc: row.CPC ?? 0,
+        convRate: row.CONV_RATE ?? 0,
+        conversions: row.CONVERSIONS ?? 0,
+        performance: getPaidPerformance(row.ROAS ?? 0),
+      }));
+
       return {
         totalReach,
         roas: Math.round(roas * 100) / 100,
@@ -2442,6 +2511,7 @@ export class ProjectService {
         monthlyRoas,
         channelGroups,
         projectBreakdown,
+        platformBreakdown,
       };
     } catch (error) {
       logger.warning(undefined, 'get_social_reach', 'Failed to fetch social reach data, returning defaults', {
@@ -2459,6 +2529,8 @@ export class ProjectService {
         monthlyLabels: [],
         monthlyRoas: [],
         channelGroups: [],
+        projectBreakdown: [],
+        platformBreakdown: [],
       };
     }
   }
