@@ -5,7 +5,13 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { BOARD_SCOPED_PERSONA_PRIORITY, LENS_DEFAULT_ROUTES, NAV_SEARCH_DEBOUNCE_MS, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import {
+  BOARD_SCOPED_PERSONA_PRIORITY,
+  LENS_DEFAULT_ROUTES,
+  NAV_SEARCH_DEBOUNCE_MS,
+  PERSONA_PRIORITY,
+  PROJECT_SCOPED_PERSONA_PRIORITY,
+} from '@lfx-one/shared/constants';
 import { LensItem, LensItemsResponse, LensPage, LensState, NavLens, PersonaType, TaggedLensPage } from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
@@ -163,7 +169,7 @@ export class NavigationService {
       return;
     }
 
-    const priority = lens === 'foundation' ? BOARD_SCOPED_PERSONA_PRIORITY : PROJECT_SCOPED_PERSONA_PRIORITY;
+    const priority = this.getPickerPriority(lens);
     const defaultItem = this.pickItemByPersonaPriority(page.items, priority);
     const context = lensItemToProjectContext(defaultItem);
     if (lens === 'foundation') {
@@ -173,22 +179,40 @@ export class NavigationService {
     }
   }
 
-  /** Prefer items where the user holds an in-priority persona, in persona-array order; fall back to the first item. */
+  /**
+   * Project lens for a hybrid persona is the merged entry (Foundation button is hidden); use the
+   * full priority so the user's highest-authority role wins instead of falling through to contributor.
+   */
+  private getPickerPriority(lens: NavLens): readonly PersonaType[] {
+    if (lens === 'foundation') return BOARD_SCOPED_PERSONA_PRIORITY;
+    return this.lensService.isHybridPersona() ? PERSONA_PRIORITY : PROJECT_SCOPED_PERSONA_PRIORITY;
+  }
+
+  /** Prefer items where the user holds an in-priority persona; among same-persona matches prefer root-most (parent outside the user's accessible set). Falls back to the first item. */
   private pickItemByPersonaPriority(items: LensItem[], priority: readonly PersonaType[]): LensItem {
     const personaProjects = this.personaService.personaProjects();
+    const itemUids = new Set(items.map((i) => i.uid));
+    const enrichedByUid = new Map(this.personaService.detectedProjects().map((p) => [p.projectUid, p]));
     for (const persona of priority) {
       const projects = personaProjects[persona] ?? [];
+      const matches: { item: LensItem; isRoot: boolean }[] = [];
       for (const project of projects) {
-        const match = items.find((item) => item.uid === project.projectUid);
-        if (match) return match;
+        const item = items.find((i) => i.uid === project.projectUid);
+        if (!item) continue;
+        const parentUid = enrichedByUid.get(item.uid)?.parentProjectUid;
+        const isRoot = !parentUid || !itemUids.has(parentUid);
+        matches.push({ item, isRoot });
       }
+      if (matches.length === 0) continue;
+      // Prefer a root-level match (no in-set parent) so e.g. The Linux Foundation beats AAIF when both carry board-member.
+      return (matches.find((m) => m.isRoot) ?? matches[0]).item;
     }
     return items[0];
   }
 
   /** First project UID of the highest-priority persona the user holds for this lens, or null. */
   private getPriorityUid(lens: NavLens): string | null {
-    const priority = lens === 'foundation' ? BOARD_SCOPED_PERSONA_PRIORITY : PROJECT_SCOPED_PERSONA_PRIORITY;
+    const priority = this.getPickerPriority(lens);
     const personaProjects = this.personaService.personaProjects();
     for (const persona of priority) {
       const projects = personaProjects[persona] ?? [];
