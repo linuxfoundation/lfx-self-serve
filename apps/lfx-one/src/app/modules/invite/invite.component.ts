@@ -48,7 +48,6 @@ export class InviteComponent implements OnInit {
         },
         error: (err) => {
           const code = err?.error?.code as string;
-<<<<<<< HEAD
           let reason: string;
           if (code === 'INVITE_EXPIRED') {
             reason = 'expired';
