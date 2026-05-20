@@ -19,6 +19,7 @@ import {
   VerifyIdentityDialogData,
 } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, map, of, startWith, Subject, switchMap, take } from 'rxjs';
@@ -34,7 +35,7 @@ interface IdentitiesState {
 
 @Component({
   selector: 'lfx-profile-identities',
-  imports: [CardComponent, ButtonComponent, MenuComponent, MessageComponent],
+  imports: [CardComponent, ButtonComponent, MenuComponent, MessageComponent, OpenIntercomDirective],
   providers: [DialogService],
   templateUrl: './profile-identities.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
