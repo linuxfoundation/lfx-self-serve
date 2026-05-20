@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import { InviteTokenPayload } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -48,7 +50,7 @@ export class InviteController {
         );
       }
 
-      if (Date.now() / 1000 > payload.exp) {
+      if (typeof payload.exp !== 'number' || !isFinite(payload.exp) || Date.now() / 1000 > payload.exp) {
         return next(
           new AuthorizationError('Invite link has expired', {
             operation: 'accept_invite',
@@ -82,7 +84,24 @@ export class InviteController {
       }
 
       const codec = this.natsService.getCodec();
-      await this.natsService.request('lfx.invite.accepted', codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
+      const response = await this.natsService.request(
+        NatsSubjects.INVITE_ACCEPTED,
+        codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })),
+        {
+          timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+        }
+      );
+
+      const responseText = codec.decode(response.data);
+      if (!responseText || responseText.startsWith('error:')) {
+        return next(
+          new AuthorizationError(`Invite acceptance was rejected by the backend: ${responseText || '(empty response)'}`, {
+            operation: 'accept_invite',
+            service: 'invite_controller',
+            path: req.path,
+          })
+        );
+      }
 
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,

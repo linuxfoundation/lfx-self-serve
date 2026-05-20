@@ -24,4 +24,5 @@ export enum NatsSubjects {
   LOOKUP_V1_MAPPING = 'lfx.lookup_v1_mapping',
   PERSONAS_GET = 'lfx.personas-api.get',
   IMPERSONATION_TOKEN_EXCHANGE = 'lfx.auth-service.impersonation.token_exchange',
+  INVITE_ACCEPTED = 'lfx.invite.accepted',
 }

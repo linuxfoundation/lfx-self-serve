@@ -33,8 +33,9 @@ export class InviteComponent implements OnInit {
       return;
     }
 
-    if (this.isTokenExpired(token)) {
-      this.redirectToError('expired');
+    const tokenStatus = this.checkToken(token);
+    if (tokenStatus) {
+      this.redirectToError(tokenStatus === 'expired' ? 'expired' : 'missing');
       return;
     }
 
@@ -46,25 +47,27 @@ export class InviteComponent implements OnInit {
           window.location.href = res.return_url;
         },
         error: (err) => {
-          const reason = (err?.error?.code as string) === 'INVITE_EXPIRED' ? 'expired' : 'failed';
+          const code = err?.error?.code as string;
+          const reason = code === 'INVITE_EXPIRED' ? 'expired' : code === 'VALIDATION_ERROR' ? 'missing' : 'failed';
           this.redirectToError(reason);
         },
       });
   }
 
-  private isTokenExpired(token: string): boolean {
+  private checkToken(token: string): 'expired' | 'invalid' | null {
     try {
       const parts = token.split('.');
-      if (parts.length !== 3) return true;
+      if (parts.length !== 3) return 'invalid';
       // Base64url → base64 padding for atob
       const padded = parts[1]
         .replace(/-/g, '+')
         .replace(/_/g, '/')
         .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
       const payload = JSON.parse(atob(padded)) as InviteTokenPayload;
-      return Date.now() / 1000 > payload.exp;
+      if (typeof payload.exp !== 'number' || !isFinite(payload.exp)) return 'invalid';
+      return Date.now() / 1000 > payload.exp ? 'expired' : null;
     } catch {
-      return true;
+      return 'invalid';
     }
   }
 

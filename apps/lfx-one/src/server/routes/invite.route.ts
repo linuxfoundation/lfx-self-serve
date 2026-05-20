@@ -8,7 +8,7 @@ import { InviteController } from '../controllers/invite.controller';
 const router = Router();
 const inviteController = new InviteController();
 
-// POST /invite/accept — accept an invite JWT and receive the return_url
+// POST /api/invite/accept — accept an invite JWT and receive the return_url
 router.post('/accept', (req, res, next) => inviteController.acceptInvite(req, res, next));
 
 export default router;
