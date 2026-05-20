@@ -103,8 +103,23 @@ app.get('/readyz', (_req: Request, res: Response) => {
 app.get(
   '**',
   express.static(browserDistFolder, {
-    maxAge: '1y',
     index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html') || filePath.endsWith('index.csr.html')) {
+        // index.html must not be cached long-term — returning users need the latest
+        // chunk hashes after a deploy, otherwise dynamic imports fail with
+        // "TypeError: Importing a module script failed."
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        return;
+      }
+      if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
+        // Angular emits content-hashed filenames (outputHashing: "all") — safe to
+        // cache permanently; the hash changes whenever content changes.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    },
   })
 );
 
