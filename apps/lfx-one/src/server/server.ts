@@ -105,17 +105,17 @@ app.get(
   express.static(browserDistFolder, {
     index: false,
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html') || filePath.endsWith('index.csr.html')) {
-        // index.html must not be cached long-term — returning users need the latest
-        // chunk hashes after a deploy, otherwise dynamic imports fail with
-        // "TypeError: Importing a module script failed."
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        return;
-      }
       if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
         // Angular emits content-hashed filenames (outputHashing: "all") — safe to
         // cache permanently; the hash changes whenever content changes.
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+      if (/\.(html|js|css)$/i.test(filePath)) {
+        // Non-hashed HTML, JS, and CSS (e.g. index.html, main.js in dev builds where
+        // outputHashing is not "all") must revalidate on every request — stale entry
+        // bundles reference old chunk hashes and cause "Importing a module script failed".
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
         return;
       }
       res.setHeader('Cache-Control', 'public, max-age=300');
