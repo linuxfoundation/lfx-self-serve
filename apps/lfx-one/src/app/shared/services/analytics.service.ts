@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  OrgLensAccountContextResponse,
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
   CodeCommitsDailyResponse,
@@ -204,6 +205,23 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  /**
+   * Bootstrap the Org Lens account context for the user's persona-authorised
+   * Salesforce accounts. Returns a single denormalised row per account_id
+   * with display attributes, Crowd.dev mapping, and the highest active
+   * corporate membership tier — drives both the org-selector dropdown and
+   * the header badge.
+   */
+  public getOrgLensAccountContext(accountIds: string[]): Observable<OrgLensAccountContextResponse[]> {
+    if (accountIds.length === 0) {
+      return of([]);
+    }
+    const params = { accountIds: accountIds.join(',') };
+    return this.http
+      .get<OrgLensAccountContextResponse[]>('/api/analytics/org-lens-account-context', { params })
+      .pipe(catchError(() => of([] as OrgLensAccountContextResponse[])));
   }
 
   /**

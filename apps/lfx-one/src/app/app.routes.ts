@@ -56,11 +56,90 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Org Lens dashboard (placeholder — reuses DashboardComponent for now)
+      {
+        path: 'org/overview',
+        data: { lens: 'org' },
+        loadComponent: () => import('./modules/dashboards/org/org-overview/org-overview.component').then((m) => m.OrgOverviewComponent),
+      },
+      {
+        path: 'org/memberships',
+        data: { lens: 'org' },
+        loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
+      },
+      {
+        path: 'org/projects',
+        data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/roi',
+        data: { lens: 'org', title: 'ROI', description: 'Return on investment across your memberships and engagement.', icon: 'fa-light fa-chart-line-up' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/governance',
+        data: { lens: 'org', title: 'Governance', description: 'Board seats and governance participation.', icon: 'fa-light fa-layer-group' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/people',
+        data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/contributions',
+        data: {
+          lens: 'org',
+          title: 'Code Contributions',
+          description: "Open-source contributions from your organization's contributors.",
+          icon: 'fa-light fa-code',
+        },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/events',
+        data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/training',
+        data: {
+          lens: 'org',
+          title: 'Training & Certification',
+          description: 'Training enrollments and certifications across your organization.',
+          icon: 'fa-light fa-graduation-cap',
+        },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/meetings',
+        data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/groups',
+        data: { lens: 'org', title: 'Groups', description: 'Committees your organization participates in.', icon: 'fa-light fa-users-rectangle' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
+      {
+        path: 'org/profile',
+        data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
+        loadComponent: () =>
+          import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent),
+      },
       {
         path: 'org',
-        data: { lens: 'org' },
-        loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
+        redirectTo: 'org/overview',
+        pathMatch: 'full',
       },
       // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens)
       {

@@ -341,70 +341,84 @@ export class MainLayoutComponent {
     },
   ];
 
-  // --- Org Lens Items ---
   private readonly orgLensItems: SidebarMenuItem[] = [
     {
-      label: 'Overview',
+      label: 'Org Overview',
       icon: 'fa-light fa-grid-2',
-      routerLink: '/org',
+      routerLink: '/org/overview',
     },
     {
-      label: 'Portfolio',
+      label: 'Org Foundations',
       isSection: true,
       expanded: true,
       items: [
         {
-          label: 'Key Projects',
-          icon: 'fa-light fa-diagram-project',
+          label: 'Memberships',
+          icon: 'fa-light fa-display',
+          routerLink: '/org/memberships',
+        },
+        {
+          label: 'Projects',
+          icon: 'fa-light fa-folder',
           routerLink: '/org/projects',
+        },
+        {
+          label: 'ROI',
+          icon: 'fa-light fa-chart-line-up',
+          routerLink: '/org/roi',
+        },
+        {
+          label: 'Governance',
+          icon: 'fa-light fa-layer-group',
+          routerLink: '/org/governance',
+        },
+      ],
+    },
+    {
+      label: 'Org Engagement',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'People',
+          icon: 'fa-light fa-users',
+          routerLink: '/org/people',
         },
         {
           label: 'Code Contributions',
           icon: 'fa-light fa-code',
-          routerLink: '/org/code',
-        },
-      ],
-    },
-    {
-      label: 'Membership',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Membership',
-          icon: 'fa-light fa-id-card',
-          routerLink: '/org/membership',
+          routerLink: '/org/contributions',
         },
         {
-          label: 'Benefits',
-          icon: 'fa-light fa-gift',
-          routerLink: '/org/benefits',
+          label: 'Events',
+          icon: 'fa-light fa-calendar',
+          routerLink: '/org/events',
         },
-      ],
-    },
-    {
-      label: 'Administration',
-      isSection: true,
-      expanded: true,
-      items: [
+        {
+          label: 'Training & Certification',
+          icon: 'fa-light fa-graduation-cap',
+          routerLink: '/org/training',
+        },
+        {
+          label: 'Meetings',
+          icon: 'fa-light fa-video',
+          routerLink: '/org/meetings',
+        },
         {
           label: COMMITTEE_LABEL.plural,
           icon: 'fa-light fa-users-rectangle',
           routerLink: '/org/groups',
         },
+      ],
+    },
+    {
+      label: 'Org Admin',
+      isSection: true,
+      expanded: true,
+      items: [
         {
-          label: 'CLA Management',
-          icon: 'fa-light fa-file-signature',
-          routerLink: '/org/cla',
-        },
-        {
-          label: 'Access & Permissions',
-          icon: 'fa-light fa-key',
-          routerLink: '/org/permissions',
-        },
-        {
-          label: 'Org Profile',
-          icon: 'fa-light fa-building',
+          label: 'Profile',
+          icon: 'fa-light fa-file',
           routerLink: '/org/profile',
         },
       ],

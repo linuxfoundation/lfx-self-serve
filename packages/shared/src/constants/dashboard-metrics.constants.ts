@@ -319,6 +319,59 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
+// Org Overview Involvement Metrics (cross-foundation, non-clickable)
+// ============================================
+
+/**
+ * Engagement card configuration for the /org/overview involvement section.
+ * 6 cards aggregated across all LF foundations. Cards are NOT clickable — no drawerType.
+ */
+export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
+  {
+    title: 'Active Contributors',
+    icon: 'fa-light fa-code',
+    chartType: 'bar',
+    category: 'contributors',
+    testId: 'org-overview-involvement-card-active-contributors',
+  },
+  {
+    title: 'Maintainers',
+    icon: 'fa-light fa-user-check',
+    chartType: 'bar',
+    category: 'contributors',
+    testId: 'org-overview-involvement-card-maintainers',
+  },
+  {
+    title: 'Event Attendees',
+    icon: 'fa-light fa-user-group',
+    chartType: 'line',
+    category: 'events',
+    testId: 'org-overview-involvement-card-event-attendees',
+  },
+  {
+    title: 'Event Speakers',
+    icon: 'fa-light fa-award-simple',
+    chartType: 'line',
+    category: 'events',
+    testId: 'org-overview-involvement-card-event-speakers',
+  },
+  {
+    title: 'Certified Employees',
+    icon: 'fa-light fa-graduation-cap',
+    chartType: 'line',
+    category: 'education',
+    testId: 'org-overview-involvement-card-certified-employees',
+  },
+  {
+    title: 'Training Enrollments',
+    icon: 'fa-light fa-graduation-cap',
+    chartType: 'line',
+    category: 'education',
+    testId: 'org-overview-involvement-card-training-enrollments',
+  },
+];
+
+// ============================================
 // Marketing Overview Metrics (Executive Director)
 // ============================================
 

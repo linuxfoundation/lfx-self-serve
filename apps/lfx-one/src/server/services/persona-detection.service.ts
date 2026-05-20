@@ -4,6 +4,7 @@
 import {
   AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS,
   DETECTION_SOURCE_MAP,
+  ORG_LENS_DEMO_SEED_ACCOUNTS,
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
@@ -203,7 +204,7 @@ export class PersonaDetectionService {
         personaProjects: {},
         personas: ['contributor'],
         projects: [],
-        organizations: [],
+        organizations: this.withDemoSeedFallback(req, []),
         error: detectionResponse.error.message,
       };
     }
@@ -215,7 +216,7 @@ export class PersonaDetectionService {
         personaProjects: {},
         personas: ['contributor'],
         projects: [],
-        organizations: [],
+        organizations: this.withDemoSeedFallback(req, []),
         error: null,
       };
     }
@@ -235,9 +236,34 @@ export class PersonaDetectionService {
       personaProjects,
       personas,
       projects,
-      organizations: this.extractOrganizations(req, projects),
+      organizations: this.withDemoSeedFallback(req, this.extractOrganizations(req, projects)),
       error: null,
     };
+  }
+
+  /**
+   * Org Lens demo seed fallback.
+   *
+   * Until the upstream persona service returns user-scoped organizations
+   * directly (blocked on persona-service work), the only path that
+   * populates `organizations` today is `extractOrganizations`, which
+   * scrapes `board_member` detection extras. Users without board
+   * memberships — i.e. most engineering accounts on the dev cluster —
+   * would see an empty selector.
+   *
+   * Returns the demo seed (`ORG_LENS_DEMO_SEED_ACCOUNTS`) only when the
+   * real extraction produced nothing, so real board members still see
+   * their actual orgs first. Replace this fallback with a live source
+   * once the persona contract delivers organizations.
+   */
+  private withDemoSeedFallback(req: Request, accounts: Account[]): Account[] {
+    if (accounts.length > 0) {
+      return accounts;
+    }
+    logger.debug(req, 'extract_organizations', 'No detected orgs — returning Org Lens demo seed', {
+      seed_count: ORG_LENS_DEMO_SEED_ACCOUNTS.length,
+    });
+    return ORG_LENS_DEMO_SEED_ACCOUNTS.map((account) => ({ ...account }));
   }
 
   private async fetchAndResolveAffiliatedSlugs(req: Request, username: string, email: string): Promise<string[]> {
