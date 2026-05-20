@@ -49,6 +49,17 @@
               <i class="fa-light fa-location-dot shrink-0"></i>
               <span>{{ event.location }}</span>
             </div>
+            <!-- Application Deadline (travel-fund only) -->
+            @if (requestType() === 'travel-fund') {
+              <div class="flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'event-selection-deadline-' + event.id">
+                <i class="fa-light fa-clock shrink-0"></i>
+                @if (event.travelFundEndDate) {
+                  <span>Application Deadline: {{ event.travelFundEndDate | date: 'MMM d, y' }}</span>
+                } @else {
+                  <span>Application Deadline not set</span>
+                }
+              </div>
+            }
             <!-- Button: Selected | Select -->
             @if (selectedEvent()?.id === event.id) {
               <lfx-button label="Selected" severity="primary" size="small" [fluid]="true" [attr.data-testid]="'event-selection-selected-' + event.id" />

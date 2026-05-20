@@ -37,6 +37,8 @@ export interface MyEvent {
   status: string;
   /** Whether the current user has registered for this event */
   isRegistered: boolean;
+  /** ISO YYYY-MM-DD date string for the last day travel fund applications are accepted; null when not set */
+  travelFundEndDate?: string | null;
 }
 
 /**
@@ -75,6 +77,8 @@ export interface MyEventRow {
   /** True when the user has registered for this event */
   IS_REGISTERED: boolean;
   TOTAL_RECORDS: number;
+  /** Last date travel fund applications are accepted for this event; null when not set */
+  TRAVEL_FUND_END_DATE: string | null;
 }
 
 /**
@@ -238,6 +242,8 @@ export interface GetMyEventsParams {
   country?: string;
   isVisaRequestAccepted?: boolean;
   isTravelFundRequestAccepted?: boolean;
+  /** When true, events whose travel_fund_end_date has already passed are excluded */
+  excludePastTravelFundDeadline?: boolean;
 }
 
 /**
@@ -314,6 +320,8 @@ export interface VisaRequestRow {
   /** Visa letter request status. Actual Snowflake values: "Submitted", "Approved", "Denied", "Expired" */
   REQUEST_STATUS: string;
   TOTAL_RECORDS: number;
+  /** Last date travel fund applications are accepted for this event; null when not set */
+  TRAVEL_FUND_END_DATE: string | null;
 }
 
 /**
@@ -332,6 +340,8 @@ export interface VisaRequest {
   applicationDate: string;
   /** Visa letter request status (e.g. "Submitted", "Approved", "Denied", "Expired") */
   status: string;
+  /** ISO YYYY-MM-DD date string for the last day travel fund applications are accepted; null when not set. Present on visa request rows but suppressed in rendering (travel-fund only) */
+  travelFundEndDate?: string | null;
 }
 
 /**
@@ -396,6 +406,8 @@ export interface GetMyEventsOptions {
   isVisaRequestAccepted?: boolean;
   /** When true, only events where the user's travel fund request was accepted are returned */
   isTravelFundRequestAccepted?: boolean;
+  /** When true, events whose travel_fund_end_date has already passed are excluded */
+  excludePastTravelFundDeadline?: boolean;
 }
 
 /**
