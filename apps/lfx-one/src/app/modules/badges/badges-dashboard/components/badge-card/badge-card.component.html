@@ -107,16 +107,28 @@
             <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
             {{ badge().isPending ? 'Accept Badge' : badge().isPublic ? 'View in Credly' : 'Manage Privacy' }}
           </a>
-          @if (badge().shareUrl && badge().isPublic) {
+          @if (badge().shareUrl && badge().isPublic && !badge().isPending) {
             <button
               type="button"
-              class="badge-share-btn"
-              (click)="shareBadge(badge().shareUrl!)"
-              aria-label="Copy badge URL to clipboard"
-              [attr.data-testid]="'badge-share-btn-' + badge().id">
-              <i class="fa-light fa-link text-xs"></i>
-              Share Badge
+              class="badge-share-btn relative z-20"
+              (click)="$event.stopPropagation(); shareMenu.toggle($event)"
+              [attr.aria-label]="'Share ' + badge().title"
+              aria-haspopup="menu"
+              [attr.aria-expanded]="menuOpen()"
+              [attr.data-testid]="'badge-share-trigger-' + badge().id">
+              <i class="fa-light fa-share-nodes text-xs"></i>
+              Share
             </button>
+            <lfx-menu
+              #shareMenu
+              [model]="shareMenuItems()"
+              [popup]="true"
+              appendTo="body"
+              [ariaLabel]="'Share ' + badge().title"
+              (onShow)="menuOpen.set(true)"
+              (onHide)="menuOpen.set(false)"
+              [attr.data-testid]="'badge-share-menu-' + badge().id">
+            </lfx-menu>
           }
         </div>
       }
