@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="individual-enrollment-page">
-  @if (enrollments() === undefined) {
+  @if (displayedEnrollments() === undefined) {
     <!-- Loading skeletons -->
     <div class="flex flex-col gap-4" data-testid="individual-enrollment-loading">
       @for (i of [1]; track i) {
@@ -22,14 +22,14 @@
       title="Could not load enrollment products"
       [subtitle]="enrollmentError() || 'We could not load your enrollment products. Please retry.'"
       data-testid="individual-enrollment-error" />
-  } @else if (enrollments()!.length === 0) {
+  } @else if (displayedEnrollments()!.length === 0) {
     <lfx-empty-state
       icon="fa-light fa-id-card"
       title="No enrollment products available"
       subtitle="There are no individual enrollment products at this time."
       data-testid="individual-enrollment-empty" />
   } @else {
-    @for (item of enrollments()!; track item.productId) {
+    @for (item of displayedEnrollments()!; track item.productId) {
       <lfx-card data-testid="individual-enrollment-card">
         <div class="flex flex-col gap-4 p-6">
           <!-- Header row: logo + name + status chip -->
@@ -48,24 +48,47 @@
             </div>
           </div>
 
-          <!-- Price + auto-renew info -->
-          @if (item.price !== null && item.price !== undefined) {
+          <!-- Enrollment dates, price, and auto-renew -->
+          @if (item.membership) {
+            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600" data-testid="individual-enrollment-details">
+              @if (item.price !== null && item.price !== undefined) {
+                <span
+                  ><span class="font-medium">${{ item.price }}</span> / year</span
+                >
+              }
+              @if (item.membership.PurchaseDate) {
+                <span data-testid="individual-enrollment-purchase-date">
+                  Purchased: <span class="font-medium">{{ item.membership.PurchaseDate | date: 'mediumDate' : 'UTC' }}</span>
+                </span>
+              }
+              @if (item.membership.EndDate) {
+                <span>
+                  {{ item.displayStatus === 'Expired' ? 'Expired' : 'Renews' }}:
+                  <span class="font-medium">{{ item.membership.EndDate | date: 'mediumDate' : 'UTC' }}</span>
+                </span>
+              }
+              @if (item.membership.ExtPaymentType === 'stripe') {
+                @if (item.displayStatus !== 'Expired') {
+                  <span class="flex items-center gap-2" data-testid="individual-enrollment-auto-renew-toggle">
+                    <p-toggleSwitch
+                      [inputId]="'auto-renew-' + item.membership!.ID"
+                      [ngModel]="item.membership!.AutoRenew"
+                      (onChange)="onToggleAutoRenew(item, $event.checked)"
+                      [disabled]="isPending(item)" />
+                    <label class="font-medium" [attr.for]="'auto-renew-' + item.membership!.ID">Auto Renew</label>
+                  </span>
+                } @else {
+                  <span>
+                    Auto Renew: <span class="font-medium">{{ item.membership.AutoRenew ? 'Enabled' : 'Disabled' }}</span>
+                  </span>
+                }
+              }
+            </div>
+          } @else if (item.price !== null && item.price !== undefined) {
             <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600" data-testid="individual-enrollment-details">
               <span
                 ><span class="font-medium">${{ item.price }}</span> / year</span
               >
-              @if (item.membership) {
-                <span>
-                  Auto-renew:
-                  <span class="font-medium">{{ item.membership.AutoRenew ? 'On' : 'Off' }}</span>
-                </span>
-                @if (item.membership.EndDate) {
-                  <span>
-                    {{ item.displayStatus === 'Expired' ? 'Expired' : 'Renews' }}:
-                    <span class="font-medium">{{ item.membership.EndDate | date: 'mediumDate' : 'UTC' }}</span>
-                  </span>
-                }
-              }
             </div>
           }
 
@@ -101,3 +124,6 @@
     }
   }
 </div>
+
+<p-toast position="top-right" />
+<p-confirmDialog data-testid="individual-enrollment-confirm-dialog" />

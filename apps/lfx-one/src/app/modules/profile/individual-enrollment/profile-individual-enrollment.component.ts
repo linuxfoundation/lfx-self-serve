@@ -4,10 +4,16 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormsModule } from '@angular/forms';
 import { DisplayEnrollment, EnrollmentsState } from '@lfx-one/shared/interfaces';
 import { deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { ToastModule } from 'primeng/toast';
+import { finalize, take } from 'rxjs';
 
 import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
@@ -18,46 +24,164 @@ import { EnrollmentService } from '@services/enrollment.service';
 
 @Component({
   selector: 'lfx-profile-individual-enrollment',
-  imports: [ButtonComponent, CardComponent, DatePipe, EmptyStateComponent, TagComponent],
+  imports: [ButtonComponent, CardComponent, ConfirmDialogModule, DatePipe, EmptyStateComponent, FormsModule, TagComponent, ToggleSwitchModule, ToastModule],
   templateUrl: './profile-individual-enrollment.component.html',
   styleUrl: './profile-individual-enrollment.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [ConfirmationService, MessageService, DatePipe],
 })
 export class ProfileIndividualEnrollmentComponent {
   private readonly enrollmentService = inject(EnrollmentService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
+  private readonly datePipe = inject(DatePipe);
 
-  private readonly _state: Signal<EnrollmentsState | undefined> = this.initState();
+  protected readonly enrollments = signal<DisplayEnrollment[] | null | undefined>(undefined);
+  protected readonly enrollmentError = signal<string | null>(null);
+  protected readonly pendingIds = signal<Set<string>>(new Set());
 
-  protected readonly enrollments: Signal<DisplayEnrollment[] | null | undefined> = this.initEnrollments();
-  protected readonly enrollmentError: Signal<string | null> = this.initEnrollmentError();
+  /** Local overrides for auto-renew values applied optimistically before PATCH completes. */
+  private readonly autoRenewOverrides = signal<Map<string, boolean>>(new Map());
 
-  private initState(): Signal<EnrollmentsState | undefined> {
-    return toSignal(this.enrollmentService.getEnrollments());
+  protected readonly displayedEnrollments: Signal<DisplayEnrollment[] | null | undefined> = this.initDisplayedEnrollments();
+
+  public constructor() {
+    this.enrollmentService
+      .getEnrollments()
+      .pipe(takeUntilDestroyed())
+      .subscribe((state: EnrollmentsState) => {
+        if (state.kind === 'loading') {
+          this.enrollments.set(undefined);
+          this.enrollmentError.set(null);
+        } else if (state.kind === 'error') {
+          this.enrollments.set(null);
+          this.enrollmentError.set(state.message);
+        } else {
+          const base = environment.urls.enrollment;
+          this.enrollments.set(
+            state.items.map((item): DisplayEnrollment => {
+              const displayStatus = deriveEnrollmentStatus(item);
+              return {
+                ...item,
+                displayStatus,
+                severity: enrollmentStatusSeverity(displayStatus),
+                enrollHref: `${base}${item.ctaPath}`,
+                renewHref: `${base}${item.ctaPath}&renew=true`,
+              };
+            })
+          );
+          this.enrollmentError.set(null);
+        }
+      });
   }
 
-  private initEnrollments(): Signal<DisplayEnrollment[] | null | undefined> {
-    return computed(() => {
-      const s = this._state();
-      if (!s || s.kind === 'loading') return undefined;
-      if (s.kind === 'error') return null;
-      const base = environment.urls.enrollment;
-      return s.items.map((item): DisplayEnrollment => {
-        const displayStatus = deriveEnrollmentStatus(item);
-        return {
-          ...item,
-          displayStatus,
-          severity: enrollmentStatusSeverity(displayStatus),
-          enrollHref: `${base}${item.ctaPath}`,
-          renewHref: `${base}${item.ctaPath}&renew=true`,
-        };
+  protected isPending(item: DisplayEnrollment): boolean {
+    return item.membership ? this.pendingIds().has(item.membership.ID) : false;
+  }
+
+  protected onToggleAutoRenew(item: DisplayEnrollment, newValue: boolean): void {
+    if (!item.membership || this.isPending(item)) return;
+
+    const membershipId = item.membership.ID;
+
+    // Optimistically apply new value so the toggle does not flicker back
+    this.autoRenewOverrides.update((m) => {
+      const next = new Map(m);
+      next.set(membershipId, newValue);
+      return next;
+    });
+
+    const endDate = item.membership.EndDate ? (this.datePipe.transform(item.membership.EndDate, 'mediumDate', 'UTC') ?? '') : '';
+    const message = newValue
+      ? `This will Enable auto renew for your membership, your next payment will be charged on ${endDate}.`
+      : `This will Disable auto renew for your membership, your current membership will expire on ${endDate}.`;
+
+    this.confirmationService.confirm({
+      header: 'Update Membership',
+      message,
+      acceptLabel: newValue ? 'Enable' : 'Disable',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-primary p-button-sm',
+      rejectButtonStyleClass: 'p-button-text p-button-sm',
+      accept: () => void this.performAutoRenewUpdate(membershipId, newValue),
+      reject: () => this.clearAutoRenewOverride(membershipId),
+    });
+  }
+
+  private performAutoRenewUpdate(membershipId: string, newValue: boolean): void {
+    this.pendingIds.update((s) => new Set([...s, membershipId]));
+
+    this.enrollmentService
+      .updateAutoRenew(membershipId, newValue)
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.pendingIds.update((s) => {
+            const next = new Set(s);
+            next.delete(membershipId);
+            return next;
+          })
+        )
+      )
+      .subscribe({
+        next: () => {
+          this.syncAutoRenewValue(membershipId, newValue);
+          this.clearAutoRenewOverride(membershipId);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `Auto renew ${newValue ? 'enabled' : 'disabled'} successfully`,
+          });
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to update membership, please try again',
+          });
+          this.clearAutoRenewOverride(membershipId);
+        },
+      });
+  }
+
+  private syncAutoRenewValue(membershipId: string, autoRenew: boolean): void {
+    this.enrollments.update((list) => {
+      if (!list) return list;
+      return list.map((item) => {
+        if (item.membership?.ID === membershipId) {
+          const updatedMembership = { ...item.membership, AutoRenew: autoRenew };
+          const updatedItem = { ...item, membership: updatedMembership };
+          const displayStatus = deriveEnrollmentStatus(updatedItem);
+          return { ...updatedItem, displayStatus, severity: enrollmentStatusSeverity(displayStatus) };
+        }
+        return item;
       });
     });
   }
 
-  private initEnrollmentError(): Signal<string | null> {
+  private clearAutoRenewOverride(membershipId: string): void {
+    this.autoRenewOverrides.update((m) => {
+      const next = new Map(m);
+      next.delete(membershipId);
+      return next;
+    });
+  }
+
+  private initDisplayedEnrollments(): Signal<DisplayEnrollment[] | null | undefined> {
     return computed(() => {
-      const s = this._state();
-      return s?.kind === 'error' ? s.message : null;
+      const list = this.enrollments();
+      const overrides = this.autoRenewOverrides();
+      if (!list) return list;
+      return list.map((item) => {
+        const membershipId = item.membership?.ID;
+        if (membershipId && overrides.has(membershipId)) {
+          const autoRenew = overrides.get(membershipId)!;
+          const updatedMembership = { ...item.membership!, AutoRenew: autoRenew };
+          const displayStatus = deriveEnrollmentStatus({ ...item, membership: updatedMembership });
+          return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus) };
+        }
+        return item;
+      });
     });
   }
 }

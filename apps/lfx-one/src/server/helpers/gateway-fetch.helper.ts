@@ -14,16 +14,23 @@ export interface GatewayFetchOptions {
   service: string;
   errorMessage: string;
   errorCode: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  /** When provided, overrides req.apiGatewayToken as the Authorization token. */
+  bearerToken?: string;
 }
 
 /**
- * Fetches a URL via the API gateway using req.apiGatewayToken.
+ * Fetches a URL via the API gateway. Uses req.apiGatewayToken by default;
+ * pass options.bearerToken to override (e.g. for user-token-authenticated calls).
  * Handles timeout (504), network failure (502), non-OK upstream responses,
- * empty bodies, and invalid JSON — all surfaced as MicroserviceError.
+ * and invalid JSON — all surfaced as MicroserviceError.
+ * 204 responses return null without error; all other empty bodies are errors.
  */
 export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T> {
-  if (!req.apiGatewayToken) {
+  const token = options.bearerToken ?? req.apiGatewayToken;
+
+  if (!token) {
     throw new MicroserviceError(
       'API Gateway token not available — check API_GW_AUDIENCE env var, auth middleware config, and server logs for M2M token failures',
       503,
@@ -35,11 +42,16 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     );
   }
 
+  const hasBody = options.body !== undefined;
   let upstream: Response;
   try {
     upstream = await fetch(url, {
       method: options.method ?? 'GET',
-      headers: { Authorization: `Bearer ${req.apiGatewayToken}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       signal: AbortSignal.timeout(API_GW_TIMEOUT_MS),
     });
   } catch (error: unknown) {
@@ -85,6 +97,10 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   const rawBody = await upstream.text();
 
   if (!rawBody.trim()) {
+    if (upstream.status === 204) {
+      return null as T;
+    }
+
     logger.warning(req, options.operation, 'Upstream returned empty response body', {
       status: upstream.status,
       status_text: upstream.statusText,

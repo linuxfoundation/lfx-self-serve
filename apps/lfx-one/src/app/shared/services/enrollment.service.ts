@@ -5,7 +5,7 @@
 
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { EnrollmentsState, IndividualEnrollment } from '@lfx-one/shared/interfaces';
+import { EnrollmentsState, IndividualEnrollment, UpdateAutoRenewRequest } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, startWith } from 'rxjs';
 
 @Injectable({
@@ -26,5 +26,10 @@ export class EnrollmentService {
           })
       )
     );
+  }
+
+  public updateAutoRenew(membershipId: string, autoRenew: boolean): Observable<void> {
+    const body: UpdateAutoRenewRequest = { autorenew: autoRenew };
+    return this.http.patch<void>(`/api/enrollments/${membershipId}/auto-renew`, body);
   }
 }

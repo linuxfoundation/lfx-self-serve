@@ -6,6 +6,7 @@
 import { TLF_INDIVIDUAL_SUPPORTER } from '@lfx-one/shared/constants';
 import { EnrollmentMembership, IndividualEnrollment, RawMembership } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
+import { MicroserviceError } from '../errors';
 
 import { getApiGatewayBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -83,5 +84,43 @@ export class EnrollmentService {
         membership: membershipMap.get(TLF_INDIVIDUAL_SUPPORTER.productId) ?? null,
       },
     ];
+  }
+
+  public async updateAutoRenew(req: Request, membershipId: string, autoRenew: boolean): Promise<void> {
+    const username = await getUsernameFromAuth(req);
+
+    if (username && usernameMatches(username, DEMO_USER)) {
+      logger.debug(req, 'update_individual_enrollment_auto_renew', 'Skipping update for demo user');
+      return;
+    }
+
+    if (!req.bearerToken) {
+      throw new MicroserviceError('User bearer token not available', 401, 'BEARER_TOKEN_UNAVAILABLE', {
+        operation: 'update_individual_enrollment_auto_renew',
+        service: ENROLLMENT_SERVICE,
+      });
+    }
+
+    const baseUrl = getApiGatewayBaseUrl('update_individual_enrollment_auto_renew', ENROLLMENT_SERVICE);
+    const url = `${baseUrl}/member-service/v2/memberships/${encodeURIComponent(membershipId)}`;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const payload = {
+      AutoRenew: autoRenew,
+      NumberOfYearsRequired: autoRenew ? 1 : 0,
+      ...(autoRenew ? {} : { CancellationDate: today, CancellationReason: 'By User' }),
+    };
+
+    logger.debug(req, 'update_individual_enrollment_auto_renew', 'Updating membership auto-renew', { membershipId, autoRenew });
+
+    await gatewayFetch<null>(req, url, {
+      operation: 'update_individual_enrollment_auto_renew',
+      service: ENROLLMENT_SERVICE,
+      errorMessage: 'Membership auto-renew update failed',
+      errorCode: 'MEMBERSHIP_AUTO_RENEW_UPDATE_FAILED',
+      method: 'PATCH',
+      body: payload,
+      bearerToken: req.bearerToken,
+    });
   }
 }
