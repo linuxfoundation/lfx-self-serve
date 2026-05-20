@@ -191,7 +191,8 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('shows stats section with data', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-stats');
+    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await expect(page.locator('[data-testid="website-visits-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const statCards = page.locator('[data-testid="website-visits-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(2);
   });
@@ -220,8 +221,9 @@ test.describe('Email CTR Drawer', () => {
   });
 
   test('shows stats and chart sections', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-stats');
-    await expect(page.locator('[data-testid="email-ctr-drawer-chart-section"]')).toBeVisible();
+    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
+    await expect(page.locator('[data-testid="email-ctr-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.locator('[data-testid="email-ctr-drawer-email-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
@@ -243,7 +245,8 @@ test.describe('Paid Social Reach Drawer', () => {
   });
 
   test('shows ROAS and impressions charts', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-stats');
+    await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content');
+    await expect(page.locator('[data-testid="paid-social-reach-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.locator('[data-testid="paid-social-reach-drawer-roas-chart-section"]')).toBeVisible();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-chart-section"]')).toBeVisible();
   });
@@ -267,7 +270,8 @@ test.describe('Social Media Drawer', () => {
   });
 
   test('shows stats and platform breakdown', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-stats');
+    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
+    await expect(page.locator('[data-testid="social-media-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.locator('[data-testid="social-media-drawer-platforms-section"]')).toBeVisible();
   });
 
@@ -290,7 +294,8 @@ test.describe('Member Growth Drawer', () => {
   });
 
   test('shows stats section', async ({ page }) => {
-    await openDrawer(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-stats');
+    await openDrawer(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-content');
+    await expect(page.locator('[data-testid="member-acquisition-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const statCards = page.locator('[data-testid="member-acquisition-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(3);
   });
