@@ -57,7 +57,10 @@ export class InviteComponent implements OnInit {
       const parts = token.split('.');
       if (parts.length !== 3) return true;
       // Base64url → base64 padding for atob
-      const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+      const padded = parts[1]
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
+        .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
       const payload = JSON.parse(atob(padded)) as InviteTokenPayload;
       return Date.now() / 1000 > payload.exp;
     } catch {
