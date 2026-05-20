@@ -109,6 +109,12 @@ export class VotesDashboardComponent {
     this.resultsDrawerVisible.set(true);
   }
 
+  protected onCastFromResults(voteId: string): void {
+    this.selectedVoteId.set(voteId);
+    this.resultsDrawerVisible.set(false);
+    this.castDrawerVisible.set(true);
+  }
+
   // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
   protected onVoteSubmitted(): void {
     this.refresh$.next();

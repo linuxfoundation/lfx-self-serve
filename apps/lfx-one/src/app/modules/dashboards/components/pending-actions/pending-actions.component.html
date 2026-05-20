@@ -18,82 +18,113 @@
       data-testid="dashboard-pending-actions-list">
       @for (item of decoratedActions(); track item.rowKey) {
         <div
-          class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 transition-colors duration-300"
+          class="flex flex-col gap-2 px-4 py-3 transition-colors duration-300"
           [class]="item.rowClass"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
-          <!-- Label — 20% on sm+ -->
-          <div class="shrink-0 sm:w-1/5">
-            <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
-          </div>
-          <!-- Description — 60% on sm+; for RSVP rows the title links to the meeting page in a new tab. -->
-          @if (item.isRsvpInlineLink) {
-            <a
-              [href]="item.buttonLink"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:px-4 hover:text-blue-600 hover:underline inline-flex items-center gap-1.5"
-              [attr.title]="item.text"
-              [attr.aria-label]="'Open meeting in new tab: ' + item.text"
-              data-testid="dashboard-pending-actions-title">
-              <span class="sm:truncate">{{ item.text }}</span>
-              <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0" aria-hidden="true"></i>
-            </a>
-          } @else {
-            <p
-              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4"
-              [attr.title]="item.text"
-              data-testid="dashboard-pending-actions-title">
-              {{ item.text }}
-            </p>
-          }
-          <!-- Action button — 20% on sm+, right-aligned -->
-          <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-            @if (item.isRsvpInline) {
-              @if (item.isExpanded) {
-                @if (item.isLoading || !item.meeting) {
-                  <lfx-button
-                    size="small"
-                    severity="secondary"
-                    [outlined]="true"
-                    [disabled]="true"
-                    [label]="item.buttonText"
-                    icon="fa-light fa-spinner-third fa-spin"
-                    data-testid="dashboard-pending-actions-rsvp-loading" />
+          <!-- 3-column row: label + description + action -->
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0">
+            <!-- Label — 20% on sm+ -->
+            <div class="shrink-0 sm:w-1/5">
+              <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
+            </div>
+            <!-- Description — 60% on sm+; for RSVP rows the title links to the meeting page in a new tab. -->
+            @if (item.isRsvpInlineLink) {
+              <a
+                [href]="item.buttonLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:px-4 hover:text-blue-600 hover:underline inline-flex items-center gap-1.5"
+                [attr.title]="item.text"
+                [attr.aria-label]="'Open meeting in new tab: ' + item.text"
+                data-testid="dashboard-pending-actions-title">
+                <span class="sm:truncate">{{ item.text }}</span>
+                <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0" aria-hidden="true"></i>
+              </a>
+            } @else {
+              <p
+                class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4"
+                [attr.title]="item.text"
+                data-testid="dashboard-pending-actions-title">
+                {{ item.text }}
+              </p>
+            }
+            <!-- Action button — 20% on sm+, right-aligned -->
+            <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
+              @if (item.isRsvpInline) {
+                @if (item.isExpanded) {
+                  @if (item.isLoading || !item.meeting) {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      [disabled]="true"
+                      [label]="item.buttonText"
+                      icon="fa-light fa-spinner-third fa-spin"
+                      data-testid="dashboard-pending-actions-rsvp-loading" />
+                  } @else {
+                    <div data-testid="dashboard-pending-actions-rsvp-buttons">
+                      <lfx-rsvp-button-group
+                        [meeting]="item.meeting"
+                        [showHeader]="false"
+                        [occurrenceId]="item.occurrenceId"
+                        (rsvpChanged)="handleRsvpChanged(item)" />
+                    </div>
+                  }
                 } @else {
-                  <div data-testid="dashboard-pending-actions-rsvp-buttons">
-                    <lfx-rsvp-button-group
-                      [meeting]="item.meeting"
-                      [showHeader]="false"
-                      [occurrenceId]="item.occurrenceId"
-                      (rsvpChanged)="handleRsvpChanged(item)" />
-                  </div>
+                  <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
                 }
+              } @else if (item.isVoteInline) {
+                <div class="flex flex-col items-end gap-1">
+                  @if (!item.isVoteInlineExpanded) {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="handleActionClick(item)"
+                      [label]="item.buttonText"
+                      data-testid="dashboard-pending-actions-vote-button" />
+                    @if (item.buttonLink) {
+                      <a
+                        [href]="item.buttonLink"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-xs text-gray-500 hover:text-blue-600"
+                        data-testid="dashboard-pending-actions-vote-pcc-link">
+                        Open in My Votes →
+                      </a>
+                    }
+                  } @else if (item.isVoteLoading || !item.vote) {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      [disabled]="true"
+                      [label]="item.buttonText"
+                      icon="fa-light fa-spinner-third fa-spin"
+                      data-testid="dashboard-pending-actions-vote-loading" />
+                  }
+                  <!-- else: inline ballot is rendering below (action column intentionally empty); drawer-bound votes collapse expandedVoteKey synchronously in dispatchLoadedVote so no branch is needed here -->
+                </div>
+              } @else if (item.buttonLink) {
+                <lfx-button
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  rel="noopener noreferrer"
+                  [link]="true"
+                  [href]="item.buttonLink"
+                  target="_blank"
+                  (onClick)="handleActionClick(item)"
+                  [label]="item.buttonText" />
               } @else {
                 <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
               }
-            } @else if (item.isVoteInline) {
-              <lfx-button
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText"
-                data-testid="dashboard-pending-actions-vote-button" />
-            } @else if (item.buttonLink) {
-              <lfx-button
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                rel="noopener noreferrer"
-                [link]="true"
-                [href]="item.buttonLink"
-                target="_blank"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText" />
-            } @else {
-              <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
-            }
+            </div>
           </div>
+          <!-- Expanded inline ballot (full-width row below the 3-column section) -->
+          @if (item.isVoteInlineExpanded && item.vote && !item.voteUsesDrawer) {
+            <lfx-vote-ballot-inline [vote]="item.vote" (voteSubmitted)="handleVoteSubmitted(item)" (cancelled)="handleVoteCancelled(item)" />
+          }
         </div>
       }
     </div>
