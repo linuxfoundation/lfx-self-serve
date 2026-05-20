@@ -115,8 +115,6 @@
               <lfx-button label="Renew My Enrollment" severity="primary" [href]="item.renewHref" target="_blank" rel="noopener noreferrer" />
             } @else if (item.displayStatus === 'Expired') {
               <lfx-button label="Repurchase" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
-            } @else {
-              <lfx-button [label]="item.activeButtonText || 'Active'" severity="secondary" [disabled]="true" />
             }
           </div>
         </div>
