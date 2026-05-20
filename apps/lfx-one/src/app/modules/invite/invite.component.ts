@@ -48,7 +48,14 @@ export class InviteComponent implements OnInit {
         },
         error: (err) => {
           const code = err?.error?.code as string;
-          const reason = code === 'INVITE_EXPIRED' ? 'expired' : code === 'VALIDATION_ERROR' ? 'missing' : 'failed';
+          let reason: string;
+          if (code === 'INVITE_EXPIRED') {
+            reason = 'expired';
+          } else if (code === 'VALIDATION_ERROR') {
+            reason = 'missing';
+          } else {
+            reason = 'failed';
+          }
           this.redirectToError(reason);
         },
       });
