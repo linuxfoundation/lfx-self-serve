@@ -61,6 +61,16 @@ export class InviteController {
         );
       }
 
+      if (!payload.invite_uid || typeof payload.invite_uid !== 'string') {
+        return next(
+          ServiceValidationError.forField('token', 'Invite token is missing required claims', {
+            operation: 'accept_invite',
+            service: 'invite_controller',
+            path: req.path,
+          })
+        );
+      }
+
       const safeReturnUrl = this.validateReturnUrl(payload.return_url);
       if (!safeReturnUrl) {
         return next(
@@ -94,8 +104,12 @@ export class InviteController {
 
       const responseText = codec.decode(response.data);
       if (!responseText || responseText.startsWith('error:')) {
+        logger.warning(req, 'accept_invite', 'NATS handler rejected the invite acceptance', {
+          invite_uid: payload.invite_uid,
+          nats_response: responseText || '(empty)',
+        });
         return next(
-          new AuthorizationError(`Invite acceptance was rejected by the backend: ${responseText || '(empty response)'}`, {
+          new AuthorizationError('Invite could not be accepted', {
             operation: 'accept_invite',
             service: 'invite_controller',
             path: req.path,
