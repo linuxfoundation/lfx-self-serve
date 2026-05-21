@@ -8,6 +8,35 @@ import { expect, test } from '@playwright/test';
 const ENROLLMENT_URL = '/profile/individual-enrollment';
 const DATA_LOAD_TIMEOUT = 15_000;
 
+/** Minimal active enrollment fixture with a non-Stripe payment type — used for deterministic structural assertions. */
+const MOCK_NON_STRIPE = [
+  {
+    projectName: 'The Linux Foundation',
+    projectSlug: 'tlf',
+    ProductName: 'The Linux Foundation Individual Supporter',
+    projectDesc: 'Test project description.',
+    enrollButton: 'Enroll',
+    price: 99,
+    projectLogo: '',
+    benefits: ['Weekly newsletter'],
+    projectId: 'a0941000002wBz9AAE',
+    productSFID: 'a0I2M00000PQymQUAT',
+    productId: '01t2M000005wBb0QAE',
+    ctaPath: '?product=01t2M000005wBb0QAE&project=tlf',
+    activeButtonText: '',
+    activeButtonURL: '',
+    membership: {
+      Status: 'Active',
+      AutoRenew: false,
+      PurchaseDate: '2025-06-01',
+      EndDate: '2027-06-01',
+      Price: 99,
+      ID: 'non-stripe-robust-001',
+      ExtPaymentType: 'manual',
+    },
+  },
+];
+
 test.setTimeout(60_000);
 
 test.describe('Individual Enrollment — Structural Tests', () => {
@@ -52,14 +81,6 @@ test.describe('Individual Enrollment — Structural Tests', () => {
     });
   });
 
-  test.describe('Auto-renew row', () => {
-    test('should NOT show the toggle for non-Stripe memberships', async ({ page }) => {
-      // Demo user has ExtPaymentType: '836366' (not 'stripe') — toggle must not render
-      await page.getByTestId('individual-enrollment-card').first().waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT });
-      await expect(page.getByTestId('individual-enrollment-auto-renew-toggle')).not.toBeAttached();
-    });
-  });
-
   test.describe('Confirm dialog testid hook', () => {
     test('should have confirm dialog attached in DOM (not visible until triggered)', async ({ page }) => {
       await page.getByTestId('individual-enrollment-card').first().waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT });
@@ -87,5 +108,44 @@ test.describe('Individual Enrollment — Mocked State Tests', () => {
       await expect(page).not.toHaveURL(/auth0\.com/);
       await expect(page.getByTestId('individual-enrollment-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     });
+  });
+
+  test.describe('Auto-renew row', () => {
+    test('should NOT show the toggle for non-Stripe memberships', async ({ page }) => {
+      await page.route('**/api/enrollments', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_NON_STRIPE) });
+      });
+      await page.goto(ENROLLMENT_URL, { waitUntil: 'domcontentloaded' });
+      await expect(page).not.toHaveURL(/auth0\.com/);
+      await page.getByTestId('individual-enrollment-card').first().waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('individual-enrollment-auto-renew-toggle')).not.toBeAttached();
+    });
+  });
+
+  test.describe('Loading skeleton', () => {
+    test('should show loading skeleton while API is pending', async ({ page }) => {
+      await page.route('**/api/enrollments', async (route) => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_NON_STRIPE) });
+      });
+      await page.goto(ENROLLMENT_URL, { waitUntil: 'domcontentloaded' });
+      await expect(page).not.toHaveURL(/auth0\.com/);
+      await expect(page.getByTestId('individual-enrollment-loading')).toBeVisible({ timeout: 5000 });
+    });
+  });
+});
+
+test.describe('Individual Enrollment — Tab Navigation', () => {
+  test('should navigate to individual-enrollment via Profile tabs', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.route('**/api/enrollments', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_NON_STRIPE) });
+    });
+    await page.goto('/profile', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('profile-tabs-desktop')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('profile-tab-individual-enrollment').click();
+    await expect(page).toHaveURL(/\/profile\/individual-enrollment/);
+    await expect(page.getByTestId('individual-enrollment-page')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
   });
 });
