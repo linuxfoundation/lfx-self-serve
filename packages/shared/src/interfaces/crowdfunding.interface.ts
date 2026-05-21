@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
+import { DonutRing } from './donut-chart.interface';
 
 export type CrowdfundingInitiativeStatus = 'active' | 'pending' | 'closed';
 
@@ -30,6 +31,14 @@ export interface AllocationItem {
   spent: number;
   total: number;
   pct: number;
+}
+
+export interface AllocItemWithMeta extends AllocationItem {
+  donated: number;
+  formattedTotal: string;
+  formattedDonated: string;
+  formattedSpent: string;
+  rings: DonutRing[];
 }
 
 export interface DonationTransaction {
@@ -90,4 +99,12 @@ export interface PaymentMethod {
   brand: string;
   last4: string;
   expiry: string;
+}
+
+export interface InitiativeMenuItem {
+  label?: string;
+  icon?: string;
+  description?: string;
+  danger?: boolean;
+  command?: (event: unknown) => void;
 }
