@@ -5,6 +5,7 @@ import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { InviteTokenPayload } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
+import { errors as JoseErrors, JWK, JWT } from 'jose';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
@@ -20,8 +21,8 @@ export class InviteController {
 
   /**
    * POST /api/invite/accept
-   * Decodes the invite JWT, publishes lfx.invite.accepted via NATS request-reply, and
-   * returns the return_url so the client can navigate to the intended resource.
+   * Verifies the invite JWT signature (HS256), publishes lfx.invite.accepted via NATS
+   * request-reply, and returns the return_url so the client can navigate to the intended resource.
    */
   public async acceptInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'accept_invite');
@@ -39,24 +40,25 @@ export class InviteController {
         );
       }
 
-      const payload = this.decodeInviteToken(token);
-      if (!payload) {
+      let payload: InviteTokenPayload;
+      try {
+        payload = this.verifyInviteToken(token);
+      } catch (err) {
+        if (err instanceof JoseErrors.JWTExpired) {
+          return next(
+            new AuthorizationError('Invite link has expired', {
+              operation: 'accept_invite',
+              service: 'invite_controller',
+              path: req.path,
+              code: 'INVITE_EXPIRED',
+            })
+          );
+        }
         return next(
-          ServiceValidationError.forField('token', 'Invite token is malformed', {
+          ServiceValidationError.forField('token', 'Invite token is invalid', {
             operation: 'accept_invite',
             service: 'invite_controller',
             path: req.path,
-          })
-        );
-      }
-
-      if (typeof payload.exp !== 'number' || !isFinite(payload.exp) || Date.now() / 1000 > payload.exp) {
-        return next(
-          new AuthorizationError('Invite link has expired', {
-            operation: 'accept_invite',
-            service: 'invite_controller',
-            path: req.path,
-            code: 'INVITE_EXPIRED',
           })
         );
       }
@@ -129,18 +131,18 @@ export class InviteController {
     }
   }
 
-  private decodeInviteToken(token: string): InviteTokenPayload | null {
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) return null;
-      return JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as InviteTokenPayload;
-    } catch {
-      return null;
+  // Verifies the JWT signature using HS256 and the INVITE_JWT_SECRET env var.
+  // Throws JoseErrors.JWTExpired for expired tokens and other JoseErrors for invalid/tampered ones.
+  private verifyInviteToken(token: string): InviteTokenPayload {
+    const secret = process.env['INVITE_JWT_SECRET'];
+    if (!secret) {
+      throw new Error('INVITE_JWT_SECRET is not configured');
     }
+    const key = JWK.asKey(Buffer.from(secret, 'base64'));
+    return JWT.verify(token, key, { algorithms: ['HS256'] }) as InviteTokenPayload;
   }
 
-  // Only LFX-owned domains are valid redirect destinations — prevents open-redirect if
-  // an unverified token ever carries a crafted return_url.
+  // Only LFX-owned domains are valid redirect destinations — prevents open-redirect.
   private validateReturnUrl(url: string): string | null {
     try {
       const parsed = new URL(url);
