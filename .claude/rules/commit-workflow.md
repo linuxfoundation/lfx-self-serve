@@ -12,6 +12,7 @@ paths:
 - Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `revert` — `chore` is **not** accepted (commitlint uses `@commitlint/config-angular`; use the closest specific type instead: `build` for deps/tooling, `ci` for pipelines, `refactor` for cleanup, `docs` for doc-only changes)
 - Scope should be lowercase and describe the affected area (e.g., `auth`, `ui`, `api`, `docs`) following Angular scope conventions
 - Use present tense, imperative mood: "add feature" not "added feature"
+- **No Claude co-author trailers** — do NOT append `Co-Authored-By: Claude ...` (or any Claude variant) to commit messages. Repo policy treats authorship as human-only; AI-assistance is implicit in the workflow and does not get a Git trailer.
 - Examples:
   - `feat(auth): add OAuth2 integration`
   - `fix(ui): resolve mobile button alignment`

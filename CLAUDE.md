@@ -12,6 +12,8 @@ LFX One is a Turborepo monorepo containing an Angular 20 SSR application with st
 
 You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/develop` skill.
 
+**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, invoke the `lfx-self-serve-code-review` and `lfx-self-serve-learnings-review` skills in parallel — each skill body launches a background subagent with the full review playbook (code-review uses `code-reviewer`; learnings-review uses `general-purpose` to keep the KB-only gate uncontested — see Work cycle scope rules). Default to delegating when the task is wide, parallel, or read-heavy.
+
 ## Domain language
 
 Use these naturally — do not paraphrase:
@@ -155,7 +157,7 @@ Utilities split into **generic** helpers (date/time, string, url, file, form, ht
 ### Commits & PRs
 
 - Follow Angular commit format: `type(scope): description`. Valid types: `feat, fix, docs, style, refactor, perf, test, build, ci, revert` — **`chore` is not allowed** by commitlint.
-- Commit header is capped at **72 characters** (commitlint `header-max-length`).
+- Commit header targets **≤72 characters** as a team style. Commitlint hard-fails at >100 (`@commitlint/config-angular` default; the repo doesn't override `header-max-length`). 73–100 will land but is a SHOULD_FIX in the PR-shape check.
 - Always use `git commit --signoff -S` — both DCO sign-off (`--signoff`) and GPG signing (`-S`) are enforced by repo policy. See `.claude/rules/commit-workflow.md` for setup.
 - Pre-commit runs `./check-headers.sh`, `npx lint-staged` (prettier + lint on staged files), then repo-wide `yarn format:check`, `yarn lint:check`, and `yarn check-types`. Only `lint-staged` is scoped to staged files — the rest run on the whole repo. You don't need to run `yarn format` manually; `lint-staged` already prettifies staged files. If a commit fails, fix the reported issue and retry.
 - See `.claude/rules/commit-workflow.md` for PR title / sizing / JIRA details.
@@ -248,6 +250,50 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on the `
 | [E2E Testing](docs/architecture/testing/e2e-testing.md)                        | Dual architecture testing                                        |
 | [Testing Best Practices](docs/architecture/testing/testing-best-practices.md)  | Testing patterns and guide                                       |
 
+## Work cycle — post-commit and pre-PR reviews
+
+> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, invoke the `lfx-self-serve-code-review` AND `lfx-self-serve-learnings-review` skills in parallel via the Skill tool — each skill body launches its background subagent — then keep working while they run. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
+>
+> **Once the PR is open, do NOT invoke the review skill pair on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking skill-launched audits on top adds latency without proportional signal. The pair is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
+
+### Post-commit (pre-PR phase, after every commit, parallel, asynchronous)
+
+1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
+2. **Immediately invoke both review skills in parallel — no args.** The default audits the commit you just made. Issue two **Skill tool calls in a single message**:
+   - **`lfx-self-serve-code-review`** — general code review on the diff (Step 2, native disposition) + convention audit (Step 3) against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts (Step 4). Skill body launches a `code-reviewer` subagent with `run_in_background: true`. Renders a markdown review with General review / Upstream API / Repo conventions sections.
+   - **`lfx-self-serve-learnings-review`** — empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Skill body launches a `general-purpose` subagent with `run_in_background: true`. Renders a markdown review.
+
+   **Launcher discipline — non-negotiable:** pass each skill body **verbatim** as the Agent `prompt` parameter. The playbook contains the subagent's own routing logic; trimming or summarizing it breaks the cross-check discipline (subagent can't quote rules not in its prompt) and drifts severity calibration.
+
+3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
+4. **When a review pair returns:** read both reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
+5. **It's fine to keep committing while reviews are still running.** Each pair audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get two separate reports — one per commit. Read both as they arrive and address findings in subsequent commits.
+
+### Pre-PR (drain the queue, sweep cumulative state, then open)
+
+When the work is "done" — no more code commits planned:
+
+1. **Wait for every running review to complete.** Each pair audits one commit, so the pair invoked by every recent commit needs to have returned before you continue.
+2. **If any returned pair flags Critical or reasonable Important:** add a fix commit, invoke the pair again on the new state, wait. Loop until the pair returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
+3. **Full-branch sweep — only if the branch has more than one commit.** Invoke both review skills again in parallel via the Skill tool, with the `branch` keyword so each audits the branch's diff against main (not just the latest commit):
+   - **`lfx-self-serve-code-review`**, args: `"branch"`.
+   - **`lfx-self-serve-learnings-review`**, args: `"branch"`.
+
+   Same **launcher discipline** as post-commit: pass each skill body verbatim, args appended at the end. Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit pair. Address any new findings, then re-run the sweep until clean.
+
+4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, JIRA, conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit pair and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
+5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
+6. **Only then push and open the PR.** (Reviewers run `/lfx-review-pr` against the open PR — that should not be your first standards check.)
+
+### Post-PR iteration (responding to bot feedback on an open PR)
+
+1. Wait for CodeRabbit + Copilot to comment after each push.
+2. Triage every Critical and reasonable Important finding — verify each against current code (bots can quote stale paths or APIs).
+3. Roll fixes into a single `fix(review): ...` commit. Reply + resolve each thread (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies` + the `resolveReviewThread` GraphQL mutation).
+4. Push. Repeat until clean.
+
+After `/compact`, re-invoke `/develop` or the relevant convention skill if continuing work that depends on it.
+
 ## What NOT to do
 
 - ❌ Edit a file without re-reading it if 5+ turns have passed
@@ -255,11 +301,11 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on the `
 - ❌ Hard-code brand hex values (reference `lfxColors` scales)
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
+- ❌ Open a PR without invoking the post-commit review pair (`lfx-self-serve-code-review` + `lfx-self-serve-learnings-review` skills, in parallel) after every pre-PR commit and draining the queue clean — both reviews are non-negotiable pre-PR
+- ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the pair is no longer invoked)
+- ❌ Open a multi-commit PR without running the pre-PR full-branch sweep (`branch` arg) — per-commit reviews can miss cross-commit drift
+- ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
 - ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
 - ❌ Commit and claim "done" before `yarn build` passes
 - ❌ Re-introduce Figma references — design source is HTML/GitHub
 - ❌ Edit `CLAUDE.md` or other `lfx-preflight` protected files without code-owner review
-
-## Pre-PR validation
-
-Before saying "I'm done", invoke the `/preflight` skill — it runs license-header, format, lint, build, protected-file, and commit-signoff checks against this repo's specific rules.

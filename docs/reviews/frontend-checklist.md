@@ -282,6 +282,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 - Use `inject(HttpClient)` for HTTP — never constructor injection
 - GET requests use `catchError(() => of(defaultValue))` to prevent error propagation
 - POST/PUT/DELETE use `take(1)` for one-shot subscriptions
+- **Every `HttpClient` call targets a real `/api/...` endpoint** that exists in the backend routes — no mock data, placeholder URLs, or fabricated paths. API paths are relative (`/api/...`); the proxy handles routing.
 
 **Violation:**
 

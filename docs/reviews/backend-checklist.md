@@ -300,7 +300,43 @@ When a PR modifies any of these, flag as NIT with the hook's warning reason atta
 
 ---
 
-## 12. AI service environment variables (SHOULD FIX)
+## 12. MicroserviceProxyService for external calls (SHOULD FIX)
+
+All external API calls from server services must go through `MicroserviceProxyService.proxyRequest()`. Never use raw `fetch`, `axios`, or `http` for upstream microservice calls.
+
+**Path discipline (Query Service in particular):**
+
+- **Reads** use `/query/resources` (and related read paths) — returns a paginated `{ resources, page_token }` envelope.
+- **Writes** use `/itx/...` paths — transaction endpoints for create/update/delete.
+
+Mixing these — e.g. a write going through `/query/...` or a read fabricating an `/itx/...` path — is always a finding.
+
+**Violation:**
+
+```typescript
+// Raw fetch bypassing the proxy
+const response = await fetch(`https://upstream/api/meetings/${id}`);
+
+// Write going through a read path
+await this.microserviceProxy.proxyRequest(req, '/query/resources/meetings', 'POST', body);
+```
+
+**Fix:**
+
+```typescript
+// Read — /query/resources
+const { resources } = await this.microserviceProxy.proxyRequest(req, '/query/resources', 'GET', undefined, {
+  type: 'meeting',
+  filters: `project_id:${projectId}`,
+});
+
+// Write — /itx/...
+await this.microserviceProxy.proxyRequest(req, `/itx/meetings/${id}`, 'PUT', body);
+```
+
+---
+
+## 13. AI service environment variables (SHOULD FIX)
 
 The AI service requires specific env vars for the LiteLLM proxy and M2M auth:
 
