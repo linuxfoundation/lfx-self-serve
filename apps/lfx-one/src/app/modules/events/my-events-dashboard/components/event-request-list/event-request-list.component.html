@@ -60,6 +60,11 @@
             Application Date <i [class]="sortIcons()['APPLICATION_DATE']"></i>
           </button>
         </th>
+        @if (requestType() === 'travel-fund') {
+          <th scope="col" [attr.data-testid]="config().testIdPrefix + '-deadline-header'">
+            <span class="text-xs text-gray-500 font-medium">Deadline</span>
+          </th>
+        }
         <th scope="col" class="text-right">Status</th>
       </tr>
     </ng-template>
@@ -84,6 +89,17 @@
             request.applicationDate
           }}</span>
         </td>
+        @if (requestType() === 'travel-fund') {
+          <td>
+            <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-deadline-' + request.id">
+              @if (request.travelFundEndDate) {
+                {{ request.travelFundEndDate | date: 'MMM d, y' }}
+              } @else {
+                —
+              }
+            </span>
+          </td>
+        }
         <td>
           <div class="flex justify-end">
             <lfx-tag

@@ -73,6 +73,7 @@ export class EventsController {
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
       const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
+      const excludePastTravelFundDeadline = req.query['excludePastTravelFundDeadline'] === 'true' ? true : undefined;
 
       const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
@@ -110,6 +111,7 @@ export class EventsController {
         affiliatedProjectSlugs,
         isVisaRequestAccepted,
         isTravelFundRequestAccepted,
+        excludePastTravelFundDeadline,
       });
 
       logger.success(req, 'get_my_events', startTime, {
