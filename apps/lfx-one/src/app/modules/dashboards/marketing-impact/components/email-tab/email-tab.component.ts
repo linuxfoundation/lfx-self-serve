@@ -5,9 +5,10 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
-import type { EmailCtrResponse, EmailTypeRow, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
+import type { EmailCtrResponse, EmailTypeRow, MarketingImpactFocusProgram, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
 
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
@@ -24,6 +25,7 @@ export class EmailTabComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
@@ -39,16 +41,18 @@ export class EmailTabComponent {
   // === Private Initializers ===
   private initEmailData(): Signal<EmailCtrResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$]).pipe(
+        switchMap(([slug, focus]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getEmailCtr(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getEmailCtr(slug, classification).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );

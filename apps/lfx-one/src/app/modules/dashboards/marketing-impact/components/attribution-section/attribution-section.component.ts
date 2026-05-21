@@ -12,7 +12,13 @@ import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
 
-import type { AttributionChannelRow, AttributionModel, AttributionModelOption, MarketingAttributionResponse } from '@lfx-one/shared/interfaces';
+import type {
+  AttributionChannelRow,
+  AttributionModel,
+  AttributionModelOption,
+  MarketingAttributionResponse,
+  MarketingImpactFocusProgram,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-attribution-section',
@@ -35,6 +41,7 @@ export class AttributionSectionComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === Forms ===
   protected readonly modelForm = this.fb.nonNullable.group({

@@ -1885,10 +1885,16 @@ export class ProjectService {
    * Queries ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY and ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_PROJECT
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG (aggregates all projects under the foundation)
    */
-  public async getWebActivitiesSummary(foundationSlug: string): Promise<WebActivitiesSummaryResponse> {
-    logger.debug(undefined, 'get_web_activities_summary', 'Fetching web activities summary from Snowflake', { foundation_slug: foundationSlug });
+  public async getWebActivitiesSummary(foundationSlug: string, classification?: string): Promise<WebActivitiesSummaryResponse> {
+    logger.debug(undefined, 'get_web_activities_summary', 'Fetching web activities summary from Snowflake', {
+      foundation_slug: foundationSlug,
+      classification,
+    });
 
     try {
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
+
       // Query 1: Total sessions & page views per domain classification
       const summaryQuery = `
         SELECT
@@ -1897,11 +1903,14 @@ export class ProjectService {
           SUM(TOTAL_PAGE_VIEWS_LAST_30_DAYS) AS TOTAL_PAGE_VIEWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
         GROUP BY LF_SUB_DOMAIN_CLASSIFICATION
         ORDER BY TOTAL_SESSIONS DESC
       `;
 
       // Query 2: Weekly sessions for trend chart (last 6 months)
+      // WEB_ACTIVITIES_BY_PROJECT does not have LF_SUB_DOMAIN_CLASSIFICATION,
+      // so the trend chart always shows all-program totals.
       const dailyQuery = `
         SELECT
           DATE_TRUNC('WEEK', ACTIVITY_DATE) AS ACTIVITY_DATE,
@@ -1916,6 +1925,7 @@ export class ProjectService {
       const [summaryResult, dailyResult] = await Promise.all([
         this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number; TOTAL_PAGE_VIEWS: number }>(summaryQuery, [
           foundationSlug,
+          ...classificationParams,
         ]),
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, [foundationSlug]),
       ]);
@@ -1951,10 +1961,16 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG
    * @returns Email CTR response with monthly trend and change percentage
    */
-  public async getEmailCtr(foundationSlug: string): Promise<EmailCtrResponse> {
-    logger.debug(undefined, 'get_email_ctr', 'Fetching email CTR from Snowflake Platinum tables', { foundation_slug: foundationSlug });
+  public async getEmailCtr(foundationSlug: string, classification?: string): Promise<EmailCtrResponse> {
+    logger.debug(undefined, 'get_email_ctr', 'Fetching email CTR from Snowflake Platinum tables', {
+      foundation_slug: foundationSlug,
+      classification,
+    });
 
     try {
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
+
       // Query 1: KPI card — current CTR + MoM change from email_ctr_summary
       const summaryQuery = `
         SELECT
@@ -1963,6 +1979,7 @@ export class ProjectService {
           CTR_MOM_CHANGE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
       `;
 
       // Query 2: Monthly CTR trend (bar chart, last 6 months) from email_ctr_by_month
@@ -1977,6 +1994,7 @@ export class ProjectService {
           SUM(TOTAL_OPENS) AS TOTAL_OPENS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
           AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         GROUP BY PUBLISHED_MONTH, PUBLISHED_MONTH_DATE
         ORDER BY PUBLISHED_MONTH_DATE ASC
@@ -1990,6 +2008,7 @@ export class ProjectService {
           CTR_LAST_6_MONTHS AS AVG_CTR
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
         ORDER BY CTR_LAST_6_MONTHS DESC
       `;
 
@@ -2011,12 +2030,18 @@ export class ProjectService {
       `;
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
-        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [foundationSlug]),
+        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [
+          foundationSlug,
+          ...classificationParams,
+        ]),
         this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
           monthlyQuery,
-          [foundationSlug]
+          [foundationSlug, ...classificationParams]
         ),
-        this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [foundationSlug]),
+        this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [
+          foundationSlug,
+          ...classificationParams,
+        ]),
         this.snowflakeService
           .execute<{
             MARKETING_EMAIL_NAME: string;

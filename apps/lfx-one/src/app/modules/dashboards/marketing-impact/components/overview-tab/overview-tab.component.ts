@@ -4,11 +4,12 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
-import type { OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
+import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
@@ -26,6 +27,7 @@ export class OverviewTabComponent {
   public readonly foundationSlug = input<string | undefined>();
   public readonly selectedMonth = input.required<string>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
@@ -39,19 +41,21 @@ export class OverviewTabComponent {
   // === Private Initializers ===
   private initOverviewKpiData(): Signal<OverviewKpiData> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$]).pipe(
+        switchMap(([slug, focus]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ revenueImpact: null, brandReach: null, emailCtr: null });
           }
           this.loading.set(true);
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
           return forkJoin({
             revenueImpact: this.analyticsService.getRevenueImpact(slug).pipe(catchError(() => of(null))),
             brandReach: this.analyticsService.getBrandReach(slug).pipe(catchError(() => of(null))),
-            emailCtr: this.analyticsService.getEmailCtr(slug).pipe(catchError(() => of(null))),
+            emailCtr: this.analyticsService.getEmailCtr(slug, classification).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
