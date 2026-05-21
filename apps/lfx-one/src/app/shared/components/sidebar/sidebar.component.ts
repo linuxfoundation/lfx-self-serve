@@ -106,9 +106,7 @@ export class SidebarComponent {
     }))
   );
 
-  // Stores user-toggled group states alongside the items reference they were built against.
-  // When items changes (lens switch), itemsRef no longer matches, so expandedGroupStates
-  // falls back to each item's default — no effect() needed.
+  // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
     itemsRef: [],
     overrides: {},
