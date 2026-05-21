@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="dashboard-organization-involvement-section">
+  <!-- Title row -->
+  <div class="flex items-center gap-3 mb-3">
+    <div class="flex items-center gap-2 shrink-0">
+      <h2 class="text-base font-medium text-gray-900">{{ accountName() }}'s Involvement</h2>
+      <span class="text-sm text-gray-500">{{ subtitleText() }}</span>
+    </div>
+    <div class="flex-1 border-t border-gray-200 self-center"></div>
+    <!-- Carousel Controls -->
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        (click)="scrollShadowDirective()?.scrollLeft()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="dashboard-involvement-scroll-left"
+        aria-label="Scroll left">
+        <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+      </button>
+      <button
+        type="button"
+        (click)="scrollShadowDirective()?.scrollRight()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="dashboard-involvement-scroll-right"
+        aria-label="Scroll right">
+        <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+      </button>
+    </div>
+  </div>
+  <!-- Filter Pills row -->
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="handleFilterChange($event)"></lfx-filter-pills>
+  </div>
+
+  <div class="relative overflow-hidden">
+    <div lfxScrollShadow class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="dashboard-involvement-carousel">
+      @for (metric of primaryMetrics(); track metric.testId) {
+        <lfx-metric-card
+          [title]="metric.title"
+          [icon]="metric.icon"
+          [testId]="metric.testId"
+          [chartType]="metric.chartType"
+          [chartData]="metric.chartData"
+          [chartOptions]="metric.chartOptions"
+          [value]="metric.value"
+          [subtitle]="metric.subtitle"
+          [loading]="metric.loading"
+          [clickable]="false"></lfx-metric-card>
+      }
+    </div>
+
+    <!-- Right shadow fade -->
+    <div
+      class="absolute top-0 bottom-0 right-0 w-32 z-10 pointer-events-none bg-gradient-to-r from-transparent to-gray-50 transition-opacity duration-200"
+      [class.opacity-0]="!scrollShadowDirective()?.showRightShadow()"
+      data-testid="dashboard-involvement-shadow-right"
+      aria-hidden="true"></div>
+
+    <!-- Left shadow fade -->
+    <div
+      class="absolute top-0 bottom-0 left-0 w-32 z-10 pointer-events-none bg-gradient-to-l from-transparent to-gray-50 transition-opacity duration-200"
+      [class.opacity-0]="!scrollShadowDirective()?.showLeftShadow()"
+      data-testid="dashboard-involvement-shadow-left"
+      aria-hidden="true"></div>
+  </div>
+</section>
