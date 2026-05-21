@@ -77,22 +77,44 @@
           [foundationSlug]="foundationSlug()"
           [selectedMonth]="selectedMonth()"
           [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-overview-tab" />
       } @else if (selectedTab() === 'attribution') {
-        <lfx-attribution-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-attribution-tab" />
+        <lfx-attribution-section
+          [foundationSlug]="foundationSlug()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-attribution-tab" />
       } @else if (selectedTab() === 'performance-marketing') {
         <lfx-performance-marketing-tab
           [foundationSlug]="foundationSlug()"
           [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-performance-marketing-tab" />
       } @else if (selectedTab() === 'email') {
-        <lfx-email-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-email-tab" />
+        <lfx-email-tab
+          [foundationSlug]="foundationSlug()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-email-tab" />
       } @else if (selectedTab() === 'web-activity') {
-        <lfx-web-activity-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-web-activity-tab" />
+        <lfx-web-activity-tab
+          [foundationSlug]="foundationSlug()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-web-activity-tab" />
       } @else if (selectedTab() === 'social-accounts') {
-        <lfx-social-accounts-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-social-accounts-tab" />
+        <lfx-social-accounts-tab
+          [foundationSlug]="foundationSlug()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-social-accounts-tab" />
       } @else if (selectedTab() === 'social-listening') {
-        <lfx-social-listening-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-social-listening-tab" />
+        <lfx-social-listening-tab
+          [foundationSlug]="foundationSlug()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-social-listening-tab" />
       } @else {
         <div
           class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-16"

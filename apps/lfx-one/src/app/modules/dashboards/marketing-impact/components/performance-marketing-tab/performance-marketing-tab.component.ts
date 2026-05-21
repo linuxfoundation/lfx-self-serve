@@ -12,6 +12,7 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
 import type {
   FilterPillOption,
   FunnelStage,
+  MarketingImpactFocusProgram,
   PaidProjectPerformance,
   PaidProjectRow,
   PerformanceSummaryKpi,
@@ -50,6 +51,7 @@ export class PerformanceMarketingTabComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === Constants ===
   protected readonly funnelOptions: FilterPillOption[] = FUNNEL_STAGE_OPTIONS;
