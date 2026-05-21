@@ -6,6 +6,8 @@
 import {
   CertifiedEmployeesMonthlyRow,
   CertifiedEmployeesResponse,
+  OrgLensAccountContextResponse,
+  OrgLensAccountContextRow,
   FoundationCompanyBusFactorResponse,
   FoundationCompanyBusFactorRow,
   MembershipTierResponse,
@@ -869,5 +871,63 @@ export class OrganizationService {
     }));
 
     return { programs };
+  }
+
+  /**
+   * Resolve LFX One Org Lens account context for a set of Salesforce
+   * accounts (typically the user's persona-authorised organizations).
+   *
+   * Single-table read against
+   * platinum_lfx_one_org_lens_account_context — one denormalised
+   * platinum row per account_id with display attributes, Crowd.dev
+   * mapping, and the highest active corporate membership tier
+   * pre-joined inside dbt. No application-layer joins, no conglomerate
+   * expansion (the UI renders a flat list).
+   */
+  public async getOrgLensAccountContext(accountIds: string[]): Promise<OrgLensAccountContextResponse[]> {
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = accountIds.map(() => '?').join(',');
+    const query = `
+      SELECT
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        ACCOUNT_SLUG,
+        LOGO_URL,
+        CDEV_ORG_ID,
+        CDEV_ORG_NAME,
+        CDEV_ORG_LOGO,
+        IS_MEMBER,
+        MEMBER_ACCOUNT_TYPE,
+        MEMBERSHIP_ID,
+        MEMBERSHIP_PROJECT_ID,
+        MEMBERSHIP_PROJECT_NAME,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        MEMBERSHIP_TIER_CLASS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
+      WHERE ACCOUNT_ID IN (${placeholders})
+      ORDER BY ACCOUNT_NAME
+    `;
+
+    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, accountIds);
+
+    return result.rows.map((row) => ({
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME,
+      accountSlug: row.ACCOUNT_SLUG,
+      logoUrl: row.LOGO_URL,
+      cdevOrgId: row.CDEV_ORG_ID,
+      cdevOrgName: row.CDEV_ORG_NAME,
+      cdevOrgLogo: row.CDEV_ORG_LOGO,
+      isMember: row.IS_MEMBER,
+      memberAccountType: row.MEMBER_ACCOUNT_TYPE,
+      membershipId: row.MEMBERSHIP_ID,
+      membershipProjectId: row.MEMBERSHIP_PROJECT_ID,
+      membershipProjectName: row.MEMBERSHIP_PROJECT_NAME,
+      membershipTierDisplayName: row.MEMBERSHIP_TIER_DISPLAY_NAME,
+      membershipTierClass: row.MEMBERSHIP_TIER_CLASS,
+    }));
   }
 }
