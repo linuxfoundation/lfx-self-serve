@@ -1,0 +1,88 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="initiative-detail-header">
+  <!-- Header body -->
+  <div class="flex items-start gap-4 p-6" data-testid="initiative-header-body">
+    <!-- Avatar -->
+    <lfx-avatar [label]="initiative().name" shape="square" size="xlarge" [styleClass]="avatarStyleClass()" [ariaLabel]="fundTypeLabel() + ' initiative icon'" />
+
+    <!-- Content: type label, title+status, desc, tags -->
+    <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+      <span class="text-xs font-semibold flex items-center gap-1" [class]="fundTypeColorClass()">
+        <i [class]="fundTypeIcon()" aria-hidden="true"></i>
+        {{ fundTypeLabel() }}
+      </span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-xl font-bold text-gray-900">{{ initiative().name }}</h1>
+        @if (initiative().status === 'active') {
+          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"> Active </span>
+        } @else if (initiative().status === 'pending') {
+          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"> Pending </span>
+        } @else {
+          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"> Closed </span>
+        }
+      </div>
+      <p class="text-sm text-gray-500">{{ initiative().description }}</p>
+      @if (initiative().tags.length) {
+        <div class="flex items-center gap-1.5 flex-wrap mt-1" data-testid="initiative-tags">
+          @for (tag of initiative().tags; track tag) {
+            <lfx-tag [value]="tag" severity="secondary" [rounded]="true" />
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2 flex-shrink-0 ml-4" data-testid="initiative-header-actions">
+      @if (initiative().publicUrl) {
+        <a
+          [href]="initiative().publicUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-300 bg-white rounded-md px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"
+          data-testid="initiative-view-public-btn">
+          View Public Page
+          <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+        </a>
+      }
+      <lfx-button
+        label="Settings"
+        icon="fa-light fa-gear"
+        severity="secondary"
+        size="small"
+        data-testid="initiative-settings-btn"
+        (click)="settingsClick.emit()" />
+      <lfx-button icon="fa-light fa-ellipsis" severity="secondary" size="small" data-testid="initiative-more-btn" (click)="onMoreClick($event)" />
+      <lfx-menu #moreMenu [model]="moreMenuItems" [popup]="true" appendTo="body" styleClass="w-72">
+        <ng-template #item let-item>
+          <button class="flex flex-col gap-0.5 w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors" [class.hover:bg-red-50]="item.danger">
+            <div class="flex items-center gap-2 text-sm font-medium" [class.text-gray-800]="!item.danger" [class.text-red-600]="item.danger">
+              <i [class]="item.icon" aria-hidden="true"></i>
+              {{ item.label }}
+            </div>
+            @if (item.description) {
+              <div class="text-xs text-gray-400 leading-relaxed pl-5">{{ item.description }}</div>
+            }
+          </button>
+        </ng-template>
+      </lfx-menu>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="border-t border-gray-200 flex items-center px-2" data-testid="initiative-tab-bar">
+    @for (tab of tabOptions; track tab.value) {
+      <button
+        class="relative px-4 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === tab.value ? 'text-blue-600' : 'text-gray-500 hover:text-gray-900'"
+        (click)="tabChange.emit(tab.value)"
+        [attr.data-testid]="'initiative-tab-' + tab.value">
+        {{ tab.label }}
+        @if (activeTab() === tab.value) {
+          <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+        }
+      </button>
+    }
+  </div>
+</lfx-card>

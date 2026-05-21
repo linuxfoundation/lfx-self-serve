@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex items-center gap-4 p-5"
+  [class.cursor-pointer]="isClickable()"
+  [class.hover:bg-gray-50]="isClickable()"
+  [class.opacity-80]="!isClickable()"
+  [attr.role]="isClickable() ? 'button' : null"
+  [attr.tabindex]="isClickable() ? 0 : null"
+  [attr.aria-label]="initiative().name"
+  [attr.data-testid]="'initiative-card-' + initiative().id"
+  (click)="onCardClick()"
+  (keydown.enter)="onCardClick()"
+  (keydown.space)="onCardClick(); $event.preventDefault()">
+  <!-- Avatar / Icon -->
+  <lfx-avatar [label]="initiative().name" shape="square" size="large" [styleClass]="avatarStyleClass()" [ariaLabel]="fundTypeLabel() + ' initiative icon'" />
+
+  <!-- Content -->
+  <div class="flex flex-col gap-1 min-w-0 flex-1">
+    <span class="text-xs font-semibold flex items-center gap-1" [class]="fundTypeColorClass()">
+      <i [class]="fundTypeIcon()" aria-hidden="true"></i>
+      {{ fundTypeLabel() }}
+    </span>
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-base font-bold text-gray-900">{{ initiative().name }}</span>
+      @if (initiative().status === 'active') {
+        <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
+      } @else if (initiative().status === 'pending') {
+        <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Pending</span>
+      } @else {
+        <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Closed</span>
+      }
+    </div>
+    <p class="text-xs text-gray-500 truncate">{{ initiative().description }}</p>
+  </div>
+
+  <!-- Metrics -->
+  <div class="flex items-center gap-10 flex-shrink-0" data-testid="initiative-card-metrics">
+    @if ((initiative().status === 'active' || initiative().status === 'closed') && initiative().goal) {
+      <div class="flex flex-col gap-1 min-w-44">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-gray-900">{{ formattedRaised() }}</span>
+          <span class="text-gray-500">of {{ formattedGoal() }}</span>
+        </div>
+        <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden w-full">
+          <div
+            class="h-full bg-blue-600 rounded-full"
+            [style.width.%]="progressPercent()"
+            role="progressbar"
+            [attr.aria-valuenow]="progressPercent()"
+            aria-valuemin="0"
+            aria-valuemax="100"></div>
+        </div>
+        <p class="text-xs text-gray-500">{{ progressPercent() }}% funded · {{ initiative().sponsorsCount }} sponsors</p>
+      </div>
+      <div class="flex-shrink-0">
+        <a
+          [href]="initiative().publicUrl || '#'"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-300 bg-white rounded px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"
+          (click)="$event.stopPropagation()"
+          (keydown.enter)="$event.stopPropagation()"
+          (keydown.space)="$event.stopPropagation()"
+          data-testid="initiative-card-view-public">
+          View Public
+          <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+        </a>
+      </div>
+    } @else if (initiative().status === 'pending') {
+      <div class="flex items-center gap-2 text-xs text-gray-400 whitespace-nowrap">
+        <i class="fa-light fa-clock" aria-hidden="true"></i>
+        Under review by our team
+      </div>
+    }
+  </div>
+</div>
