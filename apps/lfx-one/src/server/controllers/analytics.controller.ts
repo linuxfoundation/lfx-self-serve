@@ -1821,10 +1821,13 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getEmailCtr(foundationSlug);
+      const classification = getStringQueryParam(req, 'classification');
+
+      const response = await this.projectService.getEmailCtr(foundationSlug, classification);
 
       logger.success(req, 'get_email_ctr', startTime, {
         foundation_slug: foundationSlug,
+        classification,
         current_ctr: response.currentCtr,
         monthly_data_points: response.monthlyData.length,
       });

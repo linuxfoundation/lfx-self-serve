@@ -32,6 +32,18 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
   { label: 'Time Decay', value: 'timeDecay' },
 ];
 
+/**
+ * Maps MarketingImpactFocusProgram IDs to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values.
+ * 'all' maps to undefined (no filter). Used by endpoints that support classification filtering.
+ */
+export const FOCUS_TO_CLASSIFICATION: Record<string, string | undefined> = {
+  all: undefined,
+  events: 'Events',
+  newsletters: 'Corporate',
+  surveys: 'Projects',
+  trainings: 'Training',
+};
+
 /** Funnel stage filter options for the Performance Marketing tab. */
 export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All stages' },

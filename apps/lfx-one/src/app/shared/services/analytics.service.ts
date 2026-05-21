@@ -842,8 +842,10 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug to filter by
    * @returns Observable of email CTR response
    */
-  public getEmailCtr(foundationSlug: string): Observable<EmailCtrResponse> {
-    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params: { foundationSlug } }).pipe(
+  public getEmailCtr(foundationSlug: string, classification?: string): Observable<EmailCtrResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (classification) params['classification'] = classification;
+    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params }).pipe(
       catchError(() => {
         return of({
           currentCtr: 0,
