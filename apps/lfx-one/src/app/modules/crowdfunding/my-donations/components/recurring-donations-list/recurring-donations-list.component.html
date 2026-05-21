@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="recurring-donations-list">
+  <!-- Section header -->
+  <div class="flex items-center justify-between" data-testid="recurring-donations-header">
+    <h2 class="text-sm font-bold text-gray-900">Recurring Donations</h2>
+    @if (cancelledCount() > 0) {
+      <button
+        type="button"
+        class="text-xs font-medium text-gray-400 underline underline-offset-2 hover:text-gray-600 transition-colors"
+        (click)="viewCancelled.emit()"
+        data-testid="view-cancelled-btn">
+        Cancelled recurring donations ({{ cancelledCount() }})
+      </button>
+    }
+  </div>
+
+  <!-- Cards -->
+  <div class="flex flex-col gap-2" data-testid="recurring-cards">
+    @for (entry of donationsWithMenuItems(); track entry.donation.id; let i = $index) {
+      <div class="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg" [attr.data-testid]="'recurring-card-' + entry.donation.id">
+        <!-- Icon -->
+        <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-50 text-xl flex-shrink-0" aria-hidden="true">
+          {{ entry.donation.icon }}
+        </div>
+
+        <!-- Details -->
+        <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold text-gray-900">{{ entry.donation.name }}</span>
+            @if (entry.donation.status === 'active') {
+              <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700"> Active </span>
+            } @else {
+              <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"> Paused </span>
+            }
+          </div>
+          <p class="text-xs text-gray-400">Started {{ entry.donation.startDate }} &middot; {{ entry.donation.billingDescription }}</p>
+        </div>
+
+        <!-- Amount + next charge -->
+        <div class="flex flex-col items-end gap-0.5 flex-shrink-0">
+          <p class="text-sm font-semibold" [class]="entry.donation.status === 'active' ? 'text-gray-900' : 'text-gray-400'">
+            ${{ entry.donation.amount }}<span class="text-xs font-normal text-gray-400">/mo</span>
+          </p>
+          <p class="text-xs text-gray-400">
+            @if (entry.donation.status === 'active') {
+              Next charge: {{ entry.donation.nextChargeDate }}
+            } @else {
+              Paused since {{ entry.donation.pausedSince }}
+            }
+          </p>
+        </div>
+
+        <!-- Ellipsis menu -->
+        <div class="flex-shrink-0" (click)="$event.stopPropagation()">
+          <lfx-button
+            icon="fa-solid fa-ellipsis"
+            severity="secondary"
+            size="small"
+            [attr.aria-label]="'More options for ' + entry.donation.name"
+            (click)="onMenuToggle($event, i)" />
+          <lfx-menu [model]="entry.menuItems" [popup]="true" appendTo="body">
+            <ng-template #item let-item>
+              <div
+                class="flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-gray-50"
+                [class.text-red-600]="item.styleClass === 'text-red-600'"
+                [class.text-gray-700]="item.styleClass !== 'text-red-600'">
+                <i [class]="item.icon + ' text-xs'" aria-hidden="true"></i>
+                {{ item.label }}
+              </div>
+            </ng-template>
+          </lfx-menu>
+        </div>
+      </div>
+    }
+  </div>
+</div>

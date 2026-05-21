@@ -1,0 +1,196 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[600px] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="initiative-settings-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-0.5 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="initiative-settings-drawer-title">Initiative Settings</h2>
+        <p class="text-sm text-gray-500">{{ initiative().name }}</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="initiative-settings-drawer-close">
+        <i class="fa-light fa-xmark text-xl pointer-events-none"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 pb-2 overflow-x-hidden" data-testid="initiative-settings-drawer-content">
+    <!-- Tab bar -->
+    <div class="flex items-center border-b border-gray-200 -mx-6 px-6 -mt-2" data-testid="initiative-settings-tabs">
+      @for (tab of settingsTabs; track tab.value) {
+        <button
+          class="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
+          [class]="activeSettingsTab() === tab.value ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'"
+          (click)="activeSettingsTab.set(tab.value)"
+          [attr.data-testid]="'settings-tab-' + tab.value">
+          {{ tab.label }}
+          @if (activeSettingsTab() === tab.value) {
+            <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+          }
+        </button>
+      }
+    </div>
+
+    <!-- Initiative details tab -->
+    @if (activeSettingsTab() === 'details') {
+      <div class="flex flex-col gap-5" data-testid="settings-details-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">General Fund Details</h3>
+
+        <!-- Name -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-name">
+          <div class="flex items-center justify-between">
+            <label for="settings-name" class="text-sm font-medium text-gray-700">
+              Initiative name <span class="text-red-500" aria-hidden="true">*</span>
+            </label>
+            <span class="text-xs text-gray-400">{{ nameLength() }}/100</span>
+          </div>
+          <lfx-input-text [form]="form" control="name" id="settings-name" placeholder="Enter initiative name" />
+        </div>
+
+        <!-- Elevator pitch -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-description">
+          <div class="flex items-center justify-between">
+            <label for="settings-description" class="text-sm font-medium text-gray-700">
+              Elevator Pitch <span class="text-red-500" aria-hidden="true">*</span>
+            </label>
+            <span class="text-xs text-gray-400">{{ descriptionLength() }}/500</span>
+          </div>
+          <lfx-textarea
+            [form]="form"
+            control="description"
+            id="settings-description"
+            [rows]="4"
+            [maxlength]="500"
+            placeholder="Describe your initiative in a few sentences…" />
+        </div>
+
+        <!-- Topic / Category tags -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-tags">
+          <label class="text-sm font-medium text-gray-700"> Topic / Category <span class="text-red-500" aria-hidden="true">*</span> </label>
+          <div
+            class="flex flex-wrap items-center gap-1.5 p-2 border border-gray-300 rounded-md min-h-[42px] bg-white focus-within:border-blue-500 transition-colors cursor-text">
+            @for (tag of tags(); track tag) {
+              <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                {{ tag }}
+                <button type="button" (click)="removeTag(tag)" class="hover:text-blue-900 ml-0.5" [attr.aria-label]="'Remove ' + tag + ' category'">
+                  <i class="fa-solid fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            <input
+              pInputText
+              type="text"
+              class="flex-1 min-w-[80px] border-none outline-none text-sm bg-transparent py-0.5 p-0 shadow-none"
+              placeholder="Add category…"
+              [value]="newTagValue()"
+              (input)="newTagValue.set($any($event.target).value)"
+              (keydown.enter)="$event.preventDefault(); addTag()"
+              aria-label="Add category tag" />
+          </div>
+          <p class="text-xs text-gray-400">Press Enter to add a category.</p>
+        </div>
+
+        <!-- Website URL -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-website">
+          <label for="settings-website" class="text-sm font-medium text-gray-700">Website URL</label>
+          <lfx-input-text [form]="form" control="websiteUrl" id="settings-website" type="url" placeholder="https://example.org" />
+        </div>
+      </div>
+    }
+
+    <!-- Branding tab -->
+    @else if (activeSettingsTab() === 'branding') {
+      <div class="flex flex-col gap-5" data-testid="settings-branding-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Branding</h3>
+
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-logo">
+          <label class="text-sm font-medium text-gray-700"> Initiative logo <span class="text-red-500" aria-hidden="true">*</span> </label>
+          <div class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <!-- Current logo preview -->
+            <div
+              class="w-16 h-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center text-3xl flex-shrink-0"
+              data-testid="settings-logo-preview"
+              aria-label="Current initiative logo">
+              {{ initiative().icon }}
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <p class="text-sm font-medium text-gray-700">{{ initiative().name | lowercase }}-logo.png</p>
+              <p class="text-xs text-gray-500">PNG, JPG, or SVG. Recommended size: 256×256px.</p>
+              <div class="flex items-center gap-2 mt-1">
+                <lfx-button label="Remove" icon="fa-regular fa-trash-can" severity="secondary" size="small" data-testid="settings-logo-remove-btn" />
+                <lfx-button label="Choose different" icon="fa-solid fa-upload" severity="secondary" size="small" data-testid="settings-logo-upload-btn" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Beneficiaries tab -->
+    @else if (activeSettingsTab() === 'beneficiaries') {
+      <div class="flex flex-col gap-5" data-testid="settings-beneficiaries-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Beneficiaries</h3>
+
+        <p class="text-sm text-gray-500">You will be automatically added as a beneficiary. Add others who can submit expenses below.</p>
+
+        <div class="flex flex-col gap-3" data-testid="settings-beneficiaries-list">
+          @for (group of beneficiaryGroups(); track $index) {
+            <div class="flex items-center gap-2" [attr.data-testid]="'settings-beneficiary-row-' + $index">
+              <lfx-input-text [form]="group" control="name" placeholder="Full name" class="flex-1" [dataTest]="'beneficiary-name-' + $index" />
+              <lfx-input-text [form]="group" control="email" type="email" placeholder="Email" class="flex-[2]" [dataTest]="'beneficiary-email-' + $index" />
+              <button
+                type="button"
+                (click)="removeBeneficiary($index)"
+                class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                [attr.aria-label]="'Remove beneficiary ' + ($index + 1)">
+                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
+        </div>
+
+        <lfx-button
+          label="Add beneficiary"
+          icon="fa-solid fa-plus"
+          severity="secondary"
+          size="small"
+          styleClass="self-start"
+          (click)="addBeneficiary()"
+          data-testid="settings-add-beneficiary-btn" />
+      </div>
+    }
+
+    <!-- Funding tab -->
+    @else if (activeSettingsTab() === 'funding') {
+      <div class="flex flex-col gap-5" data-testid="settings-funding-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Funding</h3>
+
+        <p class="text-sm text-gray-500">Provide your initial estimated general fund funding goal.</p>
+
+        <div class="flex flex-col gap-1.5 max-w-[240px]" data-testid="settings-field-goal">
+          <label for="settings-goal" class="text-sm font-medium text-gray-700">
+            Annual Funding Goal <span class="text-red-500" aria-hidden="true">*</span>
+          </label>
+          <lfx-input-text [form]="form" control="goal" id="settings-goal" type="number" placeholder="0" icon="fa-light fa-dollar-sign" />
+        </div>
+      </div>
+    }
+
+    <!-- Footer actions -->
+    <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
+      <lfx-button label="Cancel" severity="secondary" (click)="onClose()" data-testid="initiative-settings-cancel-btn" />
+      <lfx-button label="Save changes" severity="primary" data-testid="initiative-settings-save-btn" />
+    </div>
+  </div>
+</p-drawer>

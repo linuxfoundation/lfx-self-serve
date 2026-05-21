@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5 p-8" data-testid="initiative-detail">
+  <lfx-button
+    label="Back to My Initiatives"
+    icon="fa-light fa-chevron-left"
+    severity="secondary"
+    size="small"
+    [text]="true"
+    routerLink="/crowdfunding/initiatives"
+    styleClass="self-start"
+    data-testid="initiative-detail-back-btn" />
+
+  <lfx-initiative-detail-header
+    [initiative]="initiative()"
+    [activeTab]="activeTab()"
+    (tabChange)="activeTab.set($event)"
+    (settingsClick)="settingsDrawerVisible.set(true)" />
+
+  <lfx-initiative-settings-drawer [initiative]="initiative()" [(visible)]="settingsDrawerVisible" />
+
+  @if (activeTab() === 'overview') {
+    <lfx-initiative-overview [initiative]="initiative()" (viewAllFinancials)="activeTab.set('financials')" />
+  } @else if (activeTab() === 'financials') {
+    <lfx-initiative-financials [initiative]="initiative()" />
+  } @else if (activeTab() === 'announcements') {
+    <lfx-initiative-announcements />
+  }
+</div>
