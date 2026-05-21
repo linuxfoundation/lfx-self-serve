@@ -415,7 +415,9 @@ export interface SidebarMenuItem {
   testId?: string;
   /** Whether this item is a collapsible section header */
   isSection?: boolean;
-  /** Default expanded state for sections (defaults to true) */
+  /** Whether this item is a collapsible nav group (icon + label + chevron, toggleable) */
+  isGroup?: boolean;
+  /** Default expanded state for sections and groups (defaults to true) */
   expanded?: boolean;
   /** Whether to render a divider line before this item */
   dividerBefore?: boolean;

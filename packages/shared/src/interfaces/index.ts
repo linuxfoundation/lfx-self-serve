@@ -156,3 +156,9 @@ export * from './marketing-impact.interface';
 
 // Enrollment interfaces
 export * from './enrollment.interface';
+
+// Crowdfunding interfaces
+export * from './crowdfunding.interface';
+
+// Donut chart interfaces
+export * from './donut-chart.interface';

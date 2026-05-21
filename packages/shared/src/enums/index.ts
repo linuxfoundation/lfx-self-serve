@@ -13,3 +13,4 @@ export * from './survey.enum';
 export * from './event.enum';
 export * from './project-funding.enum';
 export * from './project-stage.enum';
+export * from './crowdfunding.enum';

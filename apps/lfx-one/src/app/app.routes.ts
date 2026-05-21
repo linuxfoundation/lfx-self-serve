@@ -211,6 +211,11 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
+        path: 'crowdfunding',
+        data: { lens: 'me' },
+        loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
+      },
+      {
         path: 'me/events',
         redirectTo: 'events',
         pathMatch: 'full',
