@@ -10,37 +10,13 @@ import { MicroserviceError } from '../errors';
 
 import { getApiGatewayBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { getUsernameFromAuth, usernameMatches } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
-const DEMO_USER = 'johnlf2727';
 const ENROLLMENT_SERVICE = 'enrollment_service';
 const VALID_STATUSES = new Set<EnrollmentMembership['Status']>(['Active', 'Purchased', 'Expired']);
 
-const DEMO_ENROLLMENTS: IndividualEnrollment[] = [
-  {
-    ...TLF_INDIVIDUAL_SUPPORTER,
-    membership: {
-      Status: 'Expired',
-      AutoRenew: false,
-      PurchaseDate: '2020-06-09',
-      EndDate: '2021-06-09',
-      Price: 0,
-      ID: '02i2M00000QTirbQAD',
-      ExtPaymentType: '836366',
-    },
-  },
-];
-
 export class EnrollmentService {
   public async getIndividualEnrollments(req: Request): Promise<IndividualEnrollment[]> {
-    const username = await getUsernameFromAuth(req);
-
-    if (username && usernameMatches(username, DEMO_USER)) {
-      logger.debug(req, 'get_individual_enrollments', 'Returning demo data for test user');
-      return DEMO_ENROLLMENTS;
-    }
-
     const baseUrl = getApiGatewayBaseUrl('get_individual_enrollments', ENROLLMENT_SERVICE);
     const url = `${baseUrl}/member-service/v2/me/memberships?productID=${TLF_INDIVIDUAL_SUPPORTER.productId}&status=Purchased,Active,Expired&membershipType=Individual`;
 
@@ -87,13 +63,6 @@ export class EnrollmentService {
   }
 
   public async updateAutoRenew(req: Request, membershipId: string, autoRenew: boolean): Promise<void> {
-    const username = await getUsernameFromAuth(req);
-
-    if (username && usernameMatches(username, DEMO_USER)) {
-      logger.debug(req, 'update_individual_enrollment_auto_renew', 'Skipping update for demo user');
-      return;
-    }
-
     if (!req.bearerToken) {
       throw new MicroserviceError('User bearer token not available', 401, 'BEARER_TOKEN_UNAVAILABLE', {
         operation: 'update_individual_enrollment_auto_renew',

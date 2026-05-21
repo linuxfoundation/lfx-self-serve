@@ -30,7 +30,7 @@ test.describe('Individual Enrollment — Structural Tests', () => {
     });
   });
 
-  test.describe('Card structure (demo user path)', () => {
+  test.describe('Card structure', () => {
     test('should render at least one enrollment card', async ({ page }) => {
       const card = page.getByTestId('individual-enrollment-card').first();
       await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
