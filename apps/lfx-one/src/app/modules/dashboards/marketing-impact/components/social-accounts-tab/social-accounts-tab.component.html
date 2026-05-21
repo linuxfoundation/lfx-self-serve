@@ -8,6 +8,17 @@
     <p class="text-xs text-gray-500">Social media performance · {{ foundationName() || 'All foundations' }}</p>
   </div>
 
+  @if (focusProgram() !== 'all') {
+    <div
+      class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
+      role="status"
+      aria-live="polite"
+      data-testid="social-accounts-focus-info">
+      <i class="fa-light fa-circle-info text-blue-500" aria-hidden="true"></i>
+      <p class="text-xs text-blue-700">Showing all programs — social data is not yet available at the program level.</p>
+    </div>
+  }
+
   <!-- KPI Cards -->
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="social-accounts-kpi-grid">
     @if (loading()) {
