@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { AttributionModelOption, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
+import type { AttributionModelOption, MarketingImpactFocusProgram, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
 
 /** Focus program filter options for the Marketing Impact FOCUS bar. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
@@ -36,13 +36,15 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
  * Maps MarketingImpactFocusProgram IDs to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values.
  * 'all' maps to undefined (no filter). Used by endpoints that support classification filtering.
  */
-export const FOCUS_TO_CLASSIFICATION: Record<string, string | undefined> = {
+export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string | undefined> = {
   all: undefined,
   events: 'Events',
   newsletters: 'Corporate',
   surveys: 'Projects',
   trainings: 'Training',
 };
+
+export const VALID_CLASSIFICATIONS = new Set(['Events', 'Corporate', 'Projects', 'Training']);
 
 /** Funnel stage filter options for the Performance Marketing tab. */
 export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [
