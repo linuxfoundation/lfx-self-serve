@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="payment-methods">
+  <h2 class="text-sm font-bold text-gray-900" data-testid="payment-methods-heading">Payment Methods</h2>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="payment-methods-grid">
+    @for (method of methods(); track method.id) {
+      <lfx-payment-method-card [method]="method" (remove)="removeCard.emit(method)" />
+    }
+
+    <!-- Add card -->
+    <button
+      type="button"
+      class="flex flex-col items-center justify-center gap-2 p-4 bg-white border-2 border-dashed border-gray-200 rounded-lg text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors min-h-[112px]"
+      (click)="openAddCardDialog()"
+      data-testid="add-payment-method-btn"
+      aria-label="Add payment card">
+      <i class="fa-solid fa-plus text-xl" aria-hidden="true"></i>
+      <span class="text-sm font-medium">Add payment card</span>
+    </button>
+  </div>
+</div>

@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-5 items-start" data-testid="initiative-overview">
+  <!-- Left column -->
+  <div class="flex flex-col gap-5">
+    <!-- Finance summary card -->
+    <lfx-initiative-finance-summary [initiative]="initiative()" />
+
+    <!-- About card -->
+    <lfx-card data-testid="about-card">
+      <div class="text-sm font-bold text-gray-900 mb-4">About this Initiative</div>
+      <p class="text-sm text-gray-600 leading-relaxed mb-3">{{ initiative().about }}</p>
+      <p class="text-sm text-gray-600 leading-relaxed mb-3">
+        Contributions go directly toward sustaining long-term maintainership, funding critical infrastructure, and ensuring the project remains vendor-neutral
+        and community-driven. All expenditures are tracked transparently and reported quarterly to sponsors and the broader community.
+      </p>
+      <p class="text-sm text-gray-600 leading-relaxed">
+        Whether you're an individual developer or a large organization, your support helps ensure this project continues to evolve, stays secure, and remains
+        accessible to everyone — regardless of company size or resources.
+      </p>
+    </lfx-card>
+  </div>
+
+  <!-- Right column -->
+  <lfx-initiative-overview-sidebar [initiative]="initiative()" (viewAllFinancials)="viewAllFinancials.emit()" />
+</div>
