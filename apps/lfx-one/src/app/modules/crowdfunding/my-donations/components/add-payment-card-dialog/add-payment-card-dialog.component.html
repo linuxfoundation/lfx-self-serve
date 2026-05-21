@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-5" data-testid="add-card-form">
+  <!-- Card number -->
+  <div class="flex flex-col gap-1.5" data-testid="add-card-field-number">
+    <label for="card-number" class="text-sm font-medium text-gray-700"> Card number <span class="text-red-500" aria-hidden="true">*</span> </label>
+    <input
+      pInputText
+      id="card-number"
+      type="text"
+      inputmode="numeric"
+      autocomplete="cc-number"
+      placeholder="1234 5678 9123 4567"
+      maxlength="19"
+      formControlName="cardNumber"
+      (input)="onCardNumberInput($event)"
+      class="w-full"
+      [class.ng-invalid]="form.controls.cardNumber.invalid && form.controls.cardNumber.touched"
+      [class.ng-dirty]="form.controls.cardNumber.dirty"
+      data-testid="add-card-number-input" />
+    @if (form.controls.cardNumber.invalid && form.controls.cardNumber.touched) {
+      <p class="text-xs text-red-500">Enter a valid 16-digit card number.</p>
+    }
+  </div>
+
+  <!-- Expiry + CVC -->
+  <div class="grid grid-cols-2 gap-4">
+    <!-- Expiry -->
+    <div class="flex flex-col gap-1.5" data-testid="add-card-field-expiry">
+      <label for="card-expiry" class="text-sm font-medium text-gray-700"> Expiry <span class="text-red-500" aria-hidden="true">*</span> </label>
+      <input
+        pInputText
+        id="card-expiry"
+        type="text"
+        inputmode="numeric"
+        autocomplete="cc-exp"
+        placeholder="MM/YY"
+        maxlength="5"
+        formControlName="expiry"
+        (input)="onExpiryInput($event)"
+        [class.ng-invalid]="form.controls.expiry.invalid && form.controls.expiry.touched"
+        [class.ng-dirty]="form.controls.expiry.dirty"
+        data-testid="add-card-expiry-input" />
+      @if (form.controls.expiry.invalid && form.controls.expiry.touched) {
+        <p class="text-xs text-red-500">Enter a valid expiry (MM/YY).</p>
+      }
+    </div>
+
+    <!-- CVC -->
+    <div class="flex flex-col gap-1.5" data-testid="add-card-field-cvc">
+      <label for="card-cvc" class="text-sm font-medium text-gray-700"> CVC <span class="text-red-500" aria-hidden="true">*</span> </label>
+      <input
+        pInputText
+        id="card-cvc"
+        type="password"
+        inputmode="numeric"
+        autocomplete="cc-csc"
+        placeholder="•••"
+        maxlength="4"
+        formControlName="cvc"
+        [class.ng-invalid]="form.controls.cvc.invalid && form.controls.cvc.touched"
+        [class.ng-dirty]="form.controls.cvc.dirty"
+        data-testid="add-card-cvc-input" />
+      @if (form.controls.cvc.invalid && form.controls.cvc.touched) {
+        <p class="text-xs text-red-500">Enter a valid CVC.</p>
+      }
+    </div>
+  </div>
+
+  <!-- Footer actions -->
+  <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+    <lfx-button label="Cancel" severity="secondary" type="button" (click)="onCancel()" data-testid="add-card-cancel-btn" />
+    <lfx-button label="Add card" severity="primary" type="submit" data-testid="add-card-submit-btn" />
+  </div>
+</form>

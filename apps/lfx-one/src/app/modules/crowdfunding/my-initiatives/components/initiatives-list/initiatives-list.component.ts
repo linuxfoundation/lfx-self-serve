@@ -5,10 +5,11 @@ import { Component, computed, input, output, signal } from '@angular/core';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { CrowdfundingInitiative, CrowdfundingInitiativeStatus, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { InitiativeCardComponent } from '../initiative-card/initiative-card.component';
+import { CardComponent } from '@components/card/card.component';
 
 @Component({
   selector: 'lfx-initiatives-list',
-  imports: [FilterPillsComponent, InitiativeCardComponent],
+  imports: [CardComponent, FilterPillsComponent, InitiativeCardComponent],
   templateUrl: './initiatives-list.component.html',
   styleUrl: './initiatives-list.component.scss',
 })

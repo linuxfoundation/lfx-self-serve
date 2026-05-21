@@ -5,11 +5,13 @@
   <lfx-filter-pills [options]="filterOptions()" [selectedFilter]="activeFilter()" (filterChange)="setFilter($event)" data-testid="initiatives-filter-pills" />
 
   @if (filteredInitiatives().length > 0) {
-    <div class="flex flex-col gap-4" data-testid="initiatives-cards">
+    <lfx-card
+      styleClass="flex flex-col gap-4 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
+      data-testid="initiatives-cards">
       @for (initiative of filteredInitiatives(); track initiative.id) {
         <lfx-initiative-card [initiative]="initiative" (cardClick)="onCardClick($event)" />
       }
-    </div>
+    </lfx-card>
   } @else {
     <div class="flex flex-col items-center gap-3 py-16 text-gray-400" data-testid="initiatives-empty-state">
       <i class="fa-light fa-box-archive text-5xl" aria-hidden="true"></i>

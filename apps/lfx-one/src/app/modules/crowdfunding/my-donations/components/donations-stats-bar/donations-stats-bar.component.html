@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="donations-stats-bar">
+  <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+    <div class="flex items-center gap-3 p-4" data-testid="donations-stat-total">
+      <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex-shrink-0">
+        <i class="fa-solid fa-hand-holding-heart text-xl" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-xl font-semibold text-gray-900">${{ stats().totalDonated | number }}</p>
+        <p class="text-sm font-normal text-gray-900">Total Donated</p>
+        <p class="text-xs text-gray-400">All time</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 p-4" data-testid="donations-stat-initiatives">
+      <div class="flex items-center justify-center w-11 h-11 rounded-full bg-teal-50 text-teal-600 flex-shrink-0">
+        <i class="fa-solid fa-seedling text-xl" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-xl font-semibold text-gray-900">{{ stats().initiativesSupported }}</p>
+        <p class="text-sm font-normal text-gray-900">Initiatives Supported</p>
+        <p class="text-xs text-gray-400">Across 4 fund types</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 p-4" data-testid="donations-stat-recurring">
+      <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-50 text-emerald-600 flex-shrink-0">
+        <i class="fa-solid fa-arrows-rotate text-xl" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-xl font-semibold text-gray-900">${{ stats().activeRecurringAmount }}<span class="text-sm font-normal text-gray-400">/mo</span></p>
+        <p class="text-sm font-normal text-gray-900">Active Recurring</p>
+        <p class="text-xs text-gray-400">{{ stats().activeRecurringCount }} active subscription{{ stats().activeRecurringCount === 1 ? '' : 's' }}</p>
+      </div>
+    </div>
+  </div>
+</lfx-card>
