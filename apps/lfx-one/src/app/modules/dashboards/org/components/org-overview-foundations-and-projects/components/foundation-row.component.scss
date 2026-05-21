@@ -1,0 +1,11 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Host element disappears from the box tree so the inner `<tr>` is a direct
+// child of the parent `<tbody>` (required for HTML table layout). This is
+// the canonical Angular alternative to attribute-selector row components,
+// which our eslint rules disallow (component selectors must be kebab-case
+// elements per `@angular-eslint/component-selector`).
+:host {
+  display: contents;
+}
