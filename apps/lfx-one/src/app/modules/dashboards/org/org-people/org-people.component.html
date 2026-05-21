@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-people-page">
+  <header class="flex flex-col gap-2" data-testid="org-people-header">
+    <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-people-title">{{ heading() }}</h1>
+    <p class="text-sm text-gray-500" data-testid="org-people-subtitle">
+      All employee involvement with the Linux Foundation &mdash; board, committees, maintainership, code, training, and events.
+    </p>
+  </header>
+
+  <div class="flex items-center gap-1 border-b border-gray-200 overflow-x-auto" data-testid="org-people-tab-bar" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
+        [attr.id]="'org-people-tab-' + tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-controls]="'org-people-panel-' + tab.id"
+        [attr.data-testid]="'org-people-tab-' + tab.id"
+        [class.border-blue-600]="activeTab() === tab.id"
+        [class.text-blue-600]="activeTab() === tab.id"
+        [class.border-transparent]="activeTab() !== tab.id"
+        [class.text-gray-500]="activeTab() !== tab.id"
+        [class.hover:text-gray-700]="activeTab() !== tab.id"
+        (click)="switchTab(tab.id)">
+        <i [class]="tab.icon"></i>
+        {{ tab.label }}
+      </button>
+    }
+  </div>
+
+  <section
+    role="tabpanel"
+    [attr.id]="'org-people-panel-' + activeTab()"
+    [attr.aria-labelledby]="'org-people-tab-' + activeTab()"
+    [attr.data-testid]="'org-people-panel-' + activeTab()">
+    @if (!hasCompany()) {
+      <lfx-empty-state icon="fa-light fa-building" [title]="noCompanyEmptyTitle()" data-testid="org-people-no-company-empty-state" />
+    } @else {
+      <lfx-empty-state
+        [icon]="activeTabConfig().icon"
+        title="Coming soon"
+        subtitle="This tab is part of the Org Lens People page and is being built. Check back later."
+        data-testid="org-people-coming-soon-empty-state" />
+    }
+  </section>
+</main>
