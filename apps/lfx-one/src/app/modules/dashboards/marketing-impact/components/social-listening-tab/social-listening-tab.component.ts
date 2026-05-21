@@ -7,7 +7,14 @@ import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 
-import type { BrandHealthMention, BrandHealthResponse, BrandHealthTopProject, PerformanceSummaryKpi, SentimentBar } from '@lfx-one/shared/interfaces';
+import type {
+  BrandHealthMention,
+  BrandHealthResponse,
+  BrandHealthTopProject,
+  MarketingImpactFocusProgram,
+  PerformanceSummaryKpi,
+  SentimentBar,
+} from '@lfx-one/shared/interfaces';
 
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
@@ -24,6 +31,7 @@ export class SocialListeningTabComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
