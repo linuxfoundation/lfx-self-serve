@@ -6,11 +6,12 @@ import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { OrgOverviewFoundationsAndProjectsComponent } from '../components/org-overview-foundations-and-projects/org-overview-foundations-and-projects.component';
 import { OrgOverviewInvolvementComponent } from '../components/org-overview-involvement/org-overview-involvement.component';
 
 @Component({
   selector: 'lfx-org-overview',
-  imports: [TagComponent, SkeletonModule, OrgOverviewInvolvementComponent],
+  imports: [TagComponent, SkeletonModule, OrgOverviewInvolvementComponent, OrgOverviewFoundationsAndProjectsComponent],
   templateUrl: './org-overview.component.html',
 })
 export class OrgOverviewComponent {

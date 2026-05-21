@@ -1,0 +1,142 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-4" data-testid="org-overview-foundations-and-projects-section">
+  <!-- Section header -->
+  <header class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3" data-testid="org-overview-foundations-and-projects-header">
+    <h2 class="flex items-center gap-2 text-base font-medium text-gray-900" data-testid="org-overview-foundations-and-projects-title">
+      <i class="fa-light fa-layer-group text-sm text-gray-500" aria-hidden="true"></i>
+      <span>{{ companyName() }}'s Foundations and Projects</span>
+    </h2>
+    <a
+      routerLink="/org/memberships"
+      class="text-sm text-blue-600 hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded"
+      data-testid="org-overview-foundations-and-projects-view-all-link"
+      >View all on Memberships page ›</a
+    >
+  </header>
+
+  @if (loading()) {
+    <!-- Loading skeleton — mutually exclusive with error/data -->
+    <div class="flex flex-col gap-4" data-testid="org-overview-foundations-and-projects-loading-skeleton">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="p-4 bg-white border border-gray-200 rounded-lg flex flex-col gap-2">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="3rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+      <div class="flex flex-col gap-2 bg-white border border-gray-200 rounded-lg p-4">
+        @for (i of [1, 2, 3, 4, 5, 6]; track i) {
+          <p-skeleton width="100%" height="3rem" />
+        }
+      </div>
+    </div>
+  } @else if (error()) {
+    <!-- Retry affordance -->
+    <div class="flex flex-col items-start gap-3 p-4 bg-white border border-gray-200 rounded-lg" data-testid="org-overview-foundations-and-projects-error">
+      <p class="text-sm text-gray-700">Couldn't load Foundations and Projects.</p>
+      <button
+        type="button"
+        class="inline-flex items-center px-3 py-1.5 rounded border border-blue-600 text-sm text-blue-700 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        (click)="retry()"
+        data-testid="org-overview-foundations-and-projects-retry">
+        Retry
+      </button>
+    </div>
+  } @else {
+    <!-- Stat strip -->
+    <lfx-foundations-stat-strip [strip]="statStrip()" />
+
+    @if (isEmpty()) {
+      <!-- Empty state -->
+      <p class="italic text-gray-500 text-sm" data-testid="org-overview-foundations-and-projects-empty">No foundations or projects yet.</p>
+    } @else {
+      <!-- Foundations table (sort order is preserved by the BFF) -->
+      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="org-overview-foundations-and-projects-table">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+              <th class="px-4 py-2 font-medium">Foundation</th>
+              <th class="px-4 py-2 font-medium">Org Role</th>
+              <th class="px-4 py-2 font-medium">Voting Status</th>
+              <th class="px-4 py-2 font-medium">Governance Participation</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.foundationId; let i = $index) {
+              <lfx-foundation-row
+                [row]="row"
+                [expanded]="isExpanded(row.foundationId)"
+                [index]="i"
+                (toggle)="toggleExpansion(row.foundationId)"
+                (rowClick)="onRowClick($event)"
+                (caretToggle)="onCaretToggle($event)" />
+              @if (isExpanded(row.foundationId)) {
+                <tr class="bg-gray-50" [attr.data-testid]="'org-overview-foundations-and-projects-row-' + (row.foundationSlug || row.foundationId) + '-detail'">
+                  <td colspan="4" class="px-12 py-4">
+                    @if (row.projects.length === 0) {
+                      <p class="italic text-gray-500 text-sm">No projects from this foundation are currently active for your org.</p>
+                    } @else {
+                      <div
+                        class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500"
+                        [attr.data-testid]="'org-overview-foundations-and-projects-row-' + (row.foundationSlug || row.foundationId) + '-detail-caption'">
+                        Projects Involved ({{ row.projects.length }})
+                      </div>
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr class="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                            <th class="py-2 font-medium">Project</th>
+                            <th class="py-2 font-medium text-right">Maintainers</th>
+                            <th class="py-2 font-medium text-right">Contributors</th>
+                            <th class="py-2 font-medium text-right">Collaborators</th>
+                            <th class="py-2 font-medium text-right">Commits</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (project of row.projects; track project.projectId) {
+                            <tr
+                              class="border-b border-gray-100"
+                              [class.cursor-pointer]="project.isLfProject"
+                              [class.hover:bg-white]="project.isLfProject"
+                              [class.cursor-default]="!project.isLfProject"
+                              [attr.role]="project.isLfProject ? 'button' : null"
+                              [attr.tabindex]="project.isLfProject ? 0 : null"
+                              (click)="onProjectRowClick(project)"
+                              (keydown)="onProjectRowKeydown($event, project)"
+                              [attr.data-testid]="
+                                'org-overview-foundations-and-projects-row-' +
+                                (row.foundationSlug || row.foundationId) +
+                                '-project-' +
+                                projectSlugTestId(project.projectSlug, project.projectId)
+                              ">
+                              <td class="py-2">
+                                <span class="inline-flex items-center gap-2">
+                                  <span
+                                    class="inline-block w-2 h-2 rounded-full"
+                                    [class]="influenceDotClasses(project.influence)"
+                                    [attr.aria-label]="project.influence + ' influence'"></span>
+                                  <span class="text-gray-900">{{ project.projectName }}</span>
+                                </span>
+                              </td>
+                              <td class="py-2 text-right text-gray-700">{{ project.maintainers.toLocaleString() }}</td>
+                              <td class="py-2 text-right text-gray-700">{{ project.contributors.toLocaleString() }}</td>
+                              <td class="py-2 text-right text-gray-700">{{ project.collaborators.toLocaleString() }}</td>
+                              <td class="py-2 text-right text-gray-700">{{ project.commits.toLocaleString() }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    }
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</section>
