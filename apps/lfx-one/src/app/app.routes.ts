@@ -230,4 +230,16 @@ export const routes: Routes = [
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
+  // Invite acceptance — auth-protected so authGuard redirects to login (preserving ?token=)
+  // and the component runs after the user creates / signs into their account.
+  {
+    path: 'invite',
+    canActivate: [authGuard],
+    loadComponent: () => import('./modules/invite/invite.component').then((m) => m.InviteComponent),
+  },
+  // Error page is outside the auth guard so expired/invalid links are visible without login.
+  {
+    path: 'invite/error',
+    loadComponent: () => import('./modules/invite/invite-error/invite-error.component').then((m) => m.InviteErrorComponent),
+  },
 ];
