@@ -1,0 +1,36 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host ::ng-deep .pending-actions-drawer .p-drawer-header {
+  padding: 1rem 1rem 0.75rem 1rem;
+  border-bottom: 1px solid theme('colors.gray.200');
+}
+
+:host ::ng-deep .pending-actions-drawer .p-drawer-header-content {
+  width: 100%;
+}
+
+:host ::ng-deep .pending-actions-drawer .p-drawer-content {
+  padding: 0;
+}
+
+.pending-action-card {
+  transition:
+    opacity 250ms ease-out,
+    max-height 300ms ease-out,
+    padding 300ms ease-out,
+    margin 300ms ease-out,
+    border-width 300ms ease-out;
+  max-height: 8rem;
+  overflow: hidden;
+
+  &.is-completing {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+}

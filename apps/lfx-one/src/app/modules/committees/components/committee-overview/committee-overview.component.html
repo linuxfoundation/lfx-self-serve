@@ -180,20 +180,20 @@
         </div>
 
         <!-- My Pending Actions -->
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-between">
-            <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <i class="fa-light fa-list-check text-gray-400"></i>
-              My Pending Actions
+        <section data-testid="committee-overview-pending-actions-section">
+          <div class="flex items-center gap-3 mb-6">
+            <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+              <i class="fa-light fa-list-check text-lg"></i>
+              <span>My Pending Actions</span>
             </h2>
+            <div class="flex-1 border-t border-gray-200 self-center"></div>
             @if (pendingActionItems().length) {
               <lfx-button
-                label="View All"
                 [text]="true"
-                size="small"
-                severity="info"
-                styleClass="!text-xs"
-                (onClick)="navigateToTab(pendingActionsViewAllTab())"></lfx-button>
+                severity="primary"
+                label="View All"
+                (onClick)="navigateToTab(pendingActionsViewAllTab())"
+                data-testid="committee-overview-pending-actions-view-all" />
             }
           </div>
           @if (votesLoading() || surveysLoading()) {
@@ -211,32 +211,36 @@
               class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200"
               data-testid="committee-overview-pending-actions-list">
               @for (item of pendingActionItems(); track item.rowKey; let idx = $index) {
-                <div
-                  class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 transition-colors duration-300"
-                  [class]="item.rowClass"
-                  [attr.data-testid]="'committee-overview-pending-action-' + item.type + '-' + idx">
-                  <div class="shrink-0 sm:w-1/5">
-                    <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
-                  </div>
-                  <p class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4" [attr.title]="item.text">
-                    {{ item.text }}
-                  </p>
-                  <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-                    <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handlePendingActionClick(item)" [label]="item.buttonText" />
+                <div [attr.data-testid]="'committee-overview-pending-action-' + item.type + '-' + idx">
+                  <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-white">
+                    <div class="shrink-0 sm:w-40">
+                      <lfx-tag [value]="typeLabels[item.type]" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
+                    </div>
+                    <p
+                      class="text-sm font-medium text-gray-900 sm:flex-1 sm:min-w-0 sm:truncate sm:px-4"
+                      [attr.title]="item.text"
+                      data-testid="committee-overview-pending-action-title">
+                      {{ item.text }}
+                    </p>
+                    <div class="self-start sm:self-auto sm:shrink-0 sm:flex sm:justify-end">
+                      <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handlePendingActionClick(item)" [label]="item.buttonText" />
+                    </div>
                   </div>
                 </div>
               }
             </div>
           } @else {
-            <div class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-8">
-              <i class="fa-light fa-box-check text-3xl text-gray-400 shrink-0"></i>
+            <div
+              class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-10"
+              data-testid="committee-overview-pending-actions-empty">
+              <i class="fa-light fa-box-check text-4xl text-gray-400 shrink-0"></i>
               <div>
                 <p class="text-sm font-medium text-gray-700">Your desk is clear</p>
                 <p class="text-xs text-gray-400 mt-0.5">No pending actions assigned to you</p>
               </div>
             </div>
           }
-        </div>
+        </section>
       } @else if (canJoin()) {
         <!-- Visitor CTA -->
         <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 text-center" data-testid="committee-overview-visitor-cta">

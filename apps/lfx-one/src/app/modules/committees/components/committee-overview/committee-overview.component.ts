@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
+import { PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus, stableKeyParity } from '@lfx-one/shared/utils';
@@ -33,6 +33,8 @@ import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dia
   styleUrl: './committee-overview.component.scss',
 })
 export class CommitteeOverviewComponent {
+  protected readonly typeLabels = PENDING_ACTION_LABEL;
+
   // Injections
   private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
