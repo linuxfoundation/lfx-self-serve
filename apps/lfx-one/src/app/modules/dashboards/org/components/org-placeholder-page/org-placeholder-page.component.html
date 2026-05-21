@@ -1,0 +1,15 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-placeholder-page">
+  <header class="flex flex-col gap-1">
+    <h1 class="text-xl font-semibold text-gray-900">{{ title() }}</h1>
+    <p class="text-sm text-gray-500">{{ description() }}</p>
+  </header>
+
+  <lfx-empty-state
+    [icon]="icon()"
+    title="Coming soon"
+    subtitle="This page is part of the Org Lens and is being built. Check back later."
+    data-testid="org-placeholder-empty-state" />
+</main>

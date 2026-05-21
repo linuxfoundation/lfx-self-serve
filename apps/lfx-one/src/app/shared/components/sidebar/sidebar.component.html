@@ -30,6 +30,11 @@
       }
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
+      <div class="px-4 mb-6 w-full" [class.hidden]="!showOrgSelector()">
+        <lfx-org-selector [(isPanelOpen)]="selectorPanelOpen"></lfx-org-selector>
+      </div>
+
+      <!-- [class.hidden] avoids SSR hydration mismatch -->
       <div class="px-4 mb-6 w-full" [class.hidden]="!showMeSelector()">
         <div data-testid="me-selector" class="box-border flex gap-3 items-start p-3 w-full rounded-lg">
           <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
