@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -105,6 +105,40 @@ export class SidebarComponent {
       external: item.url ? this.isExternalUrl(item.url) : undefined,
     }))
   );
+
+  // Stores user-toggled group states alongside the items reference they were built against.
+  // When items changes (lens switch), itemsRef no longer matches, so expandedGroupStates
+  // falls back to each item's default — no effect() needed.
+  private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
+    itemsRef: [],
+    overrides: {},
+  });
+
+  protected readonly expandedGroupStates = computed(() => {
+    const items = this.items();
+    const { itemsRef, overrides } = this.expandedGroupOverrides();
+    const effectiveOverrides = itemsRef === items ? overrides : {};
+    const states: Record<string, boolean> = {};
+    const scanForGroups = (candidates: SidebarMenuItem[]) => {
+      for (const item of candidates) {
+        if (item.isGroup) {
+          states[item.label] = item.label in effectiveOverrides ? effectiveOverrides[item.label] : (item.expanded ?? true);
+        } else if (item.isSection && item.items?.length) {
+          scanForGroups(item.items);
+        }
+      }
+    };
+    scanForGroups(items);
+    return states;
+  });
+
+  protected toggleGroup(label: string): void {
+    const items = this.items();
+    const current = this.expandedGroupStates()[label] ?? true;
+    const prev = this.expandedGroupOverrides();
+    const baseOverrides = prev.itemsRef === items ? prev.overrides : {};
+    this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
+  }
 
   protected onItemSelected(item: LensItem): void {
     const context = lensItemToProjectContext(item);
