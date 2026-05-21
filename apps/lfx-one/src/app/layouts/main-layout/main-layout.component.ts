@@ -148,21 +148,6 @@ export class MainLayoutComponent {
           label: 'Crowdfunding',
           icon: 'fa-light fa-circle-dollar',
           url: environment.urls.crowdfunding,
-          // TODO: add group items back in when the crowdfunding app is ready
-          // isGroup: true,
-          // expanded: true,
-          // items: [
-          //   {
-          //     label: 'My Initiatives',
-          //     icon: 'fa-light fa-hand-holding-heart',
-          //     routerLink: '/crowdfunding/initiatives',
-          //   },
-          //   {
-          //     label: 'My Donations',
-          //     icon: 'fa-light fa-heart',
-          //     routerLink: '/crowdfunding/donations',
-          //   },
-          // ],
         },
         {
           label: 'Badges',
