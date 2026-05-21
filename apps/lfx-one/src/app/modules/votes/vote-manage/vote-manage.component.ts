@@ -7,10 +7,17 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_QUESTION_MIN_LENGTH, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { buildCreateVoteRequest, buildUpdateVoteRequest, mapVoteToFormValue, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import {
+  buildCreateVoteRequest,
+  buildDraftUpdateVoteRequest,
+  buildDraftVoteRequest,
+  buildUpdateVoteRequest,
+  mapVoteToFormValue,
+  markFormControlsAsTouched,
+} from '@lfx-one/shared/utils';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
@@ -65,6 +72,7 @@ export class VoteManageComponent {
   public readonly mode = signal<'create' | 'edit'>('create');
   public readonly voteId = signal<string | null>(null);
   public readonly submitting = signal<boolean>(false);
+  public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
 
@@ -78,6 +86,7 @@ export class VoteManageComponent {
   public readonly isFirstStep: Signal<boolean> = this.initIsFirstStep();
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
+  public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
 
   public constructor() {
     this.initCommitteeContext();
@@ -125,8 +134,17 @@ export class VoteManageComponent {
   }
 
   public onSaveAsDraft(): void {
-    if (this.form().invalid) {
-      this.markAllFormControlsAsTouched();
+    if (this.submitting()) {
+      return;
+    }
+
+    if (!this.isDraftSavable()) {
+      this.markDraftRequiredFieldsAsTouched();
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Cannot save draft',
+        detail: `Please enter a title and select a ${this.committeeLabel.singular.toLowerCase()} before saving this ${this.voteLabel.singular.toLowerCase()} as a draft.`,
+      });
       return;
     }
 
@@ -145,7 +163,7 @@ export class VoteManageComponent {
     const formValue = this.form().getRawValue() as VoteFormValue;
 
     if (this.isEditMode() && this.voteId()) {
-      const updateRequest = buildUpdateVoteRequest(formValue, projectUid);
+      const updateRequest = buildDraftUpdateVoteRequest(formValue, projectUid);
       this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
         next: () => {
           this.messageService.add({
@@ -166,8 +184,8 @@ export class VoteManageComponent {
         },
       });
     } else {
-      const createRequest = buildCreateVoteRequest(formValue, projectUid);
-      this.voteService.createVote(createRequest).subscribe({
+      const draftRequest = buildDraftVoteRequest(formValue, projectUid);
+      this.voteService.createVote(draftRequest).subscribe({
         next: () => {
           this.messageService.add({
             severity: 'success',
@@ -190,6 +208,10 @@ export class VoteManageComponent {
   }
 
   public onSubmit(): void {
+    if (this.submitting() || this.confirmingOpenVote()) {
+      return;
+    }
+
     if (this.form().invalid) {
       this.markAllFormControlsAsTouched();
       return;
@@ -197,6 +219,7 @@ export class VoteManageComponent {
 
     // For create mode, show confirmation dialog before opening the vote
     if (!this.isEditMode()) {
+      this.confirmingOpenVote.set(true);
       this.confirmationService.confirm({
         header: OPEN_VOTE_CONFIRMATION.header,
         message: OPEN_VOTE_CONFIRMATION.message,
@@ -204,7 +227,11 @@ export class VoteManageComponent {
         rejectLabel: OPEN_VOTE_CONFIRMATION.rejectLabel,
         acceptButtonStyleClass: 'p-button-info p-button-sm',
         rejectButtonStyleClass: 'p-button-text p-button-sm',
-        accept: () => this.submitVote(),
+        accept: () => {
+          this.confirmingOpenVote.set(false);
+          this.submitVote();
+        },
+        reject: () => this.confirmingOpenVote.set(false),
       });
     } else {
       this.submitVote();
@@ -221,7 +248,7 @@ export class VoteManageComponent {
    */
   public createQuestionFormGroup(): FormGroup {
     return new FormGroup({
-      question: new FormControl('', [trimmedRequired(), trimmedMinLength(10)]),
+      question: new FormControl('', [trimmedRequired(), trimmedMinLength(VOTE_QUESTION_MIN_LENGTH)]),
       response_type: new FormControl<'single' | 'multiple'>('single', [Validators.required]),
       options: new FormArray([this.createOptionControl(), this.createOptionControl()], [Validators.minLength(2)]),
     });
@@ -247,6 +274,10 @@ export class VoteManageComponent {
   }
 
   private submitVote(): void {
+    if (this.submitting()) {
+      return;
+    }
+
     const projectUid = this.vote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       this.messageService.add({
@@ -359,7 +390,7 @@ export class VoteManageComponent {
     if (formValue.questions.length > 0) {
       for (const question of formValue.questions) {
         const questionGroup = new FormGroup({
-          question: new FormControl(question.question, [trimmedRequired(), trimmedMinLength(10)]),
+          question: new FormControl(question.question, [trimmedRequired(), trimmedMinLength(VOTE_QUESTION_MIN_LENGTH)]),
           response_type: new FormControl<'single' | 'multiple'>(question.response_type, [Validators.required]),
           options: new FormArray(
             question.options.map((option) => new FormControl(option, { validators: [trimmedRequired()], nonNullable: true })),
@@ -485,6 +516,14 @@ export class VoteManageComponent {
     );
   }
 
+  private initIsDraftSavable(): Signal<boolean> {
+    return computed(() => {
+      const title = (this.formValue()['title'] as string | undefined) ?? '';
+      const committeeValid = !!this.committeeContext() || !!this.form().get('committee')?.valid;
+      return title.trim().length > 0 && committeeValid;
+    });
+  }
+
   private canNavigateToStep(step: number): boolean {
     // Allow navigation to previous steps or current step
     if (step <= this.currentStep()) {
@@ -545,6 +584,12 @@ export class VoteManageComponent {
 
   private markAllFormControlsAsTouched(): void {
     markFormControlsAsTouched(this.form());
+  }
+
+  /** Touch only the fields gated by `isDraftSavable` so missing-value errors render under the right inputs. */
+  private markDraftRequiredFieldsAsTouched(): void {
+    this.form().get('title')?.markAsTouched();
+    this.form().get('committee')?.markAsTouched();
   }
 
   /** Reads committee_uid from queryParams and pre-populates the committee field (locked). */

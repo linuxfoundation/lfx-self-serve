@@ -71,7 +71,13 @@
             </lfx-button>
 
             <!-- Save as Draft Button - Always visible -->
-            <lfx-button label="Save as Draft" severity="secondary" [outlined]="true" (onClick)="onSaveAsDraft()" data-testid="vote-manage-draft-btn">
+            <lfx-button
+              label="Save as Draft"
+              severity="secondary"
+              [outlined]="true"
+              [loading]="submitting()"
+              (onClick)="onSaveAsDraft()"
+              data-testid="vote-manage-draft-btn">
             </lfx-button>
 
             @if (isLastStep()) {
@@ -79,6 +85,7 @@
               <lfx-button
                 [label]="'Open ' + voteLabel.singular"
                 [loading]="submitting()"
+                [disabled]="confirmingOpenVote()"
                 severity="info"
                 (onClick)="onSubmit()"
                 data-testid="vote-manage-submit-btn">
