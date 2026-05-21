@@ -8,6 +8,13 @@
     <p class="text-xs text-gray-500">Brand mentions &amp; sentiment · {{ foundationName() || 'All foundations' }}</p>
   </div>
 
+  @if (focusProgram() !== 'all') {
+    <div class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3" data-testid="social-listening-focus-info">
+      <i class="fa-light fa-circle-info text-blue-500" aria-hidden="true"></i>
+      <p class="text-xs text-blue-700">Showing all programs — social listening data is not yet available at the program level.</p>
+    </div>
+  }
+
   <!-- KPI Cards -->
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="social-listening-kpi-grid">
     @if (loading()) {
