@@ -3,9 +3,10 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type { MarketingImpactFocusProgram, PerformanceSummaryKpi, WebActivitiesSummaryResponse, WebActivityDomainRow } from '@lfx-one/shared/interfaces';
 
@@ -38,16 +39,18 @@ export class WebActivityTabComponent {
   // === Private Initializers ===
   private initWebData(): Signal<WebActivitiesSummaryResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$]).pipe(
+        switchMap(([slug, focus]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getWebActivitiesSummary(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getWebActivitiesSummary(slug, classification).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );

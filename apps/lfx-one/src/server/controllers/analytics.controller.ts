@@ -1780,7 +1780,8 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getWebActivitiesSummary(foundationSlug);
+      const classification = getStringQueryParam(req, 'classification');
+      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification);
 
       logger.success(req, 'get_web_activities_summary', startTime, {
         foundation_slug: foundationSlug,
