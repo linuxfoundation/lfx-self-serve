@@ -148,6 +148,9 @@ export * from './supabase.interface';
 // Stat card interfaces
 export * from './stat-card.interface';
 
+// Org involvement interfaces (cross-foundation org overview)
+export * from './org-involvement.interface';
+
 // Changelog interfaces
 export * from './changelog.interface';
 
@@ -159,3 +162,6 @@ export * from './marketing-impact.interface';
 
 // Enrollment interfaces
 export * from './enrollment.interface';
+
+// Org Memberships interfaces
+export * from './org-memberships.interface';
