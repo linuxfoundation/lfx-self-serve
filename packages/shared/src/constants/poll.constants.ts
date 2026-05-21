@@ -3,7 +3,7 @@
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import { TagSeverity } from '../interfaces/components.interface';
-import { PollQuestion } from '../interfaces/poll.interface';
+import { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
 
 /**
  * Configurable labels for votes displayed throughout the UI
@@ -252,3 +252,16 @@ export const OPEN_VOTE_CONFIRMATION = {
   acceptLabel: 'Yes, open vote',
   rejectLabel: 'Cancel',
 } as const;
+
+/** Minimum trimmed length for a question prompt — shared by the form validator and the draft payload filter. */
+export const VOTE_QUESTION_MIN_LENGTH = 10;
+
+/** Default close window applied to draft votes when the user has not picked an end date. */
+export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;
+
+/** Placeholder question shipped with a draft when the user has not filled in any question yet (upstream requires `poll_questions` to be non-empty). */
+export const DRAFT_VOTE_PLACEHOLDER_QUESTION: CreatePollQuestion = {
+  prompt: 'Untitled question',
+  type: 'single_choice',
+  choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }],
+};
