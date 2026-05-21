@@ -131,12 +131,12 @@ export class InviteController {
     }
   }
 
-  // Verifies the JWT signature using HS256 and the INVITE_JWT_SECRET env var.
+  // Verifies the JWT signature using HS256 and the JWT_SECRET env var.
   // Throws JoseErrors.JWTExpired for expired tokens and other JoseErrors for invalid/tampered ones.
   private verifyInviteToken(token: string): InviteTokenPayload {
-    const secret = process.env['INVITE_JWT_SECRET'];
+    const secret = process.env['JWT_SECRET'];
     if (!secret) {
-      throw new Error('INVITE_JWT_SECRET is not configured');
+      throw new Error('JWT_SECRET is not configured');
     }
     const key = JWK.asKey(Buffer.from(secret, 'base64'));
     return JWT.verify(token, key, { algorithms: ['HS256'] }) as InviteTokenPayload;
