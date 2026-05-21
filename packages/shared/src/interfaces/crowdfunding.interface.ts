@@ -78,7 +78,7 @@ export interface DonationHistoryItem {
   id: string;
   initiativeName: string;
   initiativeIcon: string;
-  fundType: string;
+  fundType: FundType;
   fundTypeIcon: string;
   date: string;
   kind: DonationKind;
