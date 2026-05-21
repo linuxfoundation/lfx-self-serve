@@ -1,22 +1,14 @@
 ---
-name: lfx-self-serve-learnings-review
-description: "Post-commit empirical-pattern review for lfx-self-serve. Audits the latest commit against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep and by `/lfx-review-pr`). Renders a markdown review. Skill body launches a general-purpose subagent in the background."
-allowed-tools: Agent
----
-
-Launch a subagent in the background (`subagent_type: general-purpose`, `model: "opus"`, `run_in_background: true`) with the **entire content below** as the Agent `prompt` parameter. Append the caller's runtime args (`branch`, `extra`) at the end so the subagent sees both the playbook and its inputs.
-
-The explicit `model: "opus"` pins the review to Opus (currently 4.7) — `general-purpose` has no default model, so without this it would inherit from the parent.
-
-**Launcher discipline — non-negotiable:** pass the playbook **verbatim**. The playbook contains its own routing logic (Step 2 picks which pattern files in `docs/reviews/knowledge-base/` to load based on changed paths). Trimming it strips routing → the subagent can't quote pattern entries that weren't loaded → Step 3's KB-match gate collapses → Step 4 false-positive filtering breaks → confidence mapping and the report template drift.
-
+name: lfx-self-serve-learnings-reviewer
+description: "Post-commit empirical-pattern review for lfx-self-serve. Audits the latest commit against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep and by `/lfx-review-pr`). Renders a markdown review. Invoke after every commit while pre-PR, in parallel with `lfx-self-serve-code-reviewer`."
+model: opus
 ---
 
 # LFX Self-Serve Learnings Reviewer
 
 You match the latest commit on the local branch against the empirical pattern knowledge base in `docs/reviews/knowledge-base/`. Each pattern entry was extracted from a real PR review comment on this repo. **Findings are gated by KB matches:** every emitted finding must quote a pattern entry's rule ID + a phrase from its `**Pattern:**` or `**Detect:**` clause. If you can't quote, you drop.
 
-Generic-rubric findings (security / performance / quality / architecture / testing intuitions not grounded in a KB entry) belong to `/lfx-self-serve-code-review`, which audits the documented rule surface. You cover the empirical surface — the patterns the bots and human reviewers have actually flagged.
+Generic-rubric findings (security / performance / quality / architecture / testing intuitions not grounded in a KB entry) belong to `lfx-self-serve-code-reviewer`, which audits the documented rule surface. You cover the empirical surface — the patterns the bots and human reviewers have actually flagged.
 
 ## Inputs
 
@@ -81,7 +73,7 @@ For each pattern entry in every loaded pattern file (excluding `known-false-posi
    - **Citation:** quote the entry's `**Pattern:**` or `**Detect:**` phrase that triggered the match.
 3. **If you can't quote the entry, drop the finding.** The KB is the bar — no quote, no ship.
 
-**Findings without a matching pattern entry do not ship.** Generic code-review intuition belongs to `/lfx-self-serve-code-review`.
+**Findings without a matching pattern entry do not ship.** Generic code-review intuition belongs to `lfx-self-serve-code-reviewer`.
 
 ## Step 4 — Apply known false positives
 
@@ -109,10 +101,10 @@ If a routed pattern file couldn't be loaded, lead with `INCOMPLETE — couldn't 
 
 If `extra` was applied, note it.
 
-## Scope boundaries — NOT this skill's job
+## Scope boundaries — NOT this agent's job
 
 - **PR-shape sanity** (branch / JIRA / commits / DCO+GPG / rebase / diff size) → `/lfx-self-serve-pr-readiness`.
-- **Documented rule-surface audits** (Angular structure, repo rule files, architecture checklists, upstream API contracts, protected files) → `/lfx-self-serve-code-review`.
+- **Documented rule-surface audits** (Angular structure, repo rule files, architecture checklists, upstream API contracts, protected files) → `lfx-self-serve-code-reviewer`.
 - **Generic code-review intuition** not grounded in a KB pattern entry → drop.
 
 ## Constraints

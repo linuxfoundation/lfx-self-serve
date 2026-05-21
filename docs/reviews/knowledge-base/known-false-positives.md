@@ -2,7 +2,7 @@
 
 Findings that match any pattern below MUST be dropped, regardless of which source (rule file, checklist, pattern file) originally produced them. This list is the floor — even a quotable pattern doesn't survive if it matches a known false positive.
 
-Used by the `/lfx-self-serve-learnings-review` skill (Step 4), and also relevant filter discipline for the `/lfx-self-serve-code-review` skill.
+Used by the `lfx-self-serve-learnings-reviewer` subagent (Step 4), and also relevant filter discipline for the `lfx-self-serve-code-reviewer` subagent.
 
 ---
 
