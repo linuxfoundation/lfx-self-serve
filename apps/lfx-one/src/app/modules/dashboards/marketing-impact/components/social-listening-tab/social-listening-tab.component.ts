@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, input, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -27,6 +28,7 @@ import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-c
 export class SocialListeningTabComponent {
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
@@ -44,6 +46,13 @@ export class SocialListeningTabComponent {
   protected readonly hasTopProjects = computed(() => this.topProjects().length > 0);
   protected readonly topMentions: Signal<BrandHealthMention[]> = this.initTopMentions();
   protected readonly hasTopMentions = computed(() => this.topMentions().length > 0);
+
+  // === Protected Methods ===
+  protected openMentionUrl(url: string): void {
+    if (url && isPlatformBrowser(this.platformId) && /^https?:\/\//i.test(url)) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
 
   // === Private Initializers ===
   private initBrandData(): Signal<BrandHealthResponse | null> {
@@ -145,18 +154,12 @@ export class SocialListeningTabComponent {
   }
 
   private initTopMentions(): Signal<BrandHealthMention[]> {
+    const sentimentOrder: Record<string, number> = { negative: 0, neutral: 1, positive: 2 };
     return computed(() => {
       const data = this.brandData();
       if (!data) return [];
-      const positive = data.topPositiveMentions ?? [];
-      const negative = data.topNegativeMentions ?? [];
-      const interleaved: BrandHealthMention[] = [];
-      const maxLen = Math.max(positive.length, negative.length);
-      for (let i = 0; i < maxLen && interleaved.length < 5; i++) {
-        if (i < positive.length) interleaved.push(positive[i]);
-        if (i < negative.length && interleaved.length < 5) interleaved.push(negative[i]);
-      }
-      return interleaved;
+      const all = [...(data.topNegativeMentions ?? []), ...(data.topPositiveMentions ?? [])];
+      return all.sort((a, b) => (sentimentOrder[a.sentiment] ?? 1) - (sentimentOrder[b.sentiment] ?? 1)).slice(0, 10);
     });
   }
 }

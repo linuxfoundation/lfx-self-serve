@@ -97,9 +97,32 @@
       @if (hasTopMentions()) {
         <div class="flex flex-col gap-3" data-testid="social-listening-mentions-list">
           @for (mention of topMentions(); track $index) {
-            <div class="flex flex-col gap-1 rounded-lg border border-gray-100 p-3" [attr.data-testid]="'social-listening-mention-' + mention.author">
+            <div
+              class="flex flex-col gap-1 rounded-lg border border-gray-100 p-3 transition-colors"
+              [class.cursor-pointer]="mention.url"
+              [class.hover:border-gray-300]="mention.url"
+              [class.hover:bg-gray-50]="mention.url"
+              [attr.data-testid]="'social-listening-mention-' + $index"
+              (click)="openMentionUrl(mention.url)"
+              (keydown.enter)="openMentionUrl(mention.url)"
+              (keydown.space)="$event.preventDefault(); openMentionUrl(mention.url)"
+              [attr.role]="mention.url ? 'button' : null"
+              [attr.tabindex]="mention.url ? 0 : null">
               <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-gray-700">{{ mention.author }}</span>
+                @if (mention.authorProfileLink) {
+                  <a
+                    [href]="mention.authorProfileLink"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                    (click)="$event.stopPropagation()"
+                    (keydown.enter)="$event.stopPropagation()"
+                    (keydown.space)="$event.stopPropagation()"
+                    >{{ mention.author }}<i class="fa-light fa-arrow-up-right-from-square text-[9px]" aria-hidden="true"></i
+                  ></a>
+                } @else {
+                  <span class="text-xs font-medium text-gray-700">{{ mention.author }}</span>
+                }
                 <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">{{ mention.sourcePlatform }}</span>
                 @if (mention.sentiment === 'positive') {
                   <span class="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">positive</span>
@@ -107,6 +130,9 @@
                   <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">negative</span>
                 } @else {
                   <span class="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">neutral</span>
+                }
+                @if (mention.url) {
+                  <i class="fa-light fa-arrow-up-right-from-square ml-auto text-[10px] text-gray-400" aria-hidden="true"></i>
                 }
               </div>
               <p class="line-clamp-2 text-xs text-gray-600">{{ mention.title || mention.body }}</p>
