@@ -2,6 +2,19 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <main class="flex flex-col gap-6 p-6" data-testid="org-placeholder-page">
+  @if (showDevelopmentNotice()) {
+    <lfx-message
+      severity="warn"
+      icon="fa-light fa-screwdriver-wrench"
+      styleClass="mb-0"
+      title="Page in development"
+      data-testid="org-overview-development-notice">
+      <ng-template #content>
+        <p class="text-sm">This view is actively being built. Mock data is currently used for the organization dropdown and some content blocks.</p>
+      </ng-template>
+    </lfx-message>
+  }
+
   <header class="flex flex-col gap-1">
     <h1 class="text-xl font-semibold text-gray-900">{{ title() }}</h1>
     <p class="text-sm text-gray-500">{{ description() }}</p>

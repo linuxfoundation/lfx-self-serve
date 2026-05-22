@@ -115,4 +115,6 @@ export interface OrgPlaceholderRouteData {
   title?: string;
   description?: string;
   icon?: string;
+  /** When true, shows a development notice banner above the page header. */
+  showDevelopmentNotice?: boolean;
 }

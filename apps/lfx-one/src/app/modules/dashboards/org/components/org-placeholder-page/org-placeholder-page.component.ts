@@ -5,11 +5,12 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Data } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MessageComponent } from '@components/message/message.component';
 import { OrgPlaceholderRouteData } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-org-placeholder-page',
-  imports: [EmptyStateComponent],
+  imports: [EmptyStateComponent, MessageComponent],
   templateUrl: './org-placeholder-page.component.html',
 })
 export class OrgPlaceholderPageComponent {
@@ -20,4 +21,5 @@ export class OrgPlaceholderPageComponent {
   protected readonly title = computed(() => (this.routeData() as OrgPlaceholderRouteData).title ?? 'Coming Soon');
   protected readonly description = computed(() => (this.routeData() as OrgPlaceholderRouteData).description ?? 'This view is in development.');
   protected readonly icon = computed(() => (this.routeData() as OrgPlaceholderRouteData).icon ?? 'fa-light fa-screwdriver-wrench');
+  protected readonly showDevelopmentNotice = computed(() => Boolean((this.routeData() as OrgPlaceholderRouteData).showDevelopmentNotice));
 }
