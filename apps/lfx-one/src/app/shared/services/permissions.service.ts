@@ -21,12 +21,12 @@ export class PermissionsService {
     return this.http.post<void>(`/api/projects/${project}/permissions`, request);
   }
 
-  // Update user role in project
+  // Update user role in project — identifier may be a username or email address
   public updateUserRole(project: string, identifier: string, request: UpdateUserRoleRequest): Observable<void> {
     return this.http.put<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`, request);
   }
 
-  // Remove user from project (removes from both writers and auditors)
+  // Remove user from project — identifier may be a username or email address
   public removeUserFromProject(project: string, identifier: string): Observable<void> {
     return this.http.delete<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`);
   }
