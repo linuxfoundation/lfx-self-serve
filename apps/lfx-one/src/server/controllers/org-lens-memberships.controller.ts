@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { FOUNDATION_ID_PATTERN, SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -71,6 +71,34 @@ export class OrgLensMembershipsController {
     }
   }
 
+  /** GET /api/orgs/:accountId/lens/memberships/:foundationId */
+  public async getMembershipDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const accountId = req.params['accountId'];
+    const foundationId = req.params['foundationId'];
+    const startTime = logger.startOperation(req, 'get_org_membership_detail', {
+      account_id: accountId,
+      foundation_id: foundationId,
+    });
+
+    try {
+      this.assertAccountId(accountId, 'get_org_membership_detail');
+      this.assertFoundationId(foundationId, 'get_org_membership_detail');
+
+      const response = await this.service.getMembershipDetail(accountId, foundationId);
+
+      logger.success(req, 'get_org_membership_detail', startTime, {
+        account_id: accountId,
+        foundation_id: foundationId,
+        contact_count: response.keyContacts.reduce((acc, c) => acc + c.people.length, 0),
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/orgs/:accountId/lens/memberships/discover */
   public async getDiscoverOpportunities(req: Request, res: Response, next: NextFunction): Promise<void> {
     const accountId = req.params['accountId'];
@@ -101,6 +129,15 @@ export class OrgLensMembershipsController {
     }
     if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
       throw ServiceValidationError.forField('accountId', 'Invalid Salesforce accountId format', { operation });
+    }
+  }
+
+  private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
+    if (!foundationId || typeof foundationId !== 'string') {
+      throw ServiceValidationError.forField('foundationId', 'foundationId path parameter is required', { operation });
+    }
+    if (!FOUNDATION_ID_PATTERN.test(foundationId)) {
+      throw ServiceValidationError.forField('foundationId', 'Invalid foundationId format', { operation });
     }
   }
 }

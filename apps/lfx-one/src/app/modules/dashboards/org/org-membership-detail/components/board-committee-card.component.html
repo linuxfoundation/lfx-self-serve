@@ -1,0 +1,313 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Two separate toast outlets — one per `key` so PrimeNG MessageService dispatches correctly -->
+<p-toast position="top-right" key="board-toast-success-reassigned" data-testid="board-toast-success-reassigned" />
+<p-toast position="top-right" key="board-committee-refetch-error-toast" data-testid="board-committee-refetch-error-toast" />
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="board-committee-card">
+  @if (initialLoading()) {
+    <!-- Tab-wide loading skeleton (FR-011d.2) -->
+    <div class="flex flex-col gap-4 p-5" data-testid="board-committee-loading">
+      <div class="h-6 w-56 animate-pulse rounded bg-gray-200"></div>
+      <div class="h-10 w-full animate-pulse rounded bg-gray-100"></div>
+      <div class="h-32 w-full animate-pulse rounded bg-gray-100"></div>
+      <div class="h-12 w-full animate-pulse rounded bg-gray-100"></div>
+      <div class="h-12 w-full animate-pulse rounded bg-gray-100"></div>
+    </div>
+  } @else {
+    <!-- Card header: title + search input -->
+    <div class="flex flex-col gap-3 px-5 py-4">
+      <div class="flex items-center justify-between gap-4">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="board-committee-title">Board &amp; Committee Members</h2>
+        <div class="relative">
+          <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+          <input
+            pInputText
+            type="text"
+            placeholder="Search by name or email..."
+            class="!pl-9 !pr-9"
+            [ngModel]="searchTerm()"
+            (ngModelChange)="onSearchInput($event)"
+            data-testid="board-committee-search-input"
+            autocomplete="off" />
+          @if (searchTerm()) {
+            <button
+              type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              (click)="clearSearch()"
+              aria-label="Clear search"
+              data-testid="board-committee-search-clear">
+              <i class="fa-light fa-xmark"></i>
+            </button>
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <!-- ============== Section 1: Board Seats ============== -->
+        <div class="rounded-md border border-gray-200">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+            [attr.aria-expanded]="boardExpanded()"
+            (click)="toggleBoard()"
+            data-testid="board-committee-section-board-header">
+            <span class="text-sm font-semibold text-gray-900"> Board Seats ({{ boardState() === 'error' ? '?' : boardSeats().length }}) </span>
+            <i class="fa-light" [class.fa-chevron-up]="boardExpanded()" [class.fa-chevron-down]="!boardExpanded()" aria-hidden="true"></i>
+          </button>
+          @if (boardExpanded()) {
+            <div class="border-t border-gray-200" data-testid="board-committee-section-board-body">
+              @if (boardState() === 'error') {
+                <div class="px-4 py-6" data-testid="board-committee-section-error-board">
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Couldn't load Board Seats"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    [withCard]="false"
+                    (ctaClick)="fetchBoard()" />
+                </div>
+              } @else if (boardSeats().length === 0) {
+                <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-board">No board seats for this membership.</p>
+              } @else if (filteredBoardSeats().length === 0) {
+                <div class="flex items-center gap-2 px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-board">
+                  <span>No people match your search.</span>
+                  <button type="button" class="not-italic text-blue-600 hover:text-blue-700" (click)="clearSearch()">Clear search</button>
+                </div>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full" data-testid="board-committee-board-table">
+                    <thead class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th scope="col" class="px-4 py-2">Name</th>
+                        <th scope="col" class="px-4 py-2">
+                          Role
+                          <i class="fa-light fa-sort ml-1 text-gray-300" aria-hidden="true"></i>
+                        </th>
+                        <th scope="col" class="px-4 py-2">
+                          Voting
+                          <i class="fa-light fa-sort ml-1 text-gray-300" aria-hidden="true"></i>
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                      @for (seat of filteredBoardSeats(); track seat.seatId) {
+                        <tr [attr.data-testid]="'board-committee-board-row-' + seat.seatId">
+                          <td class="px-4 py-3 align-top">
+                            <div class="flex items-center gap-3">
+                              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-xs font-semibold text-white">
+                                {{ seat.person.initials }}
+                              </div>
+                              <div class="flex flex-col">
+                                <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
+                                @if (seat.person.jobTitle) {
+                                  <span class="text-xs text-gray-500">{{ seat.person.jobTitle }}</span>
+                                }
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.seatName }}</td>
+                          <td class="px-4 py-3 align-top text-sm font-medium text-green-700">
+                            {{ seat.votingPercentage !== null ? seat.votingPercentage + '%' : '—' }}
+                          </td>
+                          <td class="px-4 py-3 align-top text-right">
+                            @if (seat.isOrgEditable) {
+                              <button
+                                type="button"
+                                class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                pTooltip="Edit contact"
+                                tooltipPosition="top"
+                                [attr.aria-label]="'Reassign ' + seat.seatName + ' for ' + seat.person.fullName"
+                                [attr.data-testid]="'board-committee-board-edit-' + seat.seatId"
+                                (click)="openReassignModal(seat, 'board')">
+                                <i class="fa-light fa-pencil"></i>
+                              </button>
+                            } @else {
+                              <button
+                                type="button"
+                                class="text-xs text-gray-500 underline-offset-2 hover:text-gray-700 hover:underline"
+                                [attr.data-testid]="'board-committee-board-why-' + seat.seatId"
+                                (click)="openWhyCantEditModal(seat)">
+                                Why can't I edit?
+                              </button>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- ============== Section 2: Committee Seats ============== -->
+        <div class="rounded-md border border-gray-200">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+            [attr.aria-expanded]="committeeExpanded()"
+            (click)="toggleCommittee()"
+            data-testid="board-committee-section-committee-header">
+            <span class="text-sm font-semibold text-gray-900"> Committee Seats ({{ committeeState() === 'error' ? '?' : committeeSeats().length }}) </span>
+            <i class="fa-light" [class.fa-chevron-up]="committeeExpanded()" [class.fa-chevron-down]="!committeeExpanded()" aria-hidden="true"></i>
+          </button>
+          @if (committeeExpanded()) {
+            <div class="border-t border-gray-200" data-testid="board-committee-section-committee-body">
+              @if (committeeState() === 'error') {
+                <div class="px-4 py-6" data-testid="board-committee-section-error-committee">
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Couldn't load Committee Seats"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    [withCard]="false"
+                    (ctaClick)="fetchCommittee()" />
+                </div>
+              } @else if (committeeSeats().length === 0) {
+                <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-committee">No committee seats for this membership.</p>
+              } @else if (filteredCommitteeSeats().length === 0) {
+                <div class="flex items-center gap-2 px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-committee">
+                  <span>No people match your search.</span>
+                  <button type="button" class="not-italic text-blue-600 hover:text-blue-700" (click)="clearSearch()">Clear search</button>
+                </div>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full" data-testid="board-committee-committee-table">
+                    <thead class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th scope="col" class="px-4 py-2">Name</th>
+                        <th scope="col" class="px-4 py-2">
+                          Role
+                          <i class="fa-light fa-sort ml-1 text-gray-300" aria-hidden="true"></i>
+                        </th>
+                        <th scope="col" class="px-4 py-2">
+                          Committee
+                          <i class="fa-light fa-sort ml-1 text-gray-300" aria-hidden="true"></i>
+                        </th>
+                        <th scope="col" class="px-4 py-2">
+                          Voting
+                          <i class="fa-light fa-sort ml-1 text-gray-300" aria-hidden="true"></i>
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                      @for (seat of filteredCommitteeSeats(); track seat.seatId) {
+                        <tr [attr.data-testid]="'board-committee-committee-row-' + seat.seatId">
+                          <td class="px-4 py-3 align-top">
+                            <div class="flex items-center gap-3">
+                              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-xs font-semibold text-white">
+                                {{ seat.person.initials }}
+                              </div>
+                              <div class="flex flex-col">
+                                <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
+                                @if (seat.person.jobTitle) {
+                                  <span class="text-xs text-gray-500">{{ seat.person.jobTitle }}</span>
+                                }
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.role }}</td>
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.committeeName }}</td>
+                          <td class="px-4 py-3 align-top text-sm font-medium text-green-700">
+                            {{ seat.votingPercentage !== null ? seat.votingPercentage + '%' : '—' }}
+                          </td>
+                          <td class="px-4 py-3 align-top text-right">
+                            @if (seat.isOrgEditable) {
+                              <button
+                                type="button"
+                                class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                pTooltip="Edit contact"
+                                tooltipPosition="top"
+                                [attr.aria-label]="'Reassign ' + seat.committeeName + ' for ' + seat.person.fullName"
+                                [attr.data-testid]="'board-committee-committee-edit-' + seat.seatId"
+                                (click)="openReassignModal(seat, 'committee')">
+                                <i class="fa-light fa-pencil"></i>
+                              </button>
+                            } @else {
+                              <button
+                                type="button"
+                                class="text-xs text-gray-500 underline-offset-2 hover:text-gray-700 hover:underline"
+                                [attr.data-testid]="'board-committee-committee-why-' + seat.seatId"
+                                (click)="openWhyCantEditModal(seat)">
+                                Why can't I edit?
+                              </button>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- ============== Section 3: Voting History ============== -->
+        <div class="rounded-md border border-gray-200">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+            [attr.aria-expanded]="votingExpanded()"
+            (click)="toggleVoting()"
+            data-testid="board-committee-section-voting-header">
+            <span class="text-sm font-semibold text-gray-900"> Voting History ({{ votingState() === 'error' ? '?' : votingHistory().length }}) </span>
+            <i class="fa-light" [class.fa-chevron-up]="votingExpanded()" [class.fa-chevron-down]="!votingExpanded()" aria-hidden="true"></i>
+          </button>
+          @if (votingExpanded()) {
+            <div class="border-t border-gray-200" data-testid="board-committee-section-voting-body">
+              @if (votingState() === 'error') {
+                <div class="px-4 py-6" data-testid="board-committee-section-error-voting">
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Couldn't load Voting History"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    [withCard]="false"
+                    (ctaClick)="fetchVoting()" />
+                </div>
+              } @else if (votingHistory().length === 0) {
+                <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-voting">No voting history yet.</p>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full" data-testid="board-committee-voting-table">
+                    <thead class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th scope="col" class="px-4 py-2">Date</th>
+                        <th scope="col" class="px-4 py-2">Resolution</th>
+                        <th scope="col" class="px-4 py-2">Vote</th>
+                        <th scope="col" class="px-4 py-2">Outcome</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                      @for (vote of votingHistoryWithMeta(); track vote.voteId) {
+                        <tr [attr.data-testid]="'board-committee-voting-row-' + vote.voteId">
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.formattedDate }}</td>
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.resolution }}</td>
+                          <td class="px-4 py-3 align-top">
+                            <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" [class]="vote.chipClass">
+                              {{ vote.vote }}
+                            </span>
+                          </td>
+                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.outcome }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</lfx-card>

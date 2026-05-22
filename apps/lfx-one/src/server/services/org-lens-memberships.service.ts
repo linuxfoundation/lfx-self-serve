@@ -8,9 +8,23 @@ import type {
   OrgDiscoverOpportunity,
   OrgExpiredMembership,
   OrgExpiredMembershipsResponse,
+  OrgMembershipDetailResponse,
+  OrgMembershipFoundationHeader,
+  OrgMembershipKeyContact,
 } from '@lfx-one/shared/interfaces';
 
+import sharedFixture from './fixtures/org-membership-detail.mock.json';
 import { SnowflakeService } from './snowflake.service';
+
+// Shared mock key-contacts payload (FR-026 / FR-026a). Loaded once at build-time
+// via TypeScript JSON module import — every call to getMembershipDetail returns
+// this same array; only the foundation header is derived per-request from
+// active-memberships data (FR-026b).
+//
+// FR-031: future real impl will replace this with an HTTP call to
+// lfx-v2-member-service GET /memberships/{membership_uid}/key_contacts and
+// transform ProjectKeyContactResponse[] (snake_case) into this shape per FR-031b.
+const SHARED_FIXTURE = sharedFixture as { sharedKeyContacts: OrgMembershipKeyContact[] };
 
 interface RawMembershipRow {
   ACCOUNT_ID: string;
@@ -193,6 +207,43 @@ export class OrgLensMembershipsService {
     }));
 
     return { accountId, opportunities };
+  }
+
+  // GET /api/orgs/:accountId/lens/memberships/:foundationId — FR-024 to FR-026b.
+  // v1: foundation header derived by calling getActiveMemberships (which queries
+  // Snowflake) then matching the foundationId. Unknown IDs fall back to a generic
+  // stub. keyContacts are from the shared fixture (no additional I/O beyond the
+  // Snowflake call in getActiveMemberships).
+  public async getMembershipDetail(accountId: string, foundationId: string): Promise<OrgMembershipDetailResponse> {
+    const activeResponse = await this.getActiveMemberships(accountId);
+    const knownFoundation = activeResponse.memberships.find((m) => m.foundationId === foundationId);
+
+    const foundation: OrgMembershipFoundationHeader = knownFoundation
+      ? {
+          foundationId: knownFoundation.foundationId,
+          foundationName: knownFoundation.foundationName,
+          foundationLogo: knownFoundation.foundationLogo,
+          membershipTier: knownFoundation.membershipTier,
+          tierStartDate: knownFoundation.tierStartDate || null,
+          tierEndDate: knownFoundation.tierEndDate || null,
+          memberSince: knownFoundation.memberSince,
+          status: 'active',
+        }
+      : {
+          foundationId,
+          foundationName: `Foundation ${foundationId}`,
+          foundationLogo: null,
+          membershipTier: 'Platinum Membership',
+          tierStartDate: null,
+          tierEndDate: null,
+          memberSince: null,
+          status: 'active',
+        };
+
+    return {
+      foundation,
+      keyContacts: structuredClone(SHARED_FIXTURE.sharedKeyContacts),
+    };
   }
 
   private shapeRow(raw: RawMembershipRow): OrgActiveMembership {

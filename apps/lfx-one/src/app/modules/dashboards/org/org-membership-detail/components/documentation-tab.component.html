@@ -1,0 +1,120 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="membership-detail-docs-content">
+  @switch (pageState()) {
+    @case ('loading') {
+      <div class="flex flex-col gap-4" data-testid="membership-detail-docs-loading">
+        <div class="h-6 w-48 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-16 w-full animate-pulse rounded bg-gray-200"></div>
+        <div class="h-16 w-full animate-pulse rounded bg-gray-200"></div>
+        <div class="h-16 w-full animate-pulse rounded bg-gray-200"></div>
+        <div class="mt-4 h-6 w-48 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-24 w-full animate-pulse rounded bg-gray-200"></div>
+      </div>
+    }
+
+    @case ('error') {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Failed to load documents"
+        subtitle="Please try again."
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        data-testid="membership-detail-docs-error"
+        (ctaClick)="retry()">
+      </lfx-empty-state>
+    }
+
+    @case ('ready') {
+      <!-- Membership Agreements Card -->
+      <lfx-card data-testid="membership-detail-docs-agreements-card">
+        <div class="flex flex-col gap-4 p-5">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900" data-testid="membership-detail-docs-agreements-title">Membership Agreements</h2>
+            <button
+              type="button"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              data-testid="membership-detail-docs-download-all"
+              pTooltip="Coming soon"
+              tooltipPosition="top">
+              <i class="fa-light fa-download"></i>
+            </button>
+          </div>
+
+          @if (displayAgreements().length === 0) {
+            <div data-testid="membership-detail-docs-agreements-empty">
+              <lfx-empty-state icon="fa-light fa-file-lines" title="No membership agreements found." subtitle=""> </lfx-empty-state>
+            </div>
+          } @else {
+            <div class="flex flex-col gap-2" data-testid="membership-detail-docs-agreements-list">
+              @for (agreement of displayAgreements(); track agreement.id) {
+                <div
+                  class="flex items-center gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4"
+                  [attr.data-testid]="'membership-detail-docs-agreement-' + agreement.id">
+                  <i class="fa-light fa-file-lines text-xl text-blue-500"></i>
+                  <div class="flex flex-1 flex-col gap-0.5">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'membership-detail-docs-agreement-name-' + agreement.id">
+                        {{ agreement.name }}
+                      </span>
+                      @if (agreement.isCurrent) {
+                        <span
+                          class="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
+                          [attr.data-testid]="'membership-detail-docs-agreement-current-badge-' + agreement.id">
+                          Current
+                        </span>
+                      }
+                    </div>
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'membership-detail-docs-agreement-meta-' + agreement.id">
+                      Signed {{ agreement.formattedSignedDate }} · {{ agreement.format }} · {{ agreement.fileSizeKb }} KB
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    class="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    [attr.data-testid]="'membership-detail-docs-agreement-view-' + agreement.id"
+                    pTooltip="Coming soon"
+                    tooltipPosition="top">
+                    View
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </lfx-card>
+
+      <!-- Certificate of Membership Card -->
+      <div class="mt-5" data-testid="membership-detail-docs-certificate-card">
+        <lfx-card>
+          <div class="flex flex-col gap-4 p-5">
+            <h2 class="text-lg font-semibold text-gray-900" data-testid="membership-detail-docs-certificate-title">Certificate of Membership</h2>
+            <div class="flex items-center gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-100 to-gray-50 p-5">
+              <div class="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-blue-500">
+                <i class="fa-light fa-award text-[28px] text-white"></i>
+              </div>
+              <div class="flex flex-1 flex-col gap-0.5">
+                <span class="text-sm font-medium text-gray-900" data-testid="membership-detail-docs-certificate-name">
+                  {{ certificateTitle() }}
+                </span>
+                <span class="text-xs text-gray-500" data-testid="membership-detail-docs-certificate-subtitle">
+                  {{ certificateSubtitle() }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                data-testid="membership-detail-docs-certificate-download"
+                pTooltip="Coming soon"
+                tooltipPosition="top">
+                <i class="fa-light fa-download"></i>
+                Download
+              </button>
+            </div>
+          </div>
+        </lfx-card>
+      </div>
+    }
+  }
+</div>

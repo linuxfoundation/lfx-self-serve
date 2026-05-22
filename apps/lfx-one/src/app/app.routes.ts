@@ -85,7 +85,18 @@ export const routes: Routes = [
           {
             path: 'memberships',
             data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
+          },
+          {
+            path: 'memberships/:foundationId',
+            data: {
+              lens: 'org',
+              title: 'Membership Detail',
+              description: 'Key contacts, board, governance, and documentation for a membership.',
+              icon: 'fa-light fa-id-card',
+            },
+            loadComponent: () =>
+              import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
           },
           {
             path: 'projects',

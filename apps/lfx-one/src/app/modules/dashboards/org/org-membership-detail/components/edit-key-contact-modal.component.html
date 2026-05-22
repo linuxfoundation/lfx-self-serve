@@ -1,0 +1,256 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5 py-2" data-testid="edit-key-contact-modal">
+  <!-- Header -->
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h3 class="text-lg font-semibold text-gray-900" data-testid="edit-key-contact-title">Edit Key Contact</h3>
+      @if (foundationName) {
+        <p class="text-sm font-medium text-gray-900" data-testid="edit-key-contact-foundation-name">{{ foundationName }}</p>
+      }
+      <p class="text-sm text-gray-500" data-testid="edit-key-contact-contact-type">{{ contactTypeLabel() }}</p>
+    </div>
+    <button
+      type="button"
+      class="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+      [disabled]="isSaving()"
+      data-testid="edit-key-contact-close"
+      aria-label="Close"
+      (click)="onCancelClick()">
+      <i class="fa-light fa-xmark text-lg"></i>
+    </button>
+  </div>
+
+  <!-- Info banner (always visible) -->
+  <div class="flex items-start gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-900" role="status" data-testid="edit-key-contact-info-banner">
+    <i class="fa-light fa-circle-info mt-0.5 text-blue-600"></i>
+    <span>{{ infoBannerText() }}</span>
+  </div>
+
+  @switch (modalKind()) {
+    <!-- Replace flow (single-contact, has people) -->
+    @case ('replace-form') {
+      <div class="flex flex-col gap-3" data-testid="edit-key-contact-current-member-section">
+        <div class="flex items-center gap-2">
+          <h4 class="text-sm font-semibold text-gray-900">Current Member</h4>
+          <span class="text-sm font-semibold text-red-600" data-testid="edit-key-contact-to-be-removed-badge">(to be removed)</span>
+        </div>
+        @if (currentPerson(); as person) {
+          <div class="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2" data-testid="edit-key-contact-current-member">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-purple-500 text-sm font-semibold text-white">
+              {{ person.initials }}
+            </div>
+            <div class="flex flex-col">
+              <span class="text-sm font-medium text-gray-900">{{ person.fullName }}</span>
+              <span class="text-xs text-gray-500">{{ person.email }}</span>
+            </div>
+          </div>
+        }
+      </div>
+      <ng-container *ngTemplateOutlet="assignForm" />
+    }
+
+    <!-- Single-contact Add-only flow (FR-009b edge case — max=1 but no current member) -->
+    @case ('single-add-form') {
+      <ng-container *ngTemplateOutlet="assignForm" />
+    }
+
+    <!-- Multi-contact chooser + sub-section -->
+    @case ('chooser') {
+      <ng-container *ngTemplateOutlet="chooserCards; context: { active: 'none' }" />
+    }
+    @case ('add-form') {
+      <ng-container *ngTemplateOutlet="chooserCards; context: { active: 'add' }" />
+      <ng-container *ngTemplateOutlet="assignForm" />
+    }
+    @case ('remove-list') {
+      <ng-container *ngTemplateOutlet="chooserCards; context: { active: 'remove' }" />
+      <div class="flex flex-col gap-2">
+        <h4 class="text-sm font-semibold text-gray-900" id="edit-key-contact-remove-heading">Select contact to remove</h4>
+        <div class="flex flex-col gap-2" role="radiogroup" aria-labelledby="edit-key-contact-remove-heading" data-testid="edit-key-contact-remove-list">
+          @for (person of people(); track person.personId) {
+            <button
+              type="button"
+              role="radio"
+              [attr.aria-checked]="selectedRemoveId() === person.personId"
+              [attr.data-testid]="'edit-key-contact-remove-candidate-' + person.personId"
+              class="flex items-center gap-3 rounded-md border-2 px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              [class.border-red-500]="selectedRemoveId() === person.personId"
+              [class.bg-red-50]="selectedRemoveId() === person.personId"
+              [class.border-gray-200]="selectedRemoveId() !== person.personId"
+              [class.hover:border-gray-300]="selectedRemoveId() !== person.personId"
+              tabindex="0"
+              [disabled]="isSaving()"
+              (click)="selectRemoveCandidate(person.personId)"
+              (keydown)="onRemoveCandidateKeydown($event, person.personId)">
+              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-purple-500 text-xs font-semibold text-white">
+                {{ person.initials }}
+              </div>
+              <div class="flex flex-col">
+                <span class="text-sm font-medium text-gray-900">{{ person.fullName }}</span>
+                <span class="text-xs text-gray-500">{{ person.email }}</span>
+              </div>
+            </button>
+          }
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Footer actions (replaces <p-dialog>'s footer ng-template) -->
+  @if (modalKind() !== 'closed' && modalKind() !== 'chooser') {
+    <div class="mt-2 flex items-center justify-end gap-3">
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed"
+        data-testid="edit-key-contact-cancel"
+        [disabled]="isSaving()"
+        (click)="onCancelClick()">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        [class]="primaryButtonStyleClass()"
+        data-testid="edit-key-contact-primary-button"
+        [disabled]="!canSubmit()"
+        (click)="modalKind() === 'remove-list' ? onRemoveClick() : onSaveClick()">
+        @if (isSaving()) {
+          <i class="fa-light fa-spinner fa-spin" data-testid="edit-key-contact-primary-spinner"></i>
+        }
+        <span>{{ primaryButtonLabel() }}</span>
+      </button>
+    </div>
+  } @else if (modalKind() === 'chooser') {
+    <div class="mt-2 flex items-center justify-end">
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed"
+        data-testid="edit-key-contact-cancel"
+        [disabled]="isSaving()"
+        (click)="onCancelClick()">
+        Cancel
+      </button>
+    </div>
+  }
+</div>
+
+<!-- ============================================================ -->
+<!-- Sub-templates ============================================== -->
+<!-- ============================================================ -->
+
+<ng-template #assignForm>
+  <div class="flex flex-col gap-4" data-testid="edit-key-contact-assign-form">
+    <h4 class="text-sm font-semibold text-gray-900">Assign to</h4>
+    <div class="flex flex-col gap-1.5">
+      <label for="edit-key-contact-email-id" class="text-sm font-medium text-gray-700"> Email <span class="text-red-500">*</span> </label>
+      <div class="relative">
+        <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+        <input
+          id="edit-key-contact-email-id"
+          pInputText
+          type="email"
+          autocomplete="off"
+          placeholder="Enter the employee's email address..."
+          class="w-full pl-9"
+          [attr.aria-describedby]="
+            (emailFormatError() ? 'edit-key-contact-email-error-id' : null) || (duplicateError() ? 'edit-key-contact-duplicate-error-id' : null)
+          "
+          [attr.aria-invalid]="!!emailFormatError() || !!duplicateError()"
+          data-testid="edit-key-contact-email-input"
+          [disabled]="isSaving()"
+          [ngModel]="emailField()"
+          (ngModelChange)="onEmailChange($event)"
+          (blur)="onEmailBlur()"
+          (keydown)="onFormEnter($event)" />
+      </div>
+      @if (emailFormatError()) {
+        <p id="edit-key-contact-email-error-id" class="text-xs text-red-600" data-testid="edit-key-contact-email-error">
+          {{ emailFormatError() }}
+        </p>
+      }
+      @if (duplicateError()) {
+        <p id="edit-key-contact-duplicate-error-id" class="text-xs text-red-600" data-testid="edit-key-contact-duplicate-error">
+          {{ duplicateError() }}
+        </p>
+      }
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="flex flex-col gap-1.5">
+        <label for="edit-key-contact-first-name-id" class="text-sm font-medium text-gray-700"> First Name <span class="text-red-500">*</span> </label>
+        <input
+          id="edit-key-contact-first-name-id"
+          pInputText
+          type="text"
+          autocomplete="off"
+          class="w-full"
+          data-testid="edit-key-contact-first-name-input"
+          [disabled]="isSaving()"
+          [ngModel]="firstNameField()"
+          (ngModelChange)="firstNameField.set($event)"
+          (keydown)="onFormEnter($event)" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="edit-key-contact-last-name-id" class="text-sm font-medium text-gray-700"> Last Name <span class="text-red-500">*</span> </label>
+        <input
+          id="edit-key-contact-last-name-id"
+          pInputText
+          type="text"
+          autocomplete="off"
+          class="w-full"
+          data-testid="edit-key-contact-last-name-input"
+          [disabled]="isSaving()"
+          [ngModel]="lastNameField()"
+          (ngModelChange)="lastNameField.set($event)"
+          (keydown)="onFormEnter($event)" />
+      </div>
+    </div>
+  </div>
+</ng-template>
+
+<ng-template #chooserCards let-active="active">
+  <div class="flex flex-col gap-2" data-testid="edit-key-contact-chooser">
+    <h4 class="text-sm font-semibold text-gray-900">What would you like to do? <span class="text-red-500">*</span></h4>
+    <div class="grid grid-cols-2 gap-3">
+      <button
+        type="button"
+        role="radio"
+        [attr.aria-checked]="active === 'add'"
+        data-testid="edit-key-contact-chooser-add"
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-4 py-6 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+        [class.border-blue-500]="active === 'add'"
+        [class.bg-blue-50]="active === 'add'"
+        [class.border-gray-200]="active !== 'add'"
+        [class.hover:border-gray-300]="active !== 'add' && canAdd()"
+        tabindex="0"
+        [disabled]="!canAdd() || isSaving()"
+        [pTooltip]="addCardTooltip()"
+        tooltipPosition="top"
+        (click)="selectAddCard()"
+        (keydown)="onChooserKeydown($event, 'add')">
+        <i class="fa-light fa-plus text-2xl text-gray-600"></i>
+        <span class="text-sm font-medium text-gray-900">{{ addCardLabel() }}</span>
+      </button>
+      <button
+        type="button"
+        role="radio"
+        [attr.aria-checked]="active === 'remove'"
+        data-testid="edit-key-contact-chooser-remove"
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-4 py-6 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        [class.border-red-500]="active === 'remove'"
+        [class.bg-red-50]="active === 'remove'"
+        [class.border-gray-200]="active !== 'remove'"
+        [class.hover:border-gray-300]="active !== 'remove' && canRemove()"
+        tabindex="0"
+        [disabled]="!canRemove() || isSaving()"
+        [pTooltip]="removeCardTooltip()"
+        tooltipPosition="top"
+        (click)="selectRemoveCard()"
+        (keydown)="onChooserKeydown($event, 'remove')">
+        <i class="fa-light fa-trash text-2xl text-gray-600"></i>
+        <span class="text-sm font-medium text-gray-900">Remove Existing Contact</span>
+      </button>
+    </div>
+  </div>
+</ng-template>

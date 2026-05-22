@@ -1,0 +1,168 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (seat; as currentSeat) {
+  <div class="flex flex-col gap-5 p-5" data-testid="reassign-board-modal">
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-lg font-semibold text-gray-900" id="reassign-board-title" data-testid="reassign-board-title">Reassign Board Roles</h3>
+        <p class="text-xs text-gray-500" data-testid="reassign-board-subtitle">{{ subtitle() }}</p>
+      </div>
+      <button
+        type="button"
+        class="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+        [disabled]="isSaving()"
+        data-testid="reassign-board-close"
+        aria-label="Close"
+        (click)="onCancel()">
+        <i class="fa-light fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Current Member card -->
+    @if (currentMember(); as person) {
+      <div class="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="reassign-board-current-member">
+        <div class="text-xs font-semibold uppercase tracking-wide text-amber-800">CURRENT MEMBER · WILL BE REMOVED FROM SELECTED ROLES</div>
+        <div class="flex items-center gap-3">
+          <div class="flex h-9 w-9 items-center justify-center rounded-full bg-pink-500 text-sm font-semibold text-white">
+            {{ person.initials }}
+          </div>
+          <div class="flex flex-col">
+            <span class="text-sm font-semibold text-gray-900">{{ person.fullName }}</span>
+            <span class="text-xs text-gray-600">{{ person.email }}</span>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Select roles to reassign -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between gap-3">
+        <h4 class="text-sm font-semibold text-gray-900">Select roles to reassign</h4>
+        <label class="flex cursor-pointer items-center gap-2 text-xs text-blue-600">
+          <p-checkbox
+            [binary]="true"
+            [ngModel]="roleChecked()"
+            (ngModelChange)="toggleSelectAll()"
+            [disabled]="isSaving()"
+            inputId="reassign-board-select-all"
+            data-testid="reassign-board-select-all" />
+          <span>Select all</span>
+        </label>
+      </div>
+
+      <!-- The (single, v1) role row -->
+      <div class="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2" [attr.data-testid]="'reassign-board-role-row-' + currentSeat.seatId">
+        <p-checkbox
+          [binary]="true"
+          [ngModel]="roleChecked()"
+          (ngModelChange)="toggleRoleRow()"
+          [disabled]="isSaving()"
+          [attr.data-testid]="'reassign-board-role-checkbox-' + currentSeat.seatId" />
+        <span class="inline-flex items-center rounded bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800">
+          {{ badgeLabel() }}
+        </span>
+        <span class="flex-1 text-sm text-gray-900">{{ seatLabel() }}</span>
+        <span class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+          {{ tagPillText() }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Info banner -->
+    <div
+      class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+      role="status"
+      data-testid="reassign-board-info-banner">
+      <i class="fa-light fa-circle-info mt-0.5 text-blue-600"></i>
+      <span>
+        Each selected role must be held by someone at all times. The person you assign below will replace the current member in every role you've checked above.
+      </span>
+    </div>
+
+    <!-- Assign to form -->
+    <div class="flex flex-col gap-3" data-testid="reassign-board-assign-form" (keydown)="onFormKeydown($event)">
+      <h4 class="text-sm font-semibold text-gray-900">Assign to</h4>
+
+      <div class="flex flex-col gap-1">
+        <label for="reassign-board-email" class="text-xs font-medium text-gray-700">Email <span class="text-red-500">*</span></label>
+        <input
+          id="reassign-board-email"
+          pInputText
+          type="email"
+          placeholder="Enter email"
+          [ngModel]="emailField()"
+          (ngModelChange)="emailField.set($event); duplicateError.set(null)"
+          (blur)="onEmailBlur()"
+          [disabled]="isSaving()"
+          data-testid="reassign-board-email-input"
+          [attr.aria-describedby]="(emailFormatError() ? 'reassign-board-email-error' : null) || (duplicateError() ? 'reassign-board-duplicate-error' : null)"
+          [attr.aria-invalid]="!!emailFormatError() || !!duplicateError()"
+          autocomplete="off" />
+        @if (emailFormatError()) {
+          <p class="text-xs text-red-600" id="reassign-board-email-error" data-testid="reassign-board-email-error">
+            {{ emailFormatError() }}
+          </p>
+        }
+        @if (duplicateError()) {
+          <p class="text-xs text-red-600" id="reassign-board-duplicate-error" data-testid="reassign-board-duplicate-error">
+            {{ duplicateError() }}
+          </p>
+        }
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label for="reassign-board-first-name" class="text-xs font-medium text-gray-700">First Name <span class="text-red-500">*</span></label>
+          <input
+            id="reassign-board-first-name"
+            pInputText
+            type="text"
+            placeholder="First name"
+            [ngModel]="firstNameField()"
+            (ngModelChange)="firstNameField.set($event)"
+            [disabled]="isSaving()"
+            data-testid="reassign-board-first-name-input"
+            autocomplete="off" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label for="reassign-board-last-name" class="text-xs font-medium text-gray-700">Last Name <span class="text-red-500">*</span></label>
+          <input
+            id="reassign-board-last-name"
+            pInputText
+            type="text"
+            placeholder="Last name"
+            [ngModel]="lastNameField()"
+            (ngModelChange)="lastNameField.set($event)"
+            [disabled]="isSaving()"
+            data-testid="reassign-board-last-name-input"
+            autocomplete="off" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+        [disabled]="isSaving()"
+        data-testid="reassign-board-cancel"
+        (click)="onCancel()">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+        [disabled]="!saveEnabled()"
+        data-testid="reassign-board-primary-button"
+        (click)="onSave()">
+        @if (isSaving()) {
+          <i class="fa-light fa-spinner fa-spin" data-testid="reassign-board-primary-spinner"></i>
+        }
+        {{ primaryButtonLabel() }}
+      </button>
+    </div>
+  </div>
+}

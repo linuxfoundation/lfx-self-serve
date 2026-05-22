@@ -1,0 +1,411 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6">
+  <h1 class="text-2xl font-semibold text-gray-900" data-testid="memberships-page-title">Membership — {{ companyName() }}</h1>
+
+  <div
+    role="tablist"
+    aria-label="Memberships sections"
+    class="flex items-center gap-1 border-b border-gray-200"
+    data-testid="memberships-tab-bar"
+    (keydown)="onTabKeydown($event)">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        [id]="'memberships-tab-trigger-' + tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-controls]="'memberships-tab-panel-' + tab.id"
+        [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+        class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+        [class.border-blue-600]="activeTab() === tab.id"
+        [class.text-blue-600]="activeTab() === tab.id"
+        [class.border-transparent]="activeTab() !== tab.id"
+        [class.text-gray-500]="activeTab() !== tab.id"
+        [class.hover:text-gray-700]="activeTab() !== tab.id"
+        [attr.data-testid]="'memberships-tab-' + tab.id"
+        (click)="switchTab(tab.id)">
+        <i [class]="tab.icon" aria-hidden="true"></i>
+        {{ tab.label }}
+      </button>
+    }
+  </div>
+
+  @if (activeTab() === 'active') {
+    <div role="tabpanel" id="memberships-tab-panel-active" [attr.aria-labelledby]="'memberships-tab-trigger-active'">
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="active-memberships-summary">
+        <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+          <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-active">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+              <i class="fa-light fa-briefcase text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (pageState() === 'loading' || pageState() === 'error') {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ summary()?.activeMemberships ?? 0 }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Active Memberships</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-renewing">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
+              <i class="fa-light fa-clock text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (pageState() === 'loading' || pageState() === 'error') {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ summary()?.renewingWithin90Days ?? 0 }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Renewing Within 90 Days</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-governance">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+              <i class="fa-light fa-users text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (pageState() === 'loading' || pageState() === 'error') {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ summary()?.governanceRoles ?? 0 }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Governance Roles</p>
+            </div>
+          </div>
+        </div>
+      </lfx-card>
+
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+        <div class="px-5 pt-4 pb-3">
+          <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+            <div class="flex-1">
+              <label for="memberships-search-input-id" class="sr-only">Search memberships</label>
+              <div class="relative">
+                <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+                <input
+                  id="memberships-search-input-id"
+                  pInputText
+                  type="text"
+                  placeholder="Search memberships..."
+                  class="w-full pl-9"
+                  data-testid="memberships-search-input"
+                  [ngModel]="searchTerm()"
+                  (ngModelChange)="searchTerm.set($event)" />
+              </div>
+            </div>
+            <div class="w-full sm:w-48" data-testid="memberships-tier-filter">
+              <label for="memberships-tier-filter-id" class="sr-only">Filter by membership tier</label>
+              <p-select
+                inputId="memberships-tier-filter-id"
+                ariaLabel="Filter by membership tier"
+                [options]="tierOptions()"
+                [ngModel]="selectedTier()"
+                (ngModelChange)="selectedTier.set($event)"
+                optionLabel="label"
+                optionValue="value"
+                styleClass="w-full" />
+            </div>
+            <div class="w-full sm:w-48" data-testid="memberships-renewal-filter">
+              <label for="memberships-renewal-filter-id" class="sr-only">Filter by renewal window</label>
+              <p-select
+                inputId="memberships-renewal-filter-id"
+                ariaLabel="Filter by renewal window"
+                [options]="renewalOptions"
+                [ngModel]="selectedRenewal()"
+                (ngModelChange)="selectedRenewal.set($event)"
+                optionLabel="label"
+                optionValue="value"
+                styleClass="w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div class="px-5 pb-5">
+          @if (pageState() === 'error') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Failed to load memberships"
+              subtitle="Please try again."
+              ctaLabel="Retry"
+              ctaIcon="fa-light fa-arrow-rotate-left"
+              data-testid="memberships-error-state"
+              (ctaClick)="retry()">
+            </lfx-empty-state>
+          } @else if (pageState() === 'empty') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-folder-open"
+              title="No active memberships"
+              subtitle="This organization does not have any active memberships."
+              data-testid="memberships-empty-state">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table
+              [value]="memberships()"
+              [loading]="pageState() === 'loading'"
+              sortField="foundationName"
+              [sortOrder]="1"
+              [skeletonColumns]="6"
+              data-testid="memberships-active-table">
+              <ng-template #header>
+                <tr>
+                  <th>Name</th>
+                  <th>Membership Tier</th>
+                  <th>Member Since</th>
+                  <th>Board Members</th>
+                  <th>Committee Members</th>
+                  <th>Org Projects</th>
+                </tr>
+              </ng-template>
+              <ng-template #body let-membership>
+                <tr>
+                  <td>
+                    <a
+                      [routerLink]="['/org/memberships', membership.foundationId]"
+                      [attr.data-testid]="'memberships-active-row-link-' + membership.foundationId"
+                      class="flex items-center gap-3 -mx-2 -my-1.5 px-2 py-1.5 rounded-md hover:bg-gray-50 transition-colors no-underline">
+                      @if (membership.foundationLogo) {
+                        <img [src]="membership.foundationLogo" [alt]="membership.foundationName" class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
+                      } @else {
+                        <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
+                          {{ membership.initials }}
+                        </div>
+                      }
+                      <div class="flex flex-col">
+                        <span class="font-medium text-gray-900">{{ membership.foundationName }}</span>
+                        <span class="text-xs text-gray-500">{{ membership.projectCount }} projects · {{ membership.memberCount }} members</span>
+                      </div>
+                    </a>
+                  </td>
+                  <td>
+                    <div class="flex flex-col">
+                      <span class="text-sm text-gray-900">{{ membership.membershipTier }}</span>
+                      <span class="text-xs text-gray-500">{{ membership.tierRange }}</span>
+                    </div>
+                  </td>
+                  <td class="text-sm text-gray-700">{{ membership.memberSinceFormatted }}</td>
+                  <td class="text-sm text-gray-700">{{ membership.boardMembers }}</td>
+                  <td class="text-sm text-gray-700">{{ membership.committeeMembers }}</td>
+                  <td>
+                    @if (membership.orgProjects > 0) {
+                      <span class="text-sm font-medium text-blue-600">{{ membership.orgProjects }}</span>
+                    } @else {
+                      <span class="text-sm text-gray-700">0</span>
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          }
+        </div>
+      </lfx-card>
+    </div>
+  }
+
+  @if (activeTab() === 'expired') {
+    <div role="tabpanel" id="memberships-tab-panel-expired" [attr.aria-labelledby]="'memberships-tab-trigger-expired'">
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+        <div class="px-5 pt-4 pb-3" data-testid="expired-memberships-title">
+          <div class="flex flex-col gap-1 mb-3">
+            <h2 class="text-xl font-semibold text-gray-900">Expired Memberships</h2>
+            <p class="text-sm text-gray-500">Projects your organization had active memberships for, but are currently expired</p>
+          </div>
+          <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+            <div class="flex-1">
+              <label for="expired-memberships-search-input-id" class="sr-only">Search expired memberships</label>
+              <div class="relative">
+                <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+                <input
+                  id="expired-memberships-search-input-id"
+                  pInputText
+                  type="text"
+                  placeholder="Search..."
+                  class="w-full pl-9"
+                  [ngModel]="expiredSearchTerm()"
+                  (ngModelChange)="expiredSearchTerm.set($event)" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-5 pb-5">
+          @if (expiredState() === 'error') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Failed to load expired memberships"
+              subtitle="Please try again."
+              ctaLabel="Retry"
+              ctaIcon="fa-light fa-arrow-rotate-left"
+              data-testid="memberships-expired-error-state"
+              (ctaClick)="retryExpired()">
+            </lfx-empty-state>
+          } @else if (expiredState() === 'empty') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-clock-rotate-left"
+              title="No expired memberships"
+              subtitle="All your memberships are current!">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table
+              [value]="expiredMemberships()"
+              [loading]="expiredState() === 'loading'"
+              sortField="foundationName"
+              [sortOrder]="1"
+              [skeletonColumns]="4"
+              data-testid="memberships-expired-table">
+              <ng-template #header>
+                <tr>
+                  <th>Name</th>
+                  <th>Membership Tier</th>
+                  <th>Expiration Date</th>
+                  <th>Actions</th>
+                </tr>
+              </ng-template>
+              <ng-template #body let-membership>
+                <tr>
+                  <td>
+                    <div class="flex items-center gap-3">
+                      @if (membership.foundationLogo) {
+                        <img [src]="membership.foundationLogo" [alt]="membership.foundationName" class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
+                      } @else {
+                        <div
+                          class="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-semibold text-white flex-shrink-0"
+                          [class]="membership.logoClasses">
+                          {{ membership.initials }}
+                        </div>
+                      }
+                      <div class="flex flex-col">
+                        <span class="font-medium text-gray-900">{{ membership.foundationName }}</span>
+                        <span class="text-xs text-gray-500">Expired {{ membership.expirationDateFormatted }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="flex flex-col">
+                      <span class="text-sm text-gray-900">{{ membership.membershipTier }}</span>
+                      <span class="text-xs text-gray-500">{{ membership.tierStartFormatted }} – {{ membership.tierEndFormatted }}</span>
+                    </div>
+                  </td>
+                  <td class="text-sm text-gray-700">{{ membership.expirationDateFormatted }}</td>
+                  <td>
+                    @if (membership.actionType === 'renew') {
+                      <a
+                        [href]="membership.renewUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-block px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                        Renew
+                      </a>
+                    } @else {
+                      <a
+                        href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                        Contact Us
+                      </a>
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          }
+        </div>
+      </lfx-card>
+    </div>
+  }
+
+  @if (activeTab() === 'discover') {
+    <div role="tabpanel" id="memberships-tab-panel-discover" [attr.aria-labelledby]="'memberships-tab-trigger-discover'">
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+        <div class="px-5 pt-4 pb-3" data-testid="discover-opportunities-title">
+          <h2 class="text-xl font-semibold text-gray-900">Discover Opportunities</h2>
+        </div>
+
+        <div class="px-5 pb-5">
+          @if (discoverState() === 'error') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Failed to load discover opportunities"
+              subtitle="Please try again."
+              ctaLabel="Retry"
+              ctaIcon="fa-light fa-arrow-rotate-left"
+              data-testid="memberships-discover-error-state"
+              (ctaClick)="retryDiscover()">
+            </lfx-empty-state>
+          } @else if (discoverState() === 'empty') {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-magnifying-glass"
+              title="No new opportunities available right now"
+              subtitle="Check back later for new membership opportunities.">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table
+              [value]="discoverOpportunities()"
+              [loading]="discoverState() === 'loading'"
+              sortField="foundationName"
+              [sortOrder]="1"
+              [skeletonColumns]="5"
+              data-testid="memberships-discover-table">
+              <ng-template #header>
+                <tr>
+                  <th>Foundation</th>
+                  <th>Category</th>
+                  <th>Contributors</th>
+                  <th>Contributions</th>
+                  <th>Actions</th>
+                </tr>
+              </ng-template>
+              <ng-template #body let-opportunity>
+                <tr>
+                  <td>
+                    <div class="flex items-center gap-3">
+                      @if (opportunity.foundationLogo) {
+                        <img [src]="opportunity.foundationLogo" [alt]="opportunity.foundationName" class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
+                      } @else {
+                        <div
+                          class="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-semibold text-white flex-shrink-0"
+                          [class]="opportunity.logoClasses">
+                          {{ opportunity.initials }}
+                        </div>
+                      }
+                      <div class="flex flex-col">
+                        <span class="font-medium text-gray-900">{{ opportunity.foundationName }}</span>
+                        <span class="text-xs text-gray-500">{{ opportunity.category }} · {{ opportunity.relevantProjects }} relevant projects</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="flex flex-col">
+                      <span class="text-sm text-gray-900">{{ opportunity.suggestedTier }}</span>
+                      <span class="text-xs text-gray-500">Suggested tier</span>
+                    </div>
+                  </td>
+                  <td class="text-sm text-gray-700">{{ opportunity.contributors }}</td>
+                  <td class="text-sm text-gray-700">{{ opportunity.contributions }}</td>
+                  <td>
+                    <a
+                      [href]="opportunity.joinUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-block px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                      Join
+                    </a>
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          }
+        </div>
+      </lfx-card>
+    </div>
+  }
+</div>

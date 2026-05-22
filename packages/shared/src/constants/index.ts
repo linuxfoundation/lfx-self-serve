@@ -51,6 +51,7 @@ export * from './transaction.constants';
 export * from './rewards.constants';
 export * from './regex.constants';
 export * from './org-lens.constants';
+export * from './org-memberships.constants';
 export * from './feature-flags.constants';
 export * from './foundation-projects.constants';
 export * from './marketing-impact.constants';

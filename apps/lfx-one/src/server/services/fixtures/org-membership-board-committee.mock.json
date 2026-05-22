@@ -1,0 +1,183 @@
+{
+  "_comment": "Copyright The Linux Foundation and each contributor to LFX. SPDX-License-Identifier: MIT. Shared mock fixture for the three Board & Committee SSR endpoints (spec 016). Same payload returned for every requested foundationId in v1 mock per FR-009c. Data pinned from spec FR-010b mirroring the V3 wireframe AGL data.",
+  "sharedBoardSeats": [
+    {
+      "seatId": "agl-board-1",
+      "person": {
+        "personId": "agl-person-itoh",
+        "firstName": "Alex",
+        "lastName": "Rivera",
+        "fullName": "Alex Rivera",
+        "email": "alex.rivera@example.com",
+        "jobTitle": "Principal Engineer",
+        "initials": "MI"
+      },
+      "seatName": "Governing Board",
+      "tagLabel": "Voting Rep",
+      "votingPercentage": 92,
+      "isOrgEditable": true,
+      "reason": null
+    }
+  ],
+  "sharedCommitteeSeats": [
+    {
+      "seatId": "agl-com-1",
+      "person": {
+        "personId": "agl-person-itoh",
+        "firstName": "Alex",
+        "lastName": "Rivera",
+        "fullName": "Alex Rivera",
+        "email": "alex.rivera@example.com",
+        "jobTitle": "Principal Engineer",
+        "initials": "MI"
+      },
+      "committeeName": "Technical Steering Committee",
+      "role": "Chair",
+      "votingPercentage": 92,
+      "isOrgEditable": false,
+      "reason": "This seat is held by foundation election or appointment, not by your organization's membership entitlement."
+    },
+    {
+      "seatId": "agl-com-2",
+      "person": {
+        "personId": "agl-person-hanaoka",
+        "firstName": "Jordan",
+        "lastName": "Kim",
+        "fullName": "Jordan Kim",
+        "email": "jordan.kim@example.com",
+        "jobTitle": "Engineer",
+        "initials": "KH"
+      },
+      "committeeName": "Marketing Committee",
+      "role": "Member",
+      "votingPercentage": 78,
+      "isOrgEditable": true,
+      "reason": null
+    },
+    {
+      "seatId": "agl-com-3",
+      "person": {
+        "personId": "agl-person-hanaoka",
+        "firstName": "Jordan",
+        "lastName": "Kim",
+        "fullName": "Jordan Kim",
+        "email": "jordan.kim@example.com",
+        "jobTitle": "Engineer",
+        "initials": "KH"
+      },
+      "committeeName": "Budget & Finance",
+      "role": "Observer",
+      "votingPercentage": 78,
+      "isOrgEditable": false,
+      "reason": "This seat is held by foundation election or appointment, not by your organization's membership entitlement."
+    },
+    {
+      "seatId": "agl-com-4",
+      "person": {
+        "personId": "agl-person-hanaoka",
+        "firstName": "Jordan",
+        "lastName": "Kim",
+        "fullName": "Jordan Kim",
+        "email": "jordan.kim@example.com",
+        "jobTitle": "Engineer",
+        "initials": "KH"
+      },
+      "committeeName": "Steering Committee",
+      "role": "Non-voting Representative",
+      "votingPercentage": 78,
+      "isOrgEditable": true,
+      "reason": null
+    },
+    {
+      "seatId": "agl-com-5",
+      "person": {
+        "personId": "agl-person-ando",
+        "firstName": "Taylor",
+        "lastName": "Morgan",
+        "fullName": "Taylor Morgan",
+        "email": "taylor.morgan@example.com",
+        "jobTitle": "Distinguished Engineer",
+        "initials": "YA"
+      },
+      "committeeName": "Steering Committee",
+      "role": "Non-voting Representative",
+      "votingPercentage": 86,
+      "isOrgEditable": true,
+      "reason": null
+    },
+    {
+      "seatId": "agl-com-6",
+      "person": {
+        "personId": "agl-person-isetani",
+        "firstName": "Masaki",
+        "lastName": "Isetani",
+        "fullName": "Masaki Isetani",
+        "email": "masaki.isetani@example.com",
+        "jobTitle": "Senior Manager, Open Source Strategy",
+        "initials": "MI"
+      },
+      "committeeName": "Steering Committee",
+      "role": "Non-voting Representative",
+      "votingPercentage": 91,
+      "isOrgEditable": true,
+      "reason": null
+    },
+    {
+      "seatId": "agl-com-7",
+      "person": {
+        "personId": "agl-person-date",
+        "firstName": "Mitsuo",
+        "lastName": "Date",
+        "fullName": "Mitsuo Date",
+        "email": "mitsuo.date@example.com",
+        "jobTitle": null,
+        "initials": "MD"
+      },
+      "committeeName": "Japan Core Member (Platinum+Gold+OEMs)",
+      "role": "Non-voting",
+      "votingPercentage": 85,
+      "isOrgEditable": true,
+      "reason": null
+    },
+    {
+      "seatId": "agl-com-8",
+      "person": {
+        "personId": "agl-person-isetani",
+        "firstName": "Masaki",
+        "lastName": "Isetani",
+        "fullName": "Masaki Isetani",
+        "email": "masaki.isetani@example.com",
+        "jobTitle": "Senior Manager, Open Source Strategy",
+        "initials": "MI"
+      },
+      "committeeName": "Japan Core Member (Platinum+Gold+OEMs)",
+      "role": "Non-voting",
+      "votingPercentage": 91,
+      "isOrgEditable": true,
+      "reason": null
+    }
+  ],
+  "sharedVotingHistory": [
+    {
+      "voteId": "agl-vote-1",
+      "date": "2026-04-14",
+      "resolution": "Approve 2026 budget allocation",
+      "vote": "Yes",
+      "outcome": "Passed (8-1)"
+    },
+    {
+      "voteId": "agl-vote-2",
+      "date": "2026-03-21",
+      "resolution": "New project admission: ELISA Safety Toolkit",
+      "vote": "Yes",
+      "outcome": "Passed (unanimous)"
+    },
+    {
+      "voteId": "agl-vote-3",
+      "date": "2026-02-09",
+      "resolution": "Revise membership fee structure",
+      "vote": "No",
+      "outcome": "Passed (6-3)"
+    }
+  ]
+}
