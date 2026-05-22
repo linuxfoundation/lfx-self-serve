@@ -87,6 +87,17 @@ export interface PaidProjectRow {
   impressions: string;
   performance: PaidProjectPerformance;
   performanceClass: string;
+  campaigns: PaidCampaignRow[];
+}
+
+/** View-model row for a nested campaign under a project. */
+export interface PaidCampaignRow {
+  campaignName: string;
+  funnelStage: string;
+  spend: string;
+  revenue: string;
+  roas: string;
+  impressions: string;
 }
 
 /** View-model row for the email type breakdown table. */

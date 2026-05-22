@@ -13,6 +13,8 @@ import type {
   FilterPillOption,
   FunnelStage,
   MarketingImpactFocusProgram,
+  PaidCampaignPerformance,
+  PaidCampaignRow,
   PaidProjectPerformance,
   PaidProjectRow,
   PerformanceSummaryKpi,
@@ -59,6 +61,7 @@ export class PerformanceMarketingTabComponent {
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly selectedFunnel = signal<FunnelStage>('all');
+  protected readonly expandedProjects = signal<Set<string>>(new Set());
 
   // === Computed Signals ===
   protected readonly socialReachData: Signal<SocialReachResponse | null> = this.initSocialReachData();
@@ -74,6 +77,22 @@ export class PerformanceMarketingTabComponent {
     if (this.funnelOptions.some((o) => o.id === funnelId)) {
       this.selectedFunnel.set(funnelId as FunnelStage);
     }
+  }
+
+  protected toggleProjectExpand(projectKey: string): void {
+    this.expandedProjects.update((current) => {
+      const next = new Set(current);
+      if (next.has(projectKey)) {
+        next.delete(projectKey);
+      } else {
+        next.add(projectKey);
+      }
+      return next;
+    });
+  }
+
+  protected isProjectExpanded(projectKey: string): boolean {
+    return this.expandedProjects().has(projectKey);
   }
 
   // === Private Initializers ===
@@ -182,18 +201,20 @@ export class PerformanceMarketingTabComponent {
           if (funnel === 'bofu') return stage === 'bofu';
           return false;
         })
-        .map(
-          (p): PaidProjectRow => ({
+        .map((p): PaidProjectRow => {
+          const perf = this.normalizePerformance(p.performance);
+          return {
             name: p.projectName,
             funnelStage: p.funnelStage,
             spend: formatCurrency(p.spend),
             revenue: formatCurrency(p.revenue),
             roas: `${(p.roas ?? 0).toFixed(2)}x`,
             impressions: formatNumber(p.impressions),
-            performance: this.normalizePerformance(p.performance),
-            performanceClass: this.getPerformanceClass(this.normalizePerformance(p.performance)),
-          })
-        )
+            performance: perf,
+            performanceClass: this.getPerformanceClass(perf),
+            campaigns: this.mapCampaignRows(p.campaigns),
+          };
+        })
         .sort((a, b) => {
           return (
             (PerformanceMarketingTabComponent.performanceOrderMap[a.performance] ?? 4) -
@@ -279,6 +300,20 @@ export class PerformanceMarketingTabComponent {
 
   private getPerformanceClass(perf: PaidProjectPerformance): string {
     return PerformanceMarketingTabComponent.performanceClassMap[perf] ?? 'bg-gray-50 text-gray-700';
+  }
+
+  private mapCampaignRows(campaigns: PaidCampaignPerformance[] | undefined): PaidCampaignRow[] {
+    if (!campaigns?.length) return [];
+    return campaigns.map(
+      (c): PaidCampaignRow => ({
+        campaignName: c.campaignName,
+        funnelStage: c.funnelStage,
+        spend: formatCurrency(c.spend),
+        revenue: formatCurrency(c.revenue),
+        roas: `${(c.roas ?? 0).toFixed(2)}x`,
+        impressions: formatNumber(c.impressions),
+      })
+    );
   }
 
   private getRoasPerformance(roas: number): PaidProjectPerformance {
