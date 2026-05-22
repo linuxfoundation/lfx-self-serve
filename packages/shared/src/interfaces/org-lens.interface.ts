@@ -110,6 +110,15 @@ export interface OrgLensFoundationsAndProjectsResponse {
   rows: OrgLensFoundationRow[];
 }
 
+/** Loading lifecycle states for the foundations-and-projects section UI. */
+export type OrgLensFoundationsSectionStatus = 'loading' | 'error' | 'ready' | 'empty';
+
+/** Combined status + payload for the foundations-and-projects component's state signal. */
+export interface OrgLensFoundationsSectionState {
+  status: OrgLensFoundationsSectionStatus;
+  data: OrgLensFoundationsAndProjectsResponse | null;
+}
+
 /** Route data for `/org/*` placeholders — drives the shared placeholder header + empty-state copy. */
 export interface OrgPlaceholderRouteData {
   title?: string;
