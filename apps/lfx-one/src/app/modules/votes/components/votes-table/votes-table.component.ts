@@ -62,6 +62,7 @@ export class VotesTableComponent {
   protected readonly statusTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: PollStatus.ACTIVE, label: 'Active' },
+    { id: PollStatus.DISABLED, label: 'Draft' },
     { id: PollStatus.ENDED, label: 'Ended' },
   ];
 
