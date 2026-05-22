@@ -104,10 +104,11 @@ export class UserPermissionsTableComponent {
   private removeUser(user: ProjectPermissionUser): void {
     if (!this.project()) return;
 
-    this.isRemoving.set(user.username);
+    const removeIdentifier = user.username || user.email;
+    this.isRemoving.set(removeIdentifier);
 
     this.permissionsService
-      .removeUserFromProject(this.project()!.uid, user.username)
+      .removeUserFromProject(this.project()!.uid, removeIdentifier)
       .pipe(take(1))
       .subscribe({
         next: () => {

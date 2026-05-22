@@ -47,18 +47,15 @@
 
       <!-- Username -->
       <div>
-        <label for="username" class="block text-sm font-medium text-gray-700 mb-1"> Username <span class="text-red-500">*</span> </label>
+        <label for="username" class="block text-sm font-medium text-gray-700 mb-1"> Username </label>
         <lfx-input-text
           size="small"
           [form]="form()"
           control="username"
           id="username"
-          placeholder="Enter username"
+          placeholder="Enter username (optional)"
           styleClass="w-full"
           data-testid="settings-user-form-username"></lfx-input-text>
-        @if (form().get('username')?.errors?.['required'] && form().get('username')?.touched) {
-          <p class="mt-1 text-xs text-red-600">Username is required</p>
-        }
       </div>
 
       <!-- Avatar URL -->

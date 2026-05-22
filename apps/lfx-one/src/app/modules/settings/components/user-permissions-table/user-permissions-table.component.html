@@ -77,12 +77,12 @@
             <td class="text-right relative">
               <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
               <lfx-button
-                [icon]="isRemoving() === user.username ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
+                [icon]="isRemoving() === (user.username || user.email) ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
                 [text]="true"
                 [rounded]="true"
                 size="small"
                 severity="secondary"
-                [disabled]="isRemoving() === user.username"
+                [disabled]="isRemoving() === (user.username || user.email)"
                 (onClick)="toggleUserActionMenu($event, user, userActionMenu)"
                 data-testid="user-actions-menu">
               </lfx-button>

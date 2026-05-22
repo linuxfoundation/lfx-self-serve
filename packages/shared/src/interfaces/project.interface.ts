@@ -37,7 +37,7 @@ export type ProjectQueryResponse = Project[];
 export interface UserInfo {
   name: string;
   email: string;
-  username: string;
+  username?: string;
   avatar?: string;
 }
 

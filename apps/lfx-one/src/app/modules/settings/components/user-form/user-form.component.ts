@@ -82,7 +82,7 @@ export class UserFormComponent {
     // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
-        .updateUserRole(project.uid, this.user()!.username, {
+        .updateUserRole(project.uid, this.user()!.username || this.user()!.email, {
           role: formValue.role,
         } as UpdateUserRoleRequest)
         .pipe(take(1))
@@ -96,7 +96,6 @@ export class UserFormComponent {
             this.dialogRef.close(true);
           },
           error: (error: HttpErrorResponse) => {
-            console.error('Error updating user:', error);
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
@@ -127,8 +126,6 @@ export class UserFormComponent {
             this.dialogRef.close(true);
           },
           error: (error: HttpErrorResponse) => {
-            console.error('Error adding user:', error);
-
             // Check if it's a 404 error for user not found
             if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
               this.handleUserNotFound(formValue);
@@ -175,11 +172,8 @@ export class UserFormComponent {
         this.showManualFields.set(true);
         this.submitting.set(false);
 
-        // Add validators to name and username fields
         this.form().get('name')?.setValidators([Validators.required]);
-        this.form().get('username')?.setValidators([Validators.required]);
         this.form().get('name')?.updateValueAndValidity();
-        this.form().get('username')?.updateValueAndValidity();
 
         // Close the confirmation dialog
         this.confirmationService.close();
@@ -234,7 +228,6 @@ export class UserFormComponent {
           this.dialogRef.close(true);
         },
         error: (error: HttpErrorResponse) => {
-          console.error('Error adding user with manual data:', error);
           this.messageService.add({
             severity: 'error',
             summary: 'Error',

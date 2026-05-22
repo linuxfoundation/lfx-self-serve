@@ -383,17 +383,12 @@ export class ProjectService {
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
     role?: 'view' | 'manage',
-    manualUserInfo?: { name: string; email: string; username: string; avatar?: string }
+    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
   ): Promise<ProjectSettings> {
-    // Step 1: Determine the appropriate identifier for backend operations
-    // For emails, use the sub; for usernames, use the username directly
-    let backendIdentifier = usernameOrEmail.trim();
-    if (usernameOrEmail.includes('@')) {
-      // For emails, get the sub for backend operations
-      backendIdentifier = await this.resolveEmailToSub(req, usernameOrEmail);
-    }
-
-    // Step 2: Fetch current settings with ETag
+    // Step 1: Fetch current settings with ETag first.
+    // Settings must be fetched before resolveEmailToSub so that manually-added users
+    // (not present in the NATS directory) can be matched by email fallback and skip
+    // the NATS call that would otherwise throw NOT_FOUND before we reach array logic.
     const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
       req,
       'LFX_V2_SERVICE',
@@ -401,18 +396,48 @@ export class ProjectService {
       `${operation}_user_project_permissions`
     );
 
-    // Step 3: Update the settings based on operation
+    // Step 2: Update the settings based on operation
     const updatedSettings = { ...settings };
 
     // Initialize arrays if they don't exist
     if (!updatedSettings.writers) updatedSettings.writers = [];
     if (!updatedSettings.auditors) updatedSettings.auditors = [];
 
+    // Step 3: Determine the backend identifier for array operations.
+    // For emails on update/remove: check settings first. If the user is stored without
+    // a username (manually added, not in NATS), skip resolveEmailToSub and use the
+    // email directly — calling NATS for such users would fail with NOT_FOUND.
+    const originalEmail = usernameOrEmail.includes('@') ? usernameOrEmail.trim().toLowerCase() : '';
+    const matchesByEmail = (u: { username?: string; email?: string }): boolean => !u.username && !!originalEmail && u.email?.toLowerCase() === originalEmail;
+    const existingByEmail = originalEmail ? updatedSettings.writers.find(matchesByEmail) || updatedSettings.auditors.find(matchesByEmail) : undefined;
+
+    let backendIdentifier = usernameOrEmail.trim();
+    if (originalEmail) {
+      if ((existingByEmail && (operation === 'update' || operation === 'remove')) || manualUserInfo) {
+        // Skip resolveEmailToSub in two cases:
+        // 1. update/remove on a no-username user found by email in settings (not in NATS)
+        // 2. manual-add — the user was not found in the directory; NATS would return NOT_FOUND
+        backendIdentifier = originalEmail;
+      } else {
+        backendIdentifier = await this.resolveEmailToSub(req, usernameOrEmail);
+      }
+    }
+
+    // Some users stored in settings pre-date username normalization and have an empty username.
+    // Match by email as a fallback so edits/removals work for those users too.
+    const matchesUser = (u: { username?: string; email?: string }): boolean => {
+      if (u.username && u.username === backendIdentifier) return true;
+      if (!u.username && originalEmail && u.email?.toLowerCase() === originalEmail) return true;
+      return false;
+    };
+
+    // Capture the user's existing UserInfo before removal — used by the 'update' path to
+    // avoid a NATS roundtrip when only the role is changing.
+    const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+
     // Remove user from both arrays first (for all operations)
-    // Compare by username property since writers/auditors are now UserInfo objects
-    // Use backendIdentifier (sub) for comparison to ensure proper removal
-    updatedSettings.writers = updatedSettings.writers.filter((u) => u.username !== backendIdentifier);
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u.username !== backendIdentifier);
+    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -421,21 +446,36 @@ export class ProjectService {
       }
 
       // Use manual user info if provided, otherwise fetch from NATS
-      let userInfo: { name: string; email: string; username: string; avatar?: string };
+      let userInfo: { name: string; email: string; username?: string; avatar?: string };
       if (manualUserInfo) {
         logger.debug(req, `${operation}_user_project_permissions`, 'Using manual user info', {
-          username: backendIdentifier,
+          username: manualUserInfo.username || '(none)',
           info_source: 'manual',
         });
         userInfo = {
           name: manualUserInfo.name,
           email: manualUserInfo.email,
-          username: backendIdentifier, // Use the sub for backend consistency
+          // Preserve whatever username the operator supplied — may be empty for users
+          // who have no username in any external directory.
+          username: manualUserInfo.username || undefined,
         };
-        // Only include avatar if it's provided and not empty
         if (manualUserInfo.avatar) {
           userInfo.avatar = manualUserInfo.avatar;
         }
+      } else if (operation === 'update' && existingUserInfo) {
+        // Role-only update: reuse the UserInfo already stored in settings.
+        // Avoids a NATS lookup that can fail when user metadata lacks an email field.
+        logger.debug(req, 'update_user_project_permissions', 'Reusing existing user info for role update', {
+          username: backendIdentifier,
+          existing_username: existingUserInfo.username,
+          existing_email: existingUserInfo.email,
+          info_source: 'existing_settings',
+        });
+        // Preserve existingUserInfo exactly as stored — do NOT overwrite username with
+        // backendIdentifier. For users added manually without a username, backendIdentifier
+        // is their email (NATS was skipped), and stamping it onto the record would
+        // incorrectly turn an intentionally empty username into an email address.
+        userInfo = { ...existingUserInfo };
       } else {
         // Fetch user info from user service via NATS using the original input
         const fetchedUserInfo = await this.getUserInfo(req, usernameOrEmail);

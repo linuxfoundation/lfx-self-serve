@@ -51,6 +51,10 @@ export class SettingsDashboardComponent {
   }
 
   public refreshUsers(): void {
+    const uid = this.project()?.uid;
+    if (uid) {
+      this.permissionsService.invalidateProjectSettings(uid);
+    }
     this.refresh$.next();
   }
 
