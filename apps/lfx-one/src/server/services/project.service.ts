@@ -1925,10 +1925,16 @@ export class ProjectService {
    * Queries ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY and ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_PROJECT
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG (aggregates all projects under the foundation)
    */
-  public async getWebActivitiesSummary(foundationSlug: string): Promise<WebActivitiesSummaryResponse> {
-    logger.debug(undefined, 'get_web_activities_summary', 'Fetching web activities summary from Snowflake', { foundation_slug: foundationSlug });
+  public async getWebActivitiesSummary(foundationSlug: string, classification?: string): Promise<WebActivitiesSummaryResponse> {
+    logger.debug(undefined, 'get_web_activities_summary', 'Fetching web activities summary from Snowflake', {
+      foundation_slug: foundationSlug,
+      classification,
+    });
 
     try {
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
+
       // Query 1: Total sessions & page views per domain classification
       const summaryQuery = `
         SELECT
@@ -1937,11 +1943,14 @@ export class ProjectService {
           SUM(TOTAL_PAGE_VIEWS_LAST_30_DAYS) AS TOTAL_PAGE_VIEWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
         GROUP BY LF_SUB_DOMAIN_CLASSIFICATION
         ORDER BY TOTAL_SESSIONS DESC
       `;
 
       // Query 2: Weekly sessions for trend chart (last 6 months)
+      // WEB_ACTIVITIES_BY_PROJECT does not have LF_SUB_DOMAIN_CLASSIFICATION,
+      // so the trend chart always shows all-program totals.
       const dailyQuery = `
         SELECT
           DATE_TRUNC('WEEK', ACTIVITY_DATE) AS ACTIVITY_DATE,
@@ -1956,6 +1965,7 @@ export class ProjectService {
       const [summaryResult, dailyResult] = await Promise.all([
         this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number; TOTAL_PAGE_VIEWS: number }>(summaryQuery, [
           foundationSlug,
+          ...classificationParams,
         ]),
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, [foundationSlug]),
       ]);

@@ -1938,7 +1938,15 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getWebActivitiesSummary(foundationSlug);
+      const classification = getStringQueryParam(req, 'classification');
+
+      if (classification && !VALID_CLASSIFICATIONS.has(classification)) {
+        throw ServiceValidationError.forField('classification', `Invalid classification value. Allowed: ${[...VALID_CLASSIFICATIONS].join(', ')}`, {
+          operation: 'get_web_activities_summary',
+        });
+      }
+
+      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification);
 
       logger.success(req, 'get_web_activities_summary', startTime, {
         foundation_slug: foundationSlug,

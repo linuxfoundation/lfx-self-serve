@@ -835,8 +835,10 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @returns Observable of web activities summary response
    */
-  public getWebActivitiesSummary(foundationSlug: string): Observable<WebActivitiesSummaryResponse> {
-    return this.http.get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', { params: { foundationSlug } }).pipe(
+  public getWebActivitiesSummary(foundationSlug: string, classification?: string): Observable<WebActivitiesSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (classification) params['classification'] = classification;
+    return this.http.get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', { params }).pipe(
       catchError(() => {
         return of({
           totalSessions: 0,
