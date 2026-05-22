@@ -30,6 +30,30 @@ export interface GenerateAgendaResponse {
 }
 
 /**
+ * Request interface for AI newsletter generation
+ */
+export interface GenerateNewsletterRequest {
+  /** Raw user-supplied content (bullets, paragraphs, links, snippets) */
+  rawContent: string;
+  /** Whether the newsletter is being composed in a foundation or project context */
+  contextType: 'foundation' | 'project';
+  /** Display name of the foundation or project (for prompt context) */
+  contextName: string;
+  /** Optional override for the system prompt — when omitted, the default is used */
+  systemPromptOverride?: string;
+}
+
+/**
+ * Response interface for AI newsletter generation
+ */
+export interface GenerateNewsletterResponse {
+  /** Generated subject line */
+  subject: string;
+  /** Generated HTML body, constrained to the sanitizer's allowed tags */
+  bodyHtml: string;
+}
+
+/**
  * OpenAI chat message interface
  */
 export interface OpenAIChatMessage {

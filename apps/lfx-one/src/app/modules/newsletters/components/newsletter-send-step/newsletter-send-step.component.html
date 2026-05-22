@@ -1,0 +1,69 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="newsletter-send-step">
+  <div>
+    <h2 class="text-base font-semibold text-gray-900">Ready to send</h2>
+    <p class="text-sm text-gray-500 mt-1">Send yourself a test first if you want to double-check formatting, then send to your audience when you're ready.</p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="newsletter-send-step-summary">
+    <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <div class="text-xs uppercase tracking-wide text-gray-500">Audience size</div>
+      <div class="text-lg font-medium text-gray-900 mt-1">
+        @if (recipientCount() !== null) {
+          {{ recipientCount() }} {{ recipientCount() === 1 ? 'recipient' : 'recipients' }}
+        } @else {
+          —
+        }
+      </div>
+      <div class="text-xs text-gray-500 mt-1">across {{ committeeCount() }} {{ committeeCount() === 1 ? 'group' : 'groups' }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <div class="text-xs uppercase tracking-wide text-gray-500">From</div>
+      <div class="text-sm font-medium text-gray-900 mt-1 truncate">{{ edName() || '—' }}</div>
+      <div class="text-xs text-gray-500 mt-1 truncate">on behalf of {{ displayName() || '—' }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <div class="text-xs uppercase tracking-wide text-gray-500">Replies go to</div>
+      <div class="text-sm font-medium text-gray-900 mt-1 truncate">{{ edReplyEmail() || '—' }}</div>
+    </div>
+  </div>
+
+  <div class="rounded-lg border border-gray-200 bg-gray-50 px-6 py-5 flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <div class="text-xs uppercase tracking-wide text-gray-500">Subject</div>
+      <div class="text-sm font-medium text-gray-900 truncate">{{ subject() || 'Untitled newsletter' }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-gray-500">Test recipient</div>
+      <div class="text-sm font-medium text-gray-900 mt-1 truncate">{{ edEmail() || '—' }}</div>
+      <div class="text-xs text-gray-500 mt-1">Test newsletters go to your email only.</div>
+    </div>
+  </div>
+
+  <div class="flex items-center justify-end gap-3 flex-wrap">
+    <lfx-button
+      label="Send test"
+      icon="fa-regular fa-paper-plane"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      [disabled]="!canSendTest()"
+      [loading]="testSending()"
+      (onClick)="sendTest.emit()"
+      [ariaLabel]="'Send a test newsletter to ' + edEmail()"
+      data-testid="newsletter-send-test-button">
+    </lfx-button>
+    <lfx-button
+      label="Send now"
+      icon="fa-regular fa-paper-plane"
+      severity="primary"
+      size="small"
+      [disabled]="!canSend()"
+      [loading]="sending()"
+      (onClick)="send.emit()"
+      data-testid="newsletter-send-now-button">
+    </lfx-button>
+  </div>
+</div>

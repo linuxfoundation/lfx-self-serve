@@ -1,0 +1,145 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <div class="mb-6">
+      <div class="flex justify-between items-center w-full gap-4">
+        <h1 class="font-display font-light text-2xl">Newsletters</h1>
+        @if (hasContext()) {
+          <lfx-button
+            icon="fa-light fa-paper-plane"
+            severity="info"
+            label="Create Newsletter"
+            size="small"
+            (onClick)="goToCreate()"
+            data-testid="newsletter-create-button">
+          </lfx-button>
+        }
+      </div>
+      <p class="mt-1 text-sm text-gray-500">Send important updates to your groups and see how past newsletters performed.</p>
+    </div>
+
+    @if (!hasContext()) {
+      <lfx-empty-state
+        icon="fa-light fa-paper-plane"
+        title="Pick a foundation or project"
+        subtitle="Select a foundation or project from the header to view its newsletters.">
+      </lfx-empty-state>
+    } @else {
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="newsletter-list-card">
+        <lfx-card-tabs-bar
+          [options]="statusTabOptions"
+          [selectedFilter]="statusTab()"
+          (filterChange)="onStatusTabChange($event)"
+          data-testid="newsletter-status-tabs">
+        </lfx-card-tabs-bar>
+
+        <div class="px-5 py-5 flex flex-col gap-4">
+          @if (!loading() && !hasNewsletters()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-paper-plane"
+              [title]="statusTab() === 'draft' ? 'No drafts yet' : 'No sent newsletters yet'"
+              [subtitle]="
+                statusTab() === 'draft'
+                  ? 'Start writing your first newsletter and your draft will appear here.'
+                  : 'Send your first newsletter and engagement metrics will show up here.'
+              "
+              ctaLabel="Create newsletter"
+              ctaIcon="fa-light fa-plus"
+              (ctaClick)="goToCreate()">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table [value]="rows()" [loading]="loading()" selectionMode="single" dataKey="id" data-testid="newsletter-list-table">
+              <ng-template #header>
+                <tr>
+                  <th class="w-[40%]">Subject</th>
+                  <th class="w-[15%]">Audience</th>
+                  @if (statusTab() === 'sent') {
+                    <th class="w-[15%]">Sent</th>
+                    <th class="w-[10%] text-right">Recipients</th>
+                    <th class="w-[10%] text-right">Open Rate</th>
+                    <th class="w-[10%]"></th>
+                  } @else {
+                    <th class="w-[20%]">Updated</th>
+                    <th class="w-[10%] text-right">Audience size</th>
+                    <th class="w-[15%]"></th>
+                  }
+                </tr>
+              </ng-template>
+
+              <ng-template #body let-newsletter>
+                <tr class="cursor-pointer" (click)="goToRow(newsletter)" [attr.data-testid]="'newsletter-row-' + newsletter.id">
+                  <td>
+                    <span class="lfx-table-name-link text-sm text-gray-900 font-medium">
+                      {{ newsletter.subject || 'Untitled draft' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="text-sm text-gray-700">
+                      {{ newsletter.groupsLabel }}
+                    </span>
+                  </td>
+
+                  @if (statusTab() === 'sent') {
+                    <td>
+                      <span class="text-sm text-gray-700">
+                        {{ newsletter.sentAt ? (newsletter.sentAt | date: 'MMM d, y') : '—' }}
+                      </span>
+                    </td>
+                    <td class="text-right">
+                      <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
+                    </td>
+                    <td class="text-right">
+                      <span class="text-sm text-gray-700" [pTooltip]="newsletter.openRateTooltip" tooltipPosition="top">
+                        {{ newsletter.openRateLabel }}
+                      </span>
+                    </td>
+                    <td class="text-right">
+                      <lfx-tag value="Sent" severity="success"></lfx-tag>
+                    </td>
+                  } @else {
+                    <td>
+                      <span class="text-sm text-gray-700">{{ newsletter.updatedAt | date: 'MMM d, y' }}</span>
+                    </td>
+                    <td class="text-right">
+                      <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
+                    </td>
+                    <td class="text-right">
+                      <lfx-button
+                        label="Delete"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        (onClick)="onDeleteDraft(newsletter, $event)"
+                        [disabled]="deletingId() === newsletter.id"
+                        [attr.data-testid]="'newsletter-delete-' + newsletter.id">
+                      </lfx-button>
+                    </td>
+                  }
+                </tr>
+              </ng-template>
+            </lfx-table>
+
+            @if (canLoadMore()) {
+              <div class="flex justify-center">
+                <lfx-button
+                  label="Load more"
+                  severity="secondary"
+                  size="small"
+                  [text]="true"
+                  [loading]="loadingMore()"
+                  (onClick)="loadMore()"
+                  data-testid="newsletter-load-more">
+                </lfx-button>
+              </div>
+            }
+          }
+        </div>
+      </lfx-card>
+    }
+  </div>
+</div>
+
+<p-confirmDialog></p-confirmDialog>

@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="newsletter-preview" data-testid="newsletter-preview">
+  <div class="newsletter-preview__frame">
+    @if (hasContent()) {
+      <div class="newsletter-preview__header">
+        @if (logoUrl()) {
+          <img class="newsletter-preview__logo" [src]="logoUrl()" [alt]="displayName()" />
+        }
+        <div class="newsletter-preview__brand">
+          <div class="newsletter-preview__eyebrow">{{ displayName() || 'Foundation' }} · Newsletter</div>
+          <div class="newsletter-preview__subject">{{ subject() || 'Untitled' }}</div>
+        </div>
+      </div>
+
+      <div class="newsletter-preview__from">
+        From <strong>{{ edName() || 'Executive Director' }}</strong>
+      </div>
+
+      <div class="newsletter-preview__body" [innerHTML]="bodyHtml()"></div>
+
+      <div class="newsletter-preview__footer">
+        <div class="newsletter-preview__footer-line">
+          Sent by <strong>{{ edName() || 'Executive Director' }}</strong> on behalf of <strong>{{ displayName() || 'Foundation' }}</strong
+          >.
+        </div>
+        <div class="newsletter-preview__footer-line">
+          To reply, email
+          @if (edReplyEmail()) {
+            <a [href]="'mailto:' + edReplyEmail()">{{ edReplyEmail() }}</a>
+          } @else {
+            <span>your ED.</span>
+          }
+        </div>
+        <div class="newsletter-preview__footer-fine">
+          To unsubscribe from {{ displayName() || 'these' }} newsletters, reply with <strong>UNSUBSCRIBE</strong>. Delivered by LFX.
+        </div>
+      </div>
+    } @else {
+      <div class="newsletter-preview__empty">
+        <i class="fa-regular fa-envelope newsletter-preview__empty-icon"></i>
+        <div class="newsletter-preview__empty-title">Live preview</div>
+        <div class="newsletter-preview__empty-subtitle">Start typing on the left to see your newsletter take shape.</div>
+      </div>
+    }
+  </div>
+</div>

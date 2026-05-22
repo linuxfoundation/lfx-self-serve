@@ -15,5 +15,15 @@
     [size]="size()"
     [styleClass]="styleClass()"
     class="w-full">
+    @if (optionSubLabel(); as subKey) {
+      <ng-template let-option pTemplate="item">
+        <div class="flex flex-col gap-0.5 leading-tight">
+          <span class="text-sm text-gray-900">{{ option[optionLabel()] }}</span>
+          @if (option[subKey]) {
+            <span class="text-xs text-gray-500">{{ option[subKey] }}</span>
+          }
+        </div>
+      </ng-template>
+    }
   </p-multiSelect>
 </ng-container>

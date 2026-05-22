@@ -1,0 +1,64 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="newsletter-content-step">
+  <div>
+    <h2 class="text-base font-semibold text-gray-900">Write your newsletter</h2>
+    <p class="text-sm text-gray-500 mt-1">Write a subject line and body. You can also generate a draft with AI and edit it before sending.</p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="newsletter-subject" class="text-sm font-medium text-gray-700">Subject</label>
+    <lfx-input-text
+      id="newsletter-subject"
+      [form]="form()"
+      control="subject"
+      placeholder="A short headline your recipients will see in their inbox"
+      styleClass="w-full"
+      data-testid="newsletter-content-subject">
+    </lfx-input-text>
+  </div>
+
+  <div class="flex flex-col gap-2 flex-1">
+    <div class="flex items-center justify-between gap-3">
+      <label class="text-sm font-medium text-gray-700">Body</label>
+      <div class="flex items-center gap-4">
+        <button
+          type="button"
+          (click)="openGenerateDrawer()"
+          [disabled]="!hasContext()"
+          class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+          data-testid="newsletter-content-generate-link">
+          <i class="fa-light fa-sparkles"></i>
+          @if (bodyFilled()) {
+            Regenerate with AI
+          } @else {
+            Generate this with AI
+          }
+        </button>
+        @if (savedLabel(); as label) {
+          <span class="flex items-center gap-1 text-xs text-gray-400" data-testid="newsletter-content-saved-indicator">
+            <i class="fa-light fa-circle-check text-emerald-500"></i>
+            {{ label }}
+          </span>
+        }
+      </div>
+    </div>
+    <lfx-editor
+      [form]="form()"
+      control="bodyHtml"
+      placeholder="Share updates, recognize contributors, or announce what's next…"
+      [style]="{ height: '480px' }"
+      dataTest="newsletter-content-body">
+    </lfx-editor>
+  </div>
+</div>
+
+<lfx-newsletter-generate-drawer
+  [(visible)]="generateDrawerVisible"
+  [contextType]="contextType()"
+  [contextName]="contextName()"
+  (generated)="onGenerated($event)">
+</lfx-newsletter-generate-drawer>
+
+<p-confirmDialog data-testid="newsletter-content-confirm-dialog"></p-confirmDialog>

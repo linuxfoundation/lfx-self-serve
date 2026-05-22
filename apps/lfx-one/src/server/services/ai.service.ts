@@ -1,9 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_AGENDA_SYSTEM_PROMPT, AI_MODEL, AI_REQUEST_CONFIG, DURATION_ESTIMATION } from '@lfx-one/shared/constants';
+import { AI_AGENDA_SYSTEM_PROMPT, AI_MODEL, AI_NEWSLETTER_SYSTEM_PROMPT, AI_REQUEST_CONFIG, DURATION_ESTIMATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import { GenerateAgendaRequest, GenerateAgendaResponse, OpenAIChatRequest, OpenAIChatResponse } from '@lfx-one/shared/interfaces';
+import {
+  GenerateAgendaRequest,
+  GenerateAgendaResponse,
+  GenerateNewsletterRequest,
+  GenerateNewsletterResponse,
+  OpenAIChatRequest,
+  OpenAIChatResponse,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -93,6 +100,123 @@ export class AiService {
     } catch (error) {
       logger.error(req, 'generate_meeting_agenda', startTime, error);
       throw new Error('Failed to generate meeting agenda');
+    }
+  }
+
+  public async generateNewsletter(req: Request, request: GenerateNewsletterRequest): Promise<GenerateNewsletterResponse> {
+    this.assertConfigured();
+
+    const startTime = logger.startOperation(req, 'generate_newsletter', {
+      contextType: request.contextType,
+      contextName: request.contextName,
+      rawContentLength: request.rawContent?.length ?? 0,
+      hasPromptOverride: !!request.systemPromptOverride,
+    });
+
+    try {
+      const systemPrompt = request.systemPromptOverride?.trim() || AI_NEWSLETTER_SYSTEM_PROMPT;
+      const userPrompt = this.buildNewsletterPrompt(request);
+
+      const chatRequest: OpenAIChatRequest = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
+        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'newsletter',
+            description: 'Generated newsletter subject and HTML body',
+            schema: {
+              type: 'object',
+              properties: {
+                subject: {
+                  type: 'string',
+                  description: 'Concise, inbox-friendly subject line.',
+                  maxLength: 200,
+                },
+                bodyHtml: {
+                  type: 'string',
+                  description:
+                    'Newsletter HTML body. Only allowed tags: <p>, <br>, <strong>, <b>, <em>, <i>, <u>, <s>, <ol>, <ul>, <li>, <a>, <blockquote>, <h2>, <h3>.',
+                  maxLength: 100_000,
+                },
+              },
+              required: ['subject', 'bodyHtml'],
+              additionalProperties: false,
+            },
+          },
+          strict: true,
+        },
+      };
+
+      const response = await this.makeAiRequest(chatRequest);
+      const result = this.extractNewsletter(req, response);
+
+      logger.success(req, 'generate_newsletter', startTime, {
+        subjectLength: result.subject.length,
+        bodyHtmlLength: result.bodyHtml.length,
+      });
+
+      return result;
+    } catch (error) {
+      logger.error(req, 'generate_newsletter', startTime, error);
+      throw new Error('Failed to generate newsletter');
+    }
+  }
+
+  private buildNewsletterPrompt(request: GenerateNewsletterRequest): string {
+    const contextLabel = request.contextType === 'foundation' ? 'foundation' : 'project';
+    const lines = [
+      `Compose a newsletter for the ${request.contextName} ${contextLabel}.`,
+      '',
+      'Raw content from the Executive Director (transform this into a polished newsletter):',
+      '"""',
+      request.rawContent.trim(),
+      '"""',
+    ];
+    return lines.join('\n');
+  }
+
+  private extractNewsletter(req: Request, response: OpenAIChatResponse): GenerateNewsletterResponse {
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error('No newsletter generated');
+    }
+
+    const content = response.choices[0].message.content;
+
+    if (!content || content.trim().length === 0) {
+      throw new Error('Empty newsletter generated');
+    }
+
+    try {
+      const parsed = JSON.parse(content.trim());
+
+      if (!parsed.bodyHtml || typeof parsed.bodyHtml !== 'string') {
+        throw new Error('Invalid bodyHtml in response');
+      }
+
+      const subject = typeof parsed.subject === 'string' ? parsed.subject.trim() : '';
+
+      return {
+        subject,
+        bodyHtml: parsed.bodyHtml.trim(),
+      };
+    } catch (parseError) {
+      // Log metadata only — never the AI-generated body itself (PII / draft content).
+      logger.warning(req, 'generate_newsletter', 'Failed to parse JSON response, falling back to raw content', {
+        contentLength: content.length,
+        err: parseError,
+      });
+
+      // Fallback: treat the whole response as bodyHtml; leave subject empty so the user fills it in.
+      return {
+        subject: '',
+        bodyHtml: content.trim(),
+      };
     }
   }
 

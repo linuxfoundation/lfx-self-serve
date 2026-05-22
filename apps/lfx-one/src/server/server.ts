@@ -29,6 +29,7 @@ import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import navigationRouter from './routes/navigation.route';
+import newslettersRouter from './routes/newsletters.route';
 import organizationsRouter from './routes/organizations.route';
 import orgsRouter from './routes/orgs.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
@@ -217,6 +218,7 @@ app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
+app.use('/api/newsletters', newslettersRouter);
 
 app.use('/api/*', apiErrorHandler);
 

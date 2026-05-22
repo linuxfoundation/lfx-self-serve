@@ -1,0 +1,161 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container px-8" data-testid="newsletter-manage">
+  <div class="mb-4">
+    <a [routerLink]="['list']" [relativeTo]="route.parent" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
+      <i class="fa-light fa-arrow-left mr-2"></i>
+      Back to Newsletters
+    </a>
+  </div>
+
+  <h1 class="mb-6" data-testid="newsletter-manage-title">
+    {{ isEditMode() ? 'Edit Newsletter' : 'Create Newsletter' }}
+  </h1>
+
+  @if (draftLoading()) {
+    <div class="flex flex-col gap-6" data-testid="newsletter-manage-loading">
+      <div class="flex items-center gap-4">
+        @for (step of [1, 2, 3]; track step) {
+          <p-skeleton shape="circle" size="2.5rem"></p-skeleton>
+          @if (step < 3) {
+            <p-skeleton width="4rem" height="0.25rem"></p-skeleton>
+          }
+        }
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+        <div class="flex items-center justify-between p-6 border-b border-gray-200">
+          <p-skeleton width="5rem" height="2rem"></p-skeleton>
+          <div class="flex gap-3">
+            <p-skeleton width="5rem" height="2rem"></p-skeleton>
+          </div>
+        </div>
+        <div class="flex flex-col gap-5 p-6 md:p-8">
+          <p-skeleton width="40%" height="1.5rem"></p-skeleton>
+          <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+          <p-skeleton width="60%" height="1.5rem"></p-skeleton>
+          <p-skeleton width="100%" height="20rem"></p-skeleton>
+        </div>
+      </div>
+    </div>
+  } @else {
+    <p-stepper
+      [value]="currentStep()"
+      (valueChange)="goToStep($event)"
+      [linear]="!isEditMode()"
+      styleClass="newsletter-manage-stepper mb-6"
+      data-testid="newsletter-manage-stepper">
+      <p-step-list>
+        <p-step [value]="1" data-testid="newsletter-manage-step-1">Audience</p-step>
+        <p-step [value]="2" data-testid="newsletter-manage-step-2">Content</p-step>
+        <p-step [value]="3" data-testid="newsletter-manage-step-3">Send</p-step>
+      </p-step-list>
+
+      <p-step-panels>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+          <div class="flex items-center justify-between p-6 border-b border-gray-200">
+            <div>
+              @if (canGoPrevious()) {
+                <lfx-button
+                  label="Previous"
+                  icon="fa-light fa-chevron-left"
+                  [text]="true"
+                  (onClick)="previousStep()"
+                  data-testid="newsletter-manage-previous-btn">
+                </lfx-button>
+              }
+            </div>
+            <div class="flex items-center gap-3">
+              @if (savedLabel(); as label) {
+                <span class="flex items-center gap-1 text-xs text-gray-400" data-testid="newsletter-manage-saved-indicator">
+                  <i class="fa-light fa-circle-check text-emerald-500"></i>
+                  {{ label }}
+                </span>
+              }
+              <lfx-button
+                label="Preview"
+                icon="fa-regular fa-eye"
+                severity="secondary"
+                [outlined]="true"
+                [text]="true"
+                size="small"
+                (onClick)="openPreviewDrawer()"
+                data-testid="newsletter-manage-preview-btn">
+              </lfx-button>
+              @if (!isLastStep()) {
+                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="newsletter-manage-cancel-btn"></lfx-button>
+                <lfx-button
+                  label="Next"
+                  icon="fa-light fa-chevron-right"
+                  iconPos="right"
+                  [disabled]="!canProceed()"
+                  severity="info"
+                  (onClick)="nextStep()"
+                  data-testid="newsletter-manage-next-btn">
+                </lfx-button>
+              }
+            </div>
+          </div>
+
+          <div class="p-6 md:p-8">
+            <p-step-panel [value]="1" data-testid="newsletter-manage-panel-1">
+              <ng-template #content>
+                <lfx-newsletter-audience-step
+                  [form]="form"
+                  [contextUid]="contextUid()"
+                  [recipientCount]="recipientCount()"
+                  [recipientCountLoading]="recipientCountLoading()">
+                </lfx-newsletter-audience-step>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="2" data-testid="newsletter-manage-panel-2">
+              <ng-template #content>
+                <lfx-newsletter-content-step
+                  [form]="form"
+                  [contextType]="contextType()"
+                  [contextName]="displayName()"
+                  [hasContext]="hasContext()"
+                  [savedLabel]="savedLabel()"
+                  (generated)="onGenerated($event)">
+                </lfx-newsletter-content-step>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="3" data-testid="newsletter-manage-panel-3">
+              <ng-template #content>
+                <lfx-newsletter-send-step
+                  [subject]="form.controls.subject.value"
+                  [recipientCount]="recipientCount()"
+                  [committeeCount]="form.controls.committeeUids.value.length"
+                  [edName]="edName()"
+                  [displayName]="displayName()"
+                  [edReplyEmail]="edEmail()"
+                  [edEmail]="edEmail()"
+                  [canSend]="canSend()"
+                  [sending]="submitting()"
+                  [canSendTest]="canSendTest()"
+                  [testSending]="testSending()"
+                  (send)="onSend()"
+                  (sendTest)="onSendTest()">
+                </lfx-newsletter-send-step>
+              </ng-template>
+            </p-step-panel>
+          </div>
+        </div>
+      </p-step-panels>
+    </p-stepper>
+  }
+</div>
+
+<lfx-newsletter-preview-drawer
+  [(visible)]="previewDrawerVisible"
+  [subject]="form.controls.subject.value"
+  [bodyHtml]="form.controls.bodyHtml.value"
+  [edName]="edName()"
+  [logoUrl]="logoUrl()"
+  [displayName]="displayName()"
+  [edReplyEmail]="edEmail()">
+</lfx-newsletter-preview-drawer>
+
+<p-confirmDialog></p-confirmDialog>

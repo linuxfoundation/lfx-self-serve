@@ -1,0 +1,87 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="newsletter-audience-step">
+  <div>
+    <h2 class="text-base font-semibold text-gray-900">Who's this for?</h2>
+    <p class="text-sm text-gray-500 mt-1">Pick the groups that should receive this newsletter. Members in multiple groups only get one email.</p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <label class="text-sm font-medium text-gray-700">Groups</label>
+      @if (selectedCount() > 0 && recipientCount() !== null) {
+        @if (recipientCountLoading()) {
+          <span class="text-xs text-gray-500" data-testid="newsletter-audience-recipient-pill">Calculating recipients…</span>
+        } @else {
+          <button
+            type="button"
+            (click)="onShowRecipients($event)"
+            class="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors flex items-center gap-1"
+            data-testid="newsletter-audience-recipient-pill"
+            [attr.aria-label]="'View ' + recipientCount() + ' recipients'">
+            {{ recipientCount() }} {{ recipientCount() === 1 ? 'recipient' : 'recipients' }}
+            <i class="fa-light fa-chevron-down text-[10px]"></i>
+          </button>
+        }
+      }
+    </div>
+
+    @if (loadingCommittees()) {
+      <div class="text-sm text-gray-500 px-3 py-2 rounded-md border border-gray-200 bg-gray-50">Loading groups…</div>
+    } @else if (!hasCommittees() && contextUid()) {
+      <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="newsletter-audience-no-committees">
+        No groups exist here yet. Create one first.
+      </div>
+    } @else {
+      <lfx-multi-select
+        [form]="form()"
+        control="committeeUids"
+        [options]="committeeOptions()"
+        optionLabel="label"
+        optionValue="value"
+        optionSubLabel="category"
+        placeholder="Pick the groups that should receive this newsletter"
+        [filter]="true"
+        filterPlaceHolder="Search groups"
+        styleClass="w-full"
+        data-testid="newsletter-audience-committees">
+      </lfx-multi-select>
+    }
+  </div>
+
+  <p-popover #recipientsPopover styleClass="newsletter-recipients-popover">
+    <div class="flex flex-col gap-2 p-2 min-w-[320px] max-w-[440px]" data-testid="newsletter-audience-recipients-popover">
+      <div class="flex items-center justify-between gap-3 pb-2 border-b border-gray-200">
+        <span class="text-sm font-semibold text-gray-900">Recipients</span>
+        @if (!recipientsLoading() && !recipientsError()) {
+          <span class="text-xs text-gray-500">{{ recipients().length }} unique</span>
+        }
+      </div>
+
+      @if (recipientsLoading()) {
+        <div class="flex items-center gap-2 text-xs text-gray-500 py-3">
+          <p-progressSpinner styleClass="!w-3.5 !h-3.5" strokeWidth="4"></p-progressSpinner>
+          Loading recipients…
+        </div>
+      } @else if (recipientsError(); as err) {
+        <div class="text-xs text-red-600 py-2">{{ err }}</div>
+      } @else if (recipients().length === 0) {
+        <div class="text-xs text-gray-500 py-2">No recipients found in the selected groups.</div>
+      } @else {
+        <ul class="flex flex-col gap-0.5 max-h-72 overflow-y-auto -mx-1 pr-1">
+          @for (r of recipients(); track r.email) {
+            <li class="flex flex-col gap-0.5 px-2 py-1.5 rounded-md hover:bg-gray-50">
+              @if (r.firstName) {
+                <span class="text-xs font-medium text-gray-900">{{ r.firstName }}</span>
+                <span class="text-xs text-gray-500 break-all">{{ r.email }}</span>
+              } @else {
+                <span class="text-xs text-gray-700 break-all">{{ r.email }}</span>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </p-popover>
+</div>

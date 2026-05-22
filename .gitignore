@@ -57,5 +57,8 @@ snowflake.log
 # Serena
 .serena/
 
+# Superpowers (brainstorming session artifacts)
+.superpowers/
+
 # Playwright MCP
 .playwright-mcp

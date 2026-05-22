@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full newsletter-generate-drawer"
+  data-testid="newsletter-generate-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between w-full pr-4" data-testid="newsletter-generate-drawer-header">
+      <div class="flex items-center gap-2">
+        <i class="fa-light fa-sparkles text-blue-600"></i>
+        <h2 class="text-lg font-semibold text-slate-900">Generate with AI</h2>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+        data-testid="newsletter-generate-drawer-close"
+        aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 px-1" data-testid="newsletter-generate-drawer-body">
+    <!-- Raw content -->
+    <section class="flex flex-col gap-3">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-slate-900">Your raw content</h3>
+        <p class="text-xs text-slate-500">Paste anything — bullet points, talking points, links, rough notes. AI will turn it into a finished newsletter.</p>
+      </div>
+
+      <lfx-textarea
+        [form]="form"
+        control="rawContent"
+        placeholder="• Released v2.4 last week, big perf wins
+• Welcome new maintainers Alice and Bob
+• Upcoming community call: Thursday at 10am PT
+• Link to the new contributor guide: https://…"
+        [rows]="10"
+        [autoResize]="true"
+        styleClass="w-full font-mono text-sm"
+        dataTest="newsletter-generate-raw-content">
+      </lfx-textarea>
+
+      <div class="flex items-center justify-end text-xs text-slate-400">
+        <span data-testid="newsletter-generate-char-count">{{ rawContentLength() }} characters</span>
+      </div>
+    </section>
+
+    <!-- Prompt customizer -->
+    <section class="flex flex-col gap-3">
+      <button
+        type="button"
+        (click)="onTogglePromptCustomizer()"
+        class="flex items-center justify-between gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
+        data-testid="newsletter-generate-prompt-toggle"
+        [attr.aria-expanded]="promptCustomizerOpen()">
+        <span class="flex items-center gap-2">
+          <i class="fa-light" [class.fa-chevron-down]="promptCustomizerOpen()" [class.fa-chevron-right]="!promptCustomizerOpen()"></i>
+          Customize AI instructions
+          @if (promptIsCustomized()) {
+            <span
+              class="rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5"
+              data-testid="newsletter-generate-prompt-customized-badge">
+              Customized
+            </span>
+          }
+        </span>
+      </button>
+
+      @if (promptCustomizerOpen()) {
+        <div class="flex flex-col gap-2" data-testid="newsletter-generate-prompt-panel">
+          <p class="text-xs text-slate-500">
+            Change how the AI writes — voice, tone, and structure. Your changes are saved in this browser and used next time.
+          </p>
+          <lfx-textarea
+            [form]="form"
+            control="systemPrompt"
+            [rows]="8"
+            [autoResize]="true"
+            styleClass="w-full font-mono text-xs"
+            dataTest="newsletter-generate-prompt-textarea">
+          </lfx-textarea>
+          <div class="flex items-center justify-end">
+            <button
+              type="button"
+              (click)="onResetPrompt()"
+              [disabled]="!promptIsCustomized()"
+              class="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors"
+              data-testid="newsletter-generate-prompt-reset">
+              <i class="fa-light fa-rotate-left mr-1"></i>
+              Reset to default
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+
+    <!-- Replace warning -->
+    <div
+      class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2"
+      data-testid="newsletter-generate-replace-warning">
+      <i class="fa-light fa-circle-info mt-0.5"></i>
+      <span>Generating will replace anything currently in the subject and body fields. You can edit the result before sending.</span>
+    </div>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-between gap-3 w-full px-1 py-3 border-t border-slate-200" data-testid="newsletter-generate-drawer-footer">
+      <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" (onClick)="onClose()" data-testid="newsletter-generate-drawer-cancel">
+      </lfx-button>
+      <lfx-button
+        label="Generate"
+        icon="fa-light fa-sparkles"
+        severity="primary"
+        size="small"
+        [disabled]="!canGenerate()"
+        [loading]="generating()"
+        (onClick)="onGenerate()"
+        data-testid="newsletter-generate-drawer-submit">
+      </lfx-button>
+    </div>
+  </ng-template>
+</p-drawer>

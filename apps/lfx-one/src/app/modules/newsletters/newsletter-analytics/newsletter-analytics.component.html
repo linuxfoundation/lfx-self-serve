@@ -1,0 +1,86 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6" data-testid="newsletter-analytics">
+  <div class="mb-4">
+    <button type="button" (click)="goBack()" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
+      <i class="fa-light fa-arrow-left mr-2"></i>
+      Back to Newsletters
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-6">
+      <p-skeleton width="40%" height="2rem"></p-skeleton>
+      <p-skeleton width="20%" height="1rem"></p-skeleton>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        @for (n of [1, 2, 3, 4]; track n) {
+          <p-skeleton width="100%" height="6rem"></p-skeleton>
+        }
+      </div>
+      <p-skeleton width="100%" height="20rem"></p-skeleton>
+    </div>
+  } @else if (loadError(); as err) {
+    <lfx-empty-state icon="fa-light fa-triangle-exclamation" title="Could not load analytics" [subtitle]="err"></lfx-empty-state>
+  } @else if (analytics(); as a) {
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-col gap-1">
+        <h1 class="text-2xl font-display font-light text-gray-900" data-testid="newsletter-analytics-subject">
+          {{ a.subject || 'Untitled newsletter' }}
+        </h1>
+        @if (a.status === 'sent' && a.sentAt) {
+          <p class="text-sm text-gray-500">Sent {{ a.sentAt | date: 'MMM d, y, h:mm a' }}</p>
+        } @else if (a.status === 'draft') {
+          <p class="text-sm text-gray-500">Draft — not yet sent. Stats will appear once it's sent.</p>
+        }
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+          <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+            <span class="text-xs uppercase tracking-wide text-gray-500">Recipients</span>
+            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-recipients">{{ a.totalRecipients }}</span>
+            <span class="text-xs text-gray-500">{{ a.delivered }} delivered · {{ a.failed }} failed</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+          <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+            <span class="text-xs uppercase tracking-wide text-gray-500">Unique opens</span>
+            <span class="text-2xl font-medium text-blue-600" data-testid="newsletter-analytics-unique-opens">{{ a.uniqueOpens }}</span>
+            <span class="text-xs text-gray-500">distinct recipients</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+          <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+            <span class="text-xs uppercase tracking-wide text-gray-500">Total opens</span>
+            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-total-opens">{{ a.totalOpens }}</span>
+            <span class="text-xs text-gray-500">includes repeat opens</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+          <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+            <span class="text-xs uppercase tracking-wide text-gray-500">Open rate</span>
+            <span class="text-2xl font-medium text-blue-600" data-testid="newsletter-analytics-open-rate">{{ openRatePercent() ?? 0 }}%</span>
+            <span class="text-xs text-gray-500">of delivered emails</span>
+          </div>
+        </lfx-card>
+      </div>
+
+      <lfx-card>
+        <div class="flex flex-col gap-3 p-2">
+          <h2 class="text-base font-semibold text-gray-900">Opens over time</h2>
+          @if (!hasOpens()) {
+            <div class="flex flex-col items-center justify-center py-12 gap-2 text-gray-500">
+              <i class="fa-light fa-chart-line text-3xl"></i>
+              <span class="text-sm">No opens recorded yet.</span>
+            </div>
+          } @else if (canRenderChart() && chartData()) {
+            <div class="h-80">
+              <lfx-chart type="line" [data]="chartData()" [options]="chartOptions()" height="320px"></lfx-chart>
+            </div>
+          }
+        </div>
+      </lfx-card>
+    </div>
+  }
+</div>

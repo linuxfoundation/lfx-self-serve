@@ -165,3 +165,6 @@ export * from './enrollment.interface';
 
 // Org Memberships interfaces
 export * from './org-memberships.interface';
+
+// Newsletter interfaces
+export * from './newsletter.interface';

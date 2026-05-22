@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[55%] lg:w-[65%] md:w-[80%] sm:w-[92%] w-full newsletter-preview-drawer"
+  data-testid="newsletter-preview-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between w-full pr-4" data-testid="newsletter-preview-drawer-header">
+      <div class="flex flex-col gap-0.5">
+        <h2 class="text-lg font-semibold text-slate-900">Preview</h2>
+        <p class="text-xs text-slate-500">As your recipients will see it</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+        data-testid="newsletter-preview-drawer-close"
+        aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="bg-slate-100 py-6 px-2 min-h-full" data-testid="newsletter-preview-drawer-body">
+    <lfx-newsletter-preview
+      [subject]="subject()"
+      [bodyHtml]="bodyHtml()"
+      [edName]="edName()"
+      [logoUrl]="logoUrl()"
+      [displayName]="displayName()"
+      [edReplyEmail]="edReplyEmail()">
+    </lfx-newsletter-preview>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-3 w-full px-1 py-3 border-t border-slate-200" data-testid="newsletter-preview-drawer-footer">
+      <lfx-button label="Close" severity="secondary" [text]="true" size="small" (onClick)="onClose()" data-testid="newsletter-preview-drawer-close-button">
+      </lfx-button>
+    </div>
+  </ng-template>
+</p-drawer>
