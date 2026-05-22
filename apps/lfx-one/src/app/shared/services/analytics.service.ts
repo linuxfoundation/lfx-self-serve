@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  OrgLensAccountContextResponse,
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
   CodeCommitsDailyResponse,
@@ -204,6 +205,17 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  /** Resolve display attributes + tier for the persona-authorised account IDs (drives selector + header badge). */
+  public getOrgLensAccountContext(accountIds: string[]): Observable<OrgLensAccountContextResponse[]> {
+    if (accountIds.length === 0) {
+      return of([]);
+    }
+    const params = { accountIds: accountIds.join(',') };
+    return this.http
+      .get<OrgLensAccountContextResponse[]>('/api/analytics/org-lens-account-context', { params })
+      .pipe(catchError(() => of([] as OrgLensAccountContextResponse[])));
   }
 
   /**
