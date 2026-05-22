@@ -1932,6 +1932,12 @@ export class AnalyticsController {
         });
       }
 
+      if (foundationSlug.length > NAME_MAX_LENGTH) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug exceeds maximum length', {
+          operation: 'get_web_activities_summary',
+        });
+      }
+
       if (!SLUG_PATTERN.test(foundationSlug)) {
         throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
           operation: 'get_web_activities_summary',
