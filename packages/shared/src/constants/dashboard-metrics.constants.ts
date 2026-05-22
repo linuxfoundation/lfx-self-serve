@@ -333,6 +333,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'bar',
     category: 'contributors',
     testId: 'org-overview-involvement-card-active-contributors',
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Maintainers',
@@ -340,6 +341,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'bar',
     category: 'contributors',
     testId: 'org-overview-involvement-card-maintainers',
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Event Attendees',
@@ -347,6 +349,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'events',
     testId: 'org-overview-involvement-card-event-attendees',
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Event Speakers',
@@ -354,6 +357,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'events',
     testId: 'org-overview-involvement-card-event-speakers',
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Certified Employees',
@@ -361,6 +365,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'education',
     testId: 'org-overview-involvement-card-certified-employees',
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Training Enrollments',
@@ -368,6 +373,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'education',
     testId: 'org-overview-involvement-card-training-enrollments',
+    chartData: EMPTY_CHART_DATA,
   },
 ];
 
