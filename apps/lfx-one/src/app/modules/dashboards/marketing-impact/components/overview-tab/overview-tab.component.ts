@@ -8,7 +8,7 @@ import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDi
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, finalize, forkJoin, of, switchMap } from 'rxjs';
 
-import type { OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
+import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
@@ -26,6 +26,7 @@ export class OverviewTabComponent {
   public readonly foundationSlug = input<string | undefined>();
   public readonly selectedMonth = input.required<string>();
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
