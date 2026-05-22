@@ -4,6 +4,8 @@
 import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
+import { VALID_CLASSIFICATIONS } from '@lfx-one/shared/constants';
+
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { assertHealthMetricsRange, getStringQueryParam, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -1979,10 +1981,19 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getEmailCtr(foundationSlug);
+      const classification = getStringQueryParam(req, 'classification');
+
+      if (classification && !VALID_CLASSIFICATIONS.has(classification)) {
+        throw ServiceValidationError.forField('classification', `Invalid classification value. Allowed: ${[...VALID_CLASSIFICATIONS].join(', ')}`, {
+          operation: 'get_email_ctr',
+        });
+      }
+
+      const response = await this.projectService.getEmailCtr(foundationSlug, classification);
 
       logger.success(req, 'get_email_ctr', startTime, {
         foundation_slug: foundationSlug,
+        ...(classification && { classification }),
         current_ctr: response.currentCtr,
         monthly_data_points: response.monthlyData.length,
       });
