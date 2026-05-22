@@ -877,7 +877,8 @@ export class AnalyticsController {
 
       logger.success(req, 'get_foundation_maintainers', startTime, {
         foundation_slug: foundationSlug,
-        avg_maintainers: response.avgMaintainers,
+        current_maintainers: response.currentMaintainers,
+        as_of_date: response.asOfDate,
         trend_data_points: response.trendData.length,
       });
 

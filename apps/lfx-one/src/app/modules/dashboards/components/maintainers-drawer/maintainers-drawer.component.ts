@@ -118,7 +118,7 @@ export class MaintainersDrawerComponent {
   });
 
   // === Inputs ===
-  public readonly data = input<FoundationMaintainersResponse>({ avgMaintainers: 0, trendData: [], trendLabels: [] });
+  public readonly data = input<FoundationMaintainersResponse>({ currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] });
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -134,8 +134,8 @@ export class MaintainersDrawerComponent {
     })
   );
 
-  protected readonly metricValue: Signal<string> = computed(() => this.data().avgMaintainers.toLocaleString());
-  protected readonly hasData: Signal<boolean> = computed(() => this.data().avgMaintainers > 0);
+  protected readonly metricValue: Signal<string> = computed(() => this.data().currentMaintainers.toLocaleString());
+  protected readonly hasData: Signal<boolean> = computed(() => this.data().asOfDate !== null);
 
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationMaintainersMonthlyResponse> = computed(() => this.drawerData().monthly);

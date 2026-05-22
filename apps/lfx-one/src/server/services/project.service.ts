@@ -35,7 +35,7 @@ import {
   FoundationHealthEventsMonthlyRow,
   FoundationHealthScoreDistributionResponse,
   FoundationHealthScoreDistributionRow,
-  FoundationMaintainersDailyRow,
+  FoundationMaintainersDailySnapshotRow,
   FoundationMaintainersDistributionResponse,
   FoundationMaintainersDistributionRow,
   FoundationMaintainersMonthlyResponse,
@@ -1384,38 +1384,37 @@ export class ProjectService {
     };
   }
 
-  /**
-   * Get foundation maintainers data from Snowflake
-   * Queries FOUNDATION_MAINTAINERS_DAILY table
-   * Returns daily maintainer counts for detailed trend visualization
-   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
-   * @returns Foundation maintainers response with average and daily trend data
-   */
+  /** Latest-day distinct-maintainer snapshot + full daily trend for a foundation (LFXV2-1625). */
   public async getFoundationMaintainers(foundationSlug: string): Promise<FoundationMaintainersResponse> {
     const query = `
       SELECT
         METRIC_DATE,
-        ACTIVE_MAINTAINERS,
-        AVG_MAINTAINERS_YEARLY
+        ACTIVE_MAINTAINERS
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_DAILY
       WHERE FOUNDATION_SLUG = ?
       ORDER BY METRIC_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<FoundationMaintainersDailyRow>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<FoundationMaintainersDailySnapshotRow>(query, [foundationSlug]);
 
-    // Get average maintainers from first row (same across all rows)
-    const avgMaintainers = result.rows.length > 0 ? Math.round(result.rows[0].AVG_MAINTAINERS_YEARLY) : 0;
+    // Filter null-METRIC_DATE rows up-front so trendData/trendLabels stay index-aligned and the snapshot picks the latest *labeled* day.
+    const trendRows = result.rows.filter((row) => row.METRIC_DATE);
 
-    // Extract daily data and labels
-    const trendData = result.rows.map((row) => row.ACTIVE_MAINTAINERS);
-    const trendLabels = result.rows.map((row) => {
+    const latest = trendRows.length > 0 ? trendRows[trendRows.length - 1] : null;
+    const currentMaintainers = latest?.ACTIVE_MAINTAINERS ?? 0;
+    // Snowflake SDK returns DATE columns as a JS Date at UTC midnight; toISOString().split('T')[0] gives the calendar key (String().slice gave "Tue May 19" in PT).
+    const asOfDate = latest ? new Date(latest.METRIC_DATE).toISOString().split('T')[0] : null;
+
+    // Anchor trend labels to UTC so the chart's rightmost tick matches the asOfDate the card subtitle renders.
+    const trendData = trendRows.map((row) => row.ACTIVE_MAINTAINERS ?? 0);
+    const trendLabels = trendRows.map((row) => {
       const date = new Date(row.METRIC_DATE);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
     });
 
     return {
-      avgMaintainers,
+      currentMaintainers,
+      asOfDate,
       trendData,
       trendLabels,
     };
@@ -1612,7 +1611,7 @@ export class ProjectService {
         LIFECYCLE_STAGE,
         CONTRIBUTORS_90D_COUNT,
         COMMITS_90D_COUNT,
-        MAINTAINERS_YTD_COUNT,
+        MAINTAINERS_CURRENT_COUNT,
         STARS_YTD_COUNT,
         LAST_UPDATED_TS
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
@@ -1639,7 +1638,7 @@ export class ProjectService {
           row.LIFECYCLE_STAGE && VALID_LIFECYCLE_STAGES.has(row.LIFECYCLE_STAGE as LifecycleStage) ? (row.LIFECYCLE_STAGE as LifecycleStage) : null,
         activeContributors: row.CONTRIBUTORS_90D_COUNT ?? 0,
         commitsLast90Days: row.COMMITS_90D_COUNT ?? 0,
-        maintainers: row.MAINTAINERS_YTD_COUNT ?? 0,
+        maintainers: row.MAINTAINERS_CURRENT_COUNT ?? 0,
         stars: row.STARS_YTD_COUNT ?? 0,
         lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
       }));
