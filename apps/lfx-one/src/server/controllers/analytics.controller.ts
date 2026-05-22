@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { assertHealthMetricsRange, getStringQueryParam, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
+import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
@@ -24,11 +26,13 @@ const NAME_MAX_LENGTH = 200;
 export class AnalyticsController {
   private readonly userService: UserService;
   private readonly organizationService: OrganizationService;
+  private readonly orgInvolvementService: OrgInvolvementService;
   private readonly projectService: ProjectService;
 
   public constructor() {
     this.userService = new UserService();
     this.organizationService = new OrganizationService();
+    this.orgInvolvementService = new OrgInvolvementService();
     this.projectService = new ProjectService();
   }
 
@@ -1751,6 +1755,160 @@ export class AnalyticsController {
     }
   }
 
+  // Organization Involvement Endpoints (cross-foundation, accountId only)
+
+  /**
+   * GET /api/analytics/org-foundation-coverage
+   * Get foundation coverage for an organization across all LF foundations
+   * Query params: accountId (required)
+   */
+  public async orgFoundationCoverage(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_foundation_coverage');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_foundation_coverage');
+
+      const response = await this.orgInvolvementService.getFoundationCoverage(accountId);
+
+      logger.success(req, 'get_org_foundation_coverage', startTime, {
+        account_id: accountId,
+        foundation_count: response.foundationCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-involvement-contributors-monthly
+   * Get cross-foundation active contributors monthly for an organization
+   * Query params: accountId (required)
+   */
+  public async orgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_involvement_contributors_monthly');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_contributors_monthly');
+
+      const response = await this.orgInvolvementService.getContributorsMonthly(accountId);
+
+      logger.success(req, 'get_org_involvement_contributors_monthly', startTime, {
+        account_id: accountId,
+        total_active_contributors: response.totalActiveContributors,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-involvement-maintainers-monthly
+   * Get cross-foundation maintainers monthly for an organization
+   * Query params: accountId (required)
+   */
+  public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_involvement_maintainers_monthly');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_maintainers_monthly');
+
+      const response = await this.orgInvolvementService.getMaintainersMonthly(accountId);
+
+      logger.success(req, 'get_org_involvement_maintainers_monthly', startTime, {
+        account_id: accountId,
+        total_maintainers: response.totalMaintainersYearly,
+        total_projects: response.totalProjectsYearly,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-involvement-event-attendance-monthly
+   * Get cross-foundation event attendance monthly for an organization
+   * Query params: accountId (required)
+   */
+  public async orgEventAttendanceMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_involvement_event_attendance_monthly');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_event_attendance_monthly');
+
+      const response = await this.orgInvolvementService.getEventAttendanceMonthly(accountId);
+
+      logger.success(req, 'get_org_involvement_event_attendance_monthly', startTime, {
+        account_id: accountId,
+        total_attended: response.totalAttended,
+        total_speakers: response.totalSpeakers,
+        monthly_data_points: response.monthlyLabels.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-involvement-certified-employees-monthly
+   * Get cross-foundation certified employees monthly for an organization
+   * Query params: accountId (required)
+   */
+  public async orgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_involvement_certified_employees_monthly');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_certified_employees_monthly');
+
+      const response = await this.orgInvolvementService.getCertifiedEmployeesMonthly(accountId);
+
+      logger.success(req, 'get_org_involvement_certified_employees_monthly', startTime, {
+        account_id: accountId,
+        total_certifications: response.totalCertifications,
+        total_certified_employees: response.totalCertifiedEmployees,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-involvement-training-enrollments
+   * Get cross-foundation training enrollments YTD for an organization
+   * Query params: accountId (required)
+   */
+  public async orgTrainingEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_involvement_training_enrollments');
+
+    try {
+      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_training_enrollments');
+
+      const response = await this.orgInvolvementService.getTrainingEnrollments(accountId);
+
+      logger.success(req, 'get_org_involvement_training_enrollments', startTime, {
+        account_id: accountId,
+        total_enrollments: response.totalEnrollments,
+        daily_data_points: response.dailyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Marketing Analytics Endpoints
   // All marketing endpoints (Web Activities, Email CTR, Social Reach, Social Media, and the
   // ED dashboard KPIs) use `foundationSlug` — underlying Snowflake Platinum views key on a
@@ -2603,6 +2761,31 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/org-lens-account-context
+   * Resolve LFX One Org Lens display context for a set of Salesforce
+   * accounts — one denormalised row per account_id with cdev mapping
+   * and highest active corporate membership tier.
+   * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
+   */
+  public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_lens_account_context');
+
+    try {
+      const accountIds = this.parseAccountIdsParam(req, 'get_org_lens_account_context');
+      const response = await this.organizationService.getOrgLensAccountContext(accountIds);
+
+      logger.success(req, 'get_org_lens_account_context', startTime, {
+        requested_count: accountIds.length,
+        resolved_count: response.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */
@@ -2645,5 +2828,55 @@ export class AnalyticsController {
     }
 
     return slugs;
+  }
+
+  /** Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format. */
+  private parseAccountIdParam(req: Request, operation: string): string {
+    const accountId = getStringQueryParam(req, 'accountId');
+    if (!accountId) {
+      throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', { operation });
+    }
+    if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
+      throw ServiceValidationError.forField('accountId', 'Invalid Salesforce accountId format', { operation });
+    }
+    return accountId;
+  }
+
+  /**
+   * Parse and validate the `accountIds` query parameter (comma-separated
+   * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
+   * checks each id matches the Salesforce 15/18-char alphanumeric format.
+   */
+  private parseAccountIdsParam(req: Request, operation: string): string[] {
+    const raw = getStringQueryParam(req, 'accountIds');
+    if (!raw) {
+      throw ServiceValidationError.forField('accountIds', 'accountIds query parameter is required', { operation });
+    }
+
+    const ids = [
+      ...new Set(
+        raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      ),
+    ];
+
+    if (ids.length === 0) {
+      throw ServiceValidationError.forField('accountIds', 'At least one accountId is required', { operation });
+    }
+
+    const MAX_ACCOUNT_IDS = 50;
+    if (ids.length > MAX_ACCOUNT_IDS) {
+      throw ServiceValidationError.forField('accountIds', `Maximum of ${MAX_ACCOUNT_IDS} accountIds allowed per request`, { operation });
+    }
+
+    for (const id of ids) {
+      if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(id)) {
+        throw ServiceValidationError.forField('accountIds', 'Invalid Salesforce accountId format', { operation });
+      }
+    }
+
+    return ids;
   }
 }

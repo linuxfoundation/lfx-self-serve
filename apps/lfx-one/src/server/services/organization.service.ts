@@ -6,6 +6,8 @@
 import {
   CertifiedEmployeesMonthlyRow,
   CertifiedEmployeesResponse,
+  MembershipTierClass,
+  OrgLensAccountContextResponse,
   FoundationCompanyBusFactorResponse,
   FoundationCompanyBusFactorRow,
   MembershipTierResponse,
@@ -46,6 +48,24 @@ import { ResourceNotFoundError } from '../errors';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
+
+/** Raw row shape for ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT — server-only, mirrors Snowflake column names. */
+interface OrgLensAccountContextRow {
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+  ACCOUNT_SLUG: string | null;
+  LOGO_URL: string | null;
+  CDEV_ORG_ID: string | null;
+  CDEV_ORG_NAME: string | null;
+  CDEV_ORG_LOGO: string | null;
+  IS_MEMBER: boolean;
+  MEMBER_ACCOUNT_TYPE: string | null;
+  MEMBERSHIP_ID: string | null;
+  MEMBERSHIP_PROJECT_ID: string | null;
+  MEMBERSHIP_PROJECT_NAME: string | null;
+  MEMBERSHIP_TIER_DISPLAY_NAME: string | null;
+  MEMBERSHIP_TIER_CLASS: MembershipTierClass | null;
+}
 
 /**
  * Service for handling organization-related operations and analytics
@@ -869,5 +889,53 @@ export class OrganizationService {
     }));
 
     return { programs };
+  }
+
+  /** Resolve Org Lens display context for the given accountIds — one denormalised row per account_id, pre-joined in dbt. */
+  public async getOrgLensAccountContext(accountIds: string[]): Promise<OrgLensAccountContextResponse[]> {
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = accountIds.map(() => '?').join(',');
+    const query = `
+      SELECT
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        ACCOUNT_SLUG,
+        LOGO_URL,
+        CDEV_ORG_ID,
+        CDEV_ORG_NAME,
+        CDEV_ORG_LOGO,
+        IS_MEMBER,
+        MEMBER_ACCOUNT_TYPE,
+        MEMBERSHIP_ID,
+        MEMBERSHIP_PROJECT_ID,
+        MEMBERSHIP_PROJECT_NAME,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        MEMBERSHIP_TIER_CLASS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
+      WHERE ACCOUNT_ID IN (${placeholders})
+      ORDER BY ACCOUNT_NAME
+    `;
+
+    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, accountIds);
+
+    return result.rows.map((row) => ({
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME,
+      accountSlug: row.ACCOUNT_SLUG,
+      logoUrl: row.LOGO_URL,
+      cdevOrgId: row.CDEV_ORG_ID,
+      cdevOrgName: row.CDEV_ORG_NAME,
+      cdevOrgLogo: row.CDEV_ORG_LOGO,
+      isMember: row.IS_MEMBER,
+      memberAccountType: row.MEMBER_ACCOUNT_TYPE,
+      membershipId: row.MEMBERSHIP_ID,
+      membershipProjectId: row.MEMBERSHIP_PROJECT_ID,
+      membershipProjectName: row.MEMBERSHIP_PROJECT_NAME,
+      membershipTierDisplayName: row.MEMBERSHIP_TIER_DISPLAY_NAME,
+      membershipTierClass: row.MEMBERSHIP_TIER_CLASS,
+    }));
   }
 }
