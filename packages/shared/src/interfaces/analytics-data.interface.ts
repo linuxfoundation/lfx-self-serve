@@ -2677,6 +2677,7 @@ export interface PaidPlatformBreakdown {
   convRate: number;
   conversions: number;
   performance: PaidProjectPerformance;
+  campaigns: PaidCampaignPerformance[];
 }
 
 /**

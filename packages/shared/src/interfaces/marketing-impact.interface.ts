@@ -163,4 +163,20 @@ export interface PlatformPerformanceRow {
   conversions: string;
   performance: PaidProjectPerformance;
   performanceClass: string;
+  campaigns: PlatformCampaignRow[];
+}
+
+/** View-model row for a nested campaign under a platform. All numeric fields are pre-formatted strings. */
+export interface PlatformCampaignRow {
+  campaignName: string;
+  /** Pre-formatted currency string, e.g. "$1,234.56" */
+  spend: string;
+  /** Pre-formatted currency string, e.g. "$5,678.90" */
+  revenue: string;
+  /** Pre-formatted ROAS multiplier string, e.g. "2.34x" */
+  roas: string;
+  /** Pre-formatted number string, e.g. "1,234" */
+  clicks: string;
+  /** Pre-formatted number string, e.g. "12,345" */
+  impressions: string;
 }

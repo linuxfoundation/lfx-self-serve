@@ -2323,12 +2323,12 @@ export class ProjectService {
       ORDER BY SPEND DESC
     `;
 
-      // Block 6: Platform-level performance breakdown (aggregated by CHANNEL)
+      // Block 6: Platform-level performance breakdown (by CHANNEL + CAMPAIGN_NAME)
       // All blocks use LAST_TOUCH_REVENUE as the default attribution model
       // Also used to derive channelGroups (impressions by channel) — eliminates a separate query
       const platformPerfQuery = `
       SELECT
-        CHANNEL,
+        CHANNEL, CAMPAIGN_NAME,
         SUM(SPEND) AS SPEND, SUM(LAST_TOUCH_REVENUE) AS REVENUE,
         ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), SUM(SPEND)), 2) AS ROAS,
         SUM(CLICKS) AS CLICKS,
@@ -2340,8 +2340,8 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
         AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
-      GROUP BY CHANNEL
-      ORDER BY SPEND DESC
+      GROUP BY CHANNEL, CAMPAIGN_NAME
+      ORDER BY CHANNEL, SPEND DESC
     `;
 
       const [impressionsResult, roasKpiResult, monthlyRoasResult, monthlyImpressionsResult, projectPerfResult, platformPerfResult] = await Promise.all([
@@ -2389,6 +2389,7 @@ export class ProjectService {
         this.snowflakeService
           .execute<{
             CHANNEL: string;
+            CAMPAIGN_NAME: string;
             SPEND: number;
             REVENUE: number;
             ROAS: number;
@@ -2407,6 +2408,7 @@ export class ProjectService {
             return {
               rows: [] as {
                 CHANNEL: string;
+                CAMPAIGN_NAME: string;
                 SPEND: number;
                 REVENUE: number;
                 ROAS: number;
@@ -2453,10 +2455,40 @@ export class ProjectService {
         return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       });
 
-      const channelGroups = platformPerfResult.rows
-        .map((row) => ({
-          channel: row.CHANNEL,
-          totalImpressions: row.IMPRESSIONS,
+      // Aggregate platform rows by CHANNEL for channelGroups and platformBreakdown
+      const platformMap = new Map<
+        string,
+        {
+          spend: number;
+          revenue: number;
+          clicks: number;
+          impressions: number;
+          conversions: number;
+          campaigns: typeof platformPerfResult.rows;
+        }
+      >();
+      for (const row of platformPerfResult.rows) {
+        const existing = platformMap.get(row.CHANNEL) ?? {
+          spend: 0,
+          revenue: 0,
+          clicks: 0,
+          impressions: 0,
+          conversions: 0,
+          campaigns: [] as typeof platformPerfResult.rows,
+        };
+        existing.spend += row.SPEND ?? 0;
+        existing.revenue += row.REVENUE ?? 0;
+        existing.clicks += row.CLICKS ?? 0;
+        existing.impressions += row.IMPRESSIONS ?? 0;
+        existing.conversions += row.CONVERSIONS ?? 0;
+        existing.campaigns.push(row);
+        platformMap.set(row.CHANNEL, existing);
+      }
+
+      const channelGroups = Array.from(platformMap.entries())
+        .map(([channel, data]) => ({
+          channel,
+          totalImpressions: data.impressions,
         }))
         .sort((a, b) => b.totalImpressions - a.totalImpressions);
 
@@ -2505,6 +2537,8 @@ export class ProjectService {
         return 'EMERGING';
       };
 
+      const CAMPAIGN_TOP_N = 10;
+
       const formatFunnel = (stages: Set<string>): string => {
         const priority = ['BoFU', 'MoFU', 'ToFU', 'ToFU2', 'Unknown'];
         for (const p of priority) {
@@ -2532,9 +2566,9 @@ export class ProjectService {
             impressions: data.impressions,
             clicks: data.clicks,
             performance: getPaidPerformance(projectRoas),
-            campaigns: data.campaigns
+            campaigns: [...data.campaigns]
               .sort((a, b) => (b.SPEND ?? 0) - (a.SPEND ?? 0))
-              .slice(0, 10)
+              .slice(0, CAMPAIGN_TOP_N)
               .map((c) => ({
                 campaignName: c.CAMPAIGN_NAME,
                 funnelStage: c.FUNNEL_STAGE ?? 'Unknown',
@@ -2552,19 +2586,44 @@ export class ProjectService {
         })
         .sort((a, b) => b.spend - a.spend);
 
-      const platformBreakdown = platformPerfResult.rows.map((row) => ({
-        platform: row.CHANNEL,
-        spend: Math.round((row.SPEND ?? 0) * 100) / 100,
-        revenue: Math.round((row.REVENUE ?? 0) * 100) / 100,
-        roas: row.ROAS ?? 0,
-        clicks: row.CLICKS ?? 0,
-        impressions: row.IMPRESSIONS ?? 0,
-        ctr: row.CTR ?? 0,
-        cpc: row.CPC ?? 0,
-        convRate: row.CONV_RATE ?? 0,
-        conversions: row.CONVERSIONS ?? 0,
-        performance: getPaidPerformance(row.ROAS ?? 0),
-      }));
+      const platformBreakdown = Array.from(platformMap.entries())
+        .map(([channel, data]) => {
+          // Ratios recomputed from aggregated totals; averaging per-campaign values would be statistically incorrect.
+          const platRoas = data.spend > 0 ? Math.round((data.revenue / data.spend) * 100) / 100 : 0;
+          const platCtr = data.impressions > 0 ? Math.round((data.clicks / data.impressions) * 10000) / 100 : 0;
+          const platCpc = data.clicks > 0 ? Math.round((data.spend / data.clicks) * 100) / 100 : 0;
+          const platConvRate = data.clicks > 0 ? Math.round((data.conversions / data.clicks) * 10000) / 100 : 0;
+          return {
+            platform: channel,
+            spend: Math.round(data.spend * 100) / 100,
+            revenue: Math.round(data.revenue * 100) / 100,
+            roas: platRoas,
+            clicks: data.clicks,
+            impressions: data.impressions,
+            ctr: platCtr,
+            cpc: platCpc,
+            convRate: platConvRate,
+            conversions: data.conversions,
+            performance: getPaidPerformance(platRoas),
+            campaigns: [...data.campaigns]
+              .sort((a, b) => (b.SPEND ?? 0) - (a.SPEND ?? 0))
+              .slice(0, CAMPAIGN_TOP_N)
+              .map((c) => ({
+                campaignName: c.CAMPAIGN_NAME,
+                funnelStage: 'Unknown',
+                spend: Math.round((c.SPEND ?? 0) * 100) / 100,
+                revenue: Math.round((c.REVENUE ?? 0) * 100) / 100,
+                roas: c.ROAS ?? 0,
+                conversions: c.CONVERSIONS ?? 0,
+                convRate: c.CONV_RATE ?? 0,
+                cpc: c.CPC ?? 0,
+                sessions: 0,
+                impressions: c.IMPRESSIONS ?? 0,
+                clicks: c.CLICKS ?? 0,
+              })),
+          };
+        })
+        .sort((a, b) => b.spend - a.spend);
 
       return {
         totalReach,

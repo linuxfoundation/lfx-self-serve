@@ -69,23 +69,21 @@
           <!-- Rows -->
           @for (row of projectRows(); track row.funnelStage + '|' + row.name) {
             @let projectKey = row.funnelStage + '|' + row.name;
+            @let projectExpanded = expandedProjects().has(projectKey);
             <div
               class="flex items-center gap-3 border-b border-gray-100 py-2.5 transition-colors"
               [class.cursor-pointer]="row.campaigns.length > 0"
               [class.hover:bg-gray-50]="row.campaigns.length > 0"
               role="row"
               [attr.data-testid]="'performance-marketing-row-' + row.name"
-              [attr.aria-expanded]="row.campaigns.length > 0 ? isProjectExpanded(projectKey) : null"
+              [attr.aria-expanded]="row.campaigns.length > 0 ? projectExpanded : null"
               (click)="row.campaigns.length > 0 && toggleProjectExpand(projectKey)"
               (keydown.enter)="row.campaigns.length > 0 && toggleProjectExpand(projectKey)"
               (keydown.space)="$event.preventDefault(); row.campaigns.length > 0 && toggleProjectExpand(projectKey)"
               [attr.tabindex]="row.campaigns.length > 0 ? 0 : null">
               <div class="flex w-40 items-center gap-1.5" role="cell">
                 @if (row.campaigns.length > 0) {
-                  <i
-                    class="fa-solid fa-chevron-right text-[9px] text-gray-400 transition-transform"
-                    [class.rotate-90]="isProjectExpanded(projectKey)"
-                    aria-hidden="true"></i>
+                  <i class="fa-solid fa-chevron-right text-[9px] text-gray-400 transition-transform" [class.rotate-90]="projectExpanded" aria-hidden="true"></i>
                 } @else {
                   <span class="w-[9px]"></span>
                 }
@@ -104,13 +102,14 @@
             </div>
 
             <!-- Expanded campaign rows -->
-            @if (isProjectExpanded(projectKey)) {
-              @for (campaign of row.campaigns; track campaign.campaignName) {
+            @if (projectExpanded) {
+              @for (campaign of row.campaigns; track $index) {
                 <div
                   class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2 pl-6"
                   role="row"
-                  [attr.data-testid]="'campaign-row-' + campaign.campaignName">
-                  <span class="w-[calc(10rem-1.5rem)] truncate text-[11px] text-gray-500" role="cell">{{ campaign.campaignName }}</span>
+                  [attr.data-testid]="'campaign-row-' + projectKey + '-' + $index">
+                  <!-- w-40 (parent) minus pl-6 (indent) = 8.5rem -->
+                  <span class="w-[8.5rem] truncate text-[11px] text-gray-500" role="cell">{{ campaign.campaignName }}</span>
                   <span class="w-20 truncate text-[11px] text-gray-400" role="cell">{{ campaign.funnelStage }}</span>
                   <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.spend }}</span>
                   <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.revenue }}</span>
@@ -155,8 +154,26 @@
 
               <!-- Rows -->
               @for (row of platformRows(); track row.platform) {
-                <div class="flex items-center gap-2 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'platform-row-' + row.platform">
-                  <span class="w-32 truncate text-xs font-medium text-gray-700" role="cell">{{ row.platform }}</span>
+                @let expanded = expandedPlatforms().has(row.platform);
+                <div
+                  class="flex items-center gap-2 border-b border-gray-100 py-2.5 transition-colors"
+                  [class.cursor-pointer]="row.campaigns.length > 0"
+                  [class.hover:bg-gray-50]="row.campaigns.length > 0"
+                  role="row"
+                  [attr.data-testid]="'platform-row-' + row.platform"
+                  [attr.aria-expanded]="row.campaigns.length > 0 ? expanded : null"
+                  (click)="row.campaigns.length > 0 && togglePlatformExpand(row.platform)"
+                  (keydown.enter)="row.campaigns.length > 0 && togglePlatformExpand(row.platform)"
+                  (keydown.space)="$event.preventDefault(); row.campaigns.length > 0 && togglePlatformExpand(row.platform)"
+                  [attr.tabindex]="row.campaigns.length > 0 ? 0 : null">
+                  <div class="flex w-32 items-center gap-1.5" role="cell">
+                    @if (row.campaigns.length > 0) {
+                      <i class="fa-solid fa-chevron-right text-[9px] text-gray-400 transition-transform" [class.rotate-90]="expanded" aria-hidden="true"></i>
+                    } @else {
+                      <span class="w-[9px]"></span>
+                    }
+                    <span class="truncate text-xs font-medium text-gray-700">{{ row.platform }}</span>
+                  </div>
                   <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
                   <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.revenue }}</span>
                   <span class="w-14 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
@@ -172,6 +189,29 @@
                     </span>
                   </div>
                 </div>
+
+                <!-- Expanded platform campaign rows -->
+                @if (expanded) {
+                  @for (campaign of row.campaigns; track $index) {
+                    <div
+                      class="flex items-center gap-2 border-b border-gray-50 bg-gray-50/50 py-2 pl-6"
+                      role="row"
+                      [attr.data-testid]="'platform-campaign-row-' + row.platform + '-' + $index">
+                      <!-- w-32 (parent) minus pl-6 (indent) = 6.5rem -->
+                      <span class="w-[6.5rem] truncate text-[11px] text-gray-500" role="cell">{{ campaign.campaignName }}</span>
+                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ campaign.spend }}</span>
+                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ campaign.revenue }}</span>
+                      <span class="w-14 text-right text-[11px] text-gray-500" role="cell">{{ campaign.roas }}</span>
+                      <span class="w-16 text-right text-[11px] text-gray-400" role="cell">{{ campaign.clicks }}</span>
+                      <span class="w-24 text-right text-[11px] text-gray-400" role="cell">{{ campaign.impressions }}</span>
+                      <span class="w-14" role="cell"></span>
+                      <span class="w-16" role="cell"></span>
+                      <span class="w-20" role="cell"></span>
+                      <span class="w-24" role="cell"></span>
+                      <div class="flex-1" role="cell"></div>
+                    </div>
+                  }
+                }
               }
 
               <!-- Total row -->

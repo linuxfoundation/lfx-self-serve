@@ -18,6 +18,7 @@ import type {
   PaidProjectPerformance,
   PaidProjectRow,
   PerformanceSummaryKpi,
+  PlatformCampaignRow,
   PlatformPerformanceRow,
   SocialReachResponse,
 } from '@lfx-one/shared/interfaces';
@@ -62,6 +63,7 @@ export class PerformanceMarketingTabComponent {
   protected readonly loading = signal(false);
   protected readonly selectedFunnel = signal<FunnelStage>('all');
   protected readonly expandedProjects = signal<Set<string>>(new Set());
+  protected readonly expandedPlatforms = signal<Set<string>>(new Set());
 
   // === Computed Signals ===
   protected readonly socialReachData: Signal<SocialReachResponse | null> = this.initSocialReachData();
@@ -91,8 +93,16 @@ export class PerformanceMarketingTabComponent {
     });
   }
 
-  protected isProjectExpanded(projectKey: string): boolean {
-    return this.expandedProjects().has(projectKey);
+  protected togglePlatformExpand(platform: string): void {
+    this.expandedPlatforms.update((current) => {
+      const next = new Set(current);
+      if (next.has(platform)) {
+        next.delete(platform);
+      } else {
+        next.add(platform);
+      }
+      return next;
+    });
   }
 
   // === Private Initializers ===
@@ -102,6 +112,8 @@ export class PerformanceMarketingTabComponent {
     return toSignal(
       slug$.pipe(
         switchMap((slug) => {
+          this.expandedProjects.set(new Set());
+          this.expandedPlatforms.set(new Set());
           if (!slug) {
             this.loading.set(false);
             return of(null);
@@ -244,6 +256,7 @@ export class PerformanceMarketingTabComponent {
           conversions: formatNumber(p.conversions),
           performance: perf,
           performanceClass: this.getPerformanceClass(perf),
+          campaigns: this.mapPlatformCampaignRows(p.campaigns),
         };
       });
     });
@@ -285,6 +298,7 @@ export class PerformanceMarketingTabComponent {
         conversions: formatNumber(totals.conversions),
         performance: totalPerf,
         performanceClass: this.getPerformanceClass(totalPerf),
+        campaigns: [],
       };
     });
   }
@@ -311,6 +325,20 @@ export class PerformanceMarketingTabComponent {
         spend: formatCurrency(c.spend),
         revenue: formatCurrency(c.revenue),
         roas: `${(c.roas ?? 0).toFixed(2)}x`,
+        impressions: formatNumber(c.impressions),
+      })
+    );
+  }
+
+  private mapPlatformCampaignRows(campaigns: PaidCampaignPerformance[] | undefined): PlatformCampaignRow[] {
+    if (!campaigns?.length) return [];
+    return campaigns.map(
+      (c): PlatformCampaignRow => ({
+        campaignName: c.campaignName,
+        spend: formatCurrency(c.spend),
+        revenue: formatCurrency(c.revenue),
+        roas: `${(c.roas ?? 0).toFixed(2)}x`,
+        clicks: formatNumber(c.clicks),
         impressions: formatNumber(c.impressions),
       })
     );
