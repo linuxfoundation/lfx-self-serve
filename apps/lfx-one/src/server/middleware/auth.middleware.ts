@@ -45,6 +45,9 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Protected API routes - require authentication and token
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 
+  // Invite error page — public so unauthenticated users see the error instead of being redirected to login
+  { pattern: '/invite/error', type: 'ssr', auth: 'public' },
+
   // All other routes - Angular SSR routes requiring authentication
   { pattern: '/', type: 'ssr', auth: 'required' },
 ];

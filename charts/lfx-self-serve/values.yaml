@@ -283,6 +283,13 @@ environment:
   AI_API_KEY:
     value:
 
+  # Invite JWT signing secret (HS256) — used to verify signed invite tokens.
+  # Must match the INVITE_JWT_SECRET configured in lfx-v2-invite-service.
+  # The value is used as raw UTF-8 bytes (not base64-decoded) to match how
+  # the Go invite service derives the HMAC key ([]byte(secret)).
+  INVITE_SERVICE_JWT_SECRET:
+    value: "qtPxtMAVHkg58Odl2j35iGweRNYUXK3PwO6DiDvaIIc="
+
   # Snowflake Analytics Configuration
   # Required for analytics endpoints: active-weeks-streak, pull-requests-merged, code-commits
   SNOWFLAKE_ACCOUNT:

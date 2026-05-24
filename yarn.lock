@@ -12586,6 +12586,7 @@ __metadata:
     express-rate-limit: "npm:^8.3.2"
     form-data: "npm:^4.0.4"
     html-to-image: "npm:^1.11.13"
+    jose: "npm:^2.0.7"
     launchdarkly-js-client-sdk: "npm:^3.9.0"
     marked: "npm:^17.0.4"
     nats: "npm:^2.29.3"

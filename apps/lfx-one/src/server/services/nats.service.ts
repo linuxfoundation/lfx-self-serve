@@ -93,6 +93,46 @@ export class NatsService {
     );
   }
 
+  /** Publish a fire-and-forget NATS message (no reply expected). */
+  public async publish(subject: string, data: Uint8Array): Promise<void> {
+    const connection = await this.ensureConnection();
+
+    return tracer.startActiveSpan(
+      `NATS publish ${subject}`,
+      {
+        kind: SpanKind.CLIENT,
+        attributes: {
+          [ATTR_MESSAGING_SYSTEM]: 'nats',
+          [ATTR_MESSAGING_OPERATION_TYPE]: 'publish',
+          [ATTR_MESSAGING_DESTINATION_NAME]: subject,
+          [ATTR_NETWORK_PROTOCOL_NAME]: 'nats',
+          [ATTR_SERVER_ADDRESS]: this.natsHostname,
+          [ATTR_SERVER_PORT]: this.natsPort,
+        },
+      },
+      async (span) => {
+        const startTime = Date.now();
+        logger.debug(undefined, 'nats_publish', 'Publishing NATS message', { subject });
+        try {
+          connection.publish(subject, data);
+          await connection.flush();
+          span.setStatus({ code: SpanStatusCode.OK });
+          span.setAttribute(ATTR_MESSAGING_MESSAGE_BODY_SIZE, data.length);
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          span.recordException(error instanceof Error ? error : new Error(String(error)));
+          logger.error(undefined, 'nats_publish', startTime, error, { subject });
+          throw error;
+        } finally {
+          span.end();
+        }
+      }
+    );
+  }
+
   /**
    * Check if NATS connection is active
    */
