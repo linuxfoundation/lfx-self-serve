@@ -113,6 +113,8 @@ export interface CreateCommitteeMemberRequest {
   country?: string | null;
   /** Member's organization information */
   organization?: {
+    /** CDP organization ID */
+    id?: string | null;
     /** Organization name */
     name?: string | null;
     /** Organization website URL */
@@ -132,6 +134,7 @@ export interface MemberFormValue {
   linkedin_profile: string;
   organization: string;
   organization_url: string;
+  organization_id: string | null;
   role: CommitteeMemberRole | '';
   voting_status: CommitteeMemberVotingStatus | '';
   appointed_by: CommitteeMemberAppointedBy | '';

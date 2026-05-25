@@ -4,7 +4,7 @@
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -20,6 +20,7 @@ import {
   CommitteeUser,
   CreateCommitteeMemberRequest,
   DialogMode,
+  OrganizationResolveResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
@@ -68,6 +69,7 @@ export class AddMemberDialogComponent {
     voting_status: new FormControl<string | null>(null, this.committee?.enable_voting ? [Validators.required] : []),
     org_name: new FormControl<string>('', this.committee?.business_email_required || this.committee?.enable_voting ? [Validators.required] : []),
     org_domain: new FormControl<string>(''),
+    org_id: new FormControl<string | null>(null),
     subscribe_mailing_list: new FormControl<boolean>(true),
     permission: new FormControl<CommitteePermissionLevel>('member'),
   });
@@ -106,6 +108,23 @@ export class AddMemberDialogComponent {
   public readonly votingStatusOptions = VOTING_STATUSES;
   public readonly permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
+  private resolvedOrgName: string | null = null;
+
+  public constructor() {
+    // Reset org_id whenever org name diverges from the last CDP-resolved name.
+    // Using the resolved name (not just empty check) prevents sending a stale
+    // org id when the user edits to a different non-empty value after resolution.
+    this.configForm
+      .get('org_name')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((name) => {
+        const normalizedName = (name ?? '').trim();
+        if (!normalizedName || normalizedName !== this.resolvedOrgName) {
+          this.configForm.patchValue({ org_id: null }, { emitEvent: false });
+        }
+      });
+  }
+
   public selectUser(user: UserSearchResult & { alreadyMember: boolean }): void {
     if (user.alreadyMember) return;
     this.selectedUser.set(user);
@@ -118,8 +137,14 @@ export class AddMemberDialogComponent {
 
   public clearSelection(): void {
     this.selectedUser.set(null);
-    this.configForm.patchValue({ org_name: '', org_domain: '' });
+    this.resolvedOrgName = null;
+    this.configForm.patchValue({ org_name: '', org_domain: '', org_id: null });
     this.mode.set('search');
+  }
+
+  public onOrgResolved(result: OrganizationResolveResult): void {
+    this.resolvedOrgName = result.name;
+    this.configForm.patchValue({ org_id: result.id || null });
   }
 
   public showManualForm(): void {
@@ -148,7 +173,10 @@ export class AddMemberDialogComponent {
       first_name: user.first_name ?? null,
       last_name: user.last_name ?? null,
       job_title: user.job_title ?? null,
-      organization: formValue.org_name || formValue.org_domain ? { name: formValue.org_name || null, website: formValue.org_domain || null } : null,
+      organization:
+        formValue.org_name || formValue.org_domain || formValue.org_id
+          ? { id: formValue.org_id || null, name: formValue.org_name || null, website: formValue.org_domain || null }
+          : null,
       role: formValue.role ? { name: formValue.role as CommitteeMemberRole, start_date: null, end_date: null } : null,
       voting: formValue.voting_status ? { status: formValue.voting_status as CommitteeMemberVotingStatus, start_date: null, end_date: null } : null,
     };

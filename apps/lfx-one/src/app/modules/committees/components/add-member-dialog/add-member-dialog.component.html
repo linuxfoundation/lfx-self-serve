@@ -197,7 +197,8 @@
             styleClass="w-full"
             inputStyleClass="text-sm w-full"
             panelStyleClass="text-sm w-full"
-            dataTestId="add-member-org-search">
+            dataTestId="add-member-org-search"
+            (onOrganizationResolved)="onOrgResolved($event)">
           </lfx-organization-search>
         </div>
 
