@@ -139,5 +139,4 @@ export class InitiativeFinancialsComponent {
     }
     return CROWDFUNDING_DONOR_AVATAR_PALETTE[Math.abs(hash) % CROWDFUNDING_DONOR_AVATAR_PALETTE.length];
   }
-
 }
