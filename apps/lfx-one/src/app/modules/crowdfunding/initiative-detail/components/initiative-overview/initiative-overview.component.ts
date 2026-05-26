@@ -3,7 +3,7 @@
 
 import { Component, input, output } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
-import { CrowdfundingInitiativeDetail } from '@lfx-one/shared/interfaces';
+import { InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { InitiativeFinanceSummaryComponent } from '../initiative-finance-summary/initiative-finance-summary.component';
 import { InitiativeOverviewSidebarComponent } from '../initiative-overview-sidebar/initiative-overview-sidebar.component';
 
@@ -14,6 +14,6 @@ import { InitiativeOverviewSidebarComponent } from '../initiative-overview-sideb
   styleUrl: './initiative-overview.component.scss',
 })
 export class InitiativeOverviewComponent {
-  public readonly initiative = input.required<CrowdfundingInitiativeDetail>();
+  public readonly initiative = input.required<InitiativeDetail>();
   public readonly viewAllFinancials = output<void>();
 }

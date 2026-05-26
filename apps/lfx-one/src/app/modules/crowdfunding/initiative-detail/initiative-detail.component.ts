@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, Signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { filter, map, switchMap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
-import { MOCK_INITIATIVE_DETAIL } from '../crowdfunding.mock';
+import { InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
 import { InitiativeFinancialsComponent } from './components/initiative-financials/initiative-financials.component';
@@ -28,13 +29,26 @@ import { InitiativeSettingsDrawerComponent } from './components/initiative-setti
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InitiativeDetailComponent {
+  // ─── Private Injections ────────────────────────────────────────────────────
   private readonly route = inject(ActivatedRoute);
+  private readonly crowdfundingService = inject(CrowdfundingService);
 
-  protected readonly initiativeId = toSignal(this.route.paramMap.pipe(map((params) => params.get('id') ?? '')), { initialValue: '' });
-  protected readonly initiative = computed(() => {
-    // For now, always return mock data. In a real app, fetch from service based on initiativeId()
-    return MOCK_INITIATIVE_DETAIL;
-  });
+  // ─── WritableSignals ───────────────────────────────────────────────────────
   protected readonly activeTab = signal<string>('overview');
   protected readonly settingsDrawerVisible = signal(false);
+
+  // ─── Computed Signals ──────────────────────────────────────────────────────
+  protected readonly initiativeSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
+  protected readonly initiative: Signal<InitiativeDetail | null> = this.initInitiative();
+
+  // ─── Private Initializers ──────────────────────────────────────────────────
+  private initInitiative(): Signal<InitiativeDetail | null> {
+    return toSignal(
+      toObservable(this.initiativeSlug).pipe(
+        filter((slug) => !!slug),
+        switchMap((slug) => this.crowdfundingService.getInitiativeBySlug(slug))
+      ),
+      { initialValue: null }
+    );
+  }
 }

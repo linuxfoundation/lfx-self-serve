@@ -4,7 +4,7 @@
 import { Component, computed, input, Signal } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { DonutChartComponent } from '@components/donut-chart/donut-chart.component';
-import { AllocItemWithMeta, CrowdfundingInitiativeDetail } from '@lfx-one/shared/interfaces';
+import { FundingGoalWithMeta, InitiativeDetail } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-initiative-finance-summary',
@@ -13,39 +13,37 @@ import { AllocItemWithMeta, CrowdfundingInitiativeDetail } from '@lfx-one/shared
   styleUrl: './initiative-finance-summary.component.scss',
 })
 export class InitiativeFinanceSummaryComponent {
-  public readonly initiative = input.required<CrowdfundingInitiativeDetail>();
+  public readonly initiative = input.required<InitiativeDetail>();
 
   protected readonly progressPercent = computed(() => {
-    const { raised, goal } = this.initiative();
-    if (!goal || goal === 0) return 0;
+    const raised = this.initiative().fundingStatus?.amountRaisedCents ?? 0;
+    const goal = this.initiative().fundingStatus?.goalsTotalCents ?? 0;
+    if (goal === 0) return 0;
     return Math.min(100, Math.round((raised / goal) * 100));
   });
 
-  protected readonly formattedBalance = computed(() => this.formatCurrency(this.initiative().balance));
-  protected readonly formattedRaised = computed(() => this.formatCurrency(this.initiative().raised));
+  protected readonly formattedBalance = computed(() => this.formatCurrency((this.initiative().currentBalanceCents ?? 0) / 100));
+  protected readonly formattedRaised = computed(() => this.formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
   protected readonly formattedGoal = this.initFormattedGoal();
-  protected readonly formattedMonthlyDelta = computed(() => this.formatCurrency(this.initiative().monthlyDelta));
-  protected readonly allocItemsWithMeta = this.initAllocItemsWithMeta();
+  protected readonly fundingGoalsWithMeta = this.initFundingGoalsWithMeta();
 
   private initFormattedGoal(): Signal<string | null> {
     return computed(() => {
-      const g = this.initiative().goal;
-      return g != null ? this.formatCurrency(g) : null;
+      const goalCents = this.initiative().fundingStatus?.goalsTotalCents;
+      return goalCents != null && goalCents > 0 ? this.formatCurrency(goalCents / 100) : null;
     });
   }
 
-  private initAllocItemsWithMeta(): Signal<AllocItemWithMeta[]> {
+  private initFundingGoalsWithMeta(): Signal<FundingGoalWithMeta[]> {
     return computed(() =>
-      this.initiative().alloc.map((item) => {
-        const donated = Math.round((item.pct / 100) * item.total);
-        const donatedPct = Math.min(100, item.pct);
-        const spentPct = item.total > 0 ? Math.min(100, Math.round((item.spent / item.total) * 100)) : 0;
+      (this.initiative().fundingGoals ?? []).map((goal) => {
+        const donatedPct = goal.goalCents > 0 ? Math.min(100, Math.round((goal.donatedCents / goal.goalCents) * 100)) : 0;
+        const spentPct = goal.goalCents > 0 ? Math.min(100, Math.round((goal.spentCents / goal.goalCents) * 100)) : 0;
         return {
-          ...item,
-          donated,
-          formattedTotal: this.formatCurrency(item.total),
-          formattedDonated: this.formatCurrency(donated),
-          formattedSpent: this.formatCurrency(item.spent),
+          ...goal,
+          formattedGoal: this.formatCurrency(goal.goalCents / 100),
+          formattedDonated: this.formatCurrency(goal.donatedCents / 100),
+          formattedSpent: this.formatCurrency(goal.spentCents / 100),
           rings: [
             { value: donatedPct, color: '#006BFF' },
             { value: spentPct, color: '#1e293b' },
