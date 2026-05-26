@@ -21,7 +21,7 @@
             </td>
 
             <!-- Date -->
-            <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ item.date | date: 'MMM d, y':'UTC' }}</td>
+            <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ item.date | date: 'MMM d, y' : 'UTC' }}</td>
 
             <!-- Amount -->
             <td class="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{{ item.amountCents / 100 | currency: 'USD' }}</td>
