@@ -28,6 +28,8 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, distinctUntilChanged, finalize, take } from 'rxjs';
 
+import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+
 @Component({
   selector: 'lfx-newsletter-list',
   imports: [
@@ -40,6 +42,7 @@ import { combineLatest, distinctUntilChanged, finalize, take } from 'rxjs';
     TagComponent,
     ConfirmDialogModule,
     TooltipModule,
+    NewsletterPreviewDrawerComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './newsletter-list.component.html',
@@ -68,6 +71,8 @@ export class NewsletterListComponent {
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
   protected readonly deletingId = signal<string | null>(null);
+  protected readonly previewVisible = signal<boolean>(false);
+  protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
 
   // === Reactive context ===
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
@@ -112,6 +117,12 @@ export class NewsletterListComponent {
   protected goToRow(item: NewsletterListItem): void {
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
     this.router.navigate(['..', item.id, target], { relativeTo: this.route });
+  }
+
+  protected openPreview(item: NewsletterListItem, event: Event): void {
+    event.stopPropagation();
+    this.selectedNewsletter.set(item);
+    this.previewVisible.set(true);
   }
 
   protected loadMore(): void {
@@ -182,6 +193,9 @@ export class NewsletterListComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(([uid, status]) => {
+        // Reset any open preview so stale newsletter content doesn't bleed across context/tab changes.
+        this.previewVisible.set(false);
+        this.selectedNewsletter.set(null);
         if (uid) {
           this.loadInitial(status as NewsletterStatus);
         } else {

@@ -97,7 +97,20 @@
                       </span>
                     </td>
                     <td class="text-right">
-                      <lfx-tag value="Sent" severity="success"></lfx-tag>
+                      <div class="flex items-center justify-end gap-2">
+                        <lfx-button
+                          icon="fa-light fa-eye"
+                          severity="secondary"
+                          size="small"
+                          [text]="true"
+                          ariaLabel="View newsletter"
+                          (onClick)="openPreview(newsletter, $event)"
+                          [attr.data-testid]="'newsletter-view-' + newsletter.id"
+                          pTooltip="Open preview of this sent newsletter"
+                          tooltipPosition="top">
+                        </lfx-button>
+                        <lfx-tag value="Sent" severity="success"></lfx-tag>
+                      </div>
                     </td>
                   } @else {
                     <td>
@@ -143,3 +156,20 @@
 </div>
 
 <p-confirmDialog></p-confirmDialog>
+
+@if (selectedNewsletter(); as n) {
+  <!--
+    Sent previews intentionally do not pass edName / displayName / logoUrl: those values would be
+    sourced from the *current* viewer/context, not from what recipients actually saw at send time.
+    The preview component already falls back to neutral labels ("Executive Director" / "Foundation").
+    True fidelity needs a backend snapshot of sender + project at send time — tracked as follow-up.
+  -->
+  <lfx-newsletter-preview-drawer
+    [(visible)]="previewVisible"
+    [subject]="n.subject"
+    [bodyHtml]="n.bodyHtml"
+    [edName]="''"
+    [displayName]="''"
+    [edReplyEmail]="n.edReplyEmail">
+  </lfx-newsletter-preview-drawer>
+}
