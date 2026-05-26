@@ -35,10 +35,7 @@
   <!-- Donation history -->
   <div class="flex flex-col gap-3" data-testid="donation-history-section">
     <h2 class="text-sm font-bold text-gray-900">Donation History</h2>
-    <lfx-donation-history-table
-      [items]="donationHistory()"
-      [hasMore]="donationHistoryHasMore()"
-      (loadMore)="onLoadMoreDonations()" />
+    <lfx-donation-history-table [items]="donationHistory()" [hasMore]="donationHistoryHasMore()" (loadMore)="onLoadMoreDonations()" />
   </div>
 
   <!-- Payment methods -->

@@ -24,7 +24,7 @@
                 <span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">ORG</span>
               }
             </div>
-            <div class="text-xs text-gray-400">{{ donation.date | date: 'MMM d, y':'UTC' }}</div>
+            <div class="text-xs text-gray-400">{{ donation.date | date: 'MMM d, y' : 'UTC' }}</div>
           </div>
           <div class="text-sm font-bold text-gray-900 whitespace-nowrap">{{ donation.formattedAmount }}</div>
         </div>
