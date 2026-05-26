@@ -119,10 +119,14 @@
           <div class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
             <!-- Current logo preview -->
             <div
-              class="w-16 h-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center text-3xl flex-shrink-0"
+              class="w-16 h-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0"
               data-testid="settings-logo-preview"
               aria-label="Current initiative logo">
-              {{ initiative().icon }}
+              @if (initiative().logoUrl) {
+                <img [src]="initiative().logoUrl" [alt]="initiative().name + ' logo'" class="w-full h-full object-contain p-1" />
+              } @else {
+                <span class="text-lg font-bold text-gray-500">{{ initiativeInitial() }}</span>
+              }
             </div>
             <div class="flex flex-col gap-1.5">
               <p class="text-sm font-medium text-gray-700">{{ initiative().name | lowercase }}-logo.png</p>

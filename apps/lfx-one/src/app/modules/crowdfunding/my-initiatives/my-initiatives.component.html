@@ -20,7 +20,9 @@
   </div>
 
   <!-- Stats bar -->
-  <lfx-initiatives-stats-bar [stats]="stats()" />
+  @if (stats(); as loadedStats) {
+    <lfx-initiatives-stats-bar [stats]="loadedStats" />
+  }
 
   <!-- Initiatives list with filter pills -->
   <lfx-initiatives-list [initiatives]="initiatives()" (initiativeClick)="onInitiativeClick($event)" />
