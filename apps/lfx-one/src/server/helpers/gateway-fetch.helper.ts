@@ -25,9 +25,9 @@ export interface GatewayFetchOptions {
  * pass options.bearerToken to override (e.g. for user-token-authenticated calls).
  * Handles timeout (504), network failure (502), non-OK upstream responses,
  * and invalid JSON — all surfaced as MicroserviceError.
- * 204 responses return null without error; all other empty bodies are errors.
+ * 204 responses return null; all other empty bodies throw MicroserviceError.
  */
-export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T> {
+export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T | null> {
   const token = options.bearerToken ?? req.apiGatewayToken;
 
   if (!token) {
@@ -98,7 +98,7 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
 
   if (!rawBody.trim()) {
     if (upstream.status === 204) {
-      return null as T;
+      return null;
     }
 
     logger.warning(req, options.operation, 'Upstream returned empty response body', {

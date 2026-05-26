@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -28,13 +28,12 @@ import { EnrollmentService } from '@services/enrollment.service';
   templateUrl: './profile-individual-enrollment.component.html',
   styleUrl: './profile-individual-enrollment.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [ConfirmationService, MessageService, DatePipe],
+  providers: [ConfirmationService, MessageService],
 })
 export class ProfileIndividualEnrollmentComponent {
   private readonly enrollmentService = inject(EnrollmentService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
-  private readonly datePipe = inject(DatePipe);
 
   protected readonly enrollments = signal<DisplayEnrollment[] | null | undefined>(undefined);
   protected readonly enrollmentError = signal<string | null>(null);
@@ -91,7 +90,7 @@ export class ProfileIndividualEnrollmentComponent {
       return next;
     });
 
-    const endDate = item.membership.EndDate ? (this.datePipe.transform(item.membership.EndDate, 'mediumDate', 'UTC') ?? '') : '';
+    const endDate = item.membership.EndDate ? formatDate(item.membership.EndDate, 'mediumDate', 'en-US', 'UTC') : '';
     const message = newValue
       ? `This will Enable auto renew for your membership, your next payment will be charged on ${endDate}.`
       : `This will Disable auto renew for your membership, your current membership will expire on ${endDate}.`;
