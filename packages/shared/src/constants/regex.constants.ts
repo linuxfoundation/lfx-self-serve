@@ -32,3 +32,6 @@ export const FOUNDATION_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 /** Basic email-format regex for client-side blur validation (FR-017a). */
 export const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** Org People `person_key` — LFID or opaque `cdp:`-prefixed id; 4–128 URL-safe chars (request-boundary bound, not a schema). */
+export const PERSON_KEY_PATTERN = /^(cdp:)?[A-Za-z0-9_-]{4,128}$/;

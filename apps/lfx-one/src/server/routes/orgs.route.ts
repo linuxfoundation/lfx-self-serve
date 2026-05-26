@@ -7,6 +7,7 @@ import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-c
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
+import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
 
 const router = Router();
 
@@ -14,6 +15,7 @@ const orgLensFoundationsController = new OrgLensFoundationsController();
 const orgLensMembershipsController = new OrgLensMembershipsController();
 const orgLensBoardCommitteeController = new OrgLensBoardCommitteeController();
 const orgLensDocumentsController = new OrgLensDocumentsController();
+const orgLensPeopleController = new OrgLensPeopleController();
 
 // GET /api/orgs/:accountId/lens/foundations-and-projects
 router.get('/:accountId/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
@@ -43,5 +45,10 @@ router.get('/:accountId/lens/memberships/:foundationId/voting-history', (req, re
 
 // GET /api/orgs/:accountId/lens/memberships/:foundationId/documents
 router.get('/:accountId/lens/memberships/:foundationId/documents', (req, res, next) => orgLensDocumentsController.getMembershipDocuments(req, res, next));
+
+// GET /api/orgs/:accountId/lens/people/all
+router.get('/:accountId/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
+// GET /api/orgs/:accountId/lens/people/:personKey/detail
+router.get('/:accountId/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
 export default router;

@@ -1,0 +1,295 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="org-people-all-employees">
+  <!-- Filter bar -->
+  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
+    <div class="flex-1">
+      <div class="relative">
+        <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+        <input
+          pInputText
+          type="text"
+          class="w-full pl-9"
+          placeholder="Search all employees..."
+          aria-label="Search all employees"
+          data-testid="org-people-all-employees-search-input"
+          [ngModel]="searchTerm()"
+          (ngModelChange)="searchTerm.set($event)" />
+      </div>
+    </div>
+    <div class="w-full md:w-56" data-testid="org-people-all-employees-foundation-filter">
+      <p-select
+        [options]="foundationOptions()"
+        [ngModel]="selectedFoundationId()"
+        (ngModelChange)="selectedFoundationId.set($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        ariaLabel="Filter by foundation" />
+    </div>
+    <div class="w-full md:w-48" data-testid="org-people-all-employees-activity-filter">
+      <p-select
+        [options]="activityOptions"
+        [ngModel]="selectedActivity()"
+        (ngModelChange)="selectedActivity.set($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        ariaLabel="Filter by activity" />
+    </div>
+  </div>
+
+  @if (fetchError()) {
+    <lfx-empty-state
+      [withCard]="false"
+      icon="fa-light fa-triangle-exclamation"
+      title="Failed to load employees"
+      subtitle="Please try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-arrow-rotate-left"
+      data-testid="org-people-all-employees-error"
+      (ctaClick)="retry()" />
+  } @else {
+    <!-- 5 stat cards -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5" data-testid="org-people-all-employees-stats">
+      @if (isLoading()) {
+        @for (label of statSkeletonLabels; track label) {
+          <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-skeleton">
+            <p-skeleton width="3rem" height="1.5rem" />
+            <div class="mt-2 text-xs text-gray-500">{{ label }}</div>
+          </div>
+        }
+      } @else {
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-active">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().activeInOss | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Employees Active in Open Source</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-governance">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().inGovernance | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">In Governance</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-code">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().codeContributors | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Code Contributors</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-events">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().eventAttendees | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Event Attendees</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-trainees">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().trainees | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Trainees</div>
+        </div>
+      }
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-people-all-employees-table">
+      @if (isLoading()) {
+        <div class="divide-y divide-gray-100" data-testid="org-people-all-employees-table-skeleton">
+          @for (i of tableSkeletonRows; track i) {
+            <div class="flex items-center gap-4 px-4 py-3">
+              <p-skeleton shape="circle" size="2.25rem" />
+              <div class="flex flex-1 flex-col gap-2">
+                <p-skeleton width="40%" height="0.875rem" />
+                <p-skeleton width="25%" height="0.75rem" />
+              </div>
+              <p-skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+            </div>
+          }
+        </div>
+      } @else if (totalFiltered() === 0) {
+        <div class="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center" data-testid="org-people-all-employees-empty">
+          <i class="fa-light fa-users-slash text-2xl text-gray-300" aria-hidden="true"></i>
+          @if (isFiltering()) {
+            <p class="text-sm text-gray-700">No employees match the current filters.</p>
+            <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
+          } @else {
+            <p class="text-sm text-gray-700">No employees found for this organization.</p>
+          }
+        </div>
+      } @else {
+        <table class="w-full text-sm" data-testid="org-people-all-employees-rows">
+          <thead class="bg-gray-50">
+            <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+              <th class="w-7 px-2 py-3"></th>
+              @let aria = ariaSortMap();
+              @let icons = sortIconMap();
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.name">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('name')">
+                  Employee
+                  <i [class]="icons.name" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.seats">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('seats')">
+                  Board &amp; Committee
+                  <i [class]="icons.seats" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.commits">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('commits')">
+                  Code Contributions
+                  <i [class]="icons.commits" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.events">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('events')">
+                  Events
+                  <i [class]="icons.events" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.courses">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('courses')">
+                  Training
+                  <i [class]="icons.courses" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="px-4 py-3 font-medium">Org Lens Access</th>
+            </tr>
+          </thead>
+          <tbody>
+            @let accountId = currentAccountId();
+            @for (row of visibleRows(); track row.personKey) {
+              @let detailKey = accountId + ':' + row.personKey;
+              @let expanded = !!expansion()[row.personKey];
+              @let detail = detailMap()[detailKey];
+              @let detailIsLoading = !!detailLoading()[detailKey];
+              @let detailHasError = !!detailErrorMap()[detailKey];
+              <tr
+                class="cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                role="button"
+                tabindex="0"
+                [attr.data-testid]="'org-people-all-employees-row-' + row.personKey"
+                [attr.aria-expanded]="expanded"
+                [attr.aria-label]="'Toggle details for ' + row.name"
+                (click)="toggleRow(row)"
+                (keydown)="onRowKeydown($event, row)">
+                <td class="px-2 py-3 align-middle">
+                  <i class="fa-light fa-chevron-right block text-xs text-gray-400 transition-transform" [class.rotate-90]="expanded" aria-hidden="true"></i>
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  <button
+                    type="button"
+                    class="flex min-w-0 items-center gap-3 text-left"
+                    [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-name'"
+                    (click)="$event.stopPropagation(); onPersonClick(row)">
+                    <span
+                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      [class]="row.avatarColorClass"
+                      aria-hidden="true">
+                      {{ row.initials }}
+                    </span>
+                    <span class="flex min-w-0 flex-col">
+                      <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.name }}</span>
+                      @if (row.title) {
+                        <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
+                      }
+                    </span>
+                  </button>
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.seatsCount > 0) {
+                    <span
+                      class="inline-flex items-center rounded-full border border-blue-300 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
+                      {{ row.seatsCount }} {{ row.seatsCount === 1 ? 'seat' : 'seats' }}
+                    </span>
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.commitsCount > 0) {
+                    <span
+                      class="inline-block rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                      {{ row.commitsCount | number }} {{ row.commitsCount === 1 ? 'commit' : 'commits' }}
+                    </span>
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.eventsCount > 0) {
+                    <span
+                      class="inline-block rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                      {{ row.eventsCount }} {{ row.eventsCount === 1 ? 'event' : 'events' }}
+                    </span>
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.coursesCount > 0) {
+                    <span
+                      class="inline-block rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                      {{ row.coursesCount }} {{ row.coursesCount === 1 ? 'course' : 'courses' }}
+                    </span>
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  <span
+                    class="text-xs text-gray-300"
+                    pTooltip="Coming in a future release"
+                    tooltipPosition="top"
+                    data-testid="org-people-all-employees-access-placeholder"
+                    >&mdash;</span
+                  >
+                </td>
+              </tr>
+              @if (expanded) {
+                <tr class="border-b border-gray-100" [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-detail-row'">
+                  <td colspan="7" class="p-0">
+                    <lfx-org-people-all-employees-detail [detail]="detail" [loading]="detailIsLoading" [error]="detailHasError" (retry)="retryDetail(row)" />
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+
+        @if (canShowMore() || totalFiltered() > initialLimit) {
+          <div class="grid grid-cols-3 items-center border-t border-gray-200 px-4 py-3" data-testid="org-people-all-employees-show-all-footer">
+            <span class="text-xs italic text-gray-400">{{ footerCountLabel() }}</span>
+            <div class="text-center">
+              @if (canShowMore()) {
+                <button
+                  type="button"
+                  class="bg-transparent p-0 text-sm font-medium text-blue-600 hover:underline"
+                  data-testid="org-people-all-employees-show-all-button"
+                  (click)="showAll()">
+                  Show All
+                </button>
+              }
+            </div>
+            <div></div>
+          </div>
+        }
+      }
+    </div>
+  }
+
+  <p class="text-xs text-gray-400">
+    Sources: LFX Board &amp; Committee seats &middot; Project maintainers &amp; contributors &middot; Event attendees &middot; Training &amp; certifications
+  </p>
+</div>

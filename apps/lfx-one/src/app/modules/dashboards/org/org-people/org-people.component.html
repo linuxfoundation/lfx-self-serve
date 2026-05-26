@@ -44,6 +44,8 @@
     [attr.data-testid]="'org-people-panel-' + activeTab()">
     @if (!hasCompany()) {
       <lfx-empty-state icon="fa-light fa-building" [title]="noCompanyEmptyTitle()" data-testid="org-people-no-company-empty-state" />
+    } @else if (activeTab() === 'all') {
+      <lfx-org-people-all-employees />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"
