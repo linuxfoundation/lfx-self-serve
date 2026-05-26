@@ -194,7 +194,7 @@
     <!-- Footer actions -->
     <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
       <lfx-button label="Cancel" severity="secondary" (click)="onClose()" data-testid="initiative-settings-cancel-btn" />
-      <lfx-button label="Save changes" severity="primary" data-testid="initiative-settings-save-btn" />
+      <lfx-button label="Save changes" severity="primary" (click)="onSave()" data-testid="initiative-settings-save-btn" />
     </div>
   </div>
 </p-drawer>

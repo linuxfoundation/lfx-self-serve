@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
+import { lfxColors } from '@lfx-one/shared/constants';
 import { DonutRing, ResolvedDonutRing } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -17,7 +18,7 @@ export class DonutChartComponent {
   /** Ring stroke thickness in px. */
   public readonly strokeWidth = input<number>(4);
   /** Track (background ring) color. */
-  public readonly trackColor = input<string>('#E2E8F0');
+  public readonly trackColor = input<string>(lfxColors.gray[200]);
   /** Gap between ring radii in px — accounts for stroke widths on both rings plus a visual gap. */
   public readonly ringSpacing = input<number>(10);
 
