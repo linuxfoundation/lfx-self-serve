@@ -7,6 +7,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { CROWDFUNDING_DONOR_AVATAR_PALETTE, DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_TRANSACTION_STATE } from '@lfx-one/shared/constants';
+import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingTransaction, CrowdfundingTransactionList, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { concat, concatMap, finalize, of, scan, Subject, switchMap } from 'rxjs';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
@@ -32,9 +33,9 @@ export class InitiativeFinancialsComponent {
   protected readonly expensesLoading = signal(false);
 
   // Derived state (financial summary)
-  protected readonly formattedTotalReceived = computed(() => this.formatCurrency((this.initiative().financialSummary?.totalReceivedCents ?? 0) / 100));
-  protected readonly formattedTotalExpenses = computed(() => this.formatCurrency((this.initiative().financialSummary?.totalExpensesCents ?? 0) / 100));
-  protected readonly formattedBalance = computed(() => this.formatCurrency((this.initiative().financialSummary?.balanceCents ?? 0) / 100));
+  protected readonly formattedTotalReceived = computed(() => formatCurrency((this.initiative().financialSummary?.totalReceivedCents ?? 0) / 100));
+  protected readonly formattedTotalExpenses = computed(() => formatCurrency((this.initiative().financialSummary?.totalExpensesCents ?? 0) / 100));
+  protected readonly formattedBalance = computed(() => formatCurrency((this.initiative().financialSummary?.balanceCents ?? 0) / 100));
 
   // Derived state (donations — paginated via transactions endpoint)
   protected readonly donationsState = this.initDonationsState();
@@ -88,7 +89,7 @@ export class InitiativeFinancialsComponent {
     return computed(() =>
       this.donationsState().items.map((t) => ({
         ...t,
-        formattedAmount: this.formatCurrency(t.amountCents / 100),
+        formattedAmount: formatCurrency(t.amountCents / 100),
         avatarClass: this.donorAvatarClass(t.donorName ?? ''),
       }))
     );
@@ -126,7 +127,7 @@ export class InitiativeFinancialsComponent {
     return computed(() =>
       this.expensesState().items.map((t) => ({
         ...t,
-        formattedAmount: this.formatCurrency(t.amountCents / 100),
+        formattedAmount: formatCurrency(t.amountCents / 100),
       }))
     );
   }
@@ -139,10 +140,4 @@ export class InitiativeFinancialsComponent {
     return CROWDFUNDING_DONOR_AVATAR_PALETTE[Math.abs(hash) % CROWDFUNDING_DONOR_AVATAR_PALETTE.length];
   }
 
-  private formatCurrency(value: number): string {
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    }
-    return `$${value.toLocaleString()}`;
-  }
 }
