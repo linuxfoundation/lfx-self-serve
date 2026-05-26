@@ -69,6 +69,15 @@ export class InitiativeSettingsDrawerComponent {
     this.visible.set(false);
   }
 
+  protected onSave(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    // TODO: wire to save API once backend endpoint is available
+    this.visible.set(false);
+  }
+
   protected addTag(): void {
     const tag = this.newTagValue().trim();
     if (tag && !this.tags().includes(tag)) {

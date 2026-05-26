@@ -4,6 +4,7 @@
 import { Component, computed, input } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { CrowdfundingInitiativesStats } from '@lfx-one/shared/interfaces';
+import { formatCurrency } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-initiatives-stats-bar',
@@ -14,13 +15,6 @@ import { CrowdfundingInitiativesStats } from '@lfx-one/shared/interfaces';
 export class InitiativesStatsBarComponent {
   public readonly stats = input.required<CrowdfundingInitiativesStats>();
 
-  protected readonly formattedTotalRaised = computed(() => this.formatCurrency(this.stats().totalRaised));
-  protected readonly formattedMonthlyGain = computed(() => this.formatCurrency(this.stats().monthlyGain));
-
-  private formatCurrency(value: number): string {
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    }
-    return `$${value.toLocaleString()}`;
-  }
+  protected readonly formattedTotalRaised = computed(() => formatCurrency(this.stats().totalRaised));
+  protected readonly formattedMonthlyGain = computed(() => formatCurrency(this.stats().monthlyGain));
 }

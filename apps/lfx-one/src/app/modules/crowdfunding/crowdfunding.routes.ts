@@ -6,6 +6,11 @@ import { authGuard } from '@shared/guards/auth.guard';
 
 export const CROWDFUNDING_ROUTES: Routes = [
   {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'initiatives',
+  },
+  {
     path: 'initiatives',
     loadComponent: () => import('./my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
     canActivate: [authGuard],

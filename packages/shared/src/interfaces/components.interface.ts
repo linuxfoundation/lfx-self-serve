@@ -420,7 +420,7 @@ export interface SidebarMenuItem {
   isSection?: boolean;
   /** Whether this item is a collapsible nav group (icon + label + chevron, toggleable) */
   isGroup?: boolean;
-  /** Default expanded state for sections and groups (defaults to true) */
+  /** Default expanded state for groups (isGroup items only — defaults to true; sections always render children) */
   expanded?: boolean;
   /** Whether to render a divider line before this item */
   dividerBefore?: boolean;
