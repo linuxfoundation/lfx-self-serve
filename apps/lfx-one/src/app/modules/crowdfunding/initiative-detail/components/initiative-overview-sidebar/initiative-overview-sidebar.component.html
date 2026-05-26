@@ -2,18 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-5" data-testid="initiative-overview-sidebar">
-  <!-- Matching banner (optional) -->
-  @if (initiative().matchLabel) {
-    <div class="rounded-lg p-5 text-white" style="background: linear-gradient(135deg, #4f46e5, #7c3aed)" data-testid="matching-banner">
-      <div class="text-sm font-bold mb-1">{{ initiative().matchLabel }}</div>
-      <div class="text-xs opacity-90 leading-relaxed mb-4">{{ initiative().matchDesc }}</div>
-      <div class="h-1 bg-white/30 rounded-full overflow-hidden">
-        <div class="h-full bg-white rounded-full" [style.width.%]="initiative().matchPct ?? 0"></div>
-      </div>
-      <div class="text-xs opacity-70 mt-1.5">{{ initiative().matchPct }}% matched</div>
-    </div>
-  }
-
   <!-- Recent donations card -->
   <lfx-card data-testid="recent-donations-card">
     <div class="flex items-center justify-between mb-4">
@@ -26,20 +14,23 @@
       </button>
     </div>
     <div class="flex flex-col" data-testid="activity-feed">
-      @for (donation of recentDonationsWithMeta(); track donation.who + donation.date) {
+      @for (donation of recentDonationsWithMeta(); track donation.id) {
         <div class="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0" data-testid="activity-row">
-          <lfx-avatar [label]="donation.who" shape="square" size="normal" [styleClass]="donation.avatarClass" />
+          <lfx-avatar [label]="donation.donorName" shape="square" size="normal" [styleClass]="donation.avatarClass" />
           <div class="flex-1 min-w-0">
             <div class="text-sm font-semibold text-gray-900 truncate">
-              {{ donation.who }}
-              @if (donation.org) {
+              {{ donation.donorName }}
+              @if (donation.donorType === 'organization') {
                 <span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">ORG</span>
               }
             </div>
-            <div class="text-xs text-gray-400">{{ donation.date }}</div>
+            <div class="text-xs text-gray-400">{{ donation.date | date: 'MMM d, y':'UTC' }}</div>
           </div>
           <div class="text-sm font-bold text-gray-900 whitespace-nowrap">{{ donation.formattedAmount }}</div>
         </div>
+      }
+      @if (recentDonationsWithMeta().length === 0) {
+        <p class="text-sm text-gray-400 py-4 text-center">No donations yet</p>
       }
     </div>
   </lfx-card>

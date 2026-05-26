@@ -7,8 +7,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextModule } from 'primeng/inputtext';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
-// TODO: Replace card number, expiry, and CVC fields with Stripe Elements once
-// the Stripe API integration is in place for secure card tokenization and storage.
+// Raw <input> elements are intentional here: the masking logic (onCardNumberInput/onExpiryInput)
+// requires (input) event binding and inputmode/maxlength attributes that lfx-input-text does not
+// expose. These will be replaced by Stripe Elements once the payment API integration lands.
 
 @Component({
   selector: 'lfx-add-payment-card-dialog',

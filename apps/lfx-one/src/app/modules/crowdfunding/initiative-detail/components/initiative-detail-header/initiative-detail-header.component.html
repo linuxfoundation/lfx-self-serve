@@ -24,20 +24,18 @@
         }
       </div>
       <p class="text-sm text-gray-500">{{ initiative().description }}</p>
-      @if (initiative().tags.length) {
+      @if (initiative().industry) {
         <div class="flex items-center gap-1.5 flex-wrap mt-1" data-testid="initiative-tags">
-          @for (tag of initiative().tags; track tag) {
-            <lfx-tag [value]="tag" severity="secondary" [rounded]="true" />
-          }
+          <lfx-tag [value]="initiative().industry!" severity="secondary" [rounded]="true" />
         </div>
       }
     </div>
 
     <!-- Actions -->
     <div class="flex items-center gap-2 flex-shrink-0 ml-4" data-testid="initiative-header-actions">
-      @if (initiative().publicUrl) {
+      @if (initiative().websiteUrl) {
         <a
-          [href]="initiative().publicUrl"
+          [href]="initiative().websiteUrl"
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-300 bg-white rounded-md px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"

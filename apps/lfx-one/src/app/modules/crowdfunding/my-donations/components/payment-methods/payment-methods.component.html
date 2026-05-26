@@ -5,7 +5,7 @@
   <h2 class="text-sm font-bold text-gray-900" data-testid="payment-methods-heading">Payment Methods</h2>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="payment-methods-grid">
-    @for (method of methods(); track method.id) {
+    @for (method of methods(); track method.paymentMethodId) {
       <lfx-payment-method-card [method]="method" (remove)="removeCard.emit(method)" />
     }
 

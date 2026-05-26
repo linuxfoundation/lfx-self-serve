@@ -11,7 +11,7 @@ export const CROWDFUNDING_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
-    path: 'initiatives/:id',
+    path: 'initiatives/:slug',
     loadComponent: () => import('./initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
     canActivate: [authGuard],
   },

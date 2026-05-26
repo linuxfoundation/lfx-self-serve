@@ -37,7 +37,7 @@
   <div data-testid="donations-received-section">
     <div class="flex items-center gap-2 mb-3">
       <span class="text-sm font-bold text-gray-900">Donations received</span>
-      <span class="text-xs text-gray-400">{{ initiative().donationsIn.length }} transactions</span>
+      <span class="text-xs text-gray-400">{{ donationsState().totalCount }} transactions</span>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
       <div class="overflow-x-auto">
@@ -51,17 +51,17 @@
             </tr>
           </thead>
           <tbody>
-            @for (donation of donationsInWithMeta(); track donation.who + donation.date) {
+            @for (donation of donationsWithMeta(); track donation.id) {
               <tr class="border-b border-gray-100 last:border-0" data-testid="donation-row">
                 <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{{ donation.date }}</td>
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-2.5">
-                    <lfx-avatar [label]="donation.who" shape="square" size="normal" [styleClass]="donation.avatarClass" />
-                    <span class="text-sm font-medium text-gray-900">{{ donation.who }}</span>
+                    <lfx-avatar [label]="donation.donorName ?? ''" shape="square" size="normal" [styleClass]="donation.avatarClass" />
+                    <span class="text-sm font-medium text-gray-900">{{ donation.donorName }}</span>
                   </div>
                 </td>
                 <td class="px-4 py-3">
-                  @if (donation.org) {
+                  @if (donation.donorType === 'organization') {
                     <span class="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Company</span>
                   } @else {
                     <span class="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">Individual</span>
@@ -72,9 +72,30 @@
                 </td>
               </tr>
             }
+            @if (donationsWithMeta().length === 0) {
+              <tr>
+                <td colspan="4" class="px-4 py-6 text-sm text-gray-400 text-center">No donations yet</td>
+              </tr>
+            }
           </tbody>
         </table>
       </div>
+      @if (hasMoreDonations()) {
+        <div class="border-t border-gray-100 px-4 py-3 flex justify-center">
+          <button
+            type="button"
+            class="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="load-more-donations-btn"
+            [disabled]="donationsLoading()"
+            (click)="loadMoreDonations()">
+            @if (donationsLoading()) {
+              Loading...
+            } @else {
+              Load more
+            }
+          </button>
+        </div>
+      }
     </div>
   </div>
 
@@ -82,7 +103,7 @@
   <div data-testid="expenses-section">
     <div class="flex items-center gap-2 mb-3">
       <span class="text-sm font-bold text-gray-900">Expense breakdown</span>
-      <span class="text-xs text-gray-400">{{ initiative().donationsOut.length }} transactions</span>
+      <span class="text-xs text-gray-400">{{ expensesState().totalCount }} transactions</span>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
       <div class="overflow-x-auto">
@@ -91,20 +112,47 @@
             <tr class="bg-gray-50 border-b border-gray-200">
               <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Date</th>
               <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Description</th>
+              <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Category</th>
               <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Amount</th>
             </tr>
           </thead>
           <tbody>
-            @for (expense of donationsOutWithMeta(); track expense.who + expense.date) {
+            @for (expense of expensesWithMeta(); track expense.id) {
               <tr class="border-b border-gray-100 last:border-0" data-testid="expense-row">
                 <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{{ expense.date }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700">{{ expense.who }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ expense.donorName }}</td>
+                <td class="px-4 py-3">
+                  @if (expense.category) {
+                    <span class="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{{ expense.category }}</span>
+                  }
+                </td>
                 <td class="px-4 py-3 text-right text-sm font-bold text-red-600 whitespace-nowrap">−{{ expense.formattedAmount }}</td>
+              </tr>
+            }
+            @if (expensesWithMeta().length === 0) {
+              <tr>
+                <td colspan="4" class="px-4 py-6 text-sm text-gray-400 text-center">No expenses yet</td>
               </tr>
             }
           </tbody>
         </table>
       </div>
+      @if (hasMoreExpenses()) {
+        <div class="border-t border-gray-100 px-4 py-3 flex justify-center">
+          <button
+            type="button"
+            class="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="load-more-expenses-btn"
+            [disabled]="expensesLoading()"
+            (click)="loadMoreExpenses()">
+            @if (expensesLoading()) {
+              Loading...
+            } @else {
+              Load more
+            }
+          </button>
+        </div>
+      }
     </div>
   </div>
 </div>

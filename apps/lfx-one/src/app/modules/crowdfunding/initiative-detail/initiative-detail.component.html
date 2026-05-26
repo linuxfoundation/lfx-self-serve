@@ -12,19 +12,21 @@
     styleClass="self-start"
     data-testid="initiative-detail-back-btn" />
 
-  <lfx-initiative-detail-header
-    [initiative]="initiative()"
-    [activeTab]="activeTab()"
-    (tabChange)="activeTab.set($event)"
-    (settingsClick)="settingsDrawerVisible.set(true)" />
+  @if (initiative(); as detail) {
+    <lfx-initiative-detail-header
+      [initiative]="detail"
+      [activeTab]="activeTab()"
+      (tabChange)="activeTab.set($event)"
+      (settingsClick)="settingsDrawerVisible.set(true)" />
 
-  <lfx-initiative-settings-drawer [initiative]="initiative()" [(visible)]="settingsDrawerVisible" />
+    <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" />
 
-  @if (activeTab() === 'overview') {
-    <lfx-initiative-overview [initiative]="initiative()" (viewAllFinancials)="activeTab.set('financials')" />
-  } @else if (activeTab() === 'financials') {
-    <lfx-initiative-financials [initiative]="initiative()" />
-  } @else if (activeTab() === 'announcements') {
-    <lfx-initiative-announcements />
+    @if (activeTab() === 'overview') {
+      <lfx-initiative-overview [initiative]="detail" (viewAllFinancials)="activeTab.set('financials')" />
+    } @else if (activeTab() === 'financials') {
+      <lfx-initiative-financials [initiative]="detail" />
+    } @else if (activeTab() === 'announcements') {
+      <lfx-initiative-announcements />
+    }
   }
 </div>
