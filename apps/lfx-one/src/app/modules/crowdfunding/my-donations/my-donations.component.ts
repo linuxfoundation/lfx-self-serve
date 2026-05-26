@@ -31,7 +31,8 @@ export class MyDonationsComponent {
   protected readonly crowdfundingUrl = environment.urls.crowdfunding;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
-  protected readonly cancelledCount = signal(4);
+  // TODO: derive from API response once cancelled-recurring concept is implemented
+  protected readonly cancelledCount = signal(0);
 
   // ─── Pagination Driver ────────────────────────────────────────────────────
   private readonly loadMore$ = new Subject<void>();

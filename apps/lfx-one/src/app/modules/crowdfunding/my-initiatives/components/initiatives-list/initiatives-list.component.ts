@@ -24,7 +24,10 @@ export class InitiativesListComponent {
   protected readonly filteredInitiatives = computed(() => this.initiatives().filter((i) => i.status === this.activeFilter()));
 
   protected setFilter(status: string): void {
-    this.activeFilter.set(status as CrowdfundingInitiativeStatus);
+    const valid: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
+    if (valid.includes(status as CrowdfundingInitiativeStatus)) {
+      this.activeFilter.set(status as CrowdfundingInitiativeStatus);
+    }
   }
 
   protected onCardClick(slug: string): void {

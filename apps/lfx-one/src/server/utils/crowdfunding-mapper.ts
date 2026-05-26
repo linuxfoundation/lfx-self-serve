@@ -18,14 +18,26 @@ import { FundType } from '@lfx-one/shared/enums';
 
 import { BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction } from '../types/crowdfunding.types';
 
+const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
+
+function toValidInitiativeStatus(value: unknown): CrowdfundingInitiativeStatus {
+  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus)
+    ? (value as CrowdfundingInitiativeStatus)
+    : 'active';
+}
+
+function toValidFundType(value: unknown): FundType {
+  return Object.values(FundType).includes(value as FundType) ? (value as FundType) : FundType.GENERAL_FUND;
+}
+
 export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
   return {
     id: b.id,
     slug: b.slug,
     name: b.name,
     description: b.description ?? '',
-    status: b.status as CrowdfundingInitiativeStatus,
-    initiativeType: b.initiative_type as FundType,
+    status: toValidInitiativeStatus(b.status),
+    initiativeType: toValidFundType(b.initiative_type),
     color: b.color ?? '',
     createdOn: b.created_on,
     updatedOn: b.updated_on,

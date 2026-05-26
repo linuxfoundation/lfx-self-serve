@@ -4,7 +4,9 @@
 import { Component, computed, input, Signal } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { DonutChartComponent } from '@components/donut-chart/donut-chart.component';
+import { lfxColors } from '@lfx-one/shared/constants';
 import { FundingGoalWithMeta, InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { formatCurrency } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-initiative-finance-summary',
@@ -22,15 +24,15 @@ export class InitiativeFinanceSummaryComponent {
     return Math.min(100, Math.round((raised / goal) * 100));
   });
 
-  protected readonly formattedBalance = computed(() => this.formatCurrency((this.initiative().currentBalanceCents ?? 0) / 100));
-  protected readonly formattedRaised = computed(() => this.formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
+  protected readonly formattedBalance = computed(() => formatCurrency((this.initiative().currentBalanceCents ?? 0) / 100));
+  protected readonly formattedRaised = computed(() => formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
   protected readonly formattedGoal = this.initFormattedGoal();
   protected readonly fundingGoalsWithMeta = this.initFundingGoalsWithMeta();
 
   private initFormattedGoal(): Signal<string | null> {
     return computed(() => {
       const goalCents = this.initiative().fundingStatus?.goalsTotalCents;
-      return goalCents != null && goalCents > 0 ? this.formatCurrency(goalCents / 100) : null;
+      return goalCents != null && goalCents > 0 ? formatCurrency(goalCents / 100) : null;
     });
   }
 
@@ -41,22 +43,15 @@ export class InitiativeFinanceSummaryComponent {
         const spentPct = goal.goalCents > 0 ? Math.min(100, Math.round((goal.spentCents / goal.goalCents) * 100)) : 0;
         return {
           ...goal,
-          formattedGoal: this.formatCurrency(goal.goalCents / 100),
-          formattedDonated: this.formatCurrency(goal.donatedCents / 100),
-          formattedSpent: this.formatCurrency(goal.spentCents / 100),
+          formattedGoal: formatCurrency(goal.goalCents / 100),
+          formattedDonated: formatCurrency(goal.donatedCents / 100),
+          formattedSpent: formatCurrency(goal.spentCents / 100),
           rings: [
-            { value: donatedPct, color: '#006BFF' },
-            { value: spentPct, color: '#1e293b' },
+            { value: donatedPct, color: lfxColors.blue[600] },
+            { value: spentPct, color: lfxColors.gray[800] },
           ],
         };
       })
     );
-  }
-
-  private formatCurrency(value: number): string {
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    }
-    return `$${value.toLocaleString()}`;
   }
 }
