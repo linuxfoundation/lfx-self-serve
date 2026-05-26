@@ -82,8 +82,17 @@
                 (onClick)="openPreviewDrawer()"
                 data-testid="newsletter-manage-preview-btn">
               </lfx-button>
+              <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="newsletter-manage-cancel-btn"></lfx-button>
+              <lfx-button
+                label="Save as Draft"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="!canSaveDraft()"
+                [loading]="manualSaving()"
+                (onClick)="onSaveAsDraft()"
+                data-testid="newsletter-manage-draft-btn">
+              </lfx-button>
               @if (!isLastStep()) {
-                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="newsletter-manage-cancel-btn"></lfx-button>
                 <lfx-button
                   label="Next"
                   icon="fa-light fa-chevron-right"
