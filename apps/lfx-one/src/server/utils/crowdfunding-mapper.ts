@@ -21,9 +21,7 @@ import { BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction } fr
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 
 function toValidInitiativeStatus(value: unknown): CrowdfundingInitiativeStatus {
-  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus)
-    ? (value as CrowdfundingInitiativeStatus)
-    : 'active';
+  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus) ? (value as CrowdfundingInitiativeStatus) : 'active';
 }
 
 function toValidFundType(value: unknown): FundType {
