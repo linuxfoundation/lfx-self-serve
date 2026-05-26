@@ -6,6 +6,19 @@ import type { MembershipDetailTab } from '../interfaces/org-memberships.interfac
 // TODO: replace with real API call latency once write endpoints are wired (FR-018b).
 export const SIMULATED_SAVE_DELAY_MS = 400;
 
+/** Spec 018 FR-032a: CSV header row, 9 columns, in this exact order. */
+export const MEMBERSHIP_AGREEMENT_CSV_HEADERS = [
+  'Organization',
+  'Foundation',
+  'Agreement Name',
+  'Signed Date',
+  'Format',
+  'Status',
+  'Tier',
+  'Current',
+  'Download URL',
+] as const;
+
 export const TAB_FRAGMENTS: readonly MembershipDetailTab[] = ['key-contacts', 'board', 'docs', 'governance'] as const;
 export const DEFAULT_TAB: MembershipDetailTab = 'key-contacts';
 

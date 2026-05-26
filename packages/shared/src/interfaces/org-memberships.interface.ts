@@ -279,7 +279,7 @@ export interface WhyCantEditDialogData {
 
 export type WhyCantEditDialogResult = { contactFoundation: boolean } | null;
 
-// Membership Detail page — Documentation tab (spec 017) --------------------------------------
+// Membership Detail page — Documentation tab (spec 017 baseline + spec 018 Snowflake extension)
 
 /** One agreement document in the Documentation tab list. */
 export interface OrgMembershipAgreement {
@@ -287,19 +287,41 @@ export interface OrgMembershipAgreement {
   name: string;
   signedDate: string;
   format: string;
-  fileSizeKb: number;
+  fileSizeKb: number | null;
   isCurrent: boolean;
+  downloadUrl: string | null;
+  statusRaw: string;
+  tier: string;
 }
 
-/** Server-side certificate template (display fields derived client-side from parent inputs). */
+/** TLF Certificate of Membership card payload — per-accountId, sourced from ORG_LENS_TLF_CERTIFICATE (spec 019). */
 export interface OrgMembershipCertificateTemplate {
+  /** Pre-formatted card title. E.g. "Linux Foundation Gold Membership Certificate". */
+  title: string;
+  /** Pre-formatted card subtitle. E.g. "Member since Jul 2011 · Issued to TOYOTA MOTOR CORPORATION". */
+  subtitle: string;
+  /** Verbatim membership tier including " Membership" suffix. E.g. "Gold Membership". */
+  membershipTier: string;
+  /** Verbatim Salesforce account name. */
+  issuedTo: string;
+  /** Pre-formatted "Mon YYYY" date string. E.g. "Jul 2011". */
+  memberSinceFormatted: string;
+  /** ISO YYYY-MM-DD date string for downstream re-formatting if needed. */
+  memberSinceDate: string;
+  /** Membership-agreement PDF URL. NULL when the upstream Opportunity has no URL recorded. */
   downloadUrl: string | null;
 }
 
-/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/documents`. */
+/** Response envelope for GET /api/orgs/:accountId/lens/memberships/:foundationId/documents. */
 export interface OrgMembershipDocumentsResponse {
   accountId: string;
   foundationId: string;
   agreements: OrgMembershipAgreement[];
-  certificateTemplate: OrgMembershipCertificateTemplate;
+  certificateTemplate: OrgMembershipCertificateTemplate | null;
+}
+
+/** Internal service result: wire response plus non-wire degraded flag for observability (spec 019 SC-015). */
+export interface OrgMembershipDocumentsResult {
+  response: OrgMembershipDocumentsResponse;
+  certificateDegraded: boolean;
 }

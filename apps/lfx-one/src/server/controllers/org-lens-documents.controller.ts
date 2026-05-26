@@ -28,12 +28,25 @@ export class OrgLensDocumentsController {
       this.assertAccountId(accountId, 'get_membership_documents');
       this.assertFoundationId(foundationId, 'get_membership_documents');
 
-      const response = this.service.getMembershipDocuments(accountId, foundationId);
+      const { response, certificateDegraded } = await this.service.getMembershipDocuments(req, accountId, foundationId);
+
+      // Spec 019 SC-015: structured observability field distinguishing legitimate
+      // non-TLF orgs ('absent') from cert-table outages ('degraded') without
+      // needing to grep warning logs.
+      let certificateState: 'present' | 'absent' | 'degraded';
+      if (response.certificateTemplate) {
+        certificateState = 'present';
+      } else if (certificateDegraded) {
+        certificateState = 'degraded';
+      } else {
+        certificateState = 'absent';
+      }
 
       logger.success(req, 'get_membership_documents', startTime, {
         account_id: accountId,
         foundation_id: foundationId,
         agreement_count: response.agreements.length,
+        certificate_state: certificateState,
       });
 
       res.setHeader('Cache-Control', 'no-store');
