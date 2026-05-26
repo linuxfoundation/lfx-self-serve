@@ -116,7 +116,7 @@ export const routes: Routes = [
           {
             path: 'people',
             data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
           },
           {
             path: 'contributions',
