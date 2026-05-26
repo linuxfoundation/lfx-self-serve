@@ -99,7 +99,9 @@ export class MyDonationsComponent {
       this.loadMore$.pipe(
         startWith(undefined as void),
         scan((page) => page + 1, -1),
-        concatMap((page) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: page * DEFAULT_CROWDFUNDING_PAGE_SIZE })),
+        concatMap((page) =>
+          this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: page * DEFAULT_CROWDFUNDING_PAGE_SIZE })
+        ),
         scan(
           (acc, res) => ({
             items: [...acc.items, ...res.data],
