@@ -2,339 +2,346 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="documents-dashboard">
-  <div class="flex flex-col gap-6">
-    <!-- Page Header -->
-    <div class="flex items-start justify-between mt-3">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
-          {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
-        </p>
-      </div>
+  @if (!personaLoaded()) {
+    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+      <p-skeleton width="12rem" height="2rem" />
+      <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
+  } @else {
+    <div class="flex flex-col gap-6">
+      <!-- Page Header -->
+      <div class="flex items-start justify-between mt-3">
+        <div>
+          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
+          <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
+            {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
+          </p>
+        </div>
+      </div>
 
-    <!-- Filter Bar + Table -->
-    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
-      @if (useProjectSource()) {
-        <!-- ── PROJECT / FOUNDATION lens ───────────────────────────────────── -->
-        <div class="px-5 pt-4 flex flex-col gap-3">
-          <!-- Toolbar -->
-          @if (canUpload()) {
-            <div class="flex items-center justify-end gap-2" data-testid="documents-dashboard-toolbar">
-              <lfx-button
-                label="Upload File"
-                icon="fa-light fa-arrow-up-from-line"
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                (onClick)="openUploadFileDialog()"
-                data-testid="documents-dashboard-upload-file-button"></lfx-button>
-              <lfx-button
-                label="New Folder"
-                icon="fa-light fa-folder-plus"
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                (onClick)="openNewFolderDialog()"
-                data-testid="documents-dashboard-new-folder-button"></lfx-button>
-              <lfx-button
-                label="Add Link"
-                icon="fa-light fa-link"
-                severity="info"
-                size="small"
-                (onClick)="openAddLinkDialog()"
-                data-testid="documents-dashboard-add-link-button"></lfx-button>
-            </div>
-          }
-
-          <!-- Breadcrumb (only when drilled into a folder) -->
-          @if (currentFolder(); as folder) {
-            <nav class="flex items-center gap-2 pb-3 border-b border-gray-100 text-sm" data-testid="documents-dashboard-breadcrumb" aria-label="Breadcrumb">
-              <button
-                type="button"
-                class="text-blue-600 hover:text-blue-700 hover:underline font-medium bg-transparent border-none cursor-pointer p-0"
-                (click)="onBreadcrumbHome()"
-                data-testid="documents-dashboard-breadcrumb-home">
-                <i class="fa-light fa-folder-open text-amber-500 mr-1"></i>
-                Documents
-              </button>
-              <i class="fa-light fa-chevron-right text-gray-300 text-xs"></i>
-              <span class="text-gray-900 font-medium" data-testid="documents-dashboard-breadcrumb-current">{{ folder.name }}</span>
-            </nav>
-          }
-
-          <!-- Search + Source filter -->
-          <div class="pb-3 border-b border-gray-100">
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="flex-1 min-w-48">
-                <lfx-input-text
-                  [form]="filterForm"
-                  control="search"
-                  placeholder="Search documents..."
-                  icon="fa-light fa-search"
-                  styleClass="w-full"
+      <!-- Filter Bar + Table -->
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
+        @if (useProjectSource()) {
+          <!-- ── PROJECT / FOUNDATION lens ───────────────────────────────────── -->
+          <div class="px-5 pt-4 flex flex-col gap-3">
+            <!-- Toolbar -->
+            @if (canUpload()) {
+              <div class="flex items-center justify-end gap-2" data-testid="documents-dashboard-toolbar">
+                <lfx-button
+                  label="Upload File"
+                  icon="fa-light fa-arrow-up-from-line"
                   size="small"
-                  data-testid="documents-search-input">
-                </lfx-input-text>
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="openUploadFileDialog()"
+                  data-testid="documents-dashboard-upload-file-button"></lfx-button>
+                <lfx-button
+                  label="New Folder"
+                  icon="fa-light fa-folder-plus"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="openNewFolderDialog()"
+                  data-testid="documents-dashboard-new-folder-button"></lfx-button>
+                <lfx-button
+                  label="Add Link"
+                  icon="fa-light fa-link"
+                  severity="info"
+                  size="small"
+                  (onClick)="openAddLinkDialog()"
+                  data-testid="documents-dashboard-add-link-button"></lfx-button>
               </div>
-              <div class="w-36 shrink-0 overflow-hidden">
-                <lfx-select
-                  [form]="filterForm"
-                  control="projectSource"
-                  size="small"
-                  [options]="projectSourceOptions"
-                  placeholder="All Sources"
-                  [showClear]="true"
-                  styleClass="w-full"
-                  data-testid="documents-dashboard-source-filter">
-                </lfx-select>
+            }
+
+            <!-- Breadcrumb (only when drilled into a folder) -->
+            @if (currentFolder(); as folder) {
+              <nav class="flex items-center gap-2 pb-3 border-b border-gray-100 text-sm" data-testid="documents-dashboard-breadcrumb" aria-label="Breadcrumb">
+                <button
+                  type="button"
+                  class="text-blue-600 hover:text-blue-700 hover:underline font-medium bg-transparent border-none cursor-pointer p-0"
+                  (click)="onBreadcrumbHome()"
+                  data-testid="documents-dashboard-breadcrumb-home">
+                  <i class="fa-light fa-folder-open text-amber-500 mr-1"></i>
+                  Documents
+                </button>
+                <i class="fa-light fa-chevron-right text-gray-300 text-xs"></i>
+                <span class="text-gray-900 font-medium" data-testid="documents-dashboard-breadcrumb-current">{{ folder.name }}</span>
+              </nav>
+            }
+
+            <!-- Search + Source filter -->
+            <div class="pb-3 border-b border-gray-100">
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="flex-1 min-w-48">
+                  <lfx-input-text
+                    [form]="filterForm"
+                    control="search"
+                    placeholder="Search documents..."
+                    icon="fa-light fa-search"
+                    styleClass="w-full"
+                    size="small"
+                    data-testid="documents-search-input">
+                  </lfx-input-text>
+                </div>
+                <div class="w-36 shrink-0 overflow-hidden">
+                  <lfx-select
+                    [form]="filterForm"
+                    control="projectSource"
+                    size="small"
+                    [options]="projectSourceOptions"
+                    placeholder="All Sources"
+                    [showClear]="true"
+                    styleClass="w-full"
+                    data-testid="documents-dashboard-source-filter">
+                  </lfx-select>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Documents table (shared component — folders, downloads, links handled internally) -->
-        <div class="px-5 pb-5">
-          <lfx-documents-table
-            [documents]="filteredDocuments()"
-            [loading]="loading()"
-            [showFoundation]="false"
-            (folderOpen)="onFolderOpen($event)"
-            testIdPrefix="documents-dashboard"
-            [emptyMessage]="projectEmptyMessage()">
-          </lfx-documents-table>
-        </div>
-      } @else {
-        <!-- ── ME / ORG lens — legacy aggregator UI ───────────────────────── -->
-        <!-- Source Tabs -->
-        <lfx-card-tabs-bar
-          [options]="sourceTabOptions"
-          [selectedFilter]="sourceTab()"
-          (filterChange)="onSourceTabChange($event)"
-          data-testid="documents-source-tabs">
-        </lfx-card-tabs-bar>
+          <!-- Documents table (shared component — folders, downloads, links handled internally) -->
+          <div class="px-5 pb-5">
+            <lfx-documents-table
+              [documents]="filteredDocuments()"
+              [loading]="loading()"
+              [showFoundation]="false"
+              (folderOpen)="onFolderOpen($event)"
+              testIdPrefix="documents-dashboard"
+              [emptyMessage]="projectEmptyMessage()">
+            </lfx-documents-table>
+          </div>
+        } @else {
+          <!-- ── ME / ORG lens — legacy aggregator UI ───────────────────────── -->
+          <!-- Source Tabs -->
+          <lfx-card-tabs-bar
+            [options]="sourceTabOptions"
+            [selectedFilter]="sourceTab()"
+            (filterChange)="onSourceTabChange($event)"
+            data-testid="documents-source-tabs">
+          </lfx-card-tabs-bar>
 
-        <!-- Filters -->
-        @if (loading() || documents().length > 0) {
-          <div class="px-5 pt-4 pb-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <!-- Search -->
-              <div class="flex-1 min-w-48">
-                <lfx-input-text
-                  [form]="filterForm"
-                  control="search"
-                  placeholder="Search documents..."
-                  icon="fa-light fa-search"
-                  styleClass="w-full"
-                  size="small"
-                  data-testid="documents-search-input-legacy">
-                </lfx-input-text>
-              </div>
+          <!-- Filters -->
+          @if (loading() || documents().length > 0) {
+            <div class="px-5 pt-4 pb-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <!-- Search -->
+                <div class="flex-1 min-w-48">
+                  <lfx-input-text
+                    [form]="filterForm"
+                    control="search"
+                    placeholder="Search documents..."
+                    icon="fa-light fa-search"
+                    styleClass="w-full"
+                    size="small"
+                    data-testid="documents-search-input-legacy">
+                  </lfx-input-text>
+                </div>
 
-              <!-- Foundation filter -->
-              <div class="w-40 shrink-0 overflow-hidden">
-                <lfx-select
-                  [form]="filterForm"
-                  control="foundation"
-                  size="small"
-                  [options]="foundationOptions()"
-                  placeholder="All Foundations"
-                  [showClear]="true"
-                  [filter]="true"
-                  filterPlaceholder="Search foundations..."
-                  styleClass="w-full"
-                  data-testid="documents-foundation-filter">
-                </lfx-select>
-              </div>
+                <!-- Foundation filter -->
+                <div class="w-40 shrink-0 overflow-hidden">
+                  <lfx-select
+                    [form]="filterForm"
+                    control="foundation"
+                    size="small"
+                    [options]="foundationOptions()"
+                    placeholder="All Foundations"
+                    [showClear]="true"
+                    [filter]="true"
+                    filterPlaceholder="Search foundations..."
+                    styleClass="w-full"
+                    data-testid="documents-foundation-filter">
+                  </lfx-select>
+                </div>
 
-              <!-- Group filter -->
-              <div class="w-36 shrink-0 overflow-hidden">
-                <lfx-select
-                  [form]="filterForm"
-                  control="group"
-                  size="small"
-                  [options]="groupOptions()"
-                  placeholder="All Groups"
-                  [showClear]="true"
-                  [filter]="true"
-                  filterPlaceholder="Search groups..."
-                  styleClass="w-full"
-                  data-testid="documents-group-filter">
-                </lfx-select>
-              </div>
+                <!-- Group filter -->
+                <div class="w-36 shrink-0 overflow-hidden">
+                  <lfx-select
+                    [form]="filterForm"
+                    control="group"
+                    size="small"
+                    [options]="groupOptions()"
+                    placeholder="All Groups"
+                    [showClear]="true"
+                    [filter]="true"
+                    filterPlaceholder="Search groups..."
+                    styleClass="w-full"
+                    data-testid="documents-group-filter">
+                  </lfx-select>
+                </div>
 
-              <!-- Meeting filter -->
-              <div class="w-36 shrink-0 overflow-hidden">
-                <lfx-select
-                  [form]="filterForm"
-                  control="meeting"
-                  size="small"
-                  [options]="meetingOptions()"
-                  placeholder="All Meetings"
-                  [showClear]="true"
-                  [filter]="true"
-                  filterPlaceholder="Search meetings..."
-                  styleClass="w-full"
-                  data-testid="documents-meeting-filter">
-                </lfx-select>
-              </div>
+                <!-- Meeting filter -->
+                <div class="w-36 shrink-0 overflow-hidden">
+                  <lfx-select
+                    [form]="filterForm"
+                    control="meeting"
+                    size="small"
+                    [options]="meetingOptions()"
+                    placeholder="All Meetings"
+                    [showClear]="true"
+                    [filter]="true"
+                    filterPlaceholder="Search meetings..."
+                    styleClass="w-full"
+                    data-testid="documents-meeting-filter">
+                  </lfx-select>
+                </div>
 
-              <!-- Mailing list filter -->
-              <div class="w-40 shrink-0 overflow-hidden">
-                <lfx-select
-                  [form]="filterForm"
-                  control="mailingList"
-                  size="small"
-                  [options]="mailingListOptions()"
-                  placeholder="All Mailing Lists"
-                  [showClear]="true"
-                  [filter]="true"
-                  filterPlaceholder="Search mailing lists..."
-                  styleClass="w-full"
-                  data-testid="documents-mailing-list-filter">
-                </lfx-select>
+                <!-- Mailing list filter -->
+                <div class="w-40 shrink-0 overflow-hidden">
+                  <lfx-select
+                    [form]="filterForm"
+                    control="mailingList"
+                    size="small"
+                    [options]="mailingListOptions()"
+                    placeholder="All Mailing Lists"
+                    [showClear]="true"
+                    [filter]="true"
+                    filterPlaceholder="Search mailing lists..."
+                    styleClass="w-full"
+                    data-testid="documents-mailing-list-filter">
+                  </lfx-select>
+                </div>
               </div>
             </div>
+          }
+
+          <div class="px-5 pb-5">
+            <!-- Primary empty state: no documents at all -->
+            @if (!loading() && documents().length === 0) {
+              <lfx-empty-state
+                [withCard]="false"
+                icon="fa-light fa-file-lines"
+                title="No documents yet"
+                subtitle="Documents, links, and attachments from your groups and meetings will appear here."
+                data-testid="documents-empty-state">
+              </lfx-empty-state>
+              <!-- Filtered empty state: documents exist but no results match -->
+            } @else if (!loading() && filteredDocuments().length === 0) {
+              <lfx-empty-state
+                [withCard]="false"
+                icon="fa-light fa-eyes"
+                title="No results found"
+                subtitle="Try adjusting your filter criteria"
+                ctaLabel="Reset filters"
+                ctaIcon="fa-light fa-arrow-rotate-left"
+                (ctaClick)="resetFilters()"
+                data-testid="documents-filtered-empty-state">
+              </lfx-empty-state>
+            } @else {
+              <!-- Table -->
+              <lfx-table
+                [value]="filteredDocuments()"
+                [paginator]="filteredDocuments().length > 0"
+                [rows]="10"
+                [rowsPerPageOptions]="rppOptions()"
+                [loading]="loading()"
+                [showFirstLastIcon]="false"
+                [showCurrentPageReport]="true"
+                currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                styleClass="[&_table]:table-fixed"
+                data-testid="documents-table">
+                <ng-template #header>
+                  <tr>
+                    <th class="w-[33%]">Name</th>
+                    <th class="w-[18%]">Foundation</th>
+                    <th class="w-[18%]">Group / Meeting</th>
+                    <th class="w-[10%]">Source</th>
+                    <th class="w-[13%] whitespace-nowrap">Date</th>
+                    <th class="w-auto"></th>
+                  </tr>
+                </ng-template>
+
+                <ng-template #body let-doc let-rowIndex="rowIndex">
+                  <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'documents-row-' + doc.id">
+                    <!-- Name column -->
+                    <td>
+                      <div class="flex items-center gap-2 min-w-0">
+                        <div class="flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 bg-white shrink-0 shadow">
+                          <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' text-gray-900 text-base'"></i>
+                        </div>
+                        <span
+                          #nameEl
+                          class="text-sm font-medium text-gray-900 truncate min-w-0"
+                          [pTooltip]="doc.name"
+                          tooltipPosition="top"
+                          [tooltipDisabled]="nameEl.scrollWidth <= nameEl.offsetWidth"
+                          [attr.data-testid]="'documents-name-' + doc.id"
+                          >{{ doc.name }}</span
+                        >
+                      </div>
+                    </td>
+
+                    <!-- Foundation column -->
+                    <td>
+                      <span class="text-sm text-gray-700">{{ doc.foundationName || '—' }}</span>
+                    </td>
+
+                    <!-- Group / Meeting column -->
+                    <td>
+                      <span class="text-sm text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+                    </td>
+
+                    <!-- Source column -->
+                    <td>
+                      <lfx-tag
+                        [value]="doc.source | myDocumentSourceTag: 'label'"
+                        [severity]="doc.source | myDocumentSourceTag: 'severity'"
+                        [attr.data-testid]="'documents-source-tag-' + doc.id">
+                      </lfx-tag>
+                    </td>
+
+                    <!-- Date column -->
+                    <td class="whitespace-nowrap">
+                      <span class="text-sm text-gray-700">{{ doc.date | date: 'MMM d, y' }}</span>
+                    </td>
+
+                    <!-- Actions column -->
+                    <td>
+                      <div class="flex items-center justify-end gap-1">
+                        @if (doc.source === 'file' && doc.attachmentUid) {
+                          <lfx-button
+                            label="Download"
+                            icon="fa-light fa-arrow-down-to-line"
+                            severity="secondary"
+                            size="small"
+                            [outlined]="true"
+                            styleClass="whitespace-nowrap"
+                            (onClick)="openDocument(doc)"
+                            [attr.data-testid]="'documents-download-' + doc.id">
+                          </lfx-button>
+                        } @else if (doc.url) {
+                          @if (doc.source === 'recording') {
+                            <lfx-button
+                              label="Recording"
+                              icon="fa-light fa-circle-play"
+                              severity="secondary"
+                              size="small"
+                              [outlined]="true"
+                              styleClass="whitespace-nowrap"
+                              (onClick)="openDocument(doc)"
+                              [attr.data-testid]="'documents-open-' + doc.id">
+                            </lfx-button>
+                          } @else {
+                            <lfx-button
+                              label="Open"
+                              icon="fa-light fa-arrow-up-right-from-square"
+                              severity="secondary"
+                              size="small"
+                              [outlined]="true"
+                              styleClass="whitespace-nowrap"
+                              (onClick)="openDocument(doc)"
+                              [attr.data-testid]="'documents-open-' + doc.id">
+                            </lfx-button>
+                          }
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                </ng-template>
+              </lfx-table>
+            }
           </div>
         }
-
-        <div class="px-5 pb-5">
-          <!-- Primary empty state: no documents at all -->
-          @if (!loading() && documents().length === 0) {
-            <lfx-empty-state
-              [withCard]="false"
-              icon="fa-light fa-file-lines"
-              title="No documents yet"
-              subtitle="Documents, links, and attachments from your groups and meetings will appear here."
-              data-testid="documents-empty-state">
-            </lfx-empty-state>
-            <!-- Filtered empty state: documents exist but no results match -->
-          } @else if (!loading() && filteredDocuments().length === 0) {
-            <lfx-empty-state
-              [withCard]="false"
-              icon="fa-light fa-eyes"
-              title="No results found"
-              subtitle="Try adjusting your filter criteria"
-              ctaLabel="Reset filters"
-              ctaIcon="fa-light fa-arrow-rotate-left"
-              (ctaClick)="resetFilters()"
-              data-testid="documents-filtered-empty-state">
-            </lfx-empty-state>
-          } @else {
-            <!-- Table -->
-            <lfx-table
-              [value]="filteredDocuments()"
-              [paginator]="filteredDocuments().length > 0"
-              [rows]="10"
-              [rowsPerPageOptions]="rppOptions()"
-              [loading]="loading()"
-              [showFirstLastIcon]="false"
-              [showCurrentPageReport]="true"
-              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-              styleClass="[&_table]:table-fixed"
-              data-testid="documents-table">
-              <ng-template #header>
-                <tr>
-                  <th class="w-[33%]">Name</th>
-                  <th class="w-[18%]">Foundation</th>
-                  <th class="w-[18%]">Group / Meeting</th>
-                  <th class="w-[10%]">Source</th>
-                  <th class="w-[13%] whitespace-nowrap">Date</th>
-                  <th class="w-auto"></th>
-                </tr>
-              </ng-template>
-
-              <ng-template #body let-doc let-rowIndex="rowIndex">
-                <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'documents-row-' + doc.id">
-                  <!-- Name column -->
-                  <td>
-                    <div class="flex items-center gap-2 min-w-0">
-                      <div class="flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 bg-white shrink-0 shadow">
-                        <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' text-gray-900 text-base'"></i>
-                      </div>
-                      <span
-                        #nameEl
-                        class="text-sm font-medium text-gray-900 truncate min-w-0"
-                        [pTooltip]="doc.name"
-                        tooltipPosition="top"
-                        [tooltipDisabled]="nameEl.scrollWidth <= nameEl.offsetWidth"
-                        [attr.data-testid]="'documents-name-' + doc.id"
-                        >{{ doc.name }}</span
-                      >
-                    </div>
-                  </td>
-
-                  <!-- Foundation column -->
-                  <td>
-                    <span class="text-sm text-gray-700">{{ doc.foundationName || '—' }}</span>
-                  </td>
-
-                  <!-- Group / Meeting column -->
-                  <td>
-                    <span class="text-sm text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
-                  </td>
-
-                  <!-- Source column -->
-                  <td>
-                    <lfx-tag
-                      [value]="doc.source | myDocumentSourceTag: 'label'"
-                      [severity]="doc.source | myDocumentSourceTag: 'severity'"
-                      [attr.data-testid]="'documents-source-tag-' + doc.id">
-                    </lfx-tag>
-                  </td>
-
-                  <!-- Date column -->
-                  <td class="whitespace-nowrap">
-                    <span class="text-sm text-gray-700">{{ doc.date | date: 'MMM d, y' }}</span>
-                  </td>
-
-                  <!-- Actions column -->
-                  <td>
-                    <div class="flex items-center justify-end gap-1">
-                      @if (doc.source === 'file' && doc.attachmentUid) {
-                        <lfx-button
-                          label="Download"
-                          icon="fa-light fa-arrow-down-to-line"
-                          severity="secondary"
-                          size="small"
-                          [outlined]="true"
-                          styleClass="whitespace-nowrap"
-                          (onClick)="openDocument(doc)"
-                          [attr.data-testid]="'documents-download-' + doc.id">
-                        </lfx-button>
-                      } @else if (doc.url) {
-                        @if (doc.source === 'recording') {
-                          <lfx-button
-                            label="Recording"
-                            icon="fa-light fa-circle-play"
-                            severity="secondary"
-                            size="small"
-                            [outlined]="true"
-                            styleClass="whitespace-nowrap"
-                            (onClick)="openDocument(doc)"
-                            [attr.data-testid]="'documents-open-' + doc.id">
-                          </lfx-button>
-                        } @else {
-                          <lfx-button
-                            label="Open"
-                            icon="fa-light fa-arrow-up-right-from-square"
-                            severity="secondary"
-                            size="small"
-                            [outlined]="true"
-                            styleClass="whitespace-nowrap"
-                            (onClick)="openDocument(doc)"
-                            [attr.data-testid]="'documents-open-' + doc.id">
-                          </lfx-button>
-                        }
-                      }
-                    </div>
-                  </td>
-                </tr>
-              </ng-template>
-            </lfx-table>
-          }
-        </div>
-      }
-    </lfx-card>
-  </div>
+      </lfx-card>
+    </div>
+  }
 </div>

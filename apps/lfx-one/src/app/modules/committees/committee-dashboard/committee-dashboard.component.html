@@ -2,171 +2,178 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-  <div class="flex flex-col gap-6">
-    <!-- Page Header -->
-    <div class="mt-3">
-      <div class="flex justify-between items-center w-full gap-4">
-        <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
-        @if (!isMeLens() && canWrite()) {
-          <lfx-button
-            [label]="'Create ' + committeeLabel.singular"
-            icon="fa-light fa-users mr-1"
-            severity="info"
-            size="small"
-            (onClick)="openCreateDialog()"
-            data-testid="committee-new-cta">
-          </lfx-button>
-        }
-      </div>
-      <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
-        @if (isMeLens()) {
-          @if (projectFilter() || foundationFilter()) {
-            {{ committeeLabel.plural }} you are a member of in the selected scope.
-          } @else {
-            {{ committeeLabel.plural }} you are a member of across all foundations and projects.
-            @if (showFoundationFilter() || showProjectFilter()) {
-              <span class="text-gray-400">Use the filters above to narrow the view.</span>
-            }
-          }
-        } @else {
-          Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
-        }
-      </p>
+  @if (!personaLoaded()) {
+    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+      <p-skeleton width="12rem" height="2rem" />
+      <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
-
-    <!-- Summary Stat Cards (Foundation/Project lens) -->
-    @if (!isMeLens()) {
-      <lfx-stat-card-grid [cards]="foundationStatCards()" [loading]="committeesLoading()" data-testid="committees-foundation-stats" />
-    }
-
-    <!-- Summary Stat Cards (Me lens only) -->
-    @if (isMeLens()) {
-      <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" data-testid="committees-me-stats" />
-    }
-
-    @let totalForChips = isMeLens() ? myCommittees().length : committees().length;
-    @if (totalForChips > 0) {
-      <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter groups by behavioral class" data-testid="groups-behavioral-class-chips">
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-          [class]="behavioralClassFilter() === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-          [attr.aria-pressed]="behavioralClassFilter() === null"
-          (click)="selectBehavioralClass(null)"
-          data-testid="groups-chip-all">
-          All ({{ totalForChips }})
-        </button>
-        @for (key of behavioralClassKeys; track key) {
-          @if (behavioralClassCounts()[key] > 0) {
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-              [class]="
-                behavioralClassFilter() === key
-                  ? 'bg-blue-600 text-white'
-                  : behavioralClassConfig[key].bgColor + ' ' + behavioralClassConfig[key].color + ' hover:opacity-80'
-              "
-              [attr.aria-pressed]="behavioralClassFilter() === key"
-              (click)="selectBehavioralClass(key)"
-              [attr.data-testid]="'groups-chip-' + key">
-              <i [class]="behavioralClassConfig[key].icon" aria-hidden="true"></i>
-              {{ behavioralClassConfig[key].label }} ({{ behavioralClassCounts()[key] }})
-            </button>
+  } @else {
+    <div class="flex flex-col gap-6">
+      <!-- Page Header -->
+      <div class="mt-3">
+        <div class="flex justify-between items-center w-full gap-4">
+          <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
+          @if (!isMeLens() && canWrite()) {
+            <lfx-button
+              [label]="'Create ' + committeeLabel.singular"
+              icon="fa-light fa-users mr-1"
+              severity="info"
+              size="small"
+              (onClick)="openCreateDialog()"
+              data-testid="committee-new-cta">
+            </lfx-button>
           }
-        }
-      </div>
-    }
-
-    <!-- My Groups Table (Me lens) -->
-    @if (isMeLens()) {
-      @if (myCommitteesLoading()) {
-        <lfx-card styleClass="[&_.p-card-body]:!px-5">
-          <div class="flex flex-col gap-4 py-2">
-            @for (_ of [1, 2, 3, 4, 5]; track _) {
-              <div class="flex items-center gap-6">
-                <p-skeleton width="18%" height="0.875rem" />
-                <p-skeleton width="10%" height="0.875rem" />
-                <p-skeleton width="22%" height="0.875rem" />
-                <p-skeleton width="6%" height="0.875rem" />
-                <p-skeleton width="6%" height="0.875rem" />
-                <p-skeleton width="6%" height="0.875rem" />
-                <p-skeleton width="10%" height="0.875rem" />
-                <p-skeleton width="10%" height="0.875rem" />
-              </div>
+        </div>
+        <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
+          @if (isMeLens()) {
+            @if (projectFilter() || foundationFilter()) {
+              {{ committeeLabel.plural }} you are a member of in the selected scope.
+            } @else {
+              {{ committeeLabel.plural }} you are a member of across all foundations and projects.
+              @if (showFoundationFilter() || showProjectFilter()) {
+                <span class="text-gray-400">Use the filters above to narrow the view.</span>
+              }
             }
-          </div>
-        </lfx-card>
-      } @else {
-        <lfx-committee-table
-          [committees]="filteredMyCommittees()"
-          [hasItems]="myCommittees().length > 0"
-          [myCommitteeUids]="myCommitteeUids()"
-          [searchForm]="searchForm"
-          [votingStatusOptions]="votingStatusOptions()"
-          [showFoundationFilter]="showFoundationFilter()"
-          [showProjectFilter]="showProjectFilter()"
-          [foundationOptions]="foundationOptions()"
-          [projectOptions]="projectOptions()"
-          (foundationFilterChange)="onFoundationFilterChange($event)"
-          (projectFilterChange)="onProjectFilterChange($event)"
-          (resetRequested)="selectBehavioralClass(null)"
-          (refresh)="refreshCommittees()"
-          (rowClick)="onCommitteeClick($event)"
-          data-testid="committees-me-table">
-        </lfx-committee-table>
-      }
-    }
-
-    @if (!isMeLens()) {
-      <!-- All Groups Section -->
-      @if (committeesLoading()) {
-        <lfx-card>
-          <div class="flex flex-col gap-4 p-4">
-            @for (_ of [1, 2, 3, 4, 5]; track _) {
-              <div class="flex items-center gap-6">
-                <p-skeleton width="25%" height="0.875rem" />
-                <p-skeleton width="20%" height="0.875rem" />
-                <p-skeleton width="15%" height="0.875rem" />
-                <p-skeleton width="10%" height="0.875rem" />
-              </div>
-            }
-          </div>
-        </lfx-card>
-      }
-
-      <!-- Content Area - Table or Cards -->
-      @if (!committeesLoading()) {
-        <div class="min-h-[400px]">
-          @if (committees().length === 0 && project()?.uid) {
-            <lfx-empty-state
-              icon="fa-light fa-users-rectangle"
-              [title]="'No ' + committeeLabel.plural.toLowerCase() + ' yet'"
-              subtitle="This project has no groups set up yet."
-              data-testid="committees-project-empty-state">
-            </lfx-empty-state>
-          } @else if (project()?.uid) {
-            <lfx-committee-table
-              data-testid="committees-project-table"
-              [committees]="filteredCommittees()"
-              [hasItems]="committees().length > 0"
-              [canManageCommittee]="canWrite()"
-              [myCommitteeUids]="myCommitteeUids()"
-              [searchForm]="searchForm"
-              [votingStatusOptions]="votingStatusOptions()"
-              (resetRequested)="selectBehavioralClass(null)"
-              (refresh)="refreshCommittees()"
-              (rowClick)="onCommitteeClick($event)">
-            </lfx-committee-table>
           } @else {
-            <lfx-empty-state
-              icon="fa-light fa-folder-open"
-              title="Select a project"
-              [subtitle]="'Choose a project to view its ' + committeeLabel.plural.toLowerCase() + '.'"
-              data-testid="committees-no-project-empty-state">
-            </lfx-empty-state>
+            Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
+          }
+        </p>
+      </div>
+
+      <!-- Summary Stat Cards (Foundation/Project lens) -->
+      @if (!isMeLens()) {
+        <lfx-stat-card-grid [cards]="foundationStatCards()" [loading]="committeesLoading()" data-testid="committees-foundation-stats" />
+      }
+
+      <!-- Summary Stat Cards (Me lens only) -->
+      @if (isMeLens()) {
+        <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" data-testid="committees-me-stats" />
+      }
+
+      @let totalForChips = isMeLens() ? myCommittees().length : committees().length;
+      @if (totalForChips > 0) {
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter groups by behavioral class" data-testid="groups-behavioral-class-chips">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+            [class]="behavioralClassFilter() === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+            [attr.aria-pressed]="behavioralClassFilter() === null"
+            (click)="selectBehavioralClass(null)"
+            data-testid="groups-chip-all">
+            All ({{ totalForChips }})
+          </button>
+          @for (key of behavioralClassKeys; track key) {
+            @if (behavioralClassCounts()[key] > 0) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                [class]="
+                  behavioralClassFilter() === key
+                    ? 'bg-blue-600 text-white'
+                    : behavioralClassConfig[key].bgColor + ' ' + behavioralClassConfig[key].color + ' hover:opacity-80'
+                "
+                [attr.aria-pressed]="behavioralClassFilter() === key"
+                (click)="selectBehavioralClass(key)"
+                [attr.data-testid]="'groups-chip-' + key">
+                <i [class]="behavioralClassConfig[key].icon" aria-hidden="true"></i>
+                {{ behavioralClassConfig[key].label }} ({{ behavioralClassCounts()[key] }})
+              </button>
+            }
           }
         </div>
       }
-    }
-  </div>
+
+      <!-- My Groups Table (Me lens) -->
+      @if (isMeLens()) {
+        @if (myCommitteesLoading()) {
+          <lfx-card styleClass="[&_.p-card-body]:!px-5">
+            <div class="flex flex-col gap-4 py-2">
+              @for (_ of [1, 2, 3, 4, 5]; track _) {
+                <div class="flex items-center gap-6">
+                  <p-skeleton width="18%" height="0.875rem" />
+                  <p-skeleton width="10%" height="0.875rem" />
+                  <p-skeleton width="22%" height="0.875rem" />
+                  <p-skeleton width="6%" height="0.875rem" />
+                  <p-skeleton width="6%" height="0.875rem" />
+                  <p-skeleton width="6%" height="0.875rem" />
+                  <p-skeleton width="10%" height="0.875rem" />
+                  <p-skeleton width="10%" height="0.875rem" />
+                </div>
+              }
+            </div>
+          </lfx-card>
+        } @else {
+          <lfx-committee-table
+            [committees]="filteredMyCommittees()"
+            [hasItems]="myCommittees().length > 0"
+            [myCommitteeUids]="myCommitteeUids()"
+            [searchForm]="searchForm"
+            [votingStatusOptions]="votingStatusOptions()"
+            [showFoundationFilter]="showFoundationFilter()"
+            [showProjectFilter]="showProjectFilter()"
+            [foundationOptions]="foundationOptions()"
+            [projectOptions]="projectOptions()"
+            (foundationFilterChange)="onFoundationFilterChange($event)"
+            (projectFilterChange)="onProjectFilterChange($event)"
+            (resetRequested)="selectBehavioralClass(null)"
+            (refresh)="refreshCommittees()"
+            (rowClick)="onCommitteeClick($event)"
+            data-testid="committees-me-table">
+          </lfx-committee-table>
+        }
+      }
+
+      @if (!isMeLens()) {
+        <!-- All Groups Section -->
+        @if (committeesLoading()) {
+          <lfx-card>
+            <div class="flex flex-col gap-4 p-4">
+              @for (_ of [1, 2, 3, 4, 5]; track _) {
+                <div class="flex items-center gap-6">
+                  <p-skeleton width="25%" height="0.875rem" />
+                  <p-skeleton width="20%" height="0.875rem" />
+                  <p-skeleton width="15%" height="0.875rem" />
+                  <p-skeleton width="10%" height="0.875rem" />
+                </div>
+              }
+            </div>
+          </lfx-card>
+        }
+
+        <!-- Content Area - Table or Cards -->
+        @if (!committeesLoading()) {
+          <div class="min-h-[400px]">
+            @if (committees().length === 0 && project()?.uid) {
+              <lfx-empty-state
+                icon="fa-light fa-users-rectangle"
+                [title]="'No ' + committeeLabel.plural.toLowerCase() + ' yet'"
+                subtitle="This project has no groups set up yet."
+                data-testid="committees-project-empty-state">
+              </lfx-empty-state>
+            } @else if (project()?.uid) {
+              <lfx-committee-table
+                data-testid="committees-project-table"
+                [committees]="filteredCommittees()"
+                [hasItems]="committees().length > 0"
+                [canManageCommittee]="canWrite()"
+                [myCommitteeUids]="myCommitteeUids()"
+                [searchForm]="searchForm"
+                [votingStatusOptions]="votingStatusOptions()"
+                (resetRequested)="selectBehavioralClass(null)"
+                (refresh)="refreshCommittees()"
+                (rowClick)="onCommitteeClick($event)">
+              </lfx-committee-table>
+            } @else {
+              <lfx-empty-state
+                icon="fa-light fa-folder-open"
+                title="Select a project"
+                [subtitle]="'Choose a project to view its ' + committeeLabel.plural.toLowerCase() + '.'"
+                data-testid="committees-no-project-empty-state">
+              </lfx-empty-state>
+            }
+          </div>
+        }
+      }
+    </div>
+  }
 </div>

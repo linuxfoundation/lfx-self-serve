@@ -23,6 +23,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { DialogService } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import {
   BehaviorSubject,
   catchError,
@@ -47,7 +48,16 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective, EmptyStateComponent, FullCalendarComponent],
+  imports: [
+    MeetingCardComponent,
+    MeetingsTopBarComponent,
+    ButtonComponent,
+    CardComponent,
+    OnRenderDirective,
+    EmptyStateComponent,
+    FullCalendarComponent,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
@@ -64,6 +74,7 @@ export class MeetingsDashboardComponent {
   private readonly dialogService = inject(DialogService);
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
+  protected readonly personaLoaded = this.personaService.personaLoaded;
 
   public viewMode = signal<ViewMode>('list');
   public isListView = computed(() => this.viewMode() === 'list');

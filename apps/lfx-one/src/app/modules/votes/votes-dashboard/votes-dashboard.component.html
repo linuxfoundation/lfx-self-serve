@@ -2,60 +2,67 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-  <!-- Page Header -->
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="font-display font-light text-2xl" data-testid="votes-dashboard-title">{{ isMeLens() ? 'My ' + voteLabelPlural : voteLabelPlural }}</h1>
-      <p class="mt-1 text-sm text-gray-500" data-testid="votes-dashboard-description">
-        {{ isMeLens() ? voteLabelPlural + ' you have been invited to across all foundations and projects.' : 'Make decisions with your project groups.' }}
-      </p>
+  @if (!personaLoaded()) {
+    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+      <p-skeleton width="12rem" height="2rem" />
+      <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
-    @if (!isMeLens() && canWrite()) {
-      <lfx-button
-        [label]="'Create ' + voteLabel"
-        size="small"
-        icon="fa-light fa-check-to-slot"
-        severity="primary"
-        [routerLink]="['/votes', 'create']"
-        data-testid="votes-create-button">
-      </lfx-button>
-    }
-  </div>
-
-  <!-- Dashboard-level empty state: only when there are genuinely no votes (no active filter). -->
-  <!-- Keep the table mounted in every other case so its form subscription doesn't re-fire on remount. -->
-  @if (!isMeLens() && !loading() && votes().length === 0 && !hasActiveFilters()) {
-    <lfx-empty-state
-      icon="fa-light fa-check-to-slot"
-      [title]="'No ' + (voteLabelPlural | lowercase) + ' yet'"
-      [subtitle]="'Create a ' + (voteLabel | lowercase) + ' to gather decisions from project groups.'"
-      [ctaLabel]="canWrite() ? 'Create ' + voteLabel : undefined"
-      [ctaRoute]="canWrite() ? ['/votes', 'create'] : undefined"
-      data-testid="votes-empty-state-card">
-    </lfx-empty-state>
   } @else {
-    <lfx-votes-table
-      [votes]="isMeLens() ? filteredMyVotes() : votes()"
-      [hasPMOAccess]="!isMeLens() && canWrite()"
-      [loading]="isMeLens() ? myVotesLoading() : loading()"
-      [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
-      [rowsPerPage]="rowsPerPage()"
-      [first]="isMeLens() ? 0 : currentFirst()"
-      [lazy]="!isMeLens()"
-      [groupOptions]="groupOptions()"
-      [foundationOptions]="foundationOptions()"
-      [projectOptions]="projectOptions()"
-      [showFoundationFilter]="showFoundationFilter()"
-      [showProjectFilter]="showProjectFilter()"
-      (foundationFilterChange)="onFoundationFilterChange($event)"
-      (projectFilterChange)="onProjectFilterChange($event)"
-      (viewVote)="onViewVote($event)"
-      (viewResults)="onViewResults($event)"
-      (refresh)="refreshVotes()"
-      (pageChange)="onPageChange($event)"
-      (filtersChange)="onFiltersChange($event)"
-      data-testid="votes-table-container">
-    </lfx-votes-table>
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="votes-dashboard-title">{{ isMeLens() ? 'My ' + voteLabelPlural : voteLabelPlural }}</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="votes-dashboard-description">
+          {{ isMeLens() ? voteLabelPlural + ' you have been invited to across all foundations and projects.' : 'Make decisions with your project groups.' }}
+        </p>
+      </div>
+      @if (!isMeLens() && canWrite()) {
+        <lfx-button
+          [label]="'Create ' + voteLabel"
+          size="small"
+          icon="fa-light fa-check-to-slot"
+          severity="primary"
+          [routerLink]="['/votes', 'create']"
+          data-testid="votes-create-button">
+        </lfx-button>
+      }
+    </div>
+
+    <!-- Dashboard-level empty state: only when there are genuinely no votes (no active filter). -->
+    <!-- Keep the table mounted in every other case so its form subscription doesn't re-fire on remount. -->
+    @if (!isMeLens() && !loading() && votes().length === 0 && !hasActiveFilters()) {
+      <lfx-empty-state
+        icon="fa-light fa-check-to-slot"
+        [title]="'No ' + (voteLabelPlural | lowercase) + ' yet'"
+        [subtitle]="'Create a ' + (voteLabel | lowercase) + ' to gather decisions from project groups.'"
+        [ctaLabel]="canWrite() ? 'Create ' + voteLabel : undefined"
+        [ctaRoute]="canWrite() ? ['/votes', 'create'] : undefined"
+        data-testid="votes-empty-state-card">
+      </lfx-empty-state>
+    } @else {
+      <lfx-votes-table
+        [votes]="isMeLens() ? filteredMyVotes() : votes()"
+        [hasPMOAccess]="!isMeLens() && canWrite()"
+        [loading]="isMeLens() ? myVotesLoading() : loading()"
+        [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
+        [rowsPerPage]="rowsPerPage()"
+        [first]="isMeLens() ? 0 : currentFirst()"
+        [lazy]="!isMeLens()"
+        [groupOptions]="groupOptions()"
+        [foundationOptions]="foundationOptions()"
+        [projectOptions]="projectOptions()"
+        [showFoundationFilter]="showFoundationFilter()"
+        [showProjectFilter]="showProjectFilter()"
+        (foundationFilterChange)="onFoundationFilterChange($event)"
+        (projectFilterChange)="onProjectFilterChange($event)"
+        (viewVote)="onViewVote($event)"
+        (viewResults)="onViewResults($event)"
+        (refresh)="refreshVotes()"
+        (pageChange)="onPageChange($event)"
+        (filtersChange)="onFiltersChange($event)"
+        data-testid="votes-table-container">
+      </lfx-votes-table>
+    }
   }
 </div>
 
