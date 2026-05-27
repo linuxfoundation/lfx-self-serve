@@ -3,6 +3,7 @@
 
 import { Router } from 'express';
 
+import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
@@ -16,6 +17,21 @@ const orgLensMembershipsController = new OrgLensMembershipsController();
 const orgLensBoardCommitteeController = new OrgLensBoardCommitteeController();
 const orgLensDocumentsController = new OrgLensDocumentsController();
 const orgLensPeopleController = new OrgLensPeopleController();
+const orgIdentityController = new OrgIdentityController();
+
+// Spec 020 — org-selector identity & role-grants endpoints. The role-grants and
+// explicit uid/sfid routes MUST be registered BEFORE the polymorphic /:id route
+// and BEFORE the legacy /:accountId/lens/* routes so Express path-to-regexp
+// matches the more-specific shapes first.
+
+// GET /api/orgs/me/role-grants
+router.get('/me/role-grants', (req, res, next) => orgIdentityController.getRoleGrants(req, res, next));
+
+// GET /api/orgs/uid/:uid — canonical record by b2b_org.uid
+router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
+
+// GET /api/orgs/sfid/:accountId — canonical record by legacy Salesforce account id
+router.get('/sfid/:accountId', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
 
 // GET /api/orgs/:accountId/lens/foundations-and-projects
 router.get('/:accountId/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
@@ -50,5 +66,11 @@ router.get('/:accountId/lens/memberships/:foundationId/documents', (req, res, ne
 router.get('/:accountId/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
 // GET /api/orgs/:accountId/lens/people/:personKey/detail
 router.get('/:accountId/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
+
+// Spec 020 — polymorphic canonical-record route (UUID-detection inside controller).
+// MUST be registered LAST so the more-specific /uid/:uid, /sfid/:accountId, and
+// /:accountId/lens/* routes match first under Express path-to-regexp ordering.
+// GET /api/orgs/:id
+router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
 
 export default router;

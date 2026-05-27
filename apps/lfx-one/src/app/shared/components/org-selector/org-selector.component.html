@@ -7,22 +7,34 @@
   (click)="togglePanel($event, popover)"
   [attr.aria-expanded]="popover.overlayVisible"
   data-testid="org-selector">
-  <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200">
+  <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
     <div class="flex items-center justify-center size-full p-1.5">
       @if (displayLogo()) {
-        <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
+        <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
       } @else {
-        <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true"></i>
+        <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
       }
     </div>
   </div>
 
-  <div class="flex flex-col gap-0.5 grow items-start relative min-w-0 overflow-hidden">
-    <p class="sidebar-org-name" [attr.title]="displayName()">{{ displayName() }}</p>
-    <span class="text-xs font-normal text-gray-400 leading-none">Organization</span>
+  <div class="flex flex-col gap-1 grow items-start relative min-w-0 overflow-hidden">
+    <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
+    @if (selectedRoleLabel()) {
+      <span
+        [attr.aria-label]="'Role: ' + selectedRoleLabel()"
+        class="inline-flex items-center gap-1.5 max-w-full px-2.5 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700 text-xs font-medium leading-tight truncate"
+        data-testid="org-selector-trigger-role-badge"
+        [attr.data-role-persona]="selectedRolePersona()"
+        [attr.data-role-label]="selectedRoleLabel()">
+        <i [ngClass]="selectedRoleIcon()" class="text-[10px] shrink-0" aria-hidden="true"></i>
+        <span class="truncate">{{ selectedRoleLabel() }}</span>
+      </span>
+    } @else {
+      <span class="text-xs font-normal text-gray-400 leading-none truncate" data-testid="org-selector-trigger-lens-label">Organization</span>
+    }
   </div>
 
-  <i class="fa-light fa-angles-up-down shrink-0 text-gray-400" aria-hidden="true"></i>
+  <i class="fa-light fa-angles-up-down shrink-0 text-gray-400" aria-hidden="true" data-testid="org-selector-trigger-chevron"></i>
 </button>
 
 <p-popover
@@ -33,47 +45,99 @@
   (onShow)="onPopoverShow()"
   (onHide)="onPopoverHide()"
   data-testid="org-selector-panel">
-  <div class="p-1">
+  <div class="p-1" data-testid="org-selector-panel-body">
     <div class="relative mb-2">
-      <i class="fa-light fa-search absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+      <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
       <input
         [pAutoFocus]="true"
         pInputText
         type="text"
         [formControl]="searchControl"
         placeholder="Search organizations..."
-        class="pl-10 h-9 w-full text-sm bg-gray-50"
-        data-testid="org-selector-search-input" />
+        class="pl-10 h-9 w-full text-sm !border-0 !bg-transparent !shadow-none focus:!ring-0"
+        data-testid="org-search-input" />
     </div>
 
-    <div class="max-h-[400px] overflow-y-auto">
-      @for (account of visibleAccounts(); track account.accountId) {
-        <button
-          type="button"
-          class="flex items-center gap-3 p-2 w-full text-left hover:bg-gray-100 rounded-lg transition-colors"
-          [class.bg-blue-50]="selectedAccountId() === account.accountId"
-          (click)="selectItem(account, popover)"
-          [attr.data-testid]="'org-selector-item-' + (account.accountSlug || account.accountId)">
-          <div class="bg-gray-100 overflow-clip rounded-lg shrink-0 size-9 border border-gray-200">
-            <div class="flex items-center justify-center size-full p-1.5">
-              @if (account.logoUrl) {
-                <img [alt]="account.accountName" class="w-full h-full object-contain" [src]="account.logoUrl" />
-              } @else {
-                <i class="fa-light fa-building text-gray-500" aria-hidden="true"></i>
+    <div
+      class="max-h-[400px] overflow-y-auto"
+      data-testid="org-selector-list"
+      [attr.data-item-count]="displayedItems().length"
+      [attr.data-has-more]="hasMore()"
+      [attr.data-loading]="loading()">
+      @for (displayItem of displayedItems(); track displayItem.item.uid; let i = $index) {
+        <!-- Auto-load sentinel 8 items from the end -->
+        @if (i === autoLoadTriggerIndex() && hasMore()) {
+          @defer (on viewport) {
+            <div lfxOnRender (rendered)="loadMore()" class="h-0 w-full" aria-hidden="true" data-testid="org-selector-load-sentinel"></div>
+          } @placeholder {
+            <div class="h-0 w-full" aria-hidden="true" data-testid="org-selector-load-sentinel-placeholder"></div>
+          }
+        }
+
+        <div class="mb-1">
+          <button
+            type="button"
+            class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors"
+            [class.bg-blue-50]="displayItem.isSelected"
+            [class.hover:bg-gray-100]="!displayItem.isSelected"
+            (click)="selectItem(displayItem.item, popover)"
+            [attr.data-testid]="'org-item-' + displayItem.item.uid"
+            [attr.data-selected]="displayItem.isSelected"
+            [attr.data-account-id]="displayItem.item.accountId">
+            <div
+              class="bg-gray-100 overflow-clip rounded-lg shrink-0 size-9 border border-gray-200"
+              [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo'">
+              <div class="flex items-center justify-center size-full p-1.5">
+                @if (displayItem.item.logoUrl) {
+                  <img
+                    [alt]="displayItem.item.name"
+                    class="w-full h-full object-contain"
+                    [src]="displayItem.item.logoUrl"
+                    [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo-image'" />
+                } @else {
+                  <i
+                    class="fa-light fa-building text-gray-500"
+                    aria-hidden="true"
+                    [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo-fallback'"></i>
+                }
+              </div>
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-sm text-gray-900 mb-0 truncate" [attr.data-testid]="'org-item-' + displayItem.item.uid + '-name'">
+                {{ displayItem.item.name }}
+              </p>
+              @if (displayItem.roleLabel) {
+                <span
+                  class="inline-flex items-center gap-1.5 mt-1 max-w-full px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700 text-xs font-medium leading-tight truncate"
+                  [attr.data-testid]="'org-item-' + displayItem.item.uid + '-role-badge'"
+                  [attr.data-role-label]="displayItem.roleLabel">
+                  <i [ngClass]="displayItem.roleIcon" class="text-[10px] shrink-0" aria-hidden="true"></i>
+                  <span class="truncate">{{ displayItem.roleLabel }}</span>
+                </span>
               }
             </div>
-          </div>
 
-          <div class="flex-1 min-w-0">
-            <p class="font-medium text-sm text-gray-900 mb-0">{{ account.accountName }}</p>
-          </div>
-
-          @if (selectedAccountId() === account.accountId) {
-            <i class="fa-solid fa-check text-blue-600 text-sm" aria-hidden="true"></i>
-          }
-        </button>
+            <i
+              class="fa-light fa-check text-blue-500 shrink-0 transition-opacity"
+              [class.opacity-100]="displayItem.isSelected"
+              [class.opacity-0]="!displayItem.isSelected"
+              [attr.aria-label]="displayItem.isSelected ? 'Selected' : null"
+              [attr.aria-hidden]="!displayItem.isSelected"
+              [attr.data-testid]="'org-item-' + displayItem.item.uid + '-check'"></i>
+          </button>
+        </div>
       } @empty {
-        <div class="text-center py-8 text-gray-500 text-sm">No organizations found</div>
+        @if (!loading()) {
+          <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">No organizations found</div>
+        }
+      }
+
+      @if (loading()) {
+        <div class="flex items-center justify-center py-3 text-gray-500 text-sm gap-2" data-testid="org-selector-loading">
+          <i class="fa-light fa-spinner fa-spin"></i>
+          <span>Loading...</span>
+        </div>
       }
     </div>
   </div>

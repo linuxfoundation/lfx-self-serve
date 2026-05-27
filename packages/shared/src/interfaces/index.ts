@@ -105,6 +105,9 @@ export * from './lens.interface';
 // Navigation interfaces
 export * from './navigation.interface';
 
+// Org selector (spec 020) — paginated FGA-filtered org list + role grants + canonical record
+export * from './org-selector.interface';
+
 // Persona detection interfaces
 export * from './persona-detection.interface';
 

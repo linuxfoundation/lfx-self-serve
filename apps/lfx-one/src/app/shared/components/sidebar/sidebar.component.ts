@@ -9,11 +9,14 @@ import { BadgeComponent } from '@components/badge/badge.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import { ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -49,16 +52,25 @@ export class SidebarComponent {
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
   private readonly userService = inject(UserService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly accountContextService = inject(AccountContextService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
+  /** Parent lens hint for the org-selector slot; ANDed with the flag + grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
   public readonly showOrgSelector = input<boolean>(false);
   public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
   public readonly selectorPanelOpen = model<boolean>(false);
+
+  /** Final org-selector visibility — `parent input ∧ flag ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
+  protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
+
+  private readonly orgLensFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
@@ -107,6 +119,19 @@ export class SidebarComponent {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
     }
+  }
+
+  private initEffectiveShowOrgSelector(): Signal<boolean> {
+    return computed<boolean>(() => {
+      if (!this.showOrgSelector()) return false;
+      if (!this.orgLensFlag()) return false;
+      if (this.orgRoleGrantsService.writerSet().size > 0) return true;
+      if (this.orgRoleGrantsService.auditorSet().size > 0) return true;
+      // Persona-seeds fallback per D-005 — keeps the selector visible for users on
+      // dev sandbox accounts that have a persona-seeded org list but no
+      // settings-doc grants in the upstream b2b_org_settings docs.
+      return this.accountContextService.availableAccounts().length > 0;
+    });
   }
 
   private initNavLens(): Signal<NavLens | null> {

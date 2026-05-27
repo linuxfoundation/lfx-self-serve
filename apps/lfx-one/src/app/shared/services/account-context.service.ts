@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ACCOUNT_COOKIE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { Account, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
+import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 
 import { AnalyticsService } from './analytics.service';
@@ -26,7 +28,11 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly http = inject(HttpClient);
   private readonly storageKey = ACCOUNT_COOKIE_KEY;
+
+  /** Request-scope dedup (spec 020 D-006) — concurrent calls for the same uid share one in-flight promise; cleared on settle. */
+  private readonly canonicalFetchInFlight = new Map<string, Promise<void>>();
 
   /** Persona-authorised accounts seeded at bootstrap; enriched from Snowflake via getOrgLensAccountContext. */
   private readonly userOrganizations: WritableSignal<Account[]> = signal<Account[]>([]);
@@ -70,7 +76,6 @@ export class AccountContextService {
 
     if (seeds.length === 0) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
-      this.clearStorage();
       return;
     }
 
@@ -92,6 +97,73 @@ export class AccountContextService {
 
   public getAccountId(): string {
     return this.selectedAccount().accountId;
+  }
+
+  public getStoredAccountId(): string | null {
+    return this.loadAccountIdFromStorage();
+  }
+
+  public clearAccount(): void {
+    this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
+    this.clearStorage();
+  }
+
+  /** Async reconciliation of the optimistic indexed snapshot against the member-service canonical record (spec 020 US4 / FR-020); silent on failure with request-scope dedup per D-006. */
+  public async refreshCanonicalRecord(account: Account): Promise<void> {
+    const identifier = account.uid || account.accountId;
+    if (!identifier) {
+      return;
+    }
+    const cached = this.canonicalFetchInFlight.get(identifier);
+    if (cached) {
+      return cached;
+    }
+
+    const path = account.uid ? `/api/orgs/uid/${encodeURIComponent(account.uid)}` : `/api/orgs/sfid/${encodeURIComponent(account.accountId)}`;
+
+    const promise = (async () => {
+      try {
+        const canonical = await firstValueFrom(this.http.get<OrgCanonicalRecord>(path).pipe(take(1)));
+        this.applyCanonicalRecord(canonical);
+      } catch (error) {
+        // FR-020 — no user-facing toast; the indexed snapshot stays. Surface to console
+        // for dev triage; BFF logs already carry the structured warning.
+        console.warn('[AccountContextService] Canonical-record fetch failed; keeping indexed snapshot', {
+          error,
+          uid: account.uid,
+          accountId: account.accountId,
+        });
+      } finally {
+        this.canonicalFetchInFlight.delete(identifier);
+      }
+    })();
+
+    this.canonicalFetchInFlight.set(identifier, promise);
+    return promise;
+  }
+
+  private applyCanonicalRecord(canonical: OrgCanonicalRecord): void {
+    const current = this.selectedAccount();
+    // Only patch when the canonical record corresponds to the still-selected org —
+    // a user that switches selection mid-flight should not have a stale canonical
+    // response clobber the new selection.
+    const matchesByUid = !!canonical.uid && canonical.uid === current.uid;
+    const matchesByAccountId = !!canonical.accountId && canonical.accountId === current.accountId;
+    if (!matchesByUid && !matchesByAccountId) {
+      return;
+    }
+    const next: Account = {
+      ...current,
+      accountId: canonical.accountId ?? current.accountId,
+      accountName: canonical.name ?? current.accountName,
+      logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
+      uid: canonical.uid ?? current.uid ?? null,
+      parentUid: canonical.parentUid ?? current.parentUid ?? null,
+    };
+    this.selectedAccount.set(next);
+    // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
+    // but covers the edge case where the indexed snapshot had a stale or null accountId).
+    this.persistToStorage(next);
   }
 
   private refreshFromSnowflake(accountIds: string[]): void {

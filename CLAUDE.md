@@ -296,6 +296,10 @@ When the work is "done" — no more code commits planned:
 
 After `/compact`, re-invoke `/develop` or the relevant convention skill if continuing work that depends on it.
 
+## Recent Specs
+
+- **020-org-selector-integration** — Replaces the persona-seeded `lfx-org-selector` with a paginated, FGA-filtered list from the query-service (`GET /api/nav/org-items`), adds session-cached role-grants (`GET /api/orgs/me/role-grants`) for per-row writer/auditor badges, and reconciles the selected org against the member-service canonical record on selection (`GET /api/orgs/uid/:uid` polymorphic). Sidebar trigger visibility is gated on `flag && (roleGrants > 0 || personaSeeds > 0)`. Cookie schema unchanged (`lfx-selected-account` still stores legacy `accountId`).
+
 ## What NOT to do
 
 - ❌ Edit a file without re-reading it if 5+ turns have passed

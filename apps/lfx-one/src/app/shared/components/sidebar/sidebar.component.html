@@ -30,8 +30,12 @@
       }
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
-      <div class="px-4 mb-6 w-full" [class.hidden]="!showOrgSelector()">
-        <lfx-org-selector [(isPanelOpen)]="selectorPanelOpen"></lfx-org-selector>
+      <div
+        class="px-4 mb-6 w-full"
+        [class.hidden]="!effectiveShowOrgSelector()"
+        data-testid="org-selector-slot"
+        [attr.data-visible]="effectiveShowOrgSelector()">
+        <lfx-org-selector [(isPanelOpen)]="selectorPanelOpen" [enabled]="effectiveShowOrgSelector()"></lfx-org-selector>
       </div>
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
