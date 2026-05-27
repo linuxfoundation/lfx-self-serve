@@ -24,13 +24,14 @@ export class VoteController {
     });
 
     try {
-      const votes = await this.voteService.getVotes(req, req.query as Record<string, any>);
+      const { data: votes, page_token } = await this.voteService.getVotes(req, req.query as Record<string, any>);
 
       logger.success(req, 'get_votes', startTime, {
         vote_count: votes.length,
+        has_more_pages: !!page_token,
       });
 
-      res.json({ data: votes });
+      res.json({ data: votes, page_token });
     } catch (error) {
       next(error);
     }

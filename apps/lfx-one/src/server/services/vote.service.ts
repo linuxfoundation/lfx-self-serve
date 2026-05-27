@@ -8,6 +8,7 @@ import {
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
+  PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateVoteRequest,
@@ -37,36 +38,34 @@ export class VoteService {
   }
 
   /**
-   * Fetches all votes based on query parameters
+   * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<Vote[]> {
+  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
-    const queryFilters = { ...query };
-    delete queryFilters['page_token'];
-    delete queryFilters['page_size'];
-
     const params = {
-      ...queryFilters,
+      ...query,
       type: 'vote',
     };
 
-    const rawVotes = await fetchAllQueryResources<IndexedVote>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
     );
 
-    const votes = rawVotes.map((v) => this.normalizeIndexedVote(req, v));
+    const votes = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,
+      has_more_pages: !!page_token,
     });
 
-    return votes;
+    return { data: votes, page_token };
   }
 
   /**

@@ -54,6 +54,10 @@ export class VoteService {
   ): Observable<PaginatedResponse<Vote>> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 
+    if (pageSize) {
+      params = params.set('page_size', pageSize.toString());
+    }
+
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -92,7 +96,8 @@ export class VoteService {
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
   public getVotesByCommittee(committeeUid: string, orderBy?: string): Observable<Vote[]> {
-    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
+    // page_size=100 keeps the drain-all UX after VoteService.getVotes switched to single-page; committees over 100 are out of scope (LFXV2-1969).
+    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', '100');
 
     if (orderBy) {
       params = params.set('order', orderBy);

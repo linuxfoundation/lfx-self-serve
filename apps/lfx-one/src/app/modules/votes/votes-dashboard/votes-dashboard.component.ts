@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -43,6 +43,7 @@ export class VotesDashboardComponent {
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
@@ -98,6 +99,18 @@ export class VotesDashboardComponent {
     return !!(f.search?.trim() || f.status || f.group);
   });
 
+  // Lens-change pagination reset is independent of the data-fetch pipelines so it fires for every lens emission, not just Me-lens loads.
+  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and stop at the page-token guard.
+  public constructor() {
+    toObservable(this.lensService.activeLens)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.pageTokens = [];
+        this.currentFirst.set(0);
+        this.fetch$.next();
+      });
+  }
+
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
 
@@ -147,11 +160,15 @@ export class VotesDashboardComponent {
   }
 
   protected onFoundationFilterChange(value: string | null): void {
+    this.pageTokens = [];
+    this.currentFirst.set(0);
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
   }
 
   protected onProjectFilterChange(value: string | null): void {
+    this.pageTokens = [];
+    this.currentFirst.set(0);
     this.projectFilter.set(value);
   }
 

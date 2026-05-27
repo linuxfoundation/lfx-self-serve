@@ -46,7 +46,7 @@
         [loading]="isMeLens() ? myVotesLoading() : loading()"
         [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
         [rowsPerPage]="rowsPerPage()"
-        [first]="isMeLens() ? 0 : currentFirst()"
+        [first]="currentFirst()"
         [lazy]="!isMeLens()"
         [groupOptions]="groupOptions()"
         [foundationOptions]="foundationOptions()"
