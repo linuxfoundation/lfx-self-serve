@@ -17,7 +17,7 @@ export interface FundingStatus {
   totalSubscriptionCount?: number;
 }
 
-/** Core initiative fields as returned by the crowdfunding API. */
+/** Core initiative fields as returned by the LFX One server (normalized from the upstream crowdfunding service). */
 export interface InitiativeBase {
   id: string;
   slug: string;
