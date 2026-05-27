@@ -117,6 +117,7 @@ export class SidebarComponent {
     const { itemsRef, overrides } = this.expandedGroupOverrides();
     const effectiveOverrides = itemsRef === items ? overrides : {};
     const states: Record<string, boolean> = {};
+    // Group expansion is keyed by item.label — group labels must be unique within a single sidebar items tree.
     const scanForGroups = (candidates: SidebarMenuItem[]) => {
       for (const item of candidates) {
         if (item.isGroup) {
