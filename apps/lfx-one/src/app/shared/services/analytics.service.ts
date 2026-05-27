@@ -71,6 +71,7 @@ import {
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
+import { HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { catchError, Observable, of, shareReplay } from 'rxjs';
 
 /**
@@ -1002,20 +1003,7 @@ export class AnalyticsService {
     if (range && range !== 'YTD') {
       params['range'] = range;
     }
-    return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(
-      catchError(() => {
-        return of({
-          projectId: '',
-          npsScore: 0,
-          promoters: 0,
-          passives: 0,
-          detractors: 0,
-          nonResponses: 0,
-          responses: 0,
-          lastUpdatedLabel: 'N/A',
-        });
-      })
-    );
+    return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(catchError(() => of(HEALTH_METRICS_NPS_DEFAULT_SUMMARY)));
   }
 
   /**

@@ -7,7 +7,16 @@
     <div class="flex flex-col">
       <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Net Promoter Score</h3>
       @if (hasData()) {
-        <span class="text-xs text-gray-500">Last Updated: {{ summaryData().lastUpdatedLabel }}</span>
+        @if (summaryData().periodLabel) {
+          <div class="flex items-center gap-2">
+            <span class="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700" data-testid="nps-card-period-label">{{
+              summaryData().periodLabel
+            }}</span>
+            <span class="text-xs text-gray-500">Last Updated: {{ summaryData().lastUpdatedLabel }}</span>
+          </div>
+        } @else {
+          <span class="text-xs text-gray-500">Last Updated: {{ summaryData().lastUpdatedLabel }}</span>
+        }
       }
     </div>
     @if (hasData()) {
