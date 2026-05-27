@@ -24,6 +24,7 @@ import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
@@ -33,7 +34,16 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ButtonComponent, CardComponent, MailingListTableComponent, ReactiveFormsModule, EmptyStateComponent, StatCardGridComponent, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    MailingListTableComponent,
+    ReactiveFormsModule,
+    EmptyStateComponent,
+    StatCardGridComponent,
+    SkeletonModule,
+    OpenIntercomDirective,
+  ],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })

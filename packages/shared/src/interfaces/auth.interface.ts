@@ -15,6 +15,8 @@ export interface User {
   sid: string;
   /** LFX SSO username claim (namespaced) */
   'https://sso.linuxfoundation.org/claims/username': string;
+  /** Intercom user JWT minted by Auth0 for identity verification (namespaced claim) */
+  'http://lfx.dev/claims/intercom'?: string;
   /** User's first name from profile */
   given_name: string;
   /** User's last name from profile */

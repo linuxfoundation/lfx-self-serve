@@ -38,4 +38,16 @@ export class DataDogRumService {
 
     datadogRum.clearUser();
   }
+
+  /**
+   * Emit a custom error to RUM with optional context tags.
+   * No-op on the server.
+   */
+  public addError(error: Error, context?: Record<string, unknown>): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    datadogRum.addError(error, context);
+  }
 }

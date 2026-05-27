@@ -33,14 +33,14 @@
         class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
         <i class="fa-light fa-user text-sm"></i>
       </a>
-      <a
-        href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        lfxOpenIntercom
+        aria-label="Open support chat"
         data-testid="lens-mobile-support"
         class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
         <i class="fa-light fa-question-circle text-sm"></i>
-      </a>
+      </button>
       <a
         href="/logout"
         data-testid="lens-mobile-logout"
@@ -184,15 +184,15 @@
           <i class="fa-light fa-user w-4 text-gray-400"></i>
           <span>My profile</span>
         </button>
-        <a
-          href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          lfxOpenIntercom
+          (click)="userMenu.hide()"
           data-testid="lens-support"
-          class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
           <i class="fa-light fa-question-circle w-4 text-gray-400"></i>
           <span>Support</span>
-        </a>
+        </button>
       </div>
 
       <!-- Sign out -->
