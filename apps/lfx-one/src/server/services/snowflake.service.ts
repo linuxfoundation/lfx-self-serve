@@ -11,8 +11,8 @@ import {
 } from '@opentelemetry/semantic-conventions';
 import { ATTR_DB_RESPONSE_RETURNED_ROWS } from '@opentelemetry/semantic-conventions/incubating';
 import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
-import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
-import { LockStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
+import { SnowflakeCircuitState, SnowflakeLockStrategy } from '@lfx-one/shared/enums';
+import { LockStats, SnowflakeCircuitStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
@@ -40,6 +40,14 @@ export class SnowflakeService {
   private pool: Pool<Connection> | null = null;
   private poolPromise: Promise<Pool<Connection>> | null = null;
   private lockManager: LockManager;
+
+  // === Circuit Breaker ===
+  private circuitState: SnowflakeCircuitState = SnowflakeCircuitState.CLOSED;
+  private consecutiveFailures = 0;
+  private lastFailureTime = 0;
+  // True while a HALF_OPEN probe is in-flight; subsequent requests fail fast
+  // rather than stampeding Snowflake with multiple concurrent probes.
+  private probeInFlight = false;
 
   /**
    * Get the singleton instance of SnowflakeService
@@ -93,6 +101,9 @@ export class SnowflakeService {
     // Validate that query is read-only
     this.validateReadOnlyQuery(sqlText);
 
+    // Fail fast if the circuit is OPEN (Snowflake is known to be unreachable)
+    this.checkCircuit();
+
     // Generate query hash for deduplication
     const queryHash = this.lockManager.hashQuery(sqlText, binds);
 
@@ -119,39 +130,67 @@ export class SnowflakeService {
             query_hash: queryHash,
             sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
             bind_count: binds?.length || 0,
+            circuit_state: this.circuitState,
           });
 
           const startTime = Date.now();
-          const pool = await this.ensurePool();
 
           try {
-            // Execute query with parameterized binds
-            const result: any = await new Promise((resolve, reject) => {
-              pool.use(async (connection: Connection) => {
-                connection.execute({
-                  sqlText,
-                  binds: binds as any[],
-                  fetchAsString: options?.fetchAsString,
-                  complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
-                    if (err) {
-                      reject(err);
-                    } else {
-                      resolve({
-                        rows,
-                        metadata: stmt.getColumns(),
-                        statementHandle: stmt.getQueryId(),
-                      });
-                    }
-                  },
-                });
-              });
+            // ensurePool is inside try so a pool-creation failure during a HALF_OPEN
+            // probe is caught by the catch below and calls recordFailure(), preventing
+            // probeInFlight from getting stuck.
+            const pool = await this.ensurePool();
+            const queryTimeoutMs = options?.timeout ?? SNOWFLAKE_CONFIG.DEFAULT_QUERY_TIMEOUT;
+
+            // Race the full pool.use() + query execution against a per-query timeout.
+            // This bounds event-loop exposure to a slow/unresponsive Snowflake regardless
+            // of the pool's own acquire timeout — whichever fires first wins.
+            //
+            // The pool.use callback returns a Promise that settles inside the Snowflake
+            // complete callback so generic-pool holds the connection until the statement
+            // finishes, keeping pool accounting (max, maxWaitingClients, acquireTimeout)
+            // accurate for in-flight queries.
+            const executePromise = pool.use(
+              (connection: Connection) =>
+                new Promise<SnowflakeQueryResult<T>>((resolve, reject) => {
+                  connection.execute({
+                    sqlText,
+                    binds: binds as any[],
+                    fetchAsString: options?.fetchAsString,
+                    complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
+                      if (err) {
+                        reject(err);
+                      } else {
+                        resolve({
+                          rows: rows ?? [],
+                          metadata: stmt.getColumns() ?? [],
+                          statementHandle: stmt.getQueryId(),
+                        });
+                      }
+                    },
+                  });
+                })
+            );
+
+            let timeoutHandle: ReturnType<typeof setTimeout>;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              timeoutHandle = setTimeout(() => reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`)), queryTimeoutMs);
             });
+
+            let result: SnowflakeQueryResult<T>;
+            try {
+              result = await Promise.race([executePromise, timeoutPromise]);
+            } finally {
+              clearTimeout(timeoutHandle!);
+            }
 
             const rowCount = Array.isArray(result?.rows) ? result.rows.length : 0;
             const poolStats = this.getPoolStats();
 
             span.setStatus({ code: SpanStatusCode.OK });
             span.setAttribute(ATTR_DB_RESPONSE_RETURNED_ROWS, rowCount);
+
+            this.recordSuccess();
 
             logger.debug(undefined, 'snowflake_query', 'Query completed', {
               query_hash: queryHash,
@@ -161,7 +200,7 @@ export class SnowflakeService {
               pool_idle: poolStats.idleConnections,
             });
 
-            return result as SnowflakeQueryResult<T>;
+            return result;
           } catch (error) {
             span.setStatus({
               code: SpanStatusCode.ERROR,
@@ -169,9 +208,13 @@ export class SnowflakeService {
             });
             span.recordException(error instanceof Error ? error : new Error(String(error)));
 
+            this.recordFailure();
+
             logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
               query_hash: queryHash,
               sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+              circuit_state: this.circuitState,
+              consecutive_failures: this.consecutiveFailures,
             });
 
             // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
@@ -232,6 +275,23 @@ export class SnowflakeService {
    */
   public getLockStats(): LockStats {
     return this.lockManager.getStats();
+  }
+
+  /**
+   * Get circuit breaker statistics for observability
+   */
+  public getCircuitStats(): SnowflakeCircuitStats {
+    const msUntilProbe =
+      this.circuitState === SnowflakeCircuitState.OPEN
+        ? Math.max(0, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - (Date.now() - this.lastFailureTime))
+        : 0;
+
+    return {
+      state: this.circuitState,
+      consecutiveFailures: this.consecutiveFailures,
+      lastFailureTime: this.lastFailureTime,
+      msUntilProbe,
+    };
   }
 
   /**
@@ -406,6 +466,90 @@ export class SnowflakeService {
         },
         originalError: error instanceof Error ? error : undefined,
       });
+    }
+  }
+
+  /**
+   * Throw immediately if the circuit is OPEN and the reset timeout hasn't elapsed.
+   * Transitions OPEN → HALF_OPEN once the timeout passes, allowing one probe query.
+   * @private
+   */
+  private checkCircuit(): void {
+    if (this.circuitState === SnowflakeCircuitState.OPEN) {
+      const elapsed = Date.now() - this.lastFailureTime;
+      if (elapsed < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS) {
+        const secondsLeft = Math.ceil((SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - elapsed) / 1000);
+        throw new MicroserviceError(`Snowflake circuit breaker OPEN — retrying in ${secondsLeft}s`, 503, 'SNOWFLAKE_CIRCUIT_OPEN', {
+          operation: 'circuit_breaker_check',
+          service: 'snowflake',
+          errorBody: {
+            state: this.circuitState,
+            consecutive_failures: this.consecutiveFailures,
+            seconds_until_probe: secondsLeft,
+          },
+        });
+      }
+      this.circuitState = SnowflakeCircuitState.HALF_OPEN;
+      logger.info(undefined, 'snowflake_circuit_breaker', 'Circuit transitioned to HALF_OPEN — probing connection', {
+        consecutive_failures: this.consecutiveFailures,
+      });
+    }
+
+    // Allow only one concurrent probe in HALF_OPEN — reject additional callers until
+    // the in-flight probe settles so we don't stampede Snowflake during recovery.
+    if (this.circuitState === SnowflakeCircuitState.HALF_OPEN && this.probeInFlight) {
+      throw new MicroserviceError('Snowflake circuit breaker HALF_OPEN — probe already in flight', 503, 'SNOWFLAKE_CIRCUIT_OPEN', {
+        operation: 'circuit_breaker_check',
+        service: 'snowflake',
+        errorBody: { state: this.circuitState },
+      });
+    }
+
+    if (this.circuitState === SnowflakeCircuitState.HALF_OPEN) {
+      this.probeInFlight = true;
+    }
+  }
+
+  /**
+   * Record a successful query — close the circuit if it was HALF_OPEN.
+   * @private
+   */
+  private recordSuccess(): void {
+    if (this.circuitState !== SnowflakeCircuitState.CLOSED) {
+      logger.info(undefined, 'snowflake_circuit_breaker', 'Circuit closed — Snowflake connection recovered', {
+        consecutive_failures: this.consecutiveFailures,
+      });
+    }
+    this.consecutiveFailures = 0;
+    this.probeInFlight = false;
+    this.circuitState = SnowflakeCircuitState.CLOSED;
+  }
+
+  /**
+   * Record a failed query — open the circuit after reaching the failure threshold,
+   * or immediately if the circuit was already HALF_OPEN (probe failed).
+   * @private
+   */
+  private recordFailure(): void {
+    this.consecutiveFailures++;
+    this.lastFailureTime = Date.now();
+    this.probeInFlight = false;
+
+    const shouldOpen = this.circuitState === SnowflakeCircuitState.HALF_OPEN || this.consecutiveFailures >= SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+
+    if (shouldOpen) {
+      this.circuitState = SnowflakeCircuitState.OPEN;
+      logger.error(
+        undefined,
+        'snowflake_circuit_breaker',
+        this.lastFailureTime,
+        new Error('Snowflake circuit breaker OPENED — failing fast until recovery probe succeeds'),
+        {
+          consecutive_failures: this.consecutiveFailures,
+          threshold: SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+          reset_timeout_ms: SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+        }
+      );
     }
   }
 

@@ -6,9 +6,12 @@
  */
 export const SNOWFLAKE_CONFIG = {
   /**
-   * Default query execution timeout in milliseconds
+   * Per-query execution timeout in milliseconds.
+   * Covers both pool acquisition wait and query execution time.
+   * Reduced from 60s to 15s so a single slow query fails fast instead of
+   * tying up the event loop and downstream callers.
    */
-  DEFAULT_QUERY_TIMEOUT: 60000, // 60 seconds
+  DEFAULT_QUERY_TIMEOUT: 15000, // 15 seconds
 
   /**
    * Connection timeout in milliseconds
@@ -16,9 +19,11 @@ export const SNOWFLAKE_CONFIG = {
   CONNECTION_TIMEOUT: 30000, // 30 seconds
 
   /**
-   * Minimum number of connections in the pool
+   * Minimum connections kept warm in the pool.
+   * Set to 0 so the pool only creates connections on demand — no eager
+   * warm-up attempts at server start when Snowflake may be unreachable.
    */
-  MIN_CONNECTIONS: 2,
+  MIN_CONNECTIONS: 0,
 
   /**
    * Maximum number of connections in the pool
@@ -26,14 +31,18 @@ export const SNOWFLAKE_CONFIG = {
   MAX_CONNECTIONS: 20,
 
   /**
-   * Maximum number of clients waiting when pool is exhausted
+   * Maximum requests queued when the pool is exhausted.
+   * Reduced from 50 to 10 so the server fails fast under sustained Snowflake
+   * outages instead of holding 50 requests for up to 30s each.
    */
-  MAX_WAITING_CLIENTS: 50,
+  MAX_WAITING_CLIENTS: 10,
 
   /**
-   * Timeout for acquiring a connection from the pool in milliseconds
+   * Timeout for acquiring a connection from the pool in milliseconds.
+   * Halved from 30s to 15s — pairs with DEFAULT_QUERY_TIMEOUT so the
+   * total worst-case per-request wait stays bounded at ~15s.
    */
-  CONNECTION_ACQUIRE_TIMEOUT: 30000, // 30 seconds
+  CONNECTION_ACQUIRE_TIMEOUT: 15000, // 15 seconds
 
   /**
    * Idle timeout for connections in milliseconds
@@ -59,6 +68,19 @@ export const SNOWFLAKE_CONFIG = {
    * Maximum number of retry attempts for transient failures
    */
   MAX_RETRIES: 3,
+
+  /**
+   * Number of consecutive failures before the circuit breaker opens.
+   * Once open, all Snowflake calls fail immediately (503) without attempting
+   * a connection, preventing event-loop saturation during outages.
+   */
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5,
+
+  /**
+   * How long the circuit stays OPEN before allowing a probe request (HALF_OPEN).
+   * If the probe succeeds the circuit closes; if it fails the timer resets.
+   */
+  CIRCUIT_BREAKER_RESET_TIMEOUT_MS: 60000, // 60 seconds
 } as const;
 
 /**
