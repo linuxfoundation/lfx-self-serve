@@ -16,10 +16,8 @@ export class NewsletterPreviewDrawerComponent {
   // === Inputs (pass-through to the preview component) ===
   public readonly subject = input.required<string>();
   public readonly bodyHtml = input.required<string>();
-  public readonly edName = input.required<string>();
   public readonly logoUrl = input<string | undefined>(undefined);
   public readonly displayName = input.required<string>();
-  public readonly edReplyEmail = input.required<string>();
 
   // === Model Signals (two-way) ===
   public readonly visible = model<boolean>(false);

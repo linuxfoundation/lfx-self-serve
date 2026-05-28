@@ -34,7 +34,6 @@ export interface NewsletterTestSendPayload {
   toEmail: string;
   contextType: NewsletterContextType;
   contextUid: string;
-  edReplyEmail: string;
 }
 
 export interface NewsletterSendPayload {

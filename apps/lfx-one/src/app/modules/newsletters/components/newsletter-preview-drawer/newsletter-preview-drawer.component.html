@@ -26,14 +26,7 @@
   </ng-template>
 
   <div class="bg-slate-100 py-6 px-2 min-h-full" data-testid="newsletter-preview-drawer-body">
-    <lfx-newsletter-preview
-      [subject]="subject()"
-      [bodyHtml]="bodyHtml()"
-      [edName]="edName()"
-      [logoUrl]="logoUrl()"
-      [displayName]="displayName()"
-      [edReplyEmail]="edReplyEmail()">
-    </lfx-newsletter-preview>
+    <lfx-newsletter-preview [subject]="subject()" [bodyHtml]="bodyHtml()" [logoUrl]="logoUrl()" [displayName]="displayName()"> </lfx-newsletter-preview>
   </div>
 
   <ng-template #footer>

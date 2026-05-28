@@ -12,10 +12,8 @@ export class NewsletterPreviewComponent {
   // Inputs
   public readonly subject = input<string>('');
   public readonly bodyHtml = input<string>('');
-  public readonly edName = input<string>('');
   public readonly logoUrl = input<string | undefined>(undefined);
   public readonly displayName = input<string>('');
-  public readonly edReplyEmail = input<string>('');
 
   // Computed
   public readonly hasContent: Signal<boolean> = computed(() => Boolean(this.subject().trim() || this.bodyHtml().trim()));

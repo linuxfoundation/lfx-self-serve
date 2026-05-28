@@ -212,7 +212,6 @@ export class NewsletterManageComponent {
         toEmail: this.edEmail(),
         contextType: this.contextType(),
         contextUid: this.contextUid(),
-        edReplyEmail: this.edEmail(),
       })
       .pipe(
         take(1),

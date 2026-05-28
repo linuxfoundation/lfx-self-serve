@@ -14,29 +14,7 @@
         </div>
       </div>
 
-      <div class="newsletter-preview__from">
-        From <strong>{{ edName() || 'Executive Director' }}</strong>
-      </div>
-
       <div class="newsletter-preview__body" [innerHTML]="bodyHtml()"></div>
-
-      <div class="newsletter-preview__footer">
-        <div class="newsletter-preview__footer-line">
-          Sent by <strong>{{ edName() || 'Executive Director' }}</strong> on behalf of <strong>{{ displayName() || 'Foundation' }}</strong
-          >.
-        </div>
-        <div class="newsletter-preview__footer-line">
-          To reply, email
-          @if (edReplyEmail()) {
-            <a [href]="'mailto:' + edReplyEmail()">{{ edReplyEmail() }}</a>
-          } @else {
-            <span>your ED.</span>
-          }
-        </div>
-        <div class="newsletter-preview__footer-fine">
-          To unsubscribe from {{ displayName() || 'these' }} newsletters, reply with <strong>UNSUBSCRIBE</strong>. Delivered by LFX.
-        </div>
-      </div>
     } @else {
       <div class="newsletter-preview__empty">
         <i class="fa-regular fa-envelope newsletter-preview__empty-icon"></i>
