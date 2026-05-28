@@ -26,6 +26,8 @@ router.put('/:uid/permissions/:username', (req, res, next) => projectController.
 
 router.delete('/:uid/permissions/:username', (req, res, next) => projectController.removeUserFromProjectPermissions(req, res, next));
 
+router.get('/:uid/sfid', (req, res, next) => projectController.getProjectSfid(req, res, next));
+
 // ── Document routes (folders + links + file uploads) ─────────────────────
 router.get('/:uid/documents', (req, res, next) => projectController.getProjectDocuments(req, res, next));
 router.post('/:uid/documents', (req, res, next) => projectController.createProjectDocument(req, res, next));

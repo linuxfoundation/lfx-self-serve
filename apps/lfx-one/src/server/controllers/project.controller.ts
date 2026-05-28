@@ -13,7 +13,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
@@ -131,6 +131,39 @@ export class ProjectController {
       res.json(project);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /projects/:uid/sfid — UUID → Salesforce 18-char ID translation via NATS.
+   * Returns `{ sfid: string | null }`; null on lookup failure so callers can hide cleanly.
+   * Project access is enforced via getProjectById before the NATS mapping (FGA on upstream).
+   */
+  public async getProjectSfid(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_project_sfid', { project_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_project_sfid',
+          service: 'project_controller',
+        })
+      ) {
+        return;
+      }
+
+      await this.projectService.getProjectById(req, uid, false);
+      const sfid = await this.projectService.getProjectSfidByUid(req, uid);
+
+      logger.success(req, 'get_project_sfid', startTime, {
+        project_uid: uid,
+        resolved: sfid != null,
+      });
+
+      res.json({ sfid });
+    } catch (error) {
       next(error);
     }
   }

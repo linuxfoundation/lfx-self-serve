@@ -8,7 +8,7 @@ import { Router } from '@angular/router';
 import { isBoardScopedPersona, ProjectContext } from '@lfx-one/shared/interfaces';
 import { isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, map, of, switchMap } from 'rxjs';
+import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
 import { LensService } from './lens.service';
 import { PersonaService } from './persona.service';
@@ -40,6 +40,9 @@ export class ProjectContextService {
 
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
   public readonly canWrite: Signal<boolean> = this.initCanWrite();
+
+  /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
+  public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
 
   public constructor() {
     // Clean up legacy cookies from the previous cookie-hydrated design.
@@ -142,6 +145,20 @@ export class ProjectContextService {
         })
       ),
       { initialValue: false }
+    );
+  }
+
+  private initSelectedFoundationSfid(): Signal<string | null> {
+    return toSignal(
+      toObservable(this.selectedFoundation).pipe(
+        switchMap((foundation) => {
+          if (!foundation?.uid) {
+            return of(null);
+          }
+          return this.projectService.getProjectSfid(foundation.uid).pipe(startWith(null));
+        })
+      ),
+      { initialValue: null }
     );
   }
 }
