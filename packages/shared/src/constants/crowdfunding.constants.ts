@@ -48,6 +48,18 @@ export const CROWDFUNDING_DONOR_AVATAR_PALETTE: string[] = [
 ];
 
 export const DEFAULT_CROWDFUNDING_PAGE_SIZE = 10;
+
+// Stripe Elements style — hex values required (Stripe does not accept Tailwind classes).
+export const STRIPE_ELEMENT_STYLE = {
+  base: {
+    color: '#0F172A',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: '14px',
+    lineHeight: '20px',
+    '::placeholder': { color: '#94A3B8' },
+  },
+  invalid: { color: '#EF4444' },
+};
 export const EMPTY_INITIATIVES_RESPONSE: InitiativesResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_CROWDFUNDING_STATS: CrowdfundingInitiativesStats = { activeCount: 0, totalRaised: 0, monthlyGain: 0, totalSponsors: 0 };
 

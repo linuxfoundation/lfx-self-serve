@@ -5,7 +5,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError } from '../errors';
+import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -34,6 +34,38 @@ export class CrowdfundingController {
       });
 
       res.json(initiatives);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/crowdfunding/payment-method
+  public async saveMyPaymentMethod(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'save_my_payment_method');
+
+    try {
+      const rawUsername = await getUsernameFromAuth(req);
+
+      if (!rawUsername) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'save_my_payment_method',
+        });
+      }
+
+      const rawId = (req.body as Record<string, unknown>)['paymentMethodId'];
+      if (typeof rawId !== 'string' || !rawId.trim()) {
+        throw ServiceValidationError.forField('paymentMethodId', 'paymentMethodId is required and must be a non-empty string', {
+          operation: 'save_my_payment_method',
+        });
+      }
+      const paymentMethodId = rawId.trim();
+
+      const username = stripAuthPrefix(rawUsername);
+      const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, username, paymentMethodId);
+
+      logger.success(req, 'save_my_payment_method', startTime, { paymentMethodId });
+
+      res.json(paymentMethod);
     } catch (error) {
       next(error);
     }
@@ -151,10 +183,7 @@ export class CrowdfundingController {
     }
   }
 
-  /**
-   * GET /api/crowdfunding/initiatives-stats
-   * Get aggregated initiatives stats for the authenticated user
-   */
+  // GET /api/crowdfunding/initiatives-stats
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
