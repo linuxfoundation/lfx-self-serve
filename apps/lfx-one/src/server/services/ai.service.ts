@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_AGENDA_SYSTEM_PROMPT, AI_MODEL, AI_NEWSLETTER_SYSTEM_PROMPT, AI_REQUEST_CONFIG, DURATION_ESTIMATION } from '@lfx-one/shared/constants';
+import {
+  AI_AGENDA_SYSTEM_PROMPT,
+  AI_MODEL,
+  AI_NEWSLETTER_SYSTEM_PROMPT,
+  AI_REQUEST_CONFIG,
+  DURATION_ESTIMATION,
+  NEWSLETTER_AI_MAX_TOKENS,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   GenerateAgendaRequest,
@@ -123,7 +130,12 @@ export class AiService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
+        // Newsletter-specific cap (~3x the shared agenda cap) so long-form
+        // generations don't get truncated mid-output. Bumping the shared
+        // AI_REQUEST_CONFIG.MAX_TOKENS would also raise the agenda ceiling,
+        // which we don't want — agendas have a documented ~2k character
+        // target and shouldn't drift larger.
+        max_tokens: NEWSLETTER_AI_MAX_TOKENS,
         temperature: AI_REQUEST_CONFIG.TEMPERATURE,
         response_format: {
           type: 'json_schema',
