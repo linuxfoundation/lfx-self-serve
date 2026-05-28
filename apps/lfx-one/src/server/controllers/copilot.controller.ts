@@ -7,12 +7,23 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { CopilotService } from '../services/copilot.service';
 import { logger } from '../services/logger.service';
+import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 import { getEffectiveSub } from '../utils/auth-helper';
 
 export class CopilotController {
   private readonly copilotService = new CopilotService();
+  private readonly activeStreams = new Set<Response>();
+
+  public constructor() {
+    addShutdownHook(() => this.closeAllStreams());
+  }
 
   public async chat(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (isShuttingDown()) {
+      res.status(503).json({ status: 'shutting_down' });
+      return;
+    }
+
     const { message, sessionId, context } = req.body as CopilotChatRequest;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
@@ -51,13 +62,15 @@ export class CopilotController {
     const abortController = new AbortController();
     let clientDisconnected = false;
 
+    this.activeStreams.add(res);
     res.on('close', () => {
       clientDisconnected = true;
+      this.activeStreams.delete(res);
       abortController.abort();
     });
 
     const sendEvent = (type: CopilotSSEEventType, data: unknown): void => {
-      if (clientDisconnected) return;
+      if (clientDisconnected || isShuttingDown()) return;
       res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
       (res as FlushableResponse).flush?.();
     };
@@ -94,9 +107,69 @@ export class CopilotController {
       logger.error(req, 'copilot_chat', startTime, error, { user_id: userId });
       sendEvent('error', 'Something went wrong. Please try again.');
     } finally {
+      this.activeStreams.delete(res);
       if (!clientDisconnected) {
         res.end();
       }
     }
+  }
+
+  private async closeAllStreams(): Promise<void> {
+    const streams = [...this.activeStreams];
+    this.activeStreams.clear();
+    // 2s per-stream timeout guards against backpressure: if the client's TCP receive
+    // buffer is full, res.write()'s flush callback stalls until the buffer drains.
+    const STREAM_CLOSE_TIMEOUT_MS = 2_000;
+    await Promise.all(
+      streams.map(
+        (res) =>
+          new Promise<void>((resolve) => {
+            let done = false;
+            const finish = (): void => {
+              if (!done) {
+                done = true;
+                resolve();
+              }
+            };
+            const timer = setTimeout(() => {
+              // Timeout fired: the res.write() flush callback never arrived (likely
+              // TCP backpressure). Force-close the socket so httpServer.close() isn't
+              // held open by this stream until the 25s closeAllConnections() cutoff.
+              logger.debug(undefined, 'sse_stream_shutdown_timeout', 'SSE stream close timed out; force-closing', {});
+              try {
+                if (!res.writableEnded) res.end();
+              } catch {
+                // already ended — harmless
+              }
+              res.socket?.destroy();
+              finish();
+            }, STREAM_CLOSE_TIMEOUT_MS);
+            try {
+              if (!res.writableEnded) {
+                res.write('event: shutdown\ndata: {"reason":"server_shutdown"}\n\n', () => {
+                  clearTimeout(timer);
+                  res.end(finish);
+                });
+              } else {
+                clearTimeout(timer);
+                finish();
+              }
+            } catch (error) {
+              clearTimeout(timer);
+              const isExpected = error instanceof Error && (error.message.includes('write after end') || error.message.includes('Cannot call end'));
+              if (isExpected) {
+                logger.debug(undefined, 'sse_stream_shutdown_close', 'Stream already closed during shutdown', {
+                  err: error,
+                });
+              } else {
+                logger.warning(undefined, 'sse_stream_shutdown_close', 'Unexpected error closing SSE stream', {
+                  err: error,
+                });
+              }
+              finish();
+            }
+          })
+      )
+    );
   }
 }

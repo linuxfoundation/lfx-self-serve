@@ -8,6 +8,7 @@ import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
+import { Server as HttpServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
@@ -50,7 +51,10 @@ import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
+import { NatsService } from './services/nats.service';
+import { SnowflakeService } from './services/snowflake.service';
 import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
@@ -100,6 +104,10 @@ app.get('/livez', (_req: Request, res: Response) => {
 // failures are handled at the route level, not by pulling the whole pod out
 // of the Service endpoints list.
 app.get('/readyz', (_req: Request, res: Response) => {
+  if (isShuttingDown()) {
+    res.status(503).json({ status: 'shutting_down' });
+    return;
+  }
   res.status(200).json({ status: 'ready' });
 });
 
@@ -358,9 +366,129 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   apiErrorHandler(error, req, res, next);
 });
 
+let httpServer: HttpServer | undefined;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (isShuttingDown()) return;
+  markShuttingDown(); // flip /readyz to 503 synchronously before anything async runs
+
+  const startTime = logger.startOperation(undefined, 'graceful_shutdown', { signal });
+
+  // Mandatory LB drain window: after readyz flips to 503, the load balancer
+  // continues routing requests until its next probe fires (readyz periodSeconds: 10s).
+  // Wait 1.5× that interval before closing the HTTP listener so no new requests
+  // land on an already-closed server. SSE shutdown hooks run concurrently so
+  // clients are notified and can reconnect within this window.
+  //
+  // Hooks are best-effort: if they exceed the LB drain window we log a warning
+  // and proceed — we never wait beyond LB_DRAIN_MS for hooks. `await lbDrain`
+  // after the race guarantees the full 15s always elapses (no-op when lbDrain
+  // already resolved via the race) while placing a hard ceiling on how long
+  // hooks can delay the HTTP drain.
+  const LB_DRAIN_MS = 15_000; // 1.5 × readyz periodSeconds (10s)
+  const lbDrain = new Promise<void>((resolve) => setTimeout(resolve, LB_DRAIN_MS));
+  let hooksCompleted = false;
+  const hooksStartTime = Date.now();
+  const hooks = runShutdownHooks()
+    .then(() => {
+      hooksCompleted = true;
+    })
+    .catch((err: unknown) => {
+      logger.error(undefined, 'shutdown_hooks_error', hooksStartTime, err as Error, {});
+    });
+  await Promise.race([hooks, lbDrain]);
+  if (!hooksCompleted) {
+    logger.warning(undefined, 'shutdown_hooks_slow', 'Shutdown hooks exceeded LB drain window', { budget_ms: LB_DRAIN_MS });
+  }
+  await lbDrain; // hard ceiling: never wait beyond LB_DRAIN_MS for hooks
+
+  if (!httpServer) {
+    logger.success(undefined, 'graceful_shutdown', startTime, { reason: 'no_http_server' });
+    process.exit(0);
+    return;
+  }
+
+  // Stop accepting new connections and drain in-flight requests (25s window).
+  await new Promise<void>((resolve) => {
+    const drainTimeout = setTimeout(() => {
+      httpServer!.closeAllConnections();
+      resolve();
+    }, 25_000);
+
+    httpServer!.closeIdleConnections();
+    httpServer!.close(() => {
+      clearTimeout(drainTimeout);
+      resolve();
+    });
+  });
+
+  logger.info(undefined, 'shutdown_http_drained', 'HTTP server drained', {});
+
+  // Drain NATS and Snowflake *after* HTTP is fully closed. This ordering ensures any
+  // in-flight HTTP request that issues a NATS request/reply can complete before the
+  // connection is torn down — draining NATS before HTTP would break those requests.
+  // Each drain is race'd against a 15s budget so a hung drain cannot exceed PM2's kill_timeout.
+  // SnowflakeService.shutdownIfInitialized() skips pool creation for pods that never used Snowflake.
+  const SERVICE_DRAIN_BUDGET_MS = 15_000;
+  const raceDrain = (name: string, p: Promise<void>): Promise<void> => {
+    let completed = false;
+    const tracked = p.then(
+      () => {
+        completed = true;
+      },
+      () => {
+        completed = true;
+      }
+    );
+    return Promise.race([
+      tracked,
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          if (!completed) {
+            logger.warning(undefined, 'shutdown_drain_timeout', `${name} drain budget exceeded`, { budget_ms: SERVICE_DRAIN_BUDGET_MS });
+          }
+          resolve();
+        }, SERVICE_DRAIN_BUDGET_MS)
+      ),
+    ]);
+  };
+
+  await Promise.allSettled([
+    raceDrain(
+      'nats',
+      // shutdownAll() uses Promise.allSettled — always resolves regardless of individual
+      // drain outcomes. Per-connection failures are already logged at ERROR inside
+      // NatsService.shutdown(). Log "complete" here (not "drained") to avoid implying
+      // all drains succeeded when some may have been swallowed.
+      NatsService.shutdownAll().then(() => {
+        logger.info(undefined, 'shutdown_nats_complete', 'NATS shutdown complete', {});
+      })
+    ),
+    raceDrain(
+      'snowflake',
+      // shutdown() has an internal try/catch that logs pool drain errors and resolves.
+      // Per-drain failures are already logged at ERROR inside SnowflakeService.shutdown().
+      // Log "complete" here (not "drained") for the same reason as NATS above.
+      // Keep the rejection handler: unlike shutdownAll(), shutdownIfInitialized() can
+      // reject if pre-pool code throws before the internal try/catch.
+      SnowflakeService.shutdownIfInitialized().then(
+        () => {
+          logger.info(undefined, 'shutdown_snowflake_complete', 'Snowflake shutdown complete', {});
+        },
+        (err) => {
+          logger.warning(undefined, 'shutdown_snowflake_failed', 'Snowflake shutdown failed', { err });
+        }
+      )
+    ),
+  ]);
+
+  logger.success(undefined, 'graceful_shutdown', startTime, {});
+  process.exit(0);
+}
+
 export function startServer() {
   const port = process.env['PORT'] || 4000;
-  app.listen(port, () => {
+  httpServer = app.listen(port, () => {
     logger.debug(undefined, 'server_startup', 'Node Express server started', {
       port,
       url: `http://localhost:${port}`,
@@ -376,6 +504,14 @@ const isPM2 = process.env['PM2'] === 'true';
 
 if (isMain || isPM2) {
   startServer();
+  const handleSignal = (sig: string): void => {
+    gracefulShutdown(sig).catch((err) => {
+      logger.error(undefined, 'shutdown_fatal', Date.now(), err, { signal: sig });
+      process.exit(1);
+    });
+  };
+  process.on('SIGTERM', () => handleSignal('SIGTERM'));
+  process.on('SIGINT', () => handleSignal('SIGINT'));
 }
 
 export const reqHandler = createNodeRequestHandler(app);

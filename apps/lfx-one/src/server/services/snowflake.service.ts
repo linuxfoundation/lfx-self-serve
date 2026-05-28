@@ -67,6 +67,15 @@ export class SnowflakeService {
   }
 
   /**
+   * Shuts down the singleton only if it was ever initialized.
+   * Safe to call from server shutdown — avoids creating a pool just to tear it down.
+   */
+  public static shutdownIfInitialized(): Promise<void> {
+    if (!SnowflakeService.instance) return Promise.resolve();
+    return SnowflakeService.instance.shutdown();
+  }
+
+  /**
    * Reset the singleton instance (primarily for testing)
    */
   public static resetInstance(): void {

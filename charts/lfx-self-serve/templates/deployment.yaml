@@ -13,6 +13,10 @@ metadata:
   {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- with .Values.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "lfx-self-serve.selectorLabels" . | nindent 6 }}
@@ -26,6 +30,9 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- if not (eq .Values.terminationGracePeriodSeconds nil) }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -52,6 +59,10 @@ spec:
             valueFrom:
               {{- toYaml $config.valueFrom | nindent 14 }}
             {{- end }}
+          {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.startupProbe }}
           startupProbe:
