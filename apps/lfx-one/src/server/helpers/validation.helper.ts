@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Request, NextFunction } from 'express';
-import { HEALTH_METRICS_RANGES, isHealthMetricsRange } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_RANGES, VALID_CLASSIFICATIONS, isHealthMetricsRange } from '@lfx-one/shared/constants';
 import { ServiceValidationError } from '../errors';
 
 import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
@@ -143,6 +143,23 @@ export function parseEntityType(req: Request, operation: string): EntityType {
     throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', { operation });
   }
   return raw as EntityType;
+}
+
+/**
+ * Extracts and validates the optional `classification` query parameter.
+ * @param req Express request object
+ * @param operation Operation name used in error metadata
+ * @returns The validated classification string, or undefined if not provided
+ * @throws {ServiceValidationError} When the value is not in VALID_CLASSIFICATIONS
+ */
+export function getValidatedClassification(req: Request, operation: string): string | undefined {
+  const classification = getStringQueryParam(req, 'classification');
+  if (classification && !VALID_CLASSIFICATIONS.has(classification)) {
+    throw ServiceValidationError.forField('classification', `Invalid classification value. Allowed: ${[...VALID_CLASSIFICATIONS].join(', ')}`, {
+      operation,
+    });
+  }
+  return classification;
 }
 
 /**

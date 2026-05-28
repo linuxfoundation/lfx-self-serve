@@ -53,8 +53,8 @@ export class OverviewTabComponent {
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
           return forkJoin({
-            revenueImpact: this.analyticsService.getRevenueImpact(slug).pipe(catchError(() => of(null))),
-            brandReach: this.analyticsService.getBrandReach(slug).pipe(catchError(() => of(null))),
+            revenueImpact: this.analyticsService.getRevenueImpact(slug, classification).pipe(catchError(() => of(null))),
+            brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
             emailCtr: this.analyticsService.getEmailCtr(slug, classification).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })

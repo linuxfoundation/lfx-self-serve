@@ -2261,14 +2261,17 @@ export class ProjectService {
 
   /**
    * Get paid social reach metrics from Snowflake Platinum tables
-   * Queries ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH and ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG
    * @returns Social reach response with ROAS, impressions, spend, revenue, and monthly trends
    */
-  public async getSocialReach(foundationSlug: string): Promise<SocialReachResponse> {
-    logger.debug(undefined, 'get_social_reach', 'Fetching paid social reach from Snowflake', { foundation_slug: foundationSlug });
+  public async getSocialReach(foundationSlug: string, classification?: string): Promise<SocialReachResponse> {
+    logger.debug(undefined, 'get_social_reach', 'Fetching paid social reach from Snowflake', { foundation_slug: foundationSlug, classification });
 
     try {
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
+
       // Block 1: Total impressions, spend, revenue (last 6 months)
       // Uses LAST_TOUCH_REVENUE as the default attribution model across all blocks
       const impressionsQuery = `
@@ -2276,6 +2279,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
+        ${classificationFilter}
     `;
 
       // Block 2: ROAS KPI — last two completed months for MoM (last-touch attribution)
@@ -2287,6 +2291,7 @@ export class ProjectService {
       WHERE FOUNDATION_SLUG = ?
         AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', CURRENT_DATE())
         AND CAMPAIGN_MONTH >= DATEADD('MONTH', -2, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH DESC
     `;
@@ -2297,6 +2302,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
+        ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
     `;
@@ -2307,6 +2313,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
         AND FOUNDATION_SLUG = ?
+        ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
     `;
@@ -2327,6 +2334,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
         AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        ${classificationFilter}
       GROUP BY PROJECT_NAME, CAMPAIGN_NAME, FUNNEL_STAGE
       ORDER BY SPEND DESC
     `;
@@ -2348,15 +2356,18 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
         AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        ${classificationFilter}
       GROUP BY CHANNEL, CAMPAIGN_NAME
       ORDER BY CHANNEL, SPEND DESC
     `;
 
+      const slugAndClassification = [foundationSlug, ...classificationParams];
+
       const [impressionsResult, roasKpiResult, monthlyRoasResult, monthlyImpressionsResult, projectPerfResult, platformPerfResult] = await Promise.all([
-        this.snowflakeService.execute<{ TOTAL_IMPRESSIONS: number; TOTAL_SPEND: number; TOTAL_REVENUE: number }>(impressionsQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(roasKpiQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [foundationSlug]),
+        this.snowflakeService.execute<{ TOTAL_IMPRESSIONS: number; TOTAL_SPEND: number; TOTAL_REVENUE: number }>(impressionsQuery, slugAndClassification),
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(roasKpiQuery, slugAndClassification),
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, slugAndClassification),
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, slugAndClassification),
         this.snowflakeService
           .execute<{
             PROJECT_NAME: string;
@@ -2371,7 +2382,7 @@ export class ProjectService {
             SESSIONS: number;
             IMPRESSIONS: number;
             CLICKS: number;
-          }>(projectPerfQuery, [foundationSlug])
+          }>(projectPerfQuery, slugAndClassification)
           .catch((error) => {
             logger.warning(undefined, 'get_social_reach', 'Optional project breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
@@ -2407,7 +2418,7 @@ export class ProjectService {
             CPC: number;
             CONV_RATE: number;
             CONVERSIONS: number;
-          }>(platformPerfQuery, [foundationSlug])
+          }>(platformPerfQuery, slugAndClassification)
           .catch((error) => {
             logger.warning(undefined, 'get_social_reach', 'Optional platform breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
@@ -2675,12 +2686,14 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug or 'tlf' for umbrella aggregation
    * @returns Channel summary + project drill-down
    */
-  public async getMarketingAttribution(foundationSlug: string): Promise<MarketingAttributionResponse> {
+  public async getMarketingAttribution(foundationSlug: string, classification?: string): Promise<MarketingAttributionResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_marketing_attribution', 'Fetching marketing attribution from Snowflake', { foundation_slug: foundationSlug });
+    logger.debug(undefined, 'get_marketing_attribution', 'Fetching marketing attribution from Snowflake', { foundation_slug: foundationSlug, classification });
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
 
       const channelQuery = isUmbrella
         ? `
@@ -2694,6 +2707,7 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          ${classificationFilter}
         GROUP BY CHANNEL
       `
         : `
@@ -2708,6 +2722,7 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
           AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          ${classificationFilter}
         GROUP BY CHANNEL
       `;
 
@@ -2723,6 +2738,7 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
       `
         : `
@@ -2737,10 +2753,11 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
           AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
       `;
 
-      const params = isUmbrella ? [] : [foundationSlug];
+      const params = isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams];
 
       interface ChannelRow {
         CHANNEL: string;
@@ -4700,9 +4717,9 @@ export class ProjectService {
    * Get brand reach metrics from Snowflake
    * Combines SOCIAL_MEDIA_OVERVIEW (followers) and WEB_ACTIVITIES_SUMMARY (sessions)
    */
-  public async getBrandReach(foundationSlug: string): Promise<BrandReachResponse> {
+  public async getBrandReach(foundationSlug: string, classification?: string): Promise<BrandReachResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_brand_reach', 'Fetching brand reach from Snowflake', { foundation_slug: foundationSlug });
+    logger.debug(undefined, 'get_brand_reach', 'Fetching brand reach from Snowflake', { foundation_slug: foundationSlug, classification });
 
     try {
       // TLF is the umbrella — aggregate across all foundations. Otherwise scope to a single foundation.
@@ -4710,16 +4727,26 @@ export class ProjectService {
       const foundationFilter = isUmbrella ? '' : 'WHERE FOUNDATION_SLUG = ?';
       const foundationFilterAnd = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
       const foundationParams = isUmbrella ? [] : [foundationSlug];
+      const classificationParams = classification ? [classification] : [];
+
+      const webConditions: string[] = [];
+      if (!isUmbrella) webConditions.push('FOUNDATION_SLUG = ?');
+      if (classification) webConditions.push('LF_SUB_DOMAIN_CLASSIFICATION = ?');
+      const webWhereClause = webConditions.length > 0 ? `WHERE ${webConditions.join(' AND ')}` : '';
 
       const webQuery = `
         SELECT LF_SUB_DOMAIN_CLASSIFICATION,
                SUM(TOTAL_SESSIONS_LAST_30_DAYS) AS TOTAL_SESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY
-        ${foundationFilter}
+        ${webWhereClause}
         GROUP BY LF_SUB_DOMAIN_CLASSIFICATION
         ORDER BY TOTAL_SESSIONS DESC
       `;
 
+      const webParams = isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams];
+
+      // WEB_ACTIVITIES_BY_PROJECT does not have LF_SUB_DOMAIN_CLASSIFICATION,
+      // so the weekly trend always shows all-program totals.
       const dailyQuery = `
         SELECT DATE_TRUNC('WEEK', ACTIVITY_DATE) AS ACTIVITY_DATE, SUM(DAILY_SESSIONS) AS DAILY_SESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_PROJECT
@@ -4730,7 +4757,7 @@ export class ProjectService {
       `;
 
       const [webResult, dailyResult] = await Promise.all([
-        this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number }>(webQuery, foundationParams),
+        this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number }>(webQuery, webParams),
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, foundationParams),
       ]);
 
@@ -5030,14 +5057,16 @@ export class ProjectService {
    * Get marketing-attributed revenue metrics from Snowflake
    * Queries ANALYTICS.PLATINUM_LFX_ONE.PIPELINE_SUMMARY and PAID_ADS_ATTRIBUTION
    */
-  public async getRevenueImpact(foundationSlug: string): Promise<RevenueImpactResponse> {
+  public async getRevenueImpact(foundationSlug: string, classification?: string): Promise<RevenueImpactResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_revenue_impact', 'Fetching revenue impact from Snowflake', { foundation_slug: foundationSlug });
+    logger.debug(undefined, 'get_revenue_impact', 'Fetching revenue impact from Snowflake', { foundation_slug: foundationSlug, classification });
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
+      const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
+      const classificationParams = classification ? [classification] : [];
 
-      // PIPELINE_SUMMARY is a single row per foundation; aggregate across all foundations in umbrella mode
+      // PIPELINE_SUMMARY does not have LF_SUB_DOMAIN_CLASSIFICATION — always unfiltered
       const pipelineQuery = isUmbrella
         ? `
         SELECT SUM(TOTAL_PIPELINE_YTD) AS TOTAL_PIPELINE_YTD, SUM(WON_REVENUE_YTD) AS WON_REVENUE_YTD,
@@ -5057,26 +5086,34 @@ export class ProjectService {
         WHERE FOUNDATION_SLUG = ?
       `;
 
-      // PAID_ADS_ATTRIBUTION is a single row per foundation; aggregate across all foundations in umbrella mode
+      // PAID_ADS_ATTRIBUTION has LF_SUB_DOMAIN_CLASSIFICATION
       const paidAdsQuery = isUmbrella
         ? `
         SELECT SUM(TOTAL_SPEND_YTD) AS TOTAL_SPEND_YTD, SUM(TOTAL_IMPRESSIONS_YTD) AS TOTAL_IMPRESSIONS_YTD,
                SUM(TOTAL_CLICKS_YTD) AS TOTAL_CLICKS_YTD,
-               AVG(LINEAR_ROAS_YTD) AS LINEAR_ROAS_YTD, AVG(AVG_CPC_YTD) AS AVG_CPC_YTD,
-               AVG(CTR_YTD) AS CTR_YTD, AVG(CONVERSION_RATE_YTD) AS CONVERSION_RATE_YTD,
+               CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
+               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
+               CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
+               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD * CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_ATTRIBUTION
+        ${classification ? 'WHERE LF_SUB_DOMAIN_CLASSIFICATION = ?' : ''}
       `
         : `
-        SELECT TOTAL_SPEND_YTD, TOTAL_IMPRESSIONS_YTD, TOTAL_CLICKS_YTD,
-               LINEAR_ROAS_YTD, AVG_CPC_YTD, CTR_YTD, CONVERSION_RATE_YTD,
-               FIRST_TOUCH_REVENUE_YTD, LAST_TOUCH_REVENUE_YTD,
-               LINEAR_REVENUE_YTD, TIME_DECAY_REVENUE_YTD,
-               SPEND_YOY_CHANGE_PCT, IMPRESSIONS_YOY_CHANGE_PCT
+        SELECT SUM(TOTAL_SPEND_YTD) AS TOTAL_SPEND_YTD, SUM(TOTAL_IMPRESSIONS_YTD) AS TOTAL_IMPRESSIONS_YTD,
+               SUM(TOTAL_CLICKS_YTD) AS TOTAL_CLICKS_YTD,
+               CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
+               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
+               CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
+               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD * CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS CONVERSION_RATE_YTD,
+               SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
+               SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
+               AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
       `;
 
       // Attribution channels — last 6 months, aggregated by paid-social channel
@@ -5085,6 +5122,7 @@ export class ProjectService {
         SELECT CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY IMPRESSIONS DESC
       `
@@ -5093,6 +5131,7 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE FOUNDATION_SLUG = ?
           AND CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY IMPRESSIONS DESC
       `;
@@ -5108,16 +5147,23 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
         WHERE CAMPAIGN_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND CAMPAIGN_MONTH < DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
         LIMIT 6
       `
         : `
-        SELECT CAMPAIGN_MONTH, SPEND, FIRST_TOUCH_REVENUE, IMPRESSIONS, FIRST_TOUCH_ROAS
+        SELECT CAMPAIGN_MONTH,
+               SUM(SPEND) AS SPEND,
+               SUM(FIRST_TOUCH_REVENUE) AS FIRST_TOUCH_REVENUE,
+               SUM(IMPRESSIONS) AS IMPRESSIONS,
+               CASE WHEN SUM(SPEND) > 0 THEN SUM(FIRST_TOUCH_REVENUE) / SUM(SPEND) ELSE 0 END AS FIRST_TOUCH_ROAS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
         WHERE FOUNDATION_SLUG = ?
           AND CAMPAIGN_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND CAMPAIGN_MONTH < DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
+        GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
         LIMIT 6
       `;
@@ -5128,6 +5174,7 @@ export class ProjectService {
         SELECT PROJECT_NAME, CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
         ORDER BY PROJECT_NAME, IMPRESSIONS DESC
       `
@@ -5136,6 +5183,7 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE FOUNDATION_SLUG = ?
           AND CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
         ORDER BY PROJECT_NAME, IMPRESSIONS DESC
       `;
@@ -5150,6 +5198,7 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
         WHERE SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY SESSIONS DESC
       `
@@ -5162,6 +5211,7 @@ export class ProjectService {
         WHERE FOUNDATION_SLUG = ?
           AND SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY SESSIONS DESC
       `;
@@ -5173,6 +5223,7 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
         WHERE SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY SESSION_MONTH, CHANNEL
         ORDER BY SESSION_MONTH ASC
       `
@@ -5182,6 +5233,7 @@ export class ProjectService {
         WHERE FOUNDATION_SLUG = ?
           AND SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
           AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          ${classificationFilter}
         GROUP BY SESSION_MONTH, CHANNEL
         ORDER BY SESSION_MONTH ASC
       `;
@@ -5216,35 +5268,35 @@ export class ProjectService {
             TIME_DECAY_REVENUE_YTD: number;
             SPEND_YOY_CHANGE_PCT: number;
             IMPRESSIONS_YOY_CHANGE_PCT: number;
-          }>(paidAdsQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(paidAdsQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             CHANNEL: string;
             IMPRESSIONS: number;
-          }>(channelsQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(channelsQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             CAMPAIGN_MONTH: string;
             SPEND: number;
             FIRST_TOUCH_REVENUE: number;
             IMPRESSIONS: number;
             FIRST_TOUCH_ROAS: number;
-          }>(monthlyTrendQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(monthlyTrendQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             PROJECT_NAME: string;
             CHANNEL: string;
             IMPRESSIONS: number;
-          }>(projectBreakdownQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(projectBreakdownQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             CHANNEL: string;
             SESSIONS: number;
             UNIQUE_VISITORS: number;
             LAST_TOUCH_REVENUE: number;
-          }>(eventAttrChannelQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(eventAttrChannelQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             MONTH: string;
             CHANNEL: string;
             SESSIONS: number;
             LAST_TOUCH_REVENUE: number;
-          }>(eventAttrMonthlyQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(eventAttrMonthlyQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
         ]);
 
       const pipeline = pipelineResult.rows.length > 0 ? pipelineResult.rows[0] : null;

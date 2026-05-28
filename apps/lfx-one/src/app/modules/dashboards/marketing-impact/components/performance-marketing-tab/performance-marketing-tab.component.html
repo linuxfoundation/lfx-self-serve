@@ -20,17 +20,6 @@
     </div>
   </div>
 
-  @if (focusProgram() !== 'all') {
-    <div
-      class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
-      role="status"
-      aria-live="polite"
-      data-testid="performance-marketing-focus-info">
-      <i class="fa-light fa-circle-info text-blue-500" aria-hidden="true"></i>
-      <p class="text-xs text-blue-700">Performance marketing data is not yet available at the program level. Showing foundation-wide data.</p>
-    </div>
-  }
-
   <!-- KPI Cards -->
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="performance-marketing-kpi-grid">
     @if (loading()) {

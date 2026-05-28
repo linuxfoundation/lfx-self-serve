@@ -4,10 +4,8 @@
 import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
-import { VALID_CLASSIFICATIONS } from '@lfx-one/shared/constants';
-
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { assertHealthMetricsRange, getStringQueryParam, parseEntityType } from '../helpers/validation.helper';
+import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -1945,13 +1943,7 @@ export class AnalyticsController {
         });
       }
 
-      const classification = getStringQueryParam(req, 'classification');
-
-      if (classification && !VALID_CLASSIFICATIONS.has(classification)) {
-        throw ServiceValidationError.forField('classification', `Invalid classification value. Allowed: ${[...VALID_CLASSIFICATIONS].join(', ')}`, {
-          operation: 'get_web_activities_summary',
-        });
-      }
+      const classification = getValidatedClassification(req, 'get_web_activities_summary');
 
       const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification);
 
@@ -1996,13 +1988,7 @@ export class AnalyticsController {
         });
       }
 
-      const classification = getStringQueryParam(req, 'classification');
-
-      if (classification && !VALID_CLASSIFICATIONS.has(classification)) {
-        throw ServiceValidationError.forField('classification', `Invalid classification value. Allowed: ${[...VALID_CLASSIFICATIONS].join(', ')}`, {
-          operation: 'get_email_ctr',
-        });
-      }
+      const classification = getValidatedClassification(req, 'get_email_ctr');
 
       const response = await this.projectService.getEmailCtr(foundationSlug, classification);
 
@@ -2047,12 +2033,15 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getSocialReach(foundationSlug);
+      const classification = getValidatedClassification(req, 'get_social_reach');
+
+      const response = await this.projectService.getSocialReach(foundationSlug, classification);
 
       logger.success(req, 'get_social_reach', startTime, {
         foundation_slug: foundationSlug,
         total_reach: response.totalReach,
         monthly_data_points: response.monthlyData.length,
+        ...(classification && { classification }),
       });
 
       res.json(response);
@@ -2633,13 +2622,16 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getBrandReach(foundationSlug);
+      const classification = getValidatedClassification(req, 'get_brand_reach');
+
+      const response = await this.projectService.getBrandReach(foundationSlug, classification);
 
       logger.success(req, 'get_brand_reach', startTime, {
         foundation_slug: foundationSlug,
         total_social_followers: response.totalSocialFollowers,
         total_monthly_sessions: response.totalMonthlySessions,
         social_platforms: response.socialPlatforms.length,
+        ...(classification && { classification }),
       });
 
       res.json(response);
@@ -2708,13 +2700,16 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getRevenueImpact(foundationSlug);
+      const classification = getValidatedClassification(req, 'get_revenue_impact');
+
+      const response = await this.projectService.getRevenueImpact(foundationSlug, classification);
 
       logger.success(req, 'get_revenue_impact', startTime, {
         foundation_slug: foundationSlug,
         pipeline_influenced: response.pipelineInfluenced,
         revenue_attributed: response.revenueAttributed,
         engagement_types: response.engagementTypes.length,
+        ...(classification && { classification }),
       });
 
       res.json(response);
@@ -2746,12 +2741,15 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getMarketingAttribution(foundationSlug);
+      const classification = getValidatedClassification(req, 'get_marketing_attribution');
+
+      const response = await this.projectService.getMarketingAttribution(foundationSlug, classification);
 
       logger.success(req, 'get_marketing_attribution', startTime, {
         foundation_slug: foundationSlug,
         channel_count: response.channels.length,
         project_count: response.projects.length,
+        ...(classification && { classification }),
       });
 
       res.json(response);

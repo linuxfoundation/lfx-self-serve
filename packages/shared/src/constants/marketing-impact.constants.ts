@@ -4,13 +4,14 @@
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type { AttributionModelOption, MarketingImpactFocusProgram, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
 
-/** Focus program filter options for the Marketing Impact FOCUS bar. */
+/** Focus program filter options for the Marketing Impact FOCUS bar. Labels match Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All programs' },
-  { id: 'events', label: 'Events' },
-  { id: 'newsletters', label: 'Newsletters' },
-  { id: 'surveys', label: 'Surveys' },
-  { id: 'trainings', label: 'Trainings' },
+  { id: 'lfCorporate', label: 'LF Corporate' },
+  { id: 'lfEvents', label: 'LF Events' },
+  { id: 'lfTraining', label: 'LF Training' },
+  { id: 'lfxPlatform', label: 'LFX Platform' },
+  { id: 'projectWebsites', label: 'Project Websites' },
 ];
 
 /** Tab definitions for the Marketing Impact section tabs. */
@@ -35,10 +36,11 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
 /** Maps MarketingImpactFocusProgram IDs to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. 'all' maps to undefined (no filter). */
 export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string | undefined> = {
   all: undefined,
-  events: 'Events',
-  newsletters: 'Corporate',
-  surveys: 'Projects',
-  trainings: 'Training',
+  lfCorporate: 'LF Corporate',
+  lfEvents: 'LF Events',
+  lfTraining: 'LF Training',
+  lfxPlatform: 'LFX Platform',
+  projectWebsites: 'Project Websites',
 };
 
 export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));

@@ -7,10 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ATTRIBUTION_MODEL_OPTIONS } from '@lfx-one/shared/constants';
+import { ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import type {
   AttributionChannelRow,
@@ -63,16 +63,18 @@ export class AttributionSectionComponent {
   // === Private Initializers ===
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$]).pipe(
+        switchMap(([slug, focus]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getMarketingAttribution(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getMarketingAttribution(slug, classification).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );

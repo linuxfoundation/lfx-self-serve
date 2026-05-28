@@ -4,10 +4,10 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { FUNNEL_STAGE_OPTIONS } from '@lfx-one/shared/constants';
+import { FOCUS_TO_CLASSIFICATION, FUNNEL_STAGE_OPTIONS } from '@lfx-one/shared/constants';
 import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -108,10 +108,11 @@ export class PerformanceMarketingTabComponent {
   // === Private Initializers ===
   private initSocialReachData(): Signal<SocialReachResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$]).pipe(
+        switchMap(([slug, focus]) => {
           this.expandedProjects.set(new Set());
           this.expandedPlatforms.set(new Set());
           if (!slug) {
@@ -119,7 +120,8 @@ export class PerformanceMarketingTabComponent {
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getSocialReach(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getSocialReach(slug, classification).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );
