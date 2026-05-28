@@ -2,11 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { UUID_REGEX } from '@lfx-one/shared/constants';
-import { MemberServiceB2bOrgResponse, OrgCanonicalRecord, OrgItem, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import {
+  MemberServiceB2bOrgResponse,
+  MemberServiceB2bOrgUpdateBody,
+  OrgAddressesResponse,
+  OrgCanonicalMockExtras,
+  OrgCanonicalRecord,
+  OrgItem,
+  OrgUpdateRequest,
+  RoleGrantsResponse,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import orgAddressesMock from '../services/fixtures/org-addresses.mock.json';
 import orgSelectorMock from '../services/fixtures/org-selector.mock.json';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
@@ -135,6 +145,92 @@ export class OrgIdentityController {
     }
   }
 
+  /** Spec 021 — `PUT /api/orgs/uid/:uid`. Partial-update proxy to member-service `PUT /b2b_orgs/{uid}`. Returns the full updated canonical record so the client can refresh the read-only view without an extra GET (FR-016). */
+  public async updateOrg(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_org_canonical_record');
+
+    try {
+      const uid = req.params['uid'];
+      this.assertNonEmpty(uid, 'uid', 'update_org_canonical_record', req.path);
+      if (!UUID_REGEX.test(uid)) {
+        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+          operation: 'update_org_canonical_record',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const update = this.toMemberServiceUpdate(req.body as OrgUpdateRequest | undefined);
+
+      const raw = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(uid)}`,
+        'PUT',
+        undefined,
+        update
+      );
+
+      const response = this.toCanonicalRecord(raw);
+
+      logger.success(req, 'update_org_canonical_record', startTime, { uid, field_count: Object.keys(update).length });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 403) {
+        logger.warning(req, 'update_org_canonical_record', 'Upstream rejected with 403', { err: error });
+        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        res.status(404).json({ error: 'Organization not found' });
+        return;
+      }
+      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
+        logger.warning(req, 'update_org_canonical_record', 'Upstream failure', { err: error, upstream_status: error.statusCode });
+        res.status(502).json({ error: 'Unable to save changes. Please try again.' });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /** Spec 021 — `GET /api/orgs/uid/:uid/addresses`. Returns mock fixture when `isMockOrgItemsEnabled()`; otherwise 404 until member-service exposes upstream address fields (fail-closed, mirrors `getCanonicalRecord`). */
+  public async getOrgAddresses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_addresses');
+
+    try {
+      const uid = req.params['uid'];
+      this.assertNonEmpty(uid, 'uid', 'get_org_addresses', req.path);
+      if (!UUID_REGEX.test(uid)) {
+        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+          operation: 'get_org_addresses',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      if (!isMockOrgItemsEnabled()) {
+        // Fail-closed per rulebook (mock fixtures gated on flag && NODE_ENV !== 'production').
+        // Real upstream address fields land in a follow-up spec; until then, no fixture in prod.
+        res.status(404).json({ error: 'Addresses unavailable' });
+        logger.success(req, 'get_org_addresses', startTime, { uid, status_code: 404, mock: false });
+        return;
+      }
+
+      const response: OrgAddressesResponse = {
+        primaryAddress: orgAddressesMock.primaryAddress,
+        billingAddress: orgAddressesMock.billingAddress,
+      };
+
+      logger.success(req, 'get_org_addresses', startTime, { uid, mock: true });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** Parses `req.params` into `{ identifier, identifierKind }`; polymorphic `/:id` uses UUID_REGEX to dispatch (mirrors project.controller pattern). */
   private extractIdentifier(req: Request): { identifier: string; identifierKind: 'uid' | 'sfid' } {
     const { uid, accountId, id } = req.params;
@@ -178,8 +274,7 @@ export class OrgIdentityController {
     const items = orgSelectorMock.items as OrgItem[];
     const match = identifierKind === 'uid' ? items.find((item) => item.uid === identifier) : items.find((item) => item.accountId === identifier);
     if (!match) return null;
-    type MockCanonicalExtras = Partial<Pick<OrgCanonicalRecord, 'description' | 'website' | 'industry' | 'sector' | 'numberOfEmployees' | 'parentUid'>>;
-    const extrasMap = (orgSelectorMock.canonicalExtras ?? {}) as Record<string, MockCanonicalExtras>;
+    const extrasMap = (orgSelectorMock.canonicalExtras ?? {}) as Record<string, OrgCanonicalMockExtras>;
     const extras = extrasMap[match.uid] ?? {};
     return {
       uid: match.uid,
@@ -192,9 +287,26 @@ export class OrgIdentityController {
       industry: extras.industry ?? null,
       sector: extras.sector ?? null,
       numberOfEmployees: extras.numberOfEmployees ?? null,
+      crunchBaseUrl: extras.crunchBaseUrl ?? null,
+      updatedAt: extras.updatedAt ?? null,
       parentUid: extras.parentUid ?? null,
       isMember: match.isMember ?? false,
     };
+  }
+
+  /** Spec 021 — Whitelist + camelCase → snake_case transform for the PUT body; `name`/`logoUrl` stripped (FR-011/012); `undefined` omitted to preserve upstream "no change" semantics. */
+  private toMemberServiceUpdate(body: OrgUpdateRequest | undefined): MemberServiceB2bOrgUpdateBody {
+    const payload: MemberServiceB2bOrgUpdateBody = {};
+    if (!body || typeof body !== 'object') return payload;
+
+    if (body.description !== undefined) payload.description = body.description;
+    if (body.website !== undefined) payload.website = body.website;
+    if (body.industry !== undefined) payload.industry = body.industry;
+    if (body.sector !== undefined) payload.sector = body.sector;
+    if (body.crunchBaseUrl !== undefined) payload.crunch_base_url = body.crunchBaseUrl;
+    if (body.numberOfEmployees !== undefined) payload.number_of_employees = body.numberOfEmployees;
+
+    return payload;
   }
 
   /** Transforms member-service snake_case response to the BFF camelCase contract. */
@@ -210,6 +322,8 @@ export class OrgIdentityController {
       industry: raw.industry ?? null,
       sector: raw.sector ?? null,
       numberOfEmployees: raw.number_of_employees ?? null,
+      crunchBaseUrl: raw.crunch_base_url ?? null,
+      updatedAt: raw.updated_at ?? null,
       parentUid: raw.parent_uid ?? null,
       isMember: raw.is_member ?? false,
     };

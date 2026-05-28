@@ -1,0 +1,180 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex flex-col gap-6"
+  data-testid="org-profile-edit-page"
+  [attr.data-saving]="saving()"
+  [attr.data-dirty]="dirty()"
+  [attr.data-can-save]="canSave()">
+  <p-toast position="top-right" />
+
+  <!-- Breadcrumb (clicking Profile cancels back to the read-only view per US2 scenario 5). -->
+  <nav class="text-sm" data-testid="org-profile-edit-breadcrumb">
+    <button type="button" class="font-semibold text-blue-600 hover:underline" (click)="onCancel()">Profile</button>
+    <span class="mx-1 text-gray-500">/</span>
+    <span class="text-gray-700">Edit Profile</span>
+  </nav>
+
+  <div class="rounded-lg border border-gray-200 bg-white p-6">
+    <!-- Logo + Upload Logo button (disabled per FR-012). -->
+    <header class="flex items-center gap-4 border-b border-gray-100 pb-4">
+      <div
+        class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
+        data-testid="org-profile-edit-logo-initials">
+        {{ (record().name | initials) || 'OR' }}
+      </div>
+      <div class="flex flex-col gap-1">
+        <p-button
+          label="Upload Logo"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="true"
+          pTooltip="Coming soon"
+          tooltipPosition="right"
+          data-testid="org-profile-edit-upload-logo-button" />
+        <p class="text-xs text-gray-500">Only SVG logos, not more than 1mb, will be accepted.</p>
+      </div>
+    </header>
+
+    <form [formGroup]="form" (ngSubmit)="onSave()" class="mt-6 flex flex-col gap-6" data-testid="org-profile-edit-form">
+      <!-- Two-column grid (FR-006). -->
+      <div class="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+        <!-- Organization Name (read-only / locked, FR-011) -->
+        <div data-testid="org-profile-edit-field-name">
+          <div class="flex items-baseline justify-between">
+            <label class="text-sm font-semibold text-gray-900">Organization Name</label>
+            <span class="text-xs text-gray-500">
+              Need to edit?
+              <button type="button" lfxOpenIntercom class="text-blue-600 hover:underline" data-testid="org-profile-edit-name-support-link">
+                Contact Support
+              </button>
+            </span>
+          </div>
+          <input type="text" pInputText [value]="record().name" disabled class="mt-1 w-full bg-gray-50" data-testid="org-profile-edit-name-input" />
+        </div>
+
+        <!-- Website -->
+        <div data-testid="org-profile-edit-field-website">
+          <label class="text-sm font-semibold text-gray-900">Website</label>
+          <div class="mt-1 flex items-center overflow-hidden rounded-md border border-gray-300 focus-within:border-blue-500">
+            <div class="flex items-center justify-center border-r border-gray-300 bg-gray-50 px-3 py-2 text-gray-400">
+              <i class="fa-light fa-globe text-sm"></i>
+            </div>
+            <input
+              type="text"
+              pInputText
+              formControlName="website"
+              placeholder="example.com"
+              class="flex-1 border-0 focus:ring-0"
+              (blur)="onFieldBlur('website')"
+              data-testid="org-profile-edit-website-input" />
+          </div>
+        </div>
+
+        <!-- Number of Employees -->
+        <div data-testid="org-profile-edit-field-employees">
+          <label class="text-sm font-semibold text-gray-900">Number of Employees</label>
+          <p-inputNumber
+            formControlName="numberOfEmployees"
+            [min]="0"
+            [useGrouping]="false"
+            inputStyleClass="w-full"
+            styleClass="mt-1 w-full block"
+            (onBlur)="onFieldBlur('numberOfEmployees')"
+            data-testid="org-profile-edit-employees-input" />
+          @if (employeesInvalid()) {
+            <p class="mt-1 text-xs text-red-600" data-testid="org-profile-edit-employees-error">Number of employees must be 0 or greater.</p>
+          }
+          <p class="mt-1 text-xs text-gray-500">Enter the number of employees within your organization.</p>
+        </div>
+
+        <!-- Crunchbase Profile -->
+        <div data-testid="org-profile-edit-field-crunchbase">
+          <label class="text-sm font-semibold text-gray-900">Crunchbase Profile</label>
+          <div class="mt-1 flex items-center overflow-hidden rounded-md border border-gray-300 focus-within:border-blue-500">
+            <div class="flex items-center justify-center border-r border-gray-300 bg-gray-50 px-3 py-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-sm bg-sky-600 text-[9px] font-extrabold text-white">cb</span>
+            </div>
+            <input
+              type="text"
+              pInputText
+              formControlName="crunchBaseUrl"
+              placeholder="https://crunchbase.com/organization/company"
+              class="flex-1 border-0 focus:ring-0"
+              (blur)="onFieldBlur('crunchBaseUrl')"
+              data-testid="org-profile-edit-crunchbase-input" />
+          </div>
+          @if (crunchbaseInvalid()) {
+            <p class="mt-1 text-xs text-red-600" data-testid="org-profile-edit-crunchbase-error">
+              Crunchbase URL must be a valid <code>https://</code> address.
+            </p>
+          }
+          <p class="mt-1 text-xs text-gray-500">Please use a secure HTTPS URL (for example https://crunchbase.com/organization/company).</p>
+        </div>
+
+        <!-- Industry -->
+        <div data-testid="org-profile-edit-field-industry">
+          <label class="text-sm font-semibold text-gray-900">Industry</label>
+          <p-select
+            formControlName="industry"
+            [options]="industryOptions"
+            placeholder="Select Industry"
+            appendTo="body"
+            styleClass="w-full"
+            data-testid="org-profile-edit-industry-select" />
+          <p class="mt-1 text-xs text-gray-500">Select the primary industry that your organization is servicing.</p>
+        </div>
+
+        <!-- Technology Sector -->
+        <div data-testid="org-profile-edit-field-sector">
+          <label class="text-sm font-semibold text-gray-900">Technology Sector</label>
+          <p-select
+            formControlName="sector"
+            [options]="sectorOptions"
+            placeholder="Select Sector"
+            appendTo="body"
+            styleClass="w-full"
+            data-testid="org-profile-edit-sector-select" />
+          <p class="mt-1 text-xs text-gray-500">Select the technology sector that your organization is most closely identified with.</p>
+        </div>
+      </div>
+
+      <!-- Full-width description -->
+      <div data-testid="org-profile-edit-field-description">
+        <label class="text-sm font-semibold text-gray-900">Organization Description</label>
+        <textarea
+          pTextarea
+          formControlName="description"
+          [maxlength]="descriptionMaxLength"
+          rows="4"
+          class="mt-1 w-full"
+          (blur)="onFieldBlur('description')"
+          data-testid="org-profile-edit-description-textarea"></textarea>
+        @if (descriptionInvalid()) {
+          <p class="mt-1 text-xs text-red-600" data-testid="org-profile-edit-description-error">
+            Description must be {{ descriptionMaxLength }} characters or fewer.
+          </p>
+        }
+      </div>
+
+      <!-- Action row -->
+      <div class="flex items-center justify-start gap-2 border-t border-gray-100 pt-4">
+        <p-button
+          label="Cancel"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="saving()"
+          data-testid="org-profile-edit-cancel-button"
+          (onClick)="onCancel()" />
+        <p-button
+          type="submit"
+          [label]="saving() ? 'Saving…' : 'Save Changes'"
+          severity="primary"
+          [disabled]="!canSave()"
+          [loading]="saving()"
+          data-testid="org-profile-edit-save-button" />
+      </div>
+    </form>
+  </div>
+</section>

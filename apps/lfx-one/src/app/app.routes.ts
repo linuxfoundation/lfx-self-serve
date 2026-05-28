@@ -13,6 +13,8 @@ import { projectQueryParamGuard } from './shared/guards/project-query-param.guar
 const loadOrgPlaceholderPage = () =>
   import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent);
 
+const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
+
 export const routes: Routes = [
   {
     path: '',
@@ -157,7 +159,7 @@ export const routes: Routes = [
           {
             path: 'profile',
             data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: loadOrgProfilePage,
           },
         ],
       },

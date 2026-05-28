@@ -90,7 +90,13 @@ export class AccountContextService {
 
   public setAccount(account: Account): void {
     const live = this.liveAccounts().get(account.accountId);
-    const next = live ?? account;
+    const next = live
+      ? {
+          ...live,
+          uid: account.uid ?? live.uid ?? null,
+          parentUid: account.parentUid ?? live.parentUid ?? null,
+        }
+      : account;
     this.selectedAccount.set(next);
     this.persistToStorage(next);
   }
@@ -142,6 +148,11 @@ export class AccountContextService {
     return promise;
   }
 
+  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. */
+  public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
+    this.applyCanonicalRecord(canonical);
+  }
+
   private applyCanonicalRecord(canonical: OrgCanonicalRecord): void {
     const current = this.selectedAccount();
     // Only patch when the canonical record corresponds to the still-selected org —
@@ -185,7 +196,11 @@ export class AccountContextService {
         const current = this.selectedAccount();
         const liveCurrent = live.get(current.accountId);
         if (liveCurrent) {
-          this.selectedAccount.set(liveCurrent);
+          this.selectedAccount.set({
+            ...liveCurrent,
+            uid: current.uid ?? liveCurrent.uid ?? null,
+            parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
+          });
         } else if (!current.accountId) {
           const firstSeed = this.userOrganizations()[0];
           if (firstSeed) {

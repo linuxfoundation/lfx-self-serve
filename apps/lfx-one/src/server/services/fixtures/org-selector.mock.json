@@ -131,24 +131,30 @@
     "$comment": "Optional per-uid enrichment surfaced by the canonical-record endpoint (US4). When a uid is missing here the controller derives the camelCase record from the items[] entry only.",
     "4c46585f-878c-8285-b2e9-2dbfc38ddd9b": {
       "description": "Open source software company providing enterprise solutions including Red Hat Enterprise Linux, OpenShift, and Ansible.",
-      "website": "https://www.redhat.com",
-      "industry": "Information Technology",
-      "sector": "Software & Services",
-      "numberOfEmployees": 19000
+      "website": "redhat.com",
+      "industry": "Open Source Software",
+      "sector": "Information Technology",
+      "numberOfEmployees": 19000,
+      "crunchBaseUrl": "https://crunchbase.com/organization/red-hat",
+      "updatedAt": "2026-05-20T12:34:56Z"
     },
     "4c46585f-878c-8285-b2e9-2dbfc38dc8a7": {
       "description": "Multinational technology company offering hybrid cloud and AI solutions.",
-      "website": "https://www.ibm.com",
-      "industry": "Information Technology",
-      "sector": "Software & Services",
-      "numberOfEmployees": 282000
+      "website": "ibm.com",
+      "industry": "Computer Hardware & Software",
+      "sector": "Information Technology",
+      "numberOfEmployees": 282000,
+      "crunchBaseUrl": "https://crunchbase.com/organization/ibm",
+      "updatedAt": "2026-05-25T10:00:00Z"
     },
     "4c46585f-878c-8285-b2e9-2dbfc38dbefe": {
-      "description": "Japanese multinational automotive manufacturer.",
-      "website": "https://global.toyota",
+      "description": "Toyota Motor Corporation is a Japanese multinational automotive manufacturer headquartered in Toyota City, Aichi, Japan. It is one of the world's largest automobile manufacturers and a pioneer in hybrid electric vehicles.",
+      "website": "toyota.com",
       "industry": "Automotive",
-      "sector": "Consumer Discretionary",
-      "numberOfEmployees": 372000
+      "sector": "Manufacturing",
+      "numberOfEmployees": 370870,
+      "crunchBaseUrl": "https://crunchbase.com/organization/toyota",
+      "updatedAt": "2026-05-27T15:42:00Z"
     }
   }
 }

@@ -30,6 +30,12 @@ router.get('/me/role-grants', (req, res, next) => orgIdentityController.getRoleG
 // GET /api/orgs/uid/:uid — canonical record by b2b_org.uid
 router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
 
+// Spec 021 — PUT /api/orgs/uid/:uid — partial-update of org profile fields (FR-008, FR-016)
+router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
+
+// Spec 021 — GET /api/orgs/uid/:uid/addresses — primary + billing addresses (mock in v1, FR-004)
+router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+
 // GET /api/orgs/sfid/:accountId — canonical record by legacy Salesforce account id
 router.get('/sfid/:accountId', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
 

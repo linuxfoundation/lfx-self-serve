@@ -87,9 +87,63 @@ export interface OrgCanonicalRecord {
   industry?: string | null;
   sector?: string | null;
   numberOfEmployees?: number | null;
+  /** Crunchbase profile URL (spec 021). */
+  crunchBaseUrl?: string | null;
+  /** Last-modified timestamp from upstream (ISO 8601 UTC); displayed as "Last Updated" on the profile page (spec 021). */
+  updatedAt?: string | null;
   /** b2b_org.uid of the parent; null for top-level orgs. */
   parentUid?: string | null;
   isMember: boolean;
+}
+
+/** Partial-update payload for `PUT /api/orgs/uid/:uid` (spec 021). Only changed fields are included. Excludes `name` (locked at UI) and `logoUrl` (deferred). */
+export interface OrgUpdateRequest {
+  description?: string;
+  website?: string;
+  industry?: string;
+  sector?: string;
+  crunchBaseUrl?: string;
+  numberOfEmployees?: number | null;
+}
+
+/** Snake_case body for member-service `PUT /b2b_orgs/{uid}` — mirrors upstream Goa `B2BOrgUpdateBody` (spec 021). */
+export interface MemberServiceB2bOrgUpdateBody {
+  description?: string;
+  website?: string;
+  industry?: string;
+  sector?: string;
+  crunch_base_url?: string;
+  number_of_employees?: number | null;
+}
+
+/** Editable form fields for the Org Profile edit view — drives dirty-check + validation (spec 021). */
+export interface OrgProfileEditableFields {
+  description: string;
+  website: string;
+  numberOfEmployees: number | null;
+  crunchBaseUrl: string;
+  industry: string;
+  sector: string;
+}
+
+/** Optional per-uid enrichment in org-selector.mock.json `canonicalExtras` (spec 020/021). */
+export type OrgCanonicalMockExtras = Partial<
+  Pick<OrgCanonicalRecord, 'description' | 'website' | 'industry' | 'sector' | 'numberOfEmployees' | 'crunchBaseUrl' | 'updatedAt' | 'parentUid'>
+>;
+
+/** Single physical address (spec 021). */
+export interface OrgAddress {
+  line1: string;
+  city: string;
+  stateProvince: string;
+  postalCode: string;
+  country: string;
+}
+
+/** Response shape for `GET /api/orgs/uid/:uid/addresses` (spec 021). Mock-backed in v1; future-ready for member-service integration. */
+export interface OrgAddressesResponse {
+  primaryAddress: OrgAddress | null;
+  billingAddress: OrgAddress | null;
 }
 
 /** Internal page result used by the client `OrgNavigationService` reactive pipeline. `reset=true` marks a fresh first page. */
@@ -148,6 +202,10 @@ export interface MemberServiceB2bOrgResponse {
   industry?: string | null;
   sector?: string | null;
   number_of_employees?: number | null;
+  /** Crunchbase URL on the upstream record (spec 021). */
+  crunch_base_url?: string | null;
+  /** Upstream last-modified timestamp (spec 021). */
+  updated_at?: string | null;
   parent_uid?: string | null;
   is_member?: boolean;
 }
