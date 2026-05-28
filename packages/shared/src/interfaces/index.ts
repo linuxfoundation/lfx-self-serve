@@ -178,5 +178,8 @@ export * from './org-people.interface';
 // Newsletter interfaces
 export * from './newsletter.interface';
 
+// Email service interfaces
+export * from './email-service.interface';
+
 // Invite interfaces
 export * from './invite.interface';

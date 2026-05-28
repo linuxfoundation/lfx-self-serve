@@ -101,6 +101,12 @@ export class NewsletterListComponent {
   );
 
   public constructor() {
+    // Seed statusTab from the `?tab=` query param so post-send navigation
+    // (and any deep links) land on the right tab — defaults to 'draft'.
+    const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
+    if (tabFromQuery === 'sent' || tabFromQuery === 'draft') {
+      this.statusTab.set(tabFromQuery);
+    }
     this.initLoadOnContextOrTab();
   }
 

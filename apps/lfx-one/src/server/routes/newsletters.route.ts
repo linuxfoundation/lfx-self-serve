@@ -4,13 +4,14 @@
 import { Router } from 'express';
 
 import { NewsletterController } from '../controllers/newsletter.controller';
-import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 
 const router = Router();
 const newsletterController = new NewsletterController();
 
-// All newsletter endpoints are Executive Director-only.
-router.use(requireExecutiveDirector);
+// Authorization is enforced by the downstream lfx-v2-newsletter-service (FGA
+// via the forwarded user bearer token) and by the corresponding frontend
+// route guards. Don't gate on persona here — newsletters are accessible to
+// Executive Directors AND writers/owners of the foundation or project.
 
 // List newsletters (drafts + sent) and per-newsletter analytics
 router.get('/', (req, res, next) => newsletterController.listNewsletters(req, res, next));
@@ -30,7 +31,11 @@ router.post('/recipients', (req, res, next) => newsletterController.getRecipient
 router.post('/test-send', (req, res, next) => newsletterController.testSend(req, res, next));
 router.post('/send', (req, res, next) => newsletterController.send(req, res, next));
 
-// AI generation stays in lfx-v2-ui
+// AI generation. Doesn't proxy to the Go newsletter-service, so there's no
+// downstream FGA check to lean on. Protection layers are the global auth
+// middleware (must be a logged-in user) + the /api rate limit. Writers
+// compose newsletters in the UI and need this too. A tighter writer/owner
+// check tied to a project contextUid is a follow-up.
 router.post('/generate', (req, res, next) => newsletterController.generate(req, res, next));
 
 export default router;
