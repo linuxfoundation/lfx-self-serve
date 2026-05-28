@@ -7,10 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
+import { PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus, stableKeyParity } from '@lfx-one/shared/utils';
+import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -33,6 +33,8 @@ import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dia
   styleUrl: './committee-overview.component.scss',
 })
 export class CommitteeOverviewComponent {
+  protected readonly typeLabels = PENDING_ACTION_LABEL;
+
   // Injections
   private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
@@ -402,10 +404,7 @@ export class CommitteeOverviewComponent {
       }));
       return [...voteItems, ...surveyItems, ...respondedSurveyItems].map((item, index) => {
         const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
-        // Parity from `rowKey` (not list index) so future row removals (e.g., a vote closing)
-        // don't flip following rows' stripes mid-`transition-colors`.
-        const rowClass = stableKeyParity(rowKey) === 0 ? 'bg-white' : 'bg-gray-50/60';
-        return { ...item, rowKey, rowClass };
+        return { ...item, rowKey };
       });
     });
   }

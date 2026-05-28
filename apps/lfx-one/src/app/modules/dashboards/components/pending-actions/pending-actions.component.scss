@@ -1,2 +1,45 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+
+// Both transitions run for 300ms so the longest CSS animation matches PENDING_ACTION_FADE_OUT_MS in
+// @lfx-one/shared/constants and the JS doesn't drop the row before the fade has finished playing.
+.pending-action-row {
+  transition:
+    opacity 300ms ease-out,
+    max-height 300ms ease-out;
+  max-height: 12rem;
+  overflow: hidden;
+
+  &.is-completing {
+    opacity: 0;
+    max-height: 0;
+  }
+}
+
+:host ::ng-deep .pending-actions-toast {
+  .p-toast-message,
+  .p-toast-message-success,
+  .p-toast-message-info,
+  .p-toast-message-warn,
+  .p-toast-message-error {
+    background: theme('colors.white');
+    border: 1px solid theme('colors.gray.200');
+    color: theme('colors.gray.900');
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  .p-toast-message-content {
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1rem;
+  }
+
+  .p-toast-icon-close {
+    color: theme('colors.gray.400');
+
+    &:hover {
+      color: theme('colors.gray.600');
+      background: transparent;
+    }
+  }
+}

@@ -527,15 +527,26 @@ export interface DecoratedPendingAction extends PendingActionItem {
   rowClass: string;
 }
 
-/**
- * Lighter pending-action row used by committee-overview's static list (no inline RSVP, no meeting fetch).
- * Carries only the row identity + computed background class needed for stable @for tracking and zebra striping.
- */
+/** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */
+export interface DrawerActionRow extends PendingActionItem {
+  /** Stable row identifier used for `@for ... track` */
+  rowKey: string;
+  /** True when the action is an RSVP that should render inline RSVP buttons (RSVP type with a meetingUid and no fetch failure) */
+  isRsvpInline: boolean;
+  /** True when the action is a Vote with a voteUid; drives the inline cast-drawer launch path in the template */
+  isVoteInline: boolean;
+  /** Lazily-loaded Meeting passed to RsvpButtonGroupComponent; null until fetched */
+  meeting: Meeting | null;
+  /** True while the Meeting payload for this row is being fetched */
+  isMeetingLoading: boolean;
+  /** True when the Meeting fetch failed; the row falls back to the regular buttonLink CTA so the user has a working action */
+  meetingLoadFailed: boolean;
+}
+
+/** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */
 export interface CommitteePendingActionRow extends PendingActionItem {
   /** Stable row identifier used for `@for ... track` */
   rowKey: string;
-  /** Tailwind background class — zebra stripe via `stableKeyParity(rowKey)` */
-  rowClass: string;
 }
 
 /**

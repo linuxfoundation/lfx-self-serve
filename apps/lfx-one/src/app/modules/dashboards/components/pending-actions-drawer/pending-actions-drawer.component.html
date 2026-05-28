@@ -1,0 +1,121 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[50%] lg:w-[40%] md:w-[70%] sm:w-[95%] w-full pending-actions-drawer"
+  data-testid="pending-actions-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between w-full pl-4 pr-4" data-testid="pending-actions-drawer-header">
+      <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2" data-testid="pending-actions-drawer-title">
+        <i class="fa-light fa-list-check text-base text-slate-700" aria-hidden="true"></i>
+        <span>Pending Actions</span>
+        <span class="text-sm font-medium text-slate-500" data-testid="pending-actions-drawer-count">({{ uncompletedCount() }})</span>
+      </h1>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+        data-testid="pending-actions-drawer-close"
+        aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  @if (visibleRows().length > 0) {
+    <div class="divide-y divide-gray-200" data-testid="pending-actions-drawer-list">
+      @for (item of visibleRows(); track item.rowKey) {
+        <div
+          class="pending-action-card px-4 py-3"
+          [class.is-completing]="completingRowKeys().has(item.rowKey)"
+          [attr.data-testid]="'pending-actions-drawer-item-' + item.type">
+          <div class="flex items-center gap-4">
+            <!-- Left: badge (fixed width so titles align) -->
+            <div class="w-36 shrink-0">
+              <lfx-tag [value]="typeLabels[item.type]" [severity]="item.severity" [icon]="item.icon" styleClass="inline-flex whitespace-nowrap" />
+            </div>
+            <!-- Middle: meeting/action name -->
+            <div class="flex-1 min-w-0">
+              @if (item.buttonLink) {
+                <a
+                  [href]="item.buttonLink"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group text-sm font-medium text-gray-900 hover:text-blue-600 flex items-center gap-1.5 min-w-0"
+                  [attr.title]="item.text"
+                  data-testid="pending-actions-drawer-title">
+                  <span class="truncate group-hover:underline">{{ item.text }}</span>
+                  <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
+                </a>
+              } @else {
+                <span class="text-sm font-medium text-gray-900 truncate block" [attr.title]="item.text" data-testid="pending-actions-drawer-title">
+                  {{ item.text }}
+                </span>
+              }
+            </div>
+
+            <!-- Right: CTA(s) -->
+            <div class="shrink-0">
+              @if (item.isRsvpInline) {
+                @if (item.isMeetingLoading || !item.meeting) {
+                  <div class="flex items-center gap-2" data-testid="pending-actions-drawer-rsvp-loading">
+                    <p-skeleton width="4.5rem" height="2rem" />
+                    <p-skeleton width="4.5rem" height="2rem" />
+                    <p-skeleton width="4.5rem" height="2rem" />
+                  </div>
+                } @else {
+                  <div data-testid="pending-actions-drawer-rsvp-buttons">
+                    <lfx-rsvp-button-group
+                      [meeting]="item.meeting"
+                      [showHeader]="false"
+                      [suppressToast]="true"
+                      [compact]="true"
+                      [occurrenceId]="item.occurrenceId"
+                      (rsvpChanged)="handleRsvpSubmit(item, $event)" />
+                  </div>
+                }
+              } @else if (item.isVoteInline) {
+                <lfx-button
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="handleAgendaOrOtherClick(item)"
+                  [label]="item.buttonText"
+                  [icon]="buttonIcons[item.type]"
+                  data-testid="pending-actions-drawer-vote-button" />
+              } @else if (item.buttonLink) {
+                <lfx-button
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  rel="noopener noreferrer"
+                  [link]="true"
+                  [href]="item.buttonLink"
+                  target="_blank"
+                  (onClick)="handleAgendaOrOtherClick(item)"
+                  [label]="item.buttonText"
+                  [icon]="buttonIcons[item.type]" />
+              } @else {
+                <lfx-button
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="handleAgendaOrOtherClick(item)"
+                  [label]="item.buttonText"
+                  [icon]="buttonIcons[item.type]" />
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="flex items-center justify-center py-16 px-4" data-testid="pending-actions-drawer-empty">
+      <lfx-empty-state icon="fa-light fa-circle-check" title="All caught up!" subtitle="No pending actions assigned to you" [withCard]="false" />
+    </div>
+  }
+</p-drawer>

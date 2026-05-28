@@ -1,6 +1,42 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<p-toast key="pending-actions-toast" position="top-right" styleClass="pending-actions-toast">
+  <ng-template let-message pTemplate="message">
+    <div class="flex items-start gap-3 w-full">
+      @switch (message.severity) {
+        @case ('error') {
+          <i class="fa-light fa-circle-xmark text-red-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+        @case ('warn') {
+          <i class="fa-light fa-triangle-exclamation text-amber-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+        @case ('info') {
+          <i class="fa-light fa-circle-info text-blue-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+        @default {
+          <i class="fa-light fa-circle-check text-emerald-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+      }
+      <div class="flex flex-col gap-1 min-w-0 flex-1">
+        <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
+        <span class="text-xs text-gray-600 break-words">{{ message.detail }}</span>
+        @if (message.data?.meetingUrl) {
+          <a
+            [routerLink]="message.data.meetingUrl"
+            class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 mt-1"
+            [attr.aria-label]="message.data.meetingTitle ? 'View details for ' + message.data.meetingTitle : 'View meeting details'"
+            [attr.title]="message.data.meetingTitle ? 'View details for ' + message.data.meetingTitle : null"
+            data-testid="dashboard-pending-actions-toast-meeting-link">
+            <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+            <span>View meeting details</span>
+          </a>
+        }
+      </div>
+    </div>
+  </ng-template>
+</p-toast>
+
 <section data-testid="dashboard-pending-actions-section">
   <!-- Section header with inline divider -->
   <div class="flex items-center gap-3 mb-6">
@@ -9,96 +45,133 @@
       <span>My Pending Actions</span>
     </h2>
     <div class="flex-1 border-t border-gray-200 self-center"></div>
+    @if (hasMore()) {
+      <lfx-button
+        [text]="true"
+        severity="primary"
+        [label]="'View all (' + totalVisible() + ')'"
+        (onClick)="openDrawer()"
+        data-testid="dashboard-pending-actions-view-all" />
+    }
   </div>
 
-  @if (decoratedActions().length > 0) {
-    <!-- Unified card with divider rows -->
-    <div
-      class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200 max-h-[30rem] overflow-y-auto"
-      data-testid="dashboard-pending-actions-list">
-      @for (item of decoratedActions(); track item.rowKey) {
-        <div
-          class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 transition-colors duration-300"
-          [class]="item.rowClass"
-          [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
-          <!-- Label — 20% on sm+ -->
-          <div class="shrink-0 sm:w-1/5">
-            <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
-          </div>
-          <!-- Description — 60% on sm+; for RSVP rows the title links to the meeting page in a new tab. -->
-          @if (item.isRsvpInlineLink) {
-            <a
-              [href]="item.buttonLink"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:px-4 hover:text-blue-600 hover:underline inline-flex items-center gap-1.5"
-              [attr.title]="item.text"
-              [attr.aria-label]="'Open meeting in new tab: ' + item.text"
-              data-testid="dashboard-pending-actions-title">
-              <span class="sm:truncate">{{ item.text }}</span>
-              <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0" aria-hidden="true"></i>
-            </a>
-          } @else {
-            <p
-              class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4"
-              [attr.title]="item.text"
-              data-testid="dashboard-pending-actions-title">
-              {{ item.text }}
-            </p>
-          }
-          <!-- Action button — 20% on sm+, right-aligned -->
-          <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-            @if (item.isRsvpInline) {
-              @if (item.isExpanded) {
-                @if (item.isLoading || !item.meeting) {
-                  <lfx-button
-                    size="small"
-                    severity="secondary"
-                    [outlined]="true"
-                    [disabled]="true"
-                    [label]="item.buttonText"
-                    icon="fa-light fa-spinner-third fa-spin"
-                    data-testid="dashboard-pending-actions-rsvp-loading" />
-                } @else {
-                  <div data-testid="dashboard-pending-actions-rsvp-buttons">
-                    <lfx-rsvp-button-group
-                      [meeting]="item.meeting"
-                      [showHeader]="false"
-                      [occurrenceId]="item.occurrenceId"
-                      (rsvpChanged)="handleRsvpChanged(item)" />
-                  </div>
-                }
-              } @else {
-                <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
-              }
-            } @else if (item.isVoteInline) {
-              <lfx-button
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText"
-                data-testid="dashboard-pending-actions-vote-button" />
-            } @else if (item.buttonLink) {
-              <lfx-button
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                rel="noopener noreferrer"
-                [link]="true"
-                [href]="item.buttonLink"
-                target="_blank"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText" />
+  <!--
+    Use totalVisible() (unwindowed count) to choose between the populated branch and the empty state so the drawer stays
+    reachable even when displayLimit clamps decoratedActions() to zero. Inside the populated branch, the inline list only
+    renders when decoratedActions() actually has rows.
+  -->
+  @if (totalVisible() > 0) {
+    @if (decoratedActions().length > 0) {
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200" data-testid="dashboard-pending-actions-list">
+        @for (item of decoratedActions(); track item.rowKey) {
+          <div
+            class="pending-action-row"
+            [class.is-completing]="completingRowKeys().has(item.rowKey)"
+            [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
+            @if (swappingRowKeys().has(item.rowKey)) {
+              <!-- Skeleton placeholder occupying the row slot while the next action takes over -->
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3" [class]="item.rowClass">
+                <div class="shrink-0 sm:w-40">
+                  <p-skeleton width="5rem" height="1.5rem" />
+                </div>
+                <div class="sm:flex-1 sm:min-w-0 sm:px-4">
+                  <p-skeleton width="80%" height="1rem" />
+                </div>
+                <div class="self-start sm:self-auto sm:shrink-0 sm:flex sm:justify-end">
+                  <p-skeleton width="6rem" height="2rem" />
+                </div>
+              </div>
             } @else {
-              <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3" [class]="item.rowClass">
+                <!-- Label — fixed-content width, no longer 20% -->
+                <div class="shrink-0 sm:w-40">
+                  <lfx-tag [value]="typeLabels[item.type]" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
+                </div>
+                <!-- Description — flexes to fill; RSVP titles with a `buttonLink` link to the meeting page in a new tab, all other titles render as plain text. -->
+                @if (item.isRsvpInlineLink) {
+                  <a
+                    [href]="item.buttonLink"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="group text-sm font-medium text-gray-900 sm:flex-1 sm:min-w-0 sm:px-4 hover:text-blue-600 inline-flex items-center gap-1.5"
+                    [attr.title]="item.text"
+                    [attr.aria-label]="'Open meeting in new tab: ' + item.text"
+                    data-testid="dashboard-pending-actions-title">
+                    <span class="sm:truncate group-hover:underline">{{ item.text }}</span>
+                    <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
+                  </a>
+                } @else {
+                  <p
+                    class="text-sm font-medium text-gray-900 sm:flex-1 sm:min-w-0 sm:truncate sm:px-4"
+                    [attr.title]="item.text"
+                    data-testid="dashboard-pending-actions-title">
+                    {{ item.text }}
+                  </p>
+                }
+                <!-- Action button — right-aligned, fixed by content -->
+                <div class="self-start sm:self-auto sm:shrink-0 sm:flex sm:justify-end">
+                  @if (item.isRsvpInline) {
+                    @if (!item.meeting || item.isLoading) {
+                      <div class="flex items-center gap-2" data-testid="dashboard-pending-actions-rsvp-loading">
+                        <p-skeleton width="4rem" height="2rem" />
+                        <p-skeleton width="4rem" height="2rem" />
+                        <p-skeleton width="4rem" height="2rem" />
+                      </div>
+                    } @else {
+                      <div data-testid="dashboard-pending-actions-rsvp-buttons">
+                        <lfx-rsvp-button-group
+                          [meeting]="item.meeting"
+                          [showHeader]="false"
+                          [compact]="true"
+                          [suppressToast]="true"
+                          [occurrenceId]="item.occurrenceId"
+                          (rsvpChanged)="handleRsvpSubmit(item, $event)" />
+                      </div>
+                    }
+                  } @else if (item.isVoteInline) {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="handleAgendaOrOtherClick(item)"
+                      [label]="item.buttonText"
+                      [icon]="buttonIcons[item.type]"
+                      data-testid="dashboard-pending-actions-vote-button" />
+                  } @else if (item.buttonLink) {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      rel="noopener noreferrer"
+                      [link]="true"
+                      [href]="item.buttonLink"
+                      target="_blank"
+                      (onClick)="handleAgendaOrOtherClick(item)"
+                      [label]="item.buttonText"
+                      [icon]="buttonIcons[item.type]" />
+                  } @else {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="handleAgendaOrOtherClick(item)"
+                      [label]="item.buttonText"
+                      [icon]="buttonIcons[item.type]" />
+                  }
+                </div>
+              </div>
             }
           </div>
-        </div>
-      }
-    </div>
+        }
+      </div>
+    }
+
+    <lfx-pending-actions-drawer
+      [pendingActions]="pendingActions()"
+      [(visible)]="drawerVisible"
+      (actionCompleted)="onDrawerActionCompleted()"
+      (castVoteRequested)="castVoteRequested.emit($event)" />
   } @else {
-    <!-- Empty state -->
     <div class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-10" data-testid="dashboard-pending-actions-empty">
       <i class="fa-light fa-box-check text-4xl text-gray-400 shrink-0"></i>
       <div>

@@ -109,11 +109,7 @@
 
     <!-- Pending Actions -->
     @defer (on idle) {
-      <lfx-pending-actions
-        [pendingActions]="pendingActions()"
-        [displayLimit]="2"
-        (actionClick)="handleActionClick()"
-        (castVoteRequested)="castDrawerHost.open($event)" />
+      <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" (castVoteRequested)="castDrawerHost.open($event)" />
     } @placeholder {
       <section class="flex flex-col flex-1" data-testid="ed-dashboard-pending-actions-placeholder">
         <div class="flex items-center justify-between mb-4 px-2 h-8">
