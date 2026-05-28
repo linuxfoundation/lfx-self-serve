@@ -146,6 +146,9 @@ router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req
 // Social reach endpoint (marketing dashboard)
 router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
+// Keyword performance endpoint (marketing dashboard)
+router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+
 // Social media endpoint (marketing dashboard)
 router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
 

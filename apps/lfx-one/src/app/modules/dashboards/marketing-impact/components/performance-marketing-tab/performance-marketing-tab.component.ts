@@ -12,6 +12,8 @@ import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 import type {
   FilterPillOption,
   FunnelStage,
+  KeywordPerformanceResponse,
+  KeywordRow,
   MarketingImpactFocusProgram,
   PaidCampaignPerformance,
   PaidCampaignRow,
@@ -20,6 +22,7 @@ import type {
   PerformanceSummaryKpi,
   PlatformCampaignRow,
   PlatformPerformanceRow,
+  SearchTermRow,
   SocialReachResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -61,18 +64,23 @@ export class PerformanceMarketingTabComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  protected readonly keywordLoading = signal(false);
   protected readonly selectedFunnel = signal<FunnelStage>('all');
   protected readonly expandedProjects = signal<Set<string>>(new Set());
   protected readonly expandedPlatforms = signal<Set<string>>(new Set());
+  protected readonly expandedKeywords = signal<Set<string>>(new Set());
 
   // === Computed Signals ===
   protected readonly socialReachData: Signal<SocialReachResponse | null> = this.initSocialReachData();
+  protected readonly keywordData: Signal<KeywordPerformanceResponse | null> = this.initKeywordData();
   protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
   protected readonly projectRows: Signal<PaidProjectRow[]> = this.initProjectRows();
   protected readonly platformRows: Signal<PlatformPerformanceRow[]> = this.initPlatformRows();
   protected readonly platformTotals: Signal<PlatformPerformanceRow | null> = this.initPlatformTotals();
+  protected readonly keywordRows: Signal<KeywordRow[]> = this.initKeywordRows();
   protected readonly hasProjects = computed(() => this.projectRows().length > 0);
   protected readonly hasPlatforms = computed(() => this.platformRows().length > 0);
+  protected readonly hasKeywords = computed(() => this.keywordRows().length > 0);
 
   // === Protected Methods ===
   protected onFunnelChange(funnelId: string): void {
@@ -100,6 +108,18 @@ export class PerformanceMarketingTabComponent {
         next.delete(platform);
       } else {
         next.add(platform);
+      }
+      return next;
+    });
+  }
+
+  protected toggleKeywordExpand(keyword: string): void {
+    this.expandedKeywords.update((current) => {
+      const next = new Set(current);
+      if (next.has(keyword)) {
+        next.delete(keyword);
+      } else {
+        next.add(keyword);
       }
       return next;
     });
@@ -302,6 +322,63 @@ export class PerformanceMarketingTabComponent {
         performanceClass: this.getPerformanceClass(totalPerf),
         campaigns: [],
       };
+    });
+  }
+
+  private initKeywordData(): Signal<KeywordPerformanceResponse | null> {
+    const slug$ = toObservable(this.foundationSlug);
+
+    return toSignal(
+      slug$.pipe(
+        switchMap((slug) => {
+          this.expandedKeywords.set(new Set());
+          if (!slug) {
+            this.keywordLoading.set(false);
+            return of(null);
+          }
+          this.keywordLoading.set(true);
+          return this.analyticsService.getKeywordPerformance(slug).pipe(
+            catchError(() => of(null)),
+            finalize(() => this.keywordLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initKeywordRows(): Signal<KeywordRow[]> {
+    return computed(() => {
+      const data = this.keywordData();
+      if (!data?.keywords?.length) return [];
+
+      return data.keywords.map(
+        (k): KeywordRow => ({
+          keyword: k.keyword,
+          matchType: k.matchType,
+          clicks: formatNumber(k.clicks),
+          spend: formatCurrency(k.spend),
+          impressions: formatNumber(k.impressions),
+          ctr: `${(k.ctr ?? 0).toFixed(2)}%`,
+          cpc: formatCurrency(k.cpc),
+          conversions: formatNumber(k.conversions),
+          convRate: `${(k.conversionRate ?? 0).toFixed(2)}%`,
+          revenue: formatCurrency(k.attributedRevenue),
+          roas: `${(k.roas ?? 0).toFixed(2)}x`,
+          searchTerms: (k.searchTerms ?? []).map(
+            (st): SearchTermRow => ({
+              searchTerm: st.searchTerm,
+              matchType: st.matchType,
+              clicks: formatNumber(st.clicks),
+              spend: formatCurrency(st.spend),
+              impressions: formatNumber(st.impressions),
+              ctr: `${(st.ctr ?? 0).toFixed(2)}%`,
+              cpc: formatCurrency(st.cpc),
+              conversions: formatNumber(st.conversions),
+            })
+          ),
+        })
+      );
     });
   }
 

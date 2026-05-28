@@ -2051,6 +2051,47 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/keyword-performance
+   * Get keyword and search term performance data from Snowflake Platinum tables
+   */
+  public async getKeywordPerformance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_keyword_performance');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_keyword_performance',
+        });
+      }
+
+      if (foundationSlug.length > NAME_MAX_LENGTH) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug exceeds maximum length', {
+          operation: 'get_keyword_performance',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_keyword_performance',
+        });
+      }
+
+      const response = await this.projectService.getKeywordPerformance(foundationSlug);
+
+      logger.success(req, 'get_keyword_performance', startTime, {
+        foundation_slug: foundationSlug,
+        keyword_count: response.keywords.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/social-media
    * Get social media metrics from Snowflake Platinum tables
    */

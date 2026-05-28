@@ -3331,3 +3331,82 @@ export interface EdEvolutionData {
   paidCampaign: SocialReachResponse;
   attribution?: MarketingAttributionResponse;
 }
+
+// ============================================
+// Keyword Performance (Marketing Impact Dashboard)
+// ============================================
+
+/**
+ * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
+ * One row per keyword/search-term per day.
+ */
+export interface KeywordPerformanceRow {
+  RECORD_TYPE: 'keyword' | 'search_term';
+  KEYWORD_TEXT: string;
+  KEYWORD_MATCH_TYPE: string;
+  SEARCH_TERM: string | null;
+  SEARCH_TERM_MATCH_TYPE: string | null;
+  CLICKS: number;
+  SPEND: number;
+  IMPRESSIONS: number;
+  CONVERSIONS: number;
+  CONVERSIONS_VALUE: number;
+  CTR: number;
+  CPC: number;
+  CONVERSION_RATE: number;
+}
+
+/**
+ * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_ATTRIBUTION (monthly grain).
+ * One row per keyword per month with attributed revenue.
+ */
+export interface KeywordAttributionRow {
+  KEYWORD_TEXT: string;
+  KEYWORD_MATCH_TYPE: string;
+  KEYWORD_CLICKS: number;
+  KEYWORD_SPEND: number;
+  KEYWORD_IMPRESSIONS: number;
+  ATTRIBUTED_LT_REVENUE: number;
+  ATTRIBUTED_LT_CONVERSIONS: number;
+  ATTRIBUTED_LT_ROAS: number;
+}
+
+/** Aggregated keyword row for the UI table. */
+export interface KeywordSummary {
+  keyword: string;
+  matchType: string;
+  clicks: number;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+  conversionRate: number;
+  attributedRevenue: number;
+  roas: number;
+  searchTerms: SearchTermSummary[];
+}
+
+/** Aggregated search term row nested under a keyword. */
+export interface SearchTermSummary {
+  searchTerm: string;
+  matchType: string;
+  clicks: number;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+}
+
+/** API response for the keyword performance endpoint. */
+export interface KeywordPerformanceResponse {
+  keywords: KeywordSummary[];
+  totals: {
+    clicks: number;
+    spend: number;
+    impressions: number;
+    conversions: number;
+    attributedRevenue: number;
+  };
+}

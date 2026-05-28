@@ -61,6 +61,7 @@ import {
   TrainingCertificationSummaryResponse,
   CodeContributionSummaryResponse,
   BoardMeetingParticipationSummaryResponse,
+  KeywordPerformanceResponse,
   SocialMediaResponse,
   SocialReachResponse,
   WebActivitiesSummaryResponse,
@@ -914,6 +915,17 @@ export class AnalyticsService {
           monthlyLabels: [],
           monthlyRoas: [],
           channelGroups: [],
+        });
+      })
+    );
+  }
+
+  public getKeywordPerformance(foundationSlug: string): Observable<KeywordPerformanceResponse> {
+    return this.http.get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params: { foundationSlug } }).pipe(
+      catchError(() => {
+        return of({
+          keywords: [],
+          totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 },
         });
       })
     );

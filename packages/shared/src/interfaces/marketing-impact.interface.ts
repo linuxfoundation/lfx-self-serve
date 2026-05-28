@@ -180,3 +180,31 @@ export interface PlatformCampaignRow {
   /** Pre-formatted number string, e.g. "12,345" */
   impressions: string;
 }
+
+/** View-model row for the keyword performance table. */
+export interface KeywordRow {
+  keyword: string;
+  matchType: string;
+  clicks: string;
+  spend: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  conversions: string;
+  convRate: string;
+  revenue: string;
+  roas: string;
+  searchTerms: SearchTermRow[];
+}
+
+/** View-model row for a nested search term under a keyword. */
+export interface SearchTermRow {
+  searchTerm: string;
+  matchType: string;
+  clicks: string;
+  spend: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  conversions: string;
+}

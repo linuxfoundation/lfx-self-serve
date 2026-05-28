@@ -65,6 +65,10 @@ import {
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
   HealthMetricsRange,
+  KeywordAttributionRow,
+  KeywordPerformanceResponse,
+  KeywordPerformanceRow,
+  KeywordSummary,
   LifecycleStage,
   MarketingAttributionChannel,
   MarketingAttributionProject,
@@ -5926,6 +5930,172 @@ export class ProjectService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /**
+   * Get keyword performance data from Snowflake Platinum tables.
+   * Queries PAID_ADS_KEYWORD_PERFORMANCE (daily grain, aggregated) and
+   * PAID_ADS_KEYWORD_ATTRIBUTION (monthly grain, aggregated) for attributed revenue.
+   */
+  public async getKeywordPerformance(foundationSlug: string): Promise<KeywordPerformanceResponse> {
+    logger.debug(undefined, 'get_keyword_performance', 'Fetching keyword performance from Snowflake', { foundation_slug: foundationSlug });
+
+    try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
+
+      const perfQuery = `
+      WITH top_keywords AS (
+        SELECT KEYWORD_TEXT, KEYWORD_MATCH_TYPE, SUM(SPEND) AS KEYWORD_SPEND
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE
+        WHERE RECORD_TYPE = 'keyword'
+          AND REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          ${foundationFilter}
+        GROUP BY KEYWORD_TEXT, KEYWORD_MATCH_TYPE
+        ORDER BY KEYWORD_SPEND DESC
+        LIMIT 500
+      )
+      SELECT
+        p.KEYWORD_TEXT,
+        p.KEYWORD_MATCH_TYPE,
+        p.RECORD_TYPE,
+        p.SEARCH_TERM,
+        p.SEARCH_TERM_MATCH_TYPE,
+        SUM(p.CLICKS) AS CLICKS,
+        SUM(p.SPEND) AS SPEND,
+        SUM(p.IMPRESSIONS) AS IMPRESSIONS,
+        SUM(p.CONVERSIONS) AS CONVERSIONS,
+        SUM(p.CONVERSIONS_VALUE) AS CONVERSIONS_VALUE,
+        CASE WHEN SUM(p.IMPRESSIONS) > 0 THEN SUM(p.CLICKS) / SUM(p.IMPRESSIONS) * 100 ELSE 0 END AS CTR,
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC,
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.CONVERSIONS) / SUM(p.CLICKS) * 100 ELSE 0 END AS CONVERSION_RATE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE p
+      INNER JOIN top_keywords k
+        ON p.KEYWORD_TEXT = k.KEYWORD_TEXT AND p.KEYWORD_MATCH_TYPE = k.KEYWORD_MATCH_TYPE
+      WHERE p.REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        ${foundationFilter}
+      GROUP BY p.KEYWORD_TEXT, p.KEYWORD_MATCH_TYPE, p.RECORD_TYPE, p.SEARCH_TERM, p.SEARCH_TERM_MATCH_TYPE
+      ORDER BY k.KEYWORD_SPEND DESC, p.RECORD_TYPE
+      `;
+
+      const attrQuery = `
+      SELECT
+        KEYWORD_TEXT,
+        KEYWORD_MATCH_TYPE,
+        SUM(KEYWORD_CLICKS) AS KEYWORD_CLICKS,
+        SUM(KEYWORD_SPEND) AS KEYWORD_SPEND,
+        SUM(KEYWORD_IMPRESSIONS) AS KEYWORD_IMPRESSIONS,
+        SUM(ATTRIBUTED_LT_REVENUE) AS ATTRIBUTED_LT_REVENUE,
+        SUM(ATTRIBUTED_LT_CONVERSIONS) AS ATTRIBUTED_LT_CONVERSIONS,
+        CASE WHEN SUM(KEYWORD_SPEND) > 0 THEN SUM(ATTRIBUTED_LT_REVENUE) / SUM(KEYWORD_SPEND) ELSE 0 END AS ATTRIBUTED_LT_ROAS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_ATTRIBUTION
+      WHERE STAT_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        ${foundationFilter}
+      GROUP BY KEYWORD_TEXT, KEYWORD_MATCH_TYPE
+      ORDER BY KEYWORD_SPEND DESC
+      LIMIT 500
+      `;
+
+      const [perfResult, attrResult] = await Promise.all([
+        this.snowflakeService.execute<KeywordPerformanceRow>(perfQuery, [...foundationParams, ...foundationParams]),
+        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, foundationParams).catch((error) => {
+          logger.warning(undefined, 'get_keyword_performance', 'Attribution query failed, degrading gracefully', {
+            foundation_slug: foundationSlug,
+            err: error,
+          });
+          return { rows: [] as KeywordAttributionRow[] };
+        }),
+      ]);
+
+      const attrMap = new Map<string, KeywordAttributionRow>();
+      for (const row of attrResult.rows) {
+        attrMap.set(`${row.KEYWORD_TEXT}|${row.KEYWORD_MATCH_TYPE}`, row);
+      }
+
+      const keywordMap = new Map<string, KeywordSummary>();
+      const searchTermRows: KeywordPerformanceRow[] = [];
+      let totalClicks = 0;
+      let totalSpend = 0;
+      let totalImpressions = 0;
+      let totalConversions = 0;
+      let totalAttributedRevenue = 0;
+
+      for (const row of perfResult.rows) {
+        if (row.RECORD_TYPE === 'search_term') {
+          searchTermRows.push(row);
+          continue;
+        }
+
+        const key = `${row.KEYWORD_TEXT}|${row.KEYWORD_MATCH_TYPE}`;
+        const attr = attrMap.get(key);
+        const attributedRevenue = attr?.ATTRIBUTED_LT_REVENUE ?? 0;
+        const roas = attr?.ATTRIBUTED_LT_ROAS ?? 0;
+
+        const summary: KeywordSummary = {
+          keyword: row.KEYWORD_TEXT,
+          matchType: row.KEYWORD_MATCH_TYPE,
+          clicks: row.CLICKS ?? 0,
+          spend: Math.round((row.SPEND ?? 0) * 100) / 100,
+          impressions: row.IMPRESSIONS ?? 0,
+          ctr: Math.round((row.CTR ?? 0) * 100) / 100,
+          cpc: Math.round((row.CPC ?? 0) * 100) / 100,
+          conversions: row.CONVERSIONS ?? 0,
+          conversionRate: Math.round((row.CONVERSION_RATE ?? 0) * 100) / 100,
+          attributedRevenue: Math.round(attributedRevenue * 100) / 100,
+          roas: Math.round(roas * 100) / 100,
+          searchTerms: [],
+        };
+
+        keywordMap.set(key, summary);
+        totalClicks += summary.clicks;
+        totalSpend += summary.spend;
+        totalImpressions += summary.impressions;
+        totalConversions += summary.conversions;
+        totalAttributedRevenue += summary.attributedRevenue;
+      }
+
+      for (const row of searchTermRows) {
+        const parentKey = `${row.KEYWORD_TEXT}|${row.KEYWORD_MATCH_TYPE}`;
+        const parent = keywordMap.get(parentKey);
+        if (parent && row.SEARCH_TERM) {
+          parent.searchTerms.push({
+            searchTerm: row.SEARCH_TERM,
+            matchType: row.SEARCH_TERM_MATCH_TYPE ?? '',
+            clicks: row.CLICKS ?? 0,
+            spend: Math.round((row.SPEND ?? 0) * 100) / 100,
+            impressions: row.IMPRESSIONS ?? 0,
+            ctr: Math.round((row.CTR ?? 0) * 100) / 100,
+            cpc: Math.round((row.CPC ?? 0) * 100) / 100,
+            conversions: row.CONVERSIONS ?? 0,
+          });
+        }
+      }
+
+      const keywords = [...keywordMap.values()].sort((a, b) => b.spend - a.spend);
+
+      logger.debug(undefined, 'get_keyword_performance', 'Keyword performance fetched', {
+        foundation_slug: foundationSlug,
+        keyword_count: keywords.length,
+      });
+
+      return {
+        keywords,
+        totals: {
+          clicks: totalClicks,
+          spend: Math.round(totalSpend * 100) / 100,
+          impressions: totalImpressions,
+          conversions: totalConversions,
+          attributedRevenue: Math.round(totalAttributedRevenue * 100) / 100,
+        },
+      };
+    } catch (error) {
+      logger.warning(undefined, 'get_keyword_performance', 'Failed to fetch keyword performance, returning empty', {
+        foundation_slug: foundationSlug,
+        err: error,
+      });
+      return { keywords: [], totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 } };
+    }
   }
 
   // Runs one IN-clause Snowflake query per source table instead of 4 queries per slug, so a 25-foundation summary fires 4 queries rather than 100.

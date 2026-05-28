@@ -232,5 +232,104 @@
         </div>
       }
     </div>
+
+    <!-- Keyword performance table -->
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="keyword-performance-section">
+      <div class="flex flex-col gap-0.5">
+        <h4 class="text-sm font-semibold text-gray-900">Keyword performance</h4>
+        <p class="text-[11px] text-gray-400">Google Ads keywords · last 6 months · revenue uses last-touch attribution</p>
+      </div>
+
+      @if (keywordLoading()) {
+        <div class="flex flex-col gap-2" data-testid="keyword-performance-skeleton">
+          @for (i of [1, 2, 3]; track i) {
+            <div class="h-10 animate-pulse rounded bg-gray-100"></div>
+          }
+        </div>
+      } @else if (hasKeywords()) {
+        <div class="overflow-x-auto">
+          <div class="min-w-[1000px]">
+            <div class="flex flex-col gap-0" role="table" aria-label="Keyword performance" data-testid="keyword-performance-table">
+              <!-- Table header -->
+              <div class="flex items-center gap-2 border-b border-gray-200 pb-2" role="row">
+                <span class="w-48 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">KEYWORD</span>
+                <span class="w-20 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">MATCH</span>
+                <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CLICKS</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
+                <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+                <span class="w-14 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
+                <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CPC</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV.</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV. RATE</span>
+                <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
+                <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
+              </div>
+
+              <!-- Keyword rows -->
+              @for (row of keywordRows(); track row.keyword + '|' + row.matchType) {
+                @let kwKey = row.keyword + '|' + row.matchType;
+                @let kwExpanded = expandedKeywords().has(kwKey);
+                <div
+                  class="flex items-center gap-2 border-b border-gray-100 py-2.5 transition-colors"
+                  [class.cursor-pointer]="row.searchTerms.length > 0"
+                  [class.hover:bg-gray-50]="row.searchTerms.length > 0"
+                  role="row"
+                  [attr.data-testid]="'keyword-row-' + kwKey"
+                  [attr.aria-expanded]="row.searchTerms.length > 0 ? kwExpanded : null"
+                  (click)="row.searchTerms.length > 0 && toggleKeywordExpand(kwKey)"
+                  (keydown.enter)="row.searchTerms.length > 0 && toggleKeywordExpand(kwKey)"
+                  (keydown.space)="$event.preventDefault(); row.searchTerms.length > 0 && toggleKeywordExpand(kwKey)"
+                  [attr.tabindex]="row.searchTerms.length > 0 ? 0 : null">
+                  <div class="flex w-48 items-center gap-1.5" role="cell">
+                    @if (row.searchTerms.length > 0) {
+                      <i class="fa-solid fa-chevron-right text-[9px] text-gray-400 transition-transform" [class.rotate-90]="kwExpanded" aria-hidden="true"></i>
+                    } @else {
+                      <span class="w-[9px]"></span>
+                    }
+                    <span class="truncate text-xs font-medium text-gray-700">{{ row.keyword }}</span>
+                  </div>
+                  <span class="w-20 truncate text-[11px] text-gray-500" role="cell">{{ row.matchType }}</span>
+                  <span class="w-16 text-right text-xs text-gray-900" role="cell">{{ row.clicks }}</span>
+                  <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
+                  <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.impressions }}</span>
+                  <span class="w-14 text-right text-xs text-gray-500" role="cell">{{ row.ctr }}</span>
+                  <span class="w-16 text-right text-xs text-gray-500" role="cell">{{ row.cpc }}</span>
+                  <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.conversions }}</span>
+                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.convRate }}</span>
+                  <span class="w-24 text-right text-xs font-medium text-gray-900" role="cell">{{ row.revenue }}</span>
+                  <span class="flex-1 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
+                </div>
+
+                <!-- Expanded search term rows -->
+                @if (kwExpanded) {
+                  @for (st of row.searchTerms; track st.searchTerm + '|' + st.matchType) {
+                    <div
+                      class="flex items-center gap-2 border-b border-gray-50 bg-gray-50/50 py-2 pl-6"
+                      role="row"
+                      [attr.data-testid]="'search-term-row-' + kwKey + '-' + $index">
+                      <span class="w-[10.5rem] truncate text-[11px] text-gray-500" role="cell">{{ st.searchTerm }}</span>
+                      <span class="w-20 truncate text-[11px] text-gray-400" role="cell">{{ st.matchType }}</span>
+                      <span class="w-16 text-right text-[11px] text-gray-500" role="cell">{{ st.clicks }}</span>
+                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ st.spend }}</span>
+                      <span class="w-24 text-right text-[11px] text-gray-400" role="cell">{{ st.impressions }}</span>
+                      <span class="w-14 text-right text-[11px] text-gray-400" role="cell">{{ st.ctr }}</span>
+                      <span class="w-16 text-right text-[11px] text-gray-400" role="cell">{{ st.cpc }}</span>
+                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ st.conversions }}</span>
+                      <span class="w-20" role="cell"></span>
+                      <span class="w-24" role="cell"></span>
+                      <div class="flex-1" role="cell"></div>
+                    </div>
+                  }
+                }
+              }
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-performance-empty">
+          <p class="text-sm text-gray-500">No keyword data available.</p>
+        </div>
+      }
+    </div>
   }
 </div>
