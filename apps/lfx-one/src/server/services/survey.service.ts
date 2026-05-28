@@ -87,22 +87,19 @@ export class SurveyService {
   }
 
   /**
-   * Fetches a single survey by UID
-   * Resolves project UUID to v1 SFID via NATS before passing as project_id
+   * Fetches a single survey by UID.
+   * Passes project_uid (V2 UUID) directly to upstream — no SFID translation needed.
    */
   public async getSurveyById(req: Request, surveyUid: string, projectId?: string): Promise<Survey> {
     logger.debug(req, 'get_survey_by_id', 'Fetching survey by ID', {
       survey_uid: surveyUid,
-      project_id: projectId,
+      project_uid: projectId,
     });
 
     const params: Record<string, string> = {};
 
     if (projectId) {
-      const sfid = await this.projectService.getProjectSfidByUid(req, projectId);
-      if (sfid) {
-        params['project_id'] = sfid;
-      }
+      params['project_uid'] = projectId;
     }
 
     const survey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET', params);
