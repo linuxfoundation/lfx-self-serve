@@ -4,6 +4,7 @@
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { Meeting } from './meeting.interface';
+import type { Vote } from './poll.interface';
 
 /**
  * Named entity interface for pipes
@@ -525,6 +526,14 @@ export interface DecoratedPendingAction extends PendingActionItem {
   meeting: Meeting | null;
   /** Tailwind background class for the row — encodes zebra striping, RSVP amber tint, and post-RSVP emerald confirmation */
   rowClass: string;
+  /** Lazily-loaded Vote payload for Vote inline rows; null until fetched. */
+  vote: Vote | null;
+  /** True while the Vote payload for this Vote row is being fetched. */
+  isVoteLoading: boolean;
+  /** True when the Vote row is currently expanded inline (mirrors isExpanded but scoped to votes). */
+  isVoteInlineExpanded: boolean;
+  /** True when this Vote row should use the drawer instead of inline (multi-question or ranked poll). */
+  voteUsesDrawer: boolean;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */

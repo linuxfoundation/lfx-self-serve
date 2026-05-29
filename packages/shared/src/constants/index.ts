@@ -60,3 +60,4 @@ export * from './marketing-impact.constants';
 export * from './org-people.constants';
 export * from './individual-enrollment-catalog';
 export * from './newsletter.constants';
+export * from './vote.constants';

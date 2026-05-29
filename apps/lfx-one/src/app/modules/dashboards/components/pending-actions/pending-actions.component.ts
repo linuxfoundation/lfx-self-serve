@@ -6,27 +6,40 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, UrlTree } from '@angular/router';
 import { PendingActionsDrawerComponent } from '@app/modules/dashboards/components/pending-actions-drawer/pending-actions-drawer.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
+import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SKELETON_HOLD_MS } from '@lfx-one/shared/constants';
+import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
+import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
 import { timer } from 'rxjs';
 
-import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions',
-  imports: [ButtonComponent, TagComponent, RsvpButtonGroupComponent, PendingActionsDrawerComponent, SkeletonModule, ToastModule, RouterLink],
+  imports: [
+    ButtonComponent,
+    TagComponent,
+    RsvpButtonGroupComponent,
+    VoteBallotInlineComponent,
+    PendingActionsDrawerComponent,
+    SkeletonModule,
+    ToastModule,
+    RouterLink,
+  ],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
 })
 export class PendingActionsComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
+  private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -38,7 +51,7 @@ export class PendingActionsComponent {
   public readonly displayLimit = input<number>(2);
 
   public readonly actionClick = output<PendingActionItem>();
-  // Emits the voteUid when a Vote pending-action is clicked, so the parent dashboard can open the cast drawer inline.
+  // Emits the voteUid when a Vote pending-action needs the cast drawer (multi-question or ranked poll).
   public readonly castVoteRequested = output<string>();
 
   protected readonly drawerVisible = model<boolean>(false);
@@ -49,8 +62,11 @@ export class PendingActionsComponent {
   protected readonly completingRowKeys = signal<ReadonlySet<string>>(new Set());
   // Rows whose content is currently swapped to a skeleton placeholder while the next action takes the slot.
   protected readonly swappingRowKeys = signal<ReadonlySet<string>>(new Set());
+  protected readonly expandedVoteKey = signal<string | null>(null);
   private readonly rsvpMeetingCache = signal<Record<string, Meeting>>({});
+  private readonly voteCache = signal<Record<string, Vote>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
+  private readonly loadingVoteUids = signal<ReadonlySet<string>>(new Set());
   private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
 
   // Clamped display limit shared by slicing, hasMore, and skeleton-swap arrival logic — rejects NaN/Infinity, floors fractional values, default 2.
@@ -76,8 +92,7 @@ export class PendingActionsComponent {
 
   protected handleAgendaOrOtherClick(item: DecoratedPendingAction): void {
     if (this.isVoteInline(item) && item.voteUid) {
-      // Vote rows: parent opens drawer; hide-on-success is handled by the parent dashboard's vote-submitted path.
-      this.castVoteRequested.emit(item.voteUid);
+      this.loadVoteForRow(item);
       return;
     }
     // RSVP fallback (meeting load failed): the user is being redirected to the meeting page to RSVP from there — opening
@@ -100,6 +115,19 @@ export class PendingActionsComponent {
       life: 5000,
     });
     this.startCompletion(item, { withSkeleton: true });
+  }
+
+  protected handleVoteSubmitted(item: DecoratedPendingAction): void {
+    if (this.expandedVoteKey() === this.getRowKey(item)) {
+      this.expandedVoteKey.set(null);
+    }
+    this.startCompletion(item, { withSkeleton: true });
+  }
+
+  protected handleVoteCancelled(item: DecoratedPendingAction): void {
+    if (this.expandedVoteKey() === this.getRowKey(item)) {
+      this.expandedVoteKey.set(null);
+    }
   }
 
   protected openDrawer(): void {
@@ -145,6 +173,69 @@ export class PendingActionsComponent {
           });
         },
       });
+  }
+
+  private loadVoteForRow(item: PendingActionItem): void {
+    const voteUid = item.voteUid;
+    if (!voteUid) return;
+
+    this.expandedVoteKey.set(this.getRowKey(item));
+
+    const cached = this.voteCache()[voteUid];
+    if (cached) {
+      this.dispatchLoadedVote(cached);
+      return;
+    }
+
+    // Idempotency guard: a fetch for this voteUid is already in flight — let it complete
+    // rather than firing a second GET that would also re-emit castVoteRequested on success.
+    if (this.loadingVoteUids().has(voteUid)) return;
+
+    this.loadingVoteUids.update((s) => new Set(s).add(voteUid));
+    this.voteService
+      .getVote(voteUid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (vote) => {
+          this.loadingVoteUids.update((s) => this.removeFromSet(s, voteUid));
+          this.voteCache.update((cache) => ({ ...cache, [voteUid]: vote }));
+          if (this.expandedVoteKey() === this.getRowKey(item)) {
+            this.dispatchLoadedVote(vote);
+          }
+        },
+        error: () => {
+          this.loadingVoteUids.update((s) => this.removeFromSet(s, voteUid));
+          if (this.expandedVoteKey() === this.getRowKey(item)) {
+            this.expandedVoteKey.set(null);
+          }
+          this.messageService.add({
+            key: 'pending-actions-toast',
+            severity: 'error',
+            summary: 'Could not load vote',
+            detail: 'Please try again or open it from the My Votes page.',
+            life: 4000,
+          });
+        },
+      });
+  }
+
+  private dispatchLoadedVote(vote: Vote): void {
+    if (this.voteUsesDrawer(vote)) {
+      this.expandedVoteKey.set(null);
+      this.castVoteRequested.emit(vote.uid);
+    }
+    // Otherwise the row stays expanded and the template renders VoteBallotInlineComponent.
+  }
+
+  private voteUsesDrawer(vote: Vote): boolean {
+    const questions = vote.poll_questions ?? [];
+    const isRanked = (vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC;
+    // Inline ballot supports exactly one single/multiple-choice question; everything else
+    // (zero questions, multiple questions, ranked/unsupported types) falls back to the drawer.
+    if (questions.length !== 1) return true;
+    const type = questions[0]?.type;
+    if (type !== 'single_choice' && type !== 'multiple_choice') return true;
+    return isRanked;
   }
 
   // Persist the hide synchronously (so an unmount within the animation window can't cancel the cookie write), then drive the fade → drop → skeleton-arrival animation through two timers.
@@ -244,8 +335,11 @@ export class PendingActionsComponent {
   private initDecoratedActions(): Signal<DecoratedPendingAction[]> {
     return computed(() => {
       const cache = this.rsvpMeetingCache();
+      const cacheV = this.voteCache();
       const loading = this.loadingMeetingUids();
+      const loadingVoteUids = this.loadingVoteUids();
       const failed = this.failedMeetingUids();
+      const expandedVoteKey = this.expandedVoteKey();
       return this.visibleActions().map((item) => {
         const rowKey = this.getRowKey(item);
         // When the meeting fetch fails, fall back to the regular buttonLink/CTA path so the user has a working action instead of perpetual skeletons.
@@ -253,6 +347,10 @@ export class PendingActionsComponent {
         const isRsvpInline = this.isRsvpInline(item) && !meetingFailed;
         const isVoteInline = this.isVoteInline(item);
         const meeting = item.meetingUid ? (cache[item.meetingUid] ?? null) : null;
+        const vote = item.voteUid ? (cacheV[item.voteUid] ?? null) : null;
+        const isVoteLoading = !!item.voteUid && loadingVoteUids.has(item.voteUid);
+        const isVoteInlineExpanded = isVoteInline && expandedVoteKey === rowKey;
+        const voteUsesDrawerVal = !!vote && this.voteUsesDrawer(vote);
         return {
           ...item,
           rowKey,
@@ -263,6 +361,10 @@ export class PendingActionsComponent {
           isLoading: !!item.meetingUid && loading.has(item.meetingUid),
           meeting,
           rowClass: 'bg-white',
+          vote,
+          isVoteLoading,
+          isVoteInlineExpanded,
+          voteUsesDrawer: voteUsesDrawerVal,
         };
       });
     });
