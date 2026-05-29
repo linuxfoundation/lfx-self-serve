@@ -14,8 +14,9 @@ import {
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { GenerateNewsletterResponse, NewsletterContextType } from '@lfx-one/shared/interfaces';
+import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { debounceTime, finalize, take } from 'rxjs';
@@ -28,11 +29,14 @@ import { debounceTime, finalize, take } from 'rxjs';
 export class NewsletterGenerateDrawerComponent {
   // === Services ===
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
-  public readonly contextType = input.required<NewsletterContextType>();
+  // contextType is retained to drive AI prompt tone (foundation vs project),
+  // independent of where the newsletter is sent from at the API.
+  public readonly contextType = input<'foundation' | 'project'>('project');
   public readonly contextName = input.required<string>();
 
   // === Model Signals (two-way) ===
@@ -108,8 +112,18 @@ export class NewsletterGenerateDrawerComponent {
     if (!this.canGenerate()) return;
     this.generating.set(true);
 
+    const projectUid = this.projectContextService.activeContextUid();
+    if (!projectUid) {
+      this.generating.set(false);
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'No project selected',
+        detail: 'Switch to a project before generating a newsletter.',
+      });
+      return;
+    }
     this.newsletterService
-      .generate({
+      .generate(projectUid, {
         rawContent: this.form.controls.rawContent.value.trim(),
         contextType: this.contextType(),
         contextName: this.contextName(),

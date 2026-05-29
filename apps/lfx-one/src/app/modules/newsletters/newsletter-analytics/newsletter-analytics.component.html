@@ -28,8 +28,8 @@
         <h1 class="text-2xl font-display font-light text-gray-900" data-testid="newsletter-analytics-subject">
           {{ a.subject || 'Untitled newsletter' }}
         </h1>
-        @if (a.status === 'sent' && a.sentAt) {
-          <p class="text-sm text-gray-500">Sent {{ a.sentAt | date: 'MMM d, y, h:mm a' }}</p>
+        @if (a.status === 'sent' && a.sent_at) {
+          <p class="text-sm text-gray-500">Sent {{ a.sent_at | date: 'MMM d, y, h:mm a' }}</p>
         } @else if (a.status === 'draft') {
           <p class="text-sm text-gray-500">Draft — not yet sent. Stats will appear once it's sent.</p>
         }
@@ -39,21 +39,21 @@
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
             <span class="text-xs uppercase tracking-wide text-gray-500">Recipients</span>
-            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-recipients">{{ a.totalRecipients }}</span>
+            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-recipients">{{ a.total_recipients }}</span>
             <span class="text-xs text-gray-500">{{ a.delivered }} delivered · {{ a.failed }} failed</span>
           </div>
         </lfx-card>
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
             <span class="text-xs uppercase tracking-wide text-gray-500">Unique opens</span>
-            <span class="text-2xl font-medium text-blue-600" data-testid="newsletter-analytics-unique-opens">{{ a.uniqueOpens }}</span>
+            <span class="text-2xl font-medium text-blue-600" data-testid="newsletter-analytics-unique-opens">{{ a.unique_opens }}</span>
             <span class="text-xs text-gray-500">distinct recipients</span>
           </div>
         </lfx-card>
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
             <span class="text-xs uppercase tracking-wide text-gray-500">Total opens</span>
-            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-total-opens">{{ a.totalOpens }}</span>
+            <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-total-opens">{{ a.total_opens }}</span>
             <span class="text-xs text-gray-500">includes repeat opens</span>
           </div>
         </lfx-card>

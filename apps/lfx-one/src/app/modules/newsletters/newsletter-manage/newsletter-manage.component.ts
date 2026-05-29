@@ -9,13 +9,12 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
-  CreateNewsletterDraftRequest,
+  CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
-  NewsletterContextType,
   NewsletterSendResult,
   ProjectContext,
-  UpdateNewsletterDraftRequest,
+  UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
@@ -26,7 +25,22 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, concatMap, debounceTime, distinctUntilChanged, EMPTY, filter, finalize, map, of, Subject, switchMap, take } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  concatMap,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  map,
+  of,
+  Subject,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
 import { NewsletterContentStepComponent } from '../components/newsletter-content-step/newsletter-content-step.component';
@@ -64,6 +78,8 @@ export class NewsletterManageComponent {
   private readonly confirmationService = inject(ConfirmationService);
 
   // === Forms ===
+  // Form control names stay camelCase (Angular convention). API payloads
+  // are serialized to snake_case at the boundary in saveDraft / runSend.
   public readonly form = new FormGroup({
     committeeUids: new FormControl<string[]>([], { nonNullable: true }),
     subject: new FormControl<string>('', { nonNullable: true }),
@@ -79,8 +95,6 @@ export class NewsletterManageComponent {
   public readonly testSending = signal<boolean>(false);
   public readonly savedAt = signal<Date | null>(null);
   public readonly savingDraft = signal<boolean>(false);
-  // Manual Save-as-Draft spinner — kept separate from `savingDraft` so the autosave debounce
-  // (which fires every ~1s while the user types) doesn't blink the manual button mid-typing.
   public readonly manualSaving = signal<boolean>(false);
   public readonly previewDrawerVisible = signal<boolean>(false);
 
@@ -90,14 +104,16 @@ export class NewsletterManageComponent {
   public readonly currentStep: Signal<number> = this.initCurrentStep();
 
   // === Project context ===
+  // Newsletters are project-only. Foundation context is intentionally not
+  // supported — the feature is hidden in the foundation lens and this
+  // component routes back to the list if it boots up with no project.
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
   public readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
-  public readonly contextUid: Signal<string> = this.projectContextService.activeContextUid;
-  public readonly contextType: Signal<NewsletterContextType> = computed(() => (this.isFoundationContext() ? 'foundation' : 'project'));
+  public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
-  public readonly hasContext: Signal<boolean> = computed(() => this.contextUid().length > 0);
+  public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0 && !this.isFoundationContext());
 
   // === Auth-derived ===
   public readonly edName: Signal<string> = computed(() => {
@@ -107,21 +123,15 @@ export class NewsletterManageComponent {
   public readonly edEmail: Signal<string> = computed(() => this.userService.user()?.email ?? '');
 
   // === Form mirrors ===
-  // toSignal can't be used here — populateFormFromDraft patches with { emitEvent: false }; we seed manually.
   private readonly committeeUidsValue = signal<string[]>([]);
   private readonly subjectValue = signal<string>('');
   private readonly bodyValue = signal<string>('');
 
   // === Save dedup ===
-  // Snapshot of the last persisted payload — autosave skips when the current form state matches,
-  // preventing a redundant save after the user clicks Save as Draft while a debounce is in flight.
   private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; committeeUids: string[] } | null>(null);
-  // Shared save channel — both the autosave pipe and the manual button push isManual flags here;
-  // concatMap serializes them so manual and auto saves can never run concurrently, and a queued
-  // autosave reads the live form state at execution time (no edits dropped during in-flight saves).
   private readonly saveTrigger$ = new Subject<boolean>();
 
-  // === Recipient summary (computed here so review/send steps can share it) ===
+  // === Recipient summary ===
   protected readonly recipientCount = signal<number | null>(null);
   protected readonly recipientCountLoading = signal<boolean>(false);
 
@@ -136,8 +146,6 @@ export class NewsletterManageComponent {
   public readonly canProceed = computed(() => this.computeCanProceed(this.currentStep()));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly canGoNext = computed(() => this.currentStep() < this.totalSteps && this.canProceed());
-  // Mirror autosave's email gate — server validates edReplyEmail contains '@', so don't enable
-  // the manual button until the user profile has loaded a usable email.
   public readonly canSaveDraft = computed(
     () => this.hasContext() && this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.edEmail().length > 0 && !this.savingDraft()
   );
@@ -160,7 +168,6 @@ export class NewsletterManageComponent {
 
   protected goToStep(step: number | undefined): void {
     if (step === undefined || step < 1 || step > this.totalSteps) return;
-    // Only allow forward navigation if all previous steps are valid; backward is always fine.
     if (step > this.currentStep()) {
       for (let i = this.currentStep(); i < step; i++) {
         if (!this.computeCanProceed(i)) return;
@@ -206,12 +213,10 @@ export class NewsletterManageComponent {
     if (!this.canSendTest()) return;
     this.testSending.set(true);
     this.newsletterService
-      .testSend({
+      .testSend(this.projectUid(), {
         subject: this.form.controls.subject.value,
-        bodyHtml: this.form.controls.bodyHtml.value,
-        toEmail: this.edEmail(),
-        contextType: this.contextType(),
-        contextUid: this.contextUid(),
+        body_html: this.form.controls.bodyHtml.value,
+        to_email: this.edEmail(),
       })
       .pipe(
         take(1),
@@ -251,7 +256,6 @@ export class NewsletterManageComponent {
     });
   }
 
-  // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
@@ -289,9 +293,12 @@ export class NewsletterManageComponent {
       this.recipientCount.set(0);
       return;
     }
+    if (!this.hasContext()) {
+      return;
+    }
     this.recipientCountLoading.set(true);
     this.newsletterService
-      .getRecipientCount({ committeeUids: uids })
+      .getRecipientCount(this.projectUid(), { committee_uids: uids })
       .pipe(
         take(1),
         finalize(() => this.recipientCountLoading.set(false))
@@ -303,40 +310,33 @@ export class NewsletterManageComponent {
   }
 
   private runSend(): void {
-    this.submitting.set(true);
     const id = this.newsletterId();
-    const send$ = id
-      ? this.newsletterService.sendDraft(id, this.version())
-      : this.newsletterService.send({
-          subject: this.form.controls.subject.value,
-          bodyHtml: this.form.controls.bodyHtml.value,
-          committeeUids: this.form.controls.committeeUids.value,
-          contextType: this.contextType(),
-          contextUid: this.contextUid(),
-          edReplyEmail: this.edEmail(),
-        });
+    if (!id) {
+      // Newsletter has to be saved as a draft first — the Go service owns the
+      // create/send transition. The Save-as-Draft flow ensures id is populated
+      // before this point in normal use; defensive guard for race conditions.
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Save first',
+        detail: 'Save the newsletter as a draft before sending.',
+      });
+      return;
+    }
+    this.submitting.set(true);
 
-    send$
+    this.newsletterService
+      .sendNewsletter(this.projectUid(), id, this.version())
       .pipe(
         take(1),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
         next: (result: NewsletterSendResult) => {
-          if (result.markSentFailed) {
-            // Emails delivered but the newsletter row didn't flip to "sent".
-            // Tell the operator explicitly — retrying would dispatch duplicates.
-            this.messageService.add({
-              severity: 'warn',
-              summary: 'Sent — status update failed',
-              detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}, but the newsletter status couldn't be updated. Don't retry — contact support to reconcile.`,
-              life: 12000,
-            });
-          } else if (result.failed > 0) {
+          if (result.failed > 0) {
             this.messageService.add({
               severity: 'warn',
               summary: 'Sent with errors',
-              detail: `Delivered ${result.sent} of ${result.totalRecipients}. ${result.failed} failed.`,
+              detail: `Delivered ${result.sent} of ${result.total_recipients}. ${result.failed} failed.`,
               life: 8000,
             });
           } else {
@@ -346,10 +346,7 @@ export class NewsletterManageComponent {
               detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}.`,
             });
           }
-          // Land on the Sent tab on full success; on markSentFailed the row
-          // is still a draft on the Go side, so don't mislead the operator
-          // by routing them to Sent.
-          this.goToList(result.markSentFailed ? 'draft' : 'sent');
+          this.goToList('sent');
         },
         error: (err: HttpErrorResponse) => {
           this.messageService.add({
@@ -362,7 +359,6 @@ export class NewsletterManageComponent {
   }
 
   private initCurrentStep(): Signal<number> {
-    // Mode flips mid-flow when /create autosaves to edit — react to isEditMode() instead of fixing source at init.
     const initialStep = this.parseStepParam(this.route.snapshot.queryParamMap.get('step'));
     this.internalStep.set(initialStep);
 
@@ -382,8 +378,6 @@ export class NewsletterManageComponent {
   }
 
   private initContextLogo(): void {
-    // React to activeContext changes via toObservable + switchMap so each
-    // context swap cancels the in-flight project fetch (instead of racing).
     toObservable(this.activeContext)
       .pipe(
         switchMap((ctx) => {
@@ -405,12 +399,20 @@ export class NewsletterManageComponent {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) return;
     this.newsletterId.set(id);
-    this.draftLoading.set(true);
-    this.newsletterService
-      .getDraft(id)
+
+    // Wait for ProjectContextService to hydrate before fetching the draft.
+    // A synchronous hasContext() check here would race the lens / persona
+    // resolution on hard refreshes — deep links would bounce to the list
+    // before the project becomes available. Subscribing once hasContext()
+    // turns true loads the draft as soon as context lands, whether that
+    // happens before or after the component initializes.
+    toObservable(this.hasContext)
       .pipe(
+        filter((ready) => ready),
         take(1),
-        finalize(() => this.draftLoading.set(false))
+        tap(() => this.draftLoading.set(true)),
+        switchMap(() => this.newsletterService.getNewsletter(this.projectUid(), id).pipe(finalize(() => this.draftLoading.set(false)))),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (draft) => this.populateFormFromDraft(draft),
@@ -427,21 +429,17 @@ export class NewsletterManageComponent {
 
   private populateFormFromDraft(draft: Newsletter): void {
     this.version.set(draft.version);
-    const committeeUids = draft.committeeUids ?? [];
+    const committeeUids = draft.committee_uids ?? [];
     const subject = draft.subject ?? '';
-    const bodyHtml = draft.bodyHtml ?? '';
+    const bodyHtml = draft.body_html ?? '';
     this.form.patchValue({ committeeUids, subject, bodyHtml }, { emitEvent: false });
-    // patchValue suppresses valueChanges — mirror manually or canProceed/canSend stay false on initial draft load.
     this.committeeUidsValue.set(committeeUids);
     this.subjectValue.set(subject);
     this.bodyValue.set(bodyHtml);
-    // initRecipientCount listens to valueChanges, which won't fire here either.
     this.fetchRecipientCountFor(committeeUids);
   }
 
   private initSaveChannel(): void {
-    // concatMap serializes manual + auto saves so they can never run concurrently. A queued autosave
-    // reads form state at execution time, so edits typed during an in-flight save are not dropped.
     this.saveTrigger$
       .pipe(
         concatMap((isManual) => this.saveDraft(isManual)),
@@ -451,8 +449,6 @@ export class NewsletterManageComponent {
   }
 
   private initAutosave(): void {
-    // Combine with edEmail so a late-arriving profile triggers autosave even when the user hasn't typed since.
-    // Snapshot dedup avoids queueing a save when the form already matches what's persisted.
     combineLatest([this.form.valueChanges, toObservable(this.edEmail)])
       .pipe(
         debounceTime(1000),
@@ -484,16 +480,16 @@ export class NewsletterManageComponent {
     return true;
   }
 
-  // Go service rejects partial drafts — only autosave once all three fields are filled to avoid 400 spam.
   private hasAnythingToSave(): boolean {
     return this.audienceFilled() && this.subjectFilled() && this.bodyFilled();
   }
 
   private saveDraft(isManual = false) {
-    // Execution-time dedup: a queued autosave may have been enqueued before a manual save completed
-    // and recorded its snapshot. Re-check at execution so the queued autosave is skipped if the form
-    // already matches what's persisted. Manual saves always run — the user clicked the button.
     if (!isManual && this.snapshotMatchesLastSaved()) {
+      return EMPTY;
+    }
+    const projectUid = this.projectUid();
+    if (!projectUid) {
       return EMPTY;
     }
 
@@ -503,22 +499,29 @@ export class NewsletterManageComponent {
       this.savingDraft.set(false);
       if (isManual) this.manualSaving.set(false);
     };
+    // Serialize once; same shape works for create and update because both
+    // requests accept the same body fields.
     const basePayload = {
       subject: this.form.controls.subject.value,
-      bodyHtml: this.form.controls.bodyHtml.value,
-      committeeUids: this.form.controls.committeeUids.value,
-      edReplyEmail: this.edEmail(),
+      body_html: this.form.controls.bodyHtml.value,
+      committee_uids: this.form.controls.committeeUids.value,
+      ed_reply_email: this.edEmail(),
+    };
+    const snapshotKey = {
+      subject: basePayload.subject,
+      bodyHtml: basePayload.body_html,
+      committeeUids: [...basePayload.committee_uids],
     };
 
     if (id) {
-      const update: UpdateNewsletterDraftRequest = basePayload;
-      return this.newsletterService.updateDraft(id, this.version(), update).pipe(
+      const update: UpdateNewsletterRequest = basePayload;
+      return this.newsletterService.updateNewsletter(projectUid, id, this.version(), update).pipe(
         take(1),
         finalize(clearSavingFlags),
         map((draft) => {
           this.version.set(draft.version);
           this.savedAt.set(new Date());
-          this.recordSavedSnapshot(basePayload);
+          this.recordSavedSnapshot(snapshotKey);
           if (isManual) this.notifyDraftSaved();
           return draft;
         }),
@@ -526,21 +529,15 @@ export class NewsletterManageComponent {
       );
     }
 
-    const create: CreateNewsletterDraftRequest = {
-      contextType: this.contextType(),
-      contextUid: this.contextUid(),
-      ...basePayload,
-    };
-    return this.newsletterService.createDraft(create).pipe(
+    const create: CreateNewsletterRequest = basePayload;
+    return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),
       map((draft) => {
         this.newsletterId.set(draft.id);
         this.version.set(draft.version);
         this.savedAt.set(new Date());
-        this.recordSavedSnapshot(basePayload);
-        // Skip /:id/edit navigation — it tears down the component and wipes the form mid-typing.
-        // Seed step in URL because isEditMode() just flipped — currentStep now reads from queryParamMap.
+        this.recordSavedSnapshot(snapshotKey);
         this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { step: this.internalStep() },
@@ -570,8 +567,6 @@ export class NewsletterManageComponent {
     });
   }
 
-  // Surface save failures — silent failures let the user navigate away believing the draft saved.
-  // savingDraft is reset by saveDraft's finalize; no need to re-set it here.
   private handleSaveError(err: HttpErrorResponse, isManual: boolean) {
     if (err.status === 409) {
       this.messageService.add({

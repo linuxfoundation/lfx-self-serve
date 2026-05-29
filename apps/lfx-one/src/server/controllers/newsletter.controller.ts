@@ -3,15 +3,13 @@
 
 import { NEWSLETTER_RAW_CONTENT_MAX_LENGTH, NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
 import {
-  CreateNewsletterDraftRequest,
+  CreateNewsletterRequest,
   GenerateNewsletterRequest,
-  NewsletterContextType,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
-  NewsletterSendPayload,
   NewsletterStatus,
   NewsletterTestSendPayload,
-  UpdateNewsletterDraftRequest,
+  UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -19,143 +17,83 @@ import { ServiceValidationError } from '../errors';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterService } from '../services/newsletter.service';
-import { NewsletterServiceClient } from '../services/newsletter-service.client';
 
-const VALID_CONTEXT_TYPES = new Set(['foundation', 'project']);
 const SUBJECT_MAX_LENGTH = 200;
 const BODY_MAX_LENGTH = 100_000;
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
+/**
+ * Newsletter controller — thin HTTP boundary in front of NewsletterService.
+ *
+ * All routes are project-scoped: `projectUid` arrives as `:projectUid` in the
+ * mount path. The Go newsletter-service owns recipient resolution, email
+ * dispatch, and analytics aggregation; Express just validates the request
+ * shape and proxies through.
+ */
 export class NewsletterController {
-  private newsletterClient: NewsletterServiceClient = new NewsletterServiceClient();
-  private newsletterService: NewsletterService = new NewsletterService(this.newsletterClient);
+  private newsletterService: NewsletterService = new NewsletterService();
   private aiService: AiService = new AiService();
 
   /**
-   * POST /api/newsletters/recipient-count
-   * Body: { committeeUids: string[] }
+   * POST /api/projects/:projectUid/newsletters/recipient-count
    */
   public async getRecipientCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
     const startTime = logger.startOperation(req, 'newsletter_recipient_count', {
-      committee_count: Array.isArray(req.body?.committeeUids) ? req.body.committeeUids.length : 0,
+      project_uid: projectUid,
+      committee_count: Array.isArray(req.body?.committee_uids) ? req.body.committee_uids.length : 0,
     });
 
     try {
       const payload = req.body as NewsletterRecipientCountPayload;
-      this.validateCommitteeUids(payload?.committeeUids, req.path, 'newsletter_recipient_count');
-
-      const recipients = await this.newsletterService.resolveRecipients(req, payload.committeeUids);
-
-      logger.success(req, 'newsletter_recipient_count', startTime, { count: recipients.length });
-      res.json({ count: recipients.length });
+      this.validateCommitteeUids(payload?.committee_uids, req.path, 'newsletter_recipient_count');
+      const result = await this.newsletterService.recipientCount(req, projectUid, payload);
+      logger.success(req, 'newsletter_recipient_count', startTime, { count: result.count });
+      res.json(result);
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * POST /api/newsletters/recipients
-   * Body: { committeeUids: string[] }
-   * Returns the deduplicated recipient list (email + firstName) across the committees.
+   * POST /api/projects/:projectUid/newsletters/recipients
    */
   public async getRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
     const startTime = logger.startOperation(req, 'newsletter_recipients', {
-      committee_count: Array.isArray(req.body?.committeeUids) ? req.body.committeeUids.length : 0,
+      project_uid: projectUid,
+      committee_count: Array.isArray(req.body?.committee_uids) ? req.body.committee_uids.length : 0,
     });
 
     try {
       const payload = req.body as NewsletterRecipientCountPayload;
-      this.validateCommitteeUids(payload?.committeeUids, req.path, 'newsletter_recipients');
-
-      const recipients = await this.newsletterService.resolveRecipients(req, payload.committeeUids);
-
-      logger.success(req, 'newsletter_recipients', startTime, { count: recipients.length });
-      res.json({ recipients });
+      this.validateCommitteeUids(payload?.committee_uids, req.path, 'newsletter_recipients');
+      const result = await this.newsletterService.recipients(req, projectUid, payload);
+      logger.success(req, 'newsletter_recipients', startTime, { count: result.recipients.length });
+      res.json(result);
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * POST /api/newsletters/test-send
-   * Body: { subject, bodyHtml, toEmail, contextType, contextUid }
+   * POST /api/projects/:projectUid/newsletters/test-send
    *
-   * Sends a single preview email via lfx-v2-email-service. No group_id is
-   * supplied — test sends auto-generate one server-side and stay out of the
-   * newsletter analytics rollup. edReplyEmail is intentionally not required
-   * here because the rendered email no longer surfaces a reply-to.
+   * Test sends do not require an ed_reply_email (the rendered envelope omits
+   * the compliance footer for test sends). The Go service still validates the
+   * field shape if it's present.
    */
   public async testSend(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_test_send', {
-      context_type: req.body?.contextType,
-      context_uid: req.body?.contextUid,
-    });
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_test_send', { project_uid: projectUid });
 
     try {
       const payload = req.body as NewsletterTestSendPayload;
-      this.validateCommonPayload(payload, req.path, 'newsletter_test_send', false);
-
-      if (!payload.toEmail || typeof payload.toEmail !== 'string' || !payload.toEmail.includes('@')) {
-        throw ServiceValidationError.forField('toEmail', 'A valid recipient email is required', {
-          operation: 'newsletter_test_send',
-          service: 'newsletter_controller',
-          path: req.path,
-        });
-      }
-
-      await this.newsletterService.sendTest(req, payload);
-
+      this.validateTestSendPayload(payload, req.path, 'newsletter_test_send');
+      const result = await this.newsletterService.testSend(req, projectUid, payload);
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});
-      res.json({ ok: true });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/newsletters/send
-   * Body: { subject, bodyHtml, committeeUids, contextType, contextUid, edReplyEmail }
-   *
-   * Ad-hoc send (no prior saved draft). Creates a draft record on the Go
-   * newsletter-service, fans out one email per recipient via email-service,
-   * then flips the draft to `sent` with the shared group_id.
-   */
-  public async send(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_send', {
-      context_type: req.body?.contextType,
-      context_uid: req.body?.contextUid,
-      committee_count: Array.isArray(req.body?.committeeUids) ? req.body.committeeUids.length : 0,
-    });
-
-    try {
-      const payload = req.body as NewsletterSendPayload;
-      this.validateCommonPayload(payload, req.path, 'newsletter_send');
-      this.validateCommitteeUids(payload.committeeUids, req.path, 'newsletter_send');
-
-      // Build the create-draft request explicitly so we keep type safety even
-      // if NewsletterSendPayload and CreateNewsletterDraftRequest diverge.
-      const createDraftRequest: CreateNewsletterDraftRequest = {
-        contextType: payload.contextType,
-        contextUid: payload.contextUid,
-        subject: payload.subject,
-        bodyHtml: payload.bodyHtml,
-        edReplyEmail: payload.edReplyEmail,
-        committeeUids: payload.committeeUids,
-      };
-      const draft = await this.newsletterClient.createDraft(req, createDraftRequest);
-
-      const result = await this.newsletterService.dispatchNewsletter(req, draft, 'newsletter_send');
-
-      logger.success(req, 'newsletter_send', startTime, {
-        newsletter_id: draft.id,
-        group_id: result.groupId,
-        total_recipients: result.totalRecipients,
-        sent: result.sent,
-        failed: result.failed,
-      });
-
       res.json(result);
     } catch (error) {
       next(error);
@@ -163,184 +101,21 @@ export class NewsletterController {
   }
 
   /**
-   * GET /api/newsletters/drafts?contextType=...&contextUid=...
-   */
-  public async listDrafts(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_list_drafts', {
-      context_type: req.query['contextType'],
-      context_uid: req.query['contextUid'],
-    });
-
-    try {
-      const contextType = String(req.query['contextType'] || '');
-      const contextUid = String(req.query['contextUid'] || '');
-      if (!VALID_CONTEXT_TYPES.has(contextType)) {
-        throw ServiceValidationError.forField('contextType', "contextType must be 'foundation' or 'project'", {
-          operation: 'newsletter_list_drafts',
-          service: 'newsletter_controller',
-          path: req.path,
-        });
-      }
-      if (!contextUid) {
-        throw ServiceValidationError.forField('contextUid', 'contextUid is required', {
-          operation: 'newsletter_list_drafts',
-          service: 'newsletter_controller',
-          path: req.path,
-        });
-      }
-      const result = await this.newsletterClient.listDrafts(req, contextType as NewsletterContextType, contextUid);
-      logger.success(req, 'newsletter_list_drafts', startTime, { count: result.drafts.length });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/newsletters/drafts
-   * Body: CreateNewsletterDraftRequest
-   */
-  public async createDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_create_draft', {
-      context_type: req.body?.contextType,
-      context_uid: req.body?.contextUid,
-    });
-
-    try {
-      const payload = req.body as CreateNewsletterDraftRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_create_draft');
-      this.validateCommitteeUids(payload.committeeUids, req.path, 'newsletter_create_draft');
-
-      const draft = await this.newsletterClient.createDraft(req, payload);
-      logger.success(req, 'newsletter_create_draft', startTime, { draft_id: draft.id, version: draft.version });
-      res.status(201).json(draft);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/newsletters/drafts/:id
-   */
-  public async getDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_get_draft', { draft_id: req.params['id'] });
-
-    try {
-      const id = String(req.params['id'] || '');
-      if (!id) {
-        throw ServiceValidationError.forField('id', 'id is required', {
-          operation: 'newsletter_get_draft',
-          service: 'newsletter_controller',
-          path: req.path,
-        });
-      }
-      const draft = await this.newsletterClient.getDraft(req, id);
-      logger.success(req, 'newsletter_get_draft', startTime, { draft_id: draft.id, version: draft.version });
-      res.json(draft);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * PUT /api/newsletters/drafts/:id
-   * Body: UpdateNewsletterDraftRequest
-   * Requires If-Match header for optimistic locking.
-   */
-  public async updateDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_update_draft', { draft_id: req.params['id'] });
-
-    try {
-      const id = String(req.params['id'] || '');
-      const version = parseIfMatch(req);
-      const payload = req.body as UpdateNewsletterDraftRequest;
-      this.validateCommonPayloadShallow(payload, req.path, 'newsletter_update_draft');
-      this.validateCommitteeUids(payload.committeeUids, req.path, 'newsletter_update_draft');
-
-      const draft = await this.newsletterClient.updateDraft(req, id, version, payload);
-      logger.success(req, 'newsletter_update_draft', startTime, { draft_id: draft.id, version: draft.version });
-      res.json(draft);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * DELETE /api/newsletters/drafts/:id
-   */
-  public async deleteDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_delete_draft', { draft_id: req.params['id'] });
-
-    try {
-      const id = String(req.params['id'] || '');
-      await this.newsletterClient.deleteDraft(req, id);
-      logger.success(req, 'newsletter_delete_draft', startTime, { draft_id: id });
-      res.status(204).end();
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/newsletters/drafts/:id/send
-   * Requires If-Match header for optimistic locking.
-   *
-   * Fetches the saved draft, fans out one email per recipient via the
-   * email-service, then PATCHes the Go newsletter-service record with the
-   * shared group_id and status=sent.
-   */
-  public async sendDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_send_draft', { draft_id: req.params['id'] });
-
-    try {
-      const id = String(req.params['id'] || '');
-      const version = parseIfMatch(req);
-
-      const draft = await this.newsletterClient.getDraft(req, id);
-      const result = await this.newsletterService.dispatchNewsletter(req, draft, 'newsletter_send_draft', version);
-
-      logger.success(req, 'newsletter_send_draft', startTime, {
-        draft_id: id,
-        group_id: result.groupId,
-        total_recipients: result.totalRecipients,
-        sent: result.sent,
-        failed: result.failed,
-      });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/newsletters?contextType=...&contextUid=...&status=...&pageToken=...
-   * Returns drafts and/or sent newsletters for the given context.
+   * GET /api/projects/:projectUid/newsletters?status=...&page_token=...
    */
   public async listNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
     const startTime = logger.startOperation(req, 'newsletter_list', {
-      context_type: req.query['contextType'],
-      context_uid: req.query['contextUid'],
+      project_uid: projectUid,
       status: req.query['status'],
     });
 
     try {
-      const contextType = String(req.query['contextType'] || '');
-      const contextUid = String(req.query['contextUid'] || '');
       const statusParam = req.query['status'] ? String(req.query['status']) : undefined;
-      const pageToken = req.query['pageToken'] ? String(req.query['pageToken']) : undefined;
+      const pageToken = req.query['page_token'] ? String(req.query['page_token']) : undefined;
 
-      const fieldErrors: Record<string, string> = {};
-      if (!VALID_CONTEXT_TYPES.has(contextType)) {
-        fieldErrors['contextType'] = "contextType must be 'foundation' or 'project'";
-      }
-      if (!contextUid) {
-        fieldErrors['contextUid'] = 'contextUid is required';
-      }
       if (statusParam && statusParam !== 'draft' && statusParam !== 'sent') {
-        fieldErrors['status'] = "status must be 'draft' or 'sent'";
-      }
-      if (Object.keys(fieldErrors).length > 0) {
-        throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+        throw ServiceValidationError.forField('status', "status must be 'draft' or 'sent'", {
           operation: 'newsletter_list',
           service: 'newsletter_controller',
           path: req.path,
@@ -348,17 +123,14 @@ export class NewsletterController {
       }
 
       const params: NewsletterListParams = {
-        contextType: contextType as NewsletterContextType,
-        contextUid,
         status: statusParam as NewsletterStatus | undefined,
-        pageToken,
+        page_token: pageToken,
       };
-      const result = await this.newsletterClient.listNewsletters(req, params);
-      result.newsletters = await this.newsletterService.enrichListWithEngagement(req, result.newsletters);
+      const result = await this.newsletterService.listNewsletters(req, projectUid, params);
 
       logger.success(req, 'newsletter_list', startTime, {
         count: result.newsletters.length,
-        has_more: !!result.nextPageToken,
+        has_more: !!result.next_page_token,
       });
       res.json(result);
     } catch (error) {
@@ -367,35 +139,124 @@ export class NewsletterController {
   }
 
   /**
-   * GET /api/newsletters/:id/analytics
-   * Returns engagement analytics for a sent newsletter.
-   *
-   * Source of truth is lfx-v2-email-service: we look up the newsletter to
-   * read its `groupId`, then aggregate per-recipient EmailRecipientRecords
-   * into the existing NewsletterAnalytics shape so the frontend doesn't have
-   * to change.
+   * POST /api/projects/:projectUid/newsletters
    */
-  public async getAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'newsletter_analytics', { newsletter_id: req.params['id'] });
+  public async createNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_create', { project_uid: projectUid });
 
     try {
-      const id = String(req.params['id'] || '');
-      if (!id) {
-        throw ServiceValidationError.forField('id', 'id is required', {
-          operation: 'newsletter_analytics',
-          service: 'newsletter_controller',
-          path: req.path,
-        });
-      }
+      const payload = req.body as CreateNewsletterRequest;
+      this.validateCommonPayload(payload, req.path, 'newsletter_create');
+      this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
 
-      const newsletter = await this.newsletterClient.getDraft(req, id);
-      const analytics = await this.newsletterService.getAnalytics(req, newsletter);
+      const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
+      logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
+      res.status(201).json(newsletter);
+    } catch (error) {
+      next(error);
+    }
+  }
 
+  /**
+   * GET /api/projects/:projectUid/newsletters/:newsletterUid
+   */
+  public async getNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_get', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      const newsletter = await this.newsletterService.getNewsletter(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_get', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
+      res.json(newsletter);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/projects/:projectUid/newsletters/:newsletterUid
+   */
+  public async updateNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_update', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      const version = parseIfMatch(req);
+      const payload = req.body as UpdateNewsletterRequest;
+      this.validateCommonPayload(payload, req.path, 'newsletter_update');
+      this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_update');
+
+      const newsletter = await this.newsletterService.updateNewsletter(req, projectUid, newsletterUid, version, payload);
+      logger.success(req, 'newsletter_update', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
+      res.json(newsletter);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/projects/:projectUid/newsletters/:newsletterUid
+   */
+  public async deleteNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_delete', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      await this.newsletterService.deleteNewsletter(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_delete', startTime, { newsletter_id: newsletterUid });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/:newsletterUid/send
+   *
+   * Owns the full send pipeline in the Go service: recipient resolution
+   * (NATS → committee-service), email-chrome rendering, per-recipient fan-out
+   * (NATS → email-service), and status transition. Express just proxies the
+   * If-Match version through.
+   */
+  public async sendNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_send', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      const version = parseIfMatch(req);
+      const result = await this.newsletterService.sendNewsletter(req, projectUid, newsletterUid, version);
+      logger.success(req, 'newsletter_send', startTime, {
+        newsletter_id: newsletterUid,
+        group_id: result.group_id,
+        total_recipients: result.total_recipients,
+        sent: result.sent,
+        failed: result.failed,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics
+   */
+  public async getAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_analytics', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      const analytics = await this.newsletterService.getAnalytics(req, projectUid, newsletterUid);
       logger.success(req, 'newsletter_analytics', startTime, {
-        newsletter_id: id,
-        group_id: newsletter.groupId,
-        unique_opens: analytics.uniqueOpens,
-        total_opens: analytics.totalOpens,
+        newsletter_id: newsletterUid,
+        unique_opens: analytics.unique_opens,
+        total_opens: analytics.total_opens,
       });
       res.json(analytics);
     } catch (error) {
@@ -404,12 +265,19 @@ export class NewsletterController {
   }
 
   /**
-   * POST /api/newsletters/generate
-   * Body: { rawContent, contextType, contextName, systemPromptOverride? }
+   * POST /api/projects/:projectUid/newsletters/generate
+   *
+   * AI-assisted body generation. Doesn't touch the Go newsletter-service —
+   * stays on the LiteLLM proxy path. Authorization is the global auth
+   * middleware + rate limiting; a per-project writer check is a follow-up.
    */
   public async generate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // The AI generation route lives under /api/projects/:projectUid/newsletters/generate
+    // so the path param is part of the contract. Validate it here for consistency
+    // with the other handlers even though the LiteLLM call doesn't consume it
+    // today — a per-project writer check is a planned follow-up.
+    this.requireProjectUid(req);
     const startTime = logger.startOperation(req, 'newsletter_generate', {
-      context_type: req.body?.contextType,
       has_prompt_override: !!req.body?.systemPromptOverride,
     });
 
@@ -423,7 +291,10 @@ export class NewsletterController {
         fieldErrors['rawContent'] = `rawContent must be ${NEWSLETTER_RAW_CONTENT_MAX_LENGTH} characters or fewer`;
       }
 
-      if (!payload?.contextType || !VALID_CONTEXT_TYPES.has(payload.contextType)) {
+      // contextType / contextName are kept on the GenerateNewsletterRequest
+      // because the AI prompt template references them (Foundation vs Project
+      // tonal cues). They drive nothing else now.
+      if (!payload?.contextType || (payload.contextType !== 'project' && payload.contextType !== 'foundation')) {
         fieldErrors['contextType'] = "contextType must be 'foundation' or 'project'";
       }
 
@@ -467,18 +338,31 @@ export class NewsletterController {
     }
   }
 
-  /**
-   * `requireEdReplyEmail=false` is used by the test-send path — the rendered
-   * email no longer surfaces the reply-to address, so we don't make writers
-   * supply one to run a test. The draft / real-send paths still require it
-   * because it's persisted on the Newsletter row in lfx-v2-newsletter-service.
-   */
-  private validateCommonPayload(
-    payload: { subject?: string; bodyHtml?: string; contextType?: string; contextUid?: string; edReplyEmail?: string },
-    path: string,
-    operation: string,
-    requireEdReplyEmail: boolean = true
-  ): void {
+  private requireProjectUid(req: Request): string {
+    const projectUid = String(req.params['projectUid'] || '').trim();
+    if (!projectUid) {
+      throw ServiceValidationError.forField('projectUid', 'projectUid path parameter is required', {
+        operation: 'newsletter_controller',
+        service: 'newsletter_controller',
+        path: req.path,
+      });
+    }
+    return projectUid;
+  }
+
+  private requireNewsletterUid(req: Request): string {
+    const newsletterUid = String(req.params['newsletterUid'] || '').trim();
+    if (!newsletterUid) {
+      throw ServiceValidationError.forField('newsletterUid', 'newsletterUid path parameter is required', {
+        operation: 'newsletter_controller',
+        service: 'newsletter_controller',
+        path: req.path,
+      });
+    }
+    return newsletterUid;
+  }
+
+  private validateCommonPayload(payload: { subject?: string; body_html?: string; ed_reply_email?: string }, path: string, operation: string): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
@@ -487,22 +371,14 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.bodyHtml || typeof payload.bodyHtml !== 'string' || payload.bodyHtml.trim().length === 0) {
-      fieldErrors['bodyHtml'] = 'Body is required';
-    } else if (payload.bodyHtml.length > BODY_MAX_LENGTH) {
-      fieldErrors['bodyHtml'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+      fieldErrors['body_html'] = 'Body is required';
+    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.contextType || !VALID_CONTEXT_TYPES.has(payload.contextType)) {
-      fieldErrors['contextType'] = "contextType must be 'foundation' or 'project'";
-    }
-
-    if (!payload?.contextUid || typeof payload.contextUid !== 'string') {
-      fieldErrors['contextUid'] = 'contextUid is required';
-    }
-
-    if (requireEdReplyEmail && (!payload?.edReplyEmail || typeof payload.edReplyEmail !== 'string' || !payload.edReplyEmail.includes('@'))) {
-      fieldErrors['edReplyEmail'] = 'A valid edReplyEmail is required';
+    if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
+      fieldErrors['ed_reply_email'] = 'A valid ed_reply_email is required';
     }
 
     if (Object.keys(fieldErrors).length > 0) {
@@ -514,11 +390,7 @@ export class NewsletterController {
     }
   }
 
-  /**
-   * Validate update-draft payloads which omit contextType / contextUid (those
-   * are immutable once a draft is created).
-   */
-  private validateCommonPayloadShallow(payload: { subject?: string; bodyHtml?: string; edReplyEmail?: string }, path: string, operation: string): void {
+  private validateTestSendPayload(payload: NewsletterTestSendPayload, path: string, operation: string): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
@@ -527,14 +399,14 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.bodyHtml || typeof payload.bodyHtml !== 'string' || payload.bodyHtml.trim().length === 0) {
-      fieldErrors['bodyHtml'] = 'Body is required';
-    } else if (payload.bodyHtml.length > BODY_MAX_LENGTH) {
-      fieldErrors['bodyHtml'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+      fieldErrors['body_html'] = 'Body is required';
+    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.edReplyEmail || typeof payload.edReplyEmail !== 'string' || !payload.edReplyEmail.includes('@')) {
-      fieldErrors['edReplyEmail'] = 'A valid edReplyEmail is required';
+    if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
+      fieldErrors['to_email'] = 'A valid to_email is required';
     }
 
     if (Object.keys(fieldErrors).length > 0) {
@@ -546,21 +418,17 @@ export class NewsletterController {
     }
   }
 
-  /**
-   * Shared committeeUids validation used by /recipient-count, /recipients,
-   * /send, /drafts (create), and /drafts/:id (update).
-   */
   private validateCommitteeUids(uids: unknown, path: string, operation: string): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!Array.isArray(uids)) {
-      fieldErrors['committeeUids'] = 'committeeUids must be an array of strings';
+      fieldErrors['committee_uids'] = 'committee_uids must be an array of strings';
     } else if (uids.length === 0) {
-      fieldErrors['committeeUids'] = 'committeeUids must contain at least one UID';
+      fieldErrors['committee_uids'] = 'committee_uids must contain at least one UID';
     } else if (uids.length > COMMITTEE_LIMIT) {
-      fieldErrors['committeeUids'] = `committeeUids must contain at most ${COMMITTEE_LIMIT} UIDs`;
+      fieldErrors['committee_uids'] = `committee_uids must contain at most ${COMMITTEE_LIMIT} UIDs`;
     } else if (!uids.every((uid) => typeof uid === 'string' && uid.length > 0)) {
-      fieldErrors['committeeUids'] = 'committeeUids must contain non-empty strings';
+      fieldErrors['committee_uids'] = 'committee_uids must contain non-empty strings';
     }
 
     if (Object.keys(fieldErrors).length > 0) {
@@ -574,8 +442,8 @@ export class NewsletterController {
 }
 
 /**
- * Parse the If-Match header into a version integer. Used by update/send draft
- * routes for optimistic concurrency control.
+ * Parse the If-Match header into a version integer. Used by update/send routes
+ * for optimistic concurrency control.
  */
 function parseIfMatch(req: Request): number {
   const raw = (req.header('If-Match') || '').trim();

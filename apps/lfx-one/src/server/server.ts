@@ -227,7 +227,7 @@ app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
-app.use('/api/newsletters', newslettersRouter);
+app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
 
 app.use('/api/*', apiErrorHandler);

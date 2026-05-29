@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export type NewsletterContextType = 'foundation' | 'project';
-
 export type NewsletterStatusTabId = 'draft' | 'sent';
+
+export type NewsletterStatus = 'draft' | 'sent';
 
 export interface NewsletterCommitteeOption {
   label: string;
@@ -12,7 +12,7 @@ export interface NewsletterCommitteeOption {
 }
 
 export interface NewsletterRecipientCountPayload {
-  committeeUids: string[];
+  committee_uids: string[];
 }
 
 export interface NewsletterRecipientCount {
@@ -21,7 +21,7 @@ export interface NewsletterRecipientCount {
 
 export interface NewsletterRecipient {
   email: string;
-  firstName?: string;
+  first_name?: string;
 }
 
 export interface NewsletterRecipientsResponse {
@@ -30,120 +30,89 @@ export interface NewsletterRecipientsResponse {
 
 export interface NewsletterTestSendPayload {
   subject: string;
-  bodyHtml: string;
-  toEmail: string;
-  contextType: NewsletterContextType;
-  contextUid: string;
-}
-
-export interface NewsletterSendPayload {
-  subject: string;
-  bodyHtml: string;
-  committeeUids: string[];
-  contextType: NewsletterContextType;
-  contextUid: string;
-  edReplyEmail: string;
+  body_html: string;
+  to_email: string;
 }
 
 export interface NewsletterSendFailure {
   email: string;
-  reason: string;
+  error: string;
 }
 
 export interface NewsletterSendResult {
-  totalRecipients: number;
+  newsletter: Newsletter;
+  group_id: string;
+  total_recipients: number;
   sent: number;
   failed: number;
-  failures: NewsletterSendFailure[];
-  groupId: string;
-  /**
-   * True when emails were delivered to the email-service but the follow-up
-   * PATCH to flip the newsletter to `status='sent'` exhausted its retries.
-   * The send succeeded — recipients received emails — but the newsletter row
-   * still reads as a draft. The frontend should surface this distinctly from
-   * a delivery failure so operators don't retry and cause duplicate sends.
-   */
-  markSentFailed?: boolean;
+  failures?: NewsletterSendFailure[];
 }
-
-export type NewsletterStatus = 'draft' | 'sent';
 
 export interface Newsletter {
   id: string;
-  contextType: NewsletterContextType;
-  contextUid: string;
+  project_uid: string;
   subject: string;
-  bodyHtml: string;
-  edReplyEmail: string;
-  committeeUids: string[];
+  body_html: string;
+  ed_reply_email: string;
+  committee_uids: string[];
   status: NewsletterStatus;
-  sentAt?: string;
-  createdBy: string;
+  sent_at?: string;
+  group_id?: string;
+  total_recipients: number;
+  created_by: string;
   version: number;
-  createdAt: string;
-  updatedAt: string;
-  // Set at first send (UUID minted in Express, persisted via the Go newsletter
-  // service). Used to query engagement analytics from lfx-v2-email-service.
-  groupId?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface CreateNewsletterDraftRequest {
-  contextType: NewsletterContextType;
-  contextUid: string;
+export interface CreateNewsletterRequest {
   subject: string;
-  bodyHtml: string;
-  edReplyEmail: string;
-  committeeUids: string[];
+  body_html: string;
+  ed_reply_email: string;
+  committee_uids: string[];
 }
 
-export interface UpdateNewsletterDraftRequest {
+export interface UpdateNewsletterRequest {
   subject: string;
-  bodyHtml: string;
-  edReplyEmail: string;
-  committeeUids: string[];
-}
-
-export interface NewsletterDraftListResponse {
-  drafts: Newsletter[];
+  body_html: string;
+  ed_reply_email: string;
+  committee_uids: string[];
 }
 
 export interface NewsletterListItem extends Newsletter {
-  totalRecipients?: number;
-  uniqueOpens?: number;
-  openRate?: number;
+  unique_opens?: number;
+  open_rate?: number;
 }
 
 export interface NewsletterListResponse {
   newsletters: NewsletterListItem[];
-  nextPageToken?: string;
+  next_page_token?: string;
 }
 
 export interface NewsletterListParams {
-  contextType: NewsletterContextType;
-  contextUid: string;
   status?: NewsletterStatus;
-  pageToken?: string;
+  page_token?: string;
 }
 
 export interface NewsletterDailyOpens {
   date: string;
   opens: number;
-  uniqueOpens: number;
+  unique_opens: number;
 }
 
 export interface NewsletterAnalytics {
-  newsletterId: string;
+  newsletter_id: string;
   subject: string;
   status: NewsletterStatus;
-  sentAt?: string;
-  totalRecipients: number;
+  sent_at?: string;
+  total_recipients: number;
   delivered: number;
   failed: number;
-  totalOpens: number;
-  uniqueOpens: number;
-  openRate: number;
-  dailyOpens: NewsletterDailyOpens[];
-  lastEventAt?: string;
+  total_opens: number;
+  unique_opens: number;
+  open_rate: number;
+  daily_opens: NewsletterDailyOpens[];
+  last_event_at?: string;
 }
 
 export interface NewsletterRow extends NewsletterListItem {

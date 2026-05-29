@@ -111,7 +111,7 @@
               <ng-template #content>
                 <lfx-newsletter-audience-step
                   [form]="form"
-                  [contextUid]="contextUid()"
+                  [projectUid]="projectUid()"
                   [recipientCount]="recipientCount()"
                   [recipientCountLoading]="recipientCountLoading()">
                 </lfx-newsletter-audience-step>
@@ -122,7 +122,6 @@
               <ng-template #content>
                 <lfx-newsletter-content-step
                   [form]="form"
-                  [contextType]="contextType()"
                   [contextName]="displayName()"
                   [hasContext]="hasContext()"
                   [savedLabel]="savedLabel()"

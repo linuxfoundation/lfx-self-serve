@@ -85,7 +85,7 @@
                   @if (statusTab() === 'sent') {
                     <td>
                       <span class="text-sm text-gray-700">
-                        {{ newsletter.sentAt ? (newsletter.sentAt | date: 'MMM d, y') : '—' }}
+                        {{ newsletter.sent_at ? (newsletter.sent_at | date: 'MMM d, y') : '—' }}
                       </span>
                     </td>
                     <td class="text-right">
@@ -114,7 +114,7 @@
                     </td>
                   } @else {
                     <td>
-                      <span class="text-sm text-gray-700">{{ newsletter.updatedAt | date: 'MMM d, y' }}</span>
+                      <span class="text-sm text-gray-700">{{ newsletter.updated_at | date: 'MMM d, y' }}</span>
                     </td>
                     <td class="text-right">
                       <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
@@ -164,5 +164,6 @@
     The preview component falls back to a neutral "Foundation" label when displayName is empty.
     True fidelity needs a backend snapshot of project at send time — tracked as follow-up.
   -->
-  <lfx-newsletter-preview-drawer [(visible)]="previewVisible" [subject]="n.subject" [bodyHtml]="n.bodyHtml" [displayName]="''"> </lfx-newsletter-preview-drawer>
+  <lfx-newsletter-preview-drawer [(visible)]="previewVisible" [subject]="n.subject" [bodyHtml]="n.body_html" [displayName]="''">
+  </lfx-newsletter-preview-drawer>
 }

@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { EditorComponent } from '@components/editor/editor.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { GenerateNewsletterResponse, NewsletterContextType } from '@lfx-one/shared/interfaces';
+import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -26,7 +26,10 @@ export class NewsletterContentStepComponent {
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
-  public readonly contextType = input.required<NewsletterContextType>();
+  // contextType is retained because the AI prompt template references it for
+  // tonal cues; the newsletter feature itself is project-only at the API
+  // boundary.
+  public readonly contextType = input<'foundation' | 'project'>('project');
   public readonly contextName = input.required<string>();
   public readonly hasContext = input<boolean>(false);
   public readonly savedLabel = input<string | null>(null);

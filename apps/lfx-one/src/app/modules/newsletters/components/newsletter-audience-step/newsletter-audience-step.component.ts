@@ -25,7 +25,7 @@ export class NewsletterAudienceStepComponent {
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
-  public readonly contextUid = input.required<string>();
+  public readonly projectUid = input.required<string>();
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
 
@@ -62,10 +62,12 @@ export class NewsletterAudienceStepComponent {
       return;
     }
 
+    const projectUid = this.projectUid();
+    if (!projectUid) return;
     this.recipientsLoading.set(true);
     this.recipientsError.set(null);
     this.newsletterService
-      .getRecipients({ committeeUids: uids })
+      .getRecipients(projectUid, { committee_uids: uids })
       .pipe(
         take(1),
         finalize(() => this.recipientsLoading.set(false))
@@ -81,7 +83,7 @@ export class NewsletterAudienceStepComponent {
 
   private initCommittees(): Signal<Committee[]> {
     return toSignal(
-      toObservable(this.contextUid).pipe(
+      toObservable(this.projectUid).pipe(
         distinctUntilChanged(),
         switchMap((uid) => {
           if (!uid) return of([] as Committee[]);
