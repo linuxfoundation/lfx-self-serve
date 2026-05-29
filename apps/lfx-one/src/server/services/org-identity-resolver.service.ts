@@ -101,7 +101,11 @@ export class OrgIdentityResolver {
       type: 'b2b_org',
       filters: [`sfid:${sfid}`],
     });
-    const uid = response?.resources?.[0]?.id ?? null;
+    // query-service returns `resource.id` as `<type>:<uuid>` (e.g. `b2b_org:4c46585f-…`). Strip the
+    // prefix to the bare UUID before caching/returning so downstream member-service `/b2b_orgs/{uid}`
+    // calls don't 404 on a prefixed identifier (UUIDs never contain ':').
+    const rawId = response?.resources?.[0]?.id ?? null;
+    const uid = rawId ? rawId.substring(rawId.indexOf(':') + 1) : null;
     if (uid) {
       this.sfidToUid.set(sfid, uid);
       this.uidToSfid.set(uid, sfid);

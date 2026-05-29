@@ -265,6 +265,15 @@ export class OrgNavigationService {
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();
+
+    // Spec 022 — when the user is already inside the Org lens (e.g. clicked lens-org or deep-linked
+    // to /org/overview), keep them there so they see the empty state instead of bouncing back to /.
+    // The redirect-to-/ still fires from other entry points (sidebar background refresh on /), where
+    // staying put would be confusing.
+    if (this.router.url.startsWith('/org')) {
+      return;
+    }
+
     this.lensService.setLens('me');
     this.router.navigate([LENS_DEFAULT_ROUTES.me]);
   }

@@ -8,7 +8,7 @@ import type { Subject } from 'rxjs';
 export interface OrgItem {
   /** Canonical b2b_org identifier (UUID 8-4-4-4-12), sourced from `resource.id`. */
   uid: string;
-  /** Legacy Salesforce account id from `resource.data.sfid`; null for orgs never registered with Salesforce. */
+  /** Legacy Salesforce account id from `resource.data.sfid`; spec 022 omits rows with null sfid (FR-005), so effectively non-null on the wire — kept nullable for pre-022 callers. */
   accountId: string | null;
   /** Display name; query-service strips nameless orgs so always non-empty in practice. */
   name: string;
@@ -18,6 +18,8 @@ export interface OrgItem {
   primaryDomain?: string | null;
   /** LF member-org flag when the indexed doc exposes it. */
   isMember?: boolean;
+  /** Spec 022 — populated only for inherited (cascading) rows; the parent org's display name, used to render the dropdown tooltip. */
+  parentName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -26,6 +28,8 @@ export interface DisplayOrgItem {
   isSelected: boolean;
   roleLabel: string;
   roleIcon: string;
+  /** Spec 022 — non-empty only for inherited rows; rendered as a PrimeNG `pTooltip` on the role badge (Clarifications Q2). */
+  roleTooltip: string;
 }
 
 /** Wire shape returned by `GET /api/nav/org-items` per `contracts/bff-org-items.md`. */
@@ -62,12 +66,26 @@ export interface GetOrgItemsParams {
   selectedUid?: string;
 }
 
+/** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
+export interface CascadingRoleGrant {
+  /** Child org's uid (the inherited grant target). */
+  uid: string;
+  /** Direct-granted parent org's uid that propagates the role. */
+  parentUid: string;
+  /** Parent org's display name, used for the dropdown tooltip ("View-only access inherited from {parentName}"). */
+  parentName: string;
+}
+
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** `b2b_org.uid` values where caller has the `writer` role. */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets and drives the Profile `canEdit` direct-only gate (FR-011a). */
   writers: string[];
-  /** `b2b_org.uid` values where caller has `auditor` AND is NOT a writer on the same org. */
+  /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
+  /** Spec 022 — uids inherited via a direct-granted parent (`data.is_parent === true`); each carries `parentUid` + `parentName` for the tooltip and is disjoint from `writers` (D-005, direct wins on tie). */
+  cascadingWriters: CascadingRoleGrant[];
+  /** Spec 022 — analogous to `cascadingWriters` for the auditor role. Disjoint from `auditors`. */
+  cascadingAuditors: CascadingRoleGrant[];
   /** Caller's resolved username (from JWT). */
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
@@ -126,11 +144,6 @@ export interface OrgProfileEditableFields {
   sector: string;
 }
 
-/** Optional per-uid enrichment in org-selector.mock.json `canonicalExtras` (spec 020/021). */
-export type OrgCanonicalMockExtras = Partial<
-  Pick<OrgCanonicalRecord, 'description' | 'website' | 'industry' | 'sector' | 'numberOfEmployees' | 'crunchBaseUrl' | 'updatedAt' | 'parentUid'>
->;
-
 /** Single physical address (spec 021). */
 export interface OrgAddress {
   line1: string;
@@ -140,10 +153,24 @@ export interface OrgAddress {
   country: string;
 }
 
-/** Response shape for `GET /api/orgs/uid/:uid/addresses` (spec 021). Mock-backed in v1; future-ready for member-service integration. */
+/** Response shape for `GET /api/orgs/uid/:uid/addresses` (spec 023). Snowflake `ORG_LENS_ADDRESSES`; BFF returns 200 with nulls on lookup misses. */
 export interface OrgAddressesResponse {
   primaryAddress: OrgAddress | null;
   billingAddress: OrgAddress | null;
+}
+
+/** Snowflake row shape returned by `ORG_LENS_ADDRESSES` lookups. */
+export interface OrgLensAddressesWarehouseRow {
+  BILLING_STREET: string | null;
+  BILLING_CITY: string | null;
+  BILLING_STATE: string | null;
+  BILLING_POSTAL_CODE: string | null;
+  BILLING_COUNTRY: string | null;
+  SHIPPING_STREET: string | null;
+  SHIPPING_CITY: string | null;
+  SHIPPING_STATE: string | null;
+  SHIPPING_POSTAL_CODE: string | null;
+  SHIPPING_COUNTRY: string | null;
 }
 
 /** Internal page result used by the client `OrgNavigationService` reactive pipeline. `reset=true` marks a fresh first page. */
@@ -182,12 +209,22 @@ export interface B2bOrgIndexedDoc {
   logo_url?: string | null;
   primary_domain?: string | null;
   is_member?: boolean;
+  /** Spec 022 — true when this org has child orgs in the b2b_org index. Drives cascading-children lookup per D-004. */
+  is_parent?: boolean;
 }
 
 /** Shape of `b2b_org_settings.data` from the query-service "what can I see" pattern. */
 export interface B2bOrgSettingsDoc {
-  writers?: { username?: string | null }[];
-  auditors?: { username?: string | null }[];
+  writers?: {
+    username?: string | null;
+    /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
+    invite_status?: 'pending' | 'accepted' | 'revoked';
+  }[];
+  auditors?: {
+    username?: string | null;
+    /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
+    invite_status?: 'pending' | 'accepted' | 'revoked';
+  }[];
 }
 
 /** Raw response from member-service `GET /b2b_orgs/{uid}` (snake_case; BFF transforms to camelCase). */
@@ -215,5 +252,34 @@ export type OrgIdentityLookupResult<K extends 'uid' | 'sfid'> = {
   [P in K]: string | null;
 } & { cacheHit: boolean };
 
-/** Per-row caller role persona. Writer wins when caller holds both — server-side flattening keeps writers/auditors disjoint. */
-export type OrgRolePersona = 'writer' | 'auditor';
+/** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
+export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
+
+/** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
+export interface ResolvedOrgRole {
+  roleSource: OrgRolePersona;
+  /** Direct-granted parent's uid; present only on inherited rows. */
+  parentUid?: string;
+  /** Direct-granted parent's display name; present only on inherited rows. */
+  parentName?: string;
+}
+
+/** Cross-service payload — the resolved access-aware map plus the org-details lookup needed to materialise wire rows. */
+export interface AccessAwareOrgsResult {
+  /** Per-uid resolved role; iteration order matches insertion (direct first, then cascading per parent). */
+  resolved: Map<string, ResolvedOrgRole>;
+  /** uid → b2b_org indexed doc; covers both direct grants and cascading children. */
+  orgDocByUid: Map<string, B2bOrgIndexedDoc>;
+  /** True when any upstream dependency failed while building the access-aware set. */
+  upstreamFailed: boolean;
+  /** ISO 8601 UTC timestamp set when this resolution started; surfaces in `RoleGrantsResponse.loaded_at`. */
+  loadedAt: string;
+  /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
+  username: string;
+}
+
+/** NATS response body for UUID→SFID resolution requests. */
+export interface UuidToSfidNatsResponse {
+  sfid?: string;
+  error?: string;
+}

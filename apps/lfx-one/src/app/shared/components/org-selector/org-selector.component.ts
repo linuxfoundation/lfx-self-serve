@@ -14,11 +14,12 @@ import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
+import { TooltipModule } from 'primeng/tooltip';
 import { distinctUntilChanged, filter } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
-  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective],
+  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, TooltipModule, OnRenderDirective],
   templateUrl: './org-selector.component.html',
   styleUrl: './org-selector.component.scss',
 })
@@ -54,24 +55,42 @@ export class OrgSelectorComponent {
   protected readonly selectedRolePersona: Signal<OrgRolePersona | null> = computed(() => {
     const uid = this.selectedAccountUid();
     if (!uid) return null;
-    if (this.orgRoleGrantsService.writerSet().has(uid)) return 'writer';
-    if (this.orgRoleGrantsService.auditorSet().has(uid)) return 'auditor';
-    return null;
+    return this.resolvePersona(
+      uid,
+      this.orgRoleGrantsService.writerSet(),
+      this.orgRoleGrantsService.auditorSet(),
+      this.orgRoleGrantsService.inheritedWriterSet(),
+      this.orgRoleGrantsService.inheritedAuditorSet()
+    );
   });
   protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona()));
   protected readonly selectedRoleIcon: Signal<string> = computed(() => this.personaToIcon(this.selectedRolePersona()));
+  protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
+    const uid = this.selectedAccountUid();
+    const persona = this.selectedRolePersona();
+    if (!uid || !persona) return '';
+    const parentName = this.orgRoleGrantsService.parentNameByUid().get(uid) ?? '';
+    return this.personaToTooltip(persona, parentName);
+  });
 
   protected readonly displayedItems: Signal<DisplayOrgItem[]> = computed(() => {
     const selectedUid = this.selectedAccountUid();
     const writerSet = this.orgRoleGrantsService.writerSet();
     const auditorSet = this.orgRoleGrantsService.auditorSet();
+    const inheritedWriterSet = this.orgRoleGrantsService.inheritedWriterSet();
+    const inheritedAuditorSet = this.orgRoleGrantsService.inheritedAuditorSet();
+    const parentNameByUid = this.orgRoleGrantsService.parentNameByUid();
     return this.items().map((item) => {
-      const persona = this.resolvePersona(item.uid, writerSet, auditorSet);
+      const persona = this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet);
+      // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
+      // signal map only if the server response somehow omitted it on a row known to be inherited.
+      const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
       return {
         item,
         isSelected: !!selectedUid && selectedUid === item.uid,
         roleLabel: this.personaToLabel(persona),
         roleIcon: this.personaToIcon(persona),
+        roleTooltip: this.personaToTooltip(persona, parentName),
       };
     });
   });
@@ -151,22 +170,55 @@ export class OrgSelectorComponent {
     this.orgNavigationService.resetAndReload(restoredUid, restoredAccountId);
   }
 
-  private resolvePersona(uid: string, writerSet: Set<string>, auditorSet: Set<string>): OrgRolePersona | null {
-    if (writerSet.has(uid)) return 'writer';
-    if (auditorSet.has(uid)) return 'auditor';
+  /** Spec 022 — direct sources take precedence over inherited so the Edit Profile gate (FR-011a) stays direct-only. Defense-in-depth alongside the BFF's disjointness merge. */
+  private resolvePersona(
+    uid: string,
+    writerSet: Set<string>,
+    auditorSet: Set<string>,
+    inheritedWriterSet: Set<string>,
+    inheritedAuditorSet: Set<string>
+  ): OrgRolePersona | null {
+    if (writerSet.has(uid)) return 'direct-writer';
+    if (auditorSet.has(uid)) return 'direct-auditor';
+    if (inheritedWriterSet.has(uid)) return 'inherited-writer';
+    if (inheritedAuditorSet.has(uid)) return 'inherited-auditor';
     return null;
   }
 
-  /** Product-naming label for the role persona: writer → "Org Admin Editor", auditor → "Org Admin Viewer". */
+  /** Product-naming label per persona: direct → "Org Admin Editor / Viewer". Inherited rows are always view-only (FGA: writer never cascades), so both inherited variants use the "Viewer (inherited)" label to avoid implying edit capability (Clarifications Q2). */
   private personaToLabel(persona: OrgRolePersona | null): string {
-    if (persona === 'writer') return 'Org Admin Editor';
-    if (persona === 'auditor') return 'Org Admin Viewer';
+    switch (persona) {
+      case 'direct-writer':
+        return 'Org Admin Editor';
+      case 'direct-auditor':
+        return 'Org Admin Viewer';
+      // inherited-writer can't occur (FGA prevents writer cascade); kept for type exhaustiveness and
+      // labeled as Viewer so the badge never implies edit access if the variant ever surfaces.
+      case 'inherited-writer':
+      case 'inherited-auditor':
+        return 'Org Admin Viewer (inherited)';
+      default:
+        return '';
+    }
+  }
+
+  /** Direct writer → pen (edit); everyone else (direct/inherited viewer + the impossible inherited-writer) → eye. Inherited rows are view-only, so they never get the edit icon. */
+  private personaToIcon(persona: OrgRolePersona | null): string {
+    if (persona === 'direct-writer') return 'fa-light fa-pen-to-square';
+    if (persona === 'direct-auditor' || persona === 'inherited-auditor' || persona === 'inherited-writer') return 'fa-light fa-eye';
     return '';
   }
 
-  private personaToIcon(persona: OrgRolePersona | null): string {
-    if (persona === 'writer') return 'fa-light fa-pen-to-square';
-    if (persona === 'auditor') return 'fa-light fa-eye';
+  /** Inherited-only tooltip text. Empty string for direct rows so PrimeNG hides the tooltip. Per FGA model, only auditor cascades — writer never cascades to children. */
+  private personaToTooltip(persona: OrgRolePersona | null, parentName: string): string {
+    if (!parentName) return '';
+    if (persona === 'inherited-auditor') {
+      return `View-only access inherited from ${parentName}`;
+    }
+    // inherited-writer is kept as a dead branch for type exhaustiveness; FGA model prevents it.
+    if (persona === 'inherited-writer') {
+      return `View-only access inherited from ${parentName}`;
+    }
     return '';
   }
 }
