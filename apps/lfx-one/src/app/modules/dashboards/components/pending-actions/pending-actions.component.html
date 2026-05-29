@@ -184,6 +184,19 @@
                         [icon]="buttonIcons[item.type]" />
                     }
                   </div>
+                  <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready -->
+                  @if (item.isRsvpInline && (!item.meeting || item.isLoading)) {
+                    <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0 self-start sm:self-auto sm:ml-4" />
+                  } @else {
+                    <button
+                      type="button"
+                      class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                      (click)="handleDismiss(item)"
+                      [attr.aria-label]="'Dismiss: ' + item.text"
+                      [attr.data-testid]="'dashboard-pending-actions-dismiss-' + item.type">
+                      Dismiss
+                    </button>
+                  }
                 </div>
                 @if (item.isVoteInlineExpanded && item.vote && !item.voteUsesDrawer) {
                   <lfx-vote-ballot-inline [vote]="item.vote" (voteSubmitted)="handleVoteSubmitted(item)" (cancelled)="handleVoteCancelled(item)" />

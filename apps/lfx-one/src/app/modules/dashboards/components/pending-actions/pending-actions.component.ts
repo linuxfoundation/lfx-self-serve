@@ -139,6 +139,12 @@ export class PendingActionsComponent {
     this.hiddenActionsVersion.update((v) => v + 1);
   }
 
+  protected handleDismiss(item: DecoratedPendingAction): void {
+    this.hiddenActionsService.dismissAction(item);
+    // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
+    this.startCompletion(item, { withSkeleton: true, skipHide: true });
+  }
+
   // Parse the href into a UrlTree up-front so `[routerLink]` preserves query params (e.g. `?password=...`).
   // Binding a raw string with `?` to `[routerLink]` treats the entire value as a path segment and URL-encodes the query separator.
   private buildToastMeetingData(item: PendingActionItem): { meetingUrl: UrlTree; meetingTitle: string } | undefined {
@@ -238,10 +244,12 @@ export class PendingActionsComponent {
     return isRanked;
   }
 
-  // Persist the hide synchronously (so an unmount within the animation window can't cancel the cookie write), then drive the fade → drop → skeleton-arrival animation through two timers.
-  private startCompletion(item: PendingActionItem, options: { withSkeleton: boolean }): void {
+  // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), so an unmount within the animation window can't cancel the cookie write, then drive the fade → drop → skeleton-arrival animation through two timers.
+  private startCompletion(item: PendingActionItem, options: { withSkeleton: boolean; skipHide?: boolean }): void {
     const rowKey = this.getRowKey(item);
-    this.hiddenActionsService.hideAction(item);
+    if (!options.skipHide) {
+      this.hiddenActionsService.hideAction(item);
+    }
 
     this.completingRowKeys.update((keys) => new Set(keys).add(rowKey));
     timer(PENDING_ACTION_FADE_OUT_MS)

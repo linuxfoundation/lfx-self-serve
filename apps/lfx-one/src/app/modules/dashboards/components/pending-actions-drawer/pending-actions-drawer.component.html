@@ -109,6 +109,19 @@
                   [icon]="buttonIcons[item.type]" />
               }
             </div>
+            <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready -->
+            @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
+              <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
+            } @else {
+              <button
+                type="button"
+                class="shrink-0 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                (click)="handleDismiss(item)"
+                [attr.aria-label]="'Dismiss: ' + item.text"
+                [attr.data-testid]="'pending-actions-drawer-dismiss-' + item.type">
+                Dismiss
+              </button>
+            }
           </div>
         </div>
       }
