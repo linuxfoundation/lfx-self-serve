@@ -176,6 +176,12 @@ environment:
 | `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
 | `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
 
+#### Runtime Client Configuration
+
+| Parameter                     | Description                                                                                                                                                             | Required | Default           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------- |
+| `environment.INTERCOM_APP_ID` | Public Intercom Messenger workspace App ID. Messenger loads only when set; identity verification uses the `http://lfx.dev/claims/intercom` Auth0 claim, not this value. | No       | - (Messenger off) |
+
 #### Snowflake Analytics Configuration
 
 Required for analytics endpoints (active-weeks-streak, pull-requests-merged, code-commits):
