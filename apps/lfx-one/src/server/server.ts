@@ -321,6 +321,14 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
   };
 
+  logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
+    has_app_id: !!runtimeConfig.intercomAppId,
+    has_intercom_jwt: !!auth.user?.['http://lfx.dev/claims/intercom'],
+    has_user_id: !!(auth.user?.['https://sso.linuxfoundation.org/claims/username'] || auth.user?.sub),
+    authenticated: auth.authenticated,
+    impersonating: !!auth.impersonating,
+  });
+
   angularApp
     .handle(req, {
       auth,
