@@ -489,13 +489,11 @@ export class ProjectService {
         // incorrectly turn an intentionally empty username into an email address.
         userInfo = { ...existingUserInfo };
       } else {
-        // Fetch user info from user service via NATS using the original input
+        // Fetch user info from user service via NATS using the original input.
+        // Use the display username from the profile as-is — overwriting it with the NATS
+        // sub caused the username column to show the email when the sub equalled the email.
         const fetchedUserInfo = await this.getUserInfo(req, usernameOrEmail);
-        // Use the backend identifier (sub) for the username in the stored UserInfo for backend consistency
-        userInfo = {
-          ...fetchedUserInfo,
-          username: backendIdentifier, // Use the sub for backend consistency
-        };
+        userInfo = { ...fetchedUserInfo };
       }
 
       if (role === 'manage') {
