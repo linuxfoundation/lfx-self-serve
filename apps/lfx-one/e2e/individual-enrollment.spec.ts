@@ -102,6 +102,11 @@ async function gotoAndWaitForCard(page: Page): Promise<void> {
   await expect(page.getByTestId('individual-enrollment-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 
+/** The auto-renew action is a button (label "Enable auto-renew" / "Disable auto-renew"). */
+function autoRenewControl(page: Page) {
+  return page.getByTestId('individual-enrollment-auto-renew-toggle');
+}
+
 test.describe('Individual Enrollment — Content Tests', () => {
   test.describe('Page rendering', () => {
     test('shows enrollment card with product name and status', async ({ page }) => {
@@ -123,50 +128,40 @@ test.describe('Individual Enrollment — Content Tests', () => {
     });
   });
 
-  test.describe('Auto-renew toggle visibility', () => {
-    test('shows toggle for active Stripe membership', async ({ page }) => {
+  test.describe('Auto-renew control visibility', () => {
+    test('shows the auto-renew button for an active Stripe membership', async ({ page }) => {
       await setupStripeEnrollmentMock(page);
       await gotoAndWaitForCard(page);
 
-      await expect(page.getByTestId('individual-enrollment-auto-renew-toggle')).toBeVisible();
+      await expect(autoRenewControl(page)).toBeVisible();
     });
 
-    test('toggle label reads "Auto Renew"', async ({ page }) => {
+    test('button reads "Disable auto-renew" when auto-renew is on', async ({ page }) => {
       await setupStripeEnrollmentMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggleWrapper = page.getByTestId('individual-enrollment-auto-renew-toggle');
-      await expect(toggleWrapper).toContainText('Auto Renew');
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
     });
 
-    test('toggle label is associated with the input via for/id', async ({ page }) => {
-      await setupStripeEnrollmentMock(page);
+    test('button reads "Enable auto-renew" when auto-renew is off', async ({ page }) => {
+      await setupStripeEnrollmentMock(page, false);
       await gotoAndWaitForCard(page);
 
-      const label = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('label');
-      const forAttr = await label.getAttribute('for');
-      expect(forAttr).toMatch(/^auto-renew-/);
-
-      // The switch's underlying input should have the same id
-      const input = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      const idAttr = await input.getAttribute('id');
-      expect(idAttr).toBe(forAttr);
+      await expect(autoRenewControl(page)).toContainText('Enable auto-renew');
     });
   });
 
-  test.describe('Toggle confirm → accept', () => {
-    test('confirm dialog appears after toggling', async ({ page }) => {
+  test.describe('Disable auto-renew → accept', () => {
+    test('confirm dialog appears after clicking Disable', async ({ page }) => {
       await setupStripeEnrollmentMock(page);
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 
-      // Toggle is currently ON (AutoRenew: true) — click it to disable
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      // Auto-renew is currently ON — click to disable
+      await autoRenewControl(page).click();
 
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('.p-confirmdialog')).toContainText('Update Membership');
-      await expect(page.locator('.p-confirmdialog')).toContainText('Disable auto renew');
+      await expect(page.locator('.p-confirmdialog')).toContainText('Disable auto-renew');
     });
 
     test('accepting the dialog shows success toast', async ({ page }) => {
@@ -174,11 +169,10 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
-      // Click the Disable button (acceptLabel)
+      // Click the accept button (acceptLabel "Disable auto-renew")
       await page
         .locator('.p-confirmdialog')
         .getByRole('button', { name: /Disable/i })
@@ -193,8 +187,7 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
       await page
         .locator('.p-confirmdialog')
@@ -205,13 +198,12 @@ test.describe('Individual Enrollment — Content Tests', () => {
     });
   });
 
-  test.describe('Toggle confirm → cancel (reject)', () => {
+  test.describe('Disable auto-renew → cancel (reject)', () => {
     test('cancelling the dialog dismisses it without a toast', async ({ page }) => {
       await setupStripeEnrollmentMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
       await page
@@ -223,15 +215,16 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await expect(page.locator('.p-toast')).not.toBeVisible();
     });
 
-    test('cancelling reverts the toggle to its original value', async ({ page }) => {
-      await setupStripeEnrollmentMock(page, true); // AutoRenew: true
+    test('the card does not change until the dialog is confirmed', async ({ page }) => {
+      await setupStripeEnrollmentMock(page, true); // AutoRenew: true → "Disable auto-renew"
       await gotoAndWaitForCard(page);
 
-      const input = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await expect(input).toBeChecked(); // starts checked
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
 
-      await input.click(); // uncheck (optimistic)
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+      // While the dialog is open, the card must NOT reflect the pending change
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
 
       await page
         .locator('.p-confirmdialog')
@@ -239,19 +232,18 @@ test.describe('Individual Enrollment — Content Tests', () => {
         .click();
       await expect(page.locator('.p-confirmdialog')).not.toBeVisible({ timeout: 5000 });
 
-      // After cancel, toggle should be back to checked
-      await expect(input).toBeChecked();
+      // After cancel, nothing changed
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
     });
   });
 
-  test.describe('Toggle confirm → upstream error', () => {
+  test.describe('Disable auto-renew → upstream error', () => {
     test('shows error toast on PATCH failure', async ({ page }) => {
       await setupStripeEnrollmentMock(page);
       await setupPatchMock(page, 500);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
       await page
         .locator('.p-confirmdialog')
@@ -261,40 +253,37 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await expect(page.locator('.p-toast')).toContainText('Failed to update membership', { timeout: 10_000 });
     });
 
-    test('reverts toggle to original value on PATCH failure', async ({ page }) => {
+    test('reverts the button to its original label on PATCH failure', async ({ page }) => {
       await setupStripeEnrollmentMock(page, true); // AutoRenew: true
       await setupPatchMock(page, 500);
       await gotoAndWaitForCard(page);
 
-      const input = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await expect(input).toBeChecked();
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
 
-      await input.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
       await page
         .locator('.p-confirmdialog')
         .getByRole('button', { name: /Disable/i })
         .click();
 
-      // After error, toggle should revert to original checked state
-      await expect(input).toBeChecked({ timeout: 10_000 });
+      // After error, the button reverts to "Disable auto-renew"
+      await expect(autoRenewControl(page)).toContainText('Disable auto-renew', { timeout: 10_000 });
     });
   });
 
-  test.describe('Auto-renew enable path (false → true)', () => {
-    test('confirm dialog shows Enable button when toggling on', async ({ page }) => {
-      await setupStripeEnrollmentMock(page, false); // AutoRenew: false
+  test.describe('Enable auto-renew path (false → true)', () => {
+    test('confirm dialog shows the Enable action when turning on', async ({ page }) => {
+      await setupStripeEnrollmentMock(page, false); // AutoRenew: false → "Enable auto-renew"
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await expect(toggle).not.toBeChecked();
-      await toggle.click();
+      await expect(autoRenewControl(page)).toContainText('Enable auto-renew');
+      await autoRenewControl(page).click();
 
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('.p-confirmdialog')).toContainText('Update Membership');
-      await expect(page.locator('.p-confirmdialog')).toContainText('Enable auto renew');
-      await expect(page.locator('.p-confirmdialog').getByRole('button', { name: /^Enable$/i })).toBeVisible();
+      await expect(page.locator('.p-confirmdialog')).toContainText('Enable auto-renew');
+      await expect(page.locator('.p-confirmdialog').getByRole('button', { name: /Enable auto-renew/i })).toBeVisible();
     });
 
     test('accepting Enable shows success toast', async ({ page }) => {
@@ -302,8 +291,7 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 
-      const toggle = page.getByTestId('individual-enrollment-auto-renew-toggle').locator('input[type="checkbox"]');
-      await toggle.click();
+      await autoRenewControl(page).click();
       await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
       await page
@@ -350,18 +338,18 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await expect(page.getByTestId('individual-enrollment-cta')).toContainText('Repurchase');
     });
 
-    test('auto-renew toggle is not rendered', async ({ page }) => {
+    test('auto-renew control is not rendered', async ({ page }) => {
       await setupCustomEnrollmentMock(page, expiredMembership);
       await gotoAndWaitForCard(page);
 
-      await expect(page.getByTestId('individual-enrollment-auto-renew-toggle')).not.toBeAttached();
+      await expect(autoRenewControl(page)).not.toBeAttached();
     });
 
-    test('shows read-only auto-renew text', async ({ page }) => {
+    test('the end date is labelled "Expired on"', async ({ page }) => {
       await setupCustomEnrollmentMock(page, expiredMembership);
       await gotoAndWaitForCard(page);
 
-      await expect(page.getByTestId('individual-enrollment-details')).toContainText('Auto Renew: Disabled');
+      await expect(page.getByTestId('individual-enrollment-details')).toContainText('Expired on');
     });
   });
 
@@ -389,11 +377,11 @@ test.describe('Individual Enrollment — Content Tests', () => {
       await expect(page.getByTestId('individual-enrollment-cta')).toContainText('Enroll');
     });
 
-    test('auto-renew toggle is not rendered', async ({ page }) => {
+    test('auto-renew control is not rendered', async ({ page }) => {
       await setupCustomEnrollmentMock(page, notEnrolledItem);
       await gotoAndWaitForCard(page);
 
-      await expect(page.getByTestId('individual-enrollment-auto-renew-toggle')).not.toBeAttached();
+      await expect(autoRenewControl(page)).not.toBeAttached();
     });
   });
 });

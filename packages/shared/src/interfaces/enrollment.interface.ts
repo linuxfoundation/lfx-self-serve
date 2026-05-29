@@ -53,6 +53,8 @@ export interface DisplayEnrollment extends IndividualEnrollment {
   severity: 'success' | 'warn' | 'danger' | 'secondary';
   enrollHref: string;
   renewHref: string;
+  /** True while an auto-renew PATCH is in flight for this enrollment's membership. */
+  pending: boolean;
 }
 
 export type EnrollmentsState = { kind: 'loading' } | { kind: 'loaded'; items: IndividualEnrollment[] } | { kind: 'error'; message: string };
