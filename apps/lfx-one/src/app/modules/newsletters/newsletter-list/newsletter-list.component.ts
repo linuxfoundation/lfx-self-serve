@@ -12,7 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FilterPillOption, NewsletterListItem, NewsletterRow, NewsletterStatus, NewsletterStatusTabId, ProjectContext } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, NewsletterListItem, NewsletterRow, NewsletterStatus, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -67,14 +67,8 @@ export class NewsletterListComponent {
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
 
   // === Reactive context ===
-  // Newsletters are project-only — the foundation lens hides this feature.
-  // We still expose isFoundationContext so the template can show a
-  // "switch to a project to view newsletters" empty state.
-  public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
-  public readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
-  public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0 && !this.isFoundationContext());
-  protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore());
+  protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
@@ -125,7 +119,7 @@ export class NewsletterListComponent {
 
   protected loadMore(): void {
     const token = this.nextPageToken();
-    if (!token || this.loadingMore() || !this.hasContext()) return;
+    if (!token || this.loadingMore() || !this.projectUid()) return;
     this.loadingMore.set(true);
     this.newsletterService
       .listNewsletters(this.projectUid(), {
@@ -160,7 +154,7 @@ export class NewsletterListComponent {
   }
 
   private runDelete(id: string): void {
-    if (!this.hasContext()) return;
+    if (!this.projectUid()) return;
     this.deletingId.set(id);
     this.newsletterService
       .deleteNewsletter(this.projectUid(), id)
@@ -184,17 +178,15 @@ export class NewsletterListComponent {
   }
 
   private initLoadOnContextOrTab(): void {
-    combineLatest([toObservable(this.projectUid), toObservable(this.isFoundationContext), toObservable(this.statusTab)])
+    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
       .pipe(
-        distinctUntilChanged(
-          ([prevUid, prevFoundation, prevTab], [uid, foundation, tab]) => prevUid === uid && prevFoundation === foundation && prevTab === tab
-        ),
+        distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(([uid, foundation, status]) => {
+      .subscribe(([uid, status]) => {
         this.previewVisible.set(false);
         this.selectedNewsletter.set(null);
-        if (uid && !foundation) {
+        if (uid) {
           this.loadInitial(status as NewsletterStatus);
         } else {
           this.newsletters.set([]);

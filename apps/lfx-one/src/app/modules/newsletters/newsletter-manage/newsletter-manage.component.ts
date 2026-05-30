@@ -104,16 +104,12 @@ export class NewsletterManageComponent {
   public readonly currentStep: Signal<number> = this.initCurrentStep();
 
   // === Project context ===
-  // Newsletters are project-only. Foundation context is intentionally not
-  // supported — the feature is hidden in the foundation lens and this
-  // component routes back to the list if it boots up with no project.
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
-  public readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
-  public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0 && !this.isFoundationContext());
+  public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 
   // === Auth-derived ===
   public readonly edName: Signal<string> = computed(() => {
