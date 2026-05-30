@@ -41,8 +41,10 @@
   </div>
 </div>
 
-<lfx-attribution-section
-  [foundationSlug]="foundationSlug()"
-  [foundationName]="foundationName()"
-  [focusProgram]="focusProgram()"
-  data-testid="overview-tab-attribution-section" />
+@if (!isProjectWebsites()) {
+  <lfx-attribution-section
+    [foundationSlug]="foundationSlug()"
+    [foundationName]="foundationName()"
+    [focusProgram]="focusProgram()"
+    data-testid="overview-tab-attribution-section" />
+}

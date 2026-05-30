@@ -33,6 +33,7 @@ export class OverviewTabComponent {
   protected readonly loading = signal(false);
 
   // === Computed Signals ===
+  protected readonly isProjectWebsites = computed(() => this.focusProgram() === 'projectWebsites');
   protected readonly overviewKpiData: Signal<OverviewKpiData> = this.initOverviewKpiData();
   protected readonly performanceSummaryKpis: Signal<PerformanceSummaryKpi[]> = this.initPerformanceSummaryKpis();
   protected readonly summaryTitle: Signal<string> = this.initSummaryTitle();
@@ -52,10 +53,11 @@ export class OverviewTabComponent {
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
+          const isWebOnly = focus === 'projectWebsites';
           return forkJoin({
-            revenueImpact: this.analyticsService.getRevenueImpact(slug, classification).pipe(catchError(() => of(null))),
+            revenueImpact: isWebOnly ? of(null) : this.analyticsService.getRevenueImpact(slug, classification).pipe(catchError(() => of(null))),
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
-            emailCtr: this.analyticsService.getEmailCtr(slug, classification).pipe(catchError(() => of(null))),
+            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),

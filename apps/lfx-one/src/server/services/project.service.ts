@@ -5068,7 +5068,6 @@ export class ProjectService {
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
 
-      // PIPELINE_SUMMARY does not have LF_SUB_DOMAIN_CLASSIFICATION — always unfiltered
       const pipelineQuery = isUmbrella
         ? `
         SELECT SUM(TOTAL_PIPELINE_YTD) AS TOTAL_PIPELINE_YTD, SUM(WON_REVENUE_YTD) AS WON_REVENUE_YTD,
@@ -5078,14 +5077,18 @@ export class ProjectService {
                AVG(AVG_WON_DEAL_SIZE_YTD) AS AVG_WON_DEAL_SIZE_YTD, AVG(CONVERSION_RATE_YTD) AS CONVERSION_RATE_YTD,
                SUM(WON_REVENUE_PRIOR_YEAR) AS WON_REVENUE_PRIOR_YEAR, AVG(WON_REVENUE_YOY_CHANGE_PCT) AS WON_REVENUE_YOY_CHANGE_PCT
         FROM ANALYTICS.PLATINUM_LFX_ONE.PIPELINE_SUMMARY
+        ${classification ? 'WHERE LF_SUB_DOMAIN_CLASSIFICATION = ?' : ''}
       `
         : `
-        SELECT TOTAL_PIPELINE_YTD, WON_REVENUE_YTD, LOST_REVENUE_YTD, OPEN_PIPELINE_YTD,
-               TOTAL_DEALS_YTD, WON_DEALS_YTD, LOST_DEALS_YTD, OPEN_DEALS_YTD,
-               AVG_WON_DEAL_SIZE_YTD, CONVERSION_RATE_YTD,
-               WON_REVENUE_PRIOR_YEAR, WON_REVENUE_YOY_CHANGE_PCT
+        SELECT SUM(TOTAL_PIPELINE_YTD) AS TOTAL_PIPELINE_YTD, SUM(WON_REVENUE_YTD) AS WON_REVENUE_YTD,
+               SUM(LOST_REVENUE_YTD) AS LOST_REVENUE_YTD, SUM(OPEN_PIPELINE_YTD) AS OPEN_PIPELINE_YTD,
+               SUM(TOTAL_DEALS_YTD) AS TOTAL_DEALS_YTD, SUM(WON_DEALS_YTD) AS WON_DEALS_YTD,
+               SUM(LOST_DEALS_YTD) AS LOST_DEALS_YTD, SUM(OPEN_DEALS_YTD) AS OPEN_DEALS_YTD,
+               AVG(AVG_WON_DEAL_SIZE_YTD) AS AVG_WON_DEAL_SIZE_YTD, AVG(CONVERSION_RATE_YTD) AS CONVERSION_RATE_YTD,
+               SUM(WON_REVENUE_PRIOR_YEAR) AS WON_REVENUE_PRIOR_YEAR, AVG(WON_REVENUE_YOY_CHANGE_PCT) AS WON_REVENUE_YOY_CHANGE_PCT
         FROM ANALYTICS.PLATINUM_LFX_ONE.PIPELINE_SUMMARY
         WHERE FOUNDATION_SLUG = ?
+          ${classificationFilter}
       `;
 
       // PAID_ADS_ATTRIBUTION has LF_SUB_DOMAIN_CLASSIFICATION
@@ -5255,7 +5258,7 @@ export class ProjectService {
             CONVERSION_RATE_YTD: number;
             WON_REVENUE_PRIOR_YEAR: number;
             WON_REVENUE_YOY_CHANGE_PCT: number;
-          }>(pipelineQuery, isUmbrella ? [] : [foundationSlug]),
+          }>(pipelineQuery, isUmbrella ? [...classificationParams] : [foundationSlug, ...classificationParams]),
           this.snowflakeService.execute<{
             TOTAL_SPEND_YTD: number;
             TOTAL_IMPRESSIONS_YTD: number;
