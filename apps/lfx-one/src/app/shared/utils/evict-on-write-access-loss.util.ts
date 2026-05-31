@@ -34,5 +34,9 @@ export function evictOnWriteAccessLoss(): void {
       take(1),
       takeUntilDestroyed(destroyRef)
     )
-    .subscribe(() => router.navigateByUrl('/foundation/overview'));
+    .subscribe(() => {
+      const slug = projectContextService.activeContext()?.slug;
+      const url = slug ? router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } }) : router.parseUrl('/foundation/overview');
+      router.navigateByUrl(url);
+    });
 }
