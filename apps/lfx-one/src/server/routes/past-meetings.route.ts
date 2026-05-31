@@ -17,6 +17,12 @@ router.get('/:uid/participants', (req, res, next) => pastMeetingController.getPa
 // Get past meeting recording by UID
 router.get('/:uid/recording', (req, res, next) => pastMeetingController.getPastMeetingRecording(req, res, next));
 
+// Get past meeting transcript metadata by UID
+router.get('/:uid/transcript', (req, res, next) => pastMeetingController.getPastMeetingTranscript(req, res, next));
+
+// Get past meeting transcript content (WebVTT) by UID
+router.get('/:uid/transcript/content', (req, res, next) => pastMeetingController.getPastMeetingTranscriptContent(req, res, next));
+
 // Get past meeting summary by UID
 router.get('/:uid/summary', (req, res, next) => pastMeetingController.getPastMeetingSummary(req, res, next));
 

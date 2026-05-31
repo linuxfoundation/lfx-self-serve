@@ -445,7 +445,7 @@
                       }
 
                       <!-- AI Summary -->
-                      @if (pastMeetingSummary()) {
+                      @if (hasSummaryContent()) {
                         <button
                           type="button"
                           (click)="openSummaryModal()"
@@ -470,15 +470,14 @@
 
                       <!-- Transcript -->
                       @if (transcriptUrl()) {
-                        <a
-                          [href]="transcriptUrl()"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
-                          data-testid="download-transcript-link">
+                        <button
+                          type="button"
+                          (click)="openTranscriptModal()"
+                          class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer w-full"
+                          data-testid="view-transcript-button">
                           <i class="fa-light fa-file-lines text-sm"></i>
                           <span>View Transcript</span>
-                        </a>
+                        </button>
                       } @else {
                         <div
                           class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-300"

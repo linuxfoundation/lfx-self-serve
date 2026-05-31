@@ -25,6 +25,8 @@ import {
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
+  PastMeetingTranscript,
+  PastMeetingTranscriptContent,
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
@@ -388,6 +390,14 @@ export class MeetingService {
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
     return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+  }
+
+  public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
+    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${pastMeetingUid}/transcript`);
+  }
+
+  public getPastMeetingTranscriptContent(pastMeetingUid: string): Observable<PastMeetingTranscriptContent> {
+    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${pastMeetingUid}/transcript/content`);
   }
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {

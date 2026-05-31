@@ -9,8 +9,10 @@ import {
   Meeting,
   MeetingOccurrence,
   PastMeetingSummary,
+  PastMeetingTranscript,
   RecurrenceSummary,
   SummaryData,
+  TranscriptCue,
   User,
   V1PastMeetingSummary,
   V1SummaryDetail,
@@ -431,4 +433,79 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
     created_at: summary.created_at || raw.summary_created_time || '',
     updated_at: summary.updated_at || raw.summary_last_modified_time || raw.modified_at || '',
   };
+}
+
+/**
+ * Resolves the viewable download URL for a past meeting transcript.
+ *
+ * Only an actual transcript file counts — Zoom's audio transcript (`TRANSCRIPT`)
+ * or closed captions (`CC`), matched case-insensitively. The session `share_url`
+ * is deliberately NOT used (it points to the recording, so falling back to it
+ * makes "View Transcript" open the recording), and a `TIMELINE` file is a speaker
+ * timeline, not a transcript, so it's excluded too.
+ *
+ * @param transcript - The past meeting transcript resource (may be null/undefined).
+ * @returns The transcript file's `download_url`, or `null` when no transcript file
+ *   exists (which the UI renders as "Transcript Unavailable").
+ */
+export function getPastMeetingTranscriptUrl(transcript: PastMeetingTranscript | null | undefined): string | null {
+  const file = transcript?.recording_files?.find((f) => {
+    const type = f.file_type?.toUpperCase();
+    return type === 'TRANSCRIPT' || type === 'CC';
+  });
+  return file?.download_url || null;
+}
+
+/**
+ * Parses a WebVTT transcript into ordered cues so it can be rendered inline.
+ *
+ * Each VTT block is `index / start --> end / "Speaker: text"`. The `WEBVTT` header
+ * and any NOTE/metadata blocks (no `-->` line) are skipped; the cue timestamp is
+ * trimmed to `HH:MM:SS` and a short prefix before the first `": "` is treated as
+ * the speaker (otherwise `speaker` is `''`).
+ *
+ * @param vtt - The raw WebVTT transcript string (may be null/undefined).
+ * @returns The parsed {@link TranscriptCue} list in document order, or `[]` for
+ *   empty or unparseable input.
+ */
+export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCue[] {
+  if (!vtt) {
+    return [];
+  }
+
+  const cues: TranscriptCue[] = [];
+  const blocks = vtt.split(/\r?\n\r?\n/);
+
+  for (const block of blocks) {
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const tsIndex = lines.findIndex((line) => line.includes('-->'));
+    if (tsIndex === -1) {
+      continue;
+    }
+
+    const timestamp = lines[tsIndex].split('-->')[0].trim().split('.')[0];
+    const body = lines
+      .slice(tsIndex + 1)
+      .join(' ')
+      .trim();
+    if (!body) {
+      continue;
+    }
+
+    // Split "Speaker: text" without a regex — a backtracking pattern over the
+    // external transcript content is a ReDoS risk (flagged by CodeQL). A short
+    // prefix before the first ": " is treated as the speaker.
+    const separatorIndex = body.indexOf(': ');
+    if (separatorIndex > 0 && separatorIndex <= 60) {
+      cues.push({ timestamp, speaker: body.slice(0, separatorIndex).trim(), text: body.slice(separatorIndex + 2).trim() });
+    } else {
+      cues.push({ timestamp, speaker: '', text: body });
+    }
+  }
+
+  return cues;
 }

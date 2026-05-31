@@ -41,6 +41,7 @@ import {
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
+  getPastMeetingTranscriptUrl,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
@@ -50,6 +51,7 @@ import {
   PastMeetingAttachment,
   PastMeetingRecording,
   PastMeetingSummary,
+  PastMeetingTranscript,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
@@ -123,6 +125,7 @@ export class MeetingCardComponent implements OnInit {
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
+  public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public drawerGuestCount: WritableSignal<number> = signal(0);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
@@ -165,6 +168,14 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
+  public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
+  // For past meetings the recording / transcript / AI-summary badges should reflect
+  // real availability (content exists), not just that the feature was enabled —
+  // otherwise a badge shows while no corresponding content/button does. Upcoming
+  // meetings keep the feature-flag meaning ("this meeting will record/transcribe/summarize").
+  public readonly showRecordingBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasRecording() : !!this.meeting().recording_enabled));
+  public readonly showTranscriptBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasTranscript() : !!this.meeting().transcript_enabled));
+  public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
 
   public readonly meetingDeleted = output<void>();
@@ -229,6 +240,7 @@ export class MeetingCardComponent implements OnInit {
     if (this.pastMeeting()) {
       this.initRecording();
       this.initSummary();
+      this.initTranscript();
     }
   }
 
@@ -326,11 +338,17 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public openSummaryModal(): void {
-    if (!this.summaryContent() || !this.summary()?.uid) {
+    // Keep the action guard identical to the banner's render condition
+    // (hasSummary() === !!summaryContent()) so the "Review Summary" button is
+    // never visible-but-inert. The modal only needs content to open; the summary
+    // uid is required solely for the edit/approve write path.
+    if (!this.summaryContent()) {
       return;
     }
 
-    const ref = this.dialogService.open(SummaryModalComponent, {
+    const summaryUid = this.summary()?.uid ?? '';
+
+    this.dialogService.open(SummaryModalComponent, {
       header: 'Meeting Summary',
       width: '800px',
       modal: true,
@@ -338,28 +356,19 @@ export class MeetingCardComponent implements OnInit {
       dismissableMask: true,
       data: {
         summaryContent: this.summaryContent(),
-        summaryUid: this.summary()?.uid,
+        summaryUid,
         pastMeetingUid: this.meeting().id,
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
+        // Edit/Approve write back via the summary uid; without one the modal
+        // opens read-only so its actions are never visible-but-inert.
+        readOnly: !summaryUid,
+        // Sync the card the moment an edit/approve succeeds — not on dialog close.
+        // The dialog's onClose payload is only built by the "Close" button, so an
+        // X or backdrop dismiss left the card stale (e.g. approved summary kept
+        // showing the "Review Summary" banner).
+        onSummaryUpdated: (update: { content: string; approved: boolean }) => this.applySummaryUpdate(update),
       },
-    }) as DynamicDialogRef;
-
-    // Update local content and approval status when changes are made
-    ref.onClose.pipe(take(1)).subscribe((result?: { updated: boolean; content: string; approved: boolean }) => {
-      if (result && result.updated) {
-        const currentSummary = this.summary();
-        if (currentSummary) {
-          this.summary.set({
-            ...currentSummary,
-            approved: result.approved,
-            summary_data: {
-              ...currentSummary.summary_data,
-              edited_content: result.content,
-            },
-          });
-        }
-      }
     });
   }
 
@@ -398,6 +407,22 @@ export class MeetingCardComponent implements OnInit {
       // For non-recurring meetings, show delete confirmation directly
       this.showDeleteMeetingModal(meeting);
     }
+  }
+
+  private applySummaryUpdate(update: { content: string; approved: boolean }): void {
+    const currentSummary = this.summary();
+    if (!currentSummary) {
+      return;
+    }
+
+    this.summary.set({
+      ...currentSummary,
+      approved: update.approved,
+      summary_data: {
+        ...currentSummary.summary_data,
+        edited_content: update.content,
+      },
+    });
   }
 
   private getLargestSessionShareUrl(recording: PastMeetingRecording): string | null {
@@ -518,6 +543,18 @@ export class MeetingCardComponent implements OnInit {
         this.meetingService.getPastMeetingSummary(this.meetingInput().id).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
+        ),
+        { initialValue: null }
+      );
+    });
+  }
+
+  private initTranscript(): void {
+    runInInjectionContext(this.injector, () => {
+      toSignal(
+        this.meetingService.getPastMeetingTranscript(this.meetingInput().id).pipe(
+          catchError(() => of(null)),
+          tap((transcript) => this.transcript.set(transcript))
         ),
         { initialValue: null }
       );
@@ -649,6 +686,10 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => this.recordingShareUrl() !== null);
   }
 
+  private initHasTranscript(): Signal<boolean> {
+    return computed(() => getPastMeetingTranscriptUrl(this.transcript()) !== null);
+  }
+
   private initSummaryContent(): Signal<string | null> {
     return computed(() => {
       const summary = this.summary();
@@ -662,7 +703,11 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private initHasSummary(): Signal<boolean> {
-    return computed(() => this.summaryContent() !== null);
+    // Require real content: a summary record can exist with empty content (no AI
+    // result yet), which is not actionable — the review banner and "See AI Summary"
+    // button must not render for it (otherwise the modal opens to "No summary
+    // content available"). Empty string and null both mean "nothing to review".
+    return computed(() => !!this.summaryContent());
   }
 
   private initMeetingDetailUrl(): Signal<string> {

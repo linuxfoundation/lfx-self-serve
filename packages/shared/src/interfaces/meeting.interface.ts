@@ -785,6 +785,54 @@ export interface PastMeetingRecording {
 }
 
 /**
+ * Past meeting transcript information
+ * @description Transcript data for a completed past meeting. Transcripts are a
+ * separate query-service resource (v1_past_meeting_transcript) from recordings —
+ * they are NOT part of PastMeetingRecording.recording_files.
+ */
+export interface PastMeetingTranscript {
+  /** Resource id (equals meeting_and_occurrence_id for transcripts) */
+  id?: string;
+  /** Original meeting UID */
+  meeting_id?: string;
+  /** Composite meeting + occurrence id */
+  meeting_and_occurrence_id?: string;
+  /** Transcript title */
+  title?: string;
+  /**
+   * Transcript-related files, each carrying a download URL. The viewable
+   * transcript is the TRANSCRIPT/CC file (resolved by getPastMeetingTranscriptUrl);
+   * the array may also include non-transcript files such as a TIMELINE.
+   */
+  recording_files?: RecordingFile[];
+  /** Recording sessions carrying the shareable URL */
+  sessions?: RecordingSession[];
+}
+
+/**
+ * The fetched, viewable content of a past meeting transcript.
+ * @description Server-fetched body of the transcript file (WebVTT) so the UI can
+ * render it inline instead of triggering a download.
+ */
+export interface PastMeetingTranscriptContent {
+  /** Raw transcript file content (WebVTT) */
+  content: string;
+}
+
+/**
+ * A single parsed transcript cue.
+ * @description One spoken line parsed from a WebVTT transcript.
+ */
+export interface TranscriptCue {
+  /** Cue start time, trimmed to HH:MM:SS */
+  timestamp: string;
+  /** Speaker name (empty when the cue has no speaker prefix) */
+  speaker: string;
+  /** Spoken text */
+  text: string;
+}
+
+/**
  * Summary data for a past meeting
  * @description Contains the AI-generated summary content and metadata
  */
