@@ -42,7 +42,8 @@ import { WhyCantEditModalComponent } from './why-cant-edit-modal.component';
 })
 export class BoardCommitteeCardComponent {
   // === Inputs ===
-  public readonly accountId = input.required<string>();
+  /** Spec 024 (uuid-only): the selected org's b2b_org uuid; forwarded to the uuid-keyed board/committee BFF routes. */
+  public readonly orgUid = input.required<string>();
   public readonly foundationId = input.required<string>();
   public readonly foundationName = input<string>('');
 
@@ -84,7 +85,7 @@ export class BoardCommitteeCardComponent {
   public constructor() {
     this.searchInput$.pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)).subscribe((term) => this.searchTerm.set(term));
 
-    combineLatest([toObservable(this.accountId).pipe(filter(Boolean)), toObservable(this.foundationId).pipe(filter(Boolean))])
+    combineLatest([toObservable(this.orgUid).pipe(filter(Boolean)), toObservable(this.foundationId).pipe(filter(Boolean))])
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.fetchAll());
   }
@@ -99,7 +100,7 @@ export class BoardCommitteeCardComponent {
   protected fetchBoard(): void {
     this.boardState.set('loading');
     this.service
-      .getBoardSeats(this.accountId(), this.foundationId())
+      .getBoardSeats(this.orgUid(), this.foundationId())
       .pipe(
         catchError(() => {
           this.boardState.set('error');
@@ -118,7 +119,7 @@ export class BoardCommitteeCardComponent {
   protected fetchCommittee(): void {
     this.committeeState.set('loading');
     this.service
-      .getCommitteeSeats(this.accountId(), this.foundationId())
+      .getCommitteeSeats(this.orgUid(), this.foundationId())
       .pipe(
         catchError(() => {
           this.committeeState.set('error');
@@ -137,7 +138,7 @@ export class BoardCommitteeCardComponent {
   protected fetchVoting(): void {
     this.votingState.set('loading');
     this.service
-      .getVotingHistory(this.accountId(), this.foundationId())
+      .getVotingHistory(this.orgUid(), this.foundationId())
       .pipe(
         catchError(() => {
           this.votingState.set('error');
@@ -244,7 +245,7 @@ export class BoardCommitteeCardComponent {
 
     if (event.seatKind === 'board') {
       this.service
-        .getBoardSeats(this.accountId(), this.foundationId())
+        .getBoardSeats(this.orgUid(), this.foundationId())
         .pipe(
           catchError(() => {
             this.messageService.add({
@@ -262,7 +263,7 @@ export class BoardCommitteeCardComponent {
         });
     } else {
       this.service
-        .getCommitteeSeats(this.accountId(), this.foundationId())
+        .getCommitteeSeats(this.orgUid(), this.foundationId())
         .pipe(
           catchError(() => {
             this.messageService.add({

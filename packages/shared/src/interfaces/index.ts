@@ -171,6 +171,7 @@ export * from './enrollment.interface';
 
 // Org Memberships interfaces
 export * from './org-memberships.interface';
+export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
 export * from './org-people.interface';

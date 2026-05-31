@@ -36,7 +36,7 @@ export class OrgPeopleComponent {
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
-  protected readonly hasCompany = computed(() => this.accountContext.selectedAccount().accountId !== '');
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
 
   protected readonly heading: Signal<string> = computed(() => this.initHeading());
 

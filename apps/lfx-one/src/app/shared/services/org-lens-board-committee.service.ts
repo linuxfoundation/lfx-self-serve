@@ -18,21 +18,21 @@ import { Observable } from 'rxjs';
 export class OrgLensBoardCommitteeService {
   private readonly http = inject(HttpClient);
 
-  public getBoardSeats(accountId: string, foundationId: string): Observable<OrgMembershipBoardSeatsResponse> {
+  public getBoardSeats(orgUid: string, foundationId: string): Observable<OrgMembershipBoardSeatsResponse> {
     return this.http.get<OrgMembershipBoardSeatsResponse>(
-      `/api/orgs/${encodeURIComponent(accountId)}/lens/memberships/${encodeURIComponent(foundationId)}/board-seats`
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/board-seats`
     );
   }
 
-  public getCommitteeSeats(accountId: string, foundationId: string): Observable<OrgMembershipCommitteeSeatsResponse> {
+  public getCommitteeSeats(orgUid: string, foundationId: string): Observable<OrgMembershipCommitteeSeatsResponse> {
     return this.http.get<OrgMembershipCommitteeSeatsResponse>(
-      `/api/orgs/${encodeURIComponent(accountId)}/lens/memberships/${encodeURIComponent(foundationId)}/committee-seats`
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/committee-seats`
     );
   }
 
-  public getVotingHistory(accountId: string, foundationId: string): Observable<OrgMembershipVotingHistoryResponse> {
+  public getVotingHistory(orgUid: string, foundationId: string): Observable<OrgMembershipVotingHistoryResponse> {
     return this.http.get<OrgMembershipVotingHistoryResponse>(
-      `/api/orgs/${encodeURIComponent(accountId)}/lens/memberships/${encodeURIComponent(foundationId)}/voting-history`
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/voting-history`
     );
   }
 }

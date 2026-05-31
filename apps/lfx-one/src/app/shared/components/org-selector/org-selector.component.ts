@@ -119,9 +119,9 @@ export class OrgSelectorComponent {
 
   protected selectItem(item: OrgItem, popover: Popover): void {
     const account: Account = {
-      // Salesforce-keyed routes (Snowflake, /api/orgs/:accountId/lens/*) require accountId — fall
-      // back to an empty string when null so the type contract holds; downstream guards already
-      // tolerate empty accountId (see AccountContextService.isValidAccountId).
+      // Spec 024 (uuid-only): selection is keyed by `uid` (persisted to the cookie + sent to all
+      // /api/orgs/:orgUid/lens/* routes). `accountId` is carried for display/analytics only and may be
+      // empty; the canonical-by-uid fetch + Snowflake enrichment populate it when authoritative.
       accountId: item.accountId ?? '',
       accountName: item.name,
       // Slug and tier are org-specific — never carry over the previously selected org's values.
@@ -165,9 +165,8 @@ export class OrgSelectorComponent {
   }
 
   private bootstrapOrgList(): void {
-    const restoredUid = this.accountContextService.selectedAccount().uid ?? null;
-    const restoredAccountId = this.accountContextService.getStoredAccountId();
-    this.orgNavigationService.resetAndReload(restoredUid, restoredAccountId);
+    const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    this.orgNavigationService.resetAndReload(restoredUid);
   }
 
   /** Spec 022 — direct sources take precedence over inherited so the Edit Profile gate (FR-011a) stays direct-only. Defense-in-depth alongside the BFF's disjointness merge. */

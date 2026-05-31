@@ -36,17 +36,17 @@ export class OrgOverviewFoundationsAndProjectsComponent {
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 
-  private readonly accountId$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.accountId));
+  private readonly orgUid$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.uid));
   private readonly retryTrigger$ = toObservable(this.retryTrigger);
 
   /** Combined stream: re-fetches on selected-account change OR retry tick. `retryTrigger$` is signal-backed and emits its current value on subscribe, so no `startWith(0)` needed. */
   private readonly state = toSignal(
-    combineLatest([this.accountId$, this.retryTrigger$]).pipe(
-      switchMap(([accountId]) => {
-        if (!accountId) {
+    combineLatest([this.orgUid$, this.retryTrigger$]).pipe(
+      switchMap(([orgUid]) => {
+        if (!orgUid) {
           return of<OrgLensFoundationsSectionState>({ status: 'empty', data: ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE });
         }
-        return this.foundationsService.getFoundationsAndProjects(accountId).pipe(
+        return this.foundationsService.getFoundationsAndProjects(orgUid).pipe(
           map<OrgLensFoundationsAndProjectsResponse, OrgLensFoundationsSectionState>((data) => ({
             status: data.rows.length === 0 ? 'empty' : 'ready',
             data,
@@ -55,7 +55,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
           catchError(() => of<OrgLensFoundationsSectionState>({ status: 'error', data: null })),
           tap((s) => {
             if (s.status === 'ready' || s.status === 'empty') {
-              this.emitOverviewViewOnce(accountId);
+              this.emitOverviewViewOnce(orgUid);
             }
           })
         );
@@ -139,9 +139,9 @@ export class OrgOverviewFoundationsAndProjectsComponent {
     this.onProjectRowClick(project);
   }
 
-  private emitOverviewViewOnce(accountId: string): void {
-    if (this.viewedOrgs.has(accountId)) return;
-    this.viewedOrgs.add(accountId);
-    this.plausibleService.trackEvent('overview_view', { orgId: accountId });
+  private emitOverviewViewOnce(orgUid: string): void {
+    if (this.viewedOrgs.has(orgUid)) return;
+    this.viewedOrgs.add(orgUid);
+    this.plausibleService.trackEvent('overview_view', { orgId: orgUid });
   }
 }

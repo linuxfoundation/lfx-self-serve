@@ -87,28 +87,17 @@ export class OrgProfileComponent {
   }
 
   private initLoadPipeline(): void {
-    const selectedOrg$ = toObservable(
-      computed(() => {
-        const account = this.accountContext.selectedAccount();
-        if (!account) {
-          return null;
-        }
-        if (account.uid) {
-          return { kind: 'uid' as const, id: account.uid };
-        }
-        if (account.accountId) {
-          return { kind: 'sfid' as const, id: account.accountId };
-        }
-        return null;
-      }),
+    // Spec 024 (uuid-only): the org profile loads strictly by uuid.
+    const selectedOrgUid$ = toObservable(
+      computed(() => this.accountContext.selectedAccount()?.uid ?? null),
       { injector: this.injector }
     );
     const retryTrigger$ = toObservable(this.retryTrigger, { injector: this.injector });
 
     combineLatest([
-      selectedOrg$.pipe(
-        filter((org): org is { kind: 'uid'; id: string } | { kind: 'sfid'; id: string } => !!org),
-        distinctUntilChanged((a, b) => a.kind === b.kind && a.id === b.id)
+      selectedOrgUid$.pipe(
+        filter((uid): uid is string => !!uid),
+        distinctUntilChanged()
       ),
       retryTrigger$,
     ])
@@ -120,8 +109,8 @@ export class OrgProfileComponent {
           // Exiting edit mode whenever the underlying org changes preserves the "discard unsaved changes" guarantee (FR-019).
           this.editMode.set(false);
         }),
-        switchMap(([org]) => {
-          const record$ = org.kind === 'uid' ? this.orgProfileService.getCanonicalRecord(org.id) : this.orgProfileService.getCanonicalRecordByAccountId(org.id);
+        switchMap(([uid]) => {
+          const record$ = this.orgProfileService.getCanonicalRecord(uid);
 
           return forkJoin({
             record: record$,

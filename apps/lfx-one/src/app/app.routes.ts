@@ -91,7 +91,7 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
           },
           {
-            path: 'memberships/:foundationId',
+            path: 'memberships/:foundationSlug',
             data: {
               lens: 'org',
               title: 'Membership Detail',

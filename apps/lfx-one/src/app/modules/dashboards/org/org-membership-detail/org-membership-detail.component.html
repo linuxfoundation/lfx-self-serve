@@ -3,33 +3,7 @@
 
 <p-toast position="top-right" key="key-contact-toast-success-updated" data-testid="key-contact-toast-success-updated" />
 <p-toast position="top-right" key="key-contact-toast-success-added" data-testid="key-contact-toast-success-added" />
-<p-toast position="top-right" key="key-contact-toast-undone" data-testid="key-contact-toast-undone" />
-
-<!-- Interactive Remove toast with Undo button (FR-016g) -->
-<p-toast position="top-right" key="key-contact-toast-remove" data-testid="key-contact-toast-remove">
-  <ng-template let-message #message>
-    <div class="flex w-full flex-col gap-2">
-      <div class="flex items-start gap-2">
-        <i class="fa-light fa-check-circle mt-0.5 text-green-600"></i>
-        <div class="flex flex-1 flex-col">
-          <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
-          @if (message.detail) {
-            <span class="text-xs text-gray-600">{{ message.detail }}</span>
-          }
-        </div>
-      </div>
-      <div class="flex justify-end">
-        <button
-          type="button"
-          class="text-sm font-semibold text-blue-600 hover:text-blue-700"
-          data-testid="key-contact-toast-undo"
-          (click)="message.data?.undo?.()">
-          Undo
-        </button>
-      </div>
-    </div>
-  </ng-template>
-</p-toast>
+<p-toast position="top-right" key="key-contact-toast-remove" data-testid="key-contact-toast-remove" />
 
 <div class="flex flex-col gap-6" data-testid="membership-detail-page">
   @switch (pageState()) {
@@ -136,7 +110,9 @@
                     <tbody class="divide-y divide-gray-100">
                       @for (contact of keyContacts(); track contact.contactType) {
                         <tr [attr.data-testid]="'membership-detail-key-contacts-row-' + contact.contactType">
-                          <td class="py-3 pr-4 align-top text-sm text-gray-700">{{ contact.contactTypeLabel }}</td>
+                          <td class="py-3 pr-4 align-top text-sm text-gray-700">
+                            <span [pTooltip]="roleTooltip(contact.contactType)" tooltipPosition="top">{{ contact.contactTypeLabel }}</span>
+                          </td>
                           <td class="py-3 pr-4 align-top">
                             @if (contact.people.length === 0) {
                               <span class="text-sm italic text-gray-400" [attr.data-testid]="'membership-detail-key-contacts-empty-' + contact.contactType">
@@ -163,14 +139,15 @@
                           <td class="py-3 align-top text-right">
                             <button
                               type="button"
-                              class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                              [disabled]="!canEdit()"
                               [attr.aria-label]="
                                 contact.people.length === 0
                                   ? 'Add ' + contact.contactTypeLabel + ' for this membership'
                                   : 'Edit ' + contact.contactTypeLabel + ' for this membership'
                               "
                               [attr.data-testid]="'membership-detail-key-contacts-edit-' + contact.contactType"
-                              pTooltip="Edit contact"
+                              [pTooltip]="canEdit() ? 'Edit contact' : editDisabledTooltip"
                               tooltipPosition="top"
                               (click)="onPencilClick(contact)">
                               <i class="fa-light fa-pencil"></i>
@@ -189,7 +166,7 @@
           <div role="tabpanel" id="membership-detail-tab-panel-board" [attr.aria-labelledby]="'membership-detail-tab-trigger-board'">
             @if (foundation(); as f) {
               <lfx-board-committee-card
-                [accountId]="accountContext.selectedAccount().accountId"
+                [orgUid]="accountContext.selectedAccount().uid ?? ''"
                 [foundationId]="f.foundationId"
                 [foundationName]="f.foundationName" />
             }
@@ -203,7 +180,7 @@
                    (per-org TLF data), so those per-foundation inputs are no longer needed.
                    [orgName] stays because the spec-018 Agreements CSV export reads it. -->
               <lfx-documentation-tab
-                [accountId]="accountContext.selectedAccount().accountId"
+                [orgUid]="accountContext.selectedAccount().uid ?? ''"
                 [foundationId]="f.foundationId"
                 [foundationName]="f.foundationName"
                 [orgName]="accountContext.selectedAccount().accountName" />
