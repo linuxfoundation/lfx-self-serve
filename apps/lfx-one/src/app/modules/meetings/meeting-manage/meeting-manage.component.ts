@@ -58,6 +58,7 @@ import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform
 import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -140,6 +141,7 @@ export class MeetingManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    evictOnWriteAccessLoss();
 
     // Initialize step based on mode
     // In edit mode, read from query parameters
