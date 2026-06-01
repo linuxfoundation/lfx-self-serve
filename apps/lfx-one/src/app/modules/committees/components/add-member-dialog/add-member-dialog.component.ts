@@ -23,6 +23,7 @@ import {
   OrganizationResolveResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
+import { rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -290,7 +291,11 @@ export class AddMemberDialogComponent {
             return of([] as UserSearchResult[]);
           }
           this.searchLoading.set(true);
-          return this.searchService.searchUsers(q.trim(), 'committee_member').pipe(
+          const trimmedQuery = q.trim();
+          return this.searchService.searchUsers(trimmedQuery, 'committee_member').pipe(
+            // Re-rank so name matches surface first and incidental email/alias
+            // matches (upstream over-match) are demoted/dropped.
+            map((users) => rankUserSearchResults(users, trimmedQuery)),
             tap(() => this.searchLoading.set(false)),
             catchError(() => {
               this.searchLoading.set(false);
