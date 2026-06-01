@@ -15,9 +15,11 @@ import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
 
+import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
+
 @Component({
   selector: 'lfx-survey-results-drawer',
-  imports: [DrawerModule, DatePipe, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent],
+  imports: [DrawerModule, DatePipe, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
   templateUrl: './survey-results-drawer.component.html',
   styleUrl: './survey-results-drawer.component.scss',
 })
@@ -41,6 +43,16 @@ export class SurveyResultsDrawerComponent {
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(false);
   protected readonly showAdminMenu = signal<boolean>(false);
+  protected readonly activeTab = signal<'overview' | 'responses'>('overview');
+
+  // === Computed: project scope + responsive drawer width ===
+  protected readonly projectUid: Signal<string | null> = computed(() => this.projectContextService.activeContext()?.uid ?? null);
+  // The Responses table needs more room than the aggregate Overview, so widen the
+  // drawer when that tab is active and snap back to the narrower width otherwise.
+  protected readonly drawerStyleClass: Signal<string> = computed(() => {
+    const width = this.activeTab() === 'responses' ? 'xl:w-[75%] lg:w-[80%]' : 'xl:w-[45%] lg:w-[55%]';
+    return `${width} md:w-[70%] sm:w-[90%] w-full survey-results-drawer`;
+  });
 
   // === Derived Signals (from API) ===
   protected readonly survey: Signal<Survey | null> = this.initSurvey();
@@ -59,7 +71,12 @@ export class SurveyResultsDrawerComponent {
   // === Protected Methods ===
   protected onClose(): void {
     this.showAdminMenu.set(false);
+    this.activeTab.set('overview');
     this.visible.set(false);
+  }
+
+  protected setTab(tab: 'overview' | 'responses'): void {
+    this.activeTab.set(tab);
   }
 
   protected toggleAdminMenu(): void {

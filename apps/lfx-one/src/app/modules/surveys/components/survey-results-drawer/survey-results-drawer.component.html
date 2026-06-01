@@ -1,13 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-drawer
-  [(visible)]="visible"
-  position="right"
-  [modal]="true"
-  [showCloseIcon]="false"
-  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full survey-results-drawer"
-  data-testid="survey-results-drawer">
+<p-drawer [(visible)]="visible" position="right" [modal]="true" [showCloseIcon]="false" [styleClass]="drawerStyleClass()" data-testid="survey-results-drawer">
   @if (survey(); as surveyData) {
     <!-- Header Section -->
     <ng-template #header>
@@ -98,324 +92,352 @@
 
     <!-- Content Section -->
     <div class="flex flex-col gap-6" data-testid="survey-results-drawer-content">
-      @if (loading()) {
-        <!-- Loading Skeleton -->
-        <div class="flex flex-col gap-6">
-          <!-- Participation Stats Skeleton -->
-          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3">
-            <div class="flex items-center justify-between">
-              <p-skeleton width="80px" height="40px"></p-skeleton>
-              <p-skeleton width="80px" height="40px"></p-skeleton>
-              <p-skeleton width="80px" height="40px"></p-skeleton>
-            </div>
-            <p-skeleton width="100%" height="8px"></p-skeleton>
-          </div>
+      <!-- Tab Toggle: aggregate Overview vs. per-recipient Responses -->
+      <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit" data-testid="survey-results-drawer-tabs">
+        <button
+          type="button"
+          (click)="setTab('overview')"
+          class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
+          [class]="activeTab() === 'overview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+          data-testid="survey-results-drawer-tab-overview">
+          Overview
+        </button>
+        <button
+          type="button"
+          (click)="setTab('responses')"
+          class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
+          [class]="activeTab() === 'responses' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+          data-testid="survey-results-drawer-tab-responses">
+          Responses
+        </button>
+      </div>
 
-          <!-- NPS Section Skeleton -->
-          @if (isNpsSurvey()) {
-            <div class="grid md:grid-cols-2 gap-8">
-              <div class="flex flex-col items-center">
-                <p-skeleton width="200px" height="120px"></p-skeleton>
-              </div>
-              <div class="flex flex-col gap-4">
-                @for (i of [1, 2, 3]; track i) {
-                  <p-skeleton width="100%" height="40px"></p-skeleton>
-                }
-              </div>
-            </div>
-          }
-        </div>
-      } @else if (isSurveyClosed()) {
-        <!-- CLOSED SURVEY: Show Final Results -->
-        <div class="flex flex-col gap-6">
-          <!-- Final Results Header -->
-          <div class="flex flex-col gap-4">
-            <h2 class="text-2xl font-semibold text-slate-900">Final Results</h2>
-
-            <!-- Participation Bar -->
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="survey-results-participation">
-              <div class="flex items-center justify-between text-sm text-slate-600">
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Participants</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleParticipants }}</p>
-                </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Responses</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
-                </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Response Rate</p>
-                  <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
-                </div>
-              </div>
-
-              <!-- Participation Progress Bar -->
-              <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- NPS Summary Section - Only for NPS Surveys -->
-          @if (isNpsSurvey() && npsBreakdown(); as breakdown) {
-            <div class="grid md:grid-cols-2 gap-8 mt-2">
-              <!-- Left Column: NPS Gauge -->
-              <div class="flex flex-col gap-4">
-                <h3 class="text-lg font-semibold text-slate-900">Net Promoter Score</h3>
-                <div class="flex flex-col items-center justify-center pt-4">
-                  <lfx-nps-gauge [score]="npsScore()" size="large" data-testid="survey-nps-gauge"></lfx-nps-gauge>
-                </div>
-              </div>
-
-              <!-- Right Column: Response Breakdown -->
-              <div class="flex flex-col gap-4">
-                <h3 class="text-lg font-semibold text-slate-900">Response Breakdown</h3>
-                <div class="flex flex-col gap-4 pt-4">
-                  <!-- Promoters -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-promoters">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Promoters (9-10)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-green-700">
-                        {{ breakdown.promoters }} ({{ getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-green-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Passives -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-passives">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Passives (7-8)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-yellow-700">
-                        {{ breakdown.passives }} ({{ getBreakdownPercentage(breakdown.passives, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-yellow-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.passives, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Detractors -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-detractors">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Detractors (0-6)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-red-700">
-                        {{ breakdown.detractors }} ({{ getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-red-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Non-Responses (if any) -->
-                  @if (breakdown.nonResponses > 0) {
-                    <div class="flex flex-col gap-2" data-testid="survey-nps-non-responses">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <div class="w-3 h-3 rounded-full bg-slate-300"></div>
-                          <span class="text-sm font-medium text-slate-700">No Response</span>
-                        </div>
-                        <span class="text-sm font-semibold text-slate-600">
-                          {{ breakdown.nonResponses }} ({{ getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants) }}%)
-                        </span>
-                      </div>
-                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                        <div
-                          class="h-full bg-slate-400 transition-all"
-                          [style.width.%]="getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants)"></div>
-                      </div>
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
-          }
-
-          <!-- Participant Comments Section -->
-          @if (hasComments()) {
-            <div class="flex flex-col gap-4 pb-6" data-testid="survey-comments-section">
-              <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-slate-900">Participant Comments</h2>
-                <span class="text-sm text-slate-500">{{ commentsCount() }} comments</span>
-              </div>
-
-              <!-- Scrollable comments container -->
-              <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
-                @for (comment of comments(); track comment.id) {
-                  <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
-                    <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-        </div>
+      @if (activeTab() === 'responses') {
+        <lfx-survey-responses-list
+          [surveyId]="surveyData.uid"
+          [survey]="surveyData"
+          [projectUid]="projectUid()"
+          data-testid="survey-results-drawer-responses" />
       } @else {
-        <!-- OPEN SURVEY: Show Live Participation -->
-        <div class="flex flex-col gap-6">
-          <!-- Live Participation Header -->
-          <div class="flex flex-col gap-4">
-            <h2 class="text-lg font-semibold text-slate-900">Live Participation</h2>
+        @if (loading()) {
+          <!-- Loading Skeleton -->
+          <div class="flex flex-col gap-6">
+            <!-- Participation Stats Skeleton -->
+            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3">
+              <div class="flex items-center justify-between">
+                <p-skeleton width="80px" height="40px"></p-skeleton>
+                <p-skeleton width="80px" height="40px"></p-skeleton>
+                <p-skeleton width="80px" height="40px"></p-skeleton>
+              </div>
+              <p-skeleton width="100%" height="8px"></p-skeleton>
+            </div>
 
-            <!-- Participation Bar -->
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="survey-results-participation">
-              <div class="flex items-center justify-between text-sm text-slate-600">
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Participants</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleParticipants }}</p>
+            <!-- NPS Section Skeleton -->
+            @if (isNpsSurvey()) {
+              <div class="grid md:grid-cols-2 gap-8">
+                <div class="flex flex-col items-center">
+                  <p-skeleton width="200px" height="120px"></p-skeleton>
                 </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Responses</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
-                </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Response Rate</p>
-                  <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+                <div class="flex flex-col gap-4">
+                  @for (i of [1, 2, 3]; track i) {
+                    <p-skeleton width="100%" height="40px"></p-skeleton>
+                  }
                 </div>
               </div>
+            }
+          </div>
+        } @else if (isSurveyClosed()) {
+          <!-- CLOSED SURVEY: Show Final Results -->
+          <div class="flex flex-col gap-6">
+            <!-- Final Results Header -->
+            <div class="flex flex-col gap-4">
+              <h2 class="text-2xl font-semibold text-slate-900">Final Results</h2>
 
-              <!-- Participation Progress Bar -->
-              <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+              <!-- Participation Bar -->
+              <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="survey-results-participation">
+                <div class="flex items-center justify-between text-sm text-slate-600">
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Total Participants</p>
+                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleParticipants }}</p>
+                  </div>
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Total Responses</p>
+                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
+                  </div>
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Response Rate</p>
+                    <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+                  </div>
+                </div>
+
+                <!-- Participation Progress Bar -->
+                <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                  <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- Live NPS Results - Only for NPS Surveys -->
-          @if (isNpsSurvey() && npsBreakdown(); as breakdown) {
-            <div class="grid md:grid-cols-2 gap-8">
-              <!-- Left Column: NPS Gauge -->
-              <div class="flex flex-col gap-4">
-                <h3 class="text-lg font-semibold text-slate-900">Net Promoter Score (Live)</h3>
-                <div class="flex flex-col items-center justify-center pt-4">
-                  <lfx-nps-gauge [score]="npsScore()" size="large" data-testid="survey-nps-gauge"></lfx-nps-gauge>
+            <!-- NPS Summary Section - Only for NPS Surveys -->
+            @if (isNpsSurvey() && npsBreakdown(); as breakdown) {
+              <div class="grid md:grid-cols-2 gap-8 mt-2">
+                <!-- Left Column: NPS Gauge -->
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-lg font-semibold text-slate-900">Net Promoter Score</h3>
+                  <div class="flex flex-col items-center justify-center pt-4">
+                    <lfx-nps-gauge [score]="npsScore()" size="large" data-testid="survey-nps-gauge"></lfx-nps-gauge>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Right Column: Response Breakdown -->
-              <div class="flex flex-col gap-4">
-                <h3 class="text-lg font-semibold text-slate-900">Response Breakdown</h3>
-                <div class="flex flex-col gap-4 pt-4">
-                  <!-- Promoters -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-promoters">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Promoters (9-10)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-green-700">
-                        {{ breakdown.promoters }} ({{ getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-green-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Passives -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-passives">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Passives (7-8)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-yellow-700">
-                        {{ breakdown.passives }} ({{ getBreakdownPercentage(breakdown.passives, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-yellow-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.passives, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Detractors -->
-                  <div class="flex flex-col gap-2" data-testid="survey-nps-detractors">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                        <span class="text-sm font-medium text-slate-700">Detractors (0-6)</span>
-                      </div>
-                      <span class="text-sm font-semibold text-red-700">
-                        {{ breakdown.detractors }} ({{ getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses) }}%)
-                      </span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        class="h-full bg-red-500 transition-all"
-                        [style.width.%]="getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses)"></div>
-                    </div>
-                  </div>
-
-                  <!-- Non-Responses -->
-                  @if (breakdown.nonResponses > 0) {
-                    <div class="flex flex-col gap-2" data-testid="survey-nps-non-responses">
+                <!-- Right Column: Response Breakdown -->
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-lg font-semibold text-slate-900">Response Breakdown</h3>
+                  <div class="flex flex-col gap-4 pt-4">
+                    <!-- Promoters -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-promoters">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
-                          <div class="w-3 h-3 rounded-full bg-slate-300"></div>
-                          <span class="text-sm font-medium text-slate-700">No Response</span>
+                          <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Promoters (9-10)</span>
                         </div>
-                        <span class="text-sm font-semibold text-slate-600">
-                          {{ breakdown.nonResponses }} ({{ getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants) }}%)
+                        <span class="text-sm font-semibold text-green-700">
+                          {{ breakdown.promoters }} ({{ getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses) }}%)
                         </span>
                       </div>
                       <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                         <div
-                          class="h-full bg-slate-400 transition-all"
-                          [style.width.%]="getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants)"></div>
+                          class="h-full bg-green-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses)"></div>
                       </div>
+                    </div>
+
+                    <!-- Passives -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-passives">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Passives (7-8)</span>
+                        </div>
+                        <span class="text-sm font-semibold text-yellow-700">
+                          {{ breakdown.passives }} ({{ getBreakdownPercentage(breakdown.passives, participationStats().totalResponses) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full bg-yellow-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.passives, participationStats().totalResponses)"></div>
+                      </div>
+                    </div>
+
+                    <!-- Detractors -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-detractors">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Detractors (0-6)</span>
+                        </div>
+                        <span class="text-sm font-semibold text-red-700">
+                          {{ breakdown.detractors }} ({{ getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full bg-red-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses)"></div>
+                      </div>
+                    </div>
+
+                    <!-- Non-Responses (if any) -->
+                    @if (breakdown.nonResponses > 0) {
+                      <div class="flex flex-col gap-2" data-testid="survey-nps-non-responses">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-slate-300"></div>
+                            <span class="text-sm font-medium text-slate-700">No Response</span>
+                          </div>
+                          <span class="text-sm font-semibold text-slate-600">
+                            {{ breakdown.nonResponses }} ({{ getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants) }}%)
+                          </span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            class="h-full bg-slate-400 transition-all"
+                            [style.width.%]="getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants)"></div>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- Participant Comments Section -->
+            @if (hasComments()) {
+              <div class="flex flex-col gap-4 pb-6" data-testid="survey-comments-section">
+                <div class="flex items-center justify-between">
+                  <h2 class="text-lg font-semibold text-slate-900">Participant Comments</h2>
+                  <span class="text-sm text-slate-500">{{ commentsCount() }} comments</span>
+                </div>
+
+                <!-- Scrollable comments container -->
+                <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
+                  @for (comment of comments(); track comment.id) {
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
+                      <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
                     </div>
                   }
                 </div>
               </div>
-            </div>
-          }
-
-          <!-- Participant Comments Section - Live Comments -->
-          @if (hasComments()) {
-            <div class="flex flex-col gap-4 pb-6" data-testid="survey-comments-section">
-              <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-slate-900">Participant Comments (Live)</h2>
-                <span class="text-sm text-slate-500">{{ commentsCount() }} comments</span>
-              </div>
-
-              <!-- Scrollable comments container -->
-              <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
-                @for (comment of comments(); track comment.id) {
-                  <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
-                    <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Admin Note for Open Surveys -->
-          <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p class="text-sm text-blue-800">As the creator, you can monitor live results. Final results will be available after the survey closes.</p>
+            }
           </div>
-        </div>
+        } @else {
+          <!-- OPEN SURVEY: Show Live Participation -->
+          <div class="flex flex-col gap-6">
+            <!-- Live Participation Header -->
+            <div class="flex flex-col gap-4">
+              <h2 class="text-lg font-semibold text-slate-900">Live Participation</h2>
+
+              <!-- Participation Bar -->
+              <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="survey-results-participation">
+                <div class="flex items-center justify-between text-sm text-slate-600">
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Total Participants</p>
+                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleParticipants }}</p>
+                  </div>
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Total Responses</p>
+                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
+                  </div>
+                  <div class="text-center flex-1">
+                    <p class="text-xs text-slate-500">Response Rate</p>
+                    <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+                  </div>
+                </div>
+
+                <!-- Participation Progress Bar -->
+                <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                  <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live NPS Results - Only for NPS Surveys -->
+            @if (isNpsSurvey() && npsBreakdown(); as breakdown) {
+              <div class="grid md:grid-cols-2 gap-8">
+                <!-- Left Column: NPS Gauge -->
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-lg font-semibold text-slate-900">Net Promoter Score (Live)</h3>
+                  <div class="flex flex-col items-center justify-center pt-4">
+                    <lfx-nps-gauge [score]="npsScore()" size="large" data-testid="survey-nps-gauge"></lfx-nps-gauge>
+                  </div>
+                </div>
+
+                <!-- Right Column: Response Breakdown -->
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-lg font-semibold text-slate-900">Response Breakdown</h3>
+                  <div class="flex flex-col gap-4 pt-4">
+                    <!-- Promoters -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-promoters">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Promoters (9-10)</span>
+                        </div>
+                        <span class="text-sm font-semibold text-green-700">
+                          {{ breakdown.promoters }} ({{ getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full bg-green-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.promoters, participationStats().totalResponses)"></div>
+                      </div>
+                    </div>
+
+                    <!-- Passives -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-passives">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Passives (7-8)</span>
+                        </div>
+                        <span class="text-sm font-semibold text-yellow-700">
+                          {{ breakdown.passives }} ({{ getBreakdownPercentage(breakdown.passives, participationStats().totalResponses) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full bg-yellow-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.passives, participationStats().totalResponses)"></div>
+                      </div>
+                    </div>
+
+                    <!-- Detractors -->
+                    <div class="flex flex-col gap-2" data-testid="survey-nps-detractors">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                          <span class="text-sm font-medium text-slate-700">Detractors (0-6)</span>
+                        </div>
+                        <span class="text-sm font-semibold text-red-700">
+                          {{ breakdown.detractors }} ({{ getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full bg-red-500 transition-all"
+                          [style.width.%]="getBreakdownPercentage(breakdown.detractors, participationStats().totalResponses)"></div>
+                      </div>
+                    </div>
+
+                    <!-- Non-Responses -->
+                    @if (breakdown.nonResponses > 0) {
+                      <div class="flex flex-col gap-2" data-testid="survey-nps-non-responses">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-slate-300"></div>
+                            <span class="text-sm font-medium text-slate-700">No Response</span>
+                          </div>
+                          <span class="text-sm font-semibold text-slate-600">
+                            {{ breakdown.nonResponses }} ({{ getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants) }}%)
+                          </span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            class="h-full bg-slate-400 transition-all"
+                            [style.width.%]="getBreakdownPercentage(breakdown.nonResponses, participationStats().eligibleParticipants)"></div>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- Participant Comments Section - Live Comments -->
+            @if (hasComments()) {
+              <div class="flex flex-col gap-4 pb-6" data-testid="survey-comments-section">
+                <div class="flex items-center justify-between">
+                  <h2 class="text-lg font-semibold text-slate-900">Participant Comments (Live)</h2>
+                  <span class="text-sm text-slate-500">{{ commentsCount() }} comments</span>
+                </div>
+
+                <!-- Scrollable comments container -->
+                <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
+                  @for (comment of comments(); track comment.id) {
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
+                      <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Admin Note for Open Surveys -->
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-800">As the creator, you can monitor live results. Final results will be available after the survey closes.</p>
+            </div>
+          </div>
+        }
       }
     </div>
   }

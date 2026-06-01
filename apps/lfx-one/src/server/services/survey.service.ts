@@ -3,7 +3,7 @@
 
 import { SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -117,6 +117,37 @@ export class SurveyService {
     });
 
     return survey;
+  }
+
+  /**
+   * Fetches a paginated page of individual per-recipient responses for a survey.
+   * Thin passthrough to the upstream survey service — forwards only the supported
+   * query params (pagination + project scoping) and returns the page as-is.
+   * The upstream maps V2 project UUIDs to V1 identifiers before forwarding to ITX.
+   */
+  public async getSurveyResponses(req: Request, surveyUid: string, query: Record<string, any> = {}): Promise<SurveyResponsesPage> {
+    logger.debug(req, 'get_survey_responses', 'Fetching survey responses', {
+      survey_uid: surveyUid,
+      query_params: Object.keys(query),
+    });
+
+    // Forward only the params the upstream endpoint supports; ignore anything else
+    // the client may append so a stray param can't change upstream behavior.
+    const params: Record<string, any> = {};
+    for (const key of ['page_token', 'per_page', 'project_uid', 'project_uids'] as const) {
+      if (query[key] !== undefined) {
+        params[key] = query[key];
+      }
+    }
+
+    const page = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params);
+
+    // Defensive normalization: upstream is contractually { data, meta }, but guard
+    // against a malformed body so the frontend always receives a consumable shape.
+    return {
+      data: Array.isArray(page?.data) ? page.data : [],
+      meta: page?.meta ?? {},
+    };
   }
 
   /**

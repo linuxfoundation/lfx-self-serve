@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CreateSurveyRequest, MySurveyResponse, Survey } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 @Injectable({
@@ -69,6 +69,28 @@ export class SurveyService {
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Returns a paginated page of individual per-recipient responses for a survey.
+   * Used by the PMO results drawer's Responses tab. Errors degrade to an empty
+   * page so the tab renders an empty state instead of breaking the drawer.
+   */
+  public getSurveyResponses(surveyUid: string, pageSize?: number, pageToken?: string, projectUid?: string): Observable<SurveyResponsesPage> {
+    let params = new HttpParams();
+    if (pageSize) {
+      params = params.set('per_page', pageSize.toString());
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+
+    return this.http
+      .get<SurveyResponsesPage>(`/api/surveys/${surveyUid}/responses`, { params })
+      .pipe(catchError(() => of({ data: [], meta: {} } as SurveyResponsesPage)));
   }
 
   public createSurvey(surveyData: CreateSurveyRequest): Observable<Survey> {
