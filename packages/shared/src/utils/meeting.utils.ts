@@ -105,7 +105,17 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     }
 
     case 'monthly': {
-      const monthText = interval === 1 ? 'Monthly' : `Every ${interval} months`;
+      // Quarterly is represented upstream as MONTHLY (type=3) with repeat_interval=3
+      // (the meeting-service has no distinct QUARTERLY type), so surface that cadence
+      // by name rather than the literal "Every 3 months".
+      let monthText: string;
+      if (interval === 1) {
+        monthText = 'Monthly';
+      } else if (interval === 3) {
+        monthText = 'Quarterly';
+      } else {
+        monthText = `Every ${interval} months`;
+      }
       if (pattern.monthlyType === 'dayOfMonth' && pattern.monthly_day) {
         description = `${monthText} on day ${pattern.monthly_day}`;
       } else if (pattern.monthlyType === 'dayOfWeek' && pattern.monthly_week && pattern.monthly_week_day) {
