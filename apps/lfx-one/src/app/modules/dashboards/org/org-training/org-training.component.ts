@@ -11,6 +11,7 @@ import {
   DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD,
   DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
+  DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS,
   EMPTY_ORG_CERTIFICATIONS_RESPONSE,
   ORG_TRAINING_LEVEL_OPTIONS,
   ORG_TRAINING_TABS,
@@ -36,8 +37,6 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 
 import { CertEmployeesDrawerComponent } from './components/cert-employees-drawer/cert-employees-drawer.component';
 import { OrgCertificationsTableComponent } from './components/org-certifications-table/org-certifications-table.component';
-
-const DESCENDING_DEFAULT_SORT_FIELDS = new Set(['CERTIFIED_COUNT', 'IN_PROGRESS_COUNT']);
 
 @Component({
   selector: 'lfx-org-training',
@@ -120,7 +119,7 @@ export class OrgTrainingComponent {
       this.certSortOrder.update((order) => (order === 'ASC' ? 'DESC' : 'ASC'));
     } else {
       this.certSortField.set(event.field);
-      this.certSortOrder.set(DESCENDING_DEFAULT_SORT_FIELDS.has(event.field) ? 'DESC' : 'ASC');
+      this.certSortOrder.set(DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS.has(event.field) ? 'DESC' : 'ASC');
     }
     this.certOffset.set(0);
   }

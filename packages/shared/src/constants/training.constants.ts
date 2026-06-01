@@ -47,6 +47,9 @@ export const EMPTY_ORG_CERTIFICATIONS_RESPONSE: OrgCertificationsResponse = {
   offset: 0,
 };
 
+/** Sort fields whose first click should default to descending (count columns); all others default to ascending. */
+export const DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS: ReadonlySet<string> = new Set(['CERTIFIED_COUNT', 'IN_PROGRESS_COUNT']);
+
 // ─── Me-lens training constants ────────────────────────────────────────────
 
 export const TRAINING_PRODUCT_TYPE = 'Training' as const;
