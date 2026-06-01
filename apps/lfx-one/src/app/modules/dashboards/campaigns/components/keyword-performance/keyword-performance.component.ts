@@ -3,6 +3,7 @@
 
 import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import type { Subscription } from 'rxjs';
 import { CampaignService } from '@services/campaign.service';
 
 import type { KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
@@ -19,6 +20,7 @@ export class KeywordPerformanceComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+  private keywordsSub: Subscription | null = null;
 
   // === Inputs ===
   public readonly days = input(30);
@@ -52,9 +54,10 @@ export class KeywordPerformanceComponent {
 
   // === Protected Methods ===
   protected refresh(days?: number): void {
+    this.keywordsSub?.unsubscribe();
     this.loading.set(true);
     this.currentPage.set(1);
-    this.campaignService
+    this.keywordsSub = this.campaignService
       .getKeywords(days ?? this.days())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

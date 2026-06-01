@@ -4,6 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
@@ -26,6 +27,9 @@ export class MonitoringTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private monitorSub: Subscription | null = null;
+  private keywordsSub: Subscription | null = null;
+  private searchTermsSub: Subscription | null = null;
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
@@ -96,11 +100,15 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected fetchData(): void {
+    this.monitorSub?.unsubscribe();
+    this.keywordsSub?.unsubscribe();
+    this.searchTermsSub?.unsubscribe();
+
     this.loading.set(true);
     this.error.set(null);
     const days = this.selectedDays();
 
-    this.campaignService
+    this.monitorSub = this.campaignService
       .getMonitorData(days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -116,7 +124,7 @@ export class MonitoringTabComponent implements OnInit {
 
     this.keywordsLoading.set(true);
     this.keywordPage.set(1);
-    this.campaignService
+    this.keywordsSub = this.campaignService
       .getKeywords(days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -129,7 +137,7 @@ export class MonitoringTabComponent implements OnInit {
 
     this.searchTermsLoading.set(true);
     this.searchTermPage.set(1);
-    this.campaignService
+    this.searchTermsSub = this.campaignService
       .getOptimizationInsights(days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

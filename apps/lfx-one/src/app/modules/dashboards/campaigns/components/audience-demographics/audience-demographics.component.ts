@@ -3,6 +3,7 @@
 
 import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import type { Subscription } from 'rxjs';
 import { CampaignService } from '@services/campaign.service';
 
 import type { AudienceBucket, AudienceDemographics } from '@lfx-one/shared/interfaces';
@@ -17,6 +18,7 @@ export class AudienceDemographicsComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+  private audienceSub: Subscription | null = null;
 
   // === Inputs ===
   public readonly days = input(30);
@@ -40,8 +42,9 @@ export class AudienceDemographicsComponent {
 
   // === Protected Methods ===
   protected refresh(days?: number): void {
+    this.audienceSub?.unsubscribe();
     this.loading.set(true);
-    this.campaignService
+    this.audienceSub = this.campaignService
       .getAudience(days ?? this.days())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
