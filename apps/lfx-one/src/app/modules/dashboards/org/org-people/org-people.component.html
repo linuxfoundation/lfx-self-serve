@@ -16,20 +16,21 @@
     aria-label="People page sections"
     (keydown)="onTabKeydown($event)">
     @for (tab of tabs; track tab.id) {
+      @let isActive = activeTab() === tab.id;
       <button
         type="button"
         role="tab"
         class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
         [id]="'org-people-tab-' + tab.id"
-        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-selected]="isActive"
         aria-controls="org-people-tabpanel"
-        [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+        [attr.tabindex]="isActive ? 0 : -1"
         [attr.data-testid]="'org-people-tab-' + tab.id"
-        [class.border-blue-600]="activeTab() === tab.id"
-        [class.text-blue-600]="activeTab() === tab.id"
-        [class.border-transparent]="activeTab() !== tab.id"
-        [class.text-gray-500]="activeTab() !== tab.id"
-        [class.hover:text-gray-700]="activeTab() !== tab.id"
+        [class.border-blue-600]="isActive"
+        [class.text-blue-600]="isActive"
+        [class.border-transparent]="!isActive"
+        [class.text-gray-500]="!isActive"
+        [class.hover:text-gray-700]="!isActive"
         (click)="switchTab(tab.id)">
         <i [class]="tab.icon" aria-hidden="true"></i>
         {{ tab.label }}
@@ -46,6 +47,8 @@
       <lfx-empty-state icon="fa-light fa-building" [title]="noCompanyEmptyTitle()" data-testid="org-people-no-company-empty-state" />
     } @else if (activeTab() === 'all') {
       <lfx-org-people-all-employees />
+    } @else if (activeTab() === 'contacts') {
+      <lfx-org-people-key-contacts />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

@@ -12,10 +12,11 @@ import { AccountContextService } from '@services/account-context.service';
 import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
 import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
+import { KeyContactsComponent } from './components/key-contacts/key-contacts.component';
 
 @Component({
   selector: 'lfx-org-people',
-  imports: [EmptyStateComponent, AllEmployeesComponent],
+  imports: [EmptyStateComponent, AllEmployeesComponent, KeyContactsComponent],
   templateUrl: './org-people.component.html',
 })
 export class OrgPeopleComponent {
