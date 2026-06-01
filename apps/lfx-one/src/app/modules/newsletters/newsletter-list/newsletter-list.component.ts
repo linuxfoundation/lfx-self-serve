@@ -142,6 +142,7 @@ export class NewsletterListComponent {
   protected onDeleteDraft(item: NewsletterListItem, event: Event): void {
     event.stopPropagation();
     this.confirmationService.confirm({
+      key: 'newsletter-list',
       header: 'Delete draft?',
       message: `Are you sure you want to delete "${item.subject || 'Untitled draft'}"? This action cannot be undone.`,
       icon: 'pi pi-trash',

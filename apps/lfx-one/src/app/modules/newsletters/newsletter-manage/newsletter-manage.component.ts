@@ -241,6 +241,7 @@ export class NewsletterManageComponent {
     const count = this.recipientCount();
     const recipientLabel = count !== null && count > 0 ? `${count} ${count === 1 ? 'recipient' : 'recipients'}` : 'the selected groups';
     this.confirmationService.confirm({
+      key: 'newsletter-manage',
       header: 'Send newsletter?',
       message: `This will send your newsletter to ${recipientLabel}. Once sent, it can't be undone.`,
       icon: 'pi pi-paper-plane',

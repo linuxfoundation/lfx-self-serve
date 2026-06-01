@@ -41,6 +41,10 @@ export class NewsletterAnalyticsComponent {
   // === Computed (complex bodies extracted to private init* methods) ===
   protected readonly openRatePercent: Signal<number | null> = this.initOpenRatePercent();
   protected readonly hasOpens = computed(() => (this.analytics()?.total_opens ?? 0) > 0);
+  // Upstream can return a non-zero `total_opens` rollup with an empty `daily_opens`
+  // (e.g. shortly after send, before the daily bucketing job completes). Gate the
+  // chart on real per-day data so we never render an empty axis with no series.
+  protected readonly hasDailyBreakdown = computed(() => (this.analytics()?.daily_opens?.length ?? 0) > 0);
   protected readonly chartData: Signal<NewsletterChartData | null> = this.initChartData();
   protected readonly chartOptions: Signal<Record<string, unknown>> = this.initChartOptions();
 
@@ -98,8 +102,12 @@ export class NewsletterAnalyticsComponent {
   }
 
   // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.
+  // Analytics is only reachable from the Sent tab, so anchor Back there explicitly.
   protected goBack(): void {
-    this.router.navigate(['list'], { relativeTo: this.route.parent });
+    this.router.navigate(['list'], {
+      relativeTo: this.route.parent,
+      queryParams: { tab: 'sent' },
+    });
   }
 
   private initOpenRatePercent(): Signal<number | null> {

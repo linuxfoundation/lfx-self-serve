@@ -74,6 +74,11 @@
               <i class="fa-light fa-chart-line text-3xl"></i>
               <span class="text-sm">No opens recorded yet.</span>
             </div>
+          } @else if (!hasDailyBreakdown()) {
+            <div class="flex flex-col items-center justify-center py-12 gap-2 text-gray-500">
+              <i class="fa-light fa-chart-line text-3xl"></i>
+              <span class="text-sm">Daily breakdown not available yet. Check back shortly.</span>
+            </div>
           } @else if (canRenderChart() && chartData()) {
             <div class="h-80">
               <lfx-chart type="line" [data]="chartData()" [options]="chartOptions()" height="320px"></lfx-chart>

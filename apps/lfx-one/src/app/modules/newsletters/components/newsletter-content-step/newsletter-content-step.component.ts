@@ -55,6 +55,7 @@ export class NewsletterContentStepComponent {
     const hasBody = this.bodyFilled();
     if (hasSubject || hasBody) {
       this.confirmationService.confirm({
+        key: 'newsletter-content-step',
         header: 'Replace existing content?',
         message: 'This will overwrite your current subject and body with the AI-generated newsletter. You can still edit the result before sending.',
         icon: 'pi pi-exclamation-triangle',
