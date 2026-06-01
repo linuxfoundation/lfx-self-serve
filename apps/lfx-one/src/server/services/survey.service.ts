@@ -144,9 +144,15 @@ export class SurveyService {
 
     // Defensive normalization: upstream is contractually { data, meta }, but guard
     // against a malformed body so the frontend always receives a consumable shape.
+    // Upstream signals the last page with an empty-string page_token — normalize it
+    // to undefined here so consumers can treat "no more pages" as a falsy token.
+    const pageToken = page?.meta?.page_token;
     return {
       data: Array.isArray(page?.data) ? page.data : [],
-      meta: page?.meta ?? {},
+      meta: {
+        ...(page?.meta ?? {}),
+        page_token: pageToken && pageToken.trim() !== '' ? pageToken : undefined,
+      },
     };
   }
 
