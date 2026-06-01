@@ -35,10 +35,7 @@
         </button>
       </th>
       <th scope="col" [attr.aria-sort]="getSortAriaValue('LEVEL')" data-testid="sort-level">
-        <button
-          type="button"
-          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
-          (click)="onHeaderClick('LEVEL')">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('LEVEL')">
           Level <i [class]="sortIcons()['LEVEL']"></i>
         </button>
       </th>
@@ -128,12 +125,7 @@
               <h3 class="text-gray-600 mt-2">No certifications match these filters</h3>
               <p class="text-sm text-gray-400 mt-1">No certifications were found for your organization.</p>
             </div>
-            <a
-              [href]="browseUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="lfx-table-name-link text-sm"
-              data-testid="org-certifications-browse-link">
+            <a [href]="browseUrl" target="_blank" rel="noopener noreferrer" class="lfx-table-name-link text-sm" data-testid="org-certifications-browse-link">
               Browse certifications
             </a>
           </div>

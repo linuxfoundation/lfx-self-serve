@@ -79,7 +79,13 @@ export class CertEmployeesDrawerComponent {
           this.loading.set(true);
           return this.trainingService.getCertificationEmployees(this.orgUid(), this.courseId(), this.status()).pipe(
             catchError(() =>
-              of({ courseId: this.courseId(), certificationName: this.certificationName(), status: this.status(), total: 0, data: [] } as OrgCertEmployeesResponse)
+              of({
+                courseId: this.courseId(),
+                certificationName: this.certificationName(),
+                status: this.status(),
+                total: 0,
+                data: [],
+              } as OrgCertEmployeesResponse)
             ),
             finalize(() => this.loading.set(false))
           );

@@ -71,9 +71,7 @@ export class OrgLensTrainingController {
       const rawLevel = getStringQueryParam(req, 'level');
 
       const pageSize =
-        Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_ORG_CERTIFICATIONS_PAGE_SIZE
-          ? rawPageSize
-          : DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE;
+        Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_ORG_CERTIFICATIONS_PAGE_SIZE ? rawPageSize : DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE;
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortField = rawSortField && VALID_ORG_CERTIFICATION_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD;
       const sortOrder = rawSortOrder === 'ASC' ? 'ASC' : 'DESC';

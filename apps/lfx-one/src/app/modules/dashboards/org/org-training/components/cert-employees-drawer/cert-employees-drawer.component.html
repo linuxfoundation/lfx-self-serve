@@ -14,7 +14,9 @@
       </div>
       <div class="flex flex-col gap-0.5 min-w-0">
         <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="cert-employees-drawer-title">{{ heading() }}</h2>
-        <p class="text-sm text-gray-500 truncate" data-testid="cert-employees-drawer-subtitle">{{ certificationName() }} &middot; {{ count() }} {{ statusLabel() }}</p>
+        <p class="text-sm text-gray-500 truncate" data-testid="cert-employees-drawer-subtitle">
+          {{ certificationName() }} &middot; {{ count() }} {{ statusLabel() }}
+        </p>
       </div>
     </div>
   </ng-template>
