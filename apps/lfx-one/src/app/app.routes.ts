@@ -134,7 +134,7 @@ export const routes: Routes = [
           {
             path: 'events',
             data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
           },
           {
             path: 'training',

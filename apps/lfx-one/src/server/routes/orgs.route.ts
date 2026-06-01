@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
+import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
@@ -14,6 +15,7 @@ import { OrgLensPeopleController } from '../controllers/org-lens-people.controll
 function buildOrgsRouter(): Router {
   const router = Router();
   const orgLensFoundationsController = new OrgLensFoundationsController();
+  const orgLensEventsController = new OrgLensEventsController();
   const orgLensMembershipsController = new OrgLensMembershipsController();
   const orgLensBoardCommitteeController = new OrgLensBoardCommitteeController();
   const orgLensDocumentsController = new OrgLensDocumentsController();
@@ -29,6 +31,10 @@ function buildOrgsRouter(): Router {
 
   // Spec 024 (uuid-only): all org-lens routes key off `:orgUid`.
   router.get('/:orgUid/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
+  // Spec (LFXV2-1898) — Events page keys off the Salesforce accountId (not the b2b_org uuid), so these routes
+  // intentionally use `:accountId`. /events/summary MUST be registered before /events so Express matches the more-specific path first.
+  router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
+  router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
