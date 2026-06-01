@@ -312,11 +312,23 @@
 
               <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
               @if (canJoinMeeting() && authenticated()) {
-                @if (fetchedJoinUrl() && !showGuestForm()) {
+                @if (isLoadingJoinUrl() && !showGuestForm()) {
                   <div class="w-full md:w-[296px]">
                     <lfx-button
-                      class="w-full h-[40px]"
-                      styleClass="w-full"
+                      styleClass="w-full h-[40px]"
+                      label="Join Meeting"
+                      icon="fa-light fa-video"
+                      severity="success"
+                      size="large"
+                      [loading]="true"
+                      [disabled]="true"
+                      [attr.data-testid]="'join-meeting-button-loading'">
+                    </lfx-button>
+                  </div>
+                } @else if (fetchedJoinUrl() && !showGuestForm()) {
+                  <div class="w-full md:w-[296px]">
+                    <lfx-button
+                      styleClass="w-full h-[40px]"
                       label="Join Meeting"
                       icon="fa-light fa-video"
                       severity="success"
