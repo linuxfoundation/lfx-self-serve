@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CampaignService } from '@services/campaign.service';
 
 import type { AudienceBucket, AudienceDemographics } from '@lfx-one/shared/interfaces';
@@ -12,9 +13,10 @@ import type { AudienceBucket, AudienceDemographics } from '@lfx-one/shared/inter
   templateUrl: './audience-demographics.component.html',
   styleUrl: './audience-demographics.component.scss',
 })
-export class AudienceDemographicsComponent implements OnInit {
+export class AudienceDemographicsComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly days = input(30);
@@ -30,23 +32,27 @@ export class AudienceDemographicsComponent implements OnInit {
   protected readonly deviceBuckets = computed(() => this.data()?.device ?? []);
   protected readonly pulledAt = computed(() => this.data()?.pulledAt ?? '');
 
-  // === Lifecycle ===
-  public ngOnInit(): void {
-    this.refresh();
-  }
+  // === Effects ===
+  private readonly fetchOnDaysChange = effect(() => {
+    const days = this.days();
+    this.refresh(days);
+  });
 
   // === Protected Methods ===
-  protected refresh(): void {
+  protected refresh(days?: number): void {
     this.loading.set(true);
-    this.campaignService.getAudience(this.days()).subscribe({
-      next: (result) => {
-        this.data.set(result);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
-      },
-    });
+    this.campaignService
+      .getAudience(days ?? this.days())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.data.set(result);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.loading.set(false);
+        },
+      });
   }
 
   protected barWidthPct(bucket: AudienceBucket, buckets: AudienceBucket[]): number {

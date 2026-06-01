@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CAMPAIGN_PACING_THRESHOLDS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
@@ -24,6 +25,7 @@ const SEARCH_TERM_PAGE_SIZE = 10;
 export class MonitoringTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
@@ -77,6 +79,9 @@ export class MonitoringTabComponent implements OnInit {
     return all.slice(start, start + SEARCH_TERM_PAGE_SIZE);
   });
 
+  protected readonly keywordPageNumbers = computed(() => Array.from({ length: this.keywordTotalPages() }, (_, i) => i + 1));
+  protected readonly searchTermPageNumbers = computed(() => Array.from({ length: this.searchTermTotalPages() }, (_, i) => i + 1));
+
   public ngOnInit(): void {
     this.fetchData();
   }
@@ -95,36 +100,45 @@ export class MonitoringTabComponent implements OnInit {
     this.error.set(null);
     const days = this.selectedDays();
 
-    this.campaignService.getMonitorData(days).subscribe({
-      next: (data) => {
-        this.monitorData.set(data);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.error.set(err?.error?.message || err?.message || 'Failed to load campaign data');
-        this.loading.set(false);
-      },
-    });
+    this.campaignService
+      .getMonitorData(days)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.monitorData.set(data);
+          this.loading.set(false);
+        },
+        error: (err) => {
+          this.error.set(err?.error?.message || err?.message || 'Failed to load campaign data');
+          this.loading.set(false);
+        },
+      });
 
     this.keywordsLoading.set(true);
     this.keywordPage.set(1);
-    this.campaignService.getKeywords(days).subscribe({
-      next: (result) => {
-        this.keywordsData.set(result);
-        this.keywordsLoading.set(false);
-      },
-      error: () => this.keywordsLoading.set(false),
-    });
+    this.campaignService
+      .getKeywords(days)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.keywordsData.set(result);
+          this.keywordsLoading.set(false);
+        },
+        error: () => this.keywordsLoading.set(false),
+      });
 
     this.searchTermsLoading.set(true);
     this.searchTermPage.set(1);
-    this.campaignService.getOptimizationInsights(days).subscribe({
-      next: (result) => {
-        this.searchTerms.set(result.searchTerms);
-        this.searchTermsLoading.set(false);
-      },
-      error: () => this.searchTermsLoading.set(false),
-    });
+    this.campaignService
+      .getOptimizationInsights(days)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.searchTerms.set(result.searchTerms);
+          this.searchTermsLoading.set(false);
+        },
+        error: () => this.searchTermsLoading.set(false),
+      });
   }
 
   protected goToKeywordPage(page: number): void {
@@ -137,9 +151,10 @@ export class MonitoringTabComponent implements OnInit {
 
   protected copyName(name: string): void {
     if (isPlatformBrowser(this.platformId)) {
-      navigator.clipboard.writeText(name);
-      this.copiedName.set(name);
-      setTimeout(() => this.copiedName.set(null), 2000);
+      void navigator.clipboard.writeText(name).then(() => {
+        this.copiedName.set(name);
+        setTimeout(() => this.copiedName.set(null), 2000);
+      });
     }
   }
 
@@ -168,7 +183,8 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatDate(dateStr: string): string {
     if (!dateStr) return '–';
-    const date = new Date(dateStr);
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00` : dateStr;
+    const date = new Date(normalized);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 

@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CampaignService } from '@services/campaign.service';
 
 import type { KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
@@ -14,9 +15,10 @@ const PAGE_SIZE = 10;
   templateUrl: './keyword-performance.component.html',
   styleUrl: './keyword-performance.component.scss',
 })
-export class KeywordPerformanceComponent implements OnInit {
+export class KeywordPerformanceComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly days = input(30);
@@ -34,6 +36,7 @@ export class KeywordPerformanceComponent implements OnInit {
   protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / PAGE_SIZE)));
   protected readonly hasPrevPage = computed(() => this.currentPage() > 1);
   protected readonly hasNextPage = computed(() => this.currentPage() < this.totalPages());
+  protected readonly pageNumbers = computed(() => Array.from({ length: this.totalPages() }, (_, i) => i + 1));
 
   protected readonly visibleKeywords = computed<KeywordMetrics[]>(() => {
     const all = this.keywords();
@@ -41,24 +44,28 @@ export class KeywordPerformanceComponent implements OnInit {
     return all.slice(start, start + PAGE_SIZE);
   });
 
-  // === Lifecycle ===
-  public ngOnInit(): void {
-    this.refresh();
-  }
+  // === Effects ===
+  private readonly fetchOnDaysChange = effect(() => {
+    const days = this.days();
+    this.refresh(days);
+  });
 
   // === Protected Methods ===
-  protected refresh(): void {
+  protected refresh(days?: number): void {
     this.loading.set(true);
     this.currentPage.set(1);
-    this.campaignService.getKeywords(this.days()).subscribe({
-      next: (result) => {
-        this.data.set(result);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
-      },
-    });
+    this.campaignService
+      .getKeywords(days ?? this.days())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.data.set(result);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.loading.set(false);
+        },
+      });
   }
 
   protected goToPage(page: number): void {

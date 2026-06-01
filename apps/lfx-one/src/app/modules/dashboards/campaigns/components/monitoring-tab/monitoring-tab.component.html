@@ -274,17 +274,17 @@
                   aria-label="Previous page">
                   <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                 </button>
-                @for (page of [].constructor(keywordTotalPages()); track $index) {
+                @for (page of keywordPageNumbers(); track page) {
                   <button
                     type="button"
-                    (click)="goToKeywordPage($index + 1)"
+                    (click)="goToKeywordPage(page)"
                     [class]="
-                      keywordPage() === $index + 1
+                      keywordPage() === page
                         ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
                         : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
                     "
-                    [attr.data-testid]="'keyword-page-' + ($index + 1)">
-                    {{ $index + 1 }}
+                    [attr.data-testid]="'keyword-page-' + page">
+                    {{ page }}
                   </button>
                 }
                 <button
@@ -389,17 +389,17 @@
                   aria-label="Previous page">
                   <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                 </button>
-                @for (page of [].constructor(searchTermTotalPages()); track $index) {
+                @for (page of searchTermPageNumbers(); track page) {
                   <button
                     type="button"
-                    (click)="goToSearchTermPage($index + 1)"
+                    (click)="goToSearchTermPage(page)"
                     [class]="
-                      searchTermPage() === $index + 1
+                      searchTermPage() === page
                         ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
                         : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
                     "
-                    [attr.data-testid]="'search-term-page-' + ($index + 1)">
-                    {{ $index + 1 }}
+                    [attr.data-testid]="'search-term-page-' + page">
+                    {{ page }}
                   </button>
                 }
                 <button

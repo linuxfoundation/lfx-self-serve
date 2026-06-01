@@ -125,17 +125,17 @@
               aria-label="Previous page">
               <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
             </button>
-            @for (page of [].constructor(totalPages()); track $index) {
+            @for (page of pageNumbers(); track page) {
               <button
                 type="button"
-                (click)="goToPage($index + 1)"
+                (click)="goToPage(page)"
                 [class]="
-                  currentPage() === $index + 1
+                  currentPage() === page
                     ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
                     : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
                 "
-                [attr.data-testid]="'keyword-page-' + ($index + 1)">
-                {{ $index + 1 }}
+                [attr.data-testid]="'keyword-page-' + page">
+                {{ page }}
               </button>
             }
             <button
