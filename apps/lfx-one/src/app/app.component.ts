@@ -29,7 +29,6 @@ export class AppComponent {
   private readonly dataDogRumService = inject(DataDogRumService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly intercomService = inject(IntercomService);
-
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');

@@ -31,6 +31,7 @@ export class SettingsDashboardComponent {
   private readonly dialogService = inject(DialogService);
 
   public readonly isMe = computed(() => this.lensService.activeLens() === 'me');
+  public readonly canWrite = computed(() => this.projectContextService.canWrite());
 
   public users: Signal<ProjectPermissionUser[]>;
   public loading: WritableSignal<boolean> = signal(true);
