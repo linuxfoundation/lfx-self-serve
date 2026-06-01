@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgTrainingTabId } from '../interfaces/training.interface';
+import type { OrgCertificationsResponse, OrgTrainingTabId } from '../interfaces/training.interface';
 
 // ─── Org Training page constants ───────────────────────────────────────────
 
@@ -19,6 +19,33 @@ export const ORG_TRAINING_LEVEL_OPTIONS: readonly { label: string; value: string
   { label: 'Intermediate', value: 'INTERMEDIATE' },
   { label: 'Advanced', value: 'ADVANCED' },
 ] as const;
+
+export const VALID_ORG_TRAINING_LEVEL_VALUES: ReadonlySet<string> = new Set(ORG_TRAINING_LEVEL_OPTIONS.map((option) => option.value));
+
+// ─── Org Certifications tab (LFXV2-1896) ─────────────────────────────────────
+
+export const DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE = 10;
+export const MAX_ORG_CERTIFICATIONS_PAGE_SIZE = 100;
+
+export const DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD = 'CERTIFIED_COUNT';
+export const DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER: 'ASC' | 'DESC' = 'DESC';
+
+/** Snowflake column names that the org certifications table may be sorted by. */
+export const VALID_ORG_CERTIFICATION_SORT_FIELDS: ReadonlySet<string> = new Set([
+  'COURSE_NAME',
+  'FOUNDATION_NAME',
+  'LEVEL',
+  'CERTIFIED_COUNT',
+  'IN_PROGRESS_COUNT',
+]);
+
+/** Empty/error fallback for the org certifications list. */
+export const EMPTY_ORG_CERTIFICATIONS_RESPONSE: OrgCertificationsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE,
+  offset: 0,
+};
 
 // ─── Me-lens training constants ────────────────────────────────────────────
 

@@ -129,13 +129,41 @@
     @for (tab of tabs; track tab.id) {
       @if (activeTab() === tab.id) {
         <section [id]="'org-training-panel-' + tab.id" [attr.data-testid]="'org-training-panel-' + tab.id" class="p-5">
-          <lfx-empty-state
-            [icon]="tab.icon"
-            title="Coming soon"
-            subtitle="This section is being built. Check back later."
-            [attr.data-testid]="'org-training-empty-state-' + tab.id" />
+          @if (tab.id === 'certifications') {
+            <lfx-org-certifications-table
+              [certificationsResponse]="certifications()"
+              [loading]="certificationsLoading()"
+              [sortField]="certSortField()"
+              [sortOrder]="certSortOrder()"
+              (pageChange)="onCertPageChange($event)"
+              (sortChange)="onCertSortChange($event)"
+              (certifiedClick)="onCertifiedClick($event)"
+              (inProgressClick)="onInProgressClick($event)" />
+          } @else {
+            <lfx-empty-state
+              [icon]="tab.icon"
+              title="Coming soon"
+              subtitle="This section is being built. Check back later."
+              [attr.data-testid]="'org-training-empty-state-' + tab.id" />
+          }
         </section>
       }
     }
   </lfx-card>
+
+  <!-- Certification roster drawers -->
+  <lfx-cert-employees-drawer
+    [(visible)]="certifiedDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeCertification()?.courseId ?? ''"
+    [certificationName]="activeCertification()?.name ?? ''"
+    [count]="activeCertification()?.certifiedCount ?? 0"
+    status="certified" />
+  <lfx-cert-employees-drawer
+    [(visible)]="inProgressDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeCertification()?.courseId ?? ''"
+    [certificationName]="activeCertification()?.name ?? ''"
+    [count]="activeCertification()?.inProgressCount ?? 0"
+    status="in-progress" />
 </main>

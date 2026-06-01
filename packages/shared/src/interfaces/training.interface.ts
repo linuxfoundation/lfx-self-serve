@@ -1,8 +1,91 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OffsetPaginatedResponse } from './api.interface';
+
 /** Active tab on the org training & certifications page */
 export type OrgTrainingTabId = 'certifications' | 'trainings';
+
+// ─── Org Certifications tab (LFXV2-1896) ─────────────────────────────────────
+
+/** One row in the org Certifications table — a distinct course/cert the org's people have engaged with. */
+export interface OrgCertification {
+  /** Stable grouping key — COALESCE(COURSE_ID, COURSE_OR_CERT_ID) */
+  readonly courseId: string;
+  /** Course / certification name */
+  readonly name: string;
+  /** Issuing foundation/project name; null when unknown */
+  readonly foundation: string | null;
+  /** Difficulty level (e.g. Beginner/Intermediate/Advanced); null when unknown */
+  readonly level: string | null;
+  /** Logo/seal image URL; null when unavailable */
+  readonly imageUrl: string | null;
+  /** Count of org employees who hold this certification (STATUS = 'Certified') */
+  readonly certifiedCount: number;
+  /** Count of org employees in progress (STATUS IS DISTINCT FROM 'Certified', including NULL) */
+  readonly inProgressCount: number;
+}
+
+export type OrgCertificationsResponse = OffsetPaginatedResponse<OrgCertification>;
+
+/** Which roster a certification drill-down drawer shows. */
+export type OrgCertEmployeeStatus = 'certified' | 'in-progress';
+
+/** One employee in a certification drill-down drawer. */
+export interface OrgCertEmployee {
+  readonly contactId: string;
+  readonly name: string;
+  readonly jobTitle: string | null;
+}
+
+/** Drill-down roster of org employees for a single certification + status. */
+export interface OrgCertEmployeesResponse {
+  readonly courseId: string;
+  readonly certificationName: string;
+  readonly status: OrgCertEmployeeStatus;
+  readonly total: number;
+  readonly data: readonly OrgCertEmployee[];
+}
+
+/** Frontend query params for the org certifications list (all optional). */
+export interface GetOrgCertificationsParams {
+  searchQuery?: string;
+  level?: string | null;
+  pageSize?: number;
+  offset?: number;
+  sortField?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+/** Backend-resolved (validated/clamped) options for the org certifications query. */
+export interface GetOrgCertificationsOptions {
+  searchQuery?: string;
+  level: string | null;
+  pageSize: number;
+  offset: number;
+  sortField: string;
+  sortOrder: 'ASC' | 'DESC';
+}
+
+/** Raw Snowflake row for the org certifications query. */
+export interface OrgCertificationRow {
+  COURSE_ID: string;
+  COURSE_NAME: string | null;
+  FOUNDATION_NAME: string | null;
+  LEVEL: string | null;
+  LOGO_URL: string | null;
+  CERTIFIED_COUNT: number;
+  IN_PROGRESS_COUNT: number;
+  TOTAL_RECORDS: number;
+}
+
+/** Raw Snowflake row for the certification-employees roster query. */
+export interface OrgCertEmployeeRow {
+  CONTACT_ID: string;
+  NAME: string | null;
+  JOB_TITLE: string | null;
+  CERTIFICATION_NAME: string | null;
+}
 
 /** Summary statistics for the org training & certifications stat strip */
 export interface OrgTrainingStats {
