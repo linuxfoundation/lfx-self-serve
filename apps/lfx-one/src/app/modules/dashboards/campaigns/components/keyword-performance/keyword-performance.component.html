@@ -1,0 +1,155 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="keyword-performance">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h4 class="text-sm font-semibold text-gray-900">Keyword Performance</h4>
+      @if (hasKeywords()) {
+        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ keywords().length }} keywords</span>
+      }
+      @if (pulledAt()) {
+        <span class="text-xs text-gray-400">{{ pulledAt() }}</span>
+      }
+    </div>
+    <button
+      type="button"
+      (click)="refresh()"
+      [disabled]="loading()"
+      class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      data-testid="keyword-refresh"
+      aria-label="Refresh keyword data">
+      <i class="fa-light fa-arrows-rotate" [class.fa-spin]="loading()" aria-hidden="true"></i>
+      Refresh
+    </button>
+  </div>
+
+  @if (loading() && !data()) {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="keyword-loading">
+      <div class="flex items-center gap-2 text-sm text-gray-500">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading keywords...
+      </div>
+    </div>
+  } @else if (!hasKeywords()) {
+    <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-empty">
+      <i class="fa-light fa-key text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No keyword data available for the selected date range.</p>
+    </div>
+  } @else {
+    <!-- Totals Strip -->
+    @if (totals()) {
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
+        <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+          <p class="text-xs text-gray-500">Impressions</p>
+          <p class="text-sm font-semibold text-gray-900">{{ formatNumber(totals()!.impressions) }}</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+          <p class="text-xs text-gray-500">Clicks</p>
+          <p class="text-sm font-semibold text-gray-900">{{ formatNumber(totals()!.clicks) }}</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+          <p class="text-xs text-gray-500">Avg CTR</p>
+          <p class="text-sm font-semibold text-gray-900">{{ formatPct(totals()!.avgCtr) }}</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+          <p class="text-xs text-gray-500">Spend</p>
+          <p class="text-sm font-semibold text-gray-900">{{ formatCurrency(totals()!.spend) }}</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+          <p class="text-xs text-gray-500">Conversions</p>
+          <p class="text-sm font-semibold text-gray-900">{{ formatNumber(totals()!.conversions) }}</p>
+        </div>
+      </div>
+    }
+
+    <!-- Keyword Table -->
+    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="keyword-table">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 bg-gray-50">
+              <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+              <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+              <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+              <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaign) {
+              <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
+                <td class="px-4 py-2.5">
+                  <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                  <p class="text-xs text-gray-400">{{ eventLabel(kw) }}</p>
+                </td>
+                <td class="px-4 py-2.5">
+                  <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="matchTypeClass(kw.matchType)">
+                    {{ kw.matchType }}
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-center">
+                  <span class="text-sm font-medium" [class]="qualityScoreClass(kw.qualityScore)">
+                    {{ kw.qualityScore ?? '–' }}
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.impressions) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.clicks) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatPct(kw.ctr) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.avgCpc) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.spend) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.conversions) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (totalPages() > 1) {
+        <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
+          <span class="text-xs text-gray-500">
+            Showing {{ (currentPage() - 1) * 10 + 1 }}–{{ currentPage() === totalPages() ? keywords().length : currentPage() * 10 }} of
+            {{ keywords().length }}
+          </span>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              (click)="goToPage(currentPage() - 1)"
+              [disabled]="!hasPrevPage()"
+              class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+              data-testid="keyword-page-prev"
+              aria-label="Previous page">
+              <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+            </button>
+            @for (page of [].constructor(totalPages()); track $index) {
+              <button
+                type="button"
+                (click)="goToPage($index + 1)"
+                [class]="
+                  currentPage() === $index + 1
+                    ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
+                    : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
+                "
+                [attr.data-testid]="'keyword-page-' + ($index + 1)">
+                {{ $index + 1 }}
+              </button>
+            }
+            <button
+              type="button"
+              (click)="goToPage(currentPage() + 1)"
+              [disabled]="!hasNextPage()"
+              class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+              data-testid="keyword-page-next"
+              aria-label="Next page">
+              <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

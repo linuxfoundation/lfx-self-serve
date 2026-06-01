@@ -1,0 +1,424 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="monitoring-tab">
+  <!-- Controls -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2" data-testid="monitoring-date-range">
+      @for (days of dateRangeOptions; track days) {
+        <button
+          type="button"
+          (click)="setDateRange(days)"
+          [class]="
+            selectedDays() === days
+              ? 'rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
+              : 'rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
+          "
+          [attr.data-testid]="'monitoring-range-' + days">
+          {{ days }}d
+        </button>
+      }
+    </div>
+    <div class="flex items-center gap-3">
+      @if (pulledAt()) {
+        <span class="text-xs text-gray-400" data-testid="monitoring-pulled-at">Last pulled: {{ pulledAt() }}</span>
+      }
+      <button
+        type="button"
+        (click)="refresh()"
+        [disabled]="loading()"
+        class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        data-testid="monitoring-refresh"
+        aria-label="Refresh metrics">
+        <i class="fa-light fa-arrows-rotate" [class.fa-spin]="loading()" aria-hidden="true"></i>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @if (loading() && !monitorData()) {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="monitoring-loading">
+      <div class="flex items-center gap-2 text-sm text-gray-500">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading campaign data...
+      </div>
+    </div>
+  } @else if (error()) {
+    <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="monitoring-error">
+      <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-red-700">Failed to load campaign data</p>
+      <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
+      <button
+        type="button"
+        (click)="fetchData()"
+        class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+        data-testid="monitoring-retry">
+        Retry
+      </button>
+    </div>
+  } @else if (!hasCampaigns()) {
+    <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="monitoring-empty">
+      <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No active campaigns found for the selected date range.</p>
+    </div>
+  } @else {
+    <!-- KPI Strip -->
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="monitoring-kpis">
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Impressions</p>
+        <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-impressions">{{ formatNumber(accountTotals()!.impressions) }}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Clicks</p>
+        <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-clicks">{{ formatNumber(accountTotals()!.clicks) }}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">CTR</p>
+        <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-ctr">{{ formatPct(totalCtr()) }}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Spend</p>
+        <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-spend">{{ formatCurrency(accountTotals()!.spend) }}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Conversions</p>
+        <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-conversions">{{ formatNumber(accountTotals()!.conversions) }}</p>
+      </div>
+    </div>
+
+    <!-- Campaign Table -->
+    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="monitoring-campaign-table">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 bg-gray-50">
+              <th class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
+              <th class="px-4 py-3 text-xs font-medium text-gray-500">Flight Dates</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Total Budget</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+              <th class="px-4 py-3 text-xs font-medium text-gray-500">Pacing</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (campaign of campaigns(); track campaign.name) {
+              <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'monitoring-campaign-row-' + $index">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-medium text-gray-900">{{ campaign.eventName || campaign.name }}</span>
+                    <button
+                      type="button"
+                      (click)="copyName(campaign.name)"
+                      class="text-gray-400 hover:text-blue-600"
+                      [attr.title]="'Copy: ' + campaign.name"
+                      aria-label="Copy campaign name to find in Google Ads">
+                      <i
+                        [class]="copiedName() === campaign.name ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
+                        class="text-xs"
+                        aria-hidden="true"></i>
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-400">{{ campaign.shortName }}</p>
+                </td>
+                <td class="px-4 py-3">
+                  <p class="text-xs text-gray-700">{{ formatDate(campaign.startDate) }}</p>
+                  <p class="text-xs text-gray-400">{{ formatDate(campaign.endDate) }}</p>
+                </td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatCurrency(campaign.totalBudget) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatCurrency(campaign.spend) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatNumber(campaign.impressions) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatNumber(campaign.clicks) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatPct(campaign.ctr) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatCurrency(campaign.avgCpc) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatNumber(campaign.conversions) }}</td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
+                      <div class="h-full rounded-full" [class]="pacingClass(campaign)" [style.width.%]="Math.min(campaign.pacingPct, 100)"></div>
+                    </div>
+                    <span class="text-xs text-gray-500">{{ campaign.pacingPct }}%</span>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== Keyword Performance ===== -->
+    <div class="flex flex-col gap-4" data-testid="keyword-performance">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <h4 class="text-sm font-semibold text-gray-900">Keyword Performance</h4>
+          @if (hasKeywords()) {
+            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ keywords().length }} keywords</span>
+          }
+        </div>
+      </div>
+
+      @if (keywordsLoading() && !keywordsData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="keyword-loading">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading keywords...
+          </div>
+        </div>
+      } @else if (!hasKeywords()) {
+        <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-empty">
+          <i class="fa-light fa-key text-2xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No keyword data available for the selected date range.</p>
+        </div>
+      } @else {
+        <!-- Keyword Totals Strip -->
+        @if (keywordTotals()) {
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Impressions</p>
+              <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.impressions) }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Clicks</p>
+              <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.clicks) }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Avg CTR</p>
+              <p class="text-sm font-semibold text-gray-900">{{ formatPct(keywordTotals()!.avgCtr) }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Spend</p>
+              <p class="text-sm font-semibold text-gray-900">{{ formatCurrency(keywordTotals()!.spend) }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Conversions</p>
+              <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.conversions) }}</p>
+            </div>
+          </div>
+        }
+
+        <!-- Keyword Table -->
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="keyword-table">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaign) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                      <div class="flex items-center gap-1">
+                        <span class="text-xs text-gray-400">{{ eventLabel(kw.campaign) }}</span>
+                        <button
+                          type="button"
+                          (click)="copyName(kw.campaign)"
+                          class="text-gray-400 hover:text-blue-600"
+                          [attr.title]="'Copy: ' + kw.campaign"
+                          aria-label="Copy campaign name">
+                          <i
+                            [class]="copiedName() === kw.campaign ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
+                            class="text-xs"
+                            aria-hidden="true"></i>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="matchTypeClass(kw.matchType)">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-medium" [class]="qualityScoreClass(kw.qualityScore)">
+                        {{ kw.qualityScore ?? '–' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.impressions) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.clicks) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatPct(kw.ctr) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.avgCpc) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.spend) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.conversions) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (keywordTotalPages() > 1) {
+            <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
+              <span class="text-xs text-gray-500">
+                Showing {{ (keywordPage() - 1) * 10 + 1 }}–{{ keywordPage() === keywordTotalPages() ? keywords().length : keywordPage() * 10 }} of
+                {{ keywords().length }}
+              </span>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  (click)="goToKeywordPage(keywordPage() - 1)"
+                  [disabled]="!hasKeywordPrevPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="keyword-page-prev"
+                  aria-label="Previous page">
+                  <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                @for (page of [].constructor(keywordTotalPages()); track $index) {
+                  <button
+                    type="button"
+                    (click)="goToKeywordPage($index + 1)"
+                    [class]="
+                      keywordPage() === $index + 1
+                        ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
+                        : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
+                    "
+                    [attr.data-testid]="'keyword-page-' + ($index + 1)">
+                    {{ $index + 1 }}
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="goToKeywordPage(keywordPage() + 1)"
+                  [disabled]="!hasKeywordNextPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="keyword-page-next"
+                  aria-label="Next page">
+                  <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- ===== Top Search Terms ===== -->
+    <div class="flex flex-col gap-4" data-testid="search-term-performance">
+      <div class="flex items-center gap-3">
+        <h4 class="text-sm font-semibold text-gray-900">Top Search Terms</h4>
+        @if (hasSearchTerms()) {
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ searchTerms().length }} terms</span>
+        }
+      </div>
+
+      @if (searchTermsLoading() && searchTerms().length === 0) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="search-term-loading">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading search terms...
+          </div>
+        </div>
+      } @else if (!hasSearchTerms()) {
+        <div
+          class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8"
+          data-testid="search-term-empty">
+          <i class="fa-light fa-magnifying-glass text-2xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No search term data available for the selected date range.</p>
+        </div>
+      } @else {
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="search-term-table">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Search Term</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (term of visibleSearchTerms(); track term.searchTerm + '-' + term.campaignName) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'search-term-row-' + $index">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ term.searchTerm }}</p>
+                      <div class="flex items-center gap-1">
+                        <span class="text-xs text-gray-400">{{ term.eventName }}</span>
+                        <button
+                          type="button"
+                          (click)="copyName(term.campaignName)"
+                          class="text-gray-400 hover:text-blue-600"
+                          [attr.title]="'Copy: ' + term.campaignName"
+                          aria-label="Copy campaign name">
+                          <i
+                            [class]="copiedName() === term.campaignName ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
+                            class="text-xs"
+                            aria-hidden="true"></i>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(term.impressions) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(term.clicks) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatPct(term.ctr) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(term.avgCpc) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(term.spend) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(term.conversions) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (searchTermTotalPages() > 1) {
+            <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="search-term-pagination">
+              <span class="text-xs text-gray-500">
+                Showing {{ (searchTermPage() - 1) * 10 + 1 }}–{{ searchTermPage() === searchTermTotalPages() ? searchTerms().length : searchTermPage() * 10 }}
+                of
+                {{ searchTerms().length }}
+              </span>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  (click)="goToSearchTermPage(searchTermPage() - 1)"
+                  [disabled]="!hasSearchTermPrevPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="search-term-page-prev"
+                  aria-label="Previous page">
+                  <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                @for (page of [].constructor(searchTermTotalPages()); track $index) {
+                  <button
+                    type="button"
+                    (click)="goToSearchTermPage($index + 1)"
+                    [class]="
+                      searchTermPage() === $index + 1
+                        ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
+                        : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
+                    "
+                    [attr.data-testid]="'search-term-page-' + ($index + 1)">
+                    {{ $index + 1 }}
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="goToSearchTermPage(searchTermPage() + 1)"
+                  [disabled]="!hasSearchTermNextPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="search-term-page-next"
+                  aria-label="Next page">
+                  <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Audience Demographics -->
+    <lfx-audience-demographics [days]="selectedDays()" data-testid="monitoring-audience" />
+  }
+</div>

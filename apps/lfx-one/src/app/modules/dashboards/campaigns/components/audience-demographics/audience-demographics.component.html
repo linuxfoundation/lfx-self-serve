@@ -1,0 +1,94 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="audience-demographics">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h4 class="text-sm font-semibold text-gray-900">Audience Demographics</h4>
+      @if (pulledAt()) {
+        <span class="text-xs text-gray-400">{{ pulledAt() }}</span>
+      }
+    </div>
+    <button
+      type="button"
+      (click)="refresh()"
+      [disabled]="loading()"
+      class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      data-testid="audience-refresh"
+      aria-label="Refresh audience data">
+      <i class="fa-light fa-arrows-rotate" [class.fa-spin]="loading()" aria-hidden="true"></i>
+      Refresh
+    </button>
+  </div>
+
+  @if (loading() && !data()) {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="audience-loading">
+      <div class="flex items-center gap-2 text-sm text-gray-500">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading audience data...
+      </div>
+    </div>
+  } @else if (!hasData()) {
+    <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="audience-empty">
+      <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No audience data available for the selected date range.</p>
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <!-- Age -->
+      <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="audience-age">
+        <h5 class="mb-3 text-xs font-medium text-gray-500">Age</h5>
+        <div class="flex flex-col gap-2">
+          @for (bucket of ageBuckets(); track bucket.label) {
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-700">{{ bucket.label }}</span>
+                <span class="text-xs text-gray-500">{{ formatNumber(bucket.impressions) }} impr.</span>
+              </div>
+              <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div class="h-full rounded-full bg-blue-500" [style.width.%]="barWidthPct(bucket, ageBuckets())"></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Gender -->
+      <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="audience-gender">
+        <h5 class="mb-3 text-xs font-medium text-gray-500">Gender</h5>
+        <div class="flex flex-col gap-2">
+          @for (bucket of genderBuckets(); track bucket.label) {
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-700">{{ bucket.label }}</span>
+                <span class="text-xs text-gray-500">{{ formatNumber(bucket.impressions) }} impr.</span>
+              </div>
+              <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div class="h-full rounded-full bg-violet-500" [style.width.%]="barWidthPct(bucket, genderBuckets())"></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Device -->
+      <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="audience-device">
+        <h5 class="mb-3 text-xs font-medium text-gray-500">Device</h5>
+        <div class="flex flex-col gap-2">
+          @for (bucket of deviceBuckets(); track bucket.label) {
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-700">{{ bucket.label }}</span>
+                <span class="text-xs text-gray-500">{{ formatNumber(bucket.impressions) }} impr.</span>
+              </div>
+              <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div class="h-full rounded-full bg-emerald-500" [style.width.%]="barWidthPct(bucket, deviceBuckets())"></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>
