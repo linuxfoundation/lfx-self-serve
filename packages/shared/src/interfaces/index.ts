@@ -31,6 +31,9 @@ export * from './meeting.interface';
 // Calendar interfaces
 export * from './calendar.interface';
 
+// Campaign interfaces
+export * from './campaign.interface';
+
 // Search interfaces
 export * from './search.interface';
 
