@@ -188,3 +188,6 @@ export * from './newsletter.interface';
 
 // Invite interfaces
 export * from './invite.interface';
+
+// Docs portal interfaces (build artifacts + runtime models for /docs)
+export * from './docs.interface';

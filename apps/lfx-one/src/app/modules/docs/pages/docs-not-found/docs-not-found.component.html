@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="mx-auto flex max-w-3xl flex-col gap-6 py-8" data-testid="docs-not-found">
+  <header class="flex flex-col gap-2">
+    <p class="text-sm font-medium uppercase tracking-wide text-primary">404</p>
+    <h1 class="text-3xl font-bold text-gray-900">We couldn't find that documentation page</h1>
+    <p class="text-base text-gray-600">
+      The link you followed may be out of date, or the page may have been renamed or removed. Try one of the options below to get back on track.
+    </p>
+  </header>
+
+  <div class="flex flex-col gap-3">
+    <a
+      routerLink="/docs"
+      class="inline-flex w-fit items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      data-testid="docs-not-found-back-link">
+      Return to the documentation home
+    </a>
+  </div>
+
+  @if (topics.length > 0) {
+    <section class="flex flex-col gap-3">
+      <h2 class="text-lg font-semibold text-gray-900">Browse by topic</h2>
+      <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="docs-not-found-topics">
+        @for (topic of topics; track topic.slug) {
+          <li>
+            <a
+              [routerLink]="'/docs/' + topic.slug"
+              class="block rounded-md border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              {{ topic.name }}
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+</div>

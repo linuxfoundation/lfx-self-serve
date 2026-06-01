@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (article(); as a) {
+  <article class="mx-auto flex max-w-3xl flex-col gap-6" data-testid="docs-article">
+    <div class="flex justify-end">
+      <lfx-docs-search data-testid="docs-article-search" />
+    </div>
+    @if (a.breadcrumb.length > 1) {
+      <nav aria-label="Breadcrumb" data-testid="docs-breadcrumb">
+        <ol class="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+          @for (item of a.breadcrumb; let last = $last; track item.slug) {
+            <li class="flex items-center gap-2">
+              @if (!last) {
+                <a [routerLink]="item.url" class="hover:text-primary hover:underline" data-testid="docs-breadcrumb-link">
+                  {{ item.title }}
+                </a>
+                <span aria-hidden="true">/</span>
+              } @else {
+                <span class="text-gray-800" aria-current="page">{{ item.title }}</span>
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+    }
+
+    <header class="flex flex-col gap-3">
+      <h1 class="text-3xl font-bold text-gray-900" data-testid="docs-article-title">
+        {{ a.title }}
+      </h1>
+      @if (a.description) {
+        <p class="text-base text-gray-600" data-testid="docs-article-description">
+          {{ a.description }}
+        </p>
+      }
+      @if (a.lastUpdated) {
+        <p class="flex items-center gap-1.5 text-xs text-gray-500" data-testid="docs-article-updated">
+          <i class="fa-light fa-clock-rotate-left" aria-hidden="true"></i>
+          <span>
+            Last updated
+            <time [attr.datetime]="a.lastUpdated">{{ a.lastUpdated | date: 'mediumDate' : 'UTC' }}</time>
+          </span>
+        </p>
+      }
+    </header>
+
+    <div class="prose prose-lfx max-w-none" [innerHTML]="a.bodyHtml" data-testid="docs-article-body"></div>
+
+    @if (siblings().length > 0) {
+      <aside class="mt-8 flex flex-col gap-3 border-t border-gray-200 pt-6" aria-labelledby="docs-siblings-heading">
+        <h2 id="docs-siblings-heading" class="text-base font-semibold text-gray-900">More in this topic</h2>
+        <ul class="flex flex-col gap-2" data-testid="docs-article-siblings">
+          @for (sibling of siblings(); track sibling.slug) {
+            <li>
+              <a
+                [routerLink]="sibling.url"
+                class="block rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                data-testid="docs-article-sibling-link">
+                {{ sibling.title }}
+              </a>
+            </li>
+          }
+        </ul>
+      </aside>
+    }
+  </article>
+} @else {
+  <p class="text-gray-500" data-testid="docs-article-empty">Article not found.</p>
+}

@@ -43,6 +43,7 @@ import publicMeetingsRouter from './routes/public-meetings.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
+import sitemapRouter from './routes/sitemap.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
@@ -110,6 +111,15 @@ app.get('/readyz', (_req: Request, res: Response) => {
   }
   res.status(200).json({ status: 'ready' });
 });
+
+// Public docs sitemap (LFXV2-2001) — served from a dedicated route so:
+//   - the build script can regenerate dist-docs/sitemap.xml without touching the Angular browser bundle
+//   - crawlers get a deterministic Content-Type and Cache-Control without going through Angular SSR
+//   - it sits BEFORE the express.static() catch-all so the static handler never claims this path
+// Auth middleware classifies /sitemap.xml as public (see auth.middleware.ts), so even though this
+// handler is registered before authMiddleware below, the public classification is the source of truth
+// for any code path that does fall through.
+app.use(sitemapRouter);
 
 app.get(
   '**',
