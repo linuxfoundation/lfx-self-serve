@@ -22,6 +22,7 @@ import { SseService } from './sse.service';
 
 const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
+
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
