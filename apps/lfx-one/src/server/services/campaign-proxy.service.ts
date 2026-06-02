@@ -30,9 +30,15 @@ import type { Customer } from 'google-ads-api';
 
 const REQUIRED_ENV_VARS = ['GADS_CLIENT_ID', 'GADS_CLIENT_SECRET', 'GADS_DEVELOPER_TOKEN', 'GADS_CUSTOMER_ID', 'GADS_REFRESH_TOKEN'];
 
-for (const envVar of REQUIRED_ENV_VARS) {
-  if (!process.env[envVar]) {
-    logger.warning(undefined, 'campaign_proxy_init', `Missing environment variable: ${envVar} — Google Ads features will not work`, { envVar });
+let envChecked = false;
+
+function checkRequiredEnv(req?: Request): void {
+  if (envChecked) return;
+  envChecked = true;
+  for (const envVar of REQUIRED_ENV_VARS) {
+    if (!process.env[envVar]) {
+      logger.warning(req, 'campaign_proxy_init', `Missing environment variable: ${envVar} — Google Ads features will not work`, { envVar });
+    }
   }
 }
 
@@ -53,6 +59,7 @@ const PRIVATE_IP_PATTERNS = [
   /^192\.168\.\d+\.\d+$/,
   /^169\.254\.\d+\.\d+$/, // link-local / AWS IMDS
   /^::1$/,
+  /^::ffff:\d+\.\d+\.\d+\.\d+$/i, // IPv4-mapped IPv6
   /^f[cd][0-9a-f]{2}:/i, // IPv6 ULA (fc00::/7 covers both fc and fd)
   /^fe80:/i, // IPv6 link-local
 ];
@@ -489,6 +496,7 @@ export class CampaignProxyService {
   // === Brief generation (SSE stream) ===
 
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
+    checkRequiredEnv(req);
     yield { type: 'status', data: `Scraping ${body.url}...` };
 
     let safeUrl: string;
@@ -594,7 +602,7 @@ export class CampaignProxyService {
       return;
     }
 
-    if (body.platforms?.includes('google-ads') || !body.platforms) {
+    if (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -647,17 +655,18 @@ export class CampaignProxyService {
 
   public async getJobStatus(_req: Request, jobId: string): Promise<CampaignJobStatus> {
     const job = jobs.get(jobId);
-    if (!job) return { status: 'done', result: { success: false, campaigns: [], errors: ['Job not found'] } };
+    if (!job) return { status: 'not_found', error: 'Job not found' };
     return job;
   }
 
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
-    if (!body.hsToken) {
+    const effectiveBody = { ...body };
+    if (!effectiveBody.hsToken) {
       try {
-        const hsUtm = await resolveHubSpotUtm(body.eventName);
-        if (hsUtm) body.hsToken = hsUtm;
+        const hsUtm = await resolveHubSpotUtm(effectiveBody.eventName);
+        if (hsUtm) effectiveBody.hsToken = hsUtm;
       } catch {
         // HubSpot unavailable — fall back to event slug for UTM
       }
@@ -666,26 +675,27 @@ export class CampaignProxyService {
     const results: CampaignCreateResult[] = [];
     const errors: string[] = [];
 
-    for (const campaignType of body.campaignTypes) {
+    for (const campaignType of effectiveBody.campaignTypes) {
+      const startTime = Date.now();
       try {
-        const result = campaignType === 'search' ? await this.createSearchCampaign(body) : await this.createDemandGenCampaign(body);
+        const result = campaignType === 'search' ? await this.createSearchCampaign(effectiveBody) : await this.createDemandGenCampaign(effectiveBody);
         results.push(result);
       } catch (error: unknown) {
         if (getGadsErrorCode(error) === 'DUPLICATE_CAMPAIGN_NAME') {
           try {
-            const retryBody = { ...body, eventName: `${body.eventName}-${Date.now().toString(36).slice(-4)}` };
+            const retryBody = { ...effectiveBody, eventName: `${effectiveBody.eventName}-${Date.now().toString(36).slice(-4)}` };
             const result = campaignType === 'search' ? await this.createSearchCampaign(retryBody) : await this.createDemandGenCampaign(retryBody);
             results.push(result);
             continue;
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
-            logger.error(undefined, 'campaign_create_type', Date.now(), retryError as Error, { campaignType, detail });
+            logger.error(undefined, 'campaign_create_type', startTime, retryError as Error, { campaignType, detail });
             errors.push(`${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
-        logger.error(undefined, 'campaign_create_type', Date.now(), error as Error, { campaignType, detail });
+        logger.error(undefined, 'campaign_create_type', startTime, error as Error, { campaignType, detail });
         errors.push(`${campaignType}: ${detail}`);
       }
     }
@@ -888,8 +898,9 @@ export class CampaignProxyService {
 // ---------------------------------------------------------------------------
 
 function resolveMatchType(matchType: string): number {
-  if (matchType === 'Exact') return enums.KeywordMatchType.EXACT;
-  if (matchType === 'Phrase') return enums.KeywordMatchType.PHRASE;
+  const normalized = matchType.toLowerCase();
+  if (normalized === 'exact') return enums.KeywordMatchType.EXACT;
+  if (normalized === 'phrase') return enums.KeywordMatchType.PHRASE;
   return enums.KeywordMatchType.BROAD;
 }
 
