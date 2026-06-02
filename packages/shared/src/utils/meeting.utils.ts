@@ -108,6 +108,12 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
       // Quarterly is represented upstream as MONTHLY (type=3) with repeat_interval=3
       // (the meeting-service has no distinct QUARTERLY type), so surface that cadence
       // by name rather than the literal "Every 3 months".
+      //
+      // NOTE (LFXV2-2057): the cadence label is derived from this recurrence RULE.
+      // A meeting switched to quarterly in PCC only renders as "Quarterly" once the
+      // PCC→V2 sync updates repeat_interval to 3. If a quarterly meeting still shows
+      // "Monthly", the rule is stale upstream (repeat_interval=1 with only the
+      // occurrences spaced quarterly) — that is an upstream sync fix, not a UI one.
       let monthText: string;
       if (interval === 1) {
         monthText = 'Monthly';
