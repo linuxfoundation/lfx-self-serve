@@ -42,6 +42,9 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   getPastMeetingTranscriptUrl,
+  getUpcomingMeetingStartTime,
+  isPastMeetingSummaryAwaitingApproval,
+  isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
@@ -134,6 +137,8 @@ export class MeetingCardComponent implements OnInit {
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   public readonly summaryApproved: Signal<boolean> = this.initSummaryApproved();
+  public readonly summaryVisible: Signal<boolean> = this.initSummaryVisible();
+  public readonly summaryAwaitingApproval: Signal<boolean> = this.initSummaryAwaitingApproval();
   public readonly hasSummary: Signal<boolean> = this.initHasSummary();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
@@ -631,27 +636,24 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meeting();
 
       if (!this.pastMeeting()) {
-        // For upcoming meetings, use current occurrence (next upcoming occurrence) or meeting start_time
-        const currentOccurrence = this.occurrence();
-        if (currentOccurrence?.start_time) {
-          return currentOccurrence.start_time;
-        }
-        if (meeting?.start_time) {
-          return meeting.start_time;
-        }
-      } else {
-        // For past meetings, use occurrence input or fallback to scheduled_start_time/start_time
-        const occurrence = this.occurrence();
-        if (occurrence?.start_time) {
-          return occurrence.start_time;
-        }
-        if (meeting?.start_time) {
-          return meeting.start_time;
-        }
-        // Handle past meetings that use scheduled_start_time (type-safe check)
-        if ('scheduled_start_time' in meeting && meeting.scheduled_start_time) {
-          return meeting.scheduled_start_time;
-        }
+        // For upcoming meetings prefer the resolved current/next occurrence, then the
+        // upstream-computed next-occurrence start, and only then the series origin. Falling
+        // straight to meeting.start_time made recurring cards show the first/created date when
+        // the list payload's occurrences array wasn't usable (LFXV2-2054).
+        return getUpcomingMeetingStartTime(meeting, this.occurrence());
+      }
+
+      // For past meetings, use occurrence input or fallback to scheduled_start_time/start_time
+      const occurrence = this.occurrence();
+      if (occurrence?.start_time) {
+        return occurrence.start_time;
+      }
+      if (meeting?.start_time) {
+        return meeting.start_time;
+      }
+      // Handle past meetings that use scheduled_start_time (type-safe check)
+      if ('scheduled_start_time' in meeting && meeting.scheduled_start_time) {
+        return meeting.scheduled_start_time;
       }
 
       return null;
@@ -700,6 +702,17 @@ export class MeetingCardComponent implements OnInit {
 
   private initSummaryApproved(): Signal<boolean> {
     return computed(() => this.summary()?.approved || false);
+  }
+
+  // Visible to all viewers once approved, or whenever the meeting never required
+  // approval — only a requires-approval summary that isn't approved stays hidden.
+  private initSummaryVisible(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryVisible(this.summary()));
+  }
+
+  // Drives the organizer-only review banner: requires approval and not yet approved.
+  private initSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.summary()));
   }
 
   private initHasSummary(): Signal<boolean> {

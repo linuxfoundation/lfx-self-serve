@@ -1,0 +1,795 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Input Step -->
+@if (step() === 'input') {
+  <div class="flex flex-col gap-6" data-testid="planning-input-step">
+    <form [formGroup]="briefForm" class="flex flex-col gap-6">
+      <!-- Event URL Card -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-url-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Event Page URL</h3>
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1">
+            <input
+              type="url"
+              formControlName="url"
+              placeholder="https://events.linuxfoundation.org/your-event/"
+              (input)="onUrlInput()"
+              class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-url-input" />
+            <p class="text-xs text-gray-500">Paste any LF event page — dates and details are scraped live, not from AI memory.</p>
+          </div>
+
+          <!-- HubSpot UTM Token -->
+          @if (hsUtm() || hsSearching() || hsCreating() || hsStatus() || hsNotFound()) {
+            <div class="flex flex-col gap-2" data-testid="planning-hubspot-section">
+              <label class="text-xs font-medium text-gray-700">
+                HubSpot UTM token
+                @if (hsSearching()) {
+                  <span class="ml-2 font-normal text-gray-400">Looking up...</span>
+                }
+                @if (hsCreating()) {
+                  <span class="ml-2 font-normal text-gray-400">Creating campaign...</span>
+                }
+              </label>
+
+              @if (hsUtm()) {
+                <input
+                  type="text"
+                  [value]="hsUtm()"
+                  readonly
+                  class="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-700"
+                  data-testid="planning-hubspot-utm-value" />
+              }
+
+              @if (hsNotFound() && !hsUtm()) {
+                <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
+                  <button
+                    type="button"
+                    (click)="createInHubSpot()"
+                    [disabled]="hsCreating()"
+                    class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    data-testid="planning-hubspot-create-btn">
+                    {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
+                  </button>
+                </div>
+              }
+
+              @if (hsStatus()) {
+                <p [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">{{ hsStatus() }}</p>
+              }
+
+              @if (hsMatches().length > 1) {
+                <div class="flex flex-col gap-1">
+                  <p class="text-xs text-gray-500">Multiple matches — click to select:</p>
+                  @for (m of hsMatches(); track m.hs_utm) {
+                    <button
+                      type="button"
+                      (click)="selectHsMatch(m.hs_utm, m.name)"
+                      [class]="
+                        hsUtm() === m.hs_utm
+                          ? 'w-full rounded border border-blue-500 bg-blue-50 px-2 py-1.5 text-left text-xs text-blue-700'
+                          : 'w-full rounded border border-gray-200 px-2 py-1.5 text-left text-xs text-gray-700 hover:border-gray-300'
+                      ">
+                      {{ m.name }}
+                      <span class="ml-2 font-mono text-gray-400">{{ m.hs_utm }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Campaign Details Card -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-details-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Campaign Details</h3>
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Campaign Goal</label>
+            <select
+              formControlName="campaignGoal"
+              class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-goal-select">
+              @for (goal of goals; track goal.id) {
+                <option [value]="goal.id">{{ goal.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Target Audience <span class="font-normal text-gray-400">(optional)</span></label>
+            <input
+              type="text"
+              formControlName="targetAudience"
+              placeholder="e.g., Cloud-native developers, DevOps engineers"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-audience-input" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Key Value Prop / Offer <span class="font-normal text-gray-400">(optional)</span></label>
+            <textarea
+              formControlName="valueProp"
+              rows="3"
+              placeholder="e.g., Free registration, 200+ sessions, hands-on labs with industry experts"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-valueprop-input"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Budget & Assets Card -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-budget-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget & Assets</h3>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Total Budget (USD) <span class="font-normal text-gray-400">(optional)</span></label>
+            <div class="flex items-center gap-0">
+              <span class="rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500">$</span>
+              <input
+                type="number"
+                formControlName="totalBudget"
+                placeholder="5000"
+                min="0"
+                step="100"
+                class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="planning-budget-input" />
+            </div>
+            <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
+            <input
+              type="url"
+              formControlName="driveFolderUrl"
+              placeholder="https://drive.google.com/drive/folders/..."
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-drive-url-input" />
+            <p class="text-xs text-gray-500">Link a folder with 1200×628, 1200×1200, 960×1200 images</p>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <!-- Ad Channels Card -->
+    <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
+      <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        @for (platform of platforms; track platform.id) {
+          <button
+            type="button"
+            (click)="platform.disabled ? null : togglePlatform(platform.id)"
+            [disabled]="platform.disabled"
+            [class]="
+              platform.disabled
+                ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
+                : isPlatformSelected(platform.id)
+                  ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
+                  : 'flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+            "
+            [attr.data-testid]="'planning-platform-' + platform.id">
+            <i [class]="platform.icon" aria-hidden="true"></i>
+            <span class="flex flex-col items-start gap-0">
+              {{ platform.label }}
+              @if (platform.disabled) {
+                <span class="text-[10px] font-normal leading-tight text-gray-400">Coming soon</span>
+              }
+            </span>
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Generate Button -->
+    <div class="flex items-center gap-3">
+      <lfx-button
+        label="Scrape & Generate Brief"
+        icon="fa-light fa-wand-magic-sparkles"
+        severity="primary"
+        [disabled]="!canGenerate()"
+        (onClick)="generate()"
+        ariaLabel="Generate campaign brief"
+        data-testid="planning-generate-btn" />
+      @if (errorMessage()) {
+        <p class="text-sm text-red-600" data-testid="planning-error">{{ errorMessage() }}</p>
+      }
+    </div>
+  </div>
+}
+
+<!-- Generating Step -->
+@if (step() === 'generating') {
+  <div class="flex flex-col gap-4" data-testid="planning-generating-step">
+    <!-- Status Log -->
+    <div class="rounded-lg border border-gray-200 bg-white p-5">
+      <div class="mb-3 flex items-center gap-2">
+        <div class="h-2 w-2 animate-pulse rounded-full bg-green-500"></div>
+        <h3 class="text-sm font-semibold text-gray-900">Generating brief...</h3>
+      </div>
+      <div class="flex flex-col gap-1.5" data-testid="planning-status-log">
+        @for (msg of statusMessages(); track $index) {
+          <div class="flex items-center gap-2 text-sm text-gray-600">
+            <i class="fa-light fa-check text-green-500" aria-hidden="true"></i>
+            {{ msg }}
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Event Details Card (appears mid-stream) -->
+    @if (eventDetails(); as details) {
+      <div class="rounded-lg border border-green-200 bg-green-50 p-5" data-testid="planning-event-card">
+        <h4 class="text-sm font-semibold text-gray-900">{{ details.name }}</h4>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-gray-600">
+          <span class="flex items-center gap-1">
+            <i class="fa-light fa-calendar" aria-hidden="true"></i>
+            {{ details.dates }}
+          </span>
+          <span class="flex items-center gap-1">
+            <i class="fa-light fa-location-dot" aria-hidden="true"></i>
+            {{ details.city }}
+          </span>
+          <span class="flex items-center gap-1">
+            <i class="fa-light fa-users" aria-hidden="true"></i>
+            {{ details.audience }}
+          </span>
+        </div>
+        @if (details.themes.length > 0) {
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            @for (theme of details.themes; track theme) {
+              <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">{{ theme }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Live Copy Stream -->
+    @if (copyBuffer()) {
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-live-copy">
+        <div class="mb-2 flex items-center gap-2">
+          <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500"></div>
+          <span class="text-xs font-medium text-gray-500">Live</span>
+        </div>
+        <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-gray-50 p-4 font-mono text-xs text-gray-800">{{ copyBuffer() }}</pre>
+      </div>
+    }
+
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="reset()"
+      ariaLabel="Cancel brief generation"
+      data-testid="planning-cancel-btn" />
+  </div>
+}
+
+<!-- Review Step -->
+@if (step() === 'review') {
+  <div class="flex flex-col gap-4" data-testid="planning-review-step">
+    <!-- Success Banner -->
+    <div class="rounded-lg border border-green-200 bg-green-50 p-4" data-testid="planning-success-banner">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-light fa-circle-check text-lg text-green-600" aria-hidden="true"></i>
+          <span class="text-sm font-semibold text-green-800">Brief generated successfully</span>
+        </div>
+        @if (!isEditing()) {
+          <button
+            type="button"
+            (click)="enterEditMode()"
+            class="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            data-testid="planning-edit-btn">
+            <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+            Edit Brief
+          </button>
+        }
+      </div>
+      @if (eventDetails(); as details) {
+        <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600">
+          <span class="font-medium text-gray-900">{{ details.name }}</span>
+          <span class="flex items-center gap-1">
+            <i class="fa-light fa-calendar" aria-hidden="true"></i>
+            {{ details.dates }}
+          </span>
+          <span class="flex items-center gap-1">
+            <i class="fa-light fa-location-dot" aria-hidden="true"></i>
+            {{ details.city }}
+          </span>
+        </div>
+      }
+    </div>
+
+    <!-- HubSpot UTM -->
+    @if (hsUtm()) {
+      <div class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3" data-testid="planning-hubspot-utm">
+        <i class="fa-light fa-link text-blue-600" aria-hidden="true"></i>
+        <span class="text-xs text-gray-700">HubSpot UTM:</span>
+        <code class="rounded bg-blue-100 px-2 py-0.5 font-mono text-xs text-blue-800">{{ hsUtm() }}</code>
+      </div>
+    }
+
+    <!-- Google Search Ad Copy -->
+    @if (isEditing()) {
+      <!-- EDIT MODE: Search Copy -->
+      @if (editSearchHeadlines().length > 0 || editSearchDescriptions().length > 0) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-search-copy-edit">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-google mr-1.5 text-gray-400" aria-hidden="true"></i>
+            Google Search — RSA Copy
+            <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-normal text-blue-700">Editing</span>
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
+                <button type="button" (click)="addEditItem(editSearchHeadlines)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  <i class="fa-light fa-plus" aria-hidden="true"></i> Add
+                </button>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                @for (h of editSearchHeadlines(); track $index) {
+                  <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                      <input
+                        type="text"
+                        [value]="h"
+                        (input)="editSearchHeadlines.set(updateEditItem(editSearchHeadlines(), $index, $any($event.target).value))"
+                        [class]="
+                          h.length > 30
+                            ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
+                            : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+                        " />
+                      <span
+                        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
+                        [class]="h.length > 30 ? 'text-red-500' : 'text-gray-400'">
+                        {{ h.length }}/30
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      (click)="removeEditItem(editSearchHeadlines, $index)"
+                      aria-label="Remove headline"
+                      class="shrink-0 text-gray-400 hover:text-red-500">
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-xs font-medium text-gray-500">Descriptions (max 90 chars each)</h4>
+                <button type="button" (click)="addEditItem(editSearchDescriptions)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  <i class="fa-light fa-plus" aria-hidden="true"></i> Add
+                </button>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                @for (d of editSearchDescriptions(); track $index) {
+                  <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                      <input
+                        type="text"
+                        [value]="d"
+                        (input)="editSearchDescriptions.set(updateEditItem(editSearchDescriptions(), $index, $any($event.target).value))"
+                        [class]="
+                          d.length > 90
+                            ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
+                            : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+                        " />
+                      <span
+                        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
+                        [class]="d.length > 90 ? 'text-red-500' : 'text-gray-400'">
+                        {{ d.length }}/90
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      (click)="removeEditItem(editSearchDescriptions, $index)"
+                      aria-label="Remove description"
+                      class="shrink-0 text-gray-400 hover:text-red-500">
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- EDIT MODE: Display / Demand Gen Copy -->
+      @if (editDisplayHeadlines().length > 0 || editDisplayDescriptions().length > 0) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-display-copy-edit">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-google mr-1.5 text-gray-400" aria-hidden="true"></i>
+            Google Demand Gen Copy
+            <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-normal text-blue-700">Editing</span>
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+                <button type="button" (click)="addEditItem(editDisplayHeadlines)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  <i class="fa-light fa-plus" aria-hidden="true"></i> Add
+                </button>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                @for (h of editDisplayHeadlines(); track $index) {
+                  <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                      <input
+                        type="text"
+                        [value]="h"
+                        (input)="editDisplayHeadlines.set(updateEditItem(editDisplayHeadlines(), $index, $any($event.target).value))"
+                        [class]="
+                          h.length > 40
+                            ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
+                            : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+                        " />
+                      <span
+                        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
+                        [class]="h.length > 40 ? 'text-red-500' : 'text-gray-400'">
+                        {{ h.length }}/40
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      (click)="removeEditItem(editDisplayHeadlines, $index)"
+                      aria-label="Remove headline"
+                      class="shrink-0 text-gray-400 hover:text-red-500">
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-xs font-medium text-gray-500">Descriptions (max 90 chars each)</h4>
+                <button type="button" (click)="addEditItem(editDisplayDescriptions)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  <i class="fa-light fa-plus" aria-hidden="true"></i> Add
+                </button>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                @for (d of editDisplayDescriptions(); track $index) {
+                  <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                      <input
+                        type="text"
+                        [value]="d"
+                        (input)="editDisplayDescriptions.set(updateEditItem(editDisplayDescriptions(), $index, $any($event.target).value))"
+                        [class]="
+                          d.length > 90
+                            ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
+                            : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+                        " />
+                      <span
+                        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
+                        [class]="d.length > 90 ? 'text-red-500' : 'text-gray-400'">
+                        {{ d.length }}/90
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      (click)="removeEditItem(editDisplayDescriptions, $index)"
+                      aria-label="Remove description"
+                      class="shrink-0 text-gray-400 hover:text-red-500">
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <h4 class="text-xs font-medium text-gray-500">Call to Action</h4>
+                <input
+                  type="text"
+                  [value]="editDisplayCta()"
+                  (input)="editDisplayCta.set($any($event.target).value)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <h4 class="text-xs font-medium text-gray-500">Business Name</h4>
+                <input
+                  type="text"
+                  [value]="editDisplayBusinessName()"
+                  (input)="editDisplayBusinessName.set($any($event.target).value)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- EDIT MODE: Keywords -->
+      @if (editKeywords().length > 0) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-keywords-edit">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">
+              <i class="fa-light fa-key mr-1.5 text-gray-400" aria-hidden="true"></i>
+              Suggested Keywords
+              <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-normal text-blue-700">Editing</span>
+            </h3>
+            <button type="button" (click)="addKeyword()" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+              <i class="fa-light fa-plus" aria-hidden="true"></i> Add Keyword
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 text-xs font-medium text-gray-500">
+                  <th class="pb-2 pr-3">Keyword</th>
+                  <th class="pb-2 pr-3">Match Type</th>
+                  <th class="pb-2 pr-3">Intent</th>
+                  <th class="pb-2 pr-3">Notes</th>
+                  <th class="w-8 pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of editKeywords(); track $index) {
+                  <tr class="border-b border-gray-100">
+                    <td class="py-1.5 pr-3">
+                      <input
+                        type="text"
+                        [value]="kw.term"
+                        (input)="updateKeywordField($index, 'term', $any($event.target).value)"
+                        class="w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs text-gray-800 focus:border-blue-500 focus:outline-none" />
+                    </td>
+                    <td class="py-1.5 pr-3">
+                      <select
+                        [value]="kw.matchType"
+                        (change)="updateKeywordField($index, 'matchType', $any($event.target).value)"
+                        class="rounded border border-gray-300 px-2 py-1 text-xs text-gray-800 focus:border-blue-500 focus:outline-none">
+                        <option value="Exact">Exact</option>
+                        <option value="Phrase">Phrase</option>
+                        <option value="Broad">Broad</option>
+                      </select>
+                    </td>
+                    <td class="py-1.5 pr-3">
+                      <select
+                        [value]="kw.intentLevel"
+                        (change)="updateKeywordField($index, 'intentLevel', $any($event.target).value)"
+                        class="rounded border border-gray-300 px-2 py-1 text-xs text-gray-800 focus:border-blue-500 focus:outline-none">
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                      </select>
+                    </td>
+                    <td class="py-1.5 pr-3">
+                      <input
+                        type="text"
+                        [value]="kw.notes"
+                        (input)="updateKeywordField($index, 'notes', $any($event.target).value)"
+                        class="w-full rounded border border-gray-300 px-2 py-1 text-xs text-gray-500 focus:border-blue-500 focus:outline-none" />
+                    </td>
+                    <td class="py-1.5">
+                      <button type="button" (click)="removeKeyword($index)" aria-label="Remove keyword" class="text-gray-400 hover:text-red-500">
+                        <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+
+      <!-- Edit Mode Actions -->
+      <div class="flex items-center gap-3">
+        <lfx-button
+          label="Save & Proceed to Implementation"
+          icon="fa-light fa-arrow-right"
+          severity="primary"
+          (onClick)="onProceedToImplementation()"
+          ariaLabel="Save edits and proceed to implementation"
+          data-testid="planning-save-proceed-btn" />
+        <lfx-button
+          label="Save Edits"
+          icon="fa-light fa-floppy-disk"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="saveEdits()"
+          ariaLabel="Save edits"
+          data-testid="planning-save-btn" />
+        <lfx-button
+          label="Cancel"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="cancelEdit()"
+          ariaLabel="Cancel editing"
+          data-testid="planning-cancel-edit-btn" />
+      </div>
+    } @else {
+      <!-- READ-ONLY MODE: Search Copy -->
+      @if (getSearchCopy(); as search) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-search-copy">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-google mr-1.5 text-gray-400" aria-hidden="true"></i>
+            Google Search — RSA Copy
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <div>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
+              <div class="flex flex-wrap gap-1.5">
+                @for (h of asStringArray(search['headlines']); track $index) {
+                  <span
+                    class="rounded-md border px-2.5 py-1 text-xs"
+                    [class]="h.length > 30 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    {{ h }}
+                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/30</span>
+                  </span>
+                }
+              </div>
+            </div>
+
+            <div>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Descriptions (max 90 chars each)</h4>
+              <div class="flex flex-col gap-1.5">
+                @for (d of asStringArray(search['descriptions']); track $index) {
+                  <div
+                    class="flex items-start justify-between rounded-md border px-3 py-2 text-xs"
+                    [class]="d.length > 90 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    <span>{{ d }}</span>
+                    <span class="ml-2 shrink-0 font-mono text-gray-400">{{ d.length }}/90</span>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- READ-ONLY MODE: Display / Demand Gen Copy -->
+      @if (getDisplayCopy(); as display) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-display-copy">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-google mr-1.5 text-gray-400" aria-hidden="true"></i>
+            Google Demand Gen Copy
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <div>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+              <div class="flex flex-wrap gap-1.5">
+                @for (h of asStringArray(display['headlines']); track $index) {
+                  <span
+                    class="rounded-md border px-2.5 py-1 text-xs"
+                    [class]="h.length > 40 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    {{ h }}
+                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/40</span>
+                  </span>
+                }
+              </div>
+            </div>
+
+            <div>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Descriptions (max 90 chars each)</h4>
+              <div class="flex flex-col gap-1.5">
+                @for (d of asStringArray(display['descriptions']); track $index) {
+                  <div
+                    class="flex items-start justify-between rounded-md border px-3 py-2 text-xs"
+                    [class]="d.length > 90 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    <span>{{ d }}</span>
+                    <span class="ml-2 shrink-0 font-mono text-gray-400">{{ d.length }}/90</span>
+                  </div>
+                }
+              </div>
+            </div>
+
+            @if (display['call_to_action']) {
+              <div>
+                <h4 class="mb-1 text-xs font-medium text-gray-500">Call to Action</h4>
+                <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">{{ display['call_to_action'] }}</span>
+              </div>
+            }
+
+            @if (display['business_name']) {
+              <div>
+                <h4 class="mb-1 text-xs font-medium text-gray-500">Business Name</h4>
+                <span class="text-sm text-gray-800">{{ display['business_name'] }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Raw Copy (fallback if structured sections not available) -->
+      @if (!getSearchCopy() && !getDisplayCopy() && copyBuffer()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-ad-copy">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">Generated Ad Copy</h3>
+            <lfx-button
+              label="Copy"
+              icon="fa-light fa-clipboard"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="copyToClipboard()"
+              ariaLabel="Copy ad copy to clipboard"
+              data-testid="planning-copy-ad-copy-btn" />
+          </div>
+          <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-gray-50 p-4 font-mono text-xs text-gray-800">{{ copyBuffer() }}</pre>
+        </div>
+      }
+
+      <!-- READ-ONLY MODE: Keywords Table -->
+      @if (keywords().length > 0) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-keywords">
+          <h3 class="mb-3 text-sm font-semibold text-gray-900">
+            <i class="fa-light fa-key mr-1.5 text-gray-400" aria-hidden="true"></i>
+            Suggested Keywords
+          </h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 text-xs font-medium text-gray-500">
+                  <th class="pb-2 pr-4">Keyword</th>
+                  <th class="pb-2 pr-4">Match Type</th>
+                  <th class="pb-2 pr-4">Intent</th>
+                  <th class="pb-2">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of keywords(); track $index) {
+                  <tr class="border-b border-gray-100">
+                    <td class="py-2 pr-4 font-mono text-xs text-gray-800">{{ kw.term }}</td>
+                    <td class="py-2 pr-4 text-xs text-gray-600">{{ kw.matchType }}</td>
+                    <td class="py-2 pr-4">
+                      <span [class]="'rounded-full px-2 py-0.5 text-xs font-medium ' + intentClass(kw.intentLevel)">{{ kw.intentLevel }}</span>
+                    </td>
+                    <td class="py-2 text-xs text-gray-500">{{ kw.notes }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+
+      <!-- Read-Only Actions -->
+      <div class="flex items-center gap-3">
+        <lfx-button
+          label="Proceed to Implementation"
+          icon="fa-light fa-arrow-right"
+          severity="primary"
+          (onClick)="onProceedToImplementation()"
+          ariaLabel="Proceed to implementation with this brief"
+          data-testid="planning-proceed-btn" />
+        <lfx-button
+          label="Edit Brief"
+          icon="fa-light fa-pen-to-square"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="enterEditMode()"
+          ariaLabel="Edit the generated brief"
+          data-testid="planning-edit-brief-btn" />
+        <lfx-button
+          label="Copy All"
+          icon="fa-light fa-clipboard"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="copyToClipboard()"
+          ariaLabel="Copy all ad copy to clipboard"
+          data-testid="planning-copy-all-btn" />
+        <lfx-button
+          label="New Brief"
+          icon="fa-light fa-rotate"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="reset()"
+          ariaLabel="Start a new brief"
+          data-testid="planning-new-brief-btn" />
+      </div>
+    }
+  </div>
+}

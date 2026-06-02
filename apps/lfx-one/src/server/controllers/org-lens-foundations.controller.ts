@@ -6,16 +6,13 @@ import { NextFunction, Request, Response } from 'express';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensFoundationsService } from '../services/org-lens-foundations.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 /** HTTP boundary for the OrgLensFoundationsService — validation, lifecycle logging, error propagation. */
 export class OrgLensFoundationsController {
   private readonly service: OrgLensFoundationsService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensFoundationsService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   /** GET /api/orgs/:orgUid/lens/foundations-and-projects */
@@ -28,8 +25,8 @@ export class OrgLensFoundationsController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_foundations_and_projects');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getFoundationsAndProjects(sfid);
+      // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
+      const response = await this.service.getFoundationsAndProjects(orgUid);
 
       const projectCountTotal = response.rows.reduce((sum, row) => sum + row.projects.length, 0);
 

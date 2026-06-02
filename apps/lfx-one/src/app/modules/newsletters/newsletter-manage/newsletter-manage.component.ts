@@ -105,7 +105,12 @@ export class NewsletterManageComponent {
 
   // === Project context ===
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
-  public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
+  // In edit mode the route carries the owning newsletter's project_uid; prefer
+  // that over ambient context so an edit URL keeps working after a foundation/
+  // project context switch. Create mode has no projectUid segment, so we fall
+  // back to the active context.
+  private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), { initialValue: null });
+  public readonly projectUid: Signal<string> = computed(() => this.routeProjectUid() || this.projectContextService.activeContextUid());
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
@@ -241,6 +246,7 @@ export class NewsletterManageComponent {
     const count = this.recipientCount();
     const recipientLabel = count !== null && count > 0 ? `${count} ${count === 1 ? 'recipient' : 'recipients'}` : 'the selected groups';
     this.confirmationService.confirm({
+      key: 'newsletter-manage',
       header: 'Send newsletter?',
       message: `This will send your newsletter to ${recipientLabel}. Once sent, it can't be undone.`,
       icon: 'pi pi-paper-plane',

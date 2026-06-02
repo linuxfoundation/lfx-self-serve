@@ -49,6 +49,13 @@ export const routes: Routes = [
         canActivate: [executiveDirectorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
+      // Foundation Lens — Campaigns page (ED-only)
+      {
+        path: 'foundation/campaigns',
+        data: { lens: 'foundation' },
+        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
@@ -144,7 +151,7 @@ export const routes: Routes = [
               description: 'Training enrollments and certifications across your organization.',
               icon: 'fa-light fa-graduation-cap',
             },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
           },
           {
             path: 'meetings',

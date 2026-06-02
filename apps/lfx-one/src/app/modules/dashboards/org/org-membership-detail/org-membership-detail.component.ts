@@ -185,8 +185,8 @@ export class OrgMembershipDetailComponent {
         contact,
         foundationName: this.foundation()?.foundationName ?? '',
         editingPersonId,
-        // Spec 024 (uuid-only): the modal uses this to load the org-wide employee list via the lens
-        // endpoint, which is keyed by the org uuid.
+        // Spec 002: the modal uses this to load the org-wide employee list via the lens
+        // endpoint, which is keyed by the org account id (SFID).
         orgUid: this.accountContext.selectedAccount().uid ?? '',
         // Spec 024: the modal stays open and calls this during the pessimistic write. The parent owns
         // the write + table reconcile + toasts so the table is already updated when the modal closes.

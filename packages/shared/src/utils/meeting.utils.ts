@@ -105,7 +105,23 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     }
 
     case 'monthly': {
-      const monthText = interval === 1 ? 'Monthly' : `Every ${interval} months`;
+      // Quarterly is represented upstream as MONTHLY (type=3) with repeat_interval=3
+      // (the meeting-service has no distinct QUARTERLY type), so surface that cadence
+      // by name rather than the literal "Every 3 months".
+      //
+      // NOTE (LFXV2-2057): the cadence label is derived from this recurrence RULE.
+      // A meeting switched to quarterly in PCC only renders as "Quarterly" once the
+      // PCC→V2 sync updates repeat_interval to 3. If a quarterly meeting still shows
+      // "Monthly", the rule is stale upstream (repeat_interval=1 with only the
+      // occurrences spaced quarterly) — that is an upstream sync fix, not a UI one.
+      let monthText: string;
+      if (interval === 1) {
+        monthText = 'Monthly';
+      } else if (interval === 3) {
+        monthText = 'Quarterly';
+      } else {
+        monthText = `Every ${interval} months`;
+      }
       if (pattern.monthlyType === 'dayOfMonth' && pattern.monthly_day) {
         description = `${monthText} on day ${pattern.monthly_day}`;
       } else if (pattern.monthlyType === 'dayOfWeek' && pattern.monthly_week && pattern.monthly_week_day) {
@@ -156,12 +172,38 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
 }
 
 /**
- * Filter out cancelled occurrences from a list
+ * Filter out cancelled occurrences from a list.
+ *
+ * Cancellation is signalled two different ways depending on the endpoint (LFXV2-2057):
+ * the single-meeting endpoint sets `occurrence.status === 'cancel'`, while the meetings
+ * LIST endpoint leaves `status` unset and instead lists the cancelled occurrence IDs in
+ * `Meeting.cancelled_occurrences`. Pass that array so a cancelled occurrence is dropped
+ * consistently regardless of which endpoint produced the data — otherwise the card (list)
+ * and detail (single) views select different "next" occurrences for the same meeting.
+ *
+ * Both arrays key off the canonical `occurrence_id` (the occurrence start as a Unix-second
+ * timestamp — a 10-digit value per the upstream meeting-service contract), so we compare IDs
+ * directly rather than re-deriving seconds from `start_time`; that also sidesteps the list
+ * endpoint returning `start_time` with a timezone offset vs the detail endpoint's UTC form.
+ * Note this is distinct from the 13-digit Unix-*millisecond* timestamps the UI constructs via
+ * `new Date(start_time).getTime()` elsewhere (past-meeting URLs, `meeting_and_occurrence_id`) —
+ * those are never compared against `occurrence_id` / `cancelled_occurrences`.
+ *
  * @param occurrences Array of meeting occurrences
+ * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
-export function getActiveOccurrences(occurrences: MeetingOccurrence[]): MeetingOccurrence[] {
-  return occurrences.filter((occurrence) => occurrence.status !== 'cancel');
+export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
+  const cancelledIds = new Set(cancelledOccurrences ?? []);
+  return occurrences.filter((occurrence) => {
+    if (occurrence.status === 'cancel') {
+      return false;
+    }
+    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
@@ -177,8 +219,9 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const now = new Date();
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
-  // Filter out cancelled occurrences
-  const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+  // Filter out cancelled occurrences (honouring both the per-occurrence status and the
+  // list endpoint's cancelled_occurrences IDs — see getActiveOccurrences).
+  const activeOccurrences = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
 
   if (activeOccurrences.length === 0) {
     return null;
@@ -203,6 +246,35 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Resolves the start time a card/list should display for an upcoming meeting — the next
+ * scheduled occurrence, not the recurring series origin.
+ *
+ * Order of preference:
+ * 1. `occurrence.start_time` — an already-resolved occurrence (an explicit selection, or the
+ *    current/next occurrence from {@link getCurrentOrNextOccurrence} when the `occurrences`
+ *    array is present and usable, e.g. on the ITX-backed detail view).
+ * 2. `meeting.next_occurrence_start_time` — the upstream-computed next-occurrence start. Present
+ *    on both the query-service list payload and the ITX detail payload; empty when no future
+ *    occurrence exists. This is what keeps a recurring card from falling back to the series
+ *    origin when the list payload's `occurrences` array isn't usable (it carries `is_cancelled`
+ *    rather than `status`, and isn't guaranteed to be projected on every list response).
+ * 3. `meeting.start_time` — one-time meetings and the final fallback.
+ *
+ * @param meeting The meeting object
+ * @param occurrence Optional already-resolved occurrence (explicit or current/next)
+ * @returns The start time to display, or null when none is available
+ */
+export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: MeetingOccurrence | null): string | null {
+  if (occurrence?.start_time) {
+    return occurrence.start_time;
+  }
+  if (meeting?.next_occurrence_start_time) {
+    return meeting.next_occurrence_start_time;
+  }
+  return meeting?.start_time ?? null;
 }
 
 /**

@@ -9,16 +9,13 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensMembershipsService } from '../services/org-lens-memberships.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 /** HTTP boundary for the Org Lens Memberships endpoints — validation, lifecycle logging, error propagation. */
 export class OrgLensMembershipsController {
   private readonly service: OrgLensMembershipsService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensMembershipsService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   /** GET /api/orgs/:orgUid/lens/memberships/active */
@@ -35,8 +32,7 @@ export class OrgLensMembershipsController {
       const tier = getStringQueryParam(req, 'tier');
       const renewal = getStringQueryParam(req, 'renewal');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getActiveMemberships(sfid, search, tier, renewal);
+      const response = await this.service.getActiveMemberships(orgUid, search, tier, renewal);
 
       logger.success(req, 'get_org_lens_memberships_active', startTime, {
         org_uid: orgUid,
@@ -62,8 +58,7 @@ export class OrgLensMembershipsController {
 
       const search = getStringQueryParam(req, 'search');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getExpiredMemberships(sfid, search);
+      const response = await this.service.getExpiredMemberships(orgUid, search);
 
       logger.success(req, 'get_org_lens_memberships_expired', startTime, {
         org_uid: orgUid,
@@ -90,8 +85,8 @@ export class OrgLensMembershipsController {
       assertOrgUid(orgUid, 'get_org_membership_detail');
       this.assertFoundationSlug(foundationSlug, 'get_org_membership_detail');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getMembershipDetail(req, orgUid, sfid, foundationSlug);
+      // Spec 002: orgUid is the SFID; the service's uid (query-service tag) and sfid (Snowflake) args are now the same value.
+      const response = await this.service.getMembershipDetail(req, orgUid, orgUid, foundationSlug);
 
       logger.success(req, 'get_org_membership_detail', startTime, {
         org_uid: orgUid,
@@ -117,8 +112,7 @@ export class OrgLensMembershipsController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_memberships_discover');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getDiscoverOpportunities(sfid);
+      const response = await this.service.getDiscoverOpportunities(orgUid);
 
       logger.success(req, 'get_org_lens_memberships_discover', startTime, {
         org_uid: orgUid,

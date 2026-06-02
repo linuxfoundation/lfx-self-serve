@@ -22,6 +22,7 @@ import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middlew
 import analyticsRouter from './routes/analytics.route';
 import inviteRouter from './routes/invite.route';
 import badgesRouter from './routes/badges.route';
+import campaignsRouter from './routes/campaigns.route';
 import changelogRouter from './routes/changelog.route';
 import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
@@ -231,6 +232,7 @@ app.use('/api/copilot', copilotRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/badges', badgesRouter);
+app.use('/api/campaigns', campaignsRouter);
 app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);

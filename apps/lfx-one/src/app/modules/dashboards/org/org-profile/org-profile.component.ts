@@ -87,7 +87,7 @@ export class OrgProfileComponent {
   }
 
   private initLoadPipeline(): void {
-    // Spec 024 (uuid-only): the org profile loads strictly by uuid.
+    // Spec 002: the org profile loads strictly by the org account id (SFID).
     const selectedOrgUid$ = toObservable(
       computed(() => this.accountContext.selectedAccount()?.uid ?? null),
       { injector: this.injector }

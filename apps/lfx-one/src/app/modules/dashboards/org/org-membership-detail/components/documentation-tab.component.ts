@@ -29,7 +29,7 @@ export class DocumentationTabComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // 2. Public fields from inputs
-  /** Spec 024 (uuid-only): the selected org's b2b_org uuid; forwarded to the uuid-keyed documents BFF route. */
+  /** Spec 002: the selected org's account id (SFID); forwarded to the account-id-keyed documents BFF route. */
   public readonly orgUid = input.required<string>();
   public readonly foundationId = input.required<string>();
 

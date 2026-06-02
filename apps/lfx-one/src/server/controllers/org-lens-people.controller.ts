@@ -9,18 +9,15 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
   private readonly keyContactsService: OrgPeopleKeyContactsService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -33,8 +30,7 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_all');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getAllEmployees(sfid);
+      const response = await this.service.getAllEmployees(orgUid);
 
       logger.success(req, 'get_org_lens_people_all', startTime, {
         org_uid: orgUid,
@@ -63,8 +59,7 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getEmployeeDetail(sfid, personKey);
+      const response = await this.service.getEmployeeDetail(orgUid, personKey);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
