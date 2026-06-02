@@ -190,15 +190,45 @@ export class OrgLensAccessService {
     }
   }
 
-  /** Throws a 403 when the caller is not a direct writer of the org (no write is issued). */
+  /**
+   * Write gate: throws 403 when the caller is verified NOT to be a direct writer, but a retriable
+   * 503 when the role-grants lookup itself fails — so a transient outage doesn't masquerade as
+   * "no permission". (The lenient `resolveCanManage` is for the read/list UX gate only.)
+   */
   private async assertCanManage(req: Request, orgUid: string, operation: string): Promise<void> {
-    const canManage = await this.resolveCanManage(req, orgUid);
-    if (!canManage) {
-      throw new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
+    const forbidden = (): MicroserviceError =>
+      new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
         operation,
         service: 'LFX_V2_MEMBER_SERVICE',
         path: `/b2b_orgs/${orgUid}/settings/users`,
       });
+
+    const username = getEffectiveSub(req);
+    if (!username) {
+      throw forbidden();
+    }
+
+    let isWriter: boolean;
+    try {
+      const grants = await this.roleGrants.getRoleGrants(req, username);
+      isWriter = grants.writers.includes(orgUid);
+    } catch (error) {
+      // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
+      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {
+        org_uid: orgUid,
+        operation,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      throw new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
+        operation,
+        service: 'LFX_V2_SERVICE',
+        path: `/b2b_orgs/${orgUid}/settings/users`,
+        originalError: error instanceof Error ? error : undefined,
+      });
+    }
+
+    if (!isWriter) {
+      throw forbidden();
     }
   }
 
