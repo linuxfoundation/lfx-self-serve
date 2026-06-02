@@ -153,7 +153,7 @@ export class CampaignController {
   }
 
   public async lookupHubSpotUtm(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const eventName = req.query['event_name'] as string;
+    const eventName = typeof req.query['event_name'] === 'string' ? req.query['event_name'] : '';
     if (!eventName) {
       next(ServiceValidationError.forField('event_name', 'event_name is required', { operation: 'hubspot_utm_lookup', service: 'campaign_controller' }));
       return;
@@ -171,7 +171,7 @@ export class CampaignController {
   }
 
   public async createHubSpotUtm(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const eventName = req.query['event_name'] as string;
+    const eventName = typeof req.query['event_name'] === 'string' ? req.query['event_name'] : '';
     if (!eventName) {
       next(ServiceValidationError.forField('event_name', 'event_name is required', { operation: 'hubspot_utm_create', service: 'campaign_controller' }));
       return;
