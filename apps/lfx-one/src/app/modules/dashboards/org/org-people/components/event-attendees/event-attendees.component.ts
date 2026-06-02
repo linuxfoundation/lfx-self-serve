@@ -31,6 +31,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { formatLongDateUtc } from '@shared/utils/date-format.util';
+import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
@@ -259,12 +261,12 @@ export class EventAttendeesComponent {
         name: attendee.name,
         title: attendee.title,
         email: attendee.email,
-        initials: EventAttendeesComponent.computeInitials(attendee.name),
-        avatarColorClass: EventAttendeesComponent.computeAvatarColorClass(attendee.personKey),
+        initials: computePersonInitials(attendee.name),
+        avatarColorClass: computePersonAvatarColorClass(attendee.personKey),
         role: anySpeaker ? 'Speaker' : 'Attendee',
         eventsCount: eventIds.size,
         lastAttendedTs,
-        lastAttendedLabel: lastAttendedTs ? formatLongDate(lastAttendedTs) : '—',
+        lastAttendedLabel: lastAttendedTs ? formatLongDateUtc(lastAttendedTs) : '—',
         mostRecentEventName: recent?.eventName ?? null,
         mostRecentFoundationName: recent?.foundationName ?? null,
       });
@@ -389,25 +391,6 @@ export class EventAttendeesComponent {
     this.expansion.set({});
   }
 
-  private static computeInitials(name: string): string {
-    return (
-      name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? '')
-        .join('') || '?'
-    );
-  }
-
-  private static computeAvatarColorClass(personKey: string): string {
-    const palette = ['bg-violet-600', 'bg-cyan-600', 'bg-amber-500', 'bg-blue-700', 'bg-emerald-600', 'bg-red-600', 'bg-indigo-500', 'bg-slate-900', 'bg-pink-700'];
-    let hash = 0;
-    for (let i = 0; i < personKey.length; i++) {
-      hash = ((hash << 5) - hash + personKey.charCodeAt(i)) | 0;
-    }
-    return palette[Math.abs(hash) % palette.length];
-  }
 }
 
 /**
@@ -450,7 +433,7 @@ function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttend
     locationLabel: resolveLocationLabel(r),
     role: r.isSpeaker ? 'Speaker' : 'Attendee',
     startTs: r.eventStartDate,
-    startLabel: r.eventStartDate ? formatLongDate(r.eventStartDate) : '—',
+    startLabel: r.eventStartDate ? formatLongDateUtc(r.eventStartDate) : '—',
     sortTs: r.eventEndDate,
   }));
 
@@ -479,17 +462,6 @@ function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
   if (city) return city;
   if (country) return country;
   return row.foundationName ?? null;
-}
-
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** Format an ISO date (YYYY-MM-DD or full ISO timestamp) as `MMM dd, yyyy` in UTC — matches R4.2 / R5.2 lock. */
-function formatLongDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const month = SHORT_MONTHS[d.getUTCMonth()];
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${month} ${day}, ${d.getUTCFullYear()}`;
 }
 
 /**

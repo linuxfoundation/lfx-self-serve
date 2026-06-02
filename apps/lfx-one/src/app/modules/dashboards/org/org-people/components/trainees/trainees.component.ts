@@ -12,6 +12,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { formatMonthYearUtc } from '@shared/utils/date-format.util';
+import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_DEFAULT_TIME_WINDOW,
@@ -257,8 +259,8 @@ export class TraineesComponent {
         name: trainee.name,
         title: trainee.title,
         email: trainee.email,
-        initials: TraineesComponent.computeInitials(trainee.name),
-        avatarColorClass: TraineesComponent.computeAvatarColorClass(trainee.personKey),
+        initials: computePersonInitials(trainee.name),
+        avatarColorClass: computePersonAvatarColorClass(trainee.personKey),
         status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
         coursesCount: courseIds.size,
         certsCount: certCourseIds.size,
@@ -392,25 +394,6 @@ export class TraineesComponent {
     this.expansion.set({});
   }
 
-  private static computeInitials(name: string): string {
-    return (
-      name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? '')
-        .join('') || '?'
-    );
-  }
-
-  private static computeAvatarColorClass(personKey: string): string {
-    const palette = ['bg-violet-600', 'bg-cyan-600', 'bg-amber-500', 'bg-blue-700', 'bg-emerald-600', 'bg-red-600', 'bg-indigo-500', 'bg-slate-900', 'bg-pink-700'];
-    let hash = 0;
-    for (let i = 0; i < personKey.length; i++) {
-      hash = ((hash << 5) - hash + personKey.charCodeAt(i)) | 0;
-    }
-    return palette[Math.abs(hash) % palette.length];
-  }
 }
 
 /**
@@ -470,8 +453,8 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
       type: isCertified ? 'Certification' : 'Course',
       enrolledTs,
       completedTs: certifiedTs,
-      enrolledLabel: enrolledTs ? formatMonthYear(enrolledTs) : '—',
-      completedLabel: certifiedTs ? formatMonthYear(certifiedTs) : '—',
+      enrolledLabel: enrolledTs ? formatMonthYearUtc(enrolledTs) : '—',
+      completedLabel: certifiedTs ? formatMonthYearUtc(certifiedTs) : '—',
       sortTs,
     });
   }
@@ -490,14 +473,6 @@ function minActivityTs(rows: OrgTraineeDetailRow[]): string | null {
     if (rows[i].activityTs < min) min = rows[i].activityTs;
   }
   return min || null;
-}
-
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function formatMonthYear(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return `${SHORT_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 /**
