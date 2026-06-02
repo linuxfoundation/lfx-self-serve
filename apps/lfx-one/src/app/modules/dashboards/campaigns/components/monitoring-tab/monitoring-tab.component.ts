@@ -8,14 +8,13 @@ import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
-import type { CampaignMetrics, CampaignMonitorResponse, KeywordMetrics, KeywordMetricsResponse, SearchTermMetrics } from '@lfx-one/shared/interfaces';
+import type { CampaignMetrics, CampaignMonitorResponse, KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
 
 const KEYWORD_PAGE_SIZE = 10;
-const SEARCH_TERM_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
@@ -29,12 +28,10 @@ export class MonitoringTabComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
-  private searchTermsSub: Subscription | null = null;
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
   protected readonly keywordPageSize = KEYWORD_PAGE_SIZE;
-  protected readonly searchTermPageSize = SEARCH_TERM_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
 
   protected readonly selectedDays = signal<DateRangeOption>(30);
@@ -46,11 +43,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
   protected readonly keywordsError = signal<string | null>(null);
   protected readonly keywordPage = signal(1);
-
-  protected readonly searchTermsLoading = signal(false);
-  protected readonly searchTerms = signal<SearchTermMetrics[]>([]);
-  protected readonly searchTermsError = signal<string | null>(null);
-  protected readonly searchTermPage = signal(1);
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly accountTotals = computed(() => this.monitorData()?.accountTotals ?? null);
@@ -76,19 +68,7 @@ export class MonitoringTabComponent implements OnInit {
     return all.slice(start, start + KEYWORD_PAGE_SIZE);
   });
 
-  protected readonly hasSearchTerms = computed(() => this.searchTerms().length > 0);
-  protected readonly searchTermTotalPages = computed(() => Math.max(1, Math.ceil(this.searchTerms().length / SEARCH_TERM_PAGE_SIZE)));
-  protected readonly hasSearchTermPrevPage = computed(() => this.searchTermPage() > 1);
-  protected readonly hasSearchTermNextPage = computed(() => this.searchTermPage() < this.searchTermTotalPages());
-
-  protected readonly visibleSearchTerms = computed<SearchTermMetrics[]>(() => {
-    const all = this.searchTerms();
-    const start = (this.searchTermPage() - 1) * SEARCH_TERM_PAGE_SIZE;
-    return all.slice(start, start + SEARCH_TERM_PAGE_SIZE);
-  });
-
   protected readonly keywordPageNumbers = computed(() => Array.from({ length: this.keywordTotalPages() }, (_, i) => i + 1));
-  protected readonly searchTermPageNumbers = computed(() => Array.from({ length: this.searchTermTotalPages() }, (_, i) => i + 1));
 
   public ngOnInit(): void {
     this.fetchData();
@@ -106,7 +86,6 @@ export class MonitoringTabComponent implements OnInit {
   protected fetchData(): void {
     this.monitorSub?.unsubscribe();
     this.keywordsSub?.unsubscribe();
-    this.searchTermsSub?.unsubscribe();
 
     this.loading.set(true);
     this.error.set(null);
@@ -143,32 +122,10 @@ export class MonitoringTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
       });
-
-    this.searchTermsLoading.set(true);
-    this.searchTermsError.set(null);
-    this.searchTermPage.set(1);
-    this.searchTermsSub = this.campaignService
-      .getOptimizationInsights(days)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (result) => {
-          this.searchTerms.set(result.searchTerms);
-          this.searchTermsLoading.set(false);
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.searchTermsError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load search terms');
-          this.searchTermsLoading.set(false);
-        },
-      });
   }
 
   protected goToKeywordPage(page: number): void {
     this.keywordPage.set(Math.max(1, Math.min(page, this.keywordTotalPages())));
-  }
-
-  protected goToSearchTermPage(page: number): void {
-    this.searchTermPage.set(Math.max(1, Math.min(page, this.searchTermTotalPages())));
   }
 
   protected copyName(name: string): void {
@@ -208,7 +165,7 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatDate(dateStr: string): string {
     if (!dateStr) return '–';
-    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00` : dateStr;
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00Z` : dateStr;
     const date = new Date(normalized);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }

@@ -15,7 +15,6 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
-  OptimizationInsightsResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -66,10 +65,6 @@ export class CampaignService {
 
   public getAudience(days: number = 30): Observable<AudienceDemographics> {
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
-  }
-
-  public getOptimizationInsights(days: number = 30): Observable<OptimizationInsightsResponse> {
-    return this.http.get<OptimizationInsightsResponse>('/api/campaigns/optimization', { params: { days } });
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
