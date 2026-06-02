@@ -8,6 +8,7 @@ import {
   CustomRecurrencePattern,
   Meeting,
   MeetingOccurrence,
+  PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
   RecurrenceSummary,
@@ -342,6 +343,22 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   const startTime = new Date(meeting.start_time);
   const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
   return now > endTime;
+}
+
+/**
+ * Sorts past meetings most-recent-first (descending by `scheduled_start_time`, falling back to
+ * `start_time` when absent).
+ *
+ * The upstream query-service only supports name/updated sorts — there is no `start_time` sort — so
+ * past-meeting date ordering must be applied client-side (see LFXV2-2053). Returns a new array; the
+ * input is not mutated.
+ */
+export function sortPastMeetingsDescending<T extends PastMeeting>(meetings: T[]): T[] {
+  return [...meetings].sort((a, b) => {
+    const timeA = new Date(a.scheduled_start_time ?? a.start_time).getTime();
+    const timeB = new Date(b.scheduled_start_time ?? b.start_time).getTime();
+    return timeB - timeA;
+  });
 }
 
 /**
