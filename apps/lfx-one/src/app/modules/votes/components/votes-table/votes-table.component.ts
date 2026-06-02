@@ -59,12 +59,6 @@ export class VotesTableComponent {
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
-  protected readonly statusTabOptions: FilterPillOption[] = [
-    { id: 'all', label: 'All' },
-    { id: PollStatus.ACTIVE, label: 'Active' },
-    { id: PollStatus.DISABLED, label: 'Draft' },
-    { id: PollStatus.ENDED, label: 'Ended' },
-  ];
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
@@ -79,6 +73,8 @@ export class VotesTableComponent {
   public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
+  // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
+  public readonly showDraftTab = input<boolean>(true);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -103,6 +99,7 @@ export class VotesTableComponent {
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<Vote[]> = this.initDisplayedVotes();
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return false;
@@ -196,6 +193,20 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initStatusTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const base: FilterPillOption[] = [
+        { id: 'all', label: 'All' },
+        { id: PollStatus.ACTIVE, label: 'Active' },
+      ];
+      if (this.showDraftTab()) {
+        base.push({ id: PollStatus.DISABLED, label: 'Draft' });
+      }
+      base.push({ id: PollStatus.ENDED, label: 'Ended' });
+      return base;
+    });
+  }
+
   private initFormSubscriptions(): void {
     combineLatest([
       this.searchForm.valueChanges.pipe(
