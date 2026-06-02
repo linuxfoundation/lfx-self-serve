@@ -709,7 +709,7 @@ export class CampaignProxyService {
     const errors: string[] = [];
 
     for (const campaignType of effectiveBody.campaignTypes) {
-      const startTime = Date.now();
+      const typeStartTime = Date.now();
       try {
         const result = campaignType === 'search' ? await this.createSearchCampaign(effectiveBody) : await this.createDemandGenCampaign(effectiveBody);
         results.push(result);
@@ -722,13 +722,13 @@ export class CampaignProxyService {
             continue;
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
-            logger.error(undefined, 'campaign_create_type', startTime, retryError as Error, { campaignType, detail });
+            logger.error(undefined, 'campaign_create_type', typeStartTime, retryError as Error, { campaignType, detail });
             errors.push(`${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
-        logger.error(undefined, 'campaign_create_type', startTime, error as Error, { campaignType, detail });
+        logger.error(undefined, 'campaign_create_type', typeStartTime, error as Error, { campaignType, detail });
         errors.push(`${campaignType}: ${detail}`);
       }
     }
