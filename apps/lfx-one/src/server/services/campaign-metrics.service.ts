@@ -98,13 +98,16 @@ export class CampaignMetricsService {
     const genderQuery = `SELECT ad_group_criterion.gender.type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
       FROM gender_view WHERE segments.date DURING ${gaqlRange}`;
 
-    const [ageRows, genderRows] = await Promise.all([gaqlSearch(ageQuery), gaqlSearch(genderQuery)]);
+    const deviceQuery = `SELECT segments.device, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
+      FROM campaign WHERE segments.date DURING ${gaqlRange}`;
+
+    const [ageRows, genderRows, deviceRows] = await Promise.all([gaqlSearch(ageQuery), gaqlSearch(genderQuery), gaqlSearch(deviceQuery)]);
 
     const age = aggregateDemoBuckets(ageRows, (r) => (extractNested(r, 'adGroupCriterion.ageRange.type') as string) || 'Unknown');
     const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'adGroupCriterion.gender.type') as string) || 'Unknown');
+    const device = aggregateDemoBuckets(deviceRows, (r) => (extractNested(r, 'segments.device') as string) || 'Unknown');
 
-    // Device demographics require a separate GAQL query against user_location_view — not yet implemented
-    return { pulledAt: new Date().toISOString(), days: effectiveDays, age, gender, device: [] };
+    return { pulledAt: new Date().toISOString(), days, age, gender, device };
   }
 }
 
