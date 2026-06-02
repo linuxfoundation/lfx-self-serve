@@ -11,6 +11,7 @@ import { OrgLensFoundationsController } from '../controllers/org-lens-foundation
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
+import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
   const router = Router();
@@ -21,6 +22,7 @@ function buildOrgsRouter(): Router {
   const orgLensDocumentsController = new OrgLensDocumentsController();
   const orgLensPeopleController = new OrgLensPeopleController();
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
+  const orgLensTrainingController = new OrgLensTrainingController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -55,6 +57,9 @@ function buildOrgsRouter(): Router {
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
+
+  // LFXV2-1895 — Org Lens Training & Certifications stat strip.
+  router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
