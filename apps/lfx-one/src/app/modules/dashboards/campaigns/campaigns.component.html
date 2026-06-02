@@ -38,7 +38,13 @@
       [attr.aria-labelledby]="'tab-' + tab.id"
       [hidden]="selectedTab() !== tab.id"
       [attr.data-testid]="'campaigns-' + tab.id + '-panel'">
-      <p class="text-sm text-gray-500">{{ tab.label }} tab content will be added in subsequent PRs.</p>
+      @if (tab.id === 'planning') {
+        <lfx-planning-tab (proceedToImplementation)="onProceedToImplementation($event)" data-testid="campaigns-planning-tab" />
+      } @else if (tab.id === 'implementation') {
+        <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
+      } @else {
+        <p class="text-sm text-gray-500">{{ tab.label }} tab content will be added in subsequent PRs.</p>
+      }
     </div>
   }
 </div>

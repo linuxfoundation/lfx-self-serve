@@ -123,8 +123,9 @@ export interface CampaignCreateResponse {
 }
 
 export interface CampaignJobStatus {
-  status: 'running' | 'done';
+  status: 'running' | 'done' | 'error' | 'not_found';
   result?: CampaignCreateResponse;
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------
