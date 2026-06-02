@@ -155,8 +155,9 @@ export interface EventAttendeeFoundationOptionRow {
   FOUNDATION_NAME: string;
 }
 
-/** Distinct `(EVENT_ID, EVENT_NAME)` row from the event-options query. */
+/** Distinct `(EVENT_ID, EVENT_NAME, EVENT_END_DATE)` row from the event-options query — `EVENT_END_DATE` carried for ORDER BY only, never read downstream. */
 export interface EventAttendeeEventOptionRow {
   EVENT_ID: string;
   EVENT_NAME: string;
+  EVENT_END_DATE: Date | string | null;
 }
