@@ -11,8 +11,9 @@ import { OrgLensBoardCommitteeService } from '../services/org-lens-board-committ
 
 /**
  * HTTP boundary for the three Board & Committee SSR endpoints (spec 016 FR-009).
- * Validation: UUID_REGEX for `orgUid` (uuid-only refactor), FOUNDATION_ID_PATTERN
- * for `foundationId` (FR-009j). Structured `logger.startOperation` lifecycle
+ * Validation: `assertOrgUid` (SALESFORCE_ACCOUNT_ID_PATTERN, spec 002) for the org
+ * account id `orgUid`, FOUNDATION_ID_PATTERN for `foundationId` (FR-009j).
+ * Structured `logger.startOperation` lifecycle
  * logging per the existing org-lens convention. `Cache-Control: no-store` on
  * every response. (Board & Committee data is currently a mock fixture keyed by the
  * org identifier echoed in the response envelope.)

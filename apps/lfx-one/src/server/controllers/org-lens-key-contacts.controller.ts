@@ -11,19 +11,16 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensKeyContactsService } from '../services/org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from '../services/org-lens-memberships.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 // HTTP boundary for spec-024 key-contact employee search + write proxy endpoints.
 export class OrgLensKeyContactsController {
   private readonly validContactTypes = new Set<string>(KEY_CONTACT_ROLE_CATALOG.map((c) => c.contactType));
   private readonly service: OrgLensKeyContactsService;
   private readonly membershipsService: OrgLensMembershipsService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensKeyContactsService();
     this.membershipsService = new OrgLensMembershipsService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   // GET /api/orgs/:orgUid/lens/key-contacts/employees
@@ -32,7 +29,7 @@ export class OrgLensKeyContactsController {
     const startTime = logger.startOperation(req, 'get_org_key_contact_employees', { org_uid: orgUid });
     try {
       assertOrgUid(orgUid, 'get_org_key_contact_employees');
-      // Employee search keys the indexer off the org uuid directly (no sfid needed).
+      // Employee search keys the indexer off the org account id (SFID) directly.
       const employees = await this.service.getEmployees(req, orgUid);
       logger.success(req, 'get_org_key_contact_employees', startTime, { org_uid: orgUid, employee_count: employees.length });
       res.setHeader('Cache-Control', 'no-store');
@@ -110,10 +107,9 @@ export class OrgLensKeyContactsController {
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
-  // Resolves the foundation slug through the org sfid bridge used by Snowflake-backed summaries.
+  // Resolves the foundation slug from the Snowflake-backed summaries. Spec 002: orgUid is the SFID.
   private async resolveSlugOrThrow(req: Request, orgUid: string, foundationId: string, operation: string): Promise<string> {
-    const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-    const slug = await this.membershipsService.getFoundationSlug(sfid, foundationId);
+    const slug = await this.membershipsService.getFoundationSlug(orgUid, foundationId);
     if (!slug) {
       throw ServiceValidationError.forField('foundationId', 'No membership found for this organization and foundation', { operation });
     }

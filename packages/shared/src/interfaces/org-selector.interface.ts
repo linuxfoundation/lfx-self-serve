@@ -4,11 +4,11 @@
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
 
-/** Selector row — carries both the canonical UUID and the legacy Salesforce id per spec 020 Q1. */
+/** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
-  /** Canonical b2b_org identifier (UUID 8-4-4-4-12), sourced from `resource.id`. */
+  /** Org account id (18-char SFID), sourced from the indexed `b2b_org` doc id. */
   uid: string;
-  /** Legacy Salesforce account id from `resource.data.sfid`; spec 022 omits rows with null sfid (FR-005), so effectively non-null on the wire — kept nullable for pre-022 callers. */
+  /** Org account id (18-char SFID); equals `uid`. Kept nullable for pre-spec-002 callers. */
   accountId: string | null;
   /** Display name; query-service strips nameless orgs so always non-empty in practice. */
   name: string;
@@ -92,10 +92,11 @@ export interface RoleGrantsResponse {
   loaded_at: string;
 }
 
-/** Canonical org record returned by `GET /api/orgs/uid|sfid|:id` (member-service snake_case → camelCase). */
+/** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
 export interface OrgCanonicalRecord {
+  /** Org account id (18-char SFID); equals `accountId`. */
   uid: string;
-  /** Legacy Salesforce id; null for orgs without an sfid. */
+  /** Org account id (18-char SFID); equals `uid`. Nullable only for defensive callers. */
   accountId: string | null;
   name: string;
   description?: string | null;
@@ -109,12 +110,12 @@ export interface OrgCanonicalRecord {
   crunchBaseUrl?: string | null;
   /** Last-modified timestamp from upstream (ISO 8601 UTC); displayed as "Last Updated" on the profile page (spec 021). */
   updatedAt?: string | null;
-  /** b2b_org.uid of the parent; null for top-level orgs. */
+  /** Parent org account id (18-char SFID); null for top-level orgs. */
   parentUid?: string | null;
   isMember: boolean;
 }
 
-/** Partial-update payload for `PUT /api/orgs/uid/:uid` (spec 021). Only changed fields are included. Excludes `name` (locked at UI) and `logoUrl` (deferred). */
+/** Partial-update payload for `PUT /api/orgs/:accountId` (spec 021/002, account-id keyed). Only changed fields are included. Excludes `name` (locked at UI) and `logoUrl` (deferred). */
 export interface OrgUpdateRequest {
   description?: string;
   website?: string;
@@ -153,7 +154,7 @@ export interface OrgAddress {
   country: string;
 }
 
-/** Response shape for `GET /api/orgs/uid/:uid/addresses` (spec 023). Snowflake `ORG_LENS_ADDRESSES`; BFF returns 200 with nulls on lookup misses. */
+/** Response shape for `GET /api/orgs/:accountId/addresses` (spec 023/002, account-id keyed). Snowflake `ORG_LENS_ADDRESSES`; BFF returns 200 with nulls on lookup misses. */
 export interface OrgAddressesResponse {
   primaryAddress: OrgAddress | null;
   billingAddress: OrgAddress | null;
@@ -213,13 +214,33 @@ export interface B2bOrgIndexedDoc {
   is_parent?: boolean;
 }
 
-/** Shape of `b2b_org_settings.data` from the query-service "what can I see" pattern. */
+/** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
+export interface B2bOrgSettingsMember {
+  username?: string | null;
+  /** `writer` wins when a user holds both roles (member-service dedupes writer-first). */
+  role?: 'writer' | 'auditor';
+  /** Only `accepted` invites count as grants (D-002, FR-002). Revoked/expired are excluded from the index entirely. */
+  invite_status?: 'pending' | 'accepted' | 'revoked' | 'expired';
+}
+
+/**
+ * Shape of `b2b_org_settings.data` from the query-service "what can I see" pattern.
+ *
+ * The member-service indexer flattens writers+auditors into a single `members[]` array
+ * with a `role` discriminator (see `b2bOrgSettingsIndexerView` in messaging.go). The legacy
+ * `writers[]`/`auditors[]` fields are kept for backward compatibility with any docs that
+ * have not yet been re-indexed.
+ */
 export interface B2bOrgSettingsDoc {
+  /** Current indexer shape — flattened members with a `role` discriminator. */
+  members?: B2bOrgSettingsMember[];
+  /** @deprecated Legacy pre-flatten shape; read as a fallback only. */
   writers?: {
     username?: string | null;
     /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
     invite_status?: 'pending' | 'accepted' | 'revoked';
   }[];
+  /** @deprecated Legacy pre-flatten shape; read as a fallback only. */
   auditors?: {
     username?: string | null;
     /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
@@ -247,11 +268,6 @@ export interface MemberServiceB2bOrgResponse {
   is_member?: boolean;
 }
 
-/** Resolver return shape — carries the resolved value AND an honest cacheHit flag so callers can log accurate cache-hit ratios. */
-export type OrgIdentityLookupResult<K extends 'uid' | 'sfid'> = {
-  [P in K]: string | null;
-} & { cacheHit: boolean };
-
 /** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
 export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
 
@@ -276,10 +292,4 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-}
-
-/** NATS response body for UUID→SFID resolution requests. */
-export interface UuidToSfidNatsResponse {
-  sfid?: string;
-  error?: string;
 }

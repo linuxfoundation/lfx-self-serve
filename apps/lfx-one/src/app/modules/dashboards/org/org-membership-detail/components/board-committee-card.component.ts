@@ -42,7 +42,7 @@ import { WhyCantEditModalComponent } from './why-cant-edit-modal.component';
 })
 export class BoardCommitteeCardComponent {
   // === Inputs ===
-  /** Spec 024 (uuid-only): the selected org's b2b_org uuid; forwarded to the uuid-keyed board/committee BFF routes. */
+  /** Spec 002: the selected org's account id (SFID); forwarded to the account-id-keyed board/committee BFF routes. */
   public readonly orgUid = input.required<string>();
   public readonly foundationId = input.required<string>();
   public readonly foundationName = input<string>('');

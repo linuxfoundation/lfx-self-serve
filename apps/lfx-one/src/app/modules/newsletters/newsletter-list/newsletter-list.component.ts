@@ -108,7 +108,9 @@ export class NewsletterListComponent {
 
   protected goToRow(item: NewsletterListItem): void {
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
-    this.router.navigate(['..', item.id, target], { relativeTo: this.route });
+    // Carry the newsletter's own project_uid in the URL instead of relying on
+    // ambient context — see newsletters.routes.ts for the rationale.
+    this.router.navigate(['..', item.project_uid, item.id, target], { relativeTo: this.route });
   }
 
   protected openPreview(item: NewsletterListItem, event: Event): void {
