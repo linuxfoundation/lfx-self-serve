@@ -8,16 +8,13 @@ import { NextFunction, Request, Response } from 'express';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensTrainingService } from '../services/org-lens-training.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 /** HTTP boundary for OrgLensTrainingService — validation, lifecycle logging, error propagation. */
 export class OrgLensTrainingController {
   private readonly service: OrgLensTrainingService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensTrainingService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   /** GET /api/orgs/:orgUid/lens/training/stats */
@@ -30,8 +27,8 @@ export class OrgLensTrainingController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_training_stats');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getTrainingStats(sfid);
+      // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
+      const response = await this.service.getTrainingStats(orgUid);
 
       logger.success(req, 'get_org_lens_training_stats', startTime, {
         org_uid: orgUid,

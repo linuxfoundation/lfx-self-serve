@@ -7,16 +7,13 @@ import { Request } from 'express';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
-import { SfidResolverService } from './sfid-resolver.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
 export class OrgNavigationService {
   private readonly orgRoleGrants: OrgRoleGrantsService;
-  private readonly sfidResolver: SfidResolverService;
 
   public constructor() {
     this.orgRoleGrants = new OrgRoleGrantsService();
-    this.sfidResolver = new SfidResolverService();
   }
 
   public async getOrgItems(req: Request, params: GetOrgItemsParams): Promise<OrgItemsResponse> {
@@ -48,11 +45,9 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
     }
 
-    // Batch-resolve sfids via NATS RPC (lfx.member.uuid-to-sfid.lookup) for uids whose indexed doc lacks one.
-    const uidsNeedingSfid = Array.from(access.resolved.keys()).filter((uid) => !access.orgDocByUid.get(uid)?.sfid);
-    const resolvedSfids = await this.sfidResolver.resolveBatch(uidsNeedingSfid);
-
-    const items = this.buildOrgItems(req, access.resolved, access.orgDocByUid, resolvedSfids);
+    // Spec 002: the b2b_org uid IS the 18-char SFID (member-service v0.7.0), so the account id is the
+    // uid itself — no NATS UUID→SFID resolution, and no rows dropped for a missing sfid.
+    const items = this.buildOrgItems(req, access.resolved, access.orgDocByUid);
 
     const filteredItems = this.applySearch(items, name);
     const sortedItems = this.applySort(filteredItems, name);
@@ -72,13 +67,8 @@ export class OrgNavigationService {
     };
   }
 
-  /** Two omission branches (FR-005 + spec Edge Cases): (a) missing org doc → skip+warn `missing_org_doc`; (b) null/missing sfid → skip+warn `missing_sfid`. */
-  private buildOrgItems(
-    req: Request,
-    resolved: Map<string, ResolvedOrgRole>,
-    orgDocByUid: Map<string, B2bOrgIndexedDoc>,
-    resolvedSfids: Map<string, string>
-  ): OrgItem[] {
+  /** One omission branch (FR-005 + spec Edge Cases): missing org doc → skip+warn `missing_org_doc`. Spec 002: the uid IS the account id (SFID), so there is no `missing_sfid` omission. */
+  private buildOrgItems(req: Request, resolved: Map<string, ResolvedOrgRole>, orgDocByUid: Map<string, B2bOrgIndexedDoc>): OrgItem[] {
     const items: OrgItem[] = [];
 
     for (const [uid, role] of resolved) {
@@ -92,22 +82,11 @@ export class OrgNavigationService {
         continue;
       }
 
-      // Prefer the indexed sfid (future: indexer will emit it). Fall back to the batch-resolved
-      // value from NATS RPC `lfx.member.uuid-to-sfid.lookup` (null when the RPC can't resolve it).
-      const sfid = doc.sfid || resolvedSfids.get(uid);
-      if (!sfid) {
-        logger.warning(req, 'build_org_items', 'omitting row', {
-          uid,
-          source: role.roleSource,
-          reason: 'missing_sfid',
-        });
-        continue;
-      }
-
+      // Spec 002: the b2b_org uid is the canonical 18-char SFID; it IS the account id.
       const isInherited = role.roleSource.startsWith('inherited-');
       items.push({
         uid,
-        accountId: sfid,
+        accountId: uid,
         name: doc.name ?? '',
         logoUrl: doc.logo_url ?? null,
         primaryDomain: doc.primary_domain ?? null,
