@@ -23,6 +23,18 @@ export interface CampaignTabOption {
   icon: string;
 }
 
+export interface CampaignPlatformOption {
+  id: CampaignPlatform;
+  label: string;
+  icon: string;
+  disabled?: boolean;
+}
+
+export interface CampaignGoalOption {
+  id: CampaignGoal;
+  label: string;
+}
+
 // ---------------------------------------------------------------------------
 // Brief Pipeline (Planning Phase)
 // ---------------------------------------------------------------------------

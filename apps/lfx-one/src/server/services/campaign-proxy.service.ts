@@ -104,7 +104,8 @@ export async function validateScrapeUrl(url: string): Promise<string> {
     throw new Error('DNS resolution failed — cannot verify host safety');
   }
   for (const addr of [...addresses4, ...addresses6]) {
-    if (PRIVATE_IP_PATTERNS.some((p) => p.test(addr))) {
+    const checkAddr = addr.replace(/^::ffff:/i, '');
+    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }
@@ -1133,18 +1134,6 @@ function extractGadsErrorMessage(error: unknown): string {
   };
 
   if (code && friendlyMessages[code]) return friendlyMessages[code];
-
-  if (error instanceof Error) return error.message;
-
-  const e = error as Record<string, unknown>;
-  if (Array.isArray(e['errors']) && e['errors'].length > 0) {
-    const first = e['errors'][0] as Record<string, unknown>;
-    const msg = typeof first['message'] === 'string' ? first['message'] : '';
-    if (msg) return msg;
-  }
-
-  if (typeof e['message'] === 'string' && e['message']) return e['message'];
-  if (typeof e['details'] === 'string' && e['details']) return e['details'];
 
   return 'Campaign creation failed. Please try again or contact support.';
 }

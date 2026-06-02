@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoal, CampaignPlatform, CampaignTabOption } from '../interfaces/campaign.interface';
+import type { CampaignGoal, CampaignGoalOption, CampaignPlatform, CampaignPlatformOption, CampaignTabOption } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: CampaignTabOption[] = [
@@ -10,13 +10,6 @@ export const CAMPAIGN_TABS: CampaignTabOption[] = [
   { id: 'monitoring', label: 'Monitoring', icon: 'fa-light fa-chart-mixed' },
   { id: 'optimization', label: 'Optimization', icon: 'fa-light fa-gauge-high' },
 ] as const;
-
-export interface CampaignPlatformOption {
-  id: CampaignPlatform;
-  label: string;
-  icon: string;
-  disabled?: boolean;
-}
 
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
@@ -28,11 +21,6 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;
-
-export interface CampaignGoalOption {
-  id: CampaignGoal;
-  label: string;
-}
 
 export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
   { id: 'conversions', label: 'Conversions / Registrations' },
