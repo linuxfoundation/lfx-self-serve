@@ -182,12 +182,15 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
  * and detail (single) views select different "next" occurrences for the same meeting.
  *
  * Both arrays key off the canonical `occurrence_id` (the occurrence start as a Unix-second
- * timestamp, per the upstream meeting-service contract), so we compare IDs directly rather
- * than re-deriving seconds from `start_time` — that also sidesteps the list endpoint
- * returning `start_time` with a timezone offset vs the detail endpoint's UTC form.
+ * timestamp — a 10-digit value per the upstream meeting-service contract), so we compare IDs
+ * directly rather than re-deriving seconds from `start_time`; that also sidesteps the list
+ * endpoint returning `start_time` with a timezone offset vs the detail endpoint's UTC form.
+ * Note this is distinct from the 13-digit Unix-*millisecond* timestamps the UI constructs via
+ * `new Date(start_time).getTime()` elsewhere (past-meeting URLs, `meeting_and_occurrence_id`) —
+ * those are never compared against `occurrence_id` / `cancelled_occurrences`.
  *
  * @param occurrences Array of meeting occurrences
- * @param cancelledOccurrences Cancelled occurrence IDs (Unix-second timestamp keys)
+ * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
 export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {

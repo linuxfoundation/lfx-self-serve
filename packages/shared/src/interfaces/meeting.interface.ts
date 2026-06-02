@@ -235,7 +235,9 @@ export interface Meeting {
   next_occurrence_start_time?: string;
   /**
    * Cancelled occurrence IDs — the canonical `occurrence_id` keys (each the occurrence start
-   * as a Unix-second timestamp, per the upstream meeting-service contract).
+   * as a 10-digit Unix-second timestamp, per the upstream meeting-service contract; distinct
+   * from the 13-digit Unix-millisecond timestamps the UI builds for past-meeting URLs and
+   * `meeting_and_occurrence_id`).
    *
    * The meetings LIST endpoint signals occurrence cancellation this way and leaves each
    * occurrence's `status` unset, whereas the single-meeting endpoint instead marks the
