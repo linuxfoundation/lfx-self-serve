@@ -123,10 +123,15 @@ export class CommitteeController {
       }
 
       // Get the committee by ID — include caller membership so the UI can render
-      // visitor / member / chair states without a second round-trip, and enrich with
+      // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
-      // -> project_slug for navigation.
-      const committee = await this.committeeService.getCommitteeById(req, id, { includeMembership: true, includeProjectMetadata: true });
+      // -> project_slug for navigation, and include inherited (parent-project) permissions
+      // so the members roster can label foundation-level managers correctly (LFXV2-2059).
+      const committee = await this.committeeService.getCommitteeById(req, id, {
+        includeMembership: true,
+        includeProjectMetadata: true,
+        includeInheritedPermissions: true,
+      });
 
       // Log the success
       logger.success(req, 'get_committee_by_id', startTime, {

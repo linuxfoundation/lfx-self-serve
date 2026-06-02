@@ -617,7 +617,7 @@ export class MeetingJoinComponent implements OnInit {
       const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
       if (requestedOccurrence && meeting?.occurrences?.length) {
         const requestedTime = parseInt(requestedOccurrence, 10);
-        const active = getActiveOccurrences(meeting.occurrences);
+        const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
         const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
         if (match) return match;
       }
@@ -629,7 +629,7 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting?.occurrences?.length) return { sorted: [], currentIdx: -1 };
-      const sorted = getActiveOccurrences(meeting.occurrences).sort(
+      const sorted = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).sort(
         (a: MeetingOccurrence, b: MeetingOccurrence) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
       const current = this.currentOccurrence();
