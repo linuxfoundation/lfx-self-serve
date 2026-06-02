@@ -24,6 +24,7 @@ import {
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
+  isPastMeetingSummaryAwaitingApproval,
   Meeting,
   MEETING_TYPE_CONFIGS,
   getPastMeetingTranscriptUrl,
@@ -179,6 +180,7 @@ export class MeetingJoinComponent implements OnInit {
   protected isPastMeeting: Signal<boolean>;
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
   protected hasSummaryContent: Signal<boolean>;
+  protected summaryAwaitingApproval: Signal<boolean>;
   private pastMeetingRecording: Signal<PastMeetingRecording | null>;
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
@@ -277,6 +279,7 @@ export class MeetingJoinComponent implements OnInit {
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
+    this.summaryAwaitingApproval = this.initializeSummaryAwaitingApproval();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
     this.pastMeetingAttachments = this.initializePastMeetingAttachments();
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
@@ -614,7 +617,7 @@ export class MeetingJoinComponent implements OnInit {
       const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
       if (requestedOccurrence && meeting?.occurrences?.length) {
         const requestedTime = parseInt(requestedOccurrence, 10);
-        const active = getActiveOccurrences(meeting.occurrences);
+        const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
         const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
         if (match) return match;
       }
@@ -626,7 +629,7 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting?.occurrences?.length) return { sorted: [], currentIdx: -1 };
-      const sorted = getActiveOccurrences(meeting.occurrences).sort(
+      const sorted = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).sort(
         (a: MeetingOccurrence, b: MeetingOccurrence) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
       const current = this.currentOccurrence();
@@ -1123,6 +1126,12 @@ export class MeetingJoinComponent implements OnInit {
       const data = this.pastMeetingSummary()?.summary_data;
       return !!(data?.edited_content || data?.content);
     });
+  }
+
+  // "Pending" only applies when the summary requires approval and isn't approved
+  // yet — summaries that never required approval are not pending.
+  private initializeSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.pastMeetingSummary()));
   }
 
   private initializeTranscriptUrl(): Signal<string | null> {

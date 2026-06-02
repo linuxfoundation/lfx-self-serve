@@ -119,7 +119,7 @@ export class MyMeetingsComponent {
 
       for (const meeting of meetings) {
         if (meeting.occurrences && meeting.occurrences.length > 0) {
-          for (const occurrence of getActiveOccurrences(meeting.occurrences)) {
+          for (const occurrence of getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences)) {
             const startMs = new Date(occurrence.start_time).getTime();
             const endMs = startMs + occurrence.duration * 60 * 1000;
             if (endMs >= now) {

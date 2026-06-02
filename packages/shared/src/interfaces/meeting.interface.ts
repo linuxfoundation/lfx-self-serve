@@ -233,6 +233,19 @@ export interface Meeting {
    * no future occurrence exists. Lets recurring cards show the next scheduled date instead of the
    * series origin (`start_time`) when the list payload's `occurrences` array isn't usable. */
   next_occurrence_start_time?: string;
+  /**
+   * Cancelled occurrence IDs — the canonical `occurrence_id` keys (each the occurrence start
+   * as a 10-digit Unix-second timestamp, per the upstream meeting-service contract; distinct
+   * from the 13-digit Unix-millisecond timestamps the UI builds for past-meeting URLs and
+   * `meeting_and_occurrence_id`).
+   *
+   * The meetings LIST endpoint signals occurrence cancellation this way and leaves each
+   * occurrence's `status` unset, whereas the single-meeting endpoint instead marks the
+   * occurrence with `status: 'cancel'`. Both signals must be honoured so a cancelled
+   * occurrence is dropped consistently across the card (list) and detail (single) views —
+   * see `getActiveOccurrences` (LFXV2-2057).
+   */
+  cancelled_occurrences?: string[];
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;

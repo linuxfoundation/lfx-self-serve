@@ -162,7 +162,7 @@
             <span class="text-sm font-medium text-gray-700">AI Summary</span>
             @if (summaryApproved()) {
               <span class="text-xs font-medium text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Approved</span>
-            } @else {
+            } @else if (summaryAwaitingApproval()) {
               <span class="text-xs font-medium text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">Pending</span>
             }
           </div>

@@ -58,7 +58,7 @@ export class CampaignMetricsService {
   public async getKeywords(req: Request, days: number): Promise<KeywordMetricsResponse> {
     logger.debug(req, 'campaign_keywords', 'Fetching keyword metrics from Google Ads', { days });
 
-    const { gaqlRange } = resolveDateRange(days);
+    const { gaqlRange, effectiveDays } = resolveDateRange(days);
 
     const query = `
       SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
@@ -82,7 +82,7 @@ export class CampaignMetricsService {
     };
     totals.avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
 
-    return { pulledAt: new Date().toISOString(), days, totalKeywords: keywords.length, totals, keywords };
+    return { pulledAt: new Date().toISOString(), days: effectiveDays, totalKeywords: keywords.length, totals, keywords };
   }
 
   // === Audience demographics ===
@@ -90,7 +90,7 @@ export class CampaignMetricsService {
   public async getAudience(req: Request, days: number): Promise<AudienceDemographics> {
     logger.debug(req, 'campaign_audience', 'Fetching audience demographics from Google Ads', { days });
 
-    const { gaqlRange } = resolveDateRange(days);
+    const { gaqlRange, effectiveDays } = resolveDateRange(days);
 
     const ageQuery = `SELECT ad_group_criterion.age_range.type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
       FROM age_range_view WHERE segments.date DURING ${gaqlRange}`;
@@ -103,7 +103,8 @@ export class CampaignMetricsService {
     const age = aggregateDemoBuckets(ageRows, (r) => (extractNested(r, 'adGroupCriterion.ageRange.type') as string) || 'Unknown');
     const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'adGroupCriterion.gender.type') as string) || 'Unknown');
 
-    return { pulledAt: new Date().toISOString(), days, age, gender, device: [] };
+    // Device demographics require a separate GAQL query against user_location_view — not yet implemented
+    return { pulledAt: new Date().toISOString(), days: effectiveDays, age, gender, device: [] };
   }
 }
 
