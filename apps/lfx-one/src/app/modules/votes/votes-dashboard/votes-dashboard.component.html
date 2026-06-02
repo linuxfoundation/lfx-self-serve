@@ -53,6 +53,7 @@
         [projectOptions]="projectOptions()"
         [showFoundationFilter]="showFoundationFilter()"
         [showProjectFilter]="showProjectFilter()"
+        [showDraftTab]="!isMeLens()"
         (foundationFilterChange)="onFoundationFilterChange($event)"
         (projectFilterChange)="onProjectFilterChange($event)"
         (viewVote)="onViewVote($event)"
