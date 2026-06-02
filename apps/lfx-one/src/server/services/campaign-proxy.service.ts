@@ -24,8 +24,71 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 
 import type { Customer } from 'google-ads-api';
 
+// ---------------------------------------------------------------------------
+// Required environment variables — log warnings at startup for missing ones
+// ---------------------------------------------------------------------------
+
+const REQUIRED_ENV_VARS = ['GADS_CLIENT_ID', 'GADS_CLIENT_SECRET', 'GADS_DEVELOPER_TOKEN', 'GADS_CUSTOMER_ID', 'GADS_REFRESH_TOKEN'];
+
+for (const envVar of REQUIRED_ENV_VARS) {
+  if (!process.env[envVar]) {
+    logger.warning(undefined, 'campaign_proxy_init', `Missing environment variable: ${envVar} — Google Ads features will not work`, { envVar });
+  }
+}
+
 function getEnv(key: string): string {
   return process.env[key] || '';
+}
+
+// ---------------------------------------------------------------------------
+// SSRF validation for user-provided URLs
+// ---------------------------------------------------------------------------
+
+const PRIVATE_IP_PATTERNS = [
+  /^localhost$/i,
+  /^127\.\d+\.\d+\.\d+$/,
+  /^0\.\d+\.\d+\.\d+$/,
+  /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+  /^192\.168\.\d+\.\d+$/,
+  /^169\.254\.\d+\.\d+$/, // link-local / AWS IMDS
+  /^::1$/,
+  /^f[cd][0-9a-f]{2}:/i, // IPv6 ULA (fc00::/7 covers both fc and fd)
+  /^fe80:/i, // IPv6 link-local
+];
+
+export async function validateScrapeUrl(url: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Only HTTPS URLs are allowed');
+  }
+
+  const port = parsed.port ? Number(parsed.port) : 443;
+  if (port !== 80 && port !== 443) {
+    throw new Error('Only ports 80 and 443 are allowed');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
+    throw new Error('URLs targeting private/internal hosts are not allowed');
+  }
+
+  const { promises: dns } = await import('node:dns');
+  const addresses4 = await dns.resolve4(hostname).catch(() => []);
+  const addresses6 = await dns.resolve6(hostname).catch(() => []);
+  for (const addr of [...addresses4, ...addresses6]) {
+    if (PRIVATE_IP_PATTERNS.some((p) => p.test(addr))) {
+      throw new Error('Blocked host: resolves to private IP');
+    }
+  }
+
+  return `https://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 let gadsClient: GoogleAdsApi | null = null;
@@ -37,7 +100,7 @@ function getGadsClient(): GoogleAdsApi {
     const clientSecret = getEnv('GADS_CLIENT_SECRET');
     const developerToken = getEnv('GADS_DEVELOPER_TOKEN');
     if (!clientId || !clientSecret || !developerToken) {
-      throw new Error('Google Ads credentials not configured — set GADS_CLIENT_ID, GADS_CLIENT_SECRET, and GADS_DEVELOPER_TOKEN');
+      throw new Error('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
     }
     gadsClient = new GoogleAdsApi({
       client_id: clientId,
@@ -212,7 +275,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {
@@ -220,11 +283,12 @@ async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096
     throw new Error(`AI request failed (${response.status}): ${text}`);
   }
 
-  const data = (await response.json()) as { choices: { message: { content: string } }[] };
-  if (!data.choices?.length || !data.choices[0]?.message?.content) {
-    throw new Error('AI proxy returned empty or malformed response');
+  const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('AI proxy returned an empty or malformed response');
   }
-  return data.choices[0].message.content;
+  return content;
 }
 
 async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: AbortSignal, maxTokens = 4096): AsyncGenerator<string> {
@@ -266,7 +330,8 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-      for (const line of lines) {
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/\r$/, '');
         if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
         try {
           const parsed = JSON.parse(line.slice(6)) as { choices: { delta: { content?: string } }[] };
@@ -393,65 +458,6 @@ const GEO_TARGET_MAP: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// SSRF protection for user-supplied URLs
-// ---------------------------------------------------------------------------
-
-const PRIVATE_IP_PATTERNS = [/^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^169\.254\./, /^0\./, /^::1$/, /^fc[0-9a-f]{2}:/i, /^fe80:/i];
-
-const BLOCKED_HOSTNAMES = new Set(['localhost', '[::1]']);
-
-const ALLOWED_PORTS = new Set(['', '80', '443']);
-
-async function validateScrapeUrl(rawUrl: string): Promise<void> {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('Invalid URL');
-  }
-
-  if (parsed.protocol !== 'https:') {
-    throw new Error('Only HTTPS URLs are allowed');
-  }
-
-  if (!ALLOWED_PORTS.has(parsed.port)) {
-    throw new Error(`Non-standard port not allowed: ${parsed.port}`);
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-
-  if (BLOCKED_HOSTNAMES.has(hostname) || hostname === '0.0.0.0' || hostname === '::1') {
-    throw new Error('Blocked host: private/internal address');
-  }
-
-  if (PRIVATE_IP_PATTERNS.some((re) => re.test(hostname))) {
-    throw new Error('Blocked host: private IP range');
-  }
-
-  const { promises: dns } = await import('node:dns');
-  try {
-    const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
-    const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
-    for (const addr of [...addresses, ...addresses6]) {
-      if (PRIVATE_IP_PATTERNS.some((re) => re.test(addr))) {
-        throw new Error('Blocked host: resolves to private IP');
-      }
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Blocked host')) throw error;
-    throw new Error(`DNS resolution failed for ${hostname}`);
-  }
-
-  const allowlist = getEnv('CAMPAIGN_BRIEF_SCRAPE_HOST_ALLOWLIST');
-  if (allowlist) {
-    const allowed = allowlist.split(',').map((h) => h.trim().toLowerCase());
-    if (!allowed.includes(hostname)) {
-      throw new Error(`Host not in allowlist: ${hostname}`);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // CampaignProxyService — brief generation + campaign creation
 // ---------------------------------------------------------------------------
 
@@ -485,22 +491,38 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     yield { type: 'status', data: `Scraping ${body.url}...` };
 
+    let safeUrl: string;
     try {
-      await validateScrapeUrl(body.url);
+      safeUrl = await validateScrapeUrl(body.url);
     } catch (error) {
-      yield { type: 'error', data: `Blocked URL: ${error instanceof Error ? error.message : 'Invalid URL'}` };
+      yield { type: 'error', data: `Invalid URL: ${error instanceof Error ? error.message : 'Unknown error'}` };
       return;
     }
 
     let html = '';
     try {
-      const scrapeResponse = await fetch(body.url, {
+      let scrapeResponse = await fetch(safeUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
         signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-        redirect: 'error',
+        redirect: 'manual',
       });
+
+      // Follow redirects manually to validate each target against SSRF
+      let redirectCount = 0;
+      while (scrapeResponse.status >= 300 && scrapeResponse.status < 400 && redirectCount < 5) {
+        const location = scrapeResponse.headers.get('location');
+        if (!location) break;
+        const redirectUrl = await validateScrapeUrl(new URL(location, safeUrl).href);
+        scrapeResponse = await fetch(redirectUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
+          signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+          redirect: 'manual',
+        });
+        redirectCount++;
+      }
+
       if (!scrapeResponse.ok) {
-        yield { type: 'error', data: `Event page returned ${scrapeResponse.status}` };
+        yield { type: 'error', data: `Event page returned HTTP ${scrapeResponse.status}` };
         return;
       }
       html = await scrapeResponse.text();
@@ -537,8 +559,7 @@ export class CampaignProxyService {
       }
     }
 
-    const platforms = body.platforms?.length ? body.platforms : (['google-ads'] as const);
-    const platformList = platforms.join(', ');
+    const platformList = (body.platforms || ['google-ads']).join(', ');
     yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
     const userPrompt = buildCopyPrompt(body, eventDetails);
@@ -573,7 +594,7 @@ export class CampaignProxyService {
       return;
     }
 
-    if (platforms.includes('google-ads')) {
+    if (body.platforms?.includes('google-ads') || !body.platforms) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -626,48 +647,45 @@ export class CampaignProxyService {
 
   public async getJobStatus(_req: Request, jobId: string): Promise<CampaignJobStatus> {
     const job = jobs.get(jobId);
-    if (!job) return { status: 'not_found' };
+    if (!job) return { status: 'done', result: { success: false, campaigns: [], errors: ['Job not found'] } };
     return job;
   }
 
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
-    const startTime = Date.now();
-    let hsToken = body.hsToken;
-    if (!hsToken) {
+    if (!body.hsToken) {
       try {
         const hsUtm = await resolveHubSpotUtm(body.eventName);
-        if (hsUtm) hsToken = hsUtm;
+        if (hsUtm) body.hsToken = hsUtm;
       } catch {
         // HubSpot unavailable — fall back to event slug for UTM
       }
     }
 
-    const effectiveBody = hsToken ? { ...body, hsToken } : body;
     const results: CampaignCreateResult[] = [];
     const errors: string[] = [];
 
     for (const campaignType of body.campaignTypes) {
       try {
-        const result = campaignType === 'search' ? await this.createSearchCampaign(effectiveBody) : await this.createDemandGenCampaign(effectiveBody);
+        const result = campaignType === 'search' ? await this.createSearchCampaign(body) : await this.createDemandGenCampaign(body);
         results.push(result);
       } catch (error: unknown) {
         if (getGadsErrorCode(error) === 'DUPLICATE_CAMPAIGN_NAME') {
           try {
-            const retryBody = { ...effectiveBody, eventName: `${effectiveBody.eventName} ${Date.now().toString(36).slice(-4)}` };
+            const retryBody = { ...body, eventName: `${body.eventName}-${Date.now().toString(36).slice(-4)}` };
             const result = campaignType === 'search' ? await this.createSearchCampaign(retryBody) : await this.createDemandGenCampaign(retryBody);
             results.push(result);
             continue;
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
-            logger.error(undefined, 'campaign_create_type', startTime, retryError as Error, { campaignType, detail });
+            logger.error(undefined, 'campaign_create_type', Date.now(), retryError as Error, { campaignType, detail });
             errors.push(`${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
-        logger.error(undefined, 'campaign_create_type', startTime, error as Error, { campaignType, detail });
+        logger.error(undefined, 'campaign_create_type', Date.now(), error as Error, { campaignType, detail });
         errors.push(`${campaignType}: ${detail}`);
       }
     }
@@ -678,7 +696,7 @@ export class CampaignProxyService {
   private async createSearchCampaign(body: CampaignCreateRequest): Promise<CampaignCreateResult> {
     const steps: string[] = [];
     const customer = getCustomer();
-    const searchPct = Math.max(0.1, Math.min(1.0, body.searchBudgetPct / 100));
+    const { searchPct } = normalizeBudgetSplit(body.searchBudgetPct, body.campaignTypes);
     const budgetMicros = Math.round(body.budgetUsd * searchPct * 1_000_000);
     const campaignName = buildCampaignName(body, 'Search');
 
@@ -691,7 +709,7 @@ export class CampaignProxyService {
         explicitly_shared: false,
       },
     ]);
-    const budgetResource = budgetResult.results[0].resource_name;
+    const budgetResource = budgetResult.results[0].resource_name ?? '';
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     // 2. Create campaign
@@ -701,9 +719,9 @@ export class CampaignProxyService {
         advertising_channel_type: enums.AdvertisingChannelType.SEARCH,
         status: enums.CampaignStatus.PAUSED,
         campaign_budget: budgetResource,
-        start_date_time: body.startDate,
-        end_date_time: body.endDate,
-        bidding_strategy_type: enums.BiddingStrategyType.MAXIMIZE_CONVERSIONS,
+        start_date_time: `${body.startDate} 00:00:00`,
+        end_date_time: `${body.endDate} 23:59:59`,
+        maximize_conversions: {},
         network_settings: {
           target_google_search: true,
           target_search_network: true,
@@ -737,7 +755,7 @@ export class CampaignProxyService {
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
-    const adGroupResource = adGroupResult.results[0].resource_name;
+    const adGroupResource = adGroupResult.results[0].resource_name ?? '';
     steps.push('Created ad group');
 
     // 5. Add keywords
@@ -764,7 +782,10 @@ export class CampaignProxyService {
         ad_group: adGroupResource,
         ad: {
           responsive_search_ad: {
-            headlines: headlines.map((h) => ({ text: h.slice(0, 30) })),
+            headlines: headlines.map((h, i) => ({
+              text: h.slice(0, 30),
+              pinned_field: i < 3 ? HEADLINE_PIN_FIELDS[i] : undefined,
+            })),
             descriptions: descriptions.map((d) => ({ text: d.slice(0, 90) })),
           },
           final_urls: [finalUrl],
@@ -789,7 +810,7 @@ export class CampaignProxyService {
   private async createDemandGenCampaign(body: CampaignCreateRequest): Promise<CampaignCreateResult> {
     const steps: string[] = [];
     const customer = getCustomer();
-    const displayPct = Math.max(0.1, Math.min(1.0, 1 - body.searchBudgetPct / 100));
+    const { displayPct } = normalizeBudgetSplit(body.searchBudgetPct, body.campaignTypes);
     const budgetMicros = Math.round(body.budgetUsd * displayPct * 1_000_000);
     const campaignName = buildCampaignName(body, 'DemandGen');
 
@@ -801,7 +822,7 @@ export class CampaignProxyService {
         explicitly_shared: false,
       },
     ]);
-    const budgetResource = budgetResult.results[0].resource_name;
+    const budgetResource = budgetResult.results[0].resource_name ?? '';
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     const campaignResult = await customer.campaigns.create([
@@ -810,9 +831,9 @@ export class CampaignProxyService {
         advertising_channel_type: enums.AdvertisingChannelType.DEMAND_GEN,
         status: enums.CampaignStatus.PAUSED,
         campaign_budget: budgetResource,
-        start_date_time: body.startDate,
-        end_date_time: body.endDate,
-        bidding_strategy_type: enums.BiddingStrategyType.MAXIMIZE_CONVERSIONS,
+        start_date_time: `${body.startDate} 00:00:00`,
+        end_date_time: `${body.endDate} 23:59:59`,
+        target_spend: {},
       },
     ]);
     const campaignResource = campaignResult.results[0].resource_name ?? '';
@@ -827,7 +848,7 @@ export class CampaignProxyService {
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
-    const adGroupResource = adGroupResult.results[0].resource_name;
+    const adGroupResource = adGroupResult.results[0].resource_name ?? '';
     steps.push('Created ad group');
 
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)
@@ -867,10 +888,20 @@ export class CampaignProxyService {
 // ---------------------------------------------------------------------------
 
 function resolveMatchType(matchType: string): number {
-  const normalized = matchType.toLowerCase();
-  if (normalized === 'exact') return enums.KeywordMatchType.EXACT;
-  if (normalized === 'phrase') return enums.KeywordMatchType.PHRASE;
+  if (matchType === 'Exact') return enums.KeywordMatchType.EXACT;
+  if (matchType === 'Phrase') return enums.KeywordMatchType.PHRASE;
   return enums.KeywordMatchType.BROAD;
+}
+
+const HEADLINE_PIN_FIELDS = [enums.ServedAssetFieldType.HEADLINE_1, enums.ServedAssetFieldType.HEADLINE_2, enums.ServedAssetFieldType.HEADLINE_3];
+
+function normalizeBudgetSplit(searchBudgetPct: number, campaignTypes: string[]): { searchPct: number; displayPct: number } {
+  const hasSearch = campaignTypes.includes('search');
+  const hasDisplay = campaignTypes.includes('demand-gen');
+  if (hasSearch && !hasDisplay) return { searchPct: 1, displayPct: 0 };
+  if (!hasSearch && hasDisplay) return { searchPct: 0, displayPct: 1 };
+  const raw = Math.max(0, Math.min(100, searchBudgetPct)) / 100;
+  return { searchPct: raw, displayPct: 1 - raw };
 }
 
 function truncateAdCopy(obj: Record<string, unknown>): void {
@@ -1012,14 +1043,19 @@ const REGION_MAP: Record<string, string> = {
   BR: 'LATAM',
 };
 
+function sanitizeDelimiter(value: string): string {
+  return value.replace(/\|/g, '-');
+}
+
 function buildCampaignName(body: CampaignCreateRequest, campaignType: string): string {
   const region = REGION_MAP[body.countryCode.toUpperCase()] || 'Global';
   const adFormat = campaignType === 'Search' ? 'Search' : 'DG Display';
   const targeting = campaignType === 'Search' ? 'Prospecting' : 'Intent';
   const funnel = campaignType === 'Search' ? 'BoFU' : 'MoFU';
-  const project = body.project || 'Linux Foundation';
+  const project = sanitizeDelimiter(body.project || 'Linux Foundation');
+  const eventName = sanitizeDelimiter(body.eventName);
   const dateSuffix = body.startDate || new Date().toISOString().split('T')[0];
-  return `Events | ${body.eventName} | ${region} | Conversions | ${targeting} | ${adFormat} | ${project} | ${funnel} | ${dateSuffix}`;
+  return `Events | ${eventName} | ${region} | Conversions | ${targeting} | ${adFormat} | ${project} | ${funnel} | ${dateSuffix}`;
 }
 
 function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'): string {

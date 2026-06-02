@@ -9,7 +9,7 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
 
 export type CampaignPhase = 'planning' | 'implementation' | 'monitoring' | 'optimization';
 
-export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited';
+export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 export type CampaignType = 'search' | 'demand-gen';
 
@@ -27,7 +27,17 @@ export interface CampaignTabOption {
 // Brief Pipeline (Planning Phase)
 // ---------------------------------------------------------------------------
 
-export type CampaignSSEEventType = 'status' | 'event' | 'hubspot_utm' | 'copy_token' | 'copy_done' | 'copy_structured' | 'keywords' | 'error' | 'done';
+export type CampaignSSEEventType =
+  | 'status'
+  | 'event'
+  | 'hubspot_utm'
+  | 'copy_token'
+  | 'copy_done'
+  | 'copy_structured'
+  | 'keywords'
+  | 'error'
+  | 'done'
+  | 'shutdown';
 
 export interface CampaignBriefRequest {
   url: string;
@@ -113,7 +123,7 @@ export interface CampaignCreateResponse {
 }
 
 export interface CampaignJobStatus {
-  status: 'running' | 'done' | 'not_found';
+  status: 'running' | 'done';
   result?: CampaignCreateResponse;
 }
 

@@ -19,6 +19,9 @@ export * from './components.interface';
 // Auth interfaces
 export * from './auth.interface';
 
+// Campaign interfaces
+export * from './campaign.interface';
+
 // API interfaces
 export * from './api.interface';
 
