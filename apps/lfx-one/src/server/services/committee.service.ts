@@ -1279,9 +1279,24 @@ export class CommitteeService {
 
       // This level's grants and the project record (to find the parent) in parallel; both are
       // best-effort so an unreadable level contributes nothing and the walk still continues.
+      // Capture the error at debug — a caller lacking read access to an ancestor is an expected
+      // outcome (not a system fault), but the failure must remain diagnosable since it silently
+      // shrinks the inherited lists this feature surfaces.
       const [settings, project]: [ProjectSettings | null, Project | null] = await Promise.all([
-        this.projectService.getProjectSettings(req, levelUid).catch(() => null),
-        this.projectService.getProjectById(req, levelUid, false).catch(() => null),
+        this.projectService.getProjectSettings(req, levelUid).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project settings; skipping level', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+        this.projectService.getProjectById(req, levelUid, false).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project record; stopping ancestry walk', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
       ]);
 
       for (const u of settings?.writers ?? []) {

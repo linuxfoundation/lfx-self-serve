@@ -95,7 +95,9 @@ describe('resolveCommitteeMemberPermission', () => {
 
   it('ranks manage above review when grants exist at both levels', () => {
     const result = resolveCommitteeMemberPermission(committee({ auditors: [tracey], inherited_writers: [tracey] }), member());
-    expect(result.level).toBe('manage');
+    // A direct auditor role makes hasDirectRole true, so inherited is false even though the
+    // winning manage level comes from inherited_writers.
+    expect(result).toEqual({ level: 'manage', inherited: false });
   });
 
   it('returns member for a null committee', () => {
