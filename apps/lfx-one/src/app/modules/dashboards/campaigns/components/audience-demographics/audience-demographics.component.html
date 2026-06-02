@@ -29,6 +29,11 @@
         Loading audience data...
       </div>
     </div>
+  } @else if (error()) {
+    <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8" data-testid="audience-error">
+      <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
+      <p class="text-sm text-red-600">{{ error() }}</p>
+    </div>
   } @else if (!hasData()) {
     <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="audience-empty">
       <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>

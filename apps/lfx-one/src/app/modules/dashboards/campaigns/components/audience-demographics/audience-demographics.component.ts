@@ -26,6 +26,7 @@ export class AudienceDemographicsComponent {
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly data = signal<AudienceDemographics | null>(null);
+  protected readonly error = signal<string | null>(null);
 
   // === Computed Signals ===
   protected readonly hasData = computed(() => !!this.data());
@@ -44,15 +45,19 @@ export class AudienceDemographicsComponent {
   protected refresh(days?: number): void {
     this.audienceSub?.unsubscribe();
     this.loading.set(true);
+    this.error.set(null);
     this.audienceSub = this.campaignService
       .getAudience(days ?? this.days())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.data.set(result);
+          this.error.set(null);
           this.loading.set(false);
         },
-        error: () => {
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.error.set(httpErr?.error?.message || httpErr?.message || 'Failed to load audience data');
           this.loading.set(false);
         },
       });
