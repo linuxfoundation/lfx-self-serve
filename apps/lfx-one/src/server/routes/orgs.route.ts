@@ -57,6 +57,8 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
+  // LFXV2-1876 — People → Trainees tab. Keep above the `/:personKey/detail` matcher so 'trainees' isn't consumed as a personKey.
+  router.get('/:orgUid/lens/people/trainees', (req, res, next) => orgLensPeopleController.getTrainees(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
   // LFXV2-1895 — Org Lens Training & Certifications stat strip.

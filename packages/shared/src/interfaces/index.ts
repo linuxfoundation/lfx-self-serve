@@ -183,6 +183,9 @@ export * from './org-people.interface';
 export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';
 
+// Org People — Trainees tab (LFXV2-1876)
+export * from './org-people-trainees.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 

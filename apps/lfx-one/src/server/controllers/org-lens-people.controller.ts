@@ -9,15 +9,18 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
+import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
   private readonly keyContactsService: OrgPeopleKeyContactsService;
+  private readonly traineesService: OrgPeopleTraineesService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
+    this.traineesService = new OrgPeopleTraineesService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -96,6 +99,33 @@ export class OrgLensPeopleController {
         individual_count: response.stats.individualCount,
         foundations_covered: response.stats.foundationsCovered,
         unfilled_required_role_count: response.stats.unfilledRequiredRoleCount,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/trainees — bundled rows + details + stats + filter options for the Trainees tab (LFXV2-1876). */
+  public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_trainees', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_trainees');
+
+      const response = await this.traineesService.getTrainees(orgUid);
+
+      logger.success(req, 'get_org_lens_people_trainees', startTime, {
+        org_uid: orgUid,
+        trainee_count: response.trainees.length,
+        detail_count: response.details.length,
+        foundation_count: response.foundationOptions.length,
+        course_count: response.courseOptions.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

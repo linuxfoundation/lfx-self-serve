@@ -8,6 +8,12 @@ import type {
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces/org-people.interface';
+import type {
+  OrgTraineeStatsBaseline,
+  OrgTraineesResponse,
+  OrgTraineeTimeWindow,
+  OrgTraineeTimeWindowOption,
+} from '../interfaces/org-people-trainees.interface';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -54,3 +60,41 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
   { label: 'Events', value: 'events' },
   { label: 'Training', value: 'training' },
 ] as const;
+
+// ----------------------------------------------------------------------------
+// Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
+// Initial cap mirrors All Employees so cross-tab pagination feels consistent.
+// ----------------------------------------------------------------------------
+
+/** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
+export const ORG_TRAINEES_INITIAL_LIMIT = 30;
+
+/** Default Trainees time-window — Past 12 Months per Item 2 lock (matches prototype default). */
+export const ORG_TRAINEE_DEFAULT_TIME_WINDOW: OrgTraineeTimeWindow = '12m';
+
+/** Time-window dropdown options for Trainees / Event Attendees families — ordered narrowest-first as the prototype renders them. */
+export const ORG_TRAINEE_TIME_WINDOW_OPTIONS: readonly OrgTraineeTimeWindowOption[] = [
+  { label: 'Past 3 Months', value: '3m' },
+  { label: 'Past 6 Months', value: '6m' },
+  { label: 'Past 12 Months', value: '12m' },
+  { label: 'Past 2 Years', value: '2y' },
+  { label: 'All Time', value: 'all' },
+] as const;
+
+/** Zero-valued Trainees stats baseline — fallback when stats query returns no rows. */
+export const EMPTY_ORG_TRAINEE_STATS: OrgTraineeStatsBaseline = {
+  trainees: 0,
+  coursesEnrolled: 0,
+  certifications: 0,
+  completionRate: 0,
+};
+
+/** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
+export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
+  accountId: '',
+  trainees: [],
+  details: [],
+  stats: EMPTY_ORG_TRAINEE_STATS,
+  foundationOptions: [],
+  courseOptions: [],
+};
