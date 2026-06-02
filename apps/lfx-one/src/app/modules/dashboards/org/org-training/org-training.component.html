@@ -1,0 +1,141 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-training-page">
+  <!-- Page Header -->
+  <header class="flex flex-col gap-2" data-testid="org-training-header">
+    <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-training-title">
+      @if (companyName()) {
+        Training &amp; Certifications &mdash; {{ companyName() }}
+      } @else {
+        Training &amp; Certifications
+      }
+    </h1>
+    <p class="text-sm text-gray-500" data-testid="org-training-subtitle">Training enrollments and certifications across your organization.</p>
+  </header>
+
+  <!-- Stat Strip -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-stats">
+    <div class="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+      <!-- Certified Employees (clickable → Certifications tab) -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        data-testid="org-training-stat-certified-employees"
+        (click)="onStatCardClick('certifications')">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-violet-100 text-violet-600 flex-shrink-0">
+          <i class="fa-light fa-user-check text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          @if (statsLoading() || statsError()) {
+            <p class="text-xl font-medium text-gray-400">&mdash;</p>
+          } @else {
+            <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.certifiedEmployees ?? 0 }}</p>
+          }
+          <p class="text-sm font-normal text-gray-900">Certified Employees</p>
+        </div>
+      </button>
+
+      <!-- Certifications Earned (clickable → Certifications tab) -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        data-testid="org-training-stat-certifications-earned"
+        (click)="onStatCardClick('certifications')">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
+          <i class="fa-light fa-award text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          @if (statsLoading() || statsError()) {
+            <p class="text-xl font-medium text-gray-400">&mdash;</p>
+          } @else {
+            <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.certificationsEarned ?? 0 }}</p>
+          }
+          <p class="text-sm font-normal text-gray-900">Certifications Earned</p>
+        </div>
+      </button>
+
+      <!-- Employees in Training (clickable → Trainings tab) -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        data-testid="org-training-stat-employees-in-training"
+        (click)="onStatCardClick('trainings')">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+          <i class="fa-light fa-users text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          @if (statsLoading() || statsError()) {
+            <p class="text-xl font-medium text-gray-400">&mdash;</p>
+          } @else {
+            <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.employeesInTraining ?? 0 }}</p>
+          }
+          <p class="text-sm font-normal text-gray-900">Employees in Training</p>
+        </div>
+      </button>
+
+      <!-- Training Courses Enrolled (clickable → Trainings tab) -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        data-testid="org-training-stat-training-courses-enrolled"
+        (click)="onStatCardClick('trainings')">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+          <i class="fa-light fa-book-open text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          @if (statsLoading() || statsError()) {
+            <p class="text-xl font-medium text-gray-400">&mdash;</p>
+          } @else {
+            <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.trainingCoursesEnrolled ?? 0 }}</p>
+          }
+          <p class="text-sm font-normal text-gray-900">Training Courses Enrolled</p>
+        </div>
+      </button>
+    </div>
+  </lfx-card>
+
+  <!-- Content Card: tabs + search + filter + tab panels -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-content-card">
+    <!-- Tab Pills Bar -->
+    <lfx-card-tabs-bar [options]="tabs" [selectedFilter]="activeTab()" (filterChange)="onActiveTabChange($event)" data-testid="org-training-tabs" />
+
+    <!-- Search + Level Filter Bar -->
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-gray-100" data-testid="org-training-filter-bar">
+      <div class="relative flex-1">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search by name…"
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="w-full"
+          data-testid="org-training-search-input" />
+      </div>
+      <div class="w-full sm:w-44">
+        <lfx-select
+          [form]="filterForm"
+          control="level"
+          size="small"
+          [options]="levelOptions"
+          placeholder="All Levels"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="org-training-level-filter" />
+      </div>
+    </div>
+
+    <!-- Tab Panels -->
+    @for (tab of tabs; track tab.id) {
+      @if (activeTab() === tab.id) {
+        <section [id]="'org-training-panel-' + tab.id" [attr.data-testid]="'org-training-panel-' + tab.id" class="p-5">
+          <lfx-empty-state
+            [icon]="tab.icon"
+            title="Coming soon"
+            subtitle="This section is being built. Check back later."
+            [attr.data-testid]="'org-training-empty-state-' + tab.id" />
+        </section>
+      }
+    }
+  </lfx-card>
+</main>
