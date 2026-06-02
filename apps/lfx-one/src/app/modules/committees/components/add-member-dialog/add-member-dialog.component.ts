@@ -294,7 +294,7 @@ export class AddMemberDialogComponent {
           const trimmedQuery = q.trim();
           return this.searchService.searchUsers(trimmedQuery, 'committee_member').pipe(
             // Re-rank so name matches surface first and incidental email/alias
-            // matches (upstream over-match) are demoted/dropped.
+            // matches (upstream over-match) are demoted below them.
             map((users) => rankUserSearchResults(users, trimmedQuery)),
             tap(() => this.searchLoading.set(false)),
             catchError(() => {

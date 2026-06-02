@@ -27,6 +27,8 @@ const bob = user({ uid: '2', first_name: 'Bob', last_name: 'Brown', email: 'bob.
 const emailOnly = user({ uid: '3', first_name: 'Dana', last_name: 'Reyes', email: 'dreyes-il@example.com' });
 // Neither name nor email contains "il" — pure upstream ngram/alias noise.
 const noise = user({ uid: '4', first_name: 'Grace', last_name: 'Hopper', email: 'grace@example.com' });
+// Only the LFID username contains "il".
+const usernameOnly = user({ uid: '5', first_name: 'Sam', last_name: 'Park', email: 'sam.park@example.com', username: 'silke99' });
 
 describe('scoreUserSearchResult', () => {
   it('scores an exact name match highest', () => {
@@ -44,7 +46,11 @@ describe('scoreUserSearchResult', () => {
     expect(scoreUserSearchResult(ilona, 'ai')).toBe(UserSearchRelevance.NameSubstring);
   });
 
-  it('scores an email-only match below name matches', () => {
+  it('scores a username-only match above email', () => {
+    expect(scoreUserSearchResult(usernameOnly, 'il')).toBe(UserSearchRelevance.UsernameMatch);
+  });
+
+  it('scores an email-only match below name and username matches', () => {
     expect(scoreUserSearchResult(emailOnly, 'il')).toBe(UserSearchRelevance.EmailMatch);
   });
 
@@ -58,15 +64,16 @@ describe('scoreUserSearchResult', () => {
 });
 
 describe('rankUserSearchResults', () => {
-  it('sorts name matches above email-only matches and drops non-matches for a name query', () => {
-    const ranked = rankUserSearchResults([emailOnly, bob, ilona], 'il');
-    // Ilona (name prefix) first, then the email-only match. Bob has no "il" and is dropped.
-    expect(ranked.map((r) => r.uid)).toEqual(['1', '3']);
+  it('orders name > username > email > incidental for a name query', () => {
+    const ranked = rankUserSearchResults([noise, emailOnly, usernameOnly, ilona], 'il');
+    expect(ranked.map((r) => r.uid)).toEqual(['1', '5', '3', '4']);
   });
 
-  it('drops pure-incidental (ngram noise) matches for a name query', () => {
+  it('demotes pure-incidental matches to the bottom rather than dropping them', () => {
     const ranked = rankUserSearchResults([noise, ilona], 'il');
-    expect(ranked.map((r) => r.uid)).toEqual(['1']);
+    // Both retained — incidental is never hard-filtered (it may be a legitimate
+    // alias hit the client cannot see) — but it sorts last.
+    expect(ranked.map((r) => r.uid)).toEqual(['1', '4']);
   });
 
   it('keeps stable order within the same relevance tier', () => {
@@ -76,9 +83,15 @@ describe('rankUserSearchResults', () => {
     expect(rankUserSearchResults([b, a], 'il').map((r) => r.uid)).toEqual(['b', 'a']);
   });
 
-  it('does not hide results for an explicit email query (contains "@")', () => {
-    const ranked = rankUserSearchResults([noise, emailOnly], 'il@example.com');
-    // Nothing dropped; both retained even though names do not match.
+  it('caps results to the limit, letting demoted noise fall off', () => {
+    const noiseRows = Array.from({ length: 12 }, (_, i) => user({ uid: `n${i}`, first_name: 'Zed', last_name: 'Zane', email: `z${i}@example.com` }));
+    const ranked = rankUserSearchResults([...noiseRows, ilona], 'il', { limit: 1 });
+    // The single real match wins the only slot; noise is demoted and cut.
+    expect(ranked.map((r) => r.uid)).toEqual(['1']);
+  });
+
+  it('returns every ranked result when limit is Infinity', () => {
+    const ranked = rankUserSearchResults([noise, ilona], 'il', { limit: Infinity });
     expect(ranked).toHaveLength(2);
   });
 
