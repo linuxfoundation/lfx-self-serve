@@ -109,32 +109,6 @@ export class NewsletterGenerateDrawerComponent {
     }
   }
 
-  // Preserve hyperlinks when pasting rich content. A textarea would otherwise drop
-  // hrefs and keep only visible text, hiding URLs from the AI generator downstream.
-  public onRawContentPaste(event: ClipboardEvent): void {
-    const html = event.clipboardData?.getData('text/html') ?? '';
-    if (!html) return;
-
-    const textarea = event.target as HTMLTextAreaElement | null;
-    if (!textarea) return;
-
-    event.preventDefault();
-
-    const converted = htmlClipboardToText(html);
-    const start = textarea.selectionStart ?? textarea.value.length;
-    const end = textarea.selectionEnd ?? textarea.value.length;
-    const current = textarea.value;
-    const next = current.slice(0, start) + converted + current.slice(end);
-
-    this.form.controls.rawContent.setValue(next);
-
-    const caret = start + converted.length;
-    queueMicrotask(() => {
-      textarea.setSelectionRange(caret, caret);
-      textarea.focus();
-    });
-  }
-
   public onGenerate(): void {
     if (!this.canGenerate()) return;
     this.generating.set(true);
@@ -174,6 +148,38 @@ export class NewsletterGenerateDrawerComponent {
           });
         },
       });
+  }
+
+  // Preserve hyperlinks when pasting rich content. A textarea would otherwise drop
+  // hrefs and keep only visible text, hiding URLs from the AI generator downstream.
+  protected onRawContentPaste(event: ClipboardEvent): void {
+    const html = event.clipboardData?.getData('text/html') ?? '';
+    if (!html) return;
+
+    const textarea = event.target;
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+
+    event.preventDefault();
+
+    const converted = htmlClipboardToText(html);
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const current = textarea.value;
+    const next = current.slice(0, start) + converted + current.slice(end);
+
+    const control = this.form.controls.rawContent;
+    control.setValue(next);
+    // setValue bypasses the value accessor, so dirty/touched would not flip
+    // the way a native paste does. Set them explicitly so validators that gate
+    // on touched (e.g., error display) behave consistently with manual typing.
+    control.markAsDirty();
+    control.markAsTouched();
+
+    const caret = start + converted.length;
+    queueMicrotask(() => {
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+    });
   }
 
   private restoreCustomPrompt(): void {

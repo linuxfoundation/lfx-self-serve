@@ -65,6 +65,23 @@ describe('htmlClipboardToText', () => {
     expect(htmlClipboardToText('<a href="https://x.com">cats &amp; dogs</a>')).toBe('[cats & dogs](https://x.com)');
   });
 
+  it('decodes entities inside href so query-string URLs survive', () => {
+    expect(htmlClipboardToText('<a href="https://example.com?a=1&amp;b=2">link</a>')).toBe('[link](https://example.com?a=1&b=2)');
+  });
+
+  it('collapses to a bare URL when text and href differ only by entity encoding', () => {
+    const html = '<a href="https://example.com?a=1&amp;b=2">https://example.com?a=1&amp;b=2</a>';
+    expect(htmlClipboardToText(html)).toBe('https://example.com?a=1&b=2');
+  });
+
+  it('decodes decimal numeric entities (em dash, NBSP, smart quote)', () => {
+    expect(htmlClipboardToText('hello&#8212;world&#160;&#8217;tis')).toBe("hello—world ’tis");
+  });
+
+  it('decodes hexadecimal numeric entities', () => {
+    expect(htmlClipboardToText('em dash &#x2014; and ndash &#x2013;')).toBe('em dash — and ndash –');
+  });
+
   it('turns block boundaries into newlines', () => {
     expect(htmlClipboardToText('<p>Hello</p><p>World</p>')).toBe('Hello\nWorld');
   });

@@ -2,6 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 /**
+ * Decodes a small set of named HTML entities plus all numeric ones (decimal
+ * and hex) into their character equivalents. Pure string ops — SSR-safe.
+ */
+function decodeHtmlEntities(s: string): string {
+  return (
+    s
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&apos;/g, "'")
+      // Numeric entities — common in clipboard HTML from Word, Google Docs, Notion
+      // (em dash &#8212;, NBSP &#160;, smart quotes, etc.).
+      .replace(/&#(\d+);/g, (_match, n: string) => String.fromCodePoint(Number(n)))
+      .replace(/&#x([\da-fA-F]+);/g, (_match, h: string) => String.fromCodePoint(parseInt(h, 16)))
+  );
+}
+
+/**
  * Strips HTML tags and decodes common HTML entities from a string.
  * This function works in both browser and Node.js (SSR) environments.
  *
@@ -19,23 +41,7 @@
  */
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
-
-  return (
-    html
-      // Remove HTML tags
-      .replace(/<[^>]*>/g, '')
-      // Decode common HTML entities
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&#x27;/g, "'")
-      .replace(/&apos;/g, "'")
-      // Trim whitespace
-      .trim()
-  );
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).trim();
 }
 
 /**
@@ -46,6 +52,12 @@ export function stripHtml(html: string | null | undefined): string {
  * `[text](url)` (or bare `url` when the visible text equals the href) so the
  * URLs can flow through plain-text fields (e.g., AI prompt inputs) and be
  * surfaced again downstream. SSR-safe — pure string operations, no DOM APIs.
+ *
+ * Output destination: the returned string flows into `textarea.value` /
+ * `form.setValue()` and is treated as plain text by the browser. It is never
+ * injected as `innerHTML`, so partial-decode patterns (e.g., decoded `<script>`
+ * surviving in the output) cannot become an XSS vector. CodeQL alerts on the
+ * decode/strip chain are false positives in this context.
  *
  * @param html - The HTML string from `clipboardData.getData('text/html')`
  * @returns Plain text with anchors rewritten, block boundaries turned into
@@ -63,11 +75,12 @@ export function stripHtml(html: string | null | undefined): string {
 export function htmlClipboardToText(html: string | null | undefined): string {
   if (!html) return '';
 
-  let result = html;
-
-  // Rewrite anchors first — must happen before tag stripping so we can read href.
-  result = result.replace(/<a\b[^>]*?\bhref\s*=\s*("([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi, (_match, _quotedHref, hrefDouble, hrefSingle, inner) => {
-    const href = (hrefDouble ?? hrefSingle ?? '').trim();
+  // Capture the full anchor tag first, then extract href via a bounded inner
+  // regex. This avoids superlinear backtracking that the single combined regex
+  // can exhibit on malformed clipboard HTML (e.g., unclosed href attributes).
+  let result = html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, (match, inner: string) => {
+    const hrefMatch = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(match);
+    const href = decodeHtmlEntities((hrefMatch?.[1] ?? hrefMatch?.[2] ?? '').trim());
     const text = decodeHtmlEntities(inner.replace(/<[^>]*>/g, '')).trim();
     if (!href) return text;
     if (!text || text === href) return href;
@@ -81,23 +94,11 @@ export function htmlClipboardToText(html: string | null | undefined): string {
   // Strip remaining tags.
   result = result.replace(/<[^>]*>/g, '');
 
-  // Decode entities.
+  // Decode entities on the surviving text.
   result = decodeHtmlEntities(result);
 
   // Collapse runs of 3+ newlines down to 2.
   result = result.replace(/\n{3,}/g, '\n\n');
 
   return result.trim();
-}
-
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&apos;/g, "'");
 }
