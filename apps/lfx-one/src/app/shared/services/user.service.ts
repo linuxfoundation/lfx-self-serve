@@ -10,10 +10,12 @@ import {
   ChangePasswordRequest,
   ProjectAffiliationPatchBody,
   CombinedProfile,
+  ClaimAliasRequest,
   CreateUserPermissionRequest,
   EmailManagementData,
   EnrichedIdentity,
   Impersonator,
+  LinuxAliasData,
   Meeting,
   PastMeeting,
   ProfileAuthStatus,
@@ -121,6 +123,29 @@ export class UserService {
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
     return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+  }
+
+  // Linux.com email alias methods
+
+  /**
+   * Resolve the user's Linux.com alias state (purchase + claim + forward).
+   */
+  public getLinuxAlias(): Observable<LinuxAliasData> {
+    return this.http.get<LinuxAliasData>('/api/profile/linux-email').pipe(take(1));
+  }
+
+  /**
+   * Claim a Linux.com alias and set its forwarding target.
+   */
+  public claimLinuxAlias(body: ClaimAliasRequest): Observable<LinuxAliasData> {
+    return this.http.post<LinuxAliasData>('/api/profile/linux-email/claim', body).pipe(take(1));
+  }
+
+  /**
+   * Update the forwarding target for an already-claimed alias.
+   */
+  public updateLinuxForward(forwardTo: string): Observable<{ forwardTo: string }> {
+    return this.http.put<{ forwardTo: string }>('/api/profile/linux-email/forward', { forwardTo }).pipe(take(1));
   }
 
   // Password management methods

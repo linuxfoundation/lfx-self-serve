@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { TLF_INDIVIDUAL_SUPPORTER } from '@lfx-one/shared/constants';
+import { LINUX_COM_ADDON_PRODUCT_ID, TLF_INDIVIDUAL_SUPPORTER } from '@lfx-one/shared/constants';
 import { EnrollmentMembership, IndividualEnrollment, RawMembership } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import { MicroserviceError } from '../errors';
@@ -60,6 +60,31 @@ export class EnrollmentService {
         membership: membershipMap.get(TLF_INDIVIDUAL_SUPPORTER.productId) ?? null,
       },
     ];
+  }
+
+  /**
+   * Whether the user has purchased the Lifetime Linux.com Email Alias add-on.
+   *
+   * The add-on is modeled as "lifetime" (EndDate = 2099, no auto-renew), so we
+   * check for the presence of an Active/Purchased record rather than an expiry
+   * window. Used to gate the Linux.com email tab between `not_purchased` and the
+   * (un)claimed states.
+   */
+  public async hasLinuxComAddon(req: Request): Promise<boolean> {
+    const baseUrl = getApiGatewayBaseUrl('get_linux_addon_membership', ENROLLMENT_SERVICE);
+    const url = `${baseUrl}/member-service/v2/me/memberships?productID=${LINUX_COM_ADDON_PRODUCT_ID}&status=Purchased,Active&membershipType=Individual`;
+
+    logger.debug(req, 'get_linux_addon_membership', 'Checking Linux.com add-on purchase from member-service');
+
+    const data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
+      operation: 'get_linux_addon_membership',
+      service: ENROLLMENT_SERVICE,
+      errorMessage: 'Linux.com add-on membership fetch failed',
+      errorCode: 'LINUX_ADDON_MEMBERSHIP_FETCH_FAILED',
+    });
+
+    const rawMemberships: RawMembership[] = data?.Data ?? data?.data ?? [];
+    return rawMemberships.some((m) => m.Product?.ID === LINUX_COM_ADDON_PRODUCT_ID && VALID_STATUSES.has(m.Status as EnrollmentMembership['Status']));
   }
 
   public async updateAutoRenew(req: Request, membershipId: string, autoRenew: boolean): Promise<void> {
