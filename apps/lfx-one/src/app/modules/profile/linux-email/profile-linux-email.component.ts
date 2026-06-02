@@ -62,7 +62,7 @@ export class ProfileLinuxEmailComponent {
 
   // Derived view state
   public state = computed(() => this.data().alias?.state ?? null);
-  public domain = computed(() => this.data().alias?.domain ?? 'linux.com');
+  public domain = computed(() => this.data().alias?.domain ?? '');
   public email = computed(() => this.data().alias?.email ?? null);
 
   // Verified emails the user can forward to (primary first, default selection).
@@ -156,6 +156,10 @@ export class ProfileLinuxEmailComponent {
   }
 
   public retry(): void {
+    // Clear the one-shot re-auth guard so a Retry can re-trigger Flow C for the forward target.
+    if (isPlatformBrowser(this.platformId)) {
+      sessionStorage.removeItem(this.reauthFlagKey);
+    }
     this.refresh.next();
   }
 
@@ -178,7 +182,9 @@ export class ProfileLinuxEmailComponent {
         switchMap(() => {
           this.loading.set(true);
           return forkJoin({
-            alias: this.userService.getLinuxAlias().pipe(catchError(() => of(null))),
+            alias: this.userService
+              .getLinuxAlias()
+              .pipe(catchError(() => of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null }))),
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
             identities: this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))),
           }).pipe(
@@ -221,8 +227,11 @@ export class ProfileLinuxEmailComponent {
     const primary = (emails?.primary_email ?? '').toLowerCase().trim();
 
     if (alias?.state === 'claimed') {
-      // Normalize so the default matches a (normalized) forwardOptions value.
-      this.editForm.patchValue({ forwardTo: (alias.forwardTo ?? emails?.primary_email ?? '').toLowerCase().trim() });
+      // When re-auth is still required and the real target hasn't loaded, leave the selection
+      // empty rather than guessing the primary email — a guessed value could overwrite the real
+      // forward on Save. Otherwise normalize so the default matches a (normalized) forwardOptions value.
+      const forwardTo = alias.forwardAuthRequired && !alias.forwardTo ? '' : (alias.forwardTo ?? emails?.primary_email ?? '').toLowerCase().trim();
+      this.editForm.patchValue({ forwardTo });
     } else if (alias?.state === 'purchased_unclaimed' && primary) {
       this.claimForm.patchValue({ forwardTo: primary });
     }

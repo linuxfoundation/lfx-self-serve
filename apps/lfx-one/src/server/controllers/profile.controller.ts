@@ -510,7 +510,11 @@ export class ProfileController {
       }
 
       const suffix = `@${domain}`;
-      const aliasEmail = emails.alternate_emails.find((e) => e.email.toLowerCase().trim().endsWith(suffix));
+      // Scan alternate emails first; also cover the edge case where the claimed alias is the
+      // user's primary email, which would otherwise be missed and read as unclaimed.
+      const aliasEmail =
+        emails.alternate_emails.find((e) => e.email.toLowerCase().trim().endsWith(suffix)) ??
+        (emails.primary_email?.toLowerCase().trim().endsWith(suffix) ? { email: emails.primary_email } : undefined);
 
       if (aliasEmail) {
         const email = aliasEmail.email.toLowerCase().trim();
@@ -543,7 +547,16 @@ export class ProfileController {
         return;
       }
 
-      const purchased = await this.enrollmentService.hasLinuxComAddon(req);
+      // Degrade to service_unavailable if the purchase lookup fails, so the tab keeps its
+      // 4-state contract (renders the retry panel) instead of erroring out via next(error).
+      let purchased: boolean;
+      try {
+        purchased = await this.enrollmentService.hasLinuxComAddon(req);
+      } catch {
+        logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
+        res.json(this.linuxAliasState('service_unavailable', domain));
+        return;
+      }
       const state = purchased ? 'purchased_unclaimed' : 'not_purchased';
 
       logger.success(req, 'get_linux_alias', startTime, { state });
