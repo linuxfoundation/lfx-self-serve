@@ -150,19 +150,44 @@ export class OrgRoleGrantsService {
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;
 
-      const isWriter = (resource.data?.writers ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted');
-      if (isWriter) {
+      const role = this.classifyDirectRole(resource.data, username);
+      if (role === 'writer') {
         directWriters.add(orgUid);
-        continue;
-      }
-
-      const isAuditor = (resource.data?.auditors ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted');
-      if (isAuditor) {
+      } else if (role === 'auditor') {
         directAuditors.add(orgUid);
       }
     }
 
     return { directWriters, directAuditors };
+  }
+
+  /**
+   * Resolves the caller's direct role on one settings doc, preferring the current flattened
+   * `members[]` indexer shape and falling back to the legacy `writers[]`/`auditors[]` arrays
+   * (member-service `b2bOrgSettingsIndexerView`). Only `accepted` entries count, and writer
+   * wins over auditor when the caller appears as both (matches the indexer's writer-first dedupe).
+   */
+  private classifyDirectRole(data: B2bOrgSettingsDoc | undefined, username: string): 'writer' | 'auditor' | null {
+    const members = data?.members;
+    if (members?.length) {
+      let isAuditor = false;
+      for (const entry of members) {
+        if (entry?.username !== username || entry?.invite_status !== 'accepted') continue;
+        if (entry.role === 'writer') return 'writer';
+        if (entry.role === 'auditor') isAuditor = true;
+      }
+      if (isAuditor) return 'auditor';
+    }
+
+    // Legacy fallback for docs indexed before the members[] flatten.
+    if ((data?.writers ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted')) {
+      return 'writer';
+    }
+    if ((data?.auditors ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted')) {
+      return 'auditor';
+    }
+
+    return null;
   }
 
   /** Strip the `<type>:` prefix that query-service prepends on `resource.id`. UUIDs don't contain `:`, so this is safe across all org types. */

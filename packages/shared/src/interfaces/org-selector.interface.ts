@@ -214,13 +214,33 @@ export interface B2bOrgIndexedDoc {
   is_parent?: boolean;
 }
 
-/** Shape of `b2b_org_settings.data` from the query-service "what can I see" pattern. */
+/** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
+export interface B2bOrgSettingsMember {
+  username?: string | null;
+  /** `writer` wins when a user holds both roles (member-service dedupes writer-first). */
+  role?: 'writer' | 'auditor';
+  /** Only `accepted` invites count as grants (D-002, FR-002). Revoked/expired are excluded from the index entirely. */
+  invite_status?: 'pending' | 'accepted' | 'revoked' | 'expired';
+}
+
+/**
+ * Shape of `b2b_org_settings.data` from the query-service "what can I see" pattern.
+ *
+ * The member-service indexer flattens writers+auditors into a single `members[]` array
+ * with a `role` discriminator (see `b2bOrgSettingsIndexerView` in messaging.go). The legacy
+ * `writers[]`/`auditors[]` fields are kept for backward compatibility with any docs that
+ * have not yet been re-indexed.
+ */
 export interface B2bOrgSettingsDoc {
+  /** Current indexer shape — flattened members with a `role` discriminator. */
+  members?: B2bOrgSettingsMember[];
+  /** @deprecated Legacy pre-flatten shape; read as a fallback only. */
   writers?: {
     username?: string | null;
     /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
     invite_status?: 'pending' | 'accepted' | 'revoked';
   }[];
+  /** @deprecated Legacy pre-flatten shape; read as a fallback only. */
   auditors?: {
     username?: string | null;
     /** Spec 022 — only `accepted` invites count as grants (D-002, FR-002). */
