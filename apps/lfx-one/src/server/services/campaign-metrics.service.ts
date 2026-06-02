@@ -4,6 +4,7 @@
 import type {
   AudienceBucket,
   AudienceDemographics,
+  CampaignActionItem,
   CampaignMetrics,
   CampaignMonitorResponse,
   KeywordMetrics,
@@ -28,7 +29,9 @@ export class CampaignMetricsService {
     const { gaqlRange, effectiveDays } = resolveDateRange(days);
 
     const query = `
-      SELECT campaign.name, campaign.status, campaign_budget.amount_micros,
+      SELECT campaign.name, campaign.status, campaign.id,
+             campaign.start_date, campaign.end_date,
+             campaign_budget.amount_micros,
              metrics.impressions, metrics.clicks, metrics.cost_micros,
              metrics.conversions, metrics.ctr, metrics.average_cpc
       FROM campaign
@@ -39,10 +42,6 @@ export class CampaignMetricsService {
     const rows = await gaqlSearch(query);
     const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays));
     const actionItems = generateActionItems(campaigns);
-
-    for (const campaign of campaigns) {
-      campaign.actionRules = actionItems.filter((a) => a.campaign === campaign.shortName);
-    }
 
     return {
       pulledAt: new Date().toISOString(),
@@ -63,7 +62,7 @@ export class CampaignMetricsService {
     const query = `
       SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
              ad_group_criterion.quality_info.quality_score, ad_group_criterion.status,
-             ad_group.name, campaign.name,
+             ad_group.name, campaign.name, campaign.id,
              metrics.impressions, metrics.clicks, metrics.ctr,
              metrics.cost_micros, metrics.conversions
       FROM keyword_view
@@ -134,10 +133,15 @@ function normalizeCampaignStatus(raw: string | undefined): CampaignMetrics['stat
   return VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown';
 }
 
+function buildGoogleAdsUrl(campaignId: string): string {
+  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${campaignId}` : '';
+}
+
 function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const r = row as Record<string, unknown>;
   const name = (extractNested(r, 'campaign.name') as string) || '';
   const parts = name.split(' | ');
+  const campaignId = String(extractNested(r, 'campaign.id') || '');
   const budgetMicros = Number(extractNested(r, 'campaignBudget.amountMicros') || 0);
   const costMicros = Number(extractNested(r, 'metrics.costMicros') || 0);
   const impressions = Number(extractNested(r, 'metrics.impressions') || 0);
@@ -160,7 +164,10 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     adFormat: parts[5] || '',
     targeting: parts[4] || '',
     status: normalizeCampaignStatus(extractNested(r, 'campaign.status') as string | undefined),
+    startDate: (extractNested(r, 'campaign.startDate') as string) || '',
+    endDate: (extractNested(r, 'campaign.endDate') as string) || '',
     budgetDay,
+    totalBudget: budgetDay * days,
     spend,
     impressions,
     clicks,
@@ -169,7 +176,8 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     conversions,
     pacingPct,
     pacingLabel,
-    actionRules: [],
+    campaignId,
+    googleAdsUrl: buildGoogleAdsUrl(campaignId),
   };
 }
 
@@ -183,89 +191,123 @@ function aggregateTotals(campaigns: CampaignMetrics[]) {
   };
 }
 
-function generateActionItems(campaigns: CampaignMetrics[]) {
-  const items: CampaignMetrics['actionRules'] = [];
+function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[] {
+  const items: CampaignActionItem[] = [];
+
   for (const c of campaigns) {
     const isSearch = c.adFormat.toLowerCase().includes('search');
+    const baseMetrics = {
+      spend: c.spend,
+      budget: c.budgetDay,
+      pacingPct: c.pacingPct,
+      impressions: c.impressions,
+      clicks: c.clicks,
+      conversions: c.conversions,
+    };
 
     if (c.status === 'limited') {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
         issue: 'Campaign limited by Google',
         action: 'Switch bid to Maximize Clicks or expand keyword match types',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
     if (c.budgetDay <= 1 && c.status === 'enabled') {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
         issue: 'Placeholder $1/day budget',
         action: 'Set real budget before activation',
-        owner: 'stakeholder',
+        metrics: baseMetrics,
       });
     }
     if (c.status === 'paused') {
-      items.push({ campaign: c.shortName, priority: 'MED', issue: 'Campaign paused', action: 'Verify pause reason or activate', owner: 'ads-manager' });
+      items.push({
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
+        priority: 'MED',
+        issue: 'Campaign paused',
+        action: 'Verify pause reason or activate',
+        metrics: baseMetrics,
+      });
     }
     if (c.pacingLabel === 'underspending' && c.status === 'enabled') {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Underspending (${c.pacingPct}% of budget)`,
         action: 'Broaden targeting or increase bids',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
     if (c.pacingLabel === 'constrained' && c.status === 'enabled') {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Budget constrained (${c.pacingPct}%)`,
         action: 'Consider budget increase',
-        owner: 'stakeholder',
+        metrics: baseMetrics,
       });
     }
     if (isSearch && c.ctr < 2 && c.clicks > 50) {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: 'Low Search CTR (<2%)',
         action: 'Review headline relevance, add negative keywords',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
     if (!isSearch && c.ctr < 0.3 && c.clicks > 50) {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: 'Low Display CTR (<0.3%)',
         action: 'Refresh creative, check audience overlap',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
     if (c.clicks > 100 && c.conversions === 0) {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: 'Clicks with zero conversions',
         action: 'Audit conversion tracking setup',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
     if (c.status === 'draft') {
       items.push({
-        campaign: c.shortName,
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: 'Campaign in draft',
         action: 'Complete setup: upload images, publish, then pause',
-        owner: 'ads-manager',
+        metrics: baseMetrics,
       });
     }
   }
+
   const priorityOrder: Record<string, number> = { HIGH: 0, MED: 1, LOW: 2 };
-  items.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+  items.sort((a: CampaignActionItem, b: CampaignActionItem) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
   return items;
 }
 
@@ -273,6 +315,7 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
   const r = row as Record<string, unknown>;
   const costMicros = Number(extractNested(r, 'metrics.costMicros') || 0);
   const clicks = Number(extractNested(r, 'metrics.clicks') || 0);
+  const campaignId = String(extractNested(r, 'campaign.id') || '');
   return {
     keyword: (extractNested(r, 'adGroupCriterion.keyword.text') as string) || '',
     matchType: (extractNested(r, 'adGroupCriterion.keyword.matchType') as string) || '',
@@ -280,6 +323,8 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     status: (extractNested(r, 'adGroupCriterion.status') as string) || '',
     adGroup: (extractNested(r, 'adGroup.name') as string) || '',
     campaign: (extractNested(r, 'campaign.name') as string) || '',
+    campaignId,
+    googleAdsUrl: buildGoogleAdsUrl(campaignId),
     impressions: Number(extractNested(r, 'metrics.impressions') || 0),
     clicks,
     ctr: Number(extractNested(r, 'metrics.ctr') || 0) * 100,
