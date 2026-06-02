@@ -760,7 +760,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initHasAiCompanion(): Signal<boolean> {
     return computed(() => {
-      return this.meeting().zoom_config?.ai_companion_enabled || false;
+      return this.meeting().ai_summary_enabled || false;
     });
   }
 
