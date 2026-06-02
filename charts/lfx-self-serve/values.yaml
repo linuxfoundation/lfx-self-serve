@@ -356,3 +356,30 @@ environment:
 
   SNOWFLAKE_MAX_CONNECTIONS:
     value: "10"
+
+  # Google Ads API Configuration (Campaign Management)
+  GADS_DEVELOPER_TOKEN:
+    value:
+
+  GADS_CLIENT_ID:
+    value:
+
+  GADS_CLIENT_SECRET:
+    value:
+
+  GADS_REFRESH_TOKEN:
+    value:
+
+  GADS_LOGIN_CUSTOMER_ID:
+    value:
+
+  GADS_CUSTOMER_ID:
+    value:
+
+  # Campaign Brief Scrape — SSRF host allowlist (comma-separated)
+  CAMPAIGN_BRIEF_SCRAPE_HOST_ALLOWLIST:
+    value: "events.linuxfoundation.org,lfevents.linuxfoundation.org,www.linuxfoundation.org"
+
+  # HubSpot Configuration (Campaign UTM Tracking)
+  HUBSPOT_ACCESS_TOKEN:
+    value:
