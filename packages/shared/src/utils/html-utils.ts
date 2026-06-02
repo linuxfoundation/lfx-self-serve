@@ -1,45 +1,52 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  nbsp: ' ',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
 /**
  * Decodes a small set of named HTML entities plus all numeric ones (decimal
- * and hex) into their character equivalents. Pure string ops — SSR-safe.
- *
- * Intended to be called once per value; callers that need multiple passes
- * should fold their pipeline so this runs as the final step.
+ * and hex) in a single regex pass. Single-pass is load-bearing: chaining
+ * replacements would let a decoded `&` get re-interpreted as the start of a
+ * fresh entity (e.g., `&amp;#39;` → `&#39;` → `'`), which is the
+ * double-unescape pattern CodeQL flags. Pure string ops — SSR-safe.
  */
 function decodeHtmlEntities(s: string): string {
-  return (
-    s
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&#x27;/g, "'")
-      .replace(/&apos;/g, "'")
-      // Numeric entities — common in clipboard HTML from Word, Google Docs, Notion
-      // (em dash &#8212;, NBSP &#160;, smart quotes, etc.).
-      .replace(/&#(\d+);/g, (_match, n: string) => String.fromCodePoint(Number(n)))
-      .replace(/&#x([\da-fA-F]+);/g, (_match, h: string) => String.fromCodePoint(parseInt(h, 16)))
-  );
+  return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
+    const lower = body.toLowerCase();
+    if (lower.startsWith('#x')) {
+      const code = parseInt(lower.slice(2), 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    if (lower.startsWith('#')) {
+      const code = Number(lower.slice(1));
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    return NAMED_HTML_ENTITIES[lower] ?? match;
+  });
 }
 
 /**
- * Strips HTML-like tag sequences until the string is stable. Looping is
- * required because a single regex pass can leave behind a partial tag when
- * the input contains nested or malformed angle-bracket sequences (e.g.,
- * `<<script>foo</script>>` → `>foo>` after one pass; further passes are
- * no-ops). This is the canonical incomplete-multi-character-sanitization
- * mitigation pattern.
+ * Strips HTML-like tag sequences until the string is stable. The inner
+ * `[^<>]*` class is load-bearing: it disallows nested `<` inside a tag body,
+ * which prevents the engine from trying every `<` position on adversarial
+ * inputs like `<<<<<<<>` (the polynomial-regex pattern CodeQL flags). Looping
+ * handles the residual case where one pass leaves a partial tag — each pass
+ * runs in linear time, and the loop converges in a small constant number of
+ * passes for any realistic input.
  */
 function stripTagsToStable(s: string): string {
   let prev: string;
   let current = s;
   do {
     prev = current;
-    current = current.replace(/<[^>]*>/g, '');
+    current = current.replace(/<[^<>]*>/g, '');
   } while (current !== prev);
   return current;
 }
@@ -76,12 +83,11 @@ export function stripHtml(html: string | null | undefined): string {
  *
  * Output destination: the returned string flows into `textarea.value` /
  * `form.setValue()` and is treated as plain text by the browser. It is never
- * injected as `innerHTML`, so partial-decode patterns cannot become an XSS
- * vector in this context.
+ * injected as `innerHTML`.
  *
  * Pipeline order matters:
- *   1. Carry anchor href/text through encoded — bare URL collapse compares
- *      encoded-with-encoded, which stays correct under entity equivalence.
+ *   1. Carry anchor href/text through encoded — the `text === href` bare-URL
+ *      collapse stays correct under entity equivalence.
  *   2. Strip remaining tags in a stable loop.
  *   3. Decode entities exactly once at the end, so no character is
  *      double-unescaped.
@@ -102,10 +108,10 @@ export function stripHtml(html: string | null | undefined): string {
 export function htmlClipboardToText(html: string | null | undefined): string {
   if (!html) return '';
 
-  // Capture the full anchor tag first, then extract href via a bounded inner
-  // regex on the captured tag string. Avoids superlinear backtracking that the
-  // combined single-regex form can exhibit on malformed clipboard HTML.
-  let result = html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, (match, inner: string) => {
+  // Capture the full anchor tag first (with `[^<>]*` inside the open tag to
+  // avoid polynomial backtracking on `<<<<<...>` inputs), then extract href
+  // via a bounded inner regex on the captured tag string.
+  let result = html.replace(/<a\b[^<>]*>([\s\S]*?)<\/a>/gi, (match, inner: string) => {
     const hrefMatch = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(match);
     const href = (hrefMatch?.[1] ?? hrefMatch?.[2] ?? '').trim();
     const text = stripTagsToStable(inner).trim();
