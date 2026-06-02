@@ -75,7 +75,7 @@ describe('htmlClipboardToText', () => {
   });
 
   it('decodes decimal numeric entities (em dash, NBSP, smart quote)', () => {
-    expect(htmlClipboardToText('hello&#8212;world&#160;&#8217;tis')).toBe("hello—world ’tis");
+    expect(htmlClipboardToText('hello&#8212;world&#160;&#8217;tis')).toBe('hello—world ’tis');
   });
 
   it('decodes hexadecimal numeric entities', () => {

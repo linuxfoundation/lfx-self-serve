@@ -4,6 +4,9 @@
 /**
  * Decodes a small set of named HTML entities plus all numeric ones (decimal
  * and hex) into their character equivalents. Pure string ops — SSR-safe.
+ *
+ * Intended to be called once per value; callers that need multiple passes
+ * should fold their pipeline so this runs as the final step.
  */
 function decodeHtmlEntities(s: string): string {
   return (
@@ -24,6 +27,24 @@ function decodeHtmlEntities(s: string): string {
 }
 
 /**
+ * Strips HTML-like tag sequences until the string is stable. Looping is
+ * required because a single regex pass can leave behind a partial tag when
+ * the input contains nested or malformed angle-bracket sequences (e.g.,
+ * `<<script>foo</script>>` → `>foo>` after one pass; further passes are
+ * no-ops). This is the canonical incomplete-multi-character-sanitization
+ * mitigation pattern.
+ */
+function stripTagsToStable(s: string): string {
+  let prev: string;
+  let current = s;
+  do {
+    prev = current;
+    current = current.replace(/<[^>]*>/g, '');
+  } while (current !== prev);
+  return current;
+}
+
+/**
  * Strips HTML tags and decodes common HTML entities from a string.
  * This function works in both browser and Node.js (SSR) environments.
  *
@@ -41,7 +62,7 @@ function decodeHtmlEntities(s: string): string {
  */
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
-  return decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).trim();
+  return decodeHtmlEntities(stripTagsToStable(html)).trim();
 }
 
 /**
@@ -55,9 +76,15 @@ export function stripHtml(html: string | null | undefined): string {
  *
  * Output destination: the returned string flows into `textarea.value` /
  * `form.setValue()` and is treated as plain text by the browser. It is never
- * injected as `innerHTML`, so partial-decode patterns (e.g., decoded `<script>`
- * surviving in the output) cannot become an XSS vector. CodeQL alerts on the
- * decode/strip chain are false positives in this context.
+ * injected as `innerHTML`, so partial-decode patterns cannot become an XSS
+ * vector in this context.
+ *
+ * Pipeline order matters:
+ *   1. Carry anchor href/text through encoded — bare URL collapse compares
+ *      encoded-with-encoded, which stays correct under entity equivalence.
+ *   2. Strip remaining tags in a stable loop.
+ *   3. Decode entities exactly once at the end, so no character is
+ *      double-unescaped.
  *
  * @param html - The HTML string from `clipboardData.getData('text/html')`
  * @returns Plain text with anchors rewritten, block boundaries turned into
@@ -76,12 +103,12 @@ export function htmlClipboardToText(html: string | null | undefined): string {
   if (!html) return '';
 
   // Capture the full anchor tag first, then extract href via a bounded inner
-  // regex. This avoids superlinear backtracking that the single combined regex
-  // can exhibit on malformed clipboard HTML (e.g., unclosed href attributes).
+  // regex on the captured tag string. Avoids superlinear backtracking that the
+  // combined single-regex form can exhibit on malformed clipboard HTML.
   let result = html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, (match, inner: string) => {
     const hrefMatch = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(match);
-    const href = decodeHtmlEntities((hrefMatch?.[1] ?? hrefMatch?.[2] ?? '').trim());
-    const text = decodeHtmlEntities(inner.replace(/<[^>]*>/g, '')).trim();
+    const href = (hrefMatch?.[1] ?? hrefMatch?.[2] ?? '').trim();
+    const text = stripTagsToStable(inner).trim();
     if (!href) return text;
     if (!text || text === href) return href;
     return `[${text}](${href})`;
@@ -91,10 +118,10 @@ export function htmlClipboardToText(html: string | null | undefined): string {
   result = result.replace(/<br\s*\/?>/gi, '\n');
   result = result.replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n');
 
-  // Strip remaining tags.
-  result = result.replace(/<[^>]*>/g, '');
+  // Strip remaining tags in a stable loop.
+  result = stripTagsToStable(result);
 
-  // Decode entities on the surviving text.
+  // Decode entities exactly once.
   result = decodeHtmlEntities(result);
 
   // Collapse runs of 3+ newlines down to 2.
