@@ -47,6 +47,8 @@ export class CampaignService {
       last(),
       map((status) => {
         if (status.status === 'done') return status.result ?? null;
+        if (status.status === 'error') throw new Error(status.error || 'Campaign creation failed');
+        if (status.status === 'not_found') throw new Error('Job not found');
         throw new Error('Campaign creation timed out');
       })
     );
