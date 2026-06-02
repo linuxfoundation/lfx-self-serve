@@ -228,6 +228,11 @@ export interface Meeting {
   attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
+  /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
+   * Present on both the query-service list payload and the ITX detail payload; empty or absent when
+   * no future occurrence exists. Lets recurring cards show the next scheduled date instead of the
+   * series origin (`start_time`) when the list payload's `occurrences` array isn't usable. */
+  next_occurrence_start_time?: string;
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;
