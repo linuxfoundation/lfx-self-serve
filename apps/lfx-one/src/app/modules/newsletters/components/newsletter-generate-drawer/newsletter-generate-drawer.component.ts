@@ -15,6 +15,7 @@ import {
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
+import { htmlClipboardToText } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -106,6 +107,32 @@ export class NewsletterGenerateDrawerComponent {
         // Silently ignore storage errors (private browsing, quota).
       }
     }
+  }
+
+  // Preserve hyperlinks when pasting rich content. A textarea would otherwise drop
+  // hrefs and keep only visible text, hiding URLs from the AI generator downstream.
+  public onRawContentPaste(event: ClipboardEvent): void {
+    const html = event.clipboardData?.getData('text/html') ?? '';
+    if (!html) return;
+
+    const textarea = event.target as HTMLTextAreaElement | null;
+    if (!textarea) return;
+
+    event.preventDefault();
+
+    const converted = htmlClipboardToText(html);
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const current = textarea.value;
+    const next = current.slice(0, start) + converted + current.slice(end);
+
+    this.form.controls.rawContent.setValue(next);
+
+    const caret = start + converted.length;
+    queueMicrotask(() => {
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+    });
   }
 
   public onGenerate(): void {
