@@ -1,7 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-const PERSON_AVATAR_PALETTE = ['bg-violet-600', 'bg-cyan-600', 'bg-amber-500', 'bg-blue-700', 'bg-emerald-600', 'bg-red-600', 'bg-indigo-500', 'bg-slate-900', 'bg-pink-700'];
+const PERSON_AVATAR_PALETTE = [
+  'bg-violet-600',
+  'bg-cyan-600',
+  'bg-amber-500',
+  'bg-blue-700',
+  'bg-emerald-600',
+  'bg-red-600',
+  'bg-indigo-500',
+  'bg-slate-900',
+  'bg-pink-700',
+];
 
 /**
  * Initials from a display name: first character of each of the first two

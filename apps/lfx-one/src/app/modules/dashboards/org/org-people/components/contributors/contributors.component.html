@@ -196,7 +196,10 @@
                     class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
                     [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-name'"
                     (click)="onPersonClick(row, $event)">
-                    <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" [class]="row.avatarColorClass" aria-hidden="true">
+                    <span
+                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      [class]="row.avatarColorClass"
+                      aria-hidden="true">
                       {{ row.initials }}
                     </span>
                     <span class="flex min-w-0 flex-col">
@@ -209,11 +212,13 @@
                 </td>
                 <td class="px-4 py-3 align-middle">
                   @if (row.role === 'Maintainer') {
-                    <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+                    <span
+                      class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                       Maintainer
                     </span>
                   } @else {
-                    <span class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
+                    <span
+                      class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
                       Contributor
                     </span>
                   }
@@ -263,11 +268,13 @@
                                 </td>
                                 <td class="px-3 py-2.5">
                                   @if (sub.role === 'Maintainer') {
-                                    <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                    <span
+                                      class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                       Maintainer
                                     </span>
                                   } @else {
-                                    <span class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                                    <span
+                                      class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
                                       Contributor
                                     </span>
                                   }
@@ -313,6 +320,8 @@
       }
     </div>
 
-    <p class="text-xs text-gray-400" data-testid="org-people-contributors-sources">Source: CDP (Crowd.dev) code-contribution activity, with declared maintainer flags from silver_dim_maintainers; retired projects excluded</p>
+    <p class="text-xs text-gray-400" data-testid="org-people-contributors-sources">
+      Source: CDP (Crowd.dev) code-contribution activity, with declared maintainer flags from silver_dim_maintainers; retired projects excluded
+    </p>
   }
 </div>

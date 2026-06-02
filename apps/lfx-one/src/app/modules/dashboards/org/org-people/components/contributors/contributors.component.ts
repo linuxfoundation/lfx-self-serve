@@ -356,7 +356,6 @@ export class ContributorsComponent {
     this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);
     this.expansion.set({});
   }
-
 }
 
 /**

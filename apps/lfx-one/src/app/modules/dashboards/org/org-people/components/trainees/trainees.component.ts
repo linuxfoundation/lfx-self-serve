@@ -116,7 +116,9 @@ export class TraineesComponent {
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetAllState());
 
     // Reset pagination + expansion when any filter input changes — collapse expanded rows so the visible (N) count stays in sync with filter scope.
-    combineLatest([toObservable(this.sortColumn), toObservable(this.sortDirection)]).pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
+    combineLatest([toObservable(this.sortColumn), toObservable(this.sortDirection)])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
 
     this.filterForm.valueChanges.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
@@ -393,7 +395,6 @@ export class TraineesComponent {
     this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
     this.expansion.set({});
   }
-
 }
 
 /**

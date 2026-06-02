@@ -390,7 +390,6 @@ export class EventAttendeesComponent {
     this.limit.set(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
     this.expansion.set({});
   }
-
 }
 
 /**
