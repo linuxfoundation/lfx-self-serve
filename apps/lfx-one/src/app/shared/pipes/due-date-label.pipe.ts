@@ -16,18 +16,22 @@ export class DueDateLabelPipe implements PipeTransform {
     const diffTime = dueDay.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays <= 0) return '';
+    // Past due: the row already shows the absolute date, so emit no countdown (mirrors the drawer once daysLeft < 0).
+    if (diffDays < 0) return '';
+
+    if (diffDays === 0) return 'Closes today';
+    if (diffDays === 1) return 'Closes tomorrow';
 
     if (diffDays < 14) {
-      return `Due in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      return `Closes in ${diffDays} days`;
     }
 
     if (diffDays <= 41) {
       const weeks = Math.round(diffDays / 7);
-      return `Due in ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
+      return `Closes in ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
     }
 
     const months = Math.round(diffDays / 30);
-    return `Due in ${months} ${months === 1 ? 'month' : 'months'}`;
+    return `Closes in ${months} ${months === 1 ? 'month' : 'months'}`;
   }
 }
