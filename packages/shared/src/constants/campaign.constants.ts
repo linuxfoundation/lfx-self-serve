@@ -65,10 +65,10 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
 // ---------------------------------------------------------------------------
 // Campaign Name Convention
 // ---------------------------------------------------------------------------
-// Format: "Program | Base Name | Region | Objective | Targeting | Ad Format | Project | Funnel"
-// Example: "Events | KubeCon NA 2025 | EMEA | Conversions | Intent | Search | CNCF | MoFU"
+// Format: "Program | Base Name | Region | Objective | Targeting | Ad Format | Project | Funnel | Date"
+// Example: "Events | KubeCon NA 2025 | EMEA | Conversions | Intent | Search | CNCF | MoFU | 2025-06-01"
 
-export const CAMPAIGN_NAME_FIELDS = ['program', 'baseName', 'region', 'objective', 'targeting', 'adFormat', 'project', 'funnelStage'] as const;
+export const CAMPAIGN_NAME_FIELDS = ['program', 'baseName', 'region', 'objective', 'targeting', 'adFormat', 'project', 'funnelStage', 'dateSuffix'] as const;
 
 export const CAMPAIGN_NAME_DELIMITER = ' | ';
 
@@ -83,6 +83,7 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
     adFormat: parts[5] || '',
     project: parts[6] || '',
     funnelStage: parts[7] || '',
+    dateSuffix: parts[8] || '',
     raw,
   };
 }

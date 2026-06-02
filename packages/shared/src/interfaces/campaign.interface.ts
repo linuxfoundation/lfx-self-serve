@@ -48,6 +48,7 @@ export interface ParsedCampaignName {
   adFormat: string;
   project: string;
   funnelStage: string;
+  dateSuffix: string;
   raw: string;
 }
 

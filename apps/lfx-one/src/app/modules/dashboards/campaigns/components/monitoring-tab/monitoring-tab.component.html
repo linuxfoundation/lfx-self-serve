@@ -168,6 +168,11 @@
             Loading keywords...
           </div>
         </div>
+      } @else if (keywordsError()) {
+        <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8" data-testid="keyword-error">
+          <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
+          <p class="text-sm text-red-600">{{ keywordsError() }}</p>
+        </div>
       } @else if (!hasKeywords()) {
         <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-empty">
           <i class="fa-light fa-key text-2xl text-gray-400" aria-hidden="true"></i>
@@ -321,6 +326,13 @@
             <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
             Loading search terms...
           </div>
+        </div>
+      } @else if (searchTermsError()) {
+        <div
+          class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8"
+          data-testid="search-term-error">
+          <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
+          <p class="text-sm text-red-600">{{ searchTermsError() }}</p>
         </div>
       } @else if (!hasSearchTerms()) {
         <div
