@@ -87,8 +87,22 @@ export async function validateScrapeUrl(url: string): Promise<string> {
   }
 
   const { promises: dns } = await import('node:dns');
-  const addresses4 = await dns.resolve4(hostname).catch(() => []);
-  const addresses6 = await dns.resolve6(hostname).catch(() => []);
+  let addresses4: string[];
+  let addresses6: string[];
+  try {
+    [addresses4, addresses6] = await Promise.all([
+      dns.resolve4(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+      dns.resolve6(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+    ]);
+  } catch {
+    throw new Error('DNS resolution failed — cannot verify host safety');
+  }
   for (const addr of [...addresses4, ...addresses6]) {
     if (PRIVATE_IP_PATTERNS.some((p) => p.test(addr))) {
       throw new Error('Blocked host: resolves to private IP');
@@ -728,7 +742,8 @@ export class CampaignProxyService {
         explicitly_shared: false,
       },
     ]);
-    const budgetResource = budgetResult.results[0].resource_name ?? '';
+    const budgetResource = budgetResult.results[0]?.resource_name;
+    if (!budgetResource) throw new Error('Budget creation did not return a resource_name');
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     // 2. Create campaign
@@ -748,7 +763,8 @@ export class CampaignProxyService {
         },
       },
     ]);
-    const campaignResource = campaignResult.results[0].resource_name ?? '';
+    const campaignResource = campaignResult.results[0]?.resource_name;
+    if (!campaignResource) throw new Error('Campaign creation did not return a resource_name');
     const campaignId = campaignResource.split('/').pop() || '';
     steps.push(`Created campaign: ${campaignName}`);
 
@@ -774,7 +790,8 @@ export class CampaignProxyService {
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
-    const adGroupResource = adGroupResult.results[0].resource_name ?? '';
+    const adGroupResource = adGroupResult.results[0]?.resource_name;
+    if (!adGroupResource) throw new Error('Ad group creation did not return a resource_name');
     steps.push('Created ad group');
 
     // 5. Add keywords
@@ -841,7 +858,8 @@ export class CampaignProxyService {
         explicitly_shared: false,
       },
     ]);
-    const budgetResource = budgetResult.results[0].resource_name ?? '';
+    const budgetResource = budgetResult.results[0]?.resource_name;
+    if (!budgetResource) throw new Error('Budget creation did not return a resource_name');
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     const campaignResult = await customer.campaigns.create([
@@ -855,7 +873,8 @@ export class CampaignProxyService {
         target_spend: {},
       },
     ]);
-    const campaignResource = campaignResult.results[0].resource_name ?? '';
+    const campaignResource = campaignResult.results[0]?.resource_name;
+    if (!campaignResource) throw new Error('Campaign creation did not return a resource_name');
     const campaignId = campaignResource.split('/').pop() || '';
     steps.push(`Created Demand Gen campaign: ${campaignName}`);
 
@@ -867,7 +886,8 @@ export class CampaignProxyService {
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
-    const adGroupResource = adGroupResult.results[0].resource_name ?? '';
+    const adGroupResource = adGroupResult.results[0]?.resource_name;
+    if (!adGroupResource) throw new Error('Ad group creation did not return a resource_name');
     steps.push('Created ad group');
 
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)

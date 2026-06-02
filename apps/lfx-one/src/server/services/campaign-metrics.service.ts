@@ -103,6 +103,7 @@ export class CampaignMetricsService {
     const age = aggregateDemoBuckets(ageRows, (r) => (extractNested(r, 'adGroupCriterion.ageRange.type') as string) || 'Unknown');
     const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'adGroupCriterion.gender.type') as string) || 'Unknown');
 
+    // Device demographics require a separate GAQL query against user_location_view — not yet implemented
     return { pulledAt: new Date().toISOString(), days, age, gender, device: [] };
   }
 }
