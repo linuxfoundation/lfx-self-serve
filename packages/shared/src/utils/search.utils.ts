@@ -25,13 +25,6 @@ export enum UserSearchRelevance {
 /** Minimal user shape needed to rank a search result. */
 type RankableUser = Pick<UserSearchResult, 'first_name' | 'last_name' | 'email' | 'username'>;
 
-/**
- * Default cap on ranked results handed to a typeahead. Demoted upstream
- * ngram/alias noise sorts to the bottom and falls off this limit, while real
- * matches (which sort first) survive. Pass `{ limit: Infinity }` to opt out.
- */
-const DEFAULT_RESULT_LIMIT = 10;
-
 function normalize(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
@@ -80,32 +73,26 @@ export function scoreUserSearchResult(user: RankableUser, query: string): UserSe
  * inside unrelated emails. This client-side pass mitigates that by sorting
  * exact > name-prefix > name-substring > username > email > incidental.
  *
- * It **demotes** rather than drops: low-relevance rows sort to the bottom and
- * fall off `limit`, so real matches always win the visible slots — but a
- * legitimate hit on an upstream alias the client can't see (a field outside
- * name/username/email) is never hard-filtered out. Email queries (containing
- * `@`) need no special case: name fields won't match, so genuine email hits
- * naturally rank above the rest.
+ * It **demotes** rather than drops or caps: low-relevance rows sort to the
+ * bottom but are never removed, so a legitimate hit on an upstream alias the
+ * client can't see (a field outside name/username/email) is never hard-filtered
+ * out. Email queries (containing `@`) need no special case: name fields won't
+ * match, so genuine email hits naturally rank above the rest. Limiting the
+ * visible count, if desired, is left to the UI layer as a deliberate decision.
  *
  * Ordering is stable: results within the same tier keep their upstream order.
  *
  * @param results Upstream results to rank.
  * @param query  Raw user query (normalized internally).
- * @param options.limit Max results to return; defaults to {@link DEFAULT_RESULT_LIMIT}.
- *   Pass `Infinity` to return every ranked result.
  */
-export function rankUserSearchResults<T extends RankableUser>(results: T[], query: string, options?: { limit?: number }): T[] {
+export function rankUserSearchResults<T extends RankableUser>(results: T[], query: string): T[] {
   const q = normalize(query);
   if (!q) {
     return results;
   }
 
-  const limit = options?.limit ?? DEFAULT_RESULT_LIMIT;
-
-  const ranked = results
+  return results
     .map((result, index) => ({ result, index, score: scoreUserSearchResult(result, q) }))
     .sort((a, b) => (a.score === b.score ? a.index - b.index : a.score - b.score))
     .map((entry) => entry.result);
-
-  return ranked.slice(0, limit);
 }

@@ -83,16 +83,12 @@ describe('rankUserSearchResults', () => {
     expect(rankUserSearchResults([b, a], 'il').map((r) => r.uid)).toEqual(['b', 'a']);
   });
 
-  it('caps results to the limit, letting demoted noise fall off', () => {
+  it('retains every result (no cap), sorting real matches above demoted noise', () => {
     const noiseRows = Array.from({ length: 12 }, (_, i) => user({ uid: `n${i}`, first_name: 'Zed', last_name: 'Zane', email: `z${i}@example.com` }));
-    const ranked = rankUserSearchResults([...noiseRows, ilona], 'il', { limit: 1 });
-    // The single real match wins the only slot; noise is demoted and cut.
-    expect(ranked.map((r) => r.uid)).toEqual(['1']);
-  });
-
-  it('returns every ranked result when limit is Infinity', () => {
-    const ranked = rankUserSearchResults([noise, ilona], 'il', { limit: Infinity });
-    expect(ranked).toHaveLength(2);
+    const ranked = rankUserSearchResults([...noiseRows, ilona], 'il');
+    // The real match floats to the top; nothing is dropped or capped.
+    expect(ranked).toHaveLength(13);
+    expect(ranked[0].uid).toBe('1');
   });
 
   it('ranks email matches first for an email query', () => {
