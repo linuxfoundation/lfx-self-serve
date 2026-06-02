@@ -4,11 +4,11 @@
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
 
-/** Selector row — carries both the canonical UUID and the legacy Salesforce id per spec 020 Q1. */
+/** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
-  /** Canonical b2b_org identifier (UUID 8-4-4-4-12), sourced from `resource.id`. */
+  /** Org account id (18-char SFID), sourced from the indexed `b2b_org` doc id. */
   uid: string;
-  /** Legacy Salesforce account id from `resource.data.sfid`; spec 022 omits rows with null sfid (FR-005), so effectively non-null on the wire — kept nullable for pre-022 callers. */
+  /** Org account id (18-char SFID); equals `uid`. Kept nullable for pre-spec-002 callers. */
   accountId: string | null;
   /** Display name; query-service strips nameless orgs so always non-empty in practice. */
   name: string;
@@ -247,11 +247,6 @@ export interface MemberServiceB2bOrgResponse {
   is_member?: boolean;
 }
 
-/** Resolver return shape — carries the resolved value AND an honest cacheHit flag so callers can log accurate cache-hit ratios. */
-export type OrgIdentityLookupResult<K extends 'uid' | 'sfid'> = {
-  [P in K]: string | null;
-} & { cacheHit: boolean };
-
 /** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
 export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
 
@@ -278,8 +273,3 @@ export interface AccessAwareOrgsResult {
   username: string;
 }
 
-/** NATS response body for UUID→SFID resolution requests. */
-export interface UuidToSfidNatsResponse {
-  sfid?: string;
-  error?: string;
-}

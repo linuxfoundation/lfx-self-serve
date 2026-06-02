@@ -124,7 +124,7 @@ export interface KeyContactEmployee {
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */
 export interface KeyContactEmployeesResponse {
-  /** The org's canonical b2b_org uuid (the route identifier) echoed back. */
+  /** The org's canonical account id (SFID, the route identifier) echoed back. */
   orgUid: string;
   /** Deduped by lowercased email, across all of the org's foundation memberships. */
   employees: KeyContactEmployee[];
@@ -335,7 +335,7 @@ export interface EditKeyContactDialogData {
   contact: OrgMembershipKeyContact;
   foundationName: string;
   editingPersonId: string | null;
-  /** Spec 024 (uuid-only): selected org b2b_org uuid, used by the modal to load the org-wide employee-search list (FR-023). */
+  /** Spec 002: selected org account id (SFID), used by the modal to load the org-wide employee-search list (FR-023). */
   orgUid: string;
   /** Parent performs the pessimistic write + table reconcile; resolves on success, rejects with Error(message) on failure. */
   submit: (intent: Exclude<EditKeyContactDialogResult, null>) => Promise<void>;

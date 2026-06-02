@@ -94,7 +94,12 @@ export class OrgRoleGrantsService {
     try {
       settingsResponse = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgSettingsDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'b2b_org_settings',
-        filters_or: [`writers.username:${username}`, `auditors.username:${username}`],
+        // Spec 002 / member-service v0.7.0: settings are indexed with a `member:<username>` tag (the
+        // union of accepted writers + auditors — b2b_org_settings.go Tags() → TagPrefixMember). The
+        // query-service matches these via the `tags` param (the legacy `filters_or: writers.username:`
+        // form matches nothing — verified against dev). Writer-vs-auditor is classified from the
+        // `data.writers[]` / `data.auditors[]` arrays below.
+        tags: [`member:${username}`],
         per_page: ORG_ROLE_GRANTS_HARD_CAP,
       });
     } catch (error) {

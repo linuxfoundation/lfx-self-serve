@@ -26,7 +26,7 @@ export class OrgNavigationService {
 
   private readonly state: OrgListState = this.createOrgListState();
 
-  /** Lazy hint passed on first-load to surface the cookie-restored selection (the org uuid). */
+  /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
 
   public readonly items: Signal<OrgItem[]> = this.state.items;
@@ -48,7 +48,7 @@ export class OrgNavigationService {
     this.state.loadMore$.next(token);
   }
 
-  /** Triggers a fresh first-page fetch; the optional org uuid pins the cookie-restored selection at the top via the BFF `selected_uid` injection. */
+  /** Triggers a fresh first-page fetch; the optional org account id (SFID) pins the cookie-restored selection at the top via the BFF `selected_uid` injection. */
   public resetAndReload(selectedUid?: string | null): void {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;

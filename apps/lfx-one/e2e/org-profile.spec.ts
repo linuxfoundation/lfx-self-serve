@@ -22,8 +22,9 @@ import { expect, Page, test } from '@playwright/test';
 const PROFILE_URL = '/org/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
 
-const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
+// Spec 002: the org identifier is the 18-char Salesforce account id (SFID); uid === accountId.
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_UID = MOCK_ACCOUNT_ID;
 
 const MOCK_CANONICAL = {
   uid: MOCK_UID,
@@ -280,7 +281,7 @@ test.describe('Org Profile — spec 022 inherited-auditor (US4)', () => {
     // The selected org inherits auditor from a direct-granted parent (FGA: writer does NOT cascade).
     await stubOrgProfileContext(page, {
       writers: [], // direct-writer set is empty for the *selected* uid
-      cascadingAuditors: [{ uid: MOCK_UID, parentUid: '4c46585f-878c-8285-b2e9-2dbfc38dc8a7', parentName: 'IBM Corporation' }],
+      cascadingAuditors: [{ uid: MOCK_UID, parentUid: '0012M00002qnukOQAQ', parentName: 'IBM Corporation' }],
     });
     await stubCanonicalAndAddresses(page);
 

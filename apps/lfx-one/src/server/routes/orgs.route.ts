@@ -29,7 +29,8 @@ function buildOrgsRouter(): Router {
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
 
-  // Spec 024 (uuid-only): all org-lens routes key off `:orgUid`.
+  // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
+  // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
   router.get('/:orgUid/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
   // Spec (LFXV2-1898) — Events page keys off the Salesforce accountId (not the b2b_org uuid), so these routes
   // intentionally use `:accountId`. /events/summary MUST be registered before /events so Express matches the more-specific path first.
