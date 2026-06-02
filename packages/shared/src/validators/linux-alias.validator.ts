@@ -12,7 +12,7 @@ import { LINUX_ALIAS_BANNED_CHARS, LINUX_ALIAS_MAX_LENGTH, LINUX_ALIAS_RESERVED_
  * auth-service / forwards-service enforce, so bad input is rejected before the
  * NATS round-trip. The server's `check_alias` remains the source of truth.
  *
- * Returns one of: `{ aliasRequired }`, `{ aliasMaxLength }`,
+ * Returns one of: `{ required }`, `{ aliasMaxLength }`,
  * `{ aliasInvalidChars }`, or `{ aliasReserved }`.
  */
 export function linuxAliasValidator(): ValidatorFn {
@@ -24,7 +24,7 @@ export function linuxAliasValidator(): ValidatorFn {
 
     const normalized = value.trim().toLowerCase();
 
-    if (normalized.length === 0) return { aliasRequired: true };
+    if (normalized.length === 0) return { required: true };
     if (normalized.length > LINUX_ALIAS_MAX_LENGTH) return { aliasMaxLength: { requiredLength: LINUX_ALIAS_MAX_LENGTH, actualLength: normalized.length } };
 
     if (LINUX_ALIAS_BANNED_CHARS.some((char) => normalized.includes(char))) return { aliasInvalidChars: true };

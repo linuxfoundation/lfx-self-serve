@@ -430,8 +430,7 @@ export class ProfileController {
         );
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailAddress)) {
+      if (!EMAIL_REGEX.test(emailAddress)) {
         return next(
           ServiceValidationError.forField('email', 'Invalid email format', {
             operation: 'set_primary_email',
@@ -489,9 +488,9 @@ export class ProfileController {
    */
   public async getLinuxAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_linux_alias');
-    const domain = getLinuxForwardDomain();
 
     try {
+      const domain = getLinuxForwardDomain('get_linux_alias', 'profile_controller');
       const userSub = req.oidc?.user?.['sub'] as string | undefined;
       if (!userSub) {
         return next(
@@ -548,9 +547,9 @@ export class ProfileController {
    */
   public async claimLinuxAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'claim_linux_alias');
-    const domain = getLinuxForwardDomain();
 
     try {
+      const domain = getLinuxForwardDomain('claim_linux_alias', 'profile_controller');
       const body = (req.body ?? {}) as Partial<ClaimAliasRequest>;
       const alias = typeof body.alias === 'string' ? body.alias.trim().toLowerCase() : '';
       const forwardTo = typeof body.forwardTo === 'string' ? body.forwardTo.trim() : '';
@@ -565,6 +564,14 @@ export class ProfileController {
             service: 'profile_controller',
           })
         );
+      }
+
+      // Enforce the purchase gate server-side: a direct call must not bypass the
+      // add-on requirement the UI gates on (mirrors the not_purchased state in getLinuxAlias).
+      const purchased = await this.enrollmentService.hasLinuxComAddon(req);
+      if (!purchased) {
+        res.status(403).json({ error: 'addon_required', message: 'A Linux.com email add-on is required to claim an alias.' });
+        return;
       }
 
       // Availability pre-check (best-effort; add_alias is authoritative).
@@ -622,9 +629,9 @@ export class ProfileController {
    */
   public async updateLinuxForward(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'update_linux_forward');
-    const domain = getLinuxForwardDomain();
 
     try {
+      const domain = getLinuxForwardDomain('update_linux_forward', 'profile_controller');
       const body = (req.body ?? {}) as Partial<UpdateForwardRequest>;
       const forwardTo = typeof body.forwardTo === 'string' ? body.forwardTo.trim() : '';
 
@@ -1707,8 +1714,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!EMAIL_REGEX.test(email)) {
         const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
           operation: 'send_email_verification',
           service: 'profile_controller',

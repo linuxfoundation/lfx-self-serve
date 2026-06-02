@@ -7,10 +7,10 @@
  * Linux.com email alias add-on constants.
  *
  * The forwarding *domain* is intentionally NOT defined here — it is resolved
- * server-side from the `LINUX_FORWARD_DOMAIN` env var so it can differ per
- * environment (prod `linux.com`, dev/staging `hurrdurr.org`). Only the SFDC
- * product identity and the purchase CTA, which are constant across stages,
- * live in shared code.
+ * server-side from the `LINUX_FORWARD_DOMAIN` env var (required in every stage,
+ * e.g. prod `linux.com`, dev/staging `example.org`) so it can differ per
+ * environment. Only the SFDC product identity and the purchase CTA, which are
+ * constant across stages, live in shared code.
  */
 
 /** SFDC product id for the Lifetime Linux.com Email Alias add-on. */

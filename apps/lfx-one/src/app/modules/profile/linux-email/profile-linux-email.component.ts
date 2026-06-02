@@ -78,7 +78,9 @@ export class ProfileLinuxEmailComponent {
       const value = address?.toLowerCase().trim();
       if (!value || value === aliasEmail || seen.has(value)) return;
       seen.add(value);
-      options.push({ label: isPrimary ? `${address} (Primary)` : address!, value: address! });
+      // Use the normalized value for the option value so selection matches the
+      // (lowercased/trimmed) forward target regardless of source casing.
+      options.push({ label: isPrimary ? `${address} (Primary)` : address!, value });
     };
 
     add(emails?.primary_email, true);
@@ -88,8 +90,9 @@ export class ProfileLinuxEmailComponent {
 
     // Preserve a pre-existing external forwarding target so the user still sees it.
     const current = alias?.forwardTo;
-    if (current && !seen.has(current.toLowerCase().trim())) {
-      options.push({ label: current, value: current });
+    const currentValue = current?.toLowerCase().trim();
+    if (current && currentValue && !seen.has(currentValue)) {
+      options.push({ label: current, value: currentValue });
     }
 
     return options;
@@ -187,10 +190,11 @@ export class ProfileLinuxEmailComponent {
 
   /** Default the forward selection to the current target (if any) or the primary email. */
   private applyFormDefaults(alias: LinuxAliasData | null, emails: EmailManagementData | null): void {
-    const primary = emails?.primary_email ?? '';
+    const primary = (emails?.primary_email ?? '').toLowerCase().trim();
 
     if (alias?.state === 'claimed') {
-      this.editForm.patchValue({ forwardTo: alias.forwardTo ?? primary });
+      // Normalize so the default matches a (normalized) forwardOptions value.
+      this.editForm.patchValue({ forwardTo: (alias.forwardTo ?? emails?.primary_email ?? '').toLowerCase().trim() });
     } else if (alias?.state === 'purchased_unclaimed' && primary) {
       this.claimForm.patchValue({ forwardTo: primary });
     }

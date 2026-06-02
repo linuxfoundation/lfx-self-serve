@@ -13,7 +13,7 @@
  *   proxy to forwardemail.net that owns the routing to a destination address.
  *
  * The forwarding domain is environment-specific (prod `linux.com`,
- * dev/staging `hurrdurr.org`) and is resolved server-side, then returned to the
+ * dev/staging `example.org`) and is resolved server-side, then returned to the
  * client in `LinuxAliasData.domain`. The UI never assumes a literal domain.
  */
 
@@ -23,7 +23,7 @@ export type LinuxAliasState = 'not_purchased' | 'purchased_unclaimed' | 'claimed
 /** Aggregate state returned by `GET /api/profile/linux-email`. */
 export interface LinuxAliasData {
   state: LinuxAliasState;
-  /** Active forwarding domain, env-driven (e.g. `linux.com` or `hurrdurr.org`). */
+  /** Active forwarding domain, env-driven (e.g. `linux.com` or `example.org`). */
   domain: string;
   /** Local part of the claimed alias (e.g. `jsmith`), or null when unclaimed. */
   alias: string | null;
