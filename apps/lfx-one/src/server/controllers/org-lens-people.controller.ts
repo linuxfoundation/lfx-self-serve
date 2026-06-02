@@ -175,18 +175,19 @@ export class OrgLensPeopleController {
   /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'));
-    const startTime = logger.startOperation(req, 'get_org_lens_people_contributors', {
-      org_uid: orgUid,
-      time_range: timeRange,
-    });
+    const operation = 'get_org_lens_people_contributors';
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_contributors');
+      assertOrgUid(orgUid, operation);
+      const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'), operation);
+      const startTime = logger.startOperation(req, operation, {
+        org_uid: orgUid,
+        time_range: timeRange,
+      });
 
       const response = await this.contributorsService.getContributors(orgUid, timeRange);
 
-      logger.success(req, 'get_org_lens_people_contributors', startTime, {
+      logger.success(req, operation, startTime, {
         org_uid: orgUid,
         time_range: timeRange,
         contributor_count: response.contributors.length,
@@ -212,9 +213,20 @@ export class OrgLensPeopleController {
   }
 }
 
-function parseContributorTimeRange(raw: string | undefined): OrgContributorTimeRange {
-  if (raw && VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
-    return raw as OrgContributorTimeRange;
+/**
+ * Validate the `timeRange` query param.
+ * Missing → default (`12mo`) to keep the UI's default-on-load case working
+ * without forcing the client to always echo the default. Present-but-invalid
+ * → throw 400 to match the repo's other narrowing helpers
+ * (`parseEntityType`, `assertHealthMetricsRange`) and surface a clear error
+ * instead of silently mapping a typo to the default window.
+ */
+function parseContributorTimeRange(raw: string | undefined, operation: string): OrgContributorTimeRange {
+  if (!raw) {
+    return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
   }
-  return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
+  if (!VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
+    throw ServiceValidationError.forField('timeRange', `Invalid timeRange value. Allowed: ${[...VALID_CONTRIBUTOR_TIME_RANGES].join(', ')}`, { operation });
+  }
+  return raw as OrgContributorTimeRange;
 }
