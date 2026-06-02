@@ -17,6 +17,12 @@ export type OrgAccessListedInviteStatus = Extract<OrgAccessInviteStatus, 'pendin
 /** Type-filter selection (single-select) for the access table toolbar. */
 export type OrgAccessFilter = 'all' | 'admin' | 'viewer' | 'invited';
 
+/** Type-filter dropdown option for the Org Lens Access toolbar (single-select). */
+export interface OrgAccessTypeFilterOption {
+  label: string;
+  value: OrgAccessFilter;
+}
+
 /** One row in the Org Lens Access table (BFF → client). */
 export interface OrgAccessUser {
   /** Lowercased; identity key for edit/remove. Always present. */

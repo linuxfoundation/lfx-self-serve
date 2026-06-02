@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  OrgAccessFilter,
   OrgAccessListResponse,
   OrgAccessRole,
+  OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
@@ -61,12 +61,6 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
 ] as const;
 
 // Org Lens Access tab (spec 025) ----------------------------------------------
-
-/** Type-filter dropdown option for the Org Lens Access toolbar (single-select). */
-export interface OrgAccessTypeFilterOption {
-  label: string;
-  value: OrgAccessFilter;
-}
 
 /** Single-select Type-filter options (wireframe labels); semantics in specs/025-org-lens-access-tab (FR-007a). */
 export const ORG_ACCESS_TYPE_FILTER_OPTIONS: readonly OrgAccessTypeFilterOption[] = [

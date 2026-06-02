@@ -13,7 +13,6 @@ import {
   ORG_ACCESS_ROLE_BADGE_LABEL,
   ORG_ACCESS_ROLE_BADGE_TOOLTIP,
   ORG_ACCESS_TYPE_FILTER_OPTIONS,
-  type OrgAccessTypeFilterOption,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessFilter,
@@ -21,6 +20,7 @@ import type {
   OrgAccessListResponse,
   OrgAccessRole,
   OrgAccessSummary,
+  OrgAccessTypeFilterOption,
   OrgAccessUser,
 } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';

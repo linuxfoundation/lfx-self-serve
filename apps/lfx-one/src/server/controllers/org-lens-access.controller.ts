@@ -113,6 +113,9 @@ export class OrgLensAccessController {
       throw ServiceValidationError.forField('role', 'Role must be "admin" or "viewer"', { operation });
     }
     const name = raw.name != null ? String(raw.name).trim() : '';
+    if (name.length > 255) {
+      throw ServiceValidationError.forField('name', 'Name must be 255 characters or fewer', { operation });
+    }
     return { email, role, name: name || null };
   }
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, linkedSignal, model, output, type Signal } from '@angular/core';
+import { Component, computed, effect, input, linkedSignal, model, output, type Signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ORG_ACCESS_ROLE_BADGE_LABEL } from '@lfx-one/shared/constants';
 import type { OrgAccessRole, OrgAccessRoleOption, OrgAccessUser } from '@lfx-one/shared/interfaces';
@@ -51,6 +51,18 @@ export class EditAccessRoleModalComponent {
     return !this.saving() && !!current && this.selectedRole() !== current;
   });
 
+  public constructor() {
+    // Re-seed the pending selection whenever the dialog closes — covers ALL close paths (Cancel
+    // button, dismissableMask click-outside, ESC), not just onCancel(). Without this, a discarded
+    // selection survives a same-user re-open because linkedSignal won't re-evaluate on an unchanged
+    // user() reference, leaving canSave() true and risking an unintended role change.
+    effect(() => {
+      if (!this.visible()) {
+        this.selectedRole.set(this.user()?.role ?? 'viewer');
+      }
+    });
+  }
+
   protected onSave(): void {
     if (!this.canSave()) return;
     this.save.emit(this.selectedRole());
@@ -58,9 +70,6 @@ export class EditAccessRoleModalComponent {
 
   protected onCancel(): void {
     if (this.saving()) return;
-    // Re-seed to the current role so a discarded selection can't survive a same-user re-open
-    // (linkedSignal won't re-evaluate when `user()` keeps the same reference).
-    this.selectedRole.set(this.user()?.role ?? 'viewer');
     this.visible.set(false);
   }
 }
