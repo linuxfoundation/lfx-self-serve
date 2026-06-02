@@ -25,6 +25,7 @@ export enum UserSearchRelevance {
 /** Minimal user shape needed to rank a search result. */
 type RankableUser = Pick<UserSearchResult, 'first_name' | 'last_name' | 'email' | 'username'>;
 
+/** Null-safe normalization for case-insensitive comparison: coalesces nullish to '', trims, lowercases. */
 function normalize(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
