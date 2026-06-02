@@ -5,6 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
   AddKeyContactRequest,
+  KeyContactCatalogResponse,
   KeyContactEmployeesResponse,
   KeyContactMutationResponse,
   OrgActiveMembershipsResponse,
@@ -73,6 +74,42 @@ export class OrgLensMembershipsService {
   public removeKeyContact(orgUid: string, foundationId: string, contactUid: string): Observable<KeyContactMutationResponse> {
     return this.http.delete<KeyContactMutationResponse>(
       `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts/${encodeURIComponent(contactUid)}`
+    );
+  }
+
+  // LFXV2-2067 — slug-keyed catalog GET + write proxies, used by the People → Key Contacts tab.
+  // The id-keyed write methods above route through the org sfid → foundation_id bridge that the
+  // membership-detail page needs; the People tab already has the slug per assignment row, so these
+  // methods skip the bridge and let the BFF call member-service directly.
+
+  public getKeyContactCatalogBySlug(orgUid: string, foundationSlug: string): Observable<KeyContactCatalogResponse> {
+    return this.http.get<KeyContactCatalogResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}`
+    );
+  }
+
+  public addKeyContactBySlug(orgUid: string, foundationSlug: string, body: AddKeyContactRequest): Observable<KeyContactMutationResponse> {
+    return this.http.post<KeyContactMutationResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}`,
+      body
+    );
+  }
+
+  public replaceKeyContactBySlug(
+    orgUid: string,
+    foundationSlug: string,
+    contactUid: string,
+    body: ReplaceKeyContactRequest
+  ): Observable<KeyContactMutationResponse> {
+    return this.http.put<KeyContactMutationResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`,
+      body
+    );
+  }
+
+  public removeKeyContactBySlug(orgUid: string, foundationSlug: string, contactUid: string): Observable<KeyContactMutationResponse> {
+    return this.http.delete<KeyContactMutationResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`
     );
   }
 }

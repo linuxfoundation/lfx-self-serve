@@ -105,6 +105,101 @@ export class OrgLensKeyContactsController {
     }
   }
 
+  // LFXV2-2067 — slug-keyed catalog GET + write proxies, used by the People → Key Contacts tab.
+  // The id-keyed routes above route through the org sfid → foundation_id bridge that the membership-detail
+  // page needs; the People tab already has the foundation slug per assignment row, so these endpoints
+  // skip the round-trip and pass the slug straight through to the underlying service.
+
+  // GET /api/orgs/:orgUid/lens/key-contacts/membership/:foundationSlug
+  public async getKeyContactCatalogBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationSlug = req.params['foundationSlug'];
+    const startTime = logger.startOperation(req, 'get_org_key_contact_catalog_by_slug', { org_uid: orgUid, foundation_slug: foundationSlug });
+    try {
+      assertOrgUid(orgUid, 'get_org_key_contact_catalog_by_slug');
+      this.assertFoundationSlug(foundationSlug, 'get_org_key_contact_catalog_by_slug');
+
+      const contacts = await this.service.getKeyContacts(req, orgUid, foundationSlug);
+
+      logger.success(req, 'get_org_key_contact_catalog_by_slug', startTime, {
+        org_uid: orgUid,
+        foundation_slug: foundationSlug,
+        row_count: contacts.length,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ contacts });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/key-contacts/membership/:foundationSlug
+  public async addKeyContactBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationSlug = req.params['foundationSlug'];
+    const startTime = logger.startOperation(req, 'add_org_key_contact_by_slug', { org_uid: orgUid, foundation_slug: foundationSlug });
+    try {
+      assertOrgUid(orgUid, 'add_org_key_contact_by_slug');
+      this.assertFoundationSlug(foundationSlug, 'add_org_key_contact_by_slug');
+      const body = this.parseContactBody(req, 'add_org_key_contact_by_slug');
+
+      const contact = await this.service.addKeyContact(req, orgUid, foundationSlug, body);
+
+      logger.success(req, 'add_org_key_contact_by_slug', startTime, { org_uid: orgUid, foundation_slug: foundationSlug, contact_type: body.contactType });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ contact });
+    } catch (error) {
+      this.handleWriteError(req, res, next, error, 'add_org_key_contact_by_slug');
+    }
+  }
+
+  // PUT /api/orgs/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid
+  public async replaceKeyContactBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationSlug = req.params['foundationSlug'];
+    const contactUid = req.params['contactUid'];
+    const startTime = logger.startOperation(req, 'replace_org_key_contact_by_slug', { org_uid: orgUid, foundation_slug: foundationSlug });
+    try {
+      assertOrgUid(orgUid, 'replace_org_key_contact_by_slug');
+      this.assertFoundationSlug(foundationSlug, 'replace_org_key_contact_by_slug');
+      this.assertContactUid(contactUid, 'replace_org_key_contact_by_slug');
+      const body = this.parseContactBody(req, 'replace_org_key_contact_by_slug') as ReplaceKeyContactRequest;
+
+      const contact = await this.service.replaceKeyContact(req, orgUid, foundationSlug, contactUid, body);
+
+      logger.success(req, 'replace_org_key_contact_by_slug', startTime, {
+        org_uid: orgUid,
+        foundation_slug: foundationSlug,
+        contact_type: body.contactType,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ contact });
+    } catch (error) {
+      this.handleWriteError(req, res, next, error, 'replace_org_key_contact_by_slug');
+    }
+  }
+
+  // DELETE /api/orgs/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid
+  public async removeKeyContactBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationSlug = req.params['foundationSlug'];
+    const contactUid = req.params['contactUid'];
+    const startTime = logger.startOperation(req, 'remove_org_key_contact_by_slug', { org_uid: orgUid, foundation_slug: foundationSlug });
+    try {
+      assertOrgUid(orgUid, 'remove_org_key_contact_by_slug');
+      this.assertFoundationSlug(foundationSlug, 'remove_org_key_contact_by_slug');
+      this.assertContactUid(contactUid, 'remove_org_key_contact_by_slug');
+
+      const contact = await this.service.removeKeyContact(req, orgUid, foundationSlug, contactUid);
+
+      logger.success(req, 'remove_org_key_contact_by_slug', startTime, { org_uid: orgUid, foundation_slug: foundationSlug });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ contact });
+    } catch (error) {
+      this.handleWriteError(req, res, next, error, 'remove_org_key_contact_by_slug');
+    }
+  }
+
   // ── helpers ────────────────────────────────────────────────────────────────
 
   // Resolves the foundation slug from the Snowflake-backed summaries. Spec 002: orgUid is the SFID.
@@ -157,6 +252,14 @@ export class OrgLensKeyContactsController {
   private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
     if (!foundationId || !FOUNDATION_ID_PATTERN.test(foundationId)) {
       throw ServiceValidationError.forField('foundationId', 'Invalid foundationId format', { operation });
+    }
+  }
+
+  private assertFoundationSlug(foundationSlug: string | undefined, operation: string): asserts foundationSlug is string {
+    // Reuse FOUNDATION_ID_PATTERN — it permits the alphanumeric+hyphen surface that foundation slugs
+    // share with the legacy id strings (matches the precedent in `getMembershipDetail`).
+    if (!foundationSlug || !FOUNDATION_ID_PATTERN.test(foundationSlug)) {
+      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
     }
   }
 

@@ -26,7 +26,6 @@ export interface OrgKeyContactAssignment {
   role: string;
   foundationSlug: string;
   foundationName: string | null;
-  canEdit: boolean;
 }
 
 /** Account-level stat strip (FR-004 — filter-independent). */
@@ -62,7 +61,6 @@ export interface OrgKeyContactPersonGroup {
   roles: string[];
   foundationCount: number;
   assignments: OrgKeyContactAssignment[];
-  canEditAny: boolean;
 }
 
 /** Pre-decorated assignment for the expanded sub-table — pillClass + foundation rowspan flags computed once. */
