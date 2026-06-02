@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoal, CampaignGoalOption, CampaignPlatform, CampaignPlatformOption, CampaignTabOption } from '../interfaces/campaign.interface';
+import type { CampaignGoalOption, CampaignPlatformOption, CampaignTabOption } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: CampaignTabOption[] = [

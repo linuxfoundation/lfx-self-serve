@@ -735,7 +735,15 @@ export class CampaignProxyService {
 
     const response = { success: errors.length === 0, campaigns: results, errors };
     completeJob(jobId, response);
-    logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length, errorCount: errors.length });
+    if (errors.length > 0) {
+      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
+        jobId,
+        campaignCount: results.length,
+        errorCount: errors.length,
+      });
+    } else {
+      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
+    }
   }
 
   private async createSearchCampaign(body: CampaignCreateRequest): Promise<CampaignCreateResult> {
@@ -1146,5 +1154,7 @@ function extractGadsErrorMessage(error: unknown): string {
 
   if (code && friendlyMessages[code]) return friendlyMessages[code];
 
-  return 'Campaign creation failed. Please try again or contact support.';
+  return code
+    ? `Campaign creation failed (error code: ${code}). Please try again or contact support.`
+    : 'Campaign creation failed. Please try again or contact support.';
 }
