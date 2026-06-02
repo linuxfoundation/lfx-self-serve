@@ -78,7 +78,7 @@ export interface MyEventRow {
   IS_REGISTERED: boolean;
   TOTAL_RECORDS: number;
   /** Cutoff timestamp (TIMESTAMP) after which travel fund applications are no longer accepted for this event; null when not set */
-  TRAVEL_FUND_END_TS: string | null;
+  TRAVEL_FUND_END_TS: Date | string | null;
 }
 
 /**
@@ -321,7 +321,7 @@ export interface VisaRequestRow {
   REQUEST_STATUS: string;
   TOTAL_RECORDS: number;
   /** Cutoff timestamp (TIMESTAMP) after which travel fund applications are no longer accepted for this event; null when not set. Carried on visa request rows for shape parity but suppressed in rendering (travel-fund only). */
-  TRAVEL_FUND_END_TS: string | null;
+  TRAVEL_FUND_END_TS: Date | string | null;
 }
 
 /**
