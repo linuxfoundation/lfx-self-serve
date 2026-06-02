@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';

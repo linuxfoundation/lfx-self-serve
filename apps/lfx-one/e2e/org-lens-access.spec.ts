@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 /**
  * Org Lens Access tab E2E — spec 025-org-lens-access-tab.
  *

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type { OrgAccessInviteRequest, OrgAccessListResponse, OrgAccessRole, OrgAccessRoleChangeRequest } from '@lfx-one/shared/interfaces';

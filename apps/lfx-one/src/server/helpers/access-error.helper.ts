@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { AccessErrorResult } from '@lfx-one/shared/interfaces';
 
 // Spec 025 — maps upstream member-service settings failures to clean, user-facing

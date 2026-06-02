@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { Component, computed, effect, input, linkedSignal, model, output, type Signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ORG_ACCESS_ROLE_BADGE_LABEL } from '@lfx-one/shared/constants';

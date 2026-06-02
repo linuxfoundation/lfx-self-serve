@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { Component, computed, input, model, output, signal, type Signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';

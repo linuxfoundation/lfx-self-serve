@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 import { ORG_ACCESS_ROLE_RELATION } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgSettings,

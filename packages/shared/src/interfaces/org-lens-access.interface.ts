@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Generated with [Cursor](https://cursor.com)
+
 // Spec 025 — Org Lens Access tab (People page). In-flight shapes shared between
 // member-service (upstream), the Express BFF, and the Angular client. No persistent
 // storage is introduced. See specs/025-org-lens-access-tab/data-model.md.
