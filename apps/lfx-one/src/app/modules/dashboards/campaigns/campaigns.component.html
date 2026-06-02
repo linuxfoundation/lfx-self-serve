@@ -42,6 +42,8 @@
         <lfx-planning-tab (proceedToImplementation)="onProceedToImplementation($event)" data-testid="campaigns-planning-tab" />
       } @else if (tab.id === 'implementation') {
         <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
+      } @else if (tab.id === 'insights') {
+        <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
       } @else {
         <p class="text-sm text-gray-500">{{ tab.label }} tab content will be added in subsequent PRs.</p>
       }

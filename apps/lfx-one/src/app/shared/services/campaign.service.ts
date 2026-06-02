@@ -20,6 +20,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
 
+import { CAMPAIGN_JOB_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+
 import { SseService } from './sse.service';
 
 @Injectable({ providedIn: 'root' })
