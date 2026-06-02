@@ -10,8 +10,11 @@
  */
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Salesforce Account ID (org account id / SFID) — "001" prefix + exactly 15 alphanumeric chars (the canonical 18-char form). Spec 002 is a hard cut-over to the 18-char SFID; the non-canonical 15-char form is rejected. */
-export const SALESFORCE_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{15}$/;
+/** Salesforce Account ID — "001" prefix + 12 (15-char form) or 15 (18-char form) alphanumeric chars. General Salesforce account-id validator (events, analytics). */
+export const SALESFORCE_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{12,15}$/;
+
+/** Org account id (b2b_org canonical identifier) — "001" prefix + exactly 15 alphanumeric chars (the canonical 18-char SFID). Spec 002 is a hard cut-over to the 18-char SFID; the non-canonical 15-char form is rejected. Scoped to org-lens identifiers so it does not narrow the shared `SALESFORCE_ACCOUNT_ID_PATTERN` used by events/analytics. */
+export const ORG_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{15}$/;
 
 /**
  * General-purpose SSR path parameter validator — mixed-case alphanumerics + hyphens, length 1-64.

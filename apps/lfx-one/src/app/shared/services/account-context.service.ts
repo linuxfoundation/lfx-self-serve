@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_LENS_ENABLED_FLAG, SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
@@ -284,6 +284,6 @@ export class AccountContextService {
 
   /** Spec 002: the org uid is the canonical 18-char Salesforce account id; legacy UUIDs (and anything else) are treated as absent/tampered so a stale cookie degrades to the default selection. */
   private isValidUid(uid: unknown): uid is string {
-    return typeof uid === 'string' && SALESFORCE_ACCOUNT_ID_PATTERN.test(uid);
+    return typeof uid === 'string' && ORG_ACCOUNT_ID_PATTERN.test(uid);
   }
 }

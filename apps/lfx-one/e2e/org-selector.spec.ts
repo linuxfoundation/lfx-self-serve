@@ -115,7 +115,8 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     expect(testId).toMatch(/^org-item-001[A-Za-z0-9]{15}$/);
     const uid = testId!.replace('org-item-', '');
 
-    const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/') || response.url().includes('/api/orgs/sfid/'), {
+    // Spec 002: the canonical-record route is account-id (SFID) keyed via `/api/orgs/uid/`; the legacy `/api/orgs/sfid/` route was removed.
+    const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/'), {
       timeout: 15_000,
     });
 
@@ -124,7 +125,7 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     // Popover closes — the search input should disappear from the DOM
     await expect(page.getByTestId('org-search-input')).not.toBeVisible({ timeout: 5_000 });
 
-    // Canonical fetch fires — accept either uid/ or sfid/ shape since we don't know the row's identifier kind
+    // Canonical fetch fires against the account-id (SFID) keyed `/api/orgs/uid/` route
     const canonicalResponse = await canonicalRequest;
     // Member-service may return 404 in dev sandbox for orgs without canonical records; either
     // a 200 with a body or a 404 satisfies the contract — what matters is that the call was issued.

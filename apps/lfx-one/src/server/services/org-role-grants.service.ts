@@ -98,7 +98,7 @@ export class OrgRoleGrantsService {
         // union of accepted writers + auditors — b2b_org_settings.go Tags() → TagPrefixMember). The
         // query-service matches these via the `tags` param (the legacy `filters_or: writers.username:`
         // form matches nothing — verified against dev). Writer-vs-auditor is classified from the
-        // `data.writers[]` / `data.auditors[]` arrays below.
+        // flattened `data.members[]` shape (falling back to legacy `data.writers[]`/`data.auditors[]`) below.
         tags: [`member:${username}`],
         per_page: ORG_ROLE_GRANTS_HARD_CAP,
       });
@@ -145,8 +145,8 @@ export class OrgRoleGrantsService {
     const directAuditors = new Set<string>();
 
     for (const resource of response?.resources ?? []) {
-      // query-service returns `resource.id` as `<type>:<UUID>` (e.g. `b2b_org_settings:4c46585f-…`).
-      // We key on the bare UUID so it matches the b2b_org details lookup downstream.
+      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000Te2QjAAJ`).
+      // We key on the bare account id (SFID) so it matches the b2b_org details lookup downstream.
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;
 
@@ -190,7 +190,7 @@ export class OrgRoleGrantsService {
     return null;
   }
 
-  /** Strip the `<type>:` prefix that query-service prepends on `resource.id`. UUIDs don't contain `:`, so this is safe across all org types. */
+  /** Strip the `<type>:` prefix that query-service prepends on `resource.id`. Account ids (SFIDs) don't contain `:`, so this is safe across all org types. */
   private extractUid(resourceId: string | undefined | null): string {
     if (!resourceId) return '';
     const colonIdx = resourceId.indexOf(':');

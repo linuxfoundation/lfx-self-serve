@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -105,7 +105,7 @@ export class OrgIdentityController {
     try {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'update_org_canonical_record', req.path);
-      if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(uid)) {
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
         throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
           operation: 'update_org_canonical_record',
           service: 'org_identity_controller',
@@ -160,7 +160,7 @@ export class OrgIdentityController {
     try {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'get_org_addresses', req.path);
-      if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(uid)) {
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
         throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
           operation: 'get_org_addresses',
           service: 'org_identity_controller',
@@ -203,7 +203,7 @@ export class OrgIdentityController {
   private extractUid(req: Request): string {
     const uid = req.params['uid'] ?? req.params['id'];
     this.assertNonEmpty(uid, 'uid', 'get_org_canonical_record', req.path);
-    if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(uid)) {
+    if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
       throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
         operation: 'get_org_canonical_record',
         service: 'org_identity_controller',
