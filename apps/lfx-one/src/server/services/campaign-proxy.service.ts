@@ -497,6 +497,13 @@ export class CampaignProxyService {
 
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
+
+    const unsupported = (body.platforms ?? []).filter((p) => p !== 'google-ads');
+    if (unsupported.length > 0) {
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Only google-ads is currently supported.` };
+      return;
+    }
+
     yield { type: 'status', data: `Scraping ${body.url}...` };
 
     let safeUrl: string;
@@ -517,11 +524,12 @@ export class CampaignProxyService {
 
       // Follow redirects manually to validate each target against SSRF
       let redirectCount = 0;
+      let currentUrl = safeUrl;
       while (scrapeResponse.status >= 300 && scrapeResponse.status < 400 && redirectCount < 5) {
         const location = scrapeResponse.headers.get('location');
         if (!location) break;
-        const redirectUrl = await validateScrapeUrl(new URL(location, safeUrl).href);
-        scrapeResponse = await fetch(redirectUrl, {
+        currentUrl = await validateScrapeUrl(new URL(location, currentUrl).href);
+        scrapeResponse = await fetch(currentUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
           signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
           redirect: 'manual',

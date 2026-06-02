@@ -58,7 +58,7 @@ export class CampaignMetricsService {
   public async getKeywords(req: Request, days: number): Promise<KeywordMetricsResponse> {
     logger.debug(req, 'campaign_keywords', 'Fetching keyword metrics from Google Ads', { days });
 
-    const { gaqlRange } = resolveDateRange(days);
+    const { gaqlRange, effectiveDays } = resolveDateRange(days);
 
     const query = `
       SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
@@ -82,7 +82,7 @@ export class CampaignMetricsService {
     };
     totals.avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
 
-    return { pulledAt: new Date().toISOString(), days, totalKeywords: keywords.length, totals, keywords };
+    return { pulledAt: new Date().toISOString(), days: effectiveDays, totalKeywords: keywords.length, totals, keywords };
   }
 
   // === Audience demographics ===
