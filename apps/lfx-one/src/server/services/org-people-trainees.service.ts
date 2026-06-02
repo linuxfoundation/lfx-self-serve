@@ -175,7 +175,10 @@ export class OrgPeopleTraineesService {
 function toIsoTimestamp(value: Date | string | null | undefined): string | null {
   if (!value) return null;
   if (typeof value === 'string') {
-    const parsed = new Date(value);
+    // Treat Snowflake NTZ strings (no timezone marker) as UTC, not server-local - same drift `toIsoDate` prevents on the date helper.
+    const isoLike = value.includes(' ') ? value.replace(' ', 'T') : value;
+    const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(isoLike) ? isoLike : `${isoLike}Z`;
+    const parsed = new Date(normalized);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
   if (value instanceof Date) {
