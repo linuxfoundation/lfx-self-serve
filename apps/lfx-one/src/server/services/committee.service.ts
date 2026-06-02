@@ -231,11 +231,13 @@ export class CommitteeService {
    *   detail page's Parent Project link). Internal callers (existence checks, meeting
    *   fan-out, member CRUD) should leave this off — they don't use these fields.
    * @param options.includeInheritedPermissions When true, enriches the response with
-   *   `inherited_writers` / `inherited_auditors` — the parent project's manage/review
-   *   grants, so the members roster can label inherited managers correctly (see LFXV2-2059).
-   *   Costs one extra upstream project-settings fetch and is best-effort (empty on failure
-   *   or when the caller can't read the parent project's permissions), so default is `false`.
-   *   Enable only on the user-facing detail read (GET /committees/:id).
+   *   `inherited_writers` / `inherited_auditors` — the manage/review grants the committee
+   *   inherits from its project/foundation ancestry, so the members roster can label
+   *   inherited managers correctly (see LFXV2-2059). Walks the project ancestry (up to
+   *   `MAX_DEPTH` levels) making two parallel upstream reads per level — 2-4 calls for the
+   *   typical 1-2-level hierarchy. Best-effort (a level the caller can't read contributes
+   *   nothing and never blocks the fetch), so default is `false`. Enable only on the
+   *   user-facing detail read (GET /committees/:id).
    */
   public async getCommitteeById(
     req: Request,
@@ -1270,7 +1272,11 @@ export class CommitteeService {
     const writersByKey = new Map<string, CommitteeUser>();
     const auditorsByKey = new Map<string, CommitteeUser>();
     const visited = new Set<string>();
-    const MAX_DEPTH = 8;
+    // The documented use case is a foundation-level grant 1-2 levels above the committee, so cap
+    // the walk at 3 levels (<=6 upstream calls) — enough to cover the known hierarchy with a small
+    // margin while bounding the per-request cost. Truncation is logged below (never silent), and
+    // the constant can be raised if deeper trees need support.
+    const MAX_DEPTH = 3;
 
     let currentUid: string | undefined = projectUid;
     while (currentUid && !visited.has(currentUid) && visited.size < MAX_DEPTH) {
@@ -1309,6 +1315,16 @@ export class CommitteeService {
       }
 
       currentUid = project?.parent_uid || undefined;
+    }
+
+    // Surface a truncated walk (more ancestry remained when the depth cap was hit) so a missed
+    // deep-hierarchy grant is diagnosable rather than a silent cap.
+    if (currentUid && !visited.has(currentUid)) {
+      logger.debug(req, 'get_inherited_permissions', 'Ancestry walk truncated at MAX_DEPTH; deeper grants not collected', {
+        project_uid: projectUid,
+        max_depth: MAX_DEPTH,
+        next_unvisited_project_uid: currentUid,
+      });
     }
 
     logger.debug(req, 'get_inherited_permissions', 'Collected inherited committee permissions from project ancestry', {

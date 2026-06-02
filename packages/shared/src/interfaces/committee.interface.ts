@@ -218,17 +218,18 @@ export interface Committee {
   auditors?: CommitteeUser[];
 
   /**
-   * Users with write (manage) access *inherited* from the committee's parent project
-   * (e.g. a foundation-level "Manage" grant). Populated by the BFF from the parent
-   * project's permission list — response-only, display purposes only. The committee's
-   * effective `writer` boolean already reflects this inheritance via the authorization
-   * model (`committee#writer` derives from `writer from project`); this field exists so
-   * the per-member roster can label such users "Manage" even though they are absent from
-   * the committee-scoped `writers` list. Empty/absent when the caller cannot read the
-   * parent project's permissions.
+   * Users with write (manage) access *inherited* from the committee's project/foundation
+   * ancestry (e.g. a foundation-level "Manage" grant). Populated by the BFF, which walks the
+   * project ancestry (`project_uid → parent → … → foundation`) and unions each level's
+   * permission list — response-only, display purposes only. The committee's effective `writer`
+   * boolean already reflects this inheritance via the authorization model (`committee#writer`
+   * derives from `writer from project`, and `project#writer` from `writer from parent`); this
+   * field exists so the per-member roster can label such users "Manage" even though they are
+   * absent from the committee-scoped `writers` list. Empty/absent for the levels the caller
+   * cannot read (best-effort).
    */
   inherited_writers?: CommitteeUser[];
-  /** Users with audit (review) access inherited from the parent project. See {@link inherited_writers}. */
+  /** Users with audit (review) access inherited from the committee's project/foundation ancestry. See {@link inherited_writers}. */
   inherited_auditors?: CommitteeUser[];
 
   /**
