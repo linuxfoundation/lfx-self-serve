@@ -8,7 +8,6 @@ import type {
   OrgEventAttendeeFoundationOption,
   OrgEventAttendeeRow,
   OrgEventAttendeesResponse,
-  OrgEventAttendeeStatsBaseline,
 } from '@lfx-one/shared/interfaces';
 
 import { toIsoDate } from '../helpers/date-format.helper';
@@ -59,7 +58,7 @@ export class OrgPeopleEventAttendeesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled attendees + per-(person, event) details + baseline stats + filter dropdowns. Four parallel Snowflake queries; stats derived in TS to share math with the client. */
+  /** Bundled attendees + per-(person, event) details + filter dropdowns. Four parallel Snowflake queries; stats are recomputed client-side from filtered details so the server ships none. */
   public async getEventAttendees(accountId: string): Promise<OrgEventAttendeesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
@@ -111,7 +110,6 @@ export class OrgPeopleEventAttendeesService {
       accountId,
       attendees,
       details,
-      stats: computeBaselineStats(details),
       foundationOptions,
       eventOptions,
     };
@@ -185,30 +183,4 @@ export class OrgPeopleEventAttendeesService {
     const result = await this.snowflakeService.execute<EventOptionRow>(query, [accountId]);
     return result.rows;
   }
-}
-
-/** Recompute baseline stats from `details` — same math as the client's filter-change handler (Item 3 formulas). */
-function computeBaselineStats(details: OrgEventAttendeeDetailRow[]): OrgEventAttendeeStatsBaseline {
-  const attendees = new Set<string>();
-  const speakers = new Set<string>();
-  const events = new Set<string>();
-  const foundations = new Set<string>();
-
-  for (const row of details) {
-    attendees.add(row.personKey);
-    if (row.isSpeaker) {
-      speakers.add(row.personKey);
-    }
-    events.add(row.eventId);
-    if (row.foundationId) {
-      foundations.add(row.foundationId);
-    }
-  }
-
-  return {
-    speakers: speakers.size,
-    attendees: attendees.size,
-    events: events.size,
-    foundations: foundations.size,
-  };
 }

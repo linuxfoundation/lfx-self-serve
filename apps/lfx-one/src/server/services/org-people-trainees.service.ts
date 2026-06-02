@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
-import type {
-  OrgTraineeCourseOption,
-  OrgTraineeDetailRow,
-  OrgTraineeFoundationOption,
-  OrgTraineeRow,
-  OrgTraineesResponse,
-  OrgTraineeStatsBaseline,
-} from '@lfx-one/shared/interfaces';
+import type { OrgTraineeCourseOption, OrgTraineeDetailRow, OrgTraineeFoundationOption, OrgTraineeRow, OrgTraineesResponse } from '@lfx-one/shared/interfaces';
 
 import { SnowflakeService } from './snowflake.service';
 
@@ -53,7 +46,7 @@ export class OrgPeopleTraineesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + details + baseline stats + filter dropdowns. Four parallel Snowflake queries; stats derived in TS to share math with the client. */
+  /** Bundled rows + details + filter dropdowns. Four parallel Snowflake queries; stats are recomputed client-side from filtered details so the server ships none. */
   public async getTrainees(accountId: string): Promise<OrgTraineesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE };
@@ -110,7 +103,6 @@ export class OrgPeopleTraineesService {
       accountId,
       trainees,
       details,
-      stats: computeBaselineStats(details),
       foundationOptions,
       courseOptions,
     };
@@ -177,33 +169,6 @@ export class OrgPeopleTraineesService {
     const result = await this.snowflakeService.execute<CourseOptionRow>(query, [accountId]);
     return result.rows;
   }
-}
-
-/** Recompute baseline stats from `details` — same math as the client's filter-change handler (Item 3 formulas). */
-function computeBaselineStats(details: OrgTraineeDetailRow[]): OrgTraineeStatsBaseline {
-  const trainees = new Set<string>();
-  const courseKeys = new Set<string>();
-  const certKeys = new Set<string>();
-
-  for (const row of details) {
-    trainees.add(row.personKey);
-    const composite = `${row.personKey}|${row.courseId}`;
-    courseKeys.add(composite);
-    if (row.status === 'Certified') {
-      certKeys.add(composite);
-    }
-  }
-
-  const coursesEnrolled = courseKeys.size;
-  const certifications = certKeys.size;
-  const completionRate = coursesEnrolled === 0 ? 0 : Math.round((certifications / coursesEnrolled) * 100);
-
-  return {
-    trainees: trainees.size,
-    coursesEnrolled,
-    certifications,
-    completionRate,
-  };
 }
 
 /** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */

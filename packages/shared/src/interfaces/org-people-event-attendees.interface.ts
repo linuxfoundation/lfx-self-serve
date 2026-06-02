@@ -58,7 +58,7 @@ export interface OrgEventAttendeeEventOption {
   eventName: string;
 }
 
-/** Stats baseline — recomputed client-side from filtered details so all four cards stay in lockstep with the table (Item 3 lock). */
+/** Stats-card shape for the Event Attendees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
 export interface OrgEventAttendeeStatsBaseline {
   /** `COUNT(DISTINCT CASE WHEN isSpeaker THEN personKey END)` over the filtered set. */
   speakers: number;
@@ -75,7 +75,6 @@ export interface OrgEventAttendeesResponse {
   accountId: string;
   attendees: OrgEventAttendeeRow[];
   details: OrgEventAttendeeDetailRow[];
-  stats: OrgEventAttendeeStatsBaseline;
   foundationOptions: OrgEventAttendeeFoundationOption[];
   eventOptions: OrgEventAttendeeEventOption[];
 }

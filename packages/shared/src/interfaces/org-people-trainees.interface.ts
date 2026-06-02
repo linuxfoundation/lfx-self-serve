@@ -48,7 +48,7 @@ export interface OrgTraineeCourseOption {
   courseName: string;
 }
 
-/** Unfiltered baseline stats — recomputed client-side from filtered details once any filter touches; matches Item 3 lock in the implementation brief. */
+/** Stats-card shape for the Trainees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
 export interface OrgTraineeStatsBaseline {
   trainees: number;
   coursesEnrolled: number;
@@ -62,7 +62,6 @@ export interface OrgTraineesResponse {
   accountId: string;
   trainees: OrgTraineeRow[];
   details: OrgTraineeDetailRow[];
-  stats: OrgTraineeStatsBaseline;
   foundationOptions: OrgTraineeFoundationOption[];
   courseOptions: OrgTraineeCourseOption[];
 }

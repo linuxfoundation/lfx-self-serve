@@ -16,16 +16,10 @@ import type {
 } from '../interfaces/org-people-contributors.interface';
 import type {
   OrgEventAttendeesResponse,
-  OrgEventAttendeeStatsBaseline,
   OrgEventAttendeeTimeWindow,
   OrgEventAttendeeTimeWindowOption,
 } from '../interfaces/org-people-event-attendees.interface';
-import type {
-  OrgTraineeStatsBaseline,
-  OrgTraineesResponse,
-  OrgTraineeTimeWindow,
-  OrgTraineeTimeWindowOption,
-} from '../interfaces/org-people-trainees.interface';
+import type { OrgTraineesResponse, OrgTraineeTimeWindow, OrgTraineeTimeWindowOption } from '../interfaces/org-people-trainees.interface';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -90,20 +84,11 @@ export const ORG_TRAINEE_TIME_WINDOW_OPTIONS: readonly OrgTraineeTimeWindowOptio
   { label: 'All Time', value: 'all' },
 ] as const;
 
-/** Zero-valued Trainees stats baseline — fallback when stats query returns no rows. */
-export const EMPTY_ORG_TRAINEE_STATS: OrgTraineeStatsBaseline = {
-  trainees: 0,
-  coursesEnrolled: 0,
-  certifications: 0,
-  completionRate: 0,
-};
-
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
   trainees: [],
   details: [],
-  stats: EMPTY_ORG_TRAINEE_STATS,
   foundationOptions: [],
   courseOptions: [],
 };
@@ -125,20 +110,11 @@ export const ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS: readonly OrgEventAttendeeTi
   { label: 'All Time', value: 'all' },
 ] as const;
 
-/** Zero-valued Event Attendees stats baseline — fallback when stats query returns no rows. */
-export const EMPTY_ORG_EVENT_ATTENDEE_STATS: OrgEventAttendeeStatsBaseline = {
-  speakers: 0,
-  attendees: 0,
-  events: 0,
-  foundations: 0,
-};
-
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
   attendees: [],
   details: [],
-  stats: EMPTY_ORG_EVENT_ATTENDEE_STATS,
   foundationOptions: [],
   eventOptions: [],
 };
