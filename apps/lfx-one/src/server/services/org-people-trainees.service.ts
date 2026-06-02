@@ -2,41 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
-import type { OrgTraineeCourseOption, OrgTraineeDetailRow, OrgTraineeFoundationOption, OrgTraineeRow, OrgTraineesResponse } from '@lfx-one/shared/interfaces';
+import type {
+  OrgPeopleAllTraineeRow,
+  OrgPeopleTrainingRow,
+  OrgTraineeCourseOption,
+  OrgTraineeDetailRow,
+  OrgTraineeFoundationOption,
+  OrgTraineeRow,
+  OrgTraineesResponse,
+  TraineeCourseOptionRow,
+  TraineeFoundationOptionRow,
+} from '@lfx-one/shared/interfaces';
 
 import { SnowflakeService } from './snowflake.service';
-
-/** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to trainees (`COURSES_COUNT > 0`). */
-interface OrgPeopleAllTraineeRow {
-  PERSON_KEY: string;
-  LFID: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-}
-
-/** Per-(account, person, course_or_cert) row from `ORG_PEOPLE_TRAINING`. */
-interface OrgPeopleTrainingRow {
-  PERSON_KEY: string;
-  STATUS: string | null;
-  COURSE_OR_CERT_ID: string;
-  COURSE_ID: string | null;
-  COURSE_NAME: string | null;
-  ACTIVITY_TS: Date | string | null;
-  FOUNDATION_ID: string | null;
-  FOUNDATION_NAME: string | null;
-}
-
-interface FoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
-
-interface CourseOptionRow {
-  COURSE_ID: string;
-  COURSE_NAME: string;
-}
 
 /** Trainees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
 export class OrgPeopleTraineesService {
@@ -144,7 +122,7 @@ export class OrgPeopleTraineesService {
     return result.rows;
   }
 
-  private async fetchFoundationOptions(accountId: string): Promise<FoundationOptionRow[]> {
+  private async fetchFoundationOptions(accountId: string): Promise<TraineeFoundationOptionRow[]> {
     const query = `
       SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
@@ -153,11 +131,11 @@ export class OrgPeopleTraineesService {
         AND FOUNDATION_NAME IS NOT NULL
       ORDER BY FOUNDATION_NAME ASC
     `;
-    const result = await this.snowflakeService.execute<FoundationOptionRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<TraineeFoundationOptionRow>(query, [accountId]);
     return result.rows;
   }
 
-  private async fetchCourseOptions(accountId: string): Promise<CourseOptionRow[]> {
+  private async fetchCourseOptions(accountId: string): Promise<TraineeCourseOptionRow[]> {
     const query = `
       SELECT DISTINCT COURSE_ID, COURSE_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
@@ -166,7 +144,7 @@ export class OrgPeopleTraineesService {
         AND COURSE_NAME IS NOT NULL
       ORDER BY COURSE_NAME ASC
     `;
-    const result = await this.snowflakeService.execute<CourseOptionRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<TraineeCourseOptionRow>(query, [accountId]);
     return result.rows;
   }
 }

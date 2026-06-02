@@ -133,3 +133,26 @@ export interface OrgContributorTimeRangeOption {
   label: string;
   value: OrgContributorTimeRange;
 }
+
+// Server-internal Snowflake row shape (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
+
+/** Raw per-(person, project) aggregate row returned by the Snowflake query — server-internal shape. */
+export interface ContributorPersonProjectRow {
+  PERSON_KEY: string;
+  PROJECT_ID: string;
+  LFID: string | null;
+  LF_USERNAME: string | null;
+  CDP_MEMBER_ID: string;
+  DISPLAY_NAME: string | null;
+  TITLE: string | null;
+  PROJECT_NAME: string | null;
+  PROJECT_SLUG: string | null;
+  FOUNDATION_ID: string | null;
+  FOUNDATION_NAME: string | null;
+  FOUNDATION_SLUG: string | null;
+  COMMITS: number | null;
+  CODE_ACTIVITIES: number | null;
+  LAST_ACTIVE_DATE: Date | string | null;
+  IS_DECLARED_MAINTAINER_FOR_PROJECT: boolean | null;
+  IS_DECLARED_MAINTAINER_FOR_ORG: boolean | null;
+}

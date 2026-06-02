@@ -102,3 +102,39 @@ export interface OrgTraineeTimeWindowOption {
   label: string;
   value: OrgTraineeTimeWindow;
 }
+
+// Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
+
+/** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to trainees (`COURSES_COUNT > 0`). */
+export interface OrgPeopleAllTraineeRow {
+  PERSON_KEY: string;
+  LFID: string | null;
+  CDP_MEMBER_ID: string | null;
+  NAME: string | null;
+  TITLE: string | null;
+  EMAIL: string | null;
+}
+
+/** Per-(account, person, course_or_cert) row from `ORG_PEOPLE_TRAINING`. */
+export interface OrgPeopleTrainingRow {
+  PERSON_KEY: string;
+  STATUS: string | null;
+  COURSE_OR_CERT_ID: string;
+  COURSE_ID: string | null;
+  COURSE_NAME: string | null;
+  ACTIVITY_TS: Date | string | null;
+  FOUNDATION_ID: string | null;
+  FOUNDATION_NAME: string | null;
+}
+
+/** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` row from the foundation-options query (trainees). */
+export interface TraineeFoundationOptionRow {
+  FOUNDATION_ID: string;
+  FOUNDATION_NAME: string;
+}
+
+/** Distinct `(COURSE_ID, COURSE_NAME)` row from the course-options query. */
+export interface TraineeCourseOptionRow {
+  COURSE_ID: string;
+  COURSE_NAME: string;
+}

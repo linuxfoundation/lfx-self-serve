@@ -15,27 +15,6 @@ import type {
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 
-/** Raw per-(person, project) aggregate row returned by the Snowflake query — server-internal shape. */
-interface ContributorPersonProjectRow {
-  PERSON_KEY: string;
-  PROJECT_ID: string;
-  LFID: string | null;
-  LF_USERNAME: string | null;
-  CDP_MEMBER_ID: string;
-  DISPLAY_NAME: string | null;
-  TITLE: string | null;
-  PROJECT_NAME: string | null;
-  PROJECT_SLUG: string | null;
-  FOUNDATION_ID: string | null;
-  FOUNDATION_NAME: string | null;
-  FOUNDATION_SLUG: string | null;
-  COMMITS: number | null;
-  CODE_ACTIVITIES: number | null;
-  LAST_ACTIVE_DATE: Date | string | null;
-  IS_DECLARED_MAINTAINER_FOR_PROJECT: boolean | null;
-  IS_DECLARED_MAINTAINER_FOR_ORG: boolean | null;
-}
-
 /** Contributors tab data access — single bundled GET, time-window aggregated server-side per Item 2 A1 lock. */
 export class OrgPeopleContributorsService {
   private readonly snowflakeService: SnowflakeService;

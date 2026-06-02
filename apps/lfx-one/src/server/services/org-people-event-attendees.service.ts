@@ -3,52 +3,19 @@
 
 import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE } from '@lfx-one/shared/constants';
 import type {
+  EventAttendeeEventOptionRow,
+  EventAttendeeFoundationOptionRow,
   OrgEventAttendeeDetailRow,
   OrgEventAttendeeEventOption,
   OrgEventAttendeeFoundationOption,
   OrgEventAttendeeRow,
   OrgEventAttendeesResponse,
+  OrgPeopleAllEventAttendeeRow,
+  OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
-
-/** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to people with at least one event registration. */
-interface OrgPeopleAllEventAttendeeRow {
-  PERSON_KEY: string;
-  LFID: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-}
-
-/** Per-(account, person, event) row from `ORG_PEOPLE_EVENTS`. */
-interface OrgPeopleEventRow {
-  PERSON_KEY: string;
-  EVENT_ID: string;
-  EVENT_NAME: string | null;
-  EVENT_LOCATION: string | null;
-  EVENT_CITY: string | null;
-  EVENT_COUNTRY: string | null;
-  EVENT_URL: string | null;
-  EVENT_START_DATE: Date | string | null;
-  EVENT_END_DATE: Date | string | null;
-  IS_SPEAKER: boolean | null;
-  IS_PAST_EVENT: boolean | null;
-  FOUNDATION_ID: string | null;
-  FOUNDATION_NAME: string | null;
-}
-
-interface FoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
-
-interface EventOptionRow {
-  EVENT_ID: string;
-  EVENT_NAME: string;
-}
 
 /** Event Attendees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and expanded event-grain sub-table client-side. */
 export class OrgPeopleEventAttendeesService {
@@ -156,7 +123,7 @@ export class OrgPeopleEventAttendeesService {
     return result.rows;
   }
 
-  private async fetchFoundationOptions(accountId: string): Promise<FoundationOptionRow[]> {
+  private async fetchFoundationOptions(accountId: string): Promise<EventAttendeeFoundationOptionRow[]> {
     const query = `
       SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS
@@ -165,11 +132,11 @@ export class OrgPeopleEventAttendeesService {
         AND FOUNDATION_NAME IS NOT NULL
       ORDER BY FOUNDATION_NAME ASC
     `;
-    const result = await this.snowflakeService.execute<FoundationOptionRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(query, [accountId]);
     return result.rows;
   }
 
-  private async fetchEventOptions(accountId: string): Promise<EventOptionRow[]> {
+  private async fetchEventOptions(accountId: string): Promise<EventAttendeeEventOptionRow[]> {
     // R2.3 — most-recent-first, matches the prototype's flat list. Distinct on (EVENT_ID, EVENT_NAME, EVENT_END_DATE)
     // to keep the EVENT_END_DATE column available for ORDER BY without forcing a re-aggregation.
     const query = `
@@ -180,7 +147,7 @@ export class OrgPeopleEventAttendeesService {
         AND EVENT_NAME IS NOT NULL
       ORDER BY EVENT_END_DATE DESC NULLS LAST, EVENT_NAME ASC
     `;
-    const result = await this.snowflakeService.execute<EventOptionRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<EventAttendeeEventOptionRow>(query, [accountId]);
     return result.rows;
   }
 }

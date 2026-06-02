@@ -119,3 +119,44 @@ export interface OrgEventAttendeeTimeWindowOption {
   label: string;
   value: OrgEventAttendeeTimeWindow;
 }
+
+// Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
+
+/** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to people with at least one event registration. */
+export interface OrgPeopleAllEventAttendeeRow {
+  PERSON_KEY: string;
+  LFID: string | null;
+  CDP_MEMBER_ID: string | null;
+  NAME: string | null;
+  TITLE: string | null;
+  EMAIL: string | null;
+}
+
+/** Per-(account, person, event) row from `ORG_PEOPLE_EVENTS`. */
+export interface OrgPeopleEventRow {
+  PERSON_KEY: string;
+  EVENT_ID: string;
+  EVENT_NAME: string | null;
+  EVENT_LOCATION: string | null;
+  EVENT_CITY: string | null;
+  EVENT_COUNTRY: string | null;
+  EVENT_URL: string | null;
+  EVENT_START_DATE: Date | string | null;
+  EVENT_END_DATE: Date | string | null;
+  IS_SPEAKER: boolean | null;
+  IS_PAST_EVENT: boolean | null;
+  FOUNDATION_ID: string | null;
+  FOUNDATION_NAME: string | null;
+}
+
+/** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` row from the foundation-options query (event attendees). */
+export interface EventAttendeeFoundationOptionRow {
+  FOUNDATION_ID: string;
+  FOUNDATION_NAME: string;
+}
+
+/** Distinct `(EVENT_ID, EVENT_NAME)` row from the event-options query. */
+export interface EventAttendeeEventOptionRow {
+  EVENT_ID: string;
+  EVENT_NAME: string;
+}
