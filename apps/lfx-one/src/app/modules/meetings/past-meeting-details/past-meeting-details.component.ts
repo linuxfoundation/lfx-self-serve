@@ -16,6 +16,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
   getPastMeetingTranscriptUrl,
+  isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
   PastMeeting,
   PastMeetingAttachment,
@@ -115,6 +116,7 @@ export class PastMeetingDetailsComponent {
   public hasSummary = this.initHasSummary();
   public summaryContent = this.initSummaryContent();
   public summaryApproved = this.initSummaryApproved();
+  public summaryAwaitingApproval = this.initSummaryAwaitingApproval();
 
   // Public methods
   public goBack(): void {
@@ -341,6 +343,12 @@ export class PastMeetingDetailsComponent {
 
   private initSummaryApproved(): Signal<boolean> {
     return computed(() => this.summary()?.approved || false);
+  }
+
+  // "Pending" only applies when the summary requires approval and isn't approved
+  // yet — summaries that never required approval are not pending.
+  private initSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.summary()));
   }
 
   private initHasSummary(): Signal<boolean> {

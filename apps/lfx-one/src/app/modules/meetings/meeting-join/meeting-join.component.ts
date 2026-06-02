@@ -24,6 +24,7 @@ import {
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
+  isPastMeetingSummaryAwaitingApproval,
   Meeting,
   MEETING_TYPE_CONFIGS,
   getPastMeetingTranscriptUrl,
@@ -179,6 +180,7 @@ export class MeetingJoinComponent implements OnInit {
   protected isPastMeeting: Signal<boolean>;
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
   protected hasSummaryContent: Signal<boolean>;
+  protected summaryAwaitingApproval: Signal<boolean>;
   private pastMeetingRecording: Signal<PastMeetingRecording | null>;
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
@@ -277,6 +279,7 @@ export class MeetingJoinComponent implements OnInit {
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
+    this.summaryAwaitingApproval = this.initializeSummaryAwaitingApproval();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
     this.pastMeetingAttachments = this.initializePastMeetingAttachments();
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
@@ -1123,6 +1126,12 @@ export class MeetingJoinComponent implements OnInit {
       const data = this.pastMeetingSummary()?.summary_data;
       return !!(data?.edited_content || data?.content);
     });
+  }
+
+  // "Pending" only applies when the summary requires approval and isn't approved
+  // yet — summaries that never required approval are not pending.
+  private initializeSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.pastMeetingSummary()));
   }
 
   private initializeTranscriptUrl(): Signal<string | null> {

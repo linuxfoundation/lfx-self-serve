@@ -123,7 +123,7 @@
     }
 
     <!-- AI Summary Review Banner for Organizers -->
-    @if (pastMeeting() && meeting().organizer && hasSummary() && !summaryApproved()) {
+    @if (pastMeeting() && meeting().organizer && hasSummary() && summaryAwaitingApproval()) {
       <div class="flex items-center gap-2.5 px-3.5 py-3 bg-blue-50 border border-blue-200 rounded-md mb-3">
         <i class="fa-light fa-sparkles text-base text-blue-600 flex-shrink-0 mt-0.5"></i>
         <div class="flex-1 flex items-center justify-between gap-3">
@@ -247,7 +247,7 @@
                 (click)="openRecordingModal()">
               </lfx-button>
             }
-            @if (hasSummary() && summaryApproved()) {
+            @if (hasSummary() && summaryVisible()) {
               <lfx-button
                 class="w-full"
                 icon="fa-light fa-sparkles"
@@ -345,7 +345,7 @@
                 (click)="openRecordingModal()">
               </lfx-button>
             }
-            @if (hasSummary() && summaryApproved()) {
+            @if (hasSummary() && summaryVisible()) {
               <lfx-button
                 class="w-full"
                 icon="fa-light fa-sparkles"
