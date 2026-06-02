@@ -15,7 +15,7 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
+import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -476,7 +476,14 @@ export class MeetingsDashboardComponent {
     return toSignal(
       merge(meLens$, firstPage$, nextPage$).pipe(
         tap((response) => this.pastPageToken.set(response.page_token)),
-        scan((acc: PastMeeting[], response: PageResult<PastMeeting>) => (response.reset ? response.data : [...acc, ...response.data]), [])
+        // Sort the full accumulator (not just the incoming page) descending by date: the upstream
+        // query-service can't sort past meetings by start_time, and the name-based page cursor means
+        // a freshly loaded page may contain meetings more recent than ones already shown. Re-sorting
+        // the merged list keeps the rendered order most-recent-first across "Load More". (LFXV2-2053)
+        scan(
+          (acc: PastMeeting[], response: PageResult<PastMeeting>) => sortPastMeetingsDescending(response.reset ? response.data : [...acc, ...response.data]),
+          []
+        )
       ),
       { initialValue: [] }
     );
