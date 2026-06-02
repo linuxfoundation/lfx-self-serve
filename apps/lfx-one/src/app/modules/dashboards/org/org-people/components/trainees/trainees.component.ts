@@ -108,7 +108,7 @@ export class TraineesComponent {
 
   protected readonly sortIconMap: Signal<Record<OrgTraineeSortColumn, string>> = computed(() => this.initSortIconMap());
 
-  // Cache expanded sub-row VMs per personKey across filter changes — single source of truth for the template.
+  // Lookup of expanded sub-row VMs keyed by personKey; computed from `filteredDetails()` so it recomputes when filters change.
   protected readonly expandedRowsMap: Signal<Record<string, OrgTraineeExpandedRowVm[]>> = computed(() => this.initExpandedRowsMap());
 
   public constructor() {
