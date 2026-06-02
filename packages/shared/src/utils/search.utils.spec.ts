@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { rankUserSearchResults, scoreUserSearchResult, UserSearchRelevance } from './search.utils';
+import { rankUserSearchResults, scoreUserSearchResult } from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
