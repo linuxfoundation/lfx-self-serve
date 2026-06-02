@@ -125,9 +125,9 @@ function getGadsClient(): GoogleAdsApi {
       throw new Error('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
     }
     gadsClient = new GoogleAdsApi({
-      client_id: clientId,
-      client_secret: clientSecret,
-      developer_token: developerToken,
+      client_id: getEnv('GADS_CLIENT_ID'),
+      client_secret: getEnv('GADS_CLIENT_SECRET'),
+      developer_token: getEnv('GADS_DEVELOPER_TOKEN'),
     });
   }
   return gadsClient;
@@ -342,7 +342,7 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
       temperature: 0.7,
       stream: true,
     }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+    signal,
   });
 
   if (!response.ok || !response.body) {
@@ -1109,7 +1109,7 @@ function sanitizeDelimiter(value: string): string {
 }
 
 function buildCampaignName(body: CampaignCreateRequest, campaignType: string): string {
-  const region = REGION_MAP[body.countryCode.toUpperCase()] || 'Global';
+  const region = REGION_MAP[body.countryCode] || 'Global';
   const adFormat = campaignType === 'Search' ? 'Search' : 'DG Display';
   const targeting = campaignType === 'Search' ? 'Prospecting' : 'Intent';
   const funnel = campaignType === 'Search' ? 'BoFU' : 'MoFU';
