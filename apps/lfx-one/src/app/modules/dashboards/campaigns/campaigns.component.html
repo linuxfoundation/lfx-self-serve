@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-gray-900">Campaigns</h1>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
+    @for (tab of tabs; track tab.id; let i = $index) {
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="selectedTab() === tab.id"
+        [attr.aria-controls]="'panel-' + tab.id"
+        [attr.id]="'tab-' + tab.id"
+        [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
+        (click)="selectTab(tab.id)"
+        (keydown)="onTabKeydown($event, i)"
+        [class]="
+          selectedTab() === tab.id
+            ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+            : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+        "
+        [attr.data-testid]="'campaigns-' + tab.id + '-tab'">
+        <i [class]="tab.icon" aria-hidden="true"></i>
+        {{ tab.label }}
+      </button>
+    }
+  </div>
+
+  <!-- Tab Content -->
+  @for (tab of tabs; track tab.id) {
+    <div
+      role="tabpanel"
+      [id]="'panel-' + tab.id"
+      [attr.aria-labelledby]="'tab-' + tab.id"
+      [hidden]="selectedTab() !== tab.id"
+      [attr.data-testid]="'campaigns-' + tab.id + '-panel'">
+      <p class="text-sm text-gray-500">{{ tab.label }} tab content will be added in subsequent PRs.</p>
+    </div>
+  }
+</div>

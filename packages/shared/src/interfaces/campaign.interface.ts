@@ -15,6 +15,14 @@ export type CampaignType = 'search' | 'demand-gen';
 
 export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead-generation' | 'engagement';
 
+export type CampaignTab = CampaignPhase;
+
+export interface CampaignTabOption {
+  id: CampaignTab;
+  label: string;
+  icon: string;
+}
+
 // ---------------------------------------------------------------------------
 // Brief Pipeline (Planning Phase)
 // ---------------------------------------------------------------------------

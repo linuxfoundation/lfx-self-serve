@@ -296,12 +296,6 @@ export class MainLayoutComponent {
           routerLink: '/foundation/health-metrics',
           testId: 'sidebar-metrics-health-metrics',
         },
-        {
-          label: 'Marketing Impact',
-          icon: 'fa-light fa-bullhorn',
-          routerLink: '/foundation/marketing-impact',
-          testId: 'sidebar-metrics-marketing-impact',
-        },
       ];
 
       const foundationSfid = this.projectContextService.selectedFoundationSfid();
@@ -323,6 +317,26 @@ export class MainLayoutComponent {
         isSection: true,
         expanded: true,
         items: metricsItems,
+      });
+
+      items.push({
+        label: 'Marketing',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'Marketing Impact',
+            icon: 'fa-light fa-bullhorn',
+            routerLink: '/foundation/marketing-impact',
+            testId: 'sidebar-marketing-impact',
+          },
+          {
+            label: 'Campaigns',
+            icon: 'fa-light fa-megaphone',
+            routerLink: '/foundation/campaigns',
+            testId: 'sidebar-marketing-campaigns',
+          },
+        ],
       });
     }
 
