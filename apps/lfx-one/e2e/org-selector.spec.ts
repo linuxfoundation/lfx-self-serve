@@ -109,12 +109,14 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     const firstRow = page.locator('[data-testid^="org-item-"]').first();
     await expect(firstRow).toBeVisible({ timeout: 15_000 });
 
-    // Capture the row's data-testid which contains the uid we'll see in the canonical-fetch URL
+    // Capture the row's data-testid which contains the org account id (SFID) we'll see in the canonical-fetch URL.
+    // Spec 002: the org identifier is the 18-char Salesforce account id (001-prefixed), not a UUID.
     const testId = await firstRow.getAttribute('data-testid');
-    expect(testId).toMatch(/^org-item-[0-9a-f-]{36}$/i);
+    expect(testId).toMatch(/^org-item-001[A-Za-z0-9]{15}$/);
     const uid = testId!.replace('org-item-', '');
 
-    const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/') || response.url().includes('/api/orgs/sfid/'), {
+    // Spec 002: the canonical-record route is account-id (SFID) keyed via `/api/orgs/uid/`; the legacy `/api/orgs/sfid/` route was removed.
+    const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/'), {
       timeout: 15_000,
     });
 
@@ -123,7 +125,7 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     // Popover closes — the search input should disappear from the DOM
     await expect(page.getByTestId('org-search-input')).not.toBeVisible({ timeout: 5_000 });
 
-    // Canonical fetch fires — accept either uid/ or sfid/ shape since we don't know the row's identifier kind
+    // Canonical fetch fires against the account-id (SFID) keyed `/api/orgs/uid/` route
     const canonicalResponse = await canonicalRequest;
     // Member-service may return 404 in dev sandbox for orgs without canonical records; either
     // a 200 with a body or a 404 satisfies the contract — what matters is that the call was issued.
@@ -154,8 +156,9 @@ test.describe('Org Selector — spec 022 cascading row decoration (S10)', () => 
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    const PARENT_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
-    const CHILD_UID = '4c46585f-878c-8285-b2e9-2dbfc38de012';
+    // Spec 002: org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
+    const PARENT_UID = '0014100000Te2QjAAJ';
+    const CHILD_UID = '0014100000TdzYmAAJ';
     const PARENT_NAME = 'Red Hat, Inc.';
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
@@ -234,7 +237,7 @@ test.describe('Org Selector — spec 022 no mock fallback (S11)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['00000000-0000-0000-0000-000000000001'],
+          writers: ['0014100000Te2QjAAJ'],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
@@ -280,7 +283,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['00000000-0000-0000-0000-000000000099'],
+          writers: ['0014100000Te2QjAAJ'],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],

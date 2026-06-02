@@ -1,15 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoal, CampaignPhase, CampaignPlatform } from '../interfaces';
+import type { CampaignGoal, CampaignPlatform, CampaignTabOption } from '../interfaces/campaign.interface';
 
-export interface CampaignTabOption {
-  id: CampaignPhase;
-  label: string;
-  icon: string;
-}
-
-export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
+/** Tab definitions for the Campaigns page tab navigation. */
+export const CAMPAIGN_TABS: CampaignTabOption[] = [
   { id: 'planning', label: 'Planning', icon: 'fa-light fa-clipboard-list' },
   { id: 'implementation', label: 'Implementation', icon: 'fa-light fa-rocket' },
   { id: 'monitoring', label: 'Monitoring', icon: 'fa-light fa-chart-mixed' },
@@ -20,17 +15,18 @@ export interface CampaignPlatformOption {
   id: CampaignPlatform;
   label: string;
   icon: string;
+  disabled?: boolean;
 }
 
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
-  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft' },
-  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
-  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
-  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
-  { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield' },
-  { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow' },
-  { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter' },
+  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
+  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin', disabled: true },
+  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
+  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
+  { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
+  { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
+  { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;
 
 export interface CampaignGoalOption {

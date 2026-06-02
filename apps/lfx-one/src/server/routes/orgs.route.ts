@@ -11,6 +11,7 @@ import { OrgLensFoundationsController } from '../controllers/org-lens-foundation
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
+import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
   const router = Router();
@@ -21,6 +22,7 @@ function buildOrgsRouter(): Router {
   const orgLensDocumentsController = new OrgLensDocumentsController();
   const orgLensPeopleController = new OrgLensPeopleController();
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
+  const orgLensTrainingController = new OrgLensTrainingController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -29,7 +31,8 @@ function buildOrgsRouter(): Router {
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
 
-  // Spec 024 (uuid-only): all org-lens routes key off `:orgUid`.
+  // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
+  // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
   router.get('/:orgUid/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
   // Spec (LFXV2-1898) — Events page keys off the Salesforce accountId (not the b2b_org uuid), so these routes
   // intentionally use `:accountId`. /events/summary MUST be registered before /events so Express matches the more-specific path first.
@@ -55,6 +58,9 @@ function buildOrgsRouter(): Router {
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
+
+  // LFXV2-1895 — Org Lens Training & Certifications stat strip.
+  router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));

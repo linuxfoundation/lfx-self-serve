@@ -92,8 +92,8 @@
         @if (requestType() === 'travel-fund') {
           <td>
             <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-deadline-' + request.id">
-              @if (request.travelFundEndDate) {
-                {{ request.travelFundEndDate | date: 'MMM d, y' }}
+              @if (request.travelFundEnd) {
+                {{ request.travelFundEnd | date: 'MMM d, y, h:mm a' }}
               } @else {
                 —
               }

@@ -94,7 +94,12 @@ export class OrgRoleGrantsService {
     try {
       settingsResponse = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgSettingsDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'b2b_org_settings',
-        filters_or: [`writers.username:${username}`, `auditors.username:${username}`],
+        // Spec 002 / member-service v0.7.0: settings are indexed with a `member:<username>` tag (the
+        // union of accepted writers + auditors — b2b_org_settings.go Tags() → TagPrefixMember). The
+        // query-service matches these via the `tags` param (the legacy `filters_or: writers.username:`
+        // form matches nothing — verified against dev). Writer-vs-auditor is classified from the
+        // flattened `data.members[]` shape (falling back to legacy `data.writers[]`/`data.auditors[]`) below.
+        tags: [`member:${username}`],
         per_page: ORG_ROLE_GRANTS_HARD_CAP,
       });
     } catch (error) {
@@ -140,19 +145,15 @@ export class OrgRoleGrantsService {
     const directAuditors = new Set<string>();
 
     for (const resource of response?.resources ?? []) {
-      // query-service returns `resource.id` as `<type>:<UUID>` (e.g. `b2b_org_settings:4c46585f-…`).
-      // We key on the bare UUID so it matches the b2b_org details lookup downstream.
+      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000Te2QjAAJ`).
+      // We key on the bare account id (SFID) so it matches the b2b_org details lookup downstream.
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;
 
-      const isWriter = (resource.data?.writers ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted');
-      if (isWriter) {
+      const role = this.classifyDirectRole(resource.data, username);
+      if (role === 'writer') {
         directWriters.add(orgUid);
-        continue;
-      }
-
-      const isAuditor = (resource.data?.auditors ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted');
-      if (isAuditor) {
+      } else if (role === 'auditor') {
         directAuditors.add(orgUid);
       }
     }
@@ -160,7 +161,36 @@ export class OrgRoleGrantsService {
     return { directWriters, directAuditors };
   }
 
-  /** Strip the `<type>:` prefix that query-service prepends on `resource.id`. UUIDs don't contain `:`, so this is safe across all org types. */
+  /**
+   * Resolves the caller's direct role on one settings doc, preferring the current flattened
+   * `members[]` indexer shape and falling back to the legacy `writers[]`/`auditors[]` arrays
+   * (member-service `b2bOrgSettingsIndexerView`). Only `accepted` entries count, and writer
+   * wins over auditor when the caller appears as both (matches the indexer's writer-first dedupe).
+   */
+  private classifyDirectRole(data: B2bOrgSettingsDoc | undefined, username: string): 'writer' | 'auditor' | null {
+    const members = data?.members;
+    if (members?.length) {
+      let isAuditor = false;
+      for (const entry of members) {
+        if (entry?.username !== username || entry?.invite_status !== 'accepted') continue;
+        if (entry.role === 'writer') return 'writer';
+        if (entry.role === 'auditor') isAuditor = true;
+      }
+      if (isAuditor) return 'auditor';
+    }
+
+    // Legacy fallback for docs indexed before the members[] flatten.
+    if ((data?.writers ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted')) {
+      return 'writer';
+    }
+    if ((data?.auditors ?? []).some((entry) => entry?.username === username && entry?.invite_status === 'accepted')) {
+      return 'auditor';
+    }
+
+    return null;
+  }
+
+  /** Strip the `<type>:` prefix that query-service prepends on `resource.id`. Account ids (SFIDs) don't contain `:`, so this is safe across all org types. */
   private extractUid(resourceId: string | undefined | null): string {
     if (!resourceId) return '';
     const colonIdx = resourceId.indexOf(':');

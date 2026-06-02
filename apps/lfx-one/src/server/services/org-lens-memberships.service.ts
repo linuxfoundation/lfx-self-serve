@@ -208,8 +208,8 @@ export class OrgLensMembershipsService {
   }
 
   // GET /api/orgs/:orgUid/lens/memberships/:foundationSlug
-  // Spec 024 (uuid-only): the foundation header is derived from the Snowflake summary (keyed by the
-  // org `sfid`, resolved from the route uuid at the controller boundary) and matched by FOUNDATION_SLUG;
+  // Spec 002: the foundation header is derived from the Snowflake summary (keyed by the org account id /
+  // `sfid`, which is the route identifier itself — no resolution needed) and matched by FOUNDATION_SLUG;
   // keyContacts are sourced live from the query-service indexer via OrgLensKeyContactsService, scoped to
   // the org's active membership for the foundation's slug (keyed by the org `b2bOrgUid`). Unknown slug ⇒
   // not-found (foundation: null, keyContacts: []) per FR-008.

@@ -4,7 +4,7 @@
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -12,10 +12,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { lfxColors } from '@lfx-one/shared/constants';
 import { NewsletterAnalytics, NewsletterChartData } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, EMPTY, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, finalize, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-newsletter-analytics',
@@ -28,7 +27,6 @@ export class NewsletterAnalyticsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly newsletterService = inject(NewsletterService);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -54,29 +52,18 @@ export class NewsletterAnalyticsComponent {
       this.canRenderChart.set(true);
     }
 
-    // Wait for both the route param and ProjectContextService to hydrate
-    // before fetching. On a deep link to `/projects/:slug/newsletters/:id/analytics`,
-    // the paramMap can fire before the lens / persona resolution lands —
-    // reading activeContextUid() synchronously inside switchMap would surface
-    // a permanent "Missing project context" because paramMap doesn't re-emit.
-    // Combining with the context signal re-runs the switchMap when context
-    // becomes available.
-    combineLatest([this.route.paramMap, toObservable(this.projectContextService.activeContextUid)])
+    // Read project_uid and newsletter id from the route. Both are required
+    // segments per newsletters.routes.ts, so we don't need to wait for any
+    // ambient context to hydrate — the URL carries everything we need.
+    this.route.paramMap
       .pipe(
-        switchMap(([params, projectUid]) => {
+        switchMap((params) => {
           const id = params.get('id');
-          if (!id) {
+          const projectUid = params.get('projectUid');
+          if (!id || !projectUid) {
             this.loading.set(false);
-            this.loadError.set('Missing newsletter id.');
+            this.loadError.set('Missing newsletter id or project.');
             return of(null);
-          }
-          if (!projectUid) {
-            // Keep the skeleton up while context is still pending — emitting
-            // a typed value here would set analytics to null and flash the
-            // empty-state surface.
-            this.loading.set(true);
-            this.loadError.set(null);
-            return EMPTY;
           }
           this.loading.set(true);
           this.loadError.set(null);

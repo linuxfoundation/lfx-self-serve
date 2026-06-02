@@ -1,6 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+/** Active tab on the org training & certifications page */
+export type OrgTrainingTabId = 'certifications' | 'trainings';
+
+/** Summary statistics for the org training & certifications stat strip */
+export interface OrgTrainingStats {
+  /** Count of distinct employees who completed at least one certification (STATUS = 'Certified') */
+  certifiedEmployees: number;
+  /** Total count of certification records (STATUS = 'Certified'), regardless of how many employees earned them */
+  certificationsEarned: number;
+  /** Count of distinct employees enrolled in at least one training (any STATUS other than 'Certified', including NULL) */
+  employeesInTraining: number;
+  /** Total count of training enrollment records (any STATUS other than 'Certified', including NULL), regardless of how many employees enrolled */
+  trainingCoursesEnrolled: number;
+}
+
 /**
  * Certification status derived from expiration date
  */
