@@ -105,7 +105,7 @@
             </tr>
           </thead>
           <tbody>
-            @for (campaign of campaigns(); track campaign.name) {
+            @for (campaign of campaigns(); track campaign.campaignId) {
               <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'monitoring-campaign-row-' + $index">
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-1.5">
@@ -218,7 +218,7 @@
                 </tr>
               </thead>
               <tbody>
-                @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaign) {
+                @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaignId) {
                   <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
@@ -342,7 +342,7 @@
                 </tr>
               </thead>
               <tbody>
-                @for (term of visibleSearchTerms(); track term.searchTerm + '-' + term.campaignName) {
+                @for (term of visibleSearchTerms(); track term.searchTerm + '-' + term.campaignId) {
                   <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'search-term-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ term.searchTerm }}</p>

@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
 import type { CampaignMetrics, CampaignMonitorResponse, KeywordMetrics, KeywordMetricsResponse, SearchTermMetrics } from '@lfx-one/shared/interfaces';
@@ -167,8 +167,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected eventLabel(campaignName: string): string {
-    const parts = campaignName.split(' | ');
-    return parts[1] || campaignName;
+    return parseCampaignName(campaignName).baseName || campaignName;
   }
 
   protected qualityScoreClass(score: number | null): string {

@@ -4,6 +4,7 @@
 import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
+import { parseCampaignName } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
 import type { KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
@@ -76,8 +77,7 @@ export class KeywordPerformanceComponent {
   }
 
   protected eventLabel(kw: KeywordMetrics): string {
-    const parts = kw.campaign.split(' | ');
-    return parts[1] || kw.campaign;
+    return parseCampaignName(kw.campaign).baseName || kw.campaign;
   }
 
   protected qualityScoreClass(score: number | null): string {
