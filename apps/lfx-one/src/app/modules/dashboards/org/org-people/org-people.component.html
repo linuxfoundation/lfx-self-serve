@@ -51,6 +51,8 @@
       <lfx-org-people-key-contacts />
     } @else if (activeTab() === 'training') {
       <lfx-org-people-trainees />
+    } @else if (activeTab() === 'events') {
+      <lfx-org-people-event-attendees />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

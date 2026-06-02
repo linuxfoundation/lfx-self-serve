@@ -8,6 +8,7 @@ import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
 
@@ -16,11 +17,13 @@ export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
   private readonly keyContactsService: OrgPeopleKeyContactsService;
   private readonly traineesService: OrgPeopleTraineesService;
+  private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
     this.traineesService = new OrgPeopleTraineesService();
+    this.eventAttendeesService = new OrgPeopleEventAttendeesService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -126,6 +129,33 @@ export class OrgLensPeopleController {
         detail_count: response.details.length,
         foundation_count: response.foundationOptions.length,
         course_count: response.courseOptions.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/event-attendees — bundled rows + details + stats + filter options for the Event Attendees tab (LFXV2-1875). */
+  public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_event_attendees', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_event_attendees');
+
+      const response = await this.eventAttendeesService.getEventAttendees(orgUid);
+
+      logger.success(req, 'get_org_lens_people_event_attendees', startTime, {
+        org_uid: orgUid,
+        attendee_count: response.attendees.length,
+        detail_count: response.details.length,
+        foundation_count: response.foundationOptions.length,
+        event_count: response.eventOptions.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

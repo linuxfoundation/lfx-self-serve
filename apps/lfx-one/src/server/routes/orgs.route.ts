@@ -59,6 +59,8 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   // LFXV2-1876 — People → Trainees tab. Keep above the `/:personKey/detail` matcher so 'trainees' isn't consumed as a personKey.
   router.get('/:orgUid/lens/people/trainees', (req, res, next) => orgLensPeopleController.getTrainees(req, res, next));
+  // LFXV2-1875 — People → Event Attendees tab. Same guard rationale as above ('event-attendees' must not be consumed as a personKey).
+  router.get('/:orgUid/lens/people/event-attendees', (req, res, next) => orgLensPeopleController.getEventAttendees(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
   // LFXV2-1895 — Org Lens Training & Certifications stat strip.

@@ -9,6 +9,12 @@ import type {
   PeopleTabId,
 } from '../interfaces/org-people.interface';
 import type {
+  OrgEventAttendeesResponse,
+  OrgEventAttendeeStatsBaseline,
+  OrgEventAttendeeTimeWindow,
+  OrgEventAttendeeTimeWindowOption,
+} from '../interfaces/org-people-event-attendees.interface';
+import type {
   OrgTraineeStatsBaseline,
   OrgTraineesResponse,
   OrgTraineeTimeWindow,
@@ -97,4 +103,42 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   stats: EMPTY_ORG_TRAINEE_STATS,
   foundationOptions: [],
   courseOptions: [],
+};
+
+// ----------------------------------------------------------------------------
+// Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as
+// Trainees so the page's filter trio + stat cards + expansion stay symmetric.
+// ----------------------------------------------------------------------------
+
+/** Initial visible-row cap on the Event Attendees table before "Show All" is clicked. */
+export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
+
+/** Default Event Attendees time-window — Past 12 Months per Item 2 R2.4 lock (matches prototype default). */
+export const ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW: OrgEventAttendeeTimeWindow = '12m';
+
+/** Time-window dropdown options for the Event Attendees tab — ordered narrowest-first. */
+export const ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS: readonly OrgEventAttendeeTimeWindowOption[] = [
+  { label: 'Past 3 Months', value: '3m' },
+  { label: 'Past 6 Months', value: '6m' },
+  { label: 'Past 12 Months', value: '12m' },
+  { label: 'Past 2 Years', value: '2y' },
+  { label: 'All Time', value: 'all' },
+] as const;
+
+/** Zero-valued Event Attendees stats baseline — fallback when stats query returns no rows. */
+export const EMPTY_ORG_EVENT_ATTENDEE_STATS: OrgEventAttendeeStatsBaseline = {
+  speakers: 0,
+  attendees: 0,
+  events: 0,
+  foundations: 0,
+};
+
+/** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
+export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
+  accountId: '',
+  attendees: [],
+  details: [],
+  stats: EMPTY_ORG_EVENT_ATTENDEE_STATS,
+  foundationOptions: [],
+  eventOptions: [],
 };
