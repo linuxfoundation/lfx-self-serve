@@ -12,6 +12,7 @@ import type {
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
 
+import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 
 /** Raw per-(person, project) aggregate row returned by the Snowflake query — server-internal shape. */
@@ -59,11 +60,12 @@ export class OrgPeopleContributorsService {
   }
 
   /**
-   * One SQL pass produces every metric the tab needs. The `WHERE activity_date >= ?`
-   * predicate is the only thing the time-window selector changes; binding it via
-   * parameter keeps the query plan cacheable across windows for the same org.
-   * The dbt model already gates `is_segment_active = TRUE` and `member_is_bot = FALSE`,
-   * so retired projects and bot rows never enter — no filter needed here.
+   * One SQL pass produces every metric the tab needs. The time-window cutoff
+   * is inlined into the query as a Snowflake `DATEADD(...)` expression (see
+   * `timeRangeCutoffSnowflake`) so the planner can fold it at compile time;
+   * the only user-controlled value (`account_id`) stays bound. The dbt model
+   * already gates `is_segment_active = TRUE` and `member_is_bot = FALSE`, so
+   * retired projects and bot rows never enter — no filter needed here.
    */
   private async fetchPersonProjectRows(accountId: string, timeRange: OrgContributorTimeRange): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
@@ -248,19 +250,4 @@ function computeStats(contributors: OrgContributorRow[], projects: number, found
     projects,
     foundations,
   };
-}
-
-/** Normalize Snowflake `Date | string | null` to an ISO `YYYY-MM-DD` date string. Mirrors helper in org-people-event-attendees.service.ts. */
-function toIsoDate(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  }
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  return null;
 }

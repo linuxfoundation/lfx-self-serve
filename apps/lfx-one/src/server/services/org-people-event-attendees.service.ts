@@ -11,6 +11,7 @@ import type {
   OrgEventAttendeeStatsBaseline,
 } from '@lfx-one/shared/interfaces';
 
+import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 
 /** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to people with at least one event registration. */
@@ -220,19 +221,4 @@ function computeBaselineStats(details: OrgEventAttendeeDetailRow[]): OrgEventAtt
     events: events.size,
     foundations: foundations.size,
   };
-}
-
-/** Normalize Snowflake `Date | string | null` to an ISO `YYYY-MM-DD` date string (date-only — events platform's date columns are date-grain even when typed TIMESTAMP). Null in → null out. */
-function toIsoDate(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  }
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  return null;
 }
