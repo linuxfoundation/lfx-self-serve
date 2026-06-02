@@ -354,7 +354,7 @@ export class MultiPersonaDashboardComponent {
     let count = 0;
     for (const meeting of meetings) {
       if (meeting.occurrences?.length > 0) {
-        for (const occ of getActiveOccurrences(meeting.occurrences)) {
+        for (const occ of getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences)) {
           const occDate = new Date(occ.start_time);
           if (occDate >= now && occDate < endOfWeek) {
             count++;
