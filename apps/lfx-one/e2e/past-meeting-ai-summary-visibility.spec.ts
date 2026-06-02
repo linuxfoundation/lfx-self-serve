@@ -26,7 +26,7 @@
 
 // Deep import the Angular-free helper module directly (not the '@lfx-one/shared/utils'
 // barrel) so the suite can load the pure logic without bootstrapping Angular.
-import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
+import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, type SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
 import { expect, test } from '@playwright/test';
 
 const summary = (approved: boolean, requires_approval: boolean): SummaryApprovalFlags => ({ approved, requires_approval });
