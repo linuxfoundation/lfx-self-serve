@@ -730,6 +730,11 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_category?: string | null;
 }
 
+/** Attendance filter for the past-meeting participant list. */
+export type PastParticipantAttendanceFilter = 'all' | 'attended' | 'absent';
+/** Invitation filter for the past-meeting participant list. */
+export type PastParticipantInvitationFilter = 'all' | 'invited' | 'uninvited';
+
 /**
  * Filter criteria for the past-meeting participant list.
  * @description Mirrors the upcoming-registrant filters, mapped to the fields a past
@@ -740,9 +745,9 @@ export interface PastParticipantFilters {
   /** Free-text query matched against name, email, and organization. */
   search?: string;
   /** Attendance filter: `all`, `attended` (is_attended), or `absent` (not attended). */
-  attendance?: 'all' | 'attended' | 'absent';
+  attendance?: PastParticipantAttendanceFilter;
   /** Invitation filter: `all`, `invited` (is_invited), or `uninvited` (not invited). */
-  invitation?: 'all' | 'invited' | 'uninvited';
+  invitation?: PastParticipantInvitationFilter;
   /** Committee UID to filter by, or `all` for no committee filter. */
   group?: string;
 }

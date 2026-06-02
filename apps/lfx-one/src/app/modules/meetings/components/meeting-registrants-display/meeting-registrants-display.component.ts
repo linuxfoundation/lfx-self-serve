@@ -8,7 +8,16 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { CommitteeMember, EnrichedPastMeetingParticipant, Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import {
+  CommitteeMember,
+  EnrichedPastMeetingParticipant,
+  Meeting,
+  MeetingRegistrant,
+  PastMeeting,
+  PastMeetingParticipant,
+  PastParticipantAttendanceFilter,
+  PastParticipantInvitationFilter,
+} from '@lfx-one/shared/interfaces';
 import { filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -66,8 +75,12 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly rsvpFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly groupFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   // Past-meeting-only controls — past participants carry attendance/invitation, not RSVP responses.
-  public readonly attendanceFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
-  public readonly invitationFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
+  public readonly attendanceFilterControl: FormControl<PastParticipantAttendanceFilter> = new FormControl<PastParticipantAttendanceFilter>('all', {
+    nonNullable: true,
+  });
+  public readonly invitationFilterControl: FormControl<PastParticipantInvitationFilter> = new FormControl<PastParticipantInvitationFilter>('all', {
+    nonNullable: true,
+  });
   public readonly filterForm: FormGroup = new FormGroup({
     rsvpFilter: this.rsvpFilterControl,
     groupFilter: this.groupFilterControl,
@@ -107,8 +120,18 @@ export class MeetingRegistrantsDisplayComponent {
   // Filter signals from form controls
   public readonly rsvpFilter: Signal<string> = toSignal(this.rsvpFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
   public readonly groupFilter: Signal<string> = toSignal(this.groupFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
-  public readonly attendanceFilter: Signal<string> = toSignal(this.attendanceFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
-  public readonly invitationFilter: Signal<string> = toSignal(this.invitationFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
+  public readonly attendanceFilter: Signal<PastParticipantAttendanceFilter> = toSignal(
+    this.attendanceFilterControl.valueChanges.pipe(startWith('all' as const)),
+    {
+      initialValue: 'all',
+    }
+  );
+  public readonly invitationFilter: Signal<PastParticipantInvitationFilter> = toSignal(
+    this.invitationFilterControl.valueChanges.pipe(startWith('all' as const)),
+    {
+      initialValue: 'all',
+    }
+  );
 
   // Filtered registrants based on search and filters
   public readonly filteredRegistrants = this.initFilteredRegistrants();
@@ -423,8 +446,8 @@ export class MeetingRegistrantsDisplayComponent {
     return computed(() =>
       filterPastMeetingParticipants(this.pastMeetingParticipants(), {
         search: this.searchQuery(),
-        attendance: this.attendanceFilter() as 'all' | 'attended' | 'absent',
-        invitation: this.invitationFilter() as 'all' | 'invited' | 'uninvited',
+        attendance: this.attendanceFilter(),
+        invitation: this.invitationFilter(),
         group: this.groupFilter(),
       })
     );
