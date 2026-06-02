@@ -13,18 +13,12 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
-import { EmailManagementData, EnrichedIdentity, LinuxAliasData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
+import { EmailManagementData, EnrichedIdentity, LinuxAliasData, LinuxEmailData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
 import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, tap } from 'rxjs';
-
-interface LinuxEmailData {
-  alias: LinuxAliasData | null;
-  emails: EmailManagementData | null;
-  identities: EnrichedIdentity[];
-}
 
 @Component({
   selector: 'lfx-profile-linux-email',
@@ -227,10 +221,11 @@ export class ProfileLinuxEmailComponent {
     const primary = (emails?.primary_email ?? '').toLowerCase().trim();
 
     if (alias?.state === 'claimed') {
-      // When re-auth is still required and the real target hasn't loaded, leave the selection
-      // empty rather than guessing the primary email — a guessed value could overwrite the real
-      // forward on Save. Otherwise normalize so the default matches a (normalized) forwardOptions value.
-      const forwardTo = alias.forwardAuthRequired && !alias.forwardTo ? '' : (alias.forwardTo ?? emails?.primary_email ?? '').toLowerCase().trim();
+      // Select only a real forward target. When it hasn't loaded (re-auth pending, or the
+      // forwards-service was unreachable), leave the selection empty rather than guessing the
+      // primary email — a guessed value could overwrite the real forward on Save. Normalize so
+      // the default matches a (normalized) forwardOptions value.
+      const forwardTo = (alias.forwardTo ?? '').toLowerCase().trim();
       this.editForm.patchValue({ forwardTo });
     } else if (alias?.state === 'purchased_unclaimed' && primary) {
       this.claimForm.patchValue({ forwardTo: primary });

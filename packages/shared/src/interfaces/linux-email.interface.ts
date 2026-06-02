@@ -3,6 +3,9 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import type { EnrichedIdentity } from './profile.interface';
+import type { EmailManagementData } from './user-profile.interface';
+
 /**
  * Linux.com (vanity) email alias forwarding.
  *
@@ -19,6 +22,13 @@
 
 /** The four states the Linux.com email tab can render. */
 export type LinuxAliasState = 'not_purchased' | 'purchased_unclaimed' | 'claimed' | 'service_unavailable';
+
+/** Aggregate data the Linux.com email tab component renders from. */
+export interface LinuxEmailData {
+  alias: LinuxAliasData | null;
+  emails: EmailManagementData | null;
+  identities: EnrichedIdentity[];
+}
 
 /** Aggregate state returned by `GET /api/profile/linux-email`. */
 export interface LinuxAliasData {

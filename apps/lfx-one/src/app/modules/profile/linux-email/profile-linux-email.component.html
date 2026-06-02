@@ -82,13 +82,13 @@
                 </div>
                 <span class="text-sm text-gray-600 shrink-0">&#64;{{ domain() }}</span>
               </div>
-              @if (claimForm.get('alias')?.touched && claimForm.get('alias')?.invalid) {
+              @if (claimForm.controls.alias.touched && claimForm.controls.alias.invalid) {
                 <div class="text-red-600 text-xs" data-testid="linux-email-alias-error">
-                  @if (claimForm.get('alias')?.errors?.['required']) {
+                  @if (claimForm.controls.alias.errors?.['required']) {
                     An alias is required.
-                  } @else if (claimForm.get('alias')?.errors?.['aliasReserved']) {
+                  } @else if (claimForm.controls.alias.errors?.['aliasReserved']) {
                     That alias is reserved. Please choose another.
-                  } @else if (claimForm.get('alias')?.errors?.['aliasMaxLength']) {
+                  } @else if (claimForm.controls.alias.errors?.['aliasMaxLength']) {
                     Aliases can be at most 64 characters.
                   } @else {
                     Use letters, numbers, dots, and hyphens only.
@@ -109,7 +109,7 @@
                 appendTo="body"
                 data-testid="linux-email-claim-forward-select"></lfx-select>
               <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
-              @if (claimForm.get('forwardTo')?.touched && claimForm.get('forwardTo')?.invalid) {
+              @if (claimForm.controls.forwardTo.touched && claimForm.controls.forwardTo.invalid) {
                 <div class="text-red-600 text-xs" data-testid="linux-email-claim-forward-error">Please choose a forwarding address.</div>
               }
             </div>
@@ -170,7 +170,7 @@
                   data-testid="linux-email-forward-save-button"></lfx-button>
               </div>
               <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
-              @if (editForm.get('forwardTo')?.touched && editForm.get('forwardTo')?.invalid) {
+              @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
                 <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
               }
             </form>

@@ -7,6 +7,7 @@ import {
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_REGEX,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
 import {
@@ -43,9 +44,6 @@ import { SocialVerificationService } from '../services/social-verification.servi
 import { UserService } from '../services/user.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
-
-// Basic RFC-ish email shape check shared by the linux-email handlers.
-const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -524,6 +522,16 @@ export class ProfileController {
         // the claimed state from user_emails.read; forwardTo stays null until the user re-authorizes.
         const managementToken = this.profileAuthService.getManagementToken(req);
         const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
+
+        // A claimed alias always has a forward target. If we had a management token but the read
+        // still came back null, the forwards-service was unreachable (timeout/no-responder) — degrade
+        // to service_unavailable (retry panel) rather than emitting a claimed state with a null
+        // forward, which the client could misread and overwrite on Save.
+        if (managementToken && forward === null) {
+          logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
+          res.json(this.linuxAliasState('service_unavailable', domain));
+          return;
+        }
 
         // A claimed alias always has a forward target, but reading it needs the Flow C
         // management token. When it's absent (and the flow is configured), tell the client
