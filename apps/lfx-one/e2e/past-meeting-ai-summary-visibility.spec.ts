@@ -26,15 +26,10 @@
 
 // Deep import the Angular-free helper module directly (not the '@lfx-one/shared/utils'
 // barrel) so the suite can load the pure logic without bootstrapping Angular.
-import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible } from '@lfx-one/shared/utils/past-meeting-summary.utils';
+import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
 import { expect, test } from '@playwright/test';
 
-interface ApprovalFlags {
-  approved: boolean;
-  requires_approval: boolean;
-}
-
-const summary = (approved: boolean, requires_approval: boolean): ApprovalFlags => ({ approved, requires_approval });
+const summary = (approved: boolean, requires_approval: boolean): SummaryApprovalFlags => ({ approved, requires_approval });
 
 test.describe('past-meeting AI summary visibility (LFXV2-2052)', () => {
   test('approved-only: approved summary is visible and not awaiting approval', () => {

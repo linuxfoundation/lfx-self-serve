@@ -11,7 +11,7 @@ import type { PastMeetingSummary } from '../interfaces';
  * Angular runtime — see meeting.utils.ts for the Angular-coupled summary helpers.
  */
 
-type SummaryApprovalFlags = Pick<PastMeetingSummary, 'approved' | 'requires_approval'>;
+export type SummaryApprovalFlags = Pick<PastMeetingSummary, 'approved' | 'requires_approval'>;
 
 /**
  * Determines whether a past-meeting AI summary should be visible to viewers.
