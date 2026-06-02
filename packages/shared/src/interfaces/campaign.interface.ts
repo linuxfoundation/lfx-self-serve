@@ -41,7 +41,7 @@ export type CampaignSSEEventType =
 
 export interface CampaignBriefRequest {
   url: string;
-  platforms: CampaignPlatform[];
+  platforms?: CampaignPlatform[];
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
   valueProp?: string;
