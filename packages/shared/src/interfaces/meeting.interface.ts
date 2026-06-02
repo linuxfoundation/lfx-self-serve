@@ -234,7 +234,8 @@ export interface Meeting {
    * series origin (`start_time`) when the list payload's `occurrences` array isn't usable. */
   next_occurrence_start_time?: string;
   /**
-   * Cancelled occurrence start times, as Unix-second timestamps (strings).
+   * Cancelled occurrence IDs — the canonical `occurrence_id` keys (each the occurrence start
+   * as a Unix-second timestamp, per the upstream meeting-service contract).
    *
    * The meetings LIST endpoint signals occurrence cancellation this way and leaves each
    * occurrence's `status` unset, whereas the single-meeting endpoint instead marks the

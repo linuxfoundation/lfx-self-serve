@@ -176,27 +176,28 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
  *
  * Cancellation is signalled two different ways depending on the endpoint (LFXV2-2057):
  * the single-meeting endpoint sets `occurrence.status === 'cancel'`, while the meetings
- * LIST endpoint leaves `status` unset and instead lists the cancelled occurrence start
- * times in `Meeting.cancelled_occurrences` (Unix-second timestamps). Pass that array so a
- * cancelled occurrence is dropped consistently regardless of which endpoint produced the
- * data — otherwise the card (list) and detail (single) views select different "next"
- * occurrences for the same meeting.
+ * LIST endpoint leaves `status` unset and instead lists the cancelled occurrence IDs in
+ * `Meeting.cancelled_occurrences`. Pass that array so a cancelled occurrence is dropped
+ * consistently regardless of which endpoint produced the data — otherwise the card (list)
+ * and detail (single) views select different "next" occurrences for the same meeting.
+ *
+ * Both arrays key off the canonical `occurrence_id` (the occurrence start as a Unix-second
+ * timestamp, per the upstream meeting-service contract), so we compare IDs directly rather
+ * than re-deriving seconds from `start_time` — that also sidesteps the list endpoint
+ * returning `start_time` with a timezone offset vs the detail endpoint's UTC form.
  *
  * @param occurrences Array of meeting occurrences
- * @param cancelledOccurrences Cancelled occurrence start times as Unix-second timestamps
+ * @param cancelledOccurrences Cancelled occurrence IDs (Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
 export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
-  const cancelledSeconds = new Set((cancelledOccurrences ?? []).map((ts) => String(ts)));
+  const cancelledIds = new Set(cancelledOccurrences ?? []);
   return occurrences.filter((occurrence) => {
     if (occurrence.status === 'cancel') {
       return false;
     }
-    if (cancelledSeconds.size > 0) {
-      const startSeconds = String(Math.floor(new Date(occurrence.start_time).getTime() / 1000));
-      if (cancelledSeconds.has(startSeconds)) {
-        return false;
-      }
+    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
+      return false;
     }
     return true;
   });
@@ -216,7 +217,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // Filter out cancelled occurrences (honouring both the per-occurrence status and the
-  // list endpoint's cancelled_occurrences timestamps — see getActiveOccurrences).
+  // list endpoint's cancelled_occurrences IDs — see getActiveOccurrences).
   const activeOccurrences = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
 
   if (activeOccurrences.length === 0) {
