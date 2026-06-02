@@ -23,7 +23,7 @@ export type CampaignSSEEventType = 'status' | 'event' | 'hubspot_utm' | 'copy_to
 
 export interface CampaignBriefRequest {
   url: string;
-  platforms: CampaignPlatform[];
+  platforms?: CampaignPlatform[];
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
   valueProp?: string;
@@ -105,7 +105,7 @@ export interface CampaignCreateResponse {
 }
 
 export interface CampaignJobStatus {
-  status: 'running' | 'done';
+  status: 'running' | 'done' | 'not_found';
   result?: CampaignCreateResponse;
 }
 
