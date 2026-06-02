@@ -8,10 +8,11 @@ import { EnrichedPastMeetingParticipant, PastParticipantFilters } from '../inter
  *
  * The past-meeting guest list reuses the upcoming-registrant filter UI, but past
  * participants carry different fields: they have no RSVP response, only attendance
- * (`is_attended`) and invitation (`is_invited`) flags, plus an optional committee
- * association attached during enrichment (`committee_uid`). This mirrors the upcoming
- * `initFilteredRegistrants` logic against those fields. Each criterion defaults to
- * "all" when omitted, so a call with no filters returns the full list.
+ * (`is_attended`) and invitation (`is_invited`) flags, plus the committee UIDs attached
+ * during enrichment (`committee_uids`). This mirrors the upcoming `initFilteredRegistrants`
+ * logic against those fields. Each criterion defaults to "all" when omitted, so a call with
+ * no filters returns the full list. A participant on multiple committees matches the group
+ * filter for any of them.
  *
  * @param participants - The (optionally enriched) past participants to filter.
  * @param filters - The active filter criteria; any omitted criterion is treated as `all`.
@@ -48,7 +49,7 @@ export function filterPastMeetingParticipants(
       matchesInvitation = participant.is_invited === false;
     }
 
-    const matchesGroup = group === 'all' || participant.committee_uid === group;
+    const matchesGroup = group === 'all' || (participant.committee_uids?.includes(group) ?? false);
 
     return matchesSearch && matchesAttendance && matchesInvitation && matchesGroup;
   });

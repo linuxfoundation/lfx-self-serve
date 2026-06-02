@@ -27,7 +27,7 @@ function participant(partial: Partial<EnrichedPastMeetingParticipant>): Enriched
     username: partial.username,
     created_at: partial.created_at ?? '2024-01-01T00:00:00Z',
     updated_at: partial.updated_at ?? '2024-01-01T00:00:00Z',
-    committee_uid: partial.committee_uid ?? null,
+    committee_uids: partial.committee_uids ?? null,
     committee_name: partial.committee_name ?? null,
     committee_role: partial.committee_role ?? null,
     committee_voting_status: partial.committee_voting_status ?? null,
@@ -44,7 +44,7 @@ const ada = participant({
   org_name: 'Acme',
   is_attended: true,
   is_invited: true,
-  committee_uid: 'board',
+  committee_uids: ['board'],
 });
 // Invited but did not attend, no committee.
 const bob = participant({
@@ -65,10 +65,21 @@ const cara = participant({
   org_name: 'Acme',
   is_attended: true,
   is_invited: false,
-  committee_uid: 'tsc',
+  committee_uids: ['tsc'],
+});
+// Sits on two committees (board + tsc) — must match the group filter for either.
+const dora = participant({
+  uid: '4',
+  first_name: 'Dora',
+  last_name: 'Evans',
+  email: 'dora@example.com',
+  org_name: 'Initech',
+  is_attended: true,
+  is_invited: true,
+  committee_uids: ['board', 'tsc'],
 });
 
-const everyone = [ada, bob, cara];
+const everyone = [ada, bob, cara, dora];
 
 const uids = (list: EnrichedPastMeetingParticipant[]): string[] => list.map((p) => p.uid);
 
@@ -98,29 +109,36 @@ describe('filterPastMeetingParticipants', () => {
   });
 
   it('filters by attendance', () => {
-    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended' }))).toEqual(['1', '3']);
+    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended' }))).toEqual(['1', '3', '4']);
     expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'absent' }))).toEqual(['2']);
   });
 
   it('filters by invitation', () => {
-    expect(uids(filterPastMeetingParticipants(everyone, { invitation: 'invited' }))).toEqual(['1', '2']);
+    expect(uids(filterPastMeetingParticipants(everyone, { invitation: 'invited' }))).toEqual(['1', '2', '4']);
     expect(uids(filterPastMeetingParticipants(everyone, { invitation: 'uninvited' }))).toEqual(['3']);
   });
 
-  it('filters by committee group', () => {
-    expect(uids(filterPastMeetingParticipants(everyone, { group: 'board' }))).toEqual(['1']);
-    expect(uids(filterPastMeetingParticipants(everyone, { group: 'tsc' }))).toEqual(['3']);
+  it('filters by committee group, including participants on multiple committees', () => {
+    // Dora (4) sits on both board and tsc, so she matches either group.
+    expect(uids(filterPastMeetingParticipants(everyone, { group: 'board' }))).toEqual(['1', '4']);
+    expect(uids(filterPastMeetingParticipants(everyone, { group: 'tsc' }))).toEqual(['3', '4']);
     // No participant is associated with an unknown committee.
     expect(filterPastMeetingParticipants(everyone, { group: 'unknown' })).toEqual([]);
   });
 
+  it('excludes participants with no committee association from any specific group', () => {
+    // Bob (2) has committee_uids null — he never matches a specific group, only "all".
+    expect(uids(filterPastMeetingParticipants([bob], { group: 'board' }))).toEqual([]);
+    expect(uids(filterPastMeetingParticipants([bob], { group: 'all' }))).toEqual(['2']);
+  });
+
   it('combines search, attendance, invitation, and group with AND semantics', () => {
-    // Acme + attended + invited + board -> only Ada (Cara is uninvited, on tsc).
+    // Acme + attended + invited + board -> only Ada (Cara is uninvited, Dora is Initech).
     expect(uids(filterPastMeetingParticipants(everyone, { search: 'acme', attendance: 'attended', invitation: 'invited', group: 'board' }))).toEqual(['1']);
     // Acme + attended, with no invitation/group constraint -> Ada and Cara.
     expect(uids(filterPastMeetingParticipants(everyone, { search: 'acme', attendance: 'attended' }))).toEqual(['1', '3']);
-    // Attended + invited narrows attended (Ada, Cara) down to the invited one (Ada).
-    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended', invitation: 'invited' }))).toEqual(['1']);
+    // Attended + invited -> Ada and Dora (Cara is uninvited).
+    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended', invitation: 'invited' }))).toEqual(['1', '4']);
   });
 
   it('returns an empty list when given no participants', () => {

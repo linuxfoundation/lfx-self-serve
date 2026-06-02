@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { CommitteeMember, EnrichedPastMeetingParticipant, Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
+import { CommitteeMember, EnrichedPastMeetingParticipant, Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -301,17 +301,31 @@ export class MeetingRegistrantsDisplayComponent {
             committeeMembers$,
           ]).pipe(
             map(([participants, committeeMembers]) => {
-              const memberByEmail = new Map(committeeMembers.map((member) => [member.email?.trim().toLowerCase(), member]));
+              // A participant can sit on multiple committees, so group all member records by
+              // email rather than keeping a single last-wins entry. committeeMembers is already
+              // ordered by the meeting's committee order, so the first record is the primary one.
+              const membersByEmail = new Map<string, CommitteeMember[]>();
+              for (const member of committeeMembers) {
+                const key = member.email?.trim().toLowerCase();
+                if (!key) continue;
+                const existing = membersByEmail.get(key);
+                if (existing) {
+                  existing.push(member);
+                } else {
+                  membersByEmail.set(key, [member]);
+                }
+              }
               return participants
                 .map((participant) => {
-                  const member = memberByEmail.get(participant.email?.trim().toLowerCase());
+                  const members = membersByEmail.get(participant.email?.trim().toLowerCase()) ?? [];
+                  const primary = members[0];
                   const enriched: EnrichedPastMeetingParticipant = {
                     ...participant,
-                    committee_uid: member?.committee_uid ?? null,
-                    committee_name: member?.committee_name ?? null,
-                    committee_role: member?.role?.name ?? null,
-                    committee_voting_status: member?.voting?.status ?? null,
-                    committee_category: member?.committee_category ?? null,
+                    committee_uids: members.map((member) => member.committee_uid).filter(Boolean),
+                    committee_name: primary?.committee_name ?? null,
+                    committee_role: primary?.role?.name ?? null,
+                    committee_voting_status: primary?.voting?.status ?? null,
+                    committee_category: primary?.committee_category ?? null,
                   };
                   return enriched;
                 })
