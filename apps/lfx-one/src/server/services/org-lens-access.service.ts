@@ -223,8 +223,10 @@ export class OrgLensAccessService {
       });
       throw new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
         operation,
+        // The failing upstream is the role-grants lookup (query-service), not the member-service
+        // settings endpoint — report its real path so outage telemetry isn't misleading.
         service: 'LFX_V2_SERVICE',
-        path: `/b2b_orgs/${orgUid}/settings/users`,
+        path: '/query/resources',
         originalError: error instanceof Error ? error : undefined,
       });
     }
