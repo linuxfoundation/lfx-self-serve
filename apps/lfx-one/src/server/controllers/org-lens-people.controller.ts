@@ -1,16 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import { ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgContributorTimeRange } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
+
+const VALID_CONTRIBUTOR_TIME_RANGES: ReadonlySet<OrgContributorTimeRange> = new Set(['30d', '90d', '12mo', 'all']);
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -18,12 +22,14 @@ export class OrgLensPeopleController {
   private readonly keyContactsService: OrgPeopleKeyContactsService;
   private readonly traineesService: OrgPeopleTraineesService;
   private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
+  private readonly contributorsService: OrgPeopleContributorsService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
     this.traineesService = new OrgPeopleTraineesService();
     this.eventAttendeesService = new OrgPeopleEventAttendeesService();
+    this.contributorsService = new OrgPeopleContributorsService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -165,6 +171,36 @@ export class OrgLensPeopleController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
+  public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const timeRange = parseContributorTimeRange(req.query['timeRange']);
+    const startTime = logger.startOperation(req, 'get_org_lens_people_contributors', {
+      org_uid: orgUid,
+      time_range: timeRange,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_contributors');
+
+      const response = await this.contributorsService.getContributors(orgUid, timeRange);
+
+      logger.success(req, 'get_org_lens_people_contributors', startTime, {
+        org_uid: orgUid,
+        time_range: timeRange,
+        contributor_count: response.contributors.length,
+        project_count: response.projects.length,
+        foundation_count: response.foundationOptions.length,
+        maintainers: response.stats.maintainers,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {
     if (!personKey || typeof personKey !== 'string') {
       throw ServiceValidationError.forField('personKey', 'personKey path parameter is required', { operation });
@@ -173,4 +209,11 @@ export class OrgLensPeopleController {
       throw ServiceValidationError.forField('personKey', 'Invalid personKey format', { operation });
     }
   }
+}
+
+function parseContributorTimeRange(raw: unknown): OrgContributorTimeRange {
+  if (typeof raw === 'string' && VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
+    return raw as OrgContributorTimeRange;
+  }
+  return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
 }

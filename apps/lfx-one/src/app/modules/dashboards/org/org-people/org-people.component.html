@@ -53,6 +53,8 @@
       <lfx-org-people-trainees />
     } @else if (activeTab() === 'events') {
       <lfx-org-people-event-attendees />
+    } @else if (activeTab() === 'contributors') {
+      <lfx-org-people-contributors />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

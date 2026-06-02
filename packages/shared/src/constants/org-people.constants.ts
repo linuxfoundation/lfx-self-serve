@@ -9,6 +9,12 @@ import type {
   PeopleTabId,
 } from '../interfaces/org-people.interface';
 import type {
+  OrgContributorsResponse,
+  OrgContributorStatsBaseline,
+  OrgContributorTimeRange,
+  OrgContributorTimeRangeOption,
+} from '../interfaces/org-people-contributors.interface';
+import type {
   OrgEventAttendeesResponse,
   OrgEventAttendeeStatsBaseline,
   OrgEventAttendeeTimeWindow,
@@ -141,4 +147,46 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   stats: EMPTY_ORG_EVENT_ATTENDEE_STATS,
   foundationOptions: [],
   eventOptions: [],
+};
+
+// ----------------------------------------------------------------------------
+// Contributors tab (LFXV2-1874) — A1 architecture per Item 2 lock: one BFF
+// slice per timeRange selection, narrow filter trio (search/foundation/project)
+// applied client-side. Diverges from Trainees/Events in two ways: stats anchor
+// on the BFF response (Item 3 lock — don't recompute on filter trio change),
+// and the time-window vocabulary is 30d/90d/12mo/all (matches Dano's prototype
+// spec, not the events-platform 3m/6m/12m/2y).
+// ----------------------------------------------------------------------------
+
+/** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
+export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
+
+/** Default Contributors time-range — Past 12 Months per the prototype default. */
+export const ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE: OrgContributorTimeRange = '12mo';
+
+/** Time-range dropdown options for the Contributors tab — ordered narrowest-first, matches Dano's JIRA description. */
+export const ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS: readonly OrgContributorTimeRangeOption[] = [
+  { label: 'Last 30 Days', value: '30d' },
+  { label: 'Last 90 Days', value: '90d' },
+  { label: 'Last 12 Months', value: '12mo' },
+  { label: 'All Time', value: 'all' },
+] as const;
+
+/** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
+export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
+  maintainers: 0,
+  contributors: 0,
+  projects: 0,
+  foundations: 0,
+};
+
+/** Zero-valued Contributors response — `toSignal` initialValue + empty-account fallback. */
+export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
+  accountId: '',
+  timeRange: ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE,
+  contributors: [],
+  projects: [],
+  foundationOptions: [],
+  projectOptions: [],
+  stats: EMPTY_ORG_CONTRIBUTOR_STATS,
 };

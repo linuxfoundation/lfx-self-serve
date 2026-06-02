@@ -189,6 +189,9 @@ export * from './org-people-trainees.interface';
 // Org People — Event Attendees tab (LFXV2-1875)
 export * from './org-people-event-attendees.interface';
 
+// Org People — Contributors tab (LFXV2-1874)
+export * from './org-people-contributors.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 
