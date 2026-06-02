@@ -1,0 +1,81 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { UserSearchRelevance } from '../enums';
+import { UserSearchResult } from '../interfaces';
+
+/** Minimal user shape needed to rank a search result. */
+type RankableUser = Pick<UserSearchResult, 'first_name' | 'last_name' | 'email' | 'username'>;
+
+/** Null-safe normalization for case-insensitive comparison: coalesces nullish to '', trims, lowercases. */
+function normalize(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+/**
+ * Scores a single user against a query. The query is normalized (lowercased,
+ * trimmed) internally, so it is safe to call with raw input.
+ * Exposed for testing and reuse; callers normally use {@link rankUserSearchResults}.
+ */
+export function scoreUserSearchResult(user: RankableUser, query: string): UserSearchRelevance {
+  const q = normalize(query);
+  if (!q) {
+    return UserSearchRelevance.Incidental;
+  }
+
+  const first = normalize(user.first_name);
+  const last = normalize(user.last_name);
+  const full = `${first} ${last}`.trim();
+  const username = normalize(user.username);
+  const email = normalize(user.email);
+
+  if (first === q || last === q || full === q) {
+    return UserSearchRelevance.ExactName;
+  }
+  if (first.startsWith(q) || last.startsWith(q) || full.startsWith(q)) {
+    return UserSearchRelevance.NamePrefix;
+  }
+  if (full.includes(q)) {
+    return UserSearchRelevance.NameSubstring;
+  }
+  if (username.includes(q)) {
+    return UserSearchRelevance.UsernameMatch;
+  }
+  if (email.includes(q)) {
+    return UserSearchRelevance.EmailMatch;
+  }
+  return UserSearchRelevance.Incidental;
+}
+
+/**
+ * Re-ranks user search results so name matches surface first and incidental
+ * email/alias matches are demoted.
+ *
+ * The upstream query service matches `name` against `name_and_aliases` (which
+ * folds in email and uses ngram subfields), so a query like "il" can match
+ * inside unrelated emails. This client-side pass mitigates that by sorting
+ * exact > name-prefix > name-substring > username > email > incidental.
+ *
+ * It **demotes** rather than drops or caps: low-relevance rows sort to the
+ * bottom but are never removed, so a legitimate hit on an upstream alias the
+ * client can't see (a field outside name/username/email) is never hard-filtered
+ * out. Email queries (containing `@`) need no special case: name fields won't
+ * match, so genuine email hits naturally rank above the rest. Limiting the
+ * visible count, if desired, is left to the UI layer as a deliberate decision.
+ *
+ * Ordering is stable: results within the same tier keep their upstream order.
+ *
+ * @param results Upstream results to rank.
+ * @param query  Raw user query (normalized internally).
+ */
+export function rankUserSearchResults<T extends RankableUser>(results: T[], query: string): T[] {
+  const q = normalize(query);
+  if (!q) {
+    return results;
+  }
+
+  return results
+    .map((result, index) => ({ result, index, score: scoreUserSearchResult(result, q) }))
+    .sort((a, b) => (a.score === b.score ? a.index - b.index : a.score - b.score))
+    .map((entry) => entry.result);
+}

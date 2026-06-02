@@ -5,6 +5,7 @@ import { Component, effect, inject, input, output, Signal } from '@angular/core'
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { UserSearchResult } from '@lfx-one/shared/interfaces';
+import { rankUserSearchResults } from '@lfx-one/shared/utils';
 import { SearchService } from '@services/search.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
@@ -66,8 +67,9 @@ export class UserSearchComponent {
           return of([]);
         }
 
-        // Use the search type from input
-        return this.searchService.searchUsers(trimmedTerm, this.searchType());
+        // Use the search type from input, then re-rank so name matches surface
+        // first and incidental email/alias matches (upstream over-match) are demoted.
+        return this.searchService.searchUsers(trimmedTerm, this.searchType()).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
       }),
       map((users: UserSearchResult[]) => {
         // Add displayName field for the autocomplete to show
