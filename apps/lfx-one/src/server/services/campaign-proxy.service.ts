@@ -782,6 +782,7 @@ export class CampaignProxyService {
           target_search_network: true,
           target_content_network: false,
         },
+        contains_eu_political_advertising: enums.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
       },
     ]);
     const campaignResource = campaignResult.results[0]?.resource_name;
@@ -892,6 +893,7 @@ export class CampaignProxyService {
         start_date_time: `${body.startDate} 00:00:00`,
         end_date_time: `${body.endDate} 23:59:59`,
         target_spend: {},
+        contains_eu_political_advertising: enums.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
       },
     ]);
     const campaignResource = campaignResult.results[0]?.resource_name;
@@ -903,7 +905,6 @@ export class CampaignProxyService {
       {
         name: `${body.eventName} - Display`,
         campaign: campaignResource,
-        type: enums.AdGroupType.DISPLAY_STANDARD,
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
