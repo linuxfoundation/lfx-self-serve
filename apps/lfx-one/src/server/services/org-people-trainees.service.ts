@@ -55,7 +55,7 @@ export class OrgPeopleTraineesService {
 
   /**
    * Bundled rows + details + baseline stats + filter-dropdown payloads.
-   * Five parallel Snowflake queries; stats are computed in TS over the
+   * Four parallel Snowflake queries; stats are computed in TS over the
    * returned details so the wire contract stays free of duplicated math.
    */
   public async getTrainees(accountId: string): Promise<OrgTraineesResponse> {
@@ -79,20 +79,31 @@ export class OrgPeopleTraineesService {
       email: row.EMAIL,
     }));
 
-    const details: OrgTraineeDetailRow[] = detailRows
-      .filter((row) => row.STATUS === 'Enrolled' || row.STATUS === 'Certified')
-      .map((row) => ({
-        personKey: row.PERSON_KEY,
-        status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
-        courseOrCertId: row.COURSE_OR_CERT_ID,
-        // COURSE_ID is 100% populated for both enrolled and certified rows (verified Red Hat 2026-06-01),
-        // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
-        courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-        courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-        foundationId: row.FOUNDATION_ID,
-        foundationName: row.FOUNDATION_NAME,
-        activityTs: toIsoTimestamp(row.ACTIVITY_TS) ?? '',
-      }));
+    // Drop rows with unparseable ACTIVITY_TS instead of coercing to '': the
+    // detail row's `activityTs` is consumed by lexicographic sorts and
+    // most-recent-per-(person, course) derivations on the client, so an
+    // empty-string fallback would silently move the row to the start/end of
+    // those orderings. A null/unparseable timestamp also means we have no
+    // signal to surface to the user, so dropping is the honest choice.
+    const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
+      if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
+      const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
+      if (!activityTs) return [];
+      return [
+        {
+          personKey: row.PERSON_KEY,
+          status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
+          courseOrCertId: row.COURSE_OR_CERT_ID,
+          // COURSE_ID is 100% populated for both enrolled and certified rows (verified Red Hat 2026-06-01),
+          // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
+          courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+          courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+          foundationId: row.FOUNDATION_ID,
+          foundationName: row.FOUNDATION_NAME,
+          activityTs,
+        },
+      ];
+    });
 
     const foundationOptions: OrgTraineeFoundationOption[] = foundationRows.map((row) => ({
       foundationId: row.FOUNDATION_ID,
