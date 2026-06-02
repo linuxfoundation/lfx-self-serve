@@ -367,6 +367,7 @@ export class EventAttendeesComponent {
         }),
         switchMap(([orgUid]) => {
           if (!orgUid) {
+            this.loadingState.set(false);
             return of(EMPTY_ORG_EVENT_ATTENDEES_RESPONSE);
           }
           return this.dataService.getEventAttendees(orgUid).pipe(

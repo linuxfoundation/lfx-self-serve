@@ -226,8 +226,12 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
  * Most-active-project tiebreak chain per Item 4 lock:
  *   1. Higher commits first
  *   2. More recent `last_active_date` (NULLs sort last)
- *   3. Alphabetical project name
- * Returns < 0 when `a` should beat `b`.
+ *   3. Alphabetical project name (falling back to `PROJECT_ID` when name is null)
+ *   4. `PROJECT_ID` as the final deterministic tiebreaker
+ * Returns < 0 when `a` should beat `b`. The `PROJECT_ID` fallbacks guarantee a
+ * stable order across runs even if two rows happen to tie on commits + date
+ * and one (or both) PROJECT_NAME is null — without this, sort order would be
+ * non-deterministic for those edge-case pairs.
  */
 function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonProjectRow): number {
   const commitsDelta = (b.COMMITS ?? 0) - (a.COMMITS ?? 0);
@@ -235,7 +239,9 @@ function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonP
   const ta = toIsoDate(a.LAST_ACTIVE_DATE) ?? '';
   const tb = toIsoDate(b.LAST_ACTIVE_DATE) ?? '';
   if (ta !== tb) return ta > tb ? -1 : 1;
-  return (a.PROJECT_NAME ?? '').localeCompare(b.PROJECT_NAME ?? '');
+  const nameDelta = (a.PROJECT_NAME ?? a.PROJECT_ID).localeCompare(b.PROJECT_NAME ?? b.PROJECT_ID);
+  if (nameDelta !== 0) return nameDelta;
+  return a.PROJECT_ID.localeCompare(b.PROJECT_ID);
 }
 
 /** Item 3 lock: distinct people by role, distinct projects, distinct (non-null) foundations — all over the BFF response, not the active filter. */

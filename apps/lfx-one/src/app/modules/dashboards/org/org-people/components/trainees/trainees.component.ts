@@ -372,6 +372,7 @@ export class TraineesComponent {
         }),
         switchMap(([orgUid]) => {
           if (!orgUid) {
+            this.loadingState.set(false);
             return of(EMPTY_ORG_TRAINEES_RESPONSE);
           }
           return this.dataService.getTrainees(orgUid).pipe(
@@ -445,8 +446,16 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
     const enrolledTs = minActivityTs(group.filter((r) => r.status === 'Enrolled'));
     const certifiedTs = minActivityTs(group.filter((r) => r.status === 'Certified'));
     const isCertified = certifiedTs !== null;
-    // At least one of enrolled/certified is non-null by construction (group is non-empty).
-    const sortTs = (certifiedTs ?? enrolledTs) as string;
+    // sortTs = MAX(enrolledTs, certifiedTs) per the wire contract on
+    // OrgTraineeExpandedRowVm. In the happy path certifiedTs >= enrolledTs
+    // because you can only complete after enrolling, so MAX === certifiedTs;
+    // the explicit MAX is defensive against rare source-data anomalies where
+    // certifiedTs < enrolledTs (would otherwise mis-rank the row earlier than
+    // its actual most-recent signal). At least one of the two is non-null by
+    // construction (group is non-empty).
+    const sortTs = (
+      enrolledTs !== null && certifiedTs !== null ? (enrolledTs > certifiedTs ? enrolledTs : certifiedTs) : (certifiedTs ?? enrolledTs)
+    ) as string;
 
     out.push({
       courseId: group[0].courseId,

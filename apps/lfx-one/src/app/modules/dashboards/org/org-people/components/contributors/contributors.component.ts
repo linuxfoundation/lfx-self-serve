@@ -324,6 +324,7 @@ export class ContributorsComponent {
         }),
         switchMap(([orgUid, timeRange]) => {
           if (!orgUid) {
+            this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange });
           }
           return this.dataService.getContributors(orgUid, timeRange).pipe(
