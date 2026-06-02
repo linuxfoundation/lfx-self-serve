@@ -34,8 +34,10 @@ export interface ApiResponse<T = unknown> {
  * @description Service endpoint URLs for different environments
  */
 export interface MicroserviceUrls {
-  /** LFX V2 service base URL */
+  /** LFX V2 service base URL (API gateway fronting query-service, member-service, etc.) */
   LFX_V2_SERVICE: string;
+  /** Member-service base URL; defaults to LFX_V2_SERVICE. Override to route only `/b2b_orgs/*` calls elsewhere (e.g. a locally-run member-service). */
+  LFX_V2_MEMBER_SERVICE: string;
 }
 
 /**

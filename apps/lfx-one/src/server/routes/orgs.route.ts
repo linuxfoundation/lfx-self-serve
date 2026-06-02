@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
+import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
 import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
@@ -22,6 +23,7 @@ function buildOrgsRouter(): Router {
   const orgLensDocumentsController = new OrgLensDocumentsController();
   const orgLensPeopleController = new OrgLensPeopleController();
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
+  const orgLensAccessController = new OrgLensAccessController();
   const orgLensTrainingController = new OrgLensTrainingController();
   const orgIdentityController = new OrgIdentityController();
 
@@ -58,6 +60,12 @@ function buildOrgsRouter(): Router {
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
+
+  // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).
+  router.get('/:orgUid/lens/access/users', (req, res, next) => orgLensAccessController.getUsers(req, res, next));
+  router.post('/:orgUid/lens/access/users', (req, res, next) => orgLensAccessController.addUser(req, res, next));
+  router.put('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.changeRole(req, res, next));
+  router.delete('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.removeUser(req, res, next));
 
   // LFXV2-1895 — Org Lens Training & Certifications stat strip.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));

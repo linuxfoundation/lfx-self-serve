@@ -49,6 +49,8 @@
       <lfx-org-people-all-employees />
     } @else if (activeTab() === 'contacts') {
       <lfx-org-people-key-contacts />
+    } @else if (activeTab() === 'access') {
+      <lfx-org-lens-access />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

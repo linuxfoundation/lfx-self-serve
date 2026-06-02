@@ -179,6 +179,9 @@ export * from './org-key-contacts.internal.interface';
 // Org People interfaces
 export * from './org-people.interface';
 
+// Org Lens Access tab (spec 025)
+export * from './org-lens-access.interface';
+
 // Org People — Key Contacts tab (spec 005)
 export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';

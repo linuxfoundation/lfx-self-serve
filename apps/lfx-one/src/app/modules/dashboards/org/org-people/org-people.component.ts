@@ -13,10 +13,11 @@ import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
 import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
 import { KeyContactsComponent } from './components/key-contacts/key-contacts.component';
+import { OrgLensAccessComponent } from './components/org-lens-access/org-lens-access.component';
 
 @Component({
   selector: 'lfx-org-people',
-  imports: [EmptyStateComponent, AllEmployeesComponent, KeyContactsComponent],
+  imports: [EmptyStateComponent, AllEmployeesComponent, KeyContactsComponent, OrgLensAccessComponent],
   templateUrl: './org-people.component.html',
 })
 export class OrgPeopleComponent {
