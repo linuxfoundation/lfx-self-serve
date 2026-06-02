@@ -29,6 +29,11 @@ import type {
   OrgKeyContactSortDirection,
   OrgKeyContactsResponse,
   OrgMembershipKeyContact,
+  OrgMembershipKeyContactType,
+  ReassignKeyContactRolesDialogData,
+  ReassignKeyContactRolesRoleOption,
+  ReassignKeyContactRolesSubmitEvent,
+  ReplaceKeyContactRequest,
 } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -38,15 +43,20 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { EditKeyContactModalComponent } from '../../../org-membership-detail/components/edit-key-contact-modal.component';
 import { KeyContactsService } from '../../services/key-contacts.service';
+import { ReassignKeyContactRolesModalComponent } from './components/reassign-key-contact-roles-modal.component';
 import { rolePillClass } from './helpers/key-contacts.helper';
 
 /**
  * Org Lens — People → Key Contacts tab.
  *
- * V1 (LFXV2-1873) shipped pure-read. LFXV2-2067 lights up the expanded-row Edit pencil that opens the
- * spec-024 4-state modal (chooser/single-add/replace/remove) using existing org key contacts as the
- * transitional employee-search corpus, gated on the same writer-FGA `OrgRoleGrantsService.writerSet()`
- * the membership-detail page uses.
+ * V1 (LFXV2-1873) shipped pure-read. LFXV2-2067 lights up TWO writer affordances on top of that:
+ *   - Expanded-row pencil → spec-024 4-state modal (chooser/single-add/replace/remove) scoped to ONE
+ *     (membership, role-TYPE) tuple.
+ *   - Main-row pencil → "Reassign Key Contact Roles" modal scoped to ONE PERSON across N (membership,
+ *     role-TYPE) tuples; fan-out PUTs replace the current contactUid on each selected role with the new
+ *     person.
+ * Both gates read `canEdit()` (writer-FGA via OrgRoleGrantsService.writerSet()), and both reuse the
+ * transitional org-key-contacts-as-employees corpus until LFXV2-1677 lands the canonical employee feed.
  */
 @Component({
   selector: 'lfx-org-people-key-contacts',
@@ -199,6 +209,110 @@ export class KeyContactsComponent {
           });
         },
       });
+  }
+
+  // LFXV2-2067 — main-row Reassign pencil. Stops propagation so the row's expansion toggle doesn't
+  // also fire. Builds the modal's role catalog from the person's current assignments (filtering out
+  // any non-canonical roles defensively — those wouldn't have a stable contactType for the PUT body).
+  protected onMainPencilClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
+    event.stopPropagation();
+    if (!this.canEdit()) return;
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    if (!orgUid) return;
+
+    const roles = this.buildReassignRoleOptions(group);
+    if (roles.length === 0) return; // No editable roles; defensive — pencil shouldn't have rendered.
+
+    const first = group.assignments[0];
+    const ref = this.dialogService.open(ReassignKeyContactRolesModalComponent, {
+      header: 'Reassign Key Contact Roles',
+      width: '560px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      showHeader: false,
+      data: {
+        person: {
+          fullName: group.displayName,
+          email: group.email,
+          initials: this.deriveInitials(first.firstName, first.lastName),
+        },
+        roles,
+        orgUid,
+        submit: (intent) => this.performReassignWrite(intent, orgUid),
+      } satisfies ReassignKeyContactRolesDialogData,
+    }) as DynamicDialogRef;
+
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => undefined);
+  }
+
+  private buildReassignRoleOptions(group: OrgKeyContactPersonGroupVm): ReassignKeyContactRolesRoleOption[] {
+    const options: ReassignKeyContactRolesRoleOption[] = [];
+    for (const a of group.assignments) {
+      const contactType = roleToContactType(a.role);
+      if (!contactType) continue; // Non-canonical role → can't safely PUT; skip silently.
+      options.push({
+        key: `${a.membershipUid}:${contactType}`,
+        contactUid: a.contactUid,
+        contactType,
+        role: a.role,
+        pillClass: rolePillClass(a.role),
+        foundationSlug: a.foundationSlug,
+        foundationName: a.foundationName ?? a.foundationSlug,
+      });
+    }
+    return options;
+  }
+
+  // LFXV2-2067 — Reassign fan-out. Each selected role becomes one PUT (`replaceKeyContactBySlug`)
+  // against the existing contactUid; member-service finds-or-creates the new person on email match.
+  // Promise.allSettled lets every op run; we always refresh the table afterward so partial writes
+  // are reflected. On any failure we throw so the modal stays open with a retryable inline message.
+  // Caveat: re-saving on partial-success will 404 the already-replaced contactUids — the inline
+  // error nudges the user to close and reopen on fresh state rather than retry blindly.
+  private async performReassignWrite(intent: ReassignKeyContactRolesSubmitEvent, orgUid: string): Promise<void> {
+    const ops = intent.selected.map((role) =>
+      firstValueFrom(this.membershipsService.replaceKeyContactBySlug(orgUid, role.foundationSlug, role.contactUid, this.toReassignBody(intent, role.contactType)))
+    );
+
+    const results = await Promise.allSettled(ops);
+    this.retry();
+
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failures.length === 0) {
+      const total = intent.selected.length;
+      this.messageService.add({
+        key: 'org-people-key-contact-toast-success',
+        severity: 'success',
+        summary: 'Roles reassigned',
+        detail: `${total} ${total === 1 ? 'role was' : 'roles were'} reassigned.`,
+        life: 3000,
+      });
+      return;
+    }
+
+    const total = intent.selected.length;
+    const succeeded = total - failures.length;
+    if (succeeded === 0) {
+      throw new Error(this.cleanErrorMessage(failures[0].reason));
+    }
+    throw new Error(`${succeeded} of ${total} reassignments succeeded. Close this dialog and re-open it to update the remaining roles.`);
+  }
+
+  private toReassignBody(intent: ReassignKeyContactRolesSubmitEvent, contactType: OrgMembershipKeyContactType): ReplaceKeyContactRequest {
+    return {
+      contactType,
+      email: intent.newPerson.email,
+      firstName: intent.newPerson.firstName,
+      lastName: intent.newPerson.lastName,
+      jobTitle: intent.newPerson.jobTitle,
+    };
+  }
+
+  private deriveInitials(firstName: string, lastName: string): string {
+    const f = (firstName ?? '').trim().charAt(0).toUpperCase();
+    const l = (lastName ?? '').trim().charAt(0).toUpperCase();
+    return `${f}${l}` || '?';
   }
 
   private openEditModal(contact: OrgMembershipKeyContact, assignment: OrgKeyContactAssignmentVm, orgUid: string): void {

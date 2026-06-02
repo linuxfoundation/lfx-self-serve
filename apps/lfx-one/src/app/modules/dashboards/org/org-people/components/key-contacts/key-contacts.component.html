@@ -148,11 +148,14 @@
                 </button>
               </th>
               <!--
-                LFXV2-2067: per-assignment Edit pencil is on the expanded sub-table; main-row Actions
-                column stays empty until LFXV2-1677 lands canonical employee data and the bulk-reassign
-                modal becomes safe (spec FR-005). Until then, expanded-row pencils are the only writer
-                affordance.
+                LFXV2-2067: main-row Actions column carries the bulk-Reassign pencil — opens the
+                "Reassign Key Contact Roles" modal scoped to one PERSON across N (membership, role)
+                tuples. The expanded-row pencil scopes to ONE (membership, role-TYPE). Both gates
+                read `canEdit()`.
               -->
+              <th class="w-12 px-4 py-3 text-right">
+                <span class="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -197,10 +200,23 @@
                     group.foundationCount
                   }}</span>
                 </td>
+                <td class="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                    [disabled]="!canEdit()"
+                    [attr.aria-label]="'Reassign key contact roles for ' + group.displayName"
+                    [attr.data-testid]="'org-people-key-contacts-reassign-' + group.email"
+                    [pTooltip]="canEdit() ? 'Reassign key contact roles' : editDisabledTooltip"
+                    tooltipPosition="top"
+                    (click)="onMainPencilClick(group, $event)">
+                    <i class="fa-light fa-pencil" aria-hidden="true"></i>
+                  </button>
+                </td>
               </tr>
               @if (expanded) {
                 <tr class="bg-slate-50" [attr.data-testid]="'org-people-key-contacts-expanded-' + group.email">
-                  <td colspan="4" class="p-0 pl-11">
+                  <td colspan="5" class="p-0 pl-11">
                     <table class="w-full border-collapse">
                       <thead>
                         <!--

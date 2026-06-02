@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgMembershipKeyContactType } from './org-memberships.interface';
+
 /** Canonical member-service role strings — 9 values. */
 export type OrgKeyContactRole =
   | 'Billing Contact'
@@ -81,3 +83,63 @@ export interface OrgKeyContactPersonGroupVm extends OrgKeyContactPersonGroup {
   rolePills: OrgKeyContactRolePillVm[];
   sortedAssignments: OrgKeyContactAssignmentVm[];
 }
+
+// ============================================================
+// LFXV2-2067 — main-row "Reassign Key Contact Roles" modal
+// ============================================================
+// The expanded-row pencil opens the spec-024 4-state modal scoped to ONE (membership, role-TYPE).
+// The main-row pencil opens the Reassign Key Contact Roles modal below — scoped to ONE PERSON
+// across ALL their (membership, role) tuples — for swap-in-bulk flows where the legal admin
+// just changed and every role this person held should move to the new person.
+
+/** Stable identifier used by the modal's checkbox state map. `${membershipUid}:${contactType}`. */
+export type ReassignKeyContactRolesRoleKey = string;
+
+/** One checkbox row in the Reassign Key Contact Roles modal — represents the current person's
+ *  hold on a (membership, role-TYPE). The contactUid is the existing key_contact UID that gets
+ *  PUT-replaced when the user confirms. */
+export interface ReassignKeyContactRolesRoleOption {
+  key: ReassignKeyContactRolesRoleKey;
+  contactUid: string;
+  contactType: OrgMembershipKeyContactType;
+  /** Display role name (e.g. "Marketing Contact"). */
+  role: string;
+  /** Tailwind pill classes for the role badge — reused from the parent table's helper. */
+  pillClass: string;
+  foundationSlug: string;
+  foundationName: string;
+}
+
+/** Avatar/name/email summary for the orange "current contact" card in the modal header. */
+export interface ReassignKeyContactRolesPersonRef {
+  fullName: string;
+  email: string;
+  initials: string;
+}
+
+/** Dialog input — the parent supplies the person being replaced, the role catalog (one row per
+ *  current assignment), the org uuid for the employee-search corpus, and a pessimistic submit
+ *  callback that performs the fan-out write and resolves only when the affected rows are saved. */
+export interface ReassignKeyContactRolesDialogData {
+  person: ReassignKeyContactRolesPersonRef;
+  roles: ReassignKeyContactRolesRoleOption[];
+  orgUid: string;
+  submit: (intent: ReassignKeyContactRolesSubmitEvent) => Promise<void>;
+}
+
+/** Modal → parent submit payload. The parent fans out N PUTs (one per selected role) using the
+ *  slug-keyed write proxy and resolves the Promise on all-success; partial failure rejects with
+ *  Error(message) so the modal stays open with an inline error. */
+export interface ReassignKeyContactRolesSubmitEvent {
+  newPerson: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    jobTitle: string | null;
+  };
+  selected: ReassignKeyContactRolesRoleOption[];
+}
+
+/** Dialog returns null on cancel; on save the parent already drove the write through `submit`,
+ *  so the resolved value carries no payload. */
+export type ReassignKeyContactRolesDialogResult = null;
