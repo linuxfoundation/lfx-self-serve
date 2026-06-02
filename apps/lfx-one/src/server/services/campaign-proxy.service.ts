@@ -415,7 +415,7 @@ function createJob(): string {
   setTimeout(() => {
     const job = jobs.get(jobId);
     if (job?.status === 'running') {
-      completeJob(jobId, { success: false, campaigns: [], errors: ['Job timed out after 5 minutes'] });
+      failJob(jobId, 'Job timed out after 5 minutes');
     }
   }, JOB_TIMEOUT_MS);
 
@@ -424,6 +424,11 @@ function createJob(): string {
 
 function completeJob(jobId: string, result: CampaignCreateResponse): void {
   jobs.set(jobId, { status: 'done', result });
+  setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
+}
+
+function failJob(jobId: string, error: string): void {
+  jobs.set(jobId, { status: 'error', error });
   setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
 }
 
@@ -649,11 +654,7 @@ export class CampaignProxyService {
     const jobId = createJob();
 
     this.executeCampaignCreation(jobId, body).catch((error) => {
-      completeJob(jobId, {
-        success: false,
-        campaigns: [],
-        errors: [error instanceof Error ? error.message : 'Campaign creation failed'],
-      });
+      failJob(jobId, error instanceof Error ? error.message : 'Campaign creation failed');
     });
 
     return { jobId };
