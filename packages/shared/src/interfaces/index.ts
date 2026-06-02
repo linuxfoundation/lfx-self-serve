@@ -197,3 +197,6 @@ export * from './invite.interface';
 
 // Docs portal interfaces (build artifacts + runtime models for /docs)
 export * from './docs.interface';
+
+// Linux.com email alias interfaces
+export * from './linux-email.interface';
