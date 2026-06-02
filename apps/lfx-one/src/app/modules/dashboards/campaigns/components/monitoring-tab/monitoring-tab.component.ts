@@ -138,7 +138,8 @@ export class MonitoringTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err: unknown) => {
-          this.keywordsError.set(err instanceof Error ? err.message : 'Failed to load keywords');
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.keywordsError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load keywords');
           this.keywordsLoading.set(false);
         },
       });
@@ -155,7 +156,8 @@ export class MonitoringTabComponent implements OnInit {
           this.searchTermsLoading.set(false);
         },
         error: (err: unknown) => {
-          this.searchTermsError.set(err instanceof Error ? err.message : 'Failed to load search terms');
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.searchTermsError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load search terms');
           this.searchTermsLoading.set(false);
         },
       });

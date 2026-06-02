@@ -117,8 +117,7 @@
                       [attr.title]="'Copy: ' + campaign.name"
                       aria-label="Copy campaign name to find in Google Ads">
                       <i
-                        [class]="copiedName() === campaign.name ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
-                        class="text-xs"
+                        [class]="copiedName() === campaign.name ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'"
                         aria-hidden="true"></i>
                     </button>
                   </div>
@@ -236,8 +235,7 @@
                           [attr.title]="'Copy: ' + kw.campaign"
                           aria-label="Copy campaign name">
                           <i
-                            [class]="copiedName() === kw.campaign ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
-                            class="text-xs"
+                            [class]="copiedName() === kw.campaign ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'"
                             aria-hidden="true"></i>
                         </button>
                       </div>
@@ -370,8 +368,7 @@
                           [attr.title]="'Copy: ' + term.campaignName"
                           aria-label="Copy campaign name">
                           <i
-                            [class]="copiedName() === term.campaignName ? 'fa-light fa-check text-green-500' : 'fa-light fa-copy'"
-                            class="text-xs"
+                            [class]="copiedName() === term.campaignName ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'"
                             aria-hidden="true"></i>
                         </button>
                       </div>
