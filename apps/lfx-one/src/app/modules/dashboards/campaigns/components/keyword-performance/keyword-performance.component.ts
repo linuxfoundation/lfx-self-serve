@@ -26,6 +26,9 @@ export class KeywordPerformanceComponent {
   // === Inputs ===
   public readonly days = input(30);
 
+  // === Constants ===
+  protected readonly pageSize = PAGE_SIZE;
+
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly data = signal<KeywordMetricsResponse | null>(null);

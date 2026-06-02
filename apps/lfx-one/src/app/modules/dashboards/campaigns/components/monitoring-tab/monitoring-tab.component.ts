@@ -33,6 +33,8 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
+  protected readonly keywordPageSize = KEYWORD_PAGE_SIZE;
+  protected readonly searchTermPageSize = SEARCH_TERM_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
 
   protected readonly selectedDays = signal<DateRangeOption>(30);
@@ -42,10 +44,12 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
+  protected readonly keywordsError = signal<string | null>(null);
   protected readonly keywordPage = signal(1);
 
   protected readonly searchTermsLoading = signal(false);
   protected readonly searchTerms = signal<SearchTermMetrics[]>([]);
+  protected readonly searchTermsError = signal<string | null>(null);
   protected readonly searchTermPage = signal(1);
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
@@ -123,6 +127,7 @@ export class MonitoringTabComponent implements OnInit {
       });
 
     this.keywordsLoading.set(true);
+    this.keywordsError.set(null);
     this.keywordPage.set(1);
     this.keywordsSub = this.campaignService
       .getKeywords(days)
@@ -132,10 +137,14 @@ export class MonitoringTabComponent implements OnInit {
           this.keywordsData.set(result);
           this.keywordsLoading.set(false);
         },
-        error: () => this.keywordsLoading.set(false),
+        error: (err: unknown) => {
+          this.keywordsError.set(err instanceof Error ? err.message : 'Failed to load keywords');
+          this.keywordsLoading.set(false);
+        },
       });
 
     this.searchTermsLoading.set(true);
+    this.searchTermsError.set(null);
     this.searchTermPage.set(1);
     this.searchTermsSub = this.campaignService
       .getOptimizationInsights(days)
@@ -145,7 +154,10 @@ export class MonitoringTabComponent implements OnInit {
           this.searchTerms.set(result.searchTerms);
           this.searchTermsLoading.set(false);
         },
-        error: () => this.searchTermsLoading.set(false),
+        error: (err: unknown) => {
+          this.searchTermsError.set(err instanceof Error ? err.message : 'Failed to load search terms');
+          this.searchTermsLoading.set(false);
+        },
       });
   }
 
@@ -163,7 +175,8 @@ export class MonitoringTabComponent implements OnInit {
         .writeText(name)
         .then(() => {
           this.copiedName.set(name);
-          setTimeout(() => this.copiedName.set(null), 2000);
+          const timer = setTimeout(() => this.copiedName.set(null), 2000);
+          this.destroyRef.onDestroy(() => clearTimeout(timer));
         })
         .catch(() => undefined);
     }

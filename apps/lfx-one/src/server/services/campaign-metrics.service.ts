@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { parseCampaignName } from '@lfx-one/shared/constants';
 import type {
   AudienceBucket,
   AudienceDemographics,
@@ -140,7 +141,7 @@ function buildGoogleAdsUrl(campaignId: string): string {
 function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const r = row as Record<string, unknown>;
   const name = (extractNested(r, 'campaign.name') as string) || '';
-  const parts = name.split(' | ');
+  const parsed = parseCampaignName(name);
   const campaignId = String(extractNested(r, 'campaign.id') || '');
   const budgetMicros = Number(extractNested(r, 'campaignBudget.amountMicros') || 0);
   const costMicros = Number(extractNested(r, 'metrics.costMicros') || 0);
@@ -159,10 +160,10 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
 
   return {
     name,
-    shortName: parts[1] || name,
-    eventName: parts[1] || '',
-    adFormat: parts[5] || '',
-    targeting: parts[4] || '',
+    shortName: parsed.baseName || name,
+    eventName: parsed.baseName,
+    adFormat: parsed.adFormat,
+    targeting: parsed.targeting,
     status: normalizeCampaignStatus(extractNested(r, 'campaign.status') as string | undefined),
     startDate: (extractNested(r, 'campaign.startDate') as string) || '',
     endDate: (extractNested(r, 'campaign.endDate') as string) || '',

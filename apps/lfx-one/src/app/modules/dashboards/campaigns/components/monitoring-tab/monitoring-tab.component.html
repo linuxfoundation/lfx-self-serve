@@ -261,7 +261,10 @@
           @if (keywordTotalPages() > 1) {
             <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
               <span class="text-xs text-gray-500">
-                Showing {{ (keywordPage() - 1) * 10 + 1 }}–{{ keywordPage() === keywordTotalPages() ? keywords().length : keywordPage() * 10 }} of
+                Showing {{ (keywordPage() - 1) * keywordPageSize + 1 }}–{{
+                  keywordPage() === keywordTotalPages() ? keywords().length : keywordPage() * keywordPageSize
+                }}
+                of
                 {{ keywords().length }}
               </span>
               <div class="flex items-center gap-1">
@@ -375,7 +378,9 @@
           @if (searchTermTotalPages() > 1) {
             <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="search-term-pagination">
               <span class="text-xs text-gray-500">
-                Showing {{ (searchTermPage() - 1) * 10 + 1 }}–{{ searchTermPage() === searchTermTotalPages() ? searchTerms().length : searchTermPage() * 10 }}
+                Showing {{ (searchTermPage() - 1) * searchTermPageSize + 1 }}–{{
+                  searchTermPage() === searchTermTotalPages() ? searchTerms().length : searchTermPage() * searchTermPageSize
+                }}
                 of
                 {{ searchTerms().length }}
               </span>

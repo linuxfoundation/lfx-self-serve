@@ -112,7 +112,7 @@
       @if (totalPages() > 1) {
         <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
           <span class="text-xs text-gray-500">
-            Showing {{ (currentPage() - 1) * 10 + 1 }}–{{ currentPage() === totalPages() ? keywords().length : currentPage() * 10 }} of
+            Showing {{ (currentPage() - 1) * pageSize + 1 }}–{{ currentPage() === totalPages() ? keywords().length : currentPage() * pageSize }} of
             {{ keywords().length }}
           </span>
           <div class="flex items-center gap-1">
