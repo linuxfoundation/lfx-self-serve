@@ -80,9 +80,7 @@ export interface OrgEventAttendeesResponse {
   eventOptions: OrgEventAttendeeEventOption[];
 }
 
-// ============================================================
-// Client-only view types (NOT on the wire)
-// ============================================================
+// Client-only view types (NOT on the wire).
 
 /** Pre-decorated event-attendee main row VM — initials, avatar colour, filter-aware role/events/last-attended/most-recent. */
 export interface OrgEventAttendeeRowVm {

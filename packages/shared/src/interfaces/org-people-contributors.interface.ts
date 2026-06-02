@@ -97,9 +97,7 @@ export interface OrgContributorsResponse {
   stats: OrgContributorStatsBaseline;
 }
 
-// ============================================================
-// Client-only view types (NOT on the wire)
-// ============================================================
+// Client-only view types (NOT on the wire).
 
 /** Pre-decorated Contributors main row VM — initials + avatar colour + label preformatting. */
 export interface OrgContributorRowVm {

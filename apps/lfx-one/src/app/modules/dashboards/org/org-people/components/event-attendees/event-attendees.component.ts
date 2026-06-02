@@ -393,12 +393,7 @@ export class EventAttendeesComponent {
   }
 }
 
-/**
- * Pick the Most Recent row for a person per the locked tiebreaker chain (Item 4 R4.3):
- *   1. EVENT_END_DATE DESC NULLS LAST
- *   2. EVENT_NAME ASC
- *   3. EVENT_ID ASC
- */
+/** Most-recent row per Item 4 R4.3 tiebreak: EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC. */
 function pickMostRecent(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeDetailRow | null {
   if (rows.length === 0) return null;
   let best = rows[0];
@@ -420,12 +415,7 @@ function compareMostRecent(a: OrgEventAttendeeDetailRow, b: OrgEventAttendeeDeta
   return a.eventId.localeCompare(b.eventId);
 }
 
-/**
- * Collapse per-(person, event) detail rows into expanded sub-table rows.
- * `ORG_PEOPLE_EVENTS` is already at `(account, person, event)` grain, so this is a
- * 1:1 map plus the location-subtext fallback chain + sort by event end date.
- * Sort order: EVENT_END_DATE DESC NULLS LAST, EVENT_NAME ASC, EVENT_ID ASC (R5.4).
- */
+/** Collapse per-(person, event) rows; 1:1 map + location fallback + sort EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC (R5.4). */
 function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeExpandedRowVm[] {
   const out: OrgEventAttendeeExpandedRowVm[] = rows.map((r) => ({
     eventId: r.eventId,
@@ -447,13 +437,7 @@ function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttend
   });
 }
 
-/**
- * Resolve the expanded-row subtext per the locked fallback chain (R5 spec):
- *   1. `eventLocation` — freeform venue string (~93% coverage on Red Hat)
- *   2. `eventCity` + `eventCountry` — joined `City, Country` when both present, else either alone
- *   3. `foundationName` — last-resort context so the line is never blank for an event with foundation metadata
- * Returns null only when none of the four are populated.
- */
+/** Subtext fallback (R5): eventLocation → city+country (or either alone) → foundationName → null. */
 function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
   if (row.eventLocation) return row.eventLocation;
   const city = row.eventCity ?? '';
@@ -464,13 +448,7 @@ function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
   return row.foundationName ?? null;
 }
 
-/**
- * Return the ISO date cutoff (YYYY-MM-DD, lexicographically comparable to the
- * date-only `eventEndDate` field) for finite windows, or null for 'all' (which
- * gets the IS_PAST_EVENT short-circuit in `initFilteredDetails`). Anchored on
- * the UTC date so the cutoff matches the date-grain of `eventEndDate` (also
- * UTC-anchored) — keeps the comparison correct without timezone drift.
- */
+/** ISO date cutoff (UTC) for finite windows; null for 'all'. Lex-comparable to `eventEndDate` — no timezone drift. */
 function timeWindowCutoff(window: OrgEventAttendeeTimeWindow): string | null {
   if (window === 'all') return null;
   const now = new Date();

@@ -13,11 +13,7 @@ const PERSON_AVATAR_PALETTE = [
   'bg-pink-700',
 ];
 
-/**
- * Initials from a display name: first character of each of the first two
- * whitespace-separated tokens, uppercased. Falls back to `'?'` when the name
- * is empty or whitespace-only.
- */
+/** Initials from a name: first char of the first two tokens, uppercased; `'?'` when empty. */
 export function computePersonInitials(name: string): string {
   return (
     name
@@ -29,11 +25,7 @@ export function computePersonInitials(name: string): string {
   );
 }
 
-/**
- * Deterministic Tailwind background-color class for a person avatar, hashed
- * off a stable `personKey` so the same person always renders the same colour
- * across pages and reloads.
- */
+/** Deterministic Tailwind bg class for a person avatar — same `personKey` ⇒ same colour. */
 export function computePersonAvatarColorClass(personKey: string): string {
   let hash = 0;
   for (let i = 0; i < personKey.length; i++) {

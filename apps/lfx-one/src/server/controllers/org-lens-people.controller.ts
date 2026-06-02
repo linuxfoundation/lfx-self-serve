@@ -213,14 +213,7 @@ export class OrgLensPeopleController {
   }
 }
 
-/**
- * Validate the `timeRange` query param.
- * Missing → default (`12mo`) to keep the UI's default-on-load case working
- * without forcing the client to always echo the default. Present-but-invalid
- * → throw 400 to match the repo's other narrowing helpers
- * (`parseEntityType`, `assertHealthMetricsRange`) and surface a clear error
- * instead of silently mapping a typo to the default window.
- */
+/** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
 function parseContributorTimeRange(raw: string | undefined, operation: string): OrgContributorTimeRange {
   if (!raw) {
     return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;

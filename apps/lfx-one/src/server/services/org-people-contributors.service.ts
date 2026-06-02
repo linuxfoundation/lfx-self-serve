@@ -44,12 +44,7 @@ export class OrgPeopleContributorsService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /**
-   * Aggregates the contributors-daily platinum to (account, person, project)
-   * grain for the requested window, then rolls up to person-grain rows with
-   * argmax-most-active-project pre-computed. Stats + filter dropdown options
-   * are derived from the same scope so the client side never re-queries.
-   */
+  /** Aggregates contributors-daily to (account, person, project) for the window, rolled up to person-grain with argmax-most-active-project. */
   public async getContributors(accountId: string, timeRange: OrgContributorTimeRange): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
@@ -59,14 +54,7 @@ export class OrgPeopleContributorsService {
     return buildResponse(accountId, timeRange, rows);
   }
 
-  /**
-   * One SQL pass produces every metric the tab needs. The time-window cutoff
-   * is inlined into the query as a Snowflake `DATEADD(...)` expression (see
-   * `timeRangeCutoffSnowflake`) so the planner can fold it at compile time;
-   * the only user-controlled value (`account_id`) stays bound. The dbt model
-   * already gates `is_segment_active = TRUE` and `member_is_bot = FALSE`, so
-   * retired projects and bot rows never enter — no filter needed here.
-   */
+  /** Single SQL pass; cutoff inlined as Snowflake `DATEADD(...)` for plan-time folding, only `account_id` is bound. dbt model gates retired projects + bots. */
   private async fetchPersonProjectRows(accountId: string, timeRange: OrgContributorTimeRange): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
     const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
@@ -101,13 +89,7 @@ export class OrgPeopleContributorsService {
   }
 }
 
-/**
- * Snowflake date-cutoff SQL fragment for a time-window selection. Returned as
- * an inline SQL expression (not a bind) so Snowflake's query compiler can fold
- * it at plan time; the only user-controlled value (`accountId`) stays bound.
- * `all` returns null — the dbt model already caps activity at 3 years rolling,
- * so an unfiltered query is the natural "All Time = 3yr proxy" surface.
- */
+/** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (dbt caps at 3yr rolling). */
 function timeRangeCutoffSnowflake(timeRange: OrgContributorTimeRange): string | null {
   switch (timeRange) {
     case '30d':
@@ -121,14 +103,7 @@ function timeRangeCutoffSnowflake(timeRange: OrgContributorTimeRange): string | 
   }
 }
 
-/**
- * Wire-shape projection. Walks the per-(person, project) rows once to populate:
- *   - `projects[]` — the expansion-grain sub-rows (1:1 from input)
- *   - `contributors[]` — person-grain parent rows with argmax-most-active-project
- *   - `stats` — distinct counts per Item 3 lock
- *   - `foundationOptions[]` / `projectOptions[]` — dedup + sort for the dropdowns
- * No second SQL pass; total work is O(N) where N = person×project rows for the window.
- */
+/** Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active), stats, foundationOptions[], projectOptions[]. */
 function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
   const projects: OrgContributorProjectRow[] = [];
   const personMap = new Map<string, OrgContributorRow>();
@@ -222,17 +197,7 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
   };
 }
 
-/**
- * Most-active-project tiebreak chain per Item 4 lock:
- *   1. Higher commits first
- *   2. More recent `last_active_date` (NULLs sort last)
- *   3. Alphabetical project name (falling back to `PROJECT_ID` when name is null)
- *   4. `PROJECT_ID` as the final deterministic tiebreaker
- * Returns < 0 when `a` should beat `b`. The `PROJECT_ID` fallbacks guarantee a
- * stable order across runs even if two rows happen to tie on commits + date
- * and one (or both) PROJECT_NAME is null — without this, sort order would be
- * non-deterministic for those edge-case pairs.
- */
+/** Most-active tiebreak (Item 4): commits → last_active_date NULLS LAST → name (PROJECT_ID when null) → PROJECT_ID. Returns <0 when `a` beats `b`. */
 function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonProjectRow): number {
   const commitsDelta = (b.COMMITS ?? 0) - (a.COMMITS ?? 0);
   if (commitsDelta !== 0) return commitsDelta;

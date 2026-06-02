@@ -59,11 +59,7 @@ export class OrgPeopleEventAttendeesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /**
-   * Bundled attendees + per-(person, event) details + baseline stats + filter-dropdown payloads.
-   * Four parallel Snowflake queries; stats are computed in TS over the returned details so the
-   * wire contract stays free of duplicated math and the client `computed()` re-uses the same body.
-   */
+  /** Bundled attendees + per-(person, event) details + baseline stats + filter dropdowns. Four parallel Snowflake queries; stats derived in TS to share math with the client. */
   public async getEventAttendees(accountId: string): Promise<OrgEventAttendeesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
@@ -191,13 +187,7 @@ export class OrgPeopleEventAttendeesService {
   }
 }
 
-/**
- * Recompute baseline stat values from the bundled `details` array — same math the client
- * runs on filter change, so initial paint and live filtering share one source of truth.
- * Matches the brief's locked Item 3 formulas: speakers = distinct person_key where
- * any-event isSpeaker, attendees = distinct person_key (includes speakers), events =
- * distinct event_id, foundations = distinct foundation_id (non-null).
- */
+/** Recompute baseline stats from `details` — same math as the client's filter-change handler (Item 3 formulas). */
 function computeBaselineStats(details: OrgEventAttendeeDetailRow[]): OrgEventAttendeeStatsBaseline {
   const attendees = new Set<string>();
   const speakers = new Set<string>();

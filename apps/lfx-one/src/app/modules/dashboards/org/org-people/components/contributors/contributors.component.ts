@@ -341,9 +341,7 @@ export class ContributorsComponent {
     );
   }
 
-  /**
-   * Project the timeRange form control to a stable Signal so toObservable() can wrap it without re-subscribing on every form-level emit. valueChanges is used directly with debounce above for the filter trio; this one fires on every distinct value so the BFF refetch is precise.
-   */
+  /** Stable timeRange Signal — bypass the filter-trio debounce so BFF refetch fires per distinct value. */
   private timeRangeControl(): Signal<OrgContributorTimeRange> {
     return toSignal(this.filterForm.controls.timeRange.valueChanges, {
       initialValue: this.filterForm.controls.timeRange.value,
@@ -359,11 +357,7 @@ export class ContributorsComponent {
   }
 }
 
-/**
- * Collapse per-(person, project) rows into expansion sub-table VMs.
- * Pre-sorted by Commits desc, then last_active desc, then alpha project name
- * (Item 5 R5 lock — sub-table is non-interactive so the sort is server-stable).
- */
+/** Collapse per-(person, project) rows; pre-sorted Commits DESC → last_active DESC → name (Item 5 R5 — sub-table non-interactive). */
 function collapseExpandedRows(rows: OrgContributorProjectRow[]): OrgContributorExpandedRowVm[] {
   const out: OrgContributorExpandedRowVm[] = rows.map((r) => ({
     projectId: r.projectId,

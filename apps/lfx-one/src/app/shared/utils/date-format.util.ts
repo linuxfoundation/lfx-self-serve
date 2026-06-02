@@ -3,22 +3,14 @@
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/**
- * Format an ISO date (or full ISO timestamp) as `MMM yyyy` in UTC — e.g.
- * `Jan 2024`. Returns `'—'` for invalid input so consumers can render the
- * em-dash placeholder without extra null-checks.
- */
+/** Format an ISO date/timestamp as `MMM yyyy` UTC; returns `'—'` for invalid input. */
 export function formatMonthYearUtc(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return `${SHORT_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-/**
- * Format an ISO date (or full ISO timestamp) as `MMM dd, yyyy` in UTC — e.g.
- * `Jan 05, 2024`. Returns `'—'` for invalid input. Mirrors the Trainees /
- * Event Attendees / Contributors expanded-row date convention.
- */
+/** Format an ISO date/timestamp as `MMM dd, yyyy` UTC; returns `'—'` for invalid input. */
 export function formatLongDateUtc(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';

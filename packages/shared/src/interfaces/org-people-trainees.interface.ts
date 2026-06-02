@@ -67,9 +67,7 @@ export interface OrgTraineesResponse {
   courseOptions: OrgTraineeCourseOption[];
 }
 
-// ============================================================
-// Client-only view types (NOT on the wire)
-// ============================================================
+// Client-only view types (NOT on the wire).
 
 /** Pre-decorated trainee main row VM — initials, avatar colour, filter-aware status/courses/certs/recent. */
 export interface OrgTraineeRowVm {

@@ -73,10 +73,7 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
   { label: 'Training', value: 'training' },
 ] as const;
 
-// ----------------------------------------------------------------------------
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
-// Initial cap mirrors All Employees so cross-tab pagination feels consistent.
-// ----------------------------------------------------------------------------
 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
 export const ORG_TRAINEES_INITIAL_LIMIT = 30;
@@ -111,10 +108,7 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   courseOptions: [],
 };
 
-// ----------------------------------------------------------------------------
-// Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as
-// Trainees so the page's filter trio + stat cards + expansion stay symmetric.
-// ----------------------------------------------------------------------------
+// Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as Trainees.
 
 /** Initial visible-row cap on the Event Attendees table before "Show All" is clicked. */
 export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
@@ -149,14 +143,7 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   eventOptions: [],
 };
 
-// ----------------------------------------------------------------------------
-// Contributors tab (LFXV2-1874) — A1 architecture per Item 2 lock: one BFF
-// slice per timeRange selection, narrow filter trio (search/foundation/project)
-// applied client-side. Diverges from Trainees/Events in two ways: stats anchor
-// on the BFF response (Item 3 lock — don't recompute on filter trio change),
-// and the time-window vocabulary is 30d/90d/12mo/all (matches Dano's prototype
-// spec, not the events-platform 3m/6m/12m/2y).
-// ----------------------------------------------------------------------------
+// Contributors tab (LFXV2-1874) — A1: one BFF slice per timeRange, filter trio client-side; stats anchored on BFF (Item 3); window vocab 30d/90d/12mo/all.
 
 /** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
 export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;

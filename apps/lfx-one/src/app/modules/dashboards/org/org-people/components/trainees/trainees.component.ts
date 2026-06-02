@@ -115,15 +115,12 @@ export class TraineesComponent {
     // Reset filter / sort / pagination / expansion when the org actually changes.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetAllState());
 
-    // Reset pagination when the sort key/direction changes so users always see
-    // the first page in the new ordering. Expansion is preserved across sort
-    // because the same rows are still on screen, just reordered.
+    // Sort change: reset pagination, preserve expansion (same rows, new order).
     combineLatest([toObservable(this.sortColumn), toObservable(this.sortDirection)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
 
-    // Reset pagination + expansion when any filter input changes — collapse
-    // expanded rows so the visible (N) count stays in sync with filter scope.
+    // Filter change: reset pagination + expansion (collapse so (N) tracks filter scope).
     this.filterForm.valueChanges.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
       this.expansion.set({});
@@ -402,12 +399,7 @@ export class TraineesComponent {
   }
 }
 
-/**
- * Pick the Most Recent Course row for a person per the locked tiebreaker chain (Item 4):
- *   1. ACTIVITY_TS DESC
- *   2. STATUS = 'Certified' DESC (cert outranks enrollment at the same instant)
- *   3. COURSE_NAME ASC (deterministic, alphabetical)
- */
+/** Most-recent row per Item 4 tiebreak: ACTIVITY_TS DESC → STATUS='Certified' DESC → COURSE_NAME ASC. */
 function pickMostRecent(rows: OrgTraineeDetailRow[]): OrgTraineeDetailRow | null {
   if (rows.length === 0) return null;
   let best = rows[0];
@@ -420,12 +412,7 @@ function pickMostRecent(rows: OrgTraineeDetailRow[]): OrgTraineeDetailRow | null
   return best;
 }
 
-/**
- * Pick the later of two ISO timestamps (lexicographic compare works for ISO strings).
- * At least one input is required to be non-null — `collapseExpandedRows` enforces that
- * by construction (a group always has at least one Enrolled or Certified row), so the
- * `string` return type is safe.
- */
+/** Max of two ISO timestamps; at least one must be non-null (caller-enforced). */
 function maxIsoTs(a: string | null, b: string | null): string {
   if (a === null) return b as string;
   if (b === null) return a;
@@ -442,13 +429,7 @@ function compareMostRecent(a: OrgTraineeDetailRow, b: OrgTraineeDetailRow): numb
   return a.courseName.localeCompare(b.courseName);
 }
 
-/**
- * Collapse two source rows per (personKey, courseId) into a single display row
- * — Certification supersedes Course when both exist, Enrolled column renders an
- * em-dash when no Enrolled detail row exists (62.9% of rows at Red Hat). Sort
- * recent-first, with the locked tiebreaker chain (sortTs DESC, type=Certification
- * DESC, courseName ASC).
- */
+/** Collapse (personKey, courseId) source rows; Certification supersedes Course; sort recent-first per Item 4 tiebreak. */
 function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRowVm[] {
   const byCourse = new Map<string, OrgTraineeDetailRow[]>();
   for (const r of rows) {
@@ -462,12 +443,7 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
     const enrolledTs = minActivityTs(group.filter((r) => r.status === 'Enrolled'));
     const certifiedTs = minActivityTs(group.filter((r) => r.status === 'Certified'));
     const isCertified = certifiedTs !== null;
-    // sortTs = MAX(enrolledTs, certifiedTs) per the wire contract on
-    // OrgTraineeExpandedRowVm. In the happy path certifiedTs >= enrolledTs
-    // because you can only complete after enrolling, so MAX === certifiedTs;
-    // the explicit MAX is defensive against rare source-data anomalies where
-    // certifiedTs < enrolledTs. At least one of the two is non-null by
-    // construction (group is non-empty), which `maxIsoTs` asserts.
+    // MAX is defensive against rare source-data anomalies where certifiedTs < enrolledTs.
     const sortTs = maxIsoTs(enrolledTs, certifiedTs);
 
     out.push({
@@ -498,11 +474,7 @@ function minActivityTs(rows: OrgTraineeDetailRow[]): string | null {
   return min || null;
 }
 
-/**
- * Return the ISO cutoff string for the given window, or null for 'all' (no
- * time predicate). Anchored on `Date.now()` so the comparison is whole-string
- * lexicographic on the activity_ts ISO column — cheap and correct.
- */
+/** ISO cutoff for window; null for 'all'. Lex-comparable to activity_ts. */
 function timeWindowCutoff(window: OrgTraineeTimeWindow): string | null {
   if (window === 'all') return null;
   const now = new Date();

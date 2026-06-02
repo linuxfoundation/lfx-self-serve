@@ -53,11 +53,7 @@ export class OrgPeopleTraineesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /**
-   * Bundled rows + details + baseline stats + filter-dropdown payloads.
-   * Four parallel Snowflake queries; stats are computed in TS over the
-   * returned details so the wire contract stays free of duplicated math.
-   */
+  /** Bundled rows + details + baseline stats + filter dropdowns. Four parallel Snowflake queries; stats derived in TS to share math with the client. */
   public async getTrainees(accountId: string): Promise<OrgTraineesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE };
@@ -79,12 +75,7 @@ export class OrgPeopleTraineesService {
       email: row.EMAIL,
     }));
 
-    // Drop rows with unparseable ACTIVITY_TS instead of coercing to '': the
-    // detail row's `activityTs` is consumed by lexicographic sorts and
-    // most-recent-per-(person, course) derivations on the client, so an
-    // empty-string fallback would silently move the row to the start/end of
-    // those orderings. A null/unparseable timestamp also means we have no
-    // signal to surface to the user, so dropping is the honest choice.
+    // Drop null-ACTIVITY_TS rows; coercing to '' would corrupt downstream lex sorts and most-recent derivations.
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
       if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
       const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
@@ -188,15 +179,7 @@ export class OrgPeopleTraineesService {
   }
 }
 
-/**
- * Recompute baseline stat values from the bundled `details` array — same math
- * the client runs on filter change, so initial paint and live filtering use a
- * single source of truth. Trainees = distinct person_key, coursesEnrolled =
- * distinct (person, course), certifications = distinct (person, course) where
- * status='Certified', completionRate = certs / courses × 100 (integer, 0 when
- * coursesEnrolled = 0). Matches the brief's locked Item 3 formula and the
- * client `computed()` body verbatim — keep them in lockstep.
- */
+/** Recompute baseline stats from `details` — same math as the client's filter-change handler (Item 3 formulas). */
 function computeBaselineStats(details: OrgTraineeDetailRow[]): OrgTraineeStatsBaseline {
   const trainees = new Set<string>();
   const courseKeys = new Set<string>();
