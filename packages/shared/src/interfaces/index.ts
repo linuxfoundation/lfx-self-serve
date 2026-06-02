@@ -22,6 +22,9 @@ export * from './auth.interface';
 // API interfaces
 export * from './api.interface';
 
+// Campaign interfaces
+export * from './campaign.interface';
+
 // Permissions interfaces
 export * from './permissions.interface';
 

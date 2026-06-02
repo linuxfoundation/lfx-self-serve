@@ -107,7 +107,7 @@ export class CampaignMetricsService {
     const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'adGroupCriterion.gender.type') as string) || 'Unknown');
     const device = aggregateDemoBuckets(deviceRows, (r) => (extractNested(r, 'segments.device') as string) || 'Unknown');
 
-    return { pulledAt: new Date().toISOString(), days, age, gender, device };
+    return { pulledAt: new Date().toISOString(), days: effectiveDays, age, gender, device };
   }
 }
 
