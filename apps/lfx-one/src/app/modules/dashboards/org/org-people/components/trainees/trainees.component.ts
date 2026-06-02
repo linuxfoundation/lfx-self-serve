@@ -115,11 +115,15 @@ export class TraineesComponent {
     // Reset filter / sort / pagination / expansion when the org actually changes.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetAllState());
 
-    // Reset pagination + expansion when any filter input changes — collapse expanded rows so the visible (N) count stays in sync with filter scope.
+    // Reset pagination when the sort key/direction changes so users always see
+    // the first page in the new ordering. Expansion is preserved across sort
+    // because the same rows are still on screen, just reordered.
     combineLatest([toObservable(this.sortColumn), toObservable(this.sortDirection)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
 
+    // Reset pagination + expansion when any filter input changes — collapse
+    // expanded rows so the visible (N) count stays in sync with filter scope.
     this.filterForm.valueChanges.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
       this.expansion.set({});

@@ -468,8 +468,8 @@ function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
  * Return the ISO date cutoff (YYYY-MM-DD, lexicographically comparable to the
  * date-only `eventEndDate` field) for finite windows, or null for 'all' (which
  * gets the IS_PAST_EVENT short-circuit in `initFilteredDetails`). Anchored on
- * the local wall-clock day so 'Past 3 Months' from today renders the obvious
- * window the user expects.
+ * the UTC date so the cutoff matches the date-grain of `eventEndDate` (also
+ * UTC-anchored) — keeps the comparison correct without timezone drift.
  */
 function timeWindowCutoff(window: OrgEventAttendeeTimeWindow): string | null {
   if (window === 'all') return null;
