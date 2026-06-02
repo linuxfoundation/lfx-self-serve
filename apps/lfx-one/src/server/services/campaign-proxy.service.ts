@@ -159,6 +159,7 @@ interface HubSpotUtmResult {
   hsUtm: string | null;
   campaignName: string;
   campaignId: string | null;
+  allMatches: { name: string; hsUtm: string }[];
 }
 
 function hsHeaders(): Record<string, string> {
@@ -192,7 +193,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const results = data.results ?? [];
 
   if (results.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
   const queryLower = eventName.toLowerCase();
@@ -208,13 +209,20 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   });
 
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0];
+  const matches = scored.filter((s) => s.score > 0);
 
-  if (best.score === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null };
+  if (matches.length === 0) {
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
-  return { found: true, hsUtm: best.hsUtm, campaignName: best.name, campaignId: best.id };
+  const best = matches[0];
+  return {
+    found: true,
+    hsUtm: best.hsUtm,
+    campaignName: best.name,
+    campaignId: best.id,
+    allMatches: matches.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
+  };
 }
 
 async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResult> {
@@ -260,7 +268,7 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     hsUtm = buildUtmTokenFallback(campaignUuid, eventName);
   }
 
-  return { found: true, hsUtm, campaignName: eventName, campaignId };
+  return { found: true, hsUtm, campaignName: eventName, campaignId, allMatches: [{ name: eventName, hsUtm: hsUtm! }] };
 }
 
 async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
@@ -500,7 +508,7 @@ export class CampaignProxyService {
       found: result.found,
       hs_utm: result.hsUtm,
       campaign_name: result.campaignName,
-      all_matches: result.found && result.hsUtm ? [{ name: result.campaignName, hs_utm: result.hsUtm }] : [],
+      all_matches: result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm })),
     };
   }
 
@@ -686,6 +694,7 @@ export class CampaignProxyService {
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
+    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes });
     const effectiveBody = { ...body };
     if (!effectiveBody.hsToken) {
       try {
@@ -724,7 +733,9 @@ export class CampaignProxyService {
       }
     }
 
-    completeJob(jobId, { success: errors.length === 0, campaigns: results, errors });
+    const response = { success: errors.length === 0, campaigns: results, errors };
+    completeJob(jobId, response);
+    logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length, errorCount: errors.length });
   }
 
   private async createSearchCampaign(body: CampaignCreateRequest): Promise<CampaignCreateResult> {
