@@ -36,6 +36,9 @@ export class ProfileLinuxEmailComponent {
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
+  // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
+  private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
+
   // Refresh mechanism
   private refresh = new BehaviorSubject<void>(undefined);
 
@@ -179,13 +182,38 @@ export class ProfileLinuxEmailComponent {
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
             identities: this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))),
           }).pipe(
-            tap(({ alias, emails }) => this.applyFormDefaults(alias, emails)),
+            tap(({ alias, emails }) => {
+              this.applyFormDefaults(alias, emails);
+              this.maybeReauthForForward(alias);
+            }),
             finalize(() => this.loading.set(false))
           );
         })
       ),
       { initialValue: { alias: null, emails: null, identities: [] } }
     );
+  }
+
+  /**
+   * A claimed alias always has a forward target, but the server can only read it
+   * with a Flow C management token. When that token is absent the server flags
+   * `forwardAuthRequired`; redirect once to load the real target instead of
+   * silently showing the primary email. The one-shot guard prevents a loop if the
+   * round-trip returns still tokenless (or the user cancels).
+   */
+  private maybeReauthForForward(alias: LinuxAliasData | null): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (alias?.state !== 'claimed') return;
+
+    if (!alias.forwardAuthRequired) {
+      // Token present (or flow disabled) — clear the guard for next time.
+      sessionStorage.removeItem(this.reauthFlagKey);
+      return;
+    }
+
+    if (!alias.authorizeUrl || sessionStorage.getItem(this.reauthFlagKey)) return;
+    sessionStorage.setItem(this.reauthFlagKey, '1');
+    window.location.href = alias.authorizeUrl;
   }
 
   /** Default the forward selection to the current target (if any) or the primary email. */

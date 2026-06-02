@@ -521,8 +521,25 @@ export class ProfileController {
         const managementToken = this.profileAuthService.getManagementToken(req);
         const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
 
+        // A claimed alias always has a forward target, but reading it needs the Flow C
+        // management token. When it's absent (and the flow is configured), tell the client
+        // to re-authorize so it can load the real target instead of defaulting to primary.
+        const forwardAuthRequired = !managementToken && this.profileAuthService.isProfileAuthConfigured();
+
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
-        res.json({ state: 'claimed', domain, alias, email, forwardTo: forward?.target_email ?? null } satisfies LinuxAliasData);
+        res.json({
+          state: 'claimed',
+          domain,
+          alias,
+          email,
+          forwardTo: forward?.target_email ?? null,
+          ...(forwardAuthRequired
+            ? {
+                forwardAuthRequired: true,
+                authorizeUrl: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}`,
+              }
+            : {}),
+        } satisfies LinuxAliasData);
         return;
       }
 

@@ -29,10 +29,18 @@ export interface LinuxAliasData {
   alias: string | null;
   /** Full claimed address `${alias}@${domain}`, or null when unclaimed. */
   email: string | null;
-  /** Current forwarding destination, or null when not yet set. */
+  /** Current forwarding destination, or null when not yet set / not readable without re-auth. */
   forwardTo: string | null;
   /** membership-ui CTA URL, present only in the `not_purchased` state. */
   purchaseUrl?: string;
+  /**
+   * True in the `claimed` state when the forwarding target could not be read
+   * because no profile-management token is in session. The client should
+   * redirect to `authorizeUrl` (Flow C) to load the real target.
+   */
+  forwardAuthRequired?: boolean;
+  /** Flow C authorization URL to call when `forwardAuthRequired` is true. */
+  authorizeUrl?: string;
 }
 
 /** Body for `POST /api/profile/linux-email/claim`. */
