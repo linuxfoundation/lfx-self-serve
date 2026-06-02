@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -115,6 +115,11 @@ export class VotesTableComponent {
   // === Constructor ===
   public constructor() {
     this.initFormSubscriptions();
+    effect(() => {
+      if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
+        untracked(() => this.statusTab.set('all'));
+      }
+    });
   }
 
   // === Protected Methods ===
