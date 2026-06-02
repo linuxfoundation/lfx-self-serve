@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GroupBehavioralClass } from '../interfaces/committee.interface';
+import { Committee, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { CommitteeMember } from '../interfaces/member.interface';
 import { CATEGORY_BEHAVIORAL_CLASS } from '../constants/committees.constants';
 
 /**
@@ -108,4 +109,52 @@ export function isGovernanceClass(category: string | undefined): boolean {
 export function isCollaborationClass(category: string | undefined): boolean {
   const cls = getGroupBehavioralClass(category);
   return cls === 'working-group' || cls === 'special-interest-group' || cls === 'oversight-committee' || cls === 'ambassador-program' || cls === 'other';
+}
+
+// ── Member permission resolution (LFXV2-2059) ───────────────────────────────
+
+/**
+ * Match a member to a writer/auditor entry. Prefers the Auth0 username (the stable identity the
+ * permission lists key on, e.g. `auth0|jdoe`) and falls back to a case-insensitive email match for
+ * members or entries without a resolved username.
+ */
+export function matchesCommitteeUser(member: Pick<CommitteeMember, 'username' | 'email'>, candidate: { username?: string; email?: string }): boolean {
+  const memberEmail = member.email?.toLowerCase();
+  return (!!member.username && candidate.username === member.username) || (!!memberEmail && candidate.email?.toLowerCase() === memberEmail);
+}
+
+/**
+ * Resolve a member's roster permission for the given committee.
+ *
+ * Committee-scoped grants (`writers` / `auditors`) take precedence; when the member holds no
+ * committee-scoped role, falls back to grants inherited from the project/foundation ancestry
+ * (`inherited_writers` / `inherited_auditors`) so a foundation-level "Manage" user is shown as
+ * Manage rather than a plain member (LFXV2-2059). Manage outranks Reviewer at every level.
+ *
+ * `inherited` is true only when the member has no direct committee role but matches an inherited
+ * grant — it drives the "(inherited)" label suffix.
+ */
+export function resolveCommitteeMemberPermission(committee: Committee | null | undefined, member: CommitteeMember): CommitteeMemberPermissionInfo {
+  if (!committee) return { level: 'member', inherited: false };
+
+  const matches = (candidate: { username?: string; email?: string }): boolean => matchesCommitteeUser(member, candidate);
+  const hasDirectRole = !!committee.writers?.some(matches) || !!committee.auditors?.some(matches);
+
+  if (committee.writers?.some(matches) || committee.inherited_writers?.some(matches)) {
+    return { level: 'manage', inherited: !hasDirectRole };
+  }
+  if (committee.auditors?.some(matches) || committee.inherited_auditors?.some(matches)) {
+    return { level: 'review', inherited: !hasDirectRole };
+  }
+  return { level: 'member', inherited: false };
+}
+
+/**
+ * Whether the current caller can manage this committee's members. Driven by the effective `writer`
+ * flag, which the authorization model already derives from inherited project/foundation grants
+ * (`committee#writer` ← `writer from project`), so a foundation-level manager resolves to true
+ * without a separate inherited check (LFXV2-2059).
+ */
+export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
+  return !!committee?.writer;
 }

@@ -218,6 +218,21 @@ export interface Committee {
   auditors?: CommitteeUser[];
 
   /**
+   * Users with write (manage) access *inherited* from the committee's project/foundation
+   * ancestry (e.g. a foundation-level "Manage" grant). Populated by the BFF, which walks the
+   * project ancestry (`project_uid → parent → … → foundation`) and unions each level's
+   * permission list — response-only, display purposes only. The committee's effective `writer`
+   * boolean already reflects this inheritance via the authorization model (`committee#writer`
+   * derives from `writer from project`, and `project#writer` from `writer from parent`); this
+   * field exists so the per-member roster can label such users "Manage" even though they are
+   * absent from the committee-scoped `writers` list. Empty/absent for the levels the caller
+   * cannot read (best-effort).
+   */
+  inherited_writers?: CommitteeUser[];
+  /** Users with audit (review) access inherited from the committee's project/foundation ancestry. See {@link inherited_writers}. */
+  inherited_auditors?: CommitteeUser[];
+
+  /**
    * Caller's role in this committee, when they are a member. Absent for non-members.
    * Falls back to the literal 'Member' when the upstream membership row exists but
    * either carries no role or uses the placeholder `CommitteeMemberRole.NONE` value.
@@ -735,3 +750,11 @@ export interface TabConfigEntry {
 
 /** Permission level for a committee member. */
 export type CommitteePermissionLevel = 'manage' | 'review' | 'member';
+
+/** A committee member's resolved roster permission, plus whether it was inherited rather than direct. */
+export interface CommitteeMemberPermissionInfo {
+  /** Resolved permission level shown on the roster. */
+  level: CommitteePermissionLevel;
+  /** True when `level` comes only from an inherited (project/foundation) grant, not a committee-scoped role. */
+  inherited: boolean;
+}
