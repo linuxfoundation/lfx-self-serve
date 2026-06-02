@@ -206,6 +206,35 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
 }
 
 /**
+ * Resolves the start time a card/list should display for an UPCOMING meeting — the next
+ * scheduled occurrence, not the recurring series origin.
+ *
+ * Order of preference:
+ * 1. `occurrence.start_time` — an already-resolved occurrence (an explicit selection, or the
+ *    current/next occurrence from {@link getCurrentOrNextOccurrence} when the `occurrences`
+ *    array is present and usable, e.g. on the ITX-backed detail view).
+ * 2. `meeting.next_occurrence_start_time` — the upstream-computed next-occurrence start. Present
+ *    on both the query-service list payload and the ITX detail payload; empty when no future
+ *    occurrence exists. This is what keeps a recurring card from falling back to the series
+ *    origin when the list payload's `occurrences` array isn't usable (it carries `is_cancelled`
+ *    rather than `status`, and isn't guaranteed to be projected on every list response).
+ * 3. `meeting.start_time` — one-time meetings and the final fallback.
+ *
+ * @param meeting The meeting object
+ * @param occurrence Optional already-resolved occurrence (explicit or current/next)
+ * @returns The start time to display, or null when none is available
+ */
+export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: MeetingOccurrence | null): string | null {
+  if (occurrence?.start_time) {
+    return occurrence.start_time;
+  }
+  if (meeting?.next_occurrence_start_time) {
+    return meeting.next_occurrence_start_time;
+  }
+  return meeting?.start_time ?? null;
+}
+
+/**
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
