@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
 import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
@@ -174,7 +175,7 @@ export class OrgLensPeopleController {
   /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const timeRange = parseContributorTimeRange(req.query['timeRange']);
+    const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'));
     const startTime = logger.startOperation(req, 'get_org_lens_people_contributors', {
       org_uid: orgUid,
       time_range: timeRange,
@@ -211,8 +212,8 @@ export class OrgLensPeopleController {
   }
 }
 
-function parseContributorTimeRange(raw: unknown): OrgContributorTimeRange {
-  if (typeof raw === 'string' && VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
+function parseContributorTimeRange(raw: string | undefined): OrgContributorTimeRange {
+  if (raw && VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
     return raw as OrgContributorTimeRange;
   }
   return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
