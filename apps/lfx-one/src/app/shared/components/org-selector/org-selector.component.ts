@@ -119,9 +119,9 @@ export class OrgSelectorComponent {
 
   protected selectItem(item: OrgItem, popover: Popover): void {
     const account: Account = {
-      // Spec 024 (uuid-only): selection is keyed by `uid` (persisted to the cookie + sent to all
-      // /api/orgs/:orgUid/lens/* routes). `accountId` is carried for display/analytics only and may be
-      // empty; the canonical-by-uid fetch + Snowflake enrichment populate it when authoritative.
+      // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
+      // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
+      // display/analytics; the canonical fetch + Snowflake enrichment populate display fields.
       accountId: item.accountId ?? '',
       accountName: item.name,
       // Slug and tier are org-specific — never carry over the previously selected org's values.

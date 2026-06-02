@@ -8,15 +8,12 @@ import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensDocumentsService } from '../services/org-lens-documents.service';
-import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 export class OrgLensDocumentsController {
   private readonly service: OrgLensDocumentsService;
-  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensDocumentsService();
-    this.orgSfidResolver = new OrgSfidResolver();
   }
 
   /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/documents */
@@ -32,8 +29,7 @@ export class OrgLensDocumentsController {
       assertOrgUid(orgUid, 'get_membership_documents');
       this.assertFoundationId(foundationId, 'get_membership_documents');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const { response, certificateDegraded } = await this.service.getMembershipDocuments(req, sfid, foundationId);
+      const { response, certificateDegraded } = await this.service.getMembershipDocuments(req, orgUid, foundationId);
 
       // Spec 019 SC-015: structured observability field distinguishing legitimate
       // non-TLF orgs ('absent') from cert-table outages ('degraded') without

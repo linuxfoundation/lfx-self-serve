@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_LENS_ENABLED_FLAG, UUID_REGEX } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
@@ -79,9 +79,10 @@ export class AccountContextService {
       return;
     }
 
-    // Spec 024 (uuid-only): the cookie now persists the org uuid. Match a seed by uid when one carries it;
-    // otherwise select a stub keyed only by the stored uid and let the canonical-by-uid fetch hydrate
-    // display fields. Falls back to the first seed when there is no stored uid (or it is legacy/invalid).
+    // Spec 002: the cookie persists the org account id (18-char SFID), stored under the `uid` field.
+    // Match a seed by uid when one carries it; otherwise select a stub keyed only by the stored id and
+    // let the canonical fetch hydrate display fields. Falls back to the first seed when there is no
+    // stored id (or it is a legacy UUID / otherwise invalid).
     const storedUid = this.loadUidFromStorage();
     const matchedSeed = storedUid ? (seeds.find((seed) => seed.uid === storedUid) ?? null) : null;
     if (matchedSeed) {
@@ -127,8 +128,8 @@ export class AccountContextService {
 
   /** Async reconciliation of the optimistic indexed snapshot against the member-service canonical record (spec 020 US4 / FR-020); silent on failure with request-scope dedup per D-006. */
   public async refreshCanonicalRecord(account: Account): Promise<void> {
-    // Spec 024 (uuid-only): the canonical record is keyed solely by the org uuid. Without a uid there is
-    // nothing to resolve (the legacy sfid route is gone).
+    // Spec 002: the canonical record is keyed solely by the org account id (SFID, held in `uid`).
+    // Without an identifier there is nothing to resolve.
     const identifier = account.uid;
     if (!identifier) {
       return;
@@ -248,7 +249,7 @@ export class AccountContextService {
     };
   }
 
-  /** Spec 024 (uuid-only): persist only the org uuid — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical-by-uid fetch. */
+  /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
   private persistToStorage(account: Account): void {
     if (!this.isValidUid(account.uid)) {
       this.clearStorage();
@@ -267,7 +268,7 @@ export class AccountContextService {
     this.cookieService.delete(this.storageKey, '/');
   }
 
-  /** Returns the validated org uuid from the cookie, or null. Legacy `{ accountId }`-only cookies (no uid) are ignored. */
+  /** Returns the validated org account id (SFID) from the cookie's `uid` field, or null. Legacy UUID values fail SFID validation and are ignored. */
   private loadUidFromStorage(): string | null {
     try {
       const stored = this.cookieService.get(this.storageKey);
@@ -281,8 +282,8 @@ export class AccountContextService {
     }
   }
 
-  /** Org uids are canonical UUIDs; anything else (including legacy Salesforce ids) is treated as absent/tampered. */
+  /** Spec 002: the org uid is the canonical 18-char Salesforce account id; legacy UUIDs (and anything else) are treated as absent/tampered so a stale cookie degrades to the default selection. */
   private isValidUid(uid: unknown): uid is string {
-    return typeof uid === 'string' && UUID_REGEX.test(uid);
+    return typeof uid === 'string' && ORG_ACCOUNT_ID_PATTERN.test(uid);
   }
 }
