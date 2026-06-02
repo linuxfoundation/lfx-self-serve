@@ -25,7 +25,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 // ---------------------------------------------------------------------------
-// Required environment variables — log warnings at startup for missing ones
+// Required environment variables — log warnings on first use for missing ones
 // ---------------------------------------------------------------------------
 
 const REQUIRED_ENV_VARS = ['GADS_CLIENT_ID', 'GADS_CLIENT_SECRET', 'GADS_DEVELOPER_TOKEN', 'GADS_CUSTOMER_ID', 'GADS_REFRESH_TOKEN'];
