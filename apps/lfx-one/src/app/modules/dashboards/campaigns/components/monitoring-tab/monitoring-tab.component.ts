@@ -159,10 +159,13 @@ export class MonitoringTabComponent implements OnInit {
 
   protected copyName(name: string): void {
     if (isPlatformBrowser(this.platformId)) {
-      void navigator.clipboard.writeText(name).then(() => {
-        this.copiedName.set(name);
-        setTimeout(() => this.copiedName.set(null), 2000);
-      });
+      void navigator.clipboard
+        .writeText(name)
+        .then(() => {
+          this.copiedName.set(name);
+          setTimeout(() => this.copiedName.set(null), 2000);
+        })
+        .catch(() => undefined);
     }
   }
 

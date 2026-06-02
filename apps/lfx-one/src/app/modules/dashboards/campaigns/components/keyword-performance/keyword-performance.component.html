@@ -82,7 +82,7 @@
             </tr>
           </thead>
           <tbody>
-            @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaign) {
+            @for (kw of visibleKeywords(); track kw.keyword + '-' + kw.campaignId) {
               <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
                 <td class="px-4 py-2.5">
                   <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
