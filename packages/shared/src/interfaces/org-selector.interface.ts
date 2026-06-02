@@ -92,10 +92,11 @@ export interface RoleGrantsResponse {
   loaded_at: string;
 }
 
-/** Canonical org record returned by `GET /api/orgs/uid|sfid|:id` (member-service snake_case → camelCase). */
+/** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
 export interface OrgCanonicalRecord {
+  /** Org account id (18-char SFID); equals `accountId`. */
   uid: string;
-  /** Legacy Salesforce id; null for orgs without an sfid. */
+  /** Org account id (18-char SFID); equals `uid`. Nullable only for defensive callers. */
   accountId: string | null;
   name: string;
   description?: string | null;
@@ -109,12 +110,12 @@ export interface OrgCanonicalRecord {
   crunchBaseUrl?: string | null;
   /** Last-modified timestamp from upstream (ISO 8601 UTC); displayed as "Last Updated" on the profile page (spec 021). */
   updatedAt?: string | null;
-  /** b2b_org.uid of the parent; null for top-level orgs. */
+  /** Parent org account id (18-char SFID); null for top-level orgs. */
   parentUid?: string | null;
   isMember: boolean;
 }
 
-/** Partial-update payload for `PUT /api/orgs/uid/:uid` (spec 021). Only changed fields are included. Excludes `name` (locked at UI) and `logoUrl` (deferred). */
+/** Partial-update payload for `PUT /api/orgs/:accountId` (spec 021/002, account-id keyed). Only changed fields are included. Excludes `name` (locked at UI) and `logoUrl` (deferred). */
 export interface OrgUpdateRequest {
   description?: string;
   website?: string;
@@ -153,7 +154,7 @@ export interface OrgAddress {
   country: string;
 }
 
-/** Response shape for `GET /api/orgs/uid/:uid/addresses` (spec 023). Snowflake `ORG_LENS_ADDRESSES`; BFF returns 200 with nulls on lookup misses. */
+/** Response shape for `GET /api/orgs/:accountId/addresses` (spec 023/002, account-id keyed). Snowflake `ORG_LENS_ADDRESSES`; BFF returns 200 with nulls on lookup misses. */
 export interface OrgAddressesResponse {
   primaryAddress: OrgAddress | null;
   billingAddress: OrgAddress | null;
@@ -272,4 +273,3 @@ export interface AccessAwareOrgsResult {
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
 }
-

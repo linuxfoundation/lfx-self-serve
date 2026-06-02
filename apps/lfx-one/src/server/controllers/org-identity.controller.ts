@@ -250,7 +250,9 @@ export class OrgIdentityController {
     // account id IS the uid (no resolver). Prefer an explicit sfid if upstream ever serializes one.
     const accountId = raw.sfid ?? raw.uid;
     return {
-      uid: raw.uid,
+      // Spec 002: uid and accountId are the same canonical 18-char SFID. Anchor both to `accountId`
+      // so they can never diverge if member-service later serializes `sfid` separately.
+      uid: accountId,
       accountId,
       name: raw.name,
       description: raw.description ?? null,

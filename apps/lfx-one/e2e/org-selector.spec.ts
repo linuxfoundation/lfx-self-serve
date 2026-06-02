@@ -112,7 +112,7 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     // Capture the row's data-testid which contains the org account id (SFID) we'll see in the canonical-fetch URL.
     // Spec 002: the org identifier is the 18-char Salesforce account id (001-prefixed), not a UUID.
     const testId = await firstRow.getAttribute('data-testid');
-    expect(testId).toMatch(/^org-item-001[A-Za-z0-9]{12,15}$/);
+    expect(testId).toMatch(/^org-item-001[A-Za-z0-9]{15}$/);
     const uid = testId!.replace('org-item-', '');
 
     const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/') || response.url().includes('/api/orgs/sfid/'), {
