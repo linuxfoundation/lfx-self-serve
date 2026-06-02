@@ -3,6 +3,7 @@
 
 import { EMPTY_ORG_CONTRIBUTORS_RESPONSE } from '@lfx-one/shared/constants';
 import type {
+  ContributorPersonProjectRow,
   OrgContributorFoundationOption,
   OrgContributorProjectOption,
   OrgContributorProjectRow,
