@@ -416,6 +416,18 @@ function pickMostRecent(rows: OrgTraineeDetailRow[]): OrgTraineeDetailRow | null
   return best;
 }
 
+/**
+ * Pick the later of two ISO timestamps (lexicographic compare works for ISO strings).
+ * At least one input is required to be non-null — `collapseExpandedRows` enforces that
+ * by construction (a group always has at least one Enrolled or Certified row), so the
+ * `string` return type is safe.
+ */
+function maxIsoTs(a: string | null, b: string | null): string {
+  if (a === null) return b as string;
+  if (b === null) return a;
+  return a > b ? a : b;
+}
+
 function compareMostRecent(a: OrgTraineeDetailRow, b: OrgTraineeDetailRow): number {
   if (a.activityTs !== b.activityTs) {
     return a.activityTs > b.activityTs ? -1 : 1;
@@ -450,12 +462,9 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
     // OrgTraineeExpandedRowVm. In the happy path certifiedTs >= enrolledTs
     // because you can only complete after enrolling, so MAX === certifiedTs;
     // the explicit MAX is defensive against rare source-data anomalies where
-    // certifiedTs < enrolledTs (would otherwise mis-rank the row earlier than
-    // its actual most-recent signal). At least one of the two is non-null by
-    // construction (group is non-empty).
-    const sortTs = (
-      enrolledTs !== null && certifiedTs !== null ? (enrolledTs > certifiedTs ? enrolledTs : certifiedTs) : (certifiedTs ?? enrolledTs)
-    ) as string;
+    // certifiedTs < enrolledTs. At least one of the two is non-null by
+    // construction (group is non-empty), which `maxIsoTs` asserts.
+    const sortTs = maxIsoTs(enrolledTs, certifiedTs);
 
     out.push({
       courseId: group[0].courseId,
