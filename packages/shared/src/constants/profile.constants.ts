@@ -10,6 +10,7 @@ export const PROFILE_TABS: ProfileTab[] = [
   { id: 'attribution', label: 'Work history & Affiliations', route: 'attribution' },
   { id: 'identities', label: 'Identities', route: 'identities' },
   { id: 'individual-enrollment', label: 'Individual Enrollment', route: 'individual-enrollment' },
+  { id: 'linux-email', label: 'Linux.com Email', route: 'linux-email' },
 ];
 
 /**

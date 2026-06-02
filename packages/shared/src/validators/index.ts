@@ -3,6 +3,7 @@
 
 export * from './date.validators';
 export * from './https-url.validator';
+export * from './linux-alias.validator';
 export * from './mailing-list.validators';
 export * from './meeting.validators';
 export * from './vote.validators';
