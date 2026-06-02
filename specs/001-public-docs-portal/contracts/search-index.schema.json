@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lfx.dev/schemas/docs-search-index.schema.json",
+  "title": "DocsSearchIndexFile",
+  "description": "Build artifact emitted by apps/lfx-one/scripts/build-docs.mjs and shipped as /assets/docs/search-index.json. Lazy-loaded by DocsSearchService on first interaction with the search field. Schema-versioned independently of the manifest.",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "miniSearch", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bumped on incompatible search-index file shape changes (independent of MiniSearch version)."
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the index was generated."
+    },
+    "miniSearch": {
+      "type": "object",
+      "description": "MiniSearch's native serialized form. Loaded via MiniSearch.loadJSON() at runtime. Opaque to this schema; treat as 'whatever MiniSearch.toJSON() emitted'."
+    },
+    "entries": {
+      "type": "object",
+      "description": "Original search entries kept alongside the MiniSearch index for snippet generation post-match. Keyed by slug.",
+      "patternProperties": {
+        "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$": { "$ref": "#/$defs/DocsSearchEntry" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "DocsSearchEntry": {
+      "type": "object",
+      "required": ["id", "title", "headings", "body", "tags", "url", "topic"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "MiniSearch document id; equal to the article slug.",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Indexed with field boost 3."
+        },
+        "headings": {
+          "type": "string",
+          "description": "Joined heading text (H1-H4). Indexed with field boost 2."
+        },
+        "body": {
+          "type": "string",
+          "description": "Plain-text body (HTML stripped). Indexed with field boost 1."
+        },
+        "tags": {
+          "type": "string",
+          "description": "Joined tag list. Indexed with field boost 2."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^/docs(/[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*)?$",
+          "description": "Stored, not indexed for search."
+        },
+        "topic": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "description": "Stored, not indexed for search. Available for client-side facet filtering."
+        }
+      }
+    }
+  }
+}

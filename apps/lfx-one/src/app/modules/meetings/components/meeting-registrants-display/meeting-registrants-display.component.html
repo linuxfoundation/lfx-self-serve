@@ -48,14 +48,90 @@
       }
     </div>
 
-    <!-- Loading State -->
+    <!-- Loading State — skeleton cards -->
     @if (registrantsLoading()) {
-      <div class="flex items-center justify-center py-8">
-        <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600"></i>
+      <div class="flex flex-col gap-2 pt-2" data-testid="registrants-skeleton">
+        @for (i of [1, 2, 3]; track i) {
+          <div class="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3 shadow-sm animate-pulse">
+            <div class="w-12 h-12 bg-gray-200 rounded-full flex-shrink-0"></div>
+            <div class="flex flex-col gap-2 flex-1 min-w-0">
+              <div class="h-3.5 bg-gray-200 rounded w-2/5"></div>
+              <div class="h-3 bg-gray-100 rounded w-3/5"></div>
+            </div>
+          </div>
+        }
       </div>
     }
 
-    <!-- Registrants Grid -->
+    <!-- Registrant card template — shared between board and guest sections -->
+    <ng-template #registrantCard let-registrant>
+      <div
+        class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
+        [attr.data-testid]="'registrant-' + registrant.uid">
+        <!-- Avatar + Name + LinkedIn + Voting Status -->
+        <div class="flex items-center gap-3">
+          <!-- Avatar with RSVP Badge -->
+          <div class="relative flex-shrink-0">
+            <lfx-avatar
+              [label]="registrant.first_name"
+              [image]="registrant.avatar_url!"
+              styleClass="bg-blue-50 border border-gray-200 w-12 h-12 object-cover"
+              shape="circle"></lfx-avatar>
+
+            <!-- RSVP Status Badge Overlay -->
+            <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
+              @if (registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true) {
+                <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
+              } @else if (registrant.rsvp?.response_type === 'maybe') {
+                <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
+              } @else if (registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false) {
+                <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
+              } @else {
+                <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>
+              }
+            </div>
+          </div>
+
+          <!-- Name + Company + Voting Status -->
+          <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-2">
+              <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
+              @if (registrant.linkedin_profile) {
+                <a
+                  [href]="registrant.linkedin_profile"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex-shrink-0 hover:opacity-70 transition-opacity"
+                  (click)="$event.stopPropagation()"
+                  pTooltip="View LinkedIn Profile"
+                  tooltipPosition="top">
+                  <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
+                </a>
+              }
+            </div>
+            @if (registrant.job_title || registrant.org_name) {
+              <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
+                @if (registrant.job_title && registrant.org_name) {
+                  {{ registrant.job_title }} at {{ registrant.org_name }}
+                } @else if (registrant.job_title) {
+                  {{ registrant.job_title }}
+                } @else {
+                  {{ registrant.org_name }}
+                }
+              </p>
+            }
+            @if (registrant.committee_voting_status && registrant.committee_voting_status !== 'Observer' && registrant.committee_voting_status !== 'None') {
+              <div class="flex items-center gap-1">
+                <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
+                <span class="text-gray-400 text-xs leading-relaxed tracking-tight truncate">{{ registrant.committee_voting_status }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </ng-template>
+
+    <!-- Registrants List -->
     @if (!registrantsLoading()) {
       <div class="flex flex-col gap-2">
         @if (!pastMeeting() && showAddRegistrant()) {
@@ -117,6 +193,44 @@
               </div>
             </div>
           }
+        } @else if (hasCommittees()) {
+          <!-- Two-section layout: Board Members above divider, Guests below.
+               Each section only renders when it has items, so filters that
+               zero out one section don't drop the other section's label. -->
+          @if (committeeFilteredRegistrants().length > 0) {
+            <div class="flex flex-col gap-2" data-testid="board-members-section">
+              <div class="flex items-center gap-2 px-1">
+                <i class="fa-light fa-building-columns text-gray-400 text-xs"></i>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Board Members ({{ committeeFilteredRegistrants().length }})</span>
+              </div>
+              @for (registrant of committeeFilteredRegistrants(); track registrant.uid) {
+                <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+              }
+            </div>
+          }
+
+          @if (committeeFilteredRegistrants().length > 0 && directFilteredRegistrants().length > 0) {
+            <div class="border-t border-gray-200 my-1"></div>
+          }
+
+          @if (directFilteredRegistrants().length > 0) {
+            <div class="flex flex-col gap-2" data-testid="guests-section">
+              <div class="flex items-center gap-2 px-1">
+                <i class="fa-light fa-user text-gray-400 text-xs"></i>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Guests ({{ directFilteredRegistrants().length }})</span>
+              </div>
+              @for (registrant of directFilteredRegistrants(); track registrant.uid) {
+                <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+              }
+            </div>
+          }
+
+          @if (committeeFilteredRegistrants().length === 0 && directFilteredRegistrants().length === 0 && !showAddRegistrant()) {
+            <div class="flex w-full items-center justify-center gap-4 py-8 col-span-2">
+              <i class="fa-light fa-users text-2xl text-gray-500"></i>
+              <span class="text-sm text-gray-500">No members found</span>
+            </div>
+          }
         } @else {
           @if (filteredRegistrants().length === 0 && !showAddRegistrant()) {
             <div class="flex w-full items-center justify-center gap-4 py-8 col-span-2">
@@ -125,73 +239,7 @@
             </div>
           }
           @for (registrant of filteredRegistrants(); track registrant.uid) {
-            <div
-              class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
-              [ngClass]="{ 'cursor-pointer': meeting().organizer && registrant.type === 'committee' }"
-              [attr.data-testid]="'registrant-' + registrant.uid">
-              <!-- Avatar + Name + LinkedIn + Voting Status -->
-              <div class="flex items-center gap-3">
-                <!-- Avatar with RSVP Badge -->
-                <div class="relative flex-shrink-0">
-                  <lfx-avatar
-                    [label]="registrant.first_name"
-                    [image]="registrant.avatar_url!"
-                    styleClass="bg-blue-50 border border-gray-200 w-12 h-12 object-cover"
-                    shape="circle"></lfx-avatar>
-
-                  <!-- RSVP Status Badge Overlay -->
-                  <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
-                    @if (registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true) {
-                      <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
-                    } @else if (registrant.rsvp?.response_type === 'maybe') {
-                      <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
-                    } @else if (registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false) {
-                      <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
-                    } @else {
-                      <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>
-                    }
-                  </div>
-                </div>
-
-                <!-- Name + Company + Voting Status -->
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-2">
-                    <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
-                    @if (registrant.linkedin_profile) {
-                      <a
-                        [href]="registrant.linkedin_profile"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="flex-shrink-0 hover:opacity-70 transition-opacity"
-                        (click)="$event.stopPropagation()"
-                        pTooltip="View LinkedIn Profile"
-                        tooltipPosition="top">
-                        <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
-                      </a>
-                    }
-                  </div>
-                  @if (registrant.job_title || registrant.org_name) {
-                    <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
-                      @if (registrant.job_title && registrant.org_name) {
-                        {{ registrant.job_title }} at {{ registrant.org_name }}
-                      } @else if (registrant.job_title) {
-                        {{ registrant.job_title }}
-                      } @else {
-                        {{ registrant.org_name }}
-                      }
-                    </p>
-                  }
-                  @if (
-                    registrant.committee_voting_status && registrant.committee_voting_status !== 'Observer' && registrant.committee_voting_status !== 'None'
-                  ) {
-                    <div class="flex items-center gap-1">
-                      <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
-                      <span class="text-gray-400 text-xs leading-relaxed tracking-tight truncate">{{ registrant.committee_voting_status }}</span>
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
+            <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
           }
         }
       </div>

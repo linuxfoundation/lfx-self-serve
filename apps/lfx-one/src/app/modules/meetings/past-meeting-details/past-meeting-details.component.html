@@ -98,10 +98,10 @@
               data-testid="badge-datetime">
             </lfx-tag>
           }
-          @if (meeting.recording_enabled) {
+          @if (hasRecording()) {
             <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording" data-testid="badge-recording"></lfx-tag>
           }
-          @if (meeting.transcript_enabled) {
+          @if (hasTranscript()) {
             <lfx-tag
               value="Transcripts"
               severity="secondary"
@@ -109,7 +109,7 @@
               styleClass="tag-feature-transcripts"
               data-testid="badge-transcripts"></lfx-tag>
           }
-          @if (meeting.zoom_config?.ai_companion_enabled) {
+          @if (hasSummary()) {
             <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai" data-testid="badge-ai"></lfx-tag>
           }
         </div>

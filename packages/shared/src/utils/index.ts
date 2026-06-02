@@ -3,6 +3,7 @@
 
 export * from './color.utils';
 export * from './date-time.utils';
+export * from './docs.utils';
 export * from './file.utils';
 export * from './form.utils';
 export * from './html-utils';
@@ -29,3 +30,5 @@ export * from './project-counts.utils';
 export * from './identity.utils';
 export * from './enrollment.utils';
 export * from './org-selector.utils';
+export * from './sfuuid.utils';
+export * from './search.utils';

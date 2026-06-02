@@ -17,6 +17,7 @@ import {
 import { Committee, CommitteeReference, CreateSurveyRequest, SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { SurveyService } from '@services/survey.service';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
@@ -84,6 +85,7 @@ export class SurveyManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    evictOnWriteAccessLoss();
   }
 
   public nextStep(): void {

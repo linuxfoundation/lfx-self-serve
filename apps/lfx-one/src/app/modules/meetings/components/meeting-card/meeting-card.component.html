@@ -97,13 +97,13 @@
       @if (meeting().youtube_upload_enabled) {
         <lfx-tag value="YouTube Upload" severity="secondary" icon="fa-light fa-upload" styleClass="tag-feature-youtube"></lfx-tag>
       }
-      @if (meeting().recording_enabled) {
+      @if (showRecordingBadge()) {
         <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording"></lfx-tag>
       }
-      @if (meeting().transcript_enabled) {
+      @if (showTranscriptBadge()) {
         <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines" styleClass="tag-feature-transcripts"></lfx-tag>
       }
-      @if (hasAiCompanion()) {
+      @if (showAiSummaryBadge()) {
         <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai"></lfx-tag>
       }
       @if (meeting().show_meeting_attendees) {
@@ -419,7 +419,7 @@
       <p-drawer
         [(visible)]="showRegistrants"
         position="right"
-        styleClass="lg:w-1/3 w-full"
+        styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
         data-testid="meeting-registrants-drawer"
         (onHide)="drawerGuestCount.set(0)">
         <ng-template #header>

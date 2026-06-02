@@ -9,6 +9,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
+import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -25,6 +26,7 @@ import {
   hasMeetingEnded,
   Meeting,
   MEETING_TYPE_CONFIGS,
+  getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -176,6 +178,7 @@ export class MeetingJoinComponent implements OnInit {
   public restrictedView: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
+  protected hasSummaryContent: Signal<boolean>;
   private pastMeetingRecording: Signal<PastMeetingRecording | null>;
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
@@ -273,6 +276,7 @@ export class MeetingJoinComponent implements OnInit {
     this.restrictedView = this.initializeRestrictedView();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
+    this.hasSummaryContent = this.initializeHasSummaryContent();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
     this.pastMeetingAttachments = this.initializePastMeetingAttachments();
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
@@ -458,6 +462,20 @@ export class MeetingJoinComponent implements OnInit {
       closable: true,
       dismissableMask: true,
       data: { summary },
+    });
+  }
+
+  public openTranscriptModal(): void {
+    const meeting = this.meeting();
+    if (!meeting?.id) return;
+
+    this.dialogService.open(TranscriptModalComponent, {
+      header: 'Transcript',
+      width: '700px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { pastMeetingUid: meeting.id, meetingTitle: meeting.title },
     });
   }
 
@@ -1100,14 +1118,28 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  private initializeTranscriptUrl(): Signal<string | null> {
+  private initializeHasSummaryContent(): Signal<boolean> {
     return computed(() => {
-      const recording = this.pastMeetingRecording();
-      if (!recording?.recording_files?.length) return null;
-
-      const transcript = recording.recording_files.find((f) => f.file_type === 'TRANSCRIPT');
-      return transcript?.download_url ?? null;
+      const data = this.pastMeetingSummary()?.summary_data;
+      return !!(data?.edited_content || data?.content);
     });
+  }
+
+  private initializeTranscriptUrl(): Signal<string | null> {
+    // Transcripts are a separate query-service resource — NOT part of the
+    // recording's recording_files — so they must be fetched independently.
+    return toSignal(
+      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
+        switchMap(([hasAccess, meeting]) => {
+          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingTranscript(meeting.id).pipe(
+            map((transcript) => getPastMeetingTranscriptUrl(transcript)),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   private initializeParentProject(): Signal<Project | null> {

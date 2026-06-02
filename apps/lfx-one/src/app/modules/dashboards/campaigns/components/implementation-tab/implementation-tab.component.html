@@ -1,0 +1,266 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Form Step -->
+@if (step() === 'form') {
+  <div class="flex flex-col gap-6" data-testid="implementation-form-step">
+    <form [formGroup]="campaignForm" class="flex flex-col gap-6">
+      <!-- Campaign Details -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-details-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Campaign Details</h3>
+        @if (campaignName()) {
+          <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+            <span class="text-xs font-medium text-gray-500">Campaign Name: </span>
+            <span class="font-mono text-xs text-gray-700">{{ campaignName() }}</span>
+          </div>
+        }
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Event Name</label>
+            <input
+              type="text"
+              formControlName="eventName"
+              placeholder="e.g., KubeCon NA 2026"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-event-name" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Registration URL</label>
+            <input
+              type="url"
+              formControlName="registrationUrl"
+              placeholder="https://events.linuxfoundation.org/..."
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-reg-url" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Country Code</label>
+            <input
+              type="text"
+              formControlName="countryCode"
+              maxlength="2"
+              class="w-20 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-country" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Budget & Schedule -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-budget-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget &amp; Schedule</h3>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Total Budget (USD)</label>
+            <input
+              type="number"
+              formControlName="budgetUsd"
+              min="1"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-budget" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Start Date</label>
+            <input
+              type="date"
+              formControlName="startDate"
+              [min]="todayDate"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-start-date" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">End Date</label>
+            <input
+              type="date"
+              formControlName="endDate"
+              [min]="todayDate"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-end-date" />
+          </div>
+        </div>
+
+        <!-- Budget Split -->
+        <div class="mt-4 flex flex-col gap-2">
+          <label class="text-xs font-medium text-gray-700">Budget Split: Search {{ 100 - displayBudgetPct() }}% / Display {{ displayBudgetPct() }}%</label>
+          <input type="range" formControlName="searchBudgetPct" min="0" max="100" class="w-full accent-blue-600" data-testid="implementation-budget-split" />
+        </div>
+
+        <!-- Campaign Types -->
+        <div class="mt-4 flex items-center gap-4">
+          <label class="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            Search Campaign
+          </label>
+          <label class="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            Demand Gen Campaign
+          </label>
+        </div>
+      </div>
+
+      <!-- Headlines -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-headlines-section">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900">Headlines</h3>
+          <lfx-button
+            label="Add"
+            icon="fa-light fa-plus"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="addHeadline()"
+            ariaLabel="Add headline"
+            data-testid="implementation-add-headline" />
+        </div>
+        <div class="flex flex-col gap-2" formArrayName="headlines">
+          @for (control of headlinesArray.controls; track $index; let i = $index) {
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                [formControlName]="i"
+                [maxlength]="charLimits.searchHeadline"
+                placeholder="Headline (max {{ charLimits.searchHeadline }} chars)"
+                class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-headline-' + i" />
+              <span class="text-xs text-gray-400">{{ control.value?.length || 0 }}/{{ charLimits.searchHeadline }}</span>
+              @if (headlinesArray.length > 1) {
+                <button type="button" (click)="removeHeadline(i)" class="text-gray-400 hover:text-red-500" [attr.aria-label]="'Remove headline ' + (i + 1)">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Descriptions -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-descriptions-section">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900">Descriptions</h3>
+          <lfx-button
+            label="Add"
+            icon="fa-light fa-plus"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="addDescription()"
+            ariaLabel="Add description"
+            data-testid="implementation-add-description" />
+        </div>
+        <div class="flex flex-col gap-2" formArrayName="descriptions">
+          @for (control of descriptionsArray.controls; track $index; let i = $index) {
+            <div class="flex items-center gap-2">
+              <textarea
+                [formControlName]="i"
+                [maxlength]="charLimits.searchDescription"
+                placeholder="Description (max {{ charLimits.searchDescription }} chars)"
+                rows="2"
+                class="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-description-' + i"></textarea>
+              <span class="text-xs text-gray-400">{{ control.value?.length || 0 }}/{{ charLimits.searchDescription }}</span>
+              @if (descriptionsArray.length > 1) {
+                <button
+                  type="button"
+                  (click)="removeDescription(i)"
+                  class="text-gray-400 hover:text-red-500"
+                  [attr.aria-label]="'Remove description ' + (i + 1)">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <div class="flex items-center gap-3">
+        <lfx-button
+          label="Create Campaign"
+          icon="fa-light fa-rocket"
+          severity="primary"
+          [disabled]="campaignForm.invalid"
+          (onClick)="submit()"
+          ariaLabel="Create campaign in Google Ads"
+          data-testid="implementation-submit-btn" />
+        @if (errors().length > 0) {
+          <p class="text-sm text-red-600">{{ errors()[0] }}</p>
+        }
+      </div>
+    </form>
+  </div>
+}
+
+<!-- Creating Step -->
+@if (step() === 'creating') {
+  <div class="flex flex-col gap-4" data-testid="implementation-creating-step">
+    <div class="rounded-lg border border-gray-200 bg-white p-5">
+      <div class="mb-3 flex items-center gap-2">
+        <div class="h-2 w-2 animate-pulse rounded-full bg-blue-500"></div>
+        <h3 class="text-sm font-semibold text-gray-900">Creating campaign...</h3>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        @for (msg of creationProgress(); track $index) {
+          <div class="flex items-center gap-2 text-sm text-gray-600">
+            <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
+            {{ msg }}
+          </div>
+        }
+        <div class="flex items-center gap-2 text-sm text-gray-400">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Waiting for Google Ads API...
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Results Step -->
+@if (step() === 'results') {
+  <div class="flex flex-col gap-4" data-testid="implementation-results-step">
+    @if (results().length > 0) {
+      <div class="rounded-lg border border-green-200 bg-green-50 p-5">
+        <div class="mb-3 flex items-center gap-2">
+          <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+          <h3 class="text-sm font-semibold text-gray-900">Campaigns Created</h3>
+        </div>
+        <div class="flex flex-col gap-3">
+          @for (campaign of results(); track campaign.campaignId) {
+            <div class="rounded-md border border-green-200 bg-white p-4" [attr.data-testid]="'implementation-result-' + campaign.campaignId">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-900">{{ campaign.campaignName }}</p>
+                  <p class="text-xs text-gray-500">
+                    {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
+                  </p>
+                </div>
+                <a
+                  [href]="campaign.googleAdsUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  Open in Google Ads
+                  <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                </a>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (errors().length > 0) {
+      <div class="rounded-lg border border-red-200 bg-red-50 p-5">
+        <h3 class="mb-2 text-sm font-semibold text-red-800">Errors</h3>
+        @for (err of errors(); track $index) {
+          <p class="text-sm text-red-700">{{ err }}</p>
+        }
+      </div>
+    }
+
+    <lfx-button
+      label="Create Another"
+      icon="fa-light fa-plus"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="reset()"
+      ariaLabel="Create another campaign"
+      data-testid="implementation-new-btn" />
+  </div>
+}

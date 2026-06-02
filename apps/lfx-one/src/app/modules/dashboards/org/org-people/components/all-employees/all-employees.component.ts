@@ -92,23 +92,23 @@ export class AllEmployeesComponent {
   private readonly fetchErrorState = signal<boolean>(false);
   protected readonly fetchError = this.fetchErrorState.asReadonly();
 
-  private readonly accountId$ = toObservable(this.accountContext.selectedAccount).pipe(
-    map((account) => account.accountId),
+  private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
+    map((account) => account.uid),
     distinctUntilChanged()
   );
 
   protected readonly response: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.accountId$, toObservable(this.retryTrigger)]).pipe(
+    combineLatest([this.orgUid$, toObservable(this.retryTrigger)]).pipe(
       tap(() => {
         this.loadingState.set(true);
         this.fetchErrorState.set(false);
       }),
-      switchMap(([accountId]) => {
-        if (!accountId) {
+      switchMap(([orgUid]) => {
+        if (!orgUid) {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.dataService.getAllEmployees(accountId).pipe(
+        return this.dataService.getAllEmployees(orgUid).pipe(
           tap(() => this.loadingState.set(false)),
           catchError(() => {
             this.fetchErrorState.set(true);
@@ -149,11 +149,11 @@ export class AllEmployeesComponent {
   protected readonly sortIconMap: Signal<Record<OrgAllEmployeeSortColumn, string>> = computed(() => this.initSortIconMap());
 
   // Exposed to the template so per-row @let blocks can build the composite (account, person) detail-cache key without reaching into private services.
-  protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().accountId);
+  protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
   public constructor() {
-    // Reset all state and cancel in-flight detail fetches only when the actual accountId changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. Snowflake enrichment re-setting the same account) and wipe user search/filter state.
-    this.accountId$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+    // Reset all state and cancel in-flight detail fetches only when the actual org uid changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. Snowflake enrichment re-setting the same account) and wipe user search/filter state.
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.detailCancel$.next();
       this.resetAllState();
     });
@@ -314,8 +314,8 @@ export class AllEmployeesComponent {
   }
 
   private loadDetailIfNeeded(row: OrgAllEmployeeRow): void {
-    const accountId = this.accountContext.selectedAccount().accountId;
-    if (!accountId) return;
+    const orgUid = this.accountContext.selectedAccount().uid;
+    if (!orgUid) return;
     const key = this.detailKey(row.personKey);
     if (this.detailMap()[key]) return;
     if (this.detailLoading()[key]) return;
@@ -324,7 +324,7 @@ export class AllEmployeesComponent {
     this.clearDetailError(key);
     this.detailLoading.update((state) => ({ ...state, [key]: true }));
     this.dataService
-      .getEmployeeDetail(accountId, row.personKey)
+      .getEmployeeDetail(orgUid, row.personKey)
       .pipe(
         take(1),
         takeUntil(this.detailCancel$),
@@ -337,9 +337,9 @@ export class AllEmployeesComponent {
       });
   }
 
-  /** Composite (account, person) key — keeps per-account detail caches isolated even across rapid account switches. */
+  /** Composite (org, person) key — keeps per-org detail caches isolated even across rapid account switches. */
   private detailKey(personKey: string): string {
-    return `${this.accountContext.selectedAccount().accountId}:${personKey}`;
+    return `${this.accountContext.selectedAccount().uid}:${personKey}`;
   }
 
   private clearDetailLoading(key: string): void {

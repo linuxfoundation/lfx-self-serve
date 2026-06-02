@@ -19,6 +19,9 @@ export * from './components.interface';
 // Auth interfaces
 export * from './auth.interface';
 
+// Campaign interfaces
+export * from './campaign.interface';
+
 // API interfaces
 export * from './api.interface';
 
@@ -30,6 +33,9 @@ export * from './meeting.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
+
+// Campaign interfaces
+export * from './campaign.interface';
 
 // Search interfaces
 export * from './search.interface';
@@ -171,12 +177,23 @@ export * from './enrollment.interface';
 
 // Org Memberships interfaces
 export * from './org-memberships.interface';
+export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
 export * from './org-people.interface';
+
+// Org People — Key Contacts tab (spec 005)
+export * from './org-people-key-contacts.interface';
+export * from './org-people-key-contacts.internal.interface';
+
+// Org Events interfaces
+export * from './org-events.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';
 
 // Invite interfaces
 export * from './invite.interface';
+
+// Docs portal interfaces (build artifacts + runtime models for /docs)
+export * from './docs.interface';

@@ -65,7 +65,7 @@ export class OrgMembershipsComponent {
   protected readonly selectedRenewal = signal('');
   protected readonly expiredSearchTerm = signal('');
 
-  private readonly selectedAccountId$ = toObservable(computed(() => this.accountContext.selectedAccount()?.accountId));
+  private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid));
 
   private readonly fetchError = signal(false);
   private readonly fetchLoading = signal(true);
@@ -76,7 +76,7 @@ export class OrgMembershipsComponent {
   private readonly retryTrigger$ = toObservable(this.retryTrigger);
 
   private readonly activeResponse$ = combineLatest([
-    this.selectedAccountId$.pipe(filter((id): id is string => !!id)),
+    this.selectedOrgUid$.pipe(filter((id): id is string => !!id)),
     this.searchTerm$,
     this.selectedTier$,
     this.selectedRenewal$,
@@ -129,19 +129,19 @@ export class OrgMembershipsComponent {
   private readonly renewBaseUrl = computed(() => this.initRenewBaseUrl());
   private readonly joinBaseUrl = computed(() => this.initJoinBaseUrl());
 
-  private lastAccountId: string | null = null;
+  private lastOrgUid: string | null = null;
 
   public constructor() {
-    combineLatest([this.selectedAccountId$.pipe(filter((id): id is string => !!id)), toObservable(this.activeTab)])
+    combineLatest([this.selectedOrgUid$.pipe(filter((id): id is string => !!id)), toObservable(this.activeTab)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([accountId, tab]) => {
-        if (this.lastAccountId && this.lastAccountId !== accountId) {
+      .subscribe(([orgUid, tab]) => {
+        if (this.lastOrgUid && this.lastOrgUid !== orgUid) {
           this.expiredData.set(null);
           this.discoverData.set(null);
         }
-        this.lastAccountId = accountId;
-        if (tab === 'expired' && !this.expiredData()) this.fetchExpired(accountId);
-        if (tab === 'discover' && !this.discoverData()) this.fetchDiscover(accountId);
+        this.lastOrgUid = orgUid;
+        if (tab === 'expired' && !this.expiredData()) this.fetchExpired(orgUid);
+        if (tab === 'discover' && !this.discoverData()) this.fetchDiscover(orgUid);
       });
   }
 
@@ -171,13 +171,13 @@ export class OrgMembershipsComponent {
   }
 
   protected retryExpired(): void {
-    const accountId = this.accountContext.selectedAccount()?.accountId;
-    if (accountId) this.fetchExpired(accountId);
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    if (orgUid) this.fetchExpired(orgUid);
   }
 
   protected retryDiscover(): void {
-    const accountId = this.accountContext.selectedAccount()?.accountId;
-    if (accountId) this.fetchDiscover(accountId);
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    if (orgUid) this.fetchDiscover(orgUid);
   }
 
   // --- Private init methods for multi-line computed() (component-organization convention) ---
@@ -279,40 +279,40 @@ export class OrgMembershipsComponent {
 
   // --- Private fetch methods ---
 
-  private fetchExpired(accountId: string): void {
+  private fetchExpired(orgUid: string): void {
     this.expiredLoading.set(true);
     this.expiredError.set(false);
     this.membershipsService
-      .getExpiredMemberships(accountId)
+      .getExpiredMemberships(orgUid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
-          if (this.accountContext.selectedAccount()?.accountId !== accountId) return;
+          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
           this.expiredData.set(data);
           this.expiredLoading.set(false);
         },
         error: () => {
-          if (this.accountContext.selectedAccount()?.accountId !== accountId) return;
+          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
           this.expiredError.set(true);
           this.expiredLoading.set(false);
         },
       });
   }
 
-  private fetchDiscover(accountId: string): void {
+  private fetchDiscover(orgUid: string): void {
     this.discoverLoading.set(true);
     this.discoverError.set(false);
     this.membershipsService
-      .getDiscoverOpportunities(accountId)
+      .getDiscoverOpportunities(orgUid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
-          if (this.accountContext.selectedAccount()?.accountId !== accountId) return;
+          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
           this.discoverData.set(data);
           this.discoverLoading.set(false);
         },
         error: () => {
-          if (this.accountContext.selectedAccount()?.accountId !== accountId) return;
+          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
           this.discoverError.set(true);
           this.discoverLoading.set(false);
         },

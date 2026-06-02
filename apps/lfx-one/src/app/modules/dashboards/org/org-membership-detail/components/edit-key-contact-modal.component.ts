@@ -3,11 +3,14 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectorRef, Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { EMAIL_REGEX, SIMULATED_SAVE_DELAY_MS } from '@lfx-one/shared/constants';
+import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import type {
   EditKeyContactDialogData,
   EditKeyContactDialogResult,
+  KeyContactEmployee,
   ModalKind,
   OrgMembershipKeyContact,
   OrgMembershipKeyContactPerson,
@@ -15,6 +18,7 @@ import type {
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TooltipModule } from 'primeng/tooltip';
+import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-edit-key-contact-modal',
@@ -25,20 +29,50 @@ import { TooltipModule } from 'primeng/tooltip';
 export class EditKeyContactModalComponent {
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly dialogConfig = inject<DynamicDialogConfig<EditKeyContactDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
-
-  /** Save timer handle so we can cancel on destroy. */
-  private saveTimerId: ReturnType<typeof setTimeout> | null = null;
 
   // === Dialog-injected data ===
   protected readonly contact: OrgMembershipKeyContact | null = this.dialogConfig.data?.contact ?? null;
   protected readonly foundationName: string = this.dialogConfig.data?.foundationName ?? '';
   protected readonly editingPersonId: string | null = this.dialogConfig.data?.editingPersonId ?? null;
+  private readonly orgUid: string = this.dialogConfig.data?.orgUid ?? '';
+
+  // === Employee search (FR-023/023a/024/026) — loaded once on open, filtered client-side ===
+  protected readonly employees = signal<KeyContactEmployee[]>([]);
+  protected readonly employeeSearchUnavailable = signal(false);
+  protected readonly suggestionsOpen = signal(false);
+
+  /** Emails already assigned to this role are excluded (FR-019), except the current contact in a single-slot replace. */
+  private readonly excludedEmails = computed(() => {
+    const set = new Set(
+      this.people()
+        .map((p) => p.email.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const current = this.currentPerson();
+    if (this.modalKind() === 'replace-form' && current?.email) {
+      set.delete(current.email.trim().toLowerCase());
+    }
+    return set;
+  });
+
+  /** Suggestions matching the typed query (email or name), excluding already-assigned, capped at 8. */
+  protected readonly filteredEmployees = computed<KeyContactEmployee[]>(() => {
+    const query = this.emailField().trim().toLowerCase();
+    if (!query) return [];
+    const excluded = this.excludedEmails();
+    return this.employees()
+      .filter((e) => !excluded.has(e.email))
+      .filter((e) => e.email.includes(query) || e.fullName.toLowerCase().includes(query))
+      .slice(0, 8);
+  });
 
   // === Internal state ===
   protected readonly modalKind = signal<ModalKind>('closed');
   protected readonly isSaving = signal(false);
+  protected readonly saveError = signal<string | null>(null);
 
   // Form fields
   protected readonly emailField = signal('');
@@ -76,12 +110,30 @@ export class EditKeyContactModalComponent {
       setTimeout(() => this.focusInitialElement(), 0);
     }
 
-    this.destroyRef.onDestroy(() => {
-      if (this.saveTimerId !== null) {
-        clearTimeout(this.saveTimerId);
-        this.saveTimerId = null;
-      }
-    });
+    // FR-023a: load the org's employee list once when the modal opens; filter client-side as the user types.
+    if (this.orgUid) {
+      this.membershipsService
+        .getKeyContactEmployees(this.orgUid)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (res) => this.employees.set(res.employees ?? []),
+          error: () => this.employeeSearchUnavailable.set(true), // FR-026: manual entry stays usable
+        });
+    }
+  }
+
+  // === Employee-search interactions ===
+  protected onEmailFocus(): void {
+    this.suggestionsOpen.set(true);
+  }
+
+  protected onSelectEmployee(employee: KeyContactEmployee): void {
+    this.emailField.set(employee.email);
+    this.firstNameField.set(employee.firstName);
+    this.lastNameField.set(employee.lastName);
+    this.emailFormatError.set(null);
+    this.duplicateError.set(null);
+    this.suggestionsOpen.set(false);
   }
 
   protected resetFormState(): void {
@@ -117,6 +169,9 @@ export class EditKeyContactModalComponent {
 
   // === Field validation (FR-017a — on blur) ===
   protected onEmailBlur(): void {
+    // Close the suggestion list on blur. Option clicks use (mousedown)="$event.preventDefault()" so
+    // selection still fires before blur — this only closes the list when focus genuinely leaves the field.
+    this.suggestionsOpen.set(false);
     this.emailTouched.set(true);
     this.duplicateError.set(null);
     const value = this.emailField().trim();
@@ -129,6 +184,7 @@ export class EditKeyContactModalComponent {
 
   protected onEmailChange(value: string): void {
     this.emailField.set(value);
+    this.suggestionsOpen.set(true);
     if (this.duplicateError()) {
       this.duplicateError.set(null);
     }
@@ -159,31 +215,31 @@ export class EditKeyContactModalComponent {
       initials: this.deriveInitials(this.firstNameField().trim(), this.lastNameField().trim()),
     };
 
-    this.simulateSave(() => {
-      const contact = this.contact;
-      if (!contact) return;
-      if (kind === 'replace-form') {
-        this.dialogRef.close({
-          kind: 'replace',
-          event: {
-            contactType: contact.contactType,
-            contactTypeLabel: contact.contactTypeLabel,
-            editingPersonId: this.editingPersonId,
-            person: newPerson,
-          },
-        } satisfies EditKeyContactDialogResult);
-      } else {
-        this.dialogRef.close({
-          kind: 'add',
-          event: {
-            contactType: contact.contactType,
-            contactTypeLabel: contact.contactTypeLabel,
-            editingPersonId: null,
-            person: newPerson,
-          },
-        } satisfies EditKeyContactDialogResult);
-      }
-    });
+    const contact = this.contact;
+    if (!contact) return;
+
+    const intent: Exclude<EditKeyContactDialogResult, null> =
+      kind === 'replace-form'
+        ? {
+            kind: 'replace',
+            event: {
+              contactType: contact.contactType,
+              contactTypeLabel: contact.contactTypeLabel,
+              editingPersonId: this.editingPersonId,
+              person: newPerson,
+            },
+          }
+        : {
+            kind: 'add',
+            event: {
+              contactType: contact.contactType,
+              contactTypeLabel: contact.contactTypeLabel,
+              editingPersonId: null,
+              person: newPerson,
+            },
+          };
+
+    this.submitIntent(intent);
   }
 
   protected onRemoveClick(): void {
@@ -192,15 +248,13 @@ export class EditKeyContactModalComponent {
     const personId = this.selectedRemoveId();
     if (!contact || !personId) return;
 
-    this.simulateSave(() => {
-      this.dialogRef.close({
-        kind: 'remove',
-        event: {
-          contactType: contact.contactType,
-          contactTypeLabel: contact.contactTypeLabel,
-          personId,
-        },
-      } satisfies EditKeyContactDialogResult);
+    this.submitIntent({
+      kind: 'remove',
+      event: {
+        contactType: contact.contactType,
+        contactTypeLabel: contact.contactTypeLabel,
+        personId,
+      },
     });
   }
 
@@ -231,16 +285,24 @@ export class EditKeyContactModalComponent {
 
   // === Private helpers ===
 
-  private simulateSave(then: () => void): void {
+  // Spec 024: the modal stays open during the pessimistic write. The parent owns the write + table
+  // reconcile via the injected `submit` callback; the modal closes only on success and shows an
+  // inline error on failure so the user can retry without reopening.
+  private submitIntent(intent: Exclude<EditKeyContactDialogResult, null>): void {
+    const submit = this.dialogConfig.data?.submit;
+    if (!submit) {
+      this.dialogRef.close(intent);
+      return;
+    }
     this.isSaving.set(true);
-    this.saveTimerId = setTimeout(() => {
-      this.saveTimerId = null;
-      try {
-        then();
-      } finally {
+    this.saveError.set(null);
+    submit(intent)
+      .then(() => this.dialogRef.close(null))
+      .catch((e: unknown) => {
         this.isSaving.set(false);
-      }
-    }, SIMULATED_SAVE_DELAY_MS);
+        this.saveError.set(e instanceof Error ? e.message : 'Could not save changes. Please try again.');
+        this.cdr.markForCheck();
+      });
   }
 
   private focusInitialElement(): void {

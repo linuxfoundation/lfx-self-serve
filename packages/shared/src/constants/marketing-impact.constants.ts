@@ -10,7 +10,6 @@ export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
   { id: 'lfCorporate', label: 'LF Corporate' },
   { id: 'lfEvents', label: 'LF Events' },
   { id: 'lfTraining', label: 'LF Training' },
-  { id: 'lfxPlatform', label: 'LFX Platform' },
   { id: 'projectWebsites', label: 'Project Websites' },
 ];
 
@@ -39,7 +38,6 @@ export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string
   lfCorporate: 'LF Corporate',
   lfEvents: 'LF Events',
   lfTraining: 'LF Training',
-  lfxPlatform: 'LFX Platform',
   projectWebsites: 'Project Websites',
 };
 

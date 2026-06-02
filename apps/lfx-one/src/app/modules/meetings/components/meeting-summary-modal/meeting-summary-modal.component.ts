@@ -17,7 +17,9 @@ export class MeetingSummaryModalComponent {
 
   public readonly summary: PastMeetingSummary = this.dialogConfig.data.summary;
   public readonly hasTitle: boolean = !!this.summary.summary_data?.title;
-  public readonly content: string = this.summary.summary_data?.edited_content ?? this.summary.summary_data?.content ?? '';
+  // Use || (not ??) so an empty edited_content ('' — never edited) falls back to the
+  // original content. With ??, an approved-but-unedited summary rendered blank.
+  public readonly content: string = this.summary.summary_data?.edited_content || this.summary.summary_data?.content || '';
   public readonly approved: boolean = this.summary.approved || false;
   public readonly sections: SummarySection[] = this.parseSections(this.content);
   public readonly isStructured: boolean = this.sections.length > 0;

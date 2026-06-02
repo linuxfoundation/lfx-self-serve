@@ -6,7 +6,7 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
+import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
@@ -26,10 +26,8 @@ export class OrgNavigationService {
 
   private readonly state: OrgListState = this.createOrgListState();
 
-  /** Lazy hint passed on first-load to surface the cookie-restored selection. */
+  /** Lazy hint passed on first-load to surface the cookie-restored selection (the org uuid). */
   private restoredSelectedUid: string | null = null;
-  /** Legacy persisted selector value; resolved to uid before the first org-items request. */
-  private restoredSelectedAccountId: string | null = null;
 
   public readonly items: Signal<OrgItem[]> = this.state.items;
   public readonly loading: Signal<boolean> = this.state.loading;
@@ -50,12 +48,10 @@ export class OrgNavigationService {
     this.state.loadMore$.next(token);
   }
 
-  /** Triggers a fresh first-page fetch; optional hints pin the cookie-restored selection at the top via the BFF `selected_uid` injection. */
-  public resetAndReload(selectedUid?: string | null, selectedAccountId?: string | null): void {
+  /** Triggers a fresh first-page fetch; the optional org uuid pins the cookie-restored selection at the top via the BFF `selected_uid` injection. */
+  public resetAndReload(selectedUid?: string | null): void {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;
-    } else if (selectedAccountId) {
-      this.restoredSelectedAccountId = selectedAccountId;
     }
     this.state.pendingDefaultSelection.set(true);
     this.state.reload$.next();
@@ -113,24 +109,12 @@ export class OrgNavigationService {
         const term = searchTerm();
         if (term.trim()) {
           this.restoredSelectedUid = null;
-          this.restoredSelectedAccountId = null;
           return of({ term, selectedUid: null as string | null });
         }
 
         const selectedUid = this.restoredSelectedUid;
         this.restoredSelectedUid = null;
-        if (selectedUid) {
-          this.restoredSelectedAccountId = null;
-          return of({ term, selectedUid });
-        }
-
-        const selectedAccountId = this.restoredSelectedAccountId;
-        this.restoredSelectedAccountId = null;
-        if (!selectedAccountId) {
-          return of({ term, selectedUid: null as string | null });
-        }
-
-        return this.resolveStoredAccountSelection(selectedAccountId).pipe(map((resolvedUid) => ({ term, selectedUid: resolvedUid })));
+        return of({ term, selectedUid });
       })
     );
 
@@ -213,17 +197,6 @@ export class OrgNavigationService {
     return this.http.get<OrgItemsResponse>('/api/nav/org-items', { params });
   }
 
-  private resolveStoredAccountSelection(accountId: string): Observable<string | null> {
-    return this.http.get<OrgCanonicalRecord>(`/api/orgs/sfid/${encodeURIComponent(accountId)}`).pipe(
-      tap((canonical) => {
-        const account = this.toAccountFromCanonicalRecord(canonical);
-        this.accountContextService.setAccount(account);
-      }),
-      map((canonical) => canonical.uid),
-      catchError(() => of(null))
-    );
-  }
-
   private toOrgListPage(response: OrgItemsResponse, reset: boolean): OrgListPage {
     return {
       items: response.items,
@@ -286,18 +259,6 @@ export class OrgNavigationService {
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
-    };
-  }
-
-  private toAccountFromCanonicalRecord(canonical: OrgCanonicalRecord): Account {
-    return {
-      accountId: canonical.accountId ?? '',
-      accountName: canonical.name,
-      accountSlug: '',
-      membershipTier: '',
-      logoUrl: canonical.logoUrl ?? null,
-      uid: canonical.uid,
-      parentUid: canonical.parentUid ?? null,
     };
   }
 }

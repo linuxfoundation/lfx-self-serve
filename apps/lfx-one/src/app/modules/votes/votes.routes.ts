@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
+import { writerGuard } from '@shared/guards/writer.guard';
 
 export const VOTE_ROUTES: Routes = [
   {
@@ -14,13 +15,13 @@ export const VOTE_ROUTES: Routes = [
   {
     path: 'create',
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
     data: { preload: false },
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
     data: { preload: false },
   },
 ];

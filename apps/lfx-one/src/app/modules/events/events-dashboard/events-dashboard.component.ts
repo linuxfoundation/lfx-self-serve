@@ -5,15 +5,17 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { LensService } from '@app/shared/services/lens.service';
 import { FoundationEventDashboardComponent } from '../foundation-event-dashboard/foundation-event-dashboard.component';
 import { MyEventsDashboardComponent } from '../my-events-dashboard/my-events-dashboard.component';
+import { OrgEventsDashboardComponent } from '../org-events-dashboard/org-events-dashboard.component';
 
 @Component({
   selector: 'lfx-events-dashboard',
-  imports: [MyEventsDashboardComponent, FoundationEventDashboardComponent],
+  imports: [MyEventsDashboardComponent, FoundationEventDashboardComponent, OrgEventsDashboardComponent],
   templateUrl: './events-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EventsDashboardComponent {
   private readonly lensService = inject(LensService);
 
+  protected readonly isOrgLens = computed(() => this.lensService.activeLens() === 'org');
   protected readonly isFoundationLens = computed(() => this.lensService.activeLens() === 'foundation');
 }

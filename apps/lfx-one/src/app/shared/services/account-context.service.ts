@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ORG_LENS_ENABLED_FLAG, UUID_REGEX } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
@@ -79,9 +79,20 @@ export class AccountContextService {
       return;
     }
 
-    const storedId = this.loadAccountIdFromStorage();
-    const matchedSeed = storedId ? (seeds.find((seed) => seed.accountId === storedId) ?? null) : null;
-    this.setAccount(matchedSeed ?? seeds[0]);
+    // Spec 024 (uuid-only): the cookie now persists the org uuid. Match a seed by uid when one carries it;
+    // otherwise select a stub keyed only by the stored uid and let the canonical-by-uid fetch hydrate
+    // display fields. Falls back to the first seed when there is no stored uid (or it is legacy/invalid).
+    const storedUid = this.loadUidFromStorage();
+    const matchedSeed = storedUid ? (seeds.find((seed) => seed.uid === storedUid) ?? null) : null;
+    if (matchedSeed) {
+      this.setAccount(matchedSeed);
+    } else if (storedUid) {
+      const stub: Account = { ...PLACEHOLDER_ACCOUNT, uid: storedUid };
+      this.setAccount(stub);
+      void this.refreshCanonicalRecord(stub);
+    } else {
+      this.setAccount(seeds[0]);
+    }
 
     if (this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
       this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
@@ -105,8 +116,8 @@ export class AccountContextService {
     return this.selectedAccount().accountId;
   }
 
-  public getStoredAccountId(): string | null {
-    return this.loadAccountIdFromStorage();
+  public getStoredUid(): string | null {
+    return this.loadUidFromStorage();
   }
 
   public clearAccount(): void {
@@ -116,7 +127,9 @@ export class AccountContextService {
 
   /** Async reconciliation of the optimistic indexed snapshot against the member-service canonical record (spec 020 US4 / FR-020); silent on failure with request-scope dedup per D-006. */
   public async refreshCanonicalRecord(account: Account): Promise<void> {
-    const identifier = account.uid || account.accountId;
+    // Spec 024 (uuid-only): the canonical record is keyed solely by the org uuid. Without a uid there is
+    // nothing to resolve (the legacy sfid route is gone).
+    const identifier = account.uid;
     if (!identifier) {
       return;
     }
@@ -125,7 +138,7 @@ export class AccountContextService {
       return cached;
     }
 
-    const path = account.uid ? `/api/orgs/uid/${encodeURIComponent(account.uid)}` : `/api/orgs/sfid/${encodeURIComponent(account.accountId)}`;
+    const path = `/api/orgs/uid/${encodeURIComponent(identifier)}`;
 
     const promise = (async () => {
       try {
@@ -201,7 +214,10 @@ export class AccountContextService {
             uid: current.uid ?? liveCurrent.uid ?? null,
             parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
           });
-        } else if (!current.accountId) {
+        } else if (!current.accountId && !current.uid) {
+          // No selection at all (no cookie uid, no accountId yet) — default to the first seed. A
+          // cookie-restored stub already carries a uid, so it is left untouched here and the
+          // canonical-by-uid fetch fills its display fields.
           const firstSeed = this.userOrganizations()[0];
           if (firstSeed) {
             const liveSeed = live.get(firstSeed.accountId) ?? firstSeed;
@@ -232,13 +248,13 @@ export class AccountContextService {
     };
   }
 
-  /** Persist only the accountId — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake. */
+  /** Spec 024 (uuid-only): persist only the org uuid — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical-by-uid fetch. */
   private persistToStorage(account: Account): void {
-    if (!this.isValidAccountId(account.accountId)) {
+    if (!this.isValidUid(account.uid)) {
       this.clearStorage();
       return;
     }
-    this.cookieService.set(this.storageKey, JSON.stringify({ accountId: account.accountId }), {
+    this.cookieService.set(this.storageKey, JSON.stringify({ uid: account.uid }), {
       expires: 30,
       path: '/',
       sameSite: 'Lax',
@@ -251,22 +267,22 @@ export class AccountContextService {
     this.cookieService.delete(this.storageKey, '/');
   }
 
-  /** Returns the validated accountId from the cookie, or null. Display fields are ignored on purpose. */
-  private loadAccountIdFromStorage(): string | null {
+  /** Returns the validated org uuid from the cookie, or null. Legacy `{ accountId }`-only cookies (no uid) are ignored. */
+  private loadUidFromStorage(): string | null {
     try {
       const stored = this.cookieService.get(this.storageKey);
       if (!stored) {
         return null;
       }
       const parsed = JSON.parse(stored) as Partial<Account>;
-      return this.isValidAccountId(parsed?.accountId) ? parsed.accountId : null;
+      return this.isValidUid(parsed?.uid) ? parsed.uid : null;
     } catch {
       return null;
     }
   }
 
-  /** Salesforce account ids are 15- or 18-char alphanumeric strings; anything else is treated as tampered. */
-  private isValidAccountId(id: unknown): id is string {
-    return typeof id === 'string' && /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(id);
+  /** Org uids are canonical UUIDs; anything else (including legacy Salesforce ids) is treated as absent/tampered. */
+  private isValidUid(uid: unknown): uid is string {
+    return typeof uid === 'string' && UUID_REGEX.test(uid);
   }
 }

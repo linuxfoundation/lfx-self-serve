@@ -1,35 +1,43 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PERSON_KEY_PATTERN, SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
+import { OrgSfidResolver } from '../services/org-sfid-resolver.service';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
+  private readonly keyContactsService: OrgPeopleKeyContactsService;
+  private readonly orgSfidResolver: OrgSfidResolver;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
+    this.keyContactsService = new OrgPeopleKeyContactsService();
+    this.orgSfidResolver = new OrgSfidResolver();
   }
 
-  /** GET /api/orgs/:accountId/lens/people/all */
+  /** GET /api/orgs/:orgUid/lens/people/all */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_people_all', {
-      account_id: accountId,
+      org_uid: orgUid,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_people_all');
+      assertOrgUid(orgUid, 'get_org_lens_people_all');
 
-      const response = await this.service.getAllEmployees(accountId);
+      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
+      const response = await this.service.getAllEmployees(sfid);
 
       logger.success(req, 'get_org_lens_people_all', startTime, {
-        account_id: accountId,
+        org_uid: orgUid,
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
@@ -42,23 +50,24 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:accountId/lens/people/:personKey/detail */
+  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const orgUid = req.params['orgUid'];
     const personKey = req.params['personKey'];
     const startTime = logger.startOperation(req, 'get_org_lens_people_detail', {
-      account_id: accountId,
+      org_uid: orgUid,
       person_key: personKey,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_people_detail');
+      assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
 
-      const response = await this.service.getEmployeeDetail(accountId, personKey);
+      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
+      const response = await this.service.getEmployeeDetail(sfid, personKey);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
-        account_id: accountId,
+        org_uid: orgUid,
         person_key: personKey,
         board_seats: response.boardSeats.length,
         committee_seats: response.committeeSeats.length,
@@ -74,12 +83,30 @@ export class OrgLensPeopleController {
     }
   }
 
-  private assertAccountId(accountId: string | undefined, operation: string): asserts accountId is string {
-    if (!accountId || typeof accountId !== 'string') {
-      throw ServiceValidationError.forField('accountId', 'accountId path parameter is required', { operation });
-    }
-    if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
-      throw ServiceValidationError.forField('accountId', 'Invalid Salesforce accountId format', { operation });
+  /** GET /api/orgs/:orgUid/lens/people/key-contacts — org-wide read for the People tab. Membership-scoped reads + writes live on OrgLensKeyContactsController (spec 024). */
+  public async getKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_key_contacts', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_key_contacts');
+
+      const response = await this.keyContactsService.getKeyContacts(req, orgUid);
+
+      logger.success(req, 'get_org_lens_people_key_contacts', startTime, {
+        org_uid: orgUid,
+        assignment_count: response.assignments.length,
+        individual_count: response.stats.individualCount,
+        foundations_covered: response.stats.foundationsCovered,
+        unfilled_required_role_count: response.stats.unfilledRequiredRoleCount,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
     }
   }
 
