@@ -36,6 +36,7 @@
       <lfx-textarea
         [form]="form"
         control="rawContent"
+        (paste)="onRawContentPaste($event)"
         placeholder="• Released v2.4 last week, big perf wins
 • Welcome new maintainers Alice and Bob
 • Upcoming community call: Thursday at 10am PT

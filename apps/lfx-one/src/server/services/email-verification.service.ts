@@ -4,6 +4,7 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
+  AddAliasNatsResponse,
   Auth0Identity,
   EmailManagementData,
   LinkIdentityNatsResponse,
@@ -378,6 +379,47 @@ export class EmailVerificationService {
         error: 'Internal server error',
         message: 'Failed to update primary email. Please try again.',
       };
+    }
+  }
+
+  /**
+   * Claim a system-managed alias (e.g. `<alias>@linux.com`) as a verified
+   * linked identity on the caller's account, via auth-service `add_alias`.
+   *
+   * Requires a management token carrying the `update:current_user_identities`
+   * scope (the same Flow C token used by link/unlink/set-primary), since the
+   * claim creates and links an Auth0 identity. Once claimed the alias is
+   * immutable and surfaces in `user_emails.read` as an alternate email.
+   *
+   * @param req - Express request object for logging
+   * @param managementToken - Flow C management token (update:current_user_identities)
+   * @param alias - Local part of the desired address (no `@` or domain)
+   * @param domain - Domain to claim under; must be in auth-service ALLOWED_ALIAS_DOMAINS
+   */
+  public async addAlias(req: Request, managementToken: string, alias: string, domain: string): Promise<AddAliasNatsResponse> {
+    const codec = this.natsService.getCodec();
+
+    logger.debug(req, 'add_alias', 'Claiming alias via NATS', { domain });
+
+    try {
+      const payload = JSON.stringify({ user: { auth_token: managementToken }, alias, domain });
+      const response = await this.natsService.request(NatsSubjects.ADD_ALIAS, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const parsed: AddAliasNatsResponse = JSON.parse(codec.decode(response.data));
+
+      logger.debug(req, 'add_alias', 'Received add alias response', { success: parsed.success, error: parsed.error });
+
+      return parsed;
+    } catch (error) {
+      logger.warning(req, 'add_alias', 'NATS add alias failed', { domain, err: error });
+
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        return { success: false, error: 'alias_service_unavailable' };
+      }
+
+      return { success: false, error: 'internal_error' };
     }
   }
 

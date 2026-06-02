@@ -55,6 +55,8 @@
       <lfx-org-people-event-attendees />
     } @else if (activeTab() === 'contributors') {
       <lfx-org-people-contributors />
+    } @else if (activeTab() === 'access') {
+      <lfx-org-lens-access />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

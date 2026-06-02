@@ -2,24 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  OrgAccessListResponse,
+  OrgAccessRole,
+  OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
-  PeopleTabConfig,
-  PeopleTabId,
-} from '../interfaces/org-people.interface';
-import type {
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
   OrgContributorTimeRangeOption,
-} from '../interfaces/org-people-contributors.interface';
-import type {
   OrgEventAttendeesResponse,
   OrgEventAttendeeTimeWindow,
   OrgEventAttendeeTimeWindowOption,
-} from '../interfaces/org-people-event-attendees.interface';
-import type { OrgTraineesResponse, OrgTraineeTimeWindow, OrgTraineeTimeWindowOption } from '../interfaces/org-people-trainees.interface';
+  OrgTraineesResponse,
+  OrgTraineeTimeWindow,
+  OrgTraineeTimeWindowOption,
+  PeopleTabConfig,
+  PeopleTabId,
+} from '../interfaces';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -30,6 +31,8 @@ export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
   { id: 'contributors', label: 'Contributors', icon: 'fa-light fa-code', noun: 'contributors' },
   { id: 'events', label: 'Event Attendees', icon: 'fa-light fa-calendar', noun: 'event attendees' },
   { id: 'training', label: 'Trainees', icon: 'fa-light fa-graduation-cap', noun: 'trainees' },
+  // Spec 025 — Org Lens Access is always the LAST tab.
+  { id: 'access', label: 'Org Lens Access', icon: 'fa-light fa-shield-halved', noun: 'org lens access' },
 ] as const;
 
 /** Default tab — URL drops `?tab=` when active to keep deep links clean. */
@@ -152,4 +155,49 @@ export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
   foundationOptions: [],
   projectOptions: [],
   stats: EMPTY_ORG_CONTRIBUTOR_STATS,
+};
+
+// Org Lens Access tab (spec 025) ----------------------------------------------
+
+/** Single-select Type-filter options (wireframe labels); semantics in specs/025-org-lens-access-tab (FR-007a). */
+export const ORG_ACCESS_TYPE_FILTER_OPTIONS: readonly OrgAccessTypeFilterOption[] = [
+  { label: 'All types', value: 'all' },
+  { label: 'Org Admin - Editor', value: 'admin' },
+  { label: 'Org Admin - Viewer', value: 'viewer' },
+  { label: 'Invited', value: 'invited' },
+] as const;
+
+/** Initial visible-row cap before "Show all N users" is clicked (reuses the All-Employees cap). */
+export const ORG_ACCESS_INITIAL_LIMIT = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
+
+/** UI role → FGA/settings relation (`invited_as`). */
+export const ORG_ACCESS_ROLE_RELATION: Readonly<Record<OrgAccessRole, 'writer' | 'auditor'>> = {
+  admin: 'writer',
+  viewer: 'auditor',
+} as const;
+
+/** Settings relation (`invited_as`) → UI role. */
+export const ORG_ACCESS_RELATION_ROLE: Readonly<Record<'writer' | 'auditor', OrgAccessRole>> = {
+  writer: 'admin',
+  auditor: 'viewer',
+} as const;
+
+/** Compact row-badge label per UI role. */
+export const ORG_ACCESS_ROLE_BADGE_LABEL: Readonly<Record<OrgAccessRole, string>> = {
+  admin: 'Admin',
+  viewer: 'Viewer',
+} as const;
+
+/** Info-tooltip copy per role badge (FR-005). */
+export const ORG_ACCESS_ROLE_BADGE_TOOLTIP: Readonly<Record<OrgAccessRole, string>> = {
+  admin: 'Org Admin – Editor: can view and manage this organization in Org Lens.',
+  viewer: 'Org Admin – Viewer: read-only access to this organization in Org Lens.',
+} as const;
+
+/** Empty list payload — used as the initial value and the no-account fallback. */
+export const EMPTY_ORG_ACCESS_LIST_RESPONSE: OrgAccessListResponse = {
+  orgUid: '',
+  users: [],
+  summary: { totalUsers: 0, administrators: 0, viewers: 0 },
+  canManage: false,
 };
