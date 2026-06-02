@@ -1,0 +1,129 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+
+import { EnrichedPastMeetingParticipant } from '../interfaces';
+import { filterPastMeetingParticipants } from './past-meeting.utils';
+
+/** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
+function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {
+  return {
+    uid: partial.uid ?? 'uid',
+    meeting_id: partial.meeting_id ?? 'meeting-1',
+    meeting_and_occurrence_id: partial.meeting_and_occurrence_id ?? 'meeting-1-0',
+    past_meeting_id: partial.past_meeting_id ?? 'past-1',
+    email: partial.email ?? '',
+    first_name: partial.first_name ?? '',
+    last_name: partial.last_name ?? '',
+    host: partial.host ?? false,
+    job_title: partial.job_title,
+    org_name: partial.org_name,
+    is_attended: partial.is_attended ?? false,
+    is_invited: partial.is_invited ?? false,
+    org_is_member: partial.org_is_member ?? false,
+    org_is_project_member: partial.org_is_project_member ?? false,
+    avatar_url: partial.avatar_url,
+    username: partial.username,
+    created_at: partial.created_at ?? '2024-01-01T00:00:00Z',
+    updated_at: partial.updated_at ?? '2024-01-01T00:00:00Z',
+    committee_uid: partial.committee_uid ?? null,
+    committee_name: partial.committee_name ?? null,
+    committee_role: partial.committee_role ?? null,
+    committee_voting_status: partial.committee_voting_status ?? null,
+    committee_category: partial.committee_category ?? null,
+  };
+}
+
+// Attended + invited, on the "board" committee, works at Acme.
+const ada = participant({
+  uid: '1',
+  first_name: 'Ada',
+  last_name: 'Lovelace',
+  email: 'ada@example.com',
+  org_name: 'Acme',
+  is_attended: true,
+  is_invited: true,
+  committee_uid: 'board',
+});
+// Invited but did not attend, no committee.
+const bob = participant({
+  uid: '2',
+  first_name: 'Bob',
+  last_name: 'Brown',
+  email: 'bob@example.com',
+  org_name: 'Globex',
+  is_attended: false,
+  is_invited: true,
+});
+// Attended without an invite (walk-in), on the "tsc" committee.
+const cara = participant({
+  uid: '3',
+  first_name: 'Cara',
+  last_name: 'Diaz',
+  email: 'cara@example.com',
+  org_name: 'Acme',
+  is_attended: true,
+  is_invited: false,
+  committee_uid: 'tsc',
+});
+
+const everyone = [ada, bob, cara];
+
+const uids = (list: EnrichedPastMeetingParticipant[]): string[] => list.map((p) => p.uid);
+
+describe('filterPastMeetingParticipants', () => {
+  it('returns every participant when no filters are supplied', () => {
+    expect(filterPastMeetingParticipants(everyone)).toEqual(everyone);
+  });
+
+  it('returns every participant when all filters are explicitly "all"', () => {
+    expect(filterPastMeetingParticipants(everyone, { search: '', attendance: 'all', invitation: 'all', group: 'all' })).toEqual(everyone);
+  });
+
+  it('matches search against first name, last name, email, and organization', () => {
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'ada' }))).toEqual(['1']);
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'brown' }))).toEqual(['2']);
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'cara@example.com' }))).toEqual(['3']);
+    // Organization "Acme" is shared by Ada and Cara.
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'acme' }))).toEqual(['1', '3']);
+  });
+
+  it('treats search as case-insensitive and trims whitespace', () => {
+    expect(uids(filterPastMeetingParticipants(everyone, { search: '  LOVELACE  ' }))).toEqual(['1']);
+  });
+
+  it('returns an empty list when the search matches nothing', () => {
+    expect(filterPastMeetingParticipants(everyone, { search: 'nonexistent' })).toEqual([]);
+  });
+
+  it('filters by attendance', () => {
+    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended' }))).toEqual(['1', '3']);
+    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'absent' }))).toEqual(['2']);
+  });
+
+  it('filters by invitation', () => {
+    expect(uids(filterPastMeetingParticipants(everyone, { invitation: 'invited' }))).toEqual(['1', '2']);
+    expect(uids(filterPastMeetingParticipants(everyone, { invitation: 'uninvited' }))).toEqual(['3']);
+  });
+
+  it('filters by committee group', () => {
+    expect(uids(filterPastMeetingParticipants(everyone, { group: 'board' }))).toEqual(['1']);
+    expect(uids(filterPastMeetingParticipants(everyone, { group: 'tsc' }))).toEqual(['3']);
+    // No participant is associated with an unknown committee.
+    expect(filterPastMeetingParticipants(everyone, { group: 'unknown' })).toEqual([]);
+  });
+
+  it('combines search, attendance, invitation, and group with AND semantics', () => {
+    // Acme + attended + invited + board -> only Ada (Cara is uninvited, on tsc).
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'acme', attendance: 'attended', invitation: 'invited', group: 'board' }))).toEqual(['1']);
+    // Acme + attended, with no invitation/group constraint -> Ada and Cara.
+    expect(uids(filterPastMeetingParticipants(everyone, { search: 'acme', attendance: 'attended' }))).toEqual(['1', '3']);
+    // Attended + invited narrows attended (Ada, Cara) down to the invited one (Ada).
+    expect(uids(filterPastMeetingParticipants(everyone, { attendance: 'attended', invitation: 'invited' }))).toEqual(['1']);
+  });
+
+  it('returns an empty list when given no participants', () => {
+    expect(filterPastMeetingParticipants([], { search: 'ada' })).toEqual([]);
+  });
+});

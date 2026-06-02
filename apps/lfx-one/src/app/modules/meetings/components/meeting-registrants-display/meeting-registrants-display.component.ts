@@ -8,12 +8,13 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
-import { markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { CommitteeMember, EnrichedPastMeetingParticipant, Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
+import { filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
@@ -24,6 +25,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 })
 export class MeetingRegistrantsDisplayComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -44,7 +46,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
-  public readonly pastMeetingParticipants: Signal<PastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
+  public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
@@ -63,9 +65,14 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
   public readonly rsvpFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly groupFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
+  // Past-meeting-only controls — past participants carry attendance/invitation, not RSVP responses.
+  public readonly attendanceFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
+  public readonly invitationFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly filterForm: FormGroup = new FormGroup({
     rsvpFilter: this.rsvpFilterControl,
     groupFilter: this.groupFilterControl,
+    attendanceFilter: this.attendanceFilterControl,
+    invitationFilter: this.invitationFilterControl,
   });
 
   // Filter options
@@ -74,6 +81,18 @@ export class MeetingRegistrantsDisplayComponent {
     { label: 'Accepted', value: 'yes' },
     { label: 'Declined', value: 'no' },
     { label: 'Pending', value: 'pending' },
+  ];
+
+  // Past-meeting attendance / invitation options (mirror the past-meeting-details filters)
+  public readonly attendanceFilterOptions = [
+    { label: 'All Attendees', value: 'all' },
+    { label: 'Attended', value: 'attended' },
+    { label: 'Did Not Attend', value: 'absent' },
+  ];
+  public readonly invitationFilterOptions = [
+    { label: 'All Invites', value: 'all' },
+    { label: 'Invited', value: 'invited' },
+    { label: 'Not Invited', value: 'uninvited' },
   ];
 
   // Group (Committee) filter options computed from meeting committees
@@ -88,6 +107,8 @@ export class MeetingRegistrantsDisplayComponent {
   // Filter signals from form controls
   public readonly rsvpFilter: Signal<string> = toSignal(this.rsvpFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
   public readonly groupFilter: Signal<string> = toSignal(this.groupFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
+  public readonly attendanceFilter: Signal<string> = toSignal(this.attendanceFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
+  public readonly invitationFilter: Signal<string> = toSignal(this.invitationFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
 
   // Filtered registrants based on search and filters
   public readonly filteredRegistrants = this.initFilteredRegistrants();
@@ -258,20 +279,46 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
 
-  private initPastMeetingParticipantsList(): Signal<PastMeetingParticipant[]> {
+  private initPastMeetingParticipantsList(): Signal<EnrichedPastMeetingParticipant[]> {
     return toSignal(
       this.refresh$.pipe(
         takeUntilDestroyed(),
         filter((refresh) => refresh && this.pastMeeting()),
         switchMap(() => {
           this.internalLoading.set(true);
-          return this.meetingService
-            .getPastMeetingParticipants(this.meeting().id)
-            .pipe(catchError(() => of([])))
-            .pipe(
-              map((participants) => participants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as PastMeetingParticipant[]),
-              finalize(() => this.internalLoading.set(false))
-            );
+          const meeting = this.meeting();
+          // Past participants carry no committee association — enrich them by joining the
+          // meeting's committee members on email so the group filter has something to match.
+          const committeeUids = ((meeting as Meeting).committees || []).map((committee) => committee.uid).filter(Boolean);
+          const committeeMembers$ = committeeUids.length
+            ? combineLatest(
+                committeeUids.map((uid) => this.committeeService.getCommitteeMembers(uid).pipe(catchError(() => of([] as CommitteeMember[]))))
+              ).pipe(map((memberLists) => memberLists.flat()))
+            : of([] as CommitteeMember[]);
+
+          return combineLatest([
+            this.meetingService.getPastMeetingParticipants(meeting.id).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
+            committeeMembers$,
+          ]).pipe(
+            map(([participants, committeeMembers]) => {
+              const memberByEmail = new Map(committeeMembers.map((member) => [member.email?.trim().toLowerCase(), member]));
+              return participants
+                .map((participant) => {
+                  const member = memberByEmail.get(participant.email?.trim().toLowerCase());
+                  const enriched: EnrichedPastMeetingParticipant = {
+                    ...participant,
+                    committee_uid: member?.committee_uid ?? null,
+                    committee_name: member?.committee_name ?? null,
+                    committee_role: member?.role?.name ?? null,
+                    committee_voting_status: member?.voting?.status ?? null,
+                    committee_category: member?.committee_category ?? null,
+                  };
+                  return enriched;
+                })
+                .sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0);
+            }),
+            finalize(() => this.internalLoading.set(false))
+          );
         })
       ),
       { initialValue: [] }
@@ -359,20 +406,13 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   private initFilteredPastParticipants() {
-    return computed(() => {
-      const participants = this.pastMeetingParticipants();
-      const query = this.searchQuery().toLowerCase().trim();
-
-      if (!query) {
-        return participants;
-      }
-
-      return participants.filter(
-        (participant) =>
-          participant.first_name?.toLowerCase().includes(query) ||
-          participant.last_name?.toLowerCase().includes(query) ||
-          participant.email?.toLowerCase().includes(query)
-      );
-    });
+    return computed(() =>
+      filterPastMeetingParticipants(this.pastMeetingParticipants(), {
+        search: this.searchQuery(),
+        attendance: this.attendanceFilter() as 'all' | 'attended' | 'absent',
+        invitation: this.invitationFilter() as 'all' | 'invited' | 'uninvited',
+        group: this.groupFilter(),
+      })
+    );
   }
 }
