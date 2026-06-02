@@ -146,7 +146,6 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
       foundationName: row.FOUNDATION_NAME,
       foundationSlug: row.FOUNDATION_SLUG,
       role: row.IS_DECLARED_MAINTAINER_FOR_PROJECT === true ? 'Maintainer' : 'Contributor',
-      isDeclaredMaintainerForProject: row.IS_DECLARED_MAINTAINER_FOR_PROJECT === true,
       commits: row.COMMITS ?? 0,
       lastActiveTs: toIsoDate(row.LAST_ACTIVE_DATE),
     };
@@ -178,7 +177,6 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
         lfUsername: row.LF_USERNAME,
         cdpMemberId: row.CDP_MEMBER_ID,
         role: row.IS_DECLARED_MAINTAINER_FOR_ORG === true ? 'Maintainer' : 'Contributor',
-        isDeclaredMaintainerForOrg: row.IS_DECLARED_MAINTAINER_FOR_ORG === true,
         commits,
         lastActiveTs,
         projectsCount: 1,
@@ -193,8 +191,7 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
         existing.lastActiveTs = lastActiveTs;
       }
       // Maintainer-for-org is denormalized to every (person, *) row but BOOLOR_AGG is paranoid against partial NULLs upstream.
-      if (row.IS_DECLARED_MAINTAINER_FOR_ORG === true && !existing.isDeclaredMaintainerForOrg) {
-        existing.isDeclaredMaintainerForOrg = true;
+      if (row.IS_DECLARED_MAINTAINER_FOR_ORG === true && existing.role !== 'Maintainer') {
         existing.role = 'Maintainer';
       }
       const currentMost = personMostActive.get(row.PERSON_KEY);

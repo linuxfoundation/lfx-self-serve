@@ -29,8 +29,6 @@ export interface OrgContributorRow {
   cdpMemberId: string;
   /** Item 4 R4.2 badge — the per-person derivative of `is_declared_maintainer_for_org`. Maintainer if true, Contributor otherwise. */
   role: OrgContributorRole;
-  /** Raw flag — mirrors the dbt column. `role === 'Maintainer'` iff this is true. */
-  isDeclaredMaintainerForOrg: boolean;
   /** SUM of `daily_commits` over the window — main-branch merged commits only. Expected to be 0 on ~39% of rows (review/PR-only contributors). */
   commits: number;
   /** ISO date `YYYY-MM-DD`. `MAX(activity_date)` over the person's code-contribution activity in the window. */
@@ -55,8 +53,6 @@ export interface OrgContributorProjectRow {
   foundationSlug: string | null;
   /** Per-project derivative of `is_declared_maintainer_for_project`. A person with the Maintainer badge on the parent row can (and often does) show Contributor pills on most of their project sub-rows (Item 5 Simon-Deziel pattern). */
   role: OrgContributorRole;
-  /** Raw flag — mirrors the dbt column. */
-  isDeclaredMaintainerForProject: boolean;
   /** Per-project `SUM(daily_commits)` over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
   commits: number;
   /** Per-project `MAX(activity_date)` over the window. Drives the "Last Active" column in the expanded sub-table. */

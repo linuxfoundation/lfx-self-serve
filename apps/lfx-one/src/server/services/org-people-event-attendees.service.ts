@@ -21,7 +21,6 @@ interface OrgPeopleAllEventAttendeeRow {
   NAME: string | null;
   TITLE: string | null;
   EMAIL: string | null;
-  EVENTS_COUNT: number | null;
 }
 
 /** Per-(account, person, event) row from `ORG_PEOPLE_EVENTS`. */
@@ -83,7 +82,6 @@ export class OrgPeopleEventAttendeesService {
       name: row.NAME ?? '',
       title: row.TITLE,
       email: row.EMAIL,
-      eventsCount: row.EVENTS_COUNT ?? 0,
     }));
 
     const details: OrgEventAttendeeDetailRow[] = detailRows.map((row) => ({
@@ -130,8 +128,7 @@ export class OrgPeopleEventAttendeesService {
         CDP_MEMBER_ID,
         NAME,
         TITLE,
-        EMAIL,
-        EVENTS_COUNT
+        EMAIL
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
       WHERE ACCOUNT_ID = ? AND EVENTS_COUNT > 0
       ORDER BY NAME ASC NULLS LAST

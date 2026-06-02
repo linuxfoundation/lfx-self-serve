@@ -21,8 +21,6 @@ interface OrgPeopleAllTraineeRow {
   NAME: string | null;
   TITLE: string | null;
   EMAIL: string | null;
-  COURSES_COUNT: number | null;
-  CERTIFICATIONS_COUNT: number | null;
 }
 
 /** Per-(account, person, course_or_cert) row from `ORG_PEOPLE_TRAINING`. */
@@ -79,8 +77,6 @@ export class OrgPeopleTraineesService {
       name: row.NAME ?? '',
       title: row.TITLE,
       email: row.EMAIL,
-      coursesCount: row.COURSES_COUNT ?? 0,
-      certificationsCount: row.CERTIFICATIONS_COUNT ?? 0,
     }));
 
     const details: OrgTraineeDetailRow[] = detailRows
@@ -126,9 +122,7 @@ export class OrgPeopleTraineesService {
         CDP_MEMBER_ID,
         NAME,
         TITLE,
-        EMAIL,
-        COURSES_COUNT,
-        CERTIFICATIONS_COUNT
+        EMAIL
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
       WHERE ACCOUNT_ID = ? AND COURSES_COUNT > 0
       ORDER BY NAME ASC NULLS LAST

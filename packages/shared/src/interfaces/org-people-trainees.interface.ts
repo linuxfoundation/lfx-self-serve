@@ -34,10 +34,6 @@ export interface OrgTraineeRow {
   name: string;
   title: string | null;
   email: string | null;
-  /** Unfiltered course count from `ORG_PEOPLE_ALL.COURSES_COUNT` — fallback for fast first paint before `details` arrives in the same payload. */
-  coursesCount: number;
-  /** Unfiltered cert count from `ORG_PEOPLE_ALL.CERTIFICATIONS_COUNT` — same role as `coursesCount`. */
-  certificationsCount: number;
 }
 
 /** Foundation dropdown option — only foundations the org has trainee rows for. */
@@ -88,8 +84,6 @@ export interface OrgTraineeRowVm {
   certsCount: number;
   recentCourseName: string | null;
   recentFoundationName: string | null;
-  /** ISO timestamp of the row used for Most Recent — kept for debug / future hover tooltip. */
-  recentActivityTs: string | null;
 }
 
 /** One collapsed row in the expanded "Courses & Certifications" sub-table — one per `(personKey, courseId)`. */

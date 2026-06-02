@@ -264,7 +264,6 @@ export class TraineesComponent {
         certsCount: certCourseIds.size,
         recentCourseName: recent?.courseName ?? null,
         recentFoundationName: recent?.foundationName ?? null,
-        recentActivityTs: recent?.activityTs ?? null,
       });
     }
 

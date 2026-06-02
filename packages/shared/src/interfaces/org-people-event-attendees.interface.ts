@@ -44,8 +44,6 @@ export interface OrgEventAttendeeRow {
   name: string;
   title: string | null;
   email: string | null;
-  /** Unfiltered event count from `ORG_PEOPLE_ALL.EVENTS_COUNT` — fallback for fast first paint before `details` arrives in the same payload. */
-  eventsCount: number;
 }
 
 /** Foundation dropdown option — only foundations the org has event-attendee rows for (R2.2 tab-scoped narrowing). */
