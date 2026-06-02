@@ -206,7 +206,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
 }
 
 /**
- * Resolves the start time a card/list should display for an UPCOMING meeting — the next
+ * Resolves the start time a card/list should display for an upcoming meeting — the next
  * scheduled occurrence, not the recurring series origin.
  *
  * Order of preference:
