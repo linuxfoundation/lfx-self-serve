@@ -265,6 +265,17 @@ export interface MeetingOccurrence {
   status?: string;
   /** Total registrant count for this occurrence */
   registrant_count?: number;
+  /**
+   * Per-occurrence recurrence override. When a recurring meeting's cadence changes from a
+   * specific occurrence onwards, Zoom records it as an `all_following` update and the
+   * meeting-service's occurrence calculator stamps the new pattern (e.g. `repeat_interval: 3`
+   * for quarterly) onto the ANCHOR occurrence of that segment (LFXV2-2066). When present it
+   * supersedes the meeting's top-level `recurrence` for the cadence label — see
+   * `resolveOccurrenceRecurrence`. Only the query-service (list/index) payload populates this;
+   * it is null/absent on non-anchor occurrences and on the live ITX detail payload, which does
+   * not compute the effective recurrence.
+   */
+  recurrence?: MeetingRecurrence | null;
 }
 
 /**

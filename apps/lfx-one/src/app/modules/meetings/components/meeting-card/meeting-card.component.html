@@ -19,9 +19,9 @@
         }
 
         <!-- Recurring Badge -->
-        @if (meeting().recurrence) {
+        @if (displayRecurrence(); as recurrence) {
           <lfx-tag
-            [value]="meeting().recurrence | recurrenceSummary"
+            [value]="recurrence | recurrenceSummary"
             severity="secondary"
             icon="fa-light fa-repeat"
             styleClass="tag-recurring"

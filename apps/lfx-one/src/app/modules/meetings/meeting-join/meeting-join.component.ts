@@ -30,8 +30,10 @@ import {
   getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
+  MeetingRecurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  resolveOccurrenceRecurrence,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
@@ -131,6 +133,12 @@ export class MeetingJoinComponent implements OnInit {
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
   public meeting: Signal<Meeting & { project: Partial<Project> | null }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
+  // Recurrence rule that drives the cadence badge: the displayed occurrence's own override when
+  // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule. NOTE: the
+  // detail/join view loads the meeting via the live ITX endpoint, which does not currently carry
+  // the per-occurrence override (occurrence.recurrence is null there), so this resolves to the
+  // top-level rule until that backend path stamps the effective recurrence. Forward-compatible.
+  public displayRecurrence: Signal<MeetingRecurrence | null>;
   private occurrenceContext: Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }>;
   protected previousOccurrenceUrl: Signal<string | null>;
   protected nextOccurrenceUrl: Signal<string | null>;
@@ -264,6 +272,7 @@ export class MeetingJoinComponent implements OnInit {
     this.authenticated = this.userService.authenticated;
     this.meeting = this.initializeMeeting();
     this.currentOccurrence = this.initializeCurrentOccurrence();
+    this.displayRecurrence = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
     this.occurrenceContext = this.initializeOccurrenceContext();
     this.previousOccurrenceUrl = this.initializePreviousOccurrenceUrl();
     this.nextOccurrenceUrl = this.initializeNextOccurrenceUrl();
