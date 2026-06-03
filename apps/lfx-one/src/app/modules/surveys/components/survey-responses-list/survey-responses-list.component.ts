@@ -7,14 +7,12 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { NpsBand, Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { getNpsBand, getResponseComment, getResponseDeliveryTimestamp } from '@lfx-one/shared/utils';
 import { SurveyService } from '@services/survey.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, finalize, map, merge, of, scan, startWith, Subject, switchMap, tap } from 'rxjs';
-
-/** Page size requested from the upstream responses endpoint (matches its default per_page). */
-const PAGE_SIZE = 25;
 
 @Component({
   selector: 'lfx-survey-responses-list',
@@ -164,7 +162,7 @@ export class SurveyResponsesListComponent {
           return of({ data: [] as SurveyResponseItem[], token: undefined, reset: true });
         }
         this.loading.set(true);
-        return this.surveyService.getSurveyResponses(id, PAGE_SIZE, undefined, this.projectUid() ?? undefined).pipe(
+        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, undefined, this.projectUid() ?? undefined).pipe(
           map((page) => ({ data: page.data, token: this.normalizeToken(page.meta.page_token), reset: true })),
           finalize(() => this.loading.set(false))
         );
@@ -179,7 +177,7 @@ export class SurveyResponsesListComponent {
           return of({ data: [] as SurveyResponseItem[], token: undefined, reset: false });
         }
         this.loadingMore.set(true);
-        return this.surveyService.getSurveyResponses(id, PAGE_SIZE, token, this.projectUid() ?? undefined).pipe(
+        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, token, this.projectUid() ?? undefined).pipe(
           map((page) => ({ data: page.data, token: this.normalizeToken(page.meta.page_token), reset: false })),
           finalize(() => this.loadingMore.set(false))
         );

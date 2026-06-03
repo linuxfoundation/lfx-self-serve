@@ -88,9 +88,12 @@ export class SurveyService {
       params = params.set('project_uid', projectUid);
     }
 
-    return this.http
-      .get<SurveyResponsesPage>(`/api/surveys/${surveyUid}/responses`, { params })
-      .pipe(catchError(() => of({ data: [], meta: {} } as SurveyResponsesPage)));
+    return this.http.get<SurveyResponsesPage>(`/api/surveys/${surveyUid}/responses`, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load responses for survey ${surveyUid}:`, error);
+        return of({ data: [], meta: {} } as SurveyResponsesPage);
+      })
+    );
   }
 
   public createSurvey(surveyData: CreateSurveyRequest): Observable<Survey> {
