@@ -15,6 +15,7 @@ import {
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
+import { htmlClipboardToText } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -147,6 +148,38 @@ export class NewsletterGenerateDrawerComponent {
           });
         },
       });
+  }
+
+  // Preserve hyperlinks when pasting rich content. A textarea would otherwise drop
+  // hrefs and keep only visible text, hiding URLs from the AI generator downstream.
+  protected onRawContentPaste(event: ClipboardEvent): void {
+    const html = event.clipboardData?.getData('text/html') ?? '';
+    if (!html) return;
+
+    const textarea = event.target;
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+
+    event.preventDefault();
+
+    const converted = htmlClipboardToText(html);
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const current = textarea.value;
+    const next = current.slice(0, start) + converted + current.slice(end);
+
+    const control = this.form.controls.rawContent;
+    control.setValue(next);
+    // setValue bypasses the value accessor, so dirty/touched would not flip
+    // the way a native paste does. Set them explicitly so validators that gate
+    // on touched (e.g., error display) behave consistently with manual typing.
+    control.markAsDirty();
+    control.markAsTouched();
+
+    const caret = start + converted.length;
+    queueMicrotask(() => {
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+    });
   }
 
   private restoreCustomPrompt(): void {

@@ -49,6 +49,14 @@
       <lfx-org-people-all-employees />
     } @else if (activeTab() === 'contacts') {
       <lfx-org-people-key-contacts />
+    } @else if (activeTab() === 'training') {
+      <lfx-org-people-trainees />
+    } @else if (activeTab() === 'events') {
+      <lfx-org-people-event-attendees />
+    } @else if (activeTab() === 'contributors') {
+      <lfx-org-people-contributors />
+    } @else if (activeTab() === 'access') {
+      <lfx-org-lens-access />
     } @else {
       <lfx-empty-state
         [icon]="activeTabConfig().icon"

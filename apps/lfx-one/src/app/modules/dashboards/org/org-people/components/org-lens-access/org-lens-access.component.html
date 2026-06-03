@@ -1,0 +1,253 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="org-lens-access" [attr.data-state]="dataState()" [attr.data-can-manage]="canManage()">
+  <!-- Header + legend -->
+  <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-lg font-semibold text-gray-900" data-testid="org-access-heading">Org Lens Access</h2>
+      <p class="text-sm text-gray-500">People who can view or manage this organization in Org Lens.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500" data-testid="org-access-legend">
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-block h-2 w-2 rounded-full bg-blue-600" aria-hidden="true"></span>
+        <span><strong class="font-medium text-gray-700">Admin</strong> — can view &amp; manage</span>
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-block h-2 w-2 rounded-full bg-gray-400" aria-hidden="true"></span>
+        <span><strong class="font-medium text-gray-700">Viewer</strong> — read-only</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+    <div class="flex-1">
+      <div class="relative">
+        <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+        <input
+          pInputText
+          type="text"
+          class="w-full pl-9"
+          placeholder="Search by name, title, or email..."
+          aria-label="Search org lens access users"
+          data-testid="org-access-search"
+          [ngModel]="searchTerm()"
+          (ngModelChange)="searchTerm.set($event)" />
+      </div>
+    </div>
+    <div class="w-full md:w-56">
+      <p-select
+        [options]="typeFilterOptions"
+        [ngModel]="typeFilter()"
+        (ngModelChange)="typeFilter.set($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        ariaLabel="Filter by access type"
+        data-testid="org-access-type-filter" />
+    </div>
+    @if (canManage()) {
+      <button
+        type="button"
+        class="inline-flex items-center justify-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="isInviting()"
+        aria-label="Add users to Org Lens access"
+        data-testid="org-access-add-users"
+        (click)="openAdd()">
+        <i class="fa-light fa-plus" aria-hidden="true"></i>
+        <span>Add Users</span>
+      </button>
+    }
+  </div>
+
+  @if (fetchError()) {
+    <lfx-empty-state
+      [withCard]="false"
+      icon="fa-light fa-triangle-exclamation"
+      title="Failed to load access list"
+      subtitle="Please try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-arrow-rotate-left"
+      data-testid="org-access-error"
+      (ctaClick)="retry()" />
+  } @else {
+    <!-- Summary cards -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="org-access-summary">
+      @if (isLoading()) {
+        @for (i of summarySkeletonCards; track i) {
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="3rem" height="1.5rem" />
+            <div class="mt-2 text-xs text-gray-500">&nbsp;</div>
+          </div>
+        }
+      } @else {
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-access-stat-total">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ summary().totalUsers }}</div>
+          <div class="mt-1 text-xs text-gray-500">Total Users</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-access-stat-admins">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ summary().administrators }}</div>
+          <div class="mt-1 text-xs text-gray-500">Administrators</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-access-stat-viewers">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ summary().viewers }}</div>
+          <div class="mt-1 text-xs text-gray-500">Viewers</div>
+        </div>
+      }
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-access-table">
+      @if (isLoading()) {
+        <div class="divide-y divide-gray-100" data-testid="org-access-table-skeleton">
+          @for (i of tableSkeletonRows; track i) {
+            <div class="flex items-center gap-4 px-4 py-3">
+              <p-skeleton shape="circle" size="2.25rem" />
+              <div class="flex flex-1 flex-col gap-2">
+                <p-skeleton width="40%" height="0.875rem" />
+                <p-skeleton width="25%" height="0.75rem" />
+              </div>
+              <p-skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="3rem" height="1.25rem" />
+            </div>
+          }
+        </div>
+      } @else if (totalFiltered() === 0) {
+        <div class="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center" data-testid="org-access-empty">
+          <i class="fa-light fa-shield-halved text-2xl text-gray-300" aria-hidden="true"></i>
+          @if (isFiltering()) {
+            <p class="text-sm text-gray-700">No users match the current search or filter.</p>
+            <p class="text-xs text-gray-500">Try clearing the search or changing the type filter.</p>
+          } @else {
+            <p class="text-sm text-gray-700">No one has elevated Org Lens access for this organization yet.</p>
+          }
+        </div>
+      } @else {
+        <table class="w-full text-sm" data-testid="org-access-rows">
+          <thead class="bg-gray-50">
+            <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+              <th scope="col" class="px-4 py-3 font-medium">Name</th>
+              <th scope="col" class="px-4 py-3 font-medium">Type</th>
+              <th scope="col" class="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (user of visibleRows(); track user.email) {
+              <tr class="border-b border-gray-100 hover:bg-gray-50" [attr.data-testid]="'org-access-row-' + user.email">
+                <!-- Name -->
+                <td class="px-4 py-3 align-middle">
+                  <div class="flex min-w-0 items-center gap-3">
+                    <span
+                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white"
+                      aria-hidden="true">
+                      {{ user.initials }}
+                    </span>
+                    <span class="flex min-w-0 flex-col">
+                      <span class="flex items-center gap-2">
+                        <span class="truncate font-medium text-gray-900">{{ user.name }}</span>
+                        @if (user.isPending) {
+                          <span
+                            class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700"
+                            data-testid="org-access-pending-badge">
+                            Invited
+                          </span>
+                        }
+                      </span>
+                      @if (user.jobTitle) {
+                        <span class="truncate text-xs text-gray-500">{{ user.jobTitle }}</span>
+                      } @else {
+                        <span class="truncate text-xs text-gray-400">{{ user.email }}</span>
+                      }
+                    </span>
+                  </div>
+                </td>
+                <!-- Type -->
+                <td class="px-4 py-3 align-middle">
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap"
+                    [class.border-blue-300]="user.role === 'admin'"
+                    [class.bg-blue-50]="user.role === 'admin'"
+                    [class.text-blue-700]="user.role === 'admin'"
+                    [class.border-gray-300]="user.role !== 'admin'"
+                    [class.bg-gray-100]="user.role !== 'admin'"
+                    [class.text-gray-600]="user.role !== 'admin'"
+                    [pTooltip]="roleBadgeTooltip[user.role]"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'org-access-role-' + user.email">
+                    {{ roleBadgeLabel[user.role] }}
+                    <i class="fa-light fa-circle-info text-[0.7rem] opacity-70" aria-hidden="true"></i>
+                  </span>
+                </td>
+                <!-- Actions -->
+                <td class="px-4 py-3 align-middle">
+                  <div class="flex items-center justify-end gap-1">
+                    @if (canManage()) {
+                      <!-- Tooltip lives on the wrapper: PrimeNG pTooltip won't fire on a natively [disabled] button. -->
+                      <span class="inline-flex" [pTooltip]="user.editTooltip" tooltipPosition="top">
+                        <button
+                          type="button"
+                          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          [disabled]="user.editDisabledBase || isSubmitting()"
+                          [attr.aria-label]="'Edit access for ' + user.name"
+                          [attr.data-testid]="'org-access-edit-' + user.email"
+                          (click)="openEdit(user)">
+                          <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+                        </button>
+                      </span>
+                      <span class="inline-flex" [pTooltip]="user.removeTooltip" tooltipPosition="top">
+                        <button
+                          type="button"
+                          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          [disabled]="user.isLastAdmin || isSubmitting()"
+                          [attr.aria-label]="'Remove access for ' + user.name"
+                          [attr.data-testid]="'org-access-remove-' + user.email"
+                          (click)="confirmRemove(user)">
+                          <i class="fa-light fa-trash" aria-hidden="true"></i>
+                        </button>
+                      </span>
+                    } @else {
+                      <span class="text-xs text-gray-300">&mdash;</span>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        @if (totalFiltered() > initialLimit) {
+          <div class="grid grid-cols-3 items-center border-t border-gray-200 px-4 py-3" data-testid="org-access-show-all-footer">
+            <span class="text-xs italic text-gray-400">{{ footerCountLabel() }}</span>
+            <div class="text-center">
+              @if (canShowAll()) {
+                <button
+                  type="button"
+                  class="bg-transparent p-0 text-sm font-medium text-blue-600 hover:underline"
+                  data-testid="org-access-show-all"
+                  (click)="showAll()">
+                  Show all {{ totalFiltered() }} users
+                </button>
+              }
+            </div>
+            <div></div>
+          </div>
+        }
+      }
+    </div>
+  }
+</div>
+
+<!-- Add users modal -->
+<lfx-add-access-user-modal [(visible)]="addModalVisible" [saving]="isInviting()" (invite)="onInvite($event)" />
+
+<!-- Edit role modal (US2) -->
+<lfx-edit-access-role-modal
+  [user]="editingUser()"
+  [(visible)]="editModalVisible"
+  [saving]="isSubmitting()"
+  [disableViewerOption]="editDisableViewer()"
+  (save)="onEditSave($event)" />
+
+<!-- Remove confirmation (US3) -->
+<p-confirmdialog />

@@ -6,12 +6,14 @@ import {
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
+  CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
@@ -560,6 +562,62 @@ export class CommitteeService {
     logger.debug(req, 'delete_committee_member', 'Committee member deleted successfully', {
       committee_uid: committeeId,
       member_uid: memberId,
+    });
+  }
+
+  // ── Committee Invites ───────────────────────────────────────────────────
+  // Invite-by-email is the add-member primitive for people who may not yet have
+  // an LF account. Pending/resolved invites are read from the query index
+  // (committee_invite resource); create/revoke go through the committee-service.
+
+  /**
+   * Fetches all invites for a committee from the query index. Callers filter by
+   * status (e.g. pending) client-side; the roster only surfaces pending ones.
+   */
+  public async getCommitteeInvites(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeInvite[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_invite',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+  }
+
+  /**
+   * Creates a single committee invite. The committee-service has no bulk endpoint,
+   * so bulk invite is the frontend fanning out one call per email.
+   */
+  public async createCommitteeInvite(req: Request, committeeId: string, data: CreateCommitteeInviteRequest): Promise<CommitteeInvite> {
+    const invite = await this.microserviceProxy.proxyRequest<CommitteeInvite>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites`, 'POST', {}, data);
+
+    logger.debug(req, 'create_committee_invite', 'Committee invite created successfully', {
+      committee_uid: committeeId,
+      invite_uid: invite.uid,
+    });
+
+    return invite;
+  }
+
+  /**
+   * Revokes a pending committee invite. The upstream revoke-invite endpoint is a
+   * plain DELETE (no ETag concurrency control).
+   */
+  public async revokeCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}`, 'DELETE');
+
+    logger.debug(req, 'revoke_committee_invite', 'Committee invite revoked successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
     });
   }
 

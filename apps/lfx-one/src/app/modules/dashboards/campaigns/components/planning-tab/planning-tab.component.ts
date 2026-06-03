@@ -14,13 +14,14 @@ import type {
   CampaignBriefOutput,
   CampaignEventDetails,
   CampaignGoal,
+  CampaignGoalOption,
   CampaignKeyword,
   CampaignPlatform,
+  CampaignPlatformOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
-import type { CampaignGoalOption, CampaignPlatformOption } from '@lfx-one/shared/constants';
 
 type PlanningStep = 'input' | 'generating' | 'review';
 
@@ -128,22 +129,25 @@ export class PlanningTabComponent implements OnInit {
     if (!this.lastLookedUpEvent) return;
     this.hsCreating.set(true);
     this.hsStatus.set(null);
-    this.campaignService.createHubSpotUtm(this.lastLookedUpEvent).subscribe({
-      next: (result) => {
-        if (result?.created && result.hs_utm) {
-          this.hsUtm.set(result.hs_utm);
-          this.hsNotFound.set(false);
-          this.hsStatus.set(`Created: ${result.campaign_name}`);
-        } else {
-          this.hsStatus.set('Failed to create campaign');
-        }
-        this.hsCreating.set(false);
-      },
-      error: () => {
-        this.hsStatus.set('Create failed');
-        this.hsCreating.set(false);
-      },
-    });
+    this.campaignService
+      .createHubSpotUtm(this.lastLookedUpEvent)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (result?.created && result.hs_utm) {
+            this.hsUtm.set(result.hs_utm);
+            this.hsNotFound.set(false);
+            this.hsStatus.set(`Created: ${result.campaign_name}`);
+          } else {
+            this.hsStatus.set('Failed to create campaign');
+          }
+          this.hsCreating.set(false);
+        },
+        error: () => {
+          this.hsStatus.set('Create failed');
+          this.hsCreating.set(false);
+        },
+      });
   }
 
   protected generate(): void {
@@ -371,23 +375,29 @@ export class PlanningTabComponent implements OnInit {
     this.hsNotFound.set(false);
     this.hsUtm.set(null);
 
-    this.campaignService.lookupHubSpotUtm(eventName).subscribe({
-      next: (result: HubSpotUtmLookupResult | null) => {
-        if (result?.found && result.hs_utm) {
-          this.hsUtm.set(result.hs_utm);
-          this.hsMatches.set(result.all_matches ?? []);
-          this.hsStatus.set(`Found: ${result.campaign_name}`);
-        } else {
-          this.hsNotFound.set(true);
-          this.hsStatus.set('No matching campaign in HubSpot');
-        }
-        this.hsSearching.set(false);
-      },
-      error: () => {
-        this.hsStatus.set('HubSpot lookup failed');
-        this.hsSearching.set(false);
-      },
-    });
+    const capturedEvent = eventName;
+    this.campaignService
+      .lookupHubSpotUtm(eventName)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result: HubSpotUtmLookupResult | null) => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
+          if (result?.found && result.hs_utm) {
+            this.hsUtm.set(result.hs_utm);
+            this.hsMatches.set(result.all_matches ?? []);
+            this.hsStatus.set(`Found: ${result.campaign_name}`);
+          } else {
+            this.hsNotFound.set(true);
+            this.hsStatus.set('No matching campaign in HubSpot');
+          }
+          this.hsSearching.set(false);
+        },
+        error: () => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
+          this.hsStatus.set('HubSpot lookup failed');
+          this.hsSearching.set(false);
+        },
+      });
   }
 
   private handleSSEEvent(event: SSEEvent<CampaignSSEEventType>): void {

@@ -703,6 +703,12 @@ export interface PastMeetingParticipant {
  * Past meeting participant enriched with committee membership data from meeting registrants
  */
 export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
+  /**
+   * All committee UIDs this participant belongs to (from committee member data) — used to
+   * match the group filter. An array because a participant can sit on multiple committees;
+   * the singular `committee_*` display fields below reflect the first/primary committee.
+   */
+  committee_uids?: string[] | null;
   /** Committee name (from committee member data) */
   committee_name?: string | null;
   /** Role within the committee (from committee member data) */
@@ -711,6 +717,28 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
+}
+
+/** Attendance filter for the past-meeting participant list. */
+export type PastParticipantAttendanceFilter = 'all' | 'attended' | 'absent';
+/** Invitation filter for the past-meeting participant list. */
+export type PastParticipantInvitationFilter = 'all' | 'invited' | 'uninvited';
+
+/**
+ * Filter criteria for the past-meeting participant list.
+ * @description Mirrors the upcoming-registrant filters, mapped to the fields a past
+ *   participant actually carries: attendance (`is_attended`), invitation (`is_invited`),
+ *   and committee association (`committee_uids`, from enrichment).
+ */
+export interface PastParticipantFilters {
+  /** Free-text query matched against name, email, and organization. */
+  search?: string;
+  /** Attendance filter: `all`, `attended` (is_attended), or `absent` (not attended). */
+  attendance?: PastParticipantAttendanceFilter;
+  /** Invitation filter: `all`, `invited` (is_invited), or `uninvited` (not invited). */
+  invitation?: PastParticipantInvitationFilter;
+  /** Committee UID to filter by, or `all` for no committee filter. */
+  group?: string;
 }
 
 /**

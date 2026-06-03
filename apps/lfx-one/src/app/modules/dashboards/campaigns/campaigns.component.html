@@ -1,10 +1,39 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-6">
-  <div class="flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-gray-900">Campaigns</h1>
+<div class="flex flex-col gap-6 p-6" data-testid="campaigns-page">
+  <!-- Header -->
+  <div class="flex flex-col gap-3">
+    <h1 class="sr-only">Events Campaigns</h1>
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb" data-testid="campaigns-breadcrumb">
+      <span class="text-gray-400">Campaigns</span>
+      <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
+      <span class="text-gray-400">Paid Performance</span>
+      <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
+      <span class="font-semibold text-gray-900" aria-current="page">Events Campaigns</span>
+    </nav>
+
+    <!-- Platform & Use Case Selectors -->
+    <div class="flex items-center gap-3" data-testid="campaigns-selectors">
+      <select
+        class="cursor-default rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-600"
+        disabled
+        aria-label="Campaign platform"
+        data-testid="campaigns-platform-select">
+        <option>Paid Performance</option>
+      </select>
+      <select
+        class="cursor-default rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-600"
+        disabled
+        aria-label="Campaign use case"
+        data-testid="campaigns-usecase-select">
+        <option>Events Campaigns</option>
+      </select>
+    </div>
   </div>
+
+  <hr class="border-gray-200" />
 
   <!-- Tab Navigation -->
   <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
@@ -42,8 +71,10 @@
         <lfx-planning-tab (proceedToImplementation)="onProceedToImplementation($event)" data-testid="campaigns-planning-tab" />
       } @else if (tab.id === 'implementation') {
         <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
-      } @else {
-        <p class="text-sm text-gray-500">{{ tab.label }} tab content will be added in subsequent PRs.</p>
+      } @else if (tab.id === 'insights') {
+        <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
+      } @else if (tab.id === 'optimization') {
+        <lfx-optimization-tab data-testid="campaigns-optimization-tab" />
       }
     </div>
   }

@@ -23,11 +23,7 @@ export class MicroserviceProxyService {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
-      const MICROSERVICE_URLS: MicroserviceUrls = {
-        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
-      };
-
-      const baseUrl = MICROSERVICE_URLS[service];
+      const baseUrl = this.resolveBaseUrl(service);
       const endpoint = `${baseUrl}${path}`;
       const token = req.bearerToken;
 
@@ -60,11 +56,7 @@ export class MicroserviceProxyService {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
-      const MICROSERVICE_URLS: MicroserviceUrls = {
-        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
-      };
-
-      const baseUrl = MICROSERVICE_URLS[service];
+      const baseUrl = this.resolveBaseUrl(service);
       const endpoint = `${baseUrl}${path}`;
       const token = req.bearerToken;
 
@@ -106,11 +98,7 @@ export class MicroserviceProxyService {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
-      const MICROSERVICE_URLS: MicroserviceUrls = {
-        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
-      };
-
-      const baseUrl = MICROSERVICE_URLS[service];
+      const baseUrl = this.resolveBaseUrl(service);
       const endpoint = `${baseUrl}${path}`;
       const token = req.bearerToken;
 
@@ -148,11 +136,7 @@ export class MicroserviceProxyService {
     query?: Record<string, any>,
     customHeaders?: Record<string, string>
   ): Promise<Response> {
-    const MICROSERVICE_URLS: MicroserviceUrls = {
-      LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
-    };
-
-    const baseUrl = MICROSERVICE_URLS[service];
+    const baseUrl = this.resolveBaseUrl(service);
     const endpoint = `${baseUrl}${path}`;
     const token = req.bearerToken;
 
@@ -161,5 +145,16 @@ export class MicroserviceProxyService {
     // ApiClientService.streamRequest already throws MicroserviceError with full context,
     // so no try/catch wrapping is needed here.
     return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders);
+  }
+
+  // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE falls back to
+  // LFX_V2_SERVICE (the gateway) when unset.
+  private resolveBaseUrl(service: keyof MicroserviceUrls): string {
+    const urls: MicroserviceUrls = {
+      LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
+      LFX_V2_MEMBER_SERVICE: process.env['LFX_V2_MEMBER_SERVICE'] || process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
+    };
+    // Strip trailing slashes so a config value like `https://host/` can't produce `host//path`.
+    return urls[service].replace(/\/+$/, '');
   }
 }

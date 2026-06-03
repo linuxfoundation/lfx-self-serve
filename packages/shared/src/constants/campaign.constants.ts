@@ -1,22 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoal, CampaignPlatform, CampaignTabOption } from '../interfaces/campaign.interface';
+import type { CampaignGoalOption, CampaignPlatformOption, CampaignStatus, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
-export const CAMPAIGN_TABS: CampaignTabOption[] = [
+export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
   { id: 'planning', label: 'Planning', icon: 'fa-light fa-clipboard-list' },
   { id: 'implementation', label: 'Implementation', icon: 'fa-light fa-rocket' },
-  { id: 'monitoring', label: 'Monitoring', icon: 'fa-light fa-chart-mixed' },
+  { id: 'insights', label: 'Insights', icon: 'fa-light fa-chart-mixed' },
   { id: 'optimization', label: 'Optimization', icon: 'fa-light fa-gauge-high' },
 ] as const;
-
-export interface CampaignPlatformOption {
-  id: CampaignPlatform;
-  label: string;
-  icon: string;
-  disabled?: boolean;
-}
 
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
@@ -28,11 +21,6 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;
-
-export interface CampaignGoalOption {
-  id: CampaignGoal;
-  label: string;
-}
 
 export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
   { id: 'conversions', label: 'Conversions / Registrations' },
@@ -73,3 +61,37 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
   displayBudgetPct: 30,
 } as const;
+
+export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
+
+export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
+  2: 'enabled',
+  3: 'paused',
+  4: 'removed',
+};
+
+// ---------------------------------------------------------------------------
+// Campaign Name Convention
+// ---------------------------------------------------------------------------
+// Format: "Program | Base Name | Region | Objective | Targeting | Ad Format | Project | Funnel | Date"
+// Example: "Events | KubeCon NA 2025 | EMEA | Conversions | Intent | Search | CNCF | MoFU | 2025-06-01"
+
+export const CAMPAIGN_NAME_FIELDS = ['program', 'baseName', 'region', 'objective', 'targeting', 'adFormat', 'project', 'funnelStage', 'dateSuffix'] as const;
+
+export const CAMPAIGN_NAME_DELIMITER = ' | ';
+
+export function parseCampaignName(raw: string): ParsedCampaignName {
+  const parts = raw.split(CAMPAIGN_NAME_DELIMITER);
+  return {
+    program: parts[0] || '',
+    baseName: parts[1] || '',
+    region: parts[2] || '',
+    objective: parts[3] || '',
+    targeting: parts[4] || '',
+    adFormat: parts[5] || '',
+    project: parts[6] || '',
+    funnelStage: parts[7] || '',
+    dateSuffix: parts[8] || '',
+    raw,
+  };
+}

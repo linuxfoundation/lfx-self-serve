@@ -1,0 +1,96 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-dialog
+  [visible]="visible()"
+  (visibleChange)="visible.set($event)"
+  (onShow)="onShow()"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [dismissableMask]="true"
+  [style]="{ width: '28rem' }"
+  header="Add Org Lens Access"
+  styleClass="lfx-add-access-user-modal">
+  <div class="flex flex-col gap-5 py-1" data-testid="org-access-add-modal">
+    <p class="text-sm text-gray-500">
+      Invite a person to view or manage this organization in Org Lens. They'll appear as <strong>Invited</strong> until they accept.
+    </p>
+
+    <!-- Email -->
+    <div class="flex flex-col gap-1.5">
+      <label for="org-access-add-email" class="text-xs font-medium uppercase tracking-wide text-gray-500">Email</label>
+      <input
+        pInputText
+        id="org-access-add-email"
+        type="email"
+        class="w-full"
+        placeholder="person@example.com"
+        autocomplete="off"
+        [disabled]="saving()"
+        [ngModel]="email()"
+        (ngModelChange)="email.set($event)"
+        data-testid="org-access-add-email" />
+      @if (showEmailError()) {
+        <span class="text-xs text-red-600" data-testid="org-access-add-email-error">Enter a valid email address.</span>
+      }
+    </div>
+
+    <!-- Name (optional) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="org-access-add-name" class="text-xs font-medium uppercase tracking-wide text-gray-500"
+        >Name <span class="normal-case text-gray-400">(optional)</span></label
+      >
+      <input
+        pInputText
+        id="org-access-add-name"
+        type="text"
+        class="w-full"
+        placeholder="Full name"
+        autocomplete="off"
+        [disabled]="saving()"
+        [ngModel]="name()"
+        (ngModelChange)="name.set($event)"
+        data-testid="org-access-add-name" />
+    </div>
+
+    <!-- Role -->
+    <div class="flex flex-col gap-1.5">
+      <label for="org-access-add-role" class="text-xs font-medium uppercase tracking-wide text-gray-500">Access</label>
+      <p-select
+        inputId="org-access-add-role"
+        [options]="roleOptions"
+        [ngModel]="role()"
+        (ngModelChange)="role.set($event)"
+        optionLabel="label"
+        optionValue="value"
+        [disabled]="saving()"
+        styleClass="w-full"
+        ariaLabel="Select access role"
+        data-testid="org-access-add-role" />
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-1 flex items-center justify-end gap-3">
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-gray-400"
+        [disabled]="saving()"
+        data-testid="org-access-add-cancel"
+        (click)="onCancel()">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="!canSend()"
+        data-testid="org-access-add-send"
+        (click)="onSend()">
+        @if (saving()) {
+          <i class="fa-light fa-spinner fa-spin" aria-hidden="true"></i>
+        }
+        <span>{{ saving() ? 'Sending…' : 'Send Invite' }}</span>
+      </button>
+    </div>
+  </div>
+</p-dialog>

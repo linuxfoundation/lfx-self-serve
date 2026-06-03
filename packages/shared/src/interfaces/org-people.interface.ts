@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /** Tab identifier for the Org People page tab strip. */
-export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training';
+export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
 
 /** Tab definition for the Org People page. */
 export interface PeopleTabConfig {
