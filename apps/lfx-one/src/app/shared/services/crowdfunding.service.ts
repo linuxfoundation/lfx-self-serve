@@ -63,6 +63,11 @@ export class CrowdfundingService {
     return this.http.get<PaymentMethod>('/api/crowdfunding/payment-method').pipe(catchError(() => of(null)));
   }
 
+  // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.
+  public savePaymentMethod(paymentMethodId: string): Observable<PaymentMethod> {
+    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId });
+  }
+
   public getMyDonationStats(): Observable<DonationStats> {
     return this.http.get<DonationStats>('/api/crowdfunding/donation-stats').pipe(catchError(() => of(EMPTY_DONATION_STATS)));
   }
