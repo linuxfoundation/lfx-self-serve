@@ -155,7 +155,7 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 | Guard                    | Protected routes                                                                        | Access rule                                      |
 | ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`      |
-| `newsletterAccessGuard`  | `/foundation/newsletters`, `/project/newsletters`, and all nested newsletter routes     | `canSeeNewsletters()` — ED or `canWrite()`       |
+| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`       |
 | `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()` |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
