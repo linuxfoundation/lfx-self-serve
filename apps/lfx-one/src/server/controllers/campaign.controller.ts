@@ -217,7 +217,7 @@ export class CampaignController {
     }
 
     for (const kw of body.keywords) {
-      if (!kw.campaignId || !kw.adGroupId || !kw.criterionId) {
+      if (!kw || typeof kw !== 'object' || !kw.campaignId || !kw.adGroupId || !kw.criterionId) {
         next(
           ServiceValidationError.forField('keywords', 'each keyword must include campaignId, adGroupId, and criterionId', {
             operation: 'keyword_actions',
