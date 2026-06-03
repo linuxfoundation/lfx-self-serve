@@ -441,7 +441,8 @@ function createJob(): string {
   setTimeout(() => {
     const job = jobs.get(jobId);
     if (job?.status === 'running') {
-      failJob(jobId, 'Job timed out after 5 minutes');
+      logger.warning(undefined, 'campaign_job_timeout', `Job ${jobId} timed out after 5 minutes`, { jobId });
+      failJob(jobId, 'Campaign creation timed out. Check Google Ads to see if your campaign was created.');
     }
   }, JOB_TIMEOUT_MS);
 
@@ -680,11 +681,12 @@ export class CampaignProxyService {
     const jobId = createJob();
 
     this.executeCampaignCreation(jobId, body).catch((error) => {
-      failJob(jobId, error instanceof Error ? error.message : 'Campaign creation failed');
+      logger.error(undefined, 'campaign_create_unhandled', Date.now(), error as Error, { jobId });
+      failJob(jobId, 'Campaign creation was unsuccessful. Please try again.');
     });
 
     const POLL_INTERVAL_MS = 500;
-    const INLINE_WAIT_MS = 15_000;
+    const INLINE_WAIT_MS = 120_000;
     const deadline = Date.now() + INLINE_WAIT_MS;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -698,9 +700,12 @@ export class CampaignProxyService {
 
   // === Job polling ===
 
-  public async getJobStatus(_req: Request, jobId: string): Promise<CampaignJobStatus> {
+  public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
     const job = jobs.get(jobId);
-    if (!job) return { status: 'not_found', error: 'Job not found' };
+    if (!job) {
+      logger.warning(req, 'campaign_job_status', `Job ${jobId} not found on this instance — likely routed to a different replica`, { jobId });
+      return { status: 'not_found', error: 'Lost connection to the campaign creation process. Please try again.' };
+    }
     return job;
   }
 
@@ -1218,9 +1223,6 @@ function extractGadsErrorMessage(error: unknown): string {
 
   if (code && friendlyMessages[code]) return friendlyMessages[code];
 
-  const originalMessage = error instanceof Error ? error.message : '';
-
-  if (code) return `Campaign creation failed (error code: ${code}). Please try again or contact support.`;
-  if (originalMessage) return originalMessage;
-  return 'Campaign creation failed. Please try again or contact support.';
+  if (code) return `Google Ads rejected the campaign (${code}). Please try again or contact your administrator.`;
+  return 'Google Ads could not create the campaign. Please try again.';
 }
