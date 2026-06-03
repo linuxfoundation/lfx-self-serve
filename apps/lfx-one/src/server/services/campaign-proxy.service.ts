@@ -4,6 +4,8 @@
 import { AI_MODEL } from '@lfx-one/shared/constants';
 
 import type {
+  BulkKeywordActionRequest,
+  BulkKeywordActionResponse,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -11,6 +13,7 @@ import type {
   CampaignJobStatus,
   CampaignKeyword,
   CampaignSSEEventType,
+  KeywordActionResponse,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -689,6 +692,55 @@ export class CampaignProxyService {
     const job = jobs.get(jobId);
     if (!job) return { status: 'not_found', error: 'Job not found' };
     return job;
+  }
+
+  // === Keyword actions (pause / remove) ===
+
+  public async executeKeywordActions(req: Request, body: BulkKeywordActionRequest): Promise<BulkKeywordActionResponse> {
+    checkRequiredEnv(req);
+    const customer = getCustomer();
+    const customerId = getEnv('GADS_CUSTOMER_ID');
+    const results: KeywordActionResponse[] = [];
+
+    for (const kw of body.keywords) {
+      try {
+        const resourceName = `customers/${customerId}/adGroupCriteria/${kw.adGroupId}~${kw.criterionId}`;
+
+        if (body.action === 'remove') {
+          await customer.adGroupCriteria.remove([resourceName]);
+        } else {
+          await customer.adGroupCriteria.update([
+            {
+              resource_name: resourceName,
+              status: enums.AdGroupCriterionStatus.PAUSED,
+            },
+          ]);
+        }
+
+        results.push({
+          success: true,
+          action: body.action,
+          keyword: `Criterion ${kw.criterionId}`,
+          message: `Keyword ${body.action === 'remove' ? 'removed' : 'paused'} successfully`,
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          action: body.action,
+          keyword: `Criterion ${kw.criterionId}`,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    const succeeded = results.filter((r) => r.success).length;
+    return {
+      success: succeeded === results.length,
+      total: results.length,
+      succeeded,
+      failed: results.length - succeeded,
+      results,
+    };
   }
 
   // === Private: campaign creation orchestration ===
