@@ -740,7 +740,7 @@ export class CampaignProxyService {
         jobId,
         campaignCount: results.length,
         errorCount: errors.length,
-        durationMs: Date.now() - startTime,
+        duration_ms: Date.now() - startTime,
       });
     } else {
       logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
@@ -1155,7 +1155,9 @@ function extractGadsErrorMessage(error: unknown): string {
 
   if (code && friendlyMessages[code]) return friendlyMessages[code];
 
-  return code
-    ? `Campaign creation failed (error code: ${code}). Please try again or contact support.`
-    : 'Campaign creation failed. Please try again or contact support.';
+  const originalMessage = error instanceof Error ? error.message : '';
+
+  if (code) return `Campaign creation failed (error code: ${code}). Please try again or contact support.`;
+  if (originalMessage) return originalMessage;
+  return 'Campaign creation failed. Please try again or contact support.';
 }
