@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoalOption, CampaignPlatformOption, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
+import type { CampaignGoalOption, CampaignPlatformOption, CampaignStatus, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
@@ -61,6 +61,14 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
   displayBudgetPct: 30,
 } as const;
+
+export const VALID_CAMPAIGN_STATUSES = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
+
+export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
+  2: 'enabled',
+  3: 'paused',
+  4: 'removed',
+};
 
 // ---------------------------------------------------------------------------
 // Campaign Name Convention

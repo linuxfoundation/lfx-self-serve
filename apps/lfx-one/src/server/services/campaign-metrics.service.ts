@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { parseCampaignName } from '@lfx-one/shared/constants';
+import { GADS_STATUS_ENUM, parseCampaignName, VALID_CAMPAIGN_STATUSES } from '@lfx-one/shared/constants';
 import type {
   AudienceBucket,
   AudienceDemographics,
@@ -38,10 +38,12 @@ export class CampaignMetricsService {
       FROM campaign
       WHERE segments.date DURING ${gaqlRange}
         AND campaign.advertising_channel_type IN ('SEARCH', 'DEMAND_GEN')
+        AND campaign.status IN ('ENABLED', 'PAUSED')
+        AND metrics.impressions > 0
       ORDER BY metrics.cost_micros DESC`;
 
     const rows = await gaqlSearch(query);
-    const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays));
+    const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays)).filter((c) => !c.name.toLowerCase().startsWith('zz'));
     const actionItems = generateActionItems(campaigns);
 
     return {
@@ -70,7 +72,7 @@ export class CampaignMetricsService {
       FROM keyword_view
       WHERE segments.date DURING ${gaqlRange}
       ORDER BY metrics.impressions DESC
-      LIMIT 200`;
+      LIMIT 50`;
 
     const rows = await gaqlSearch(query);
     const keywords = rows.map(parseKeywordRow);
@@ -104,8 +106,8 @@ export class CampaignMetricsService {
 
     const [ageRows, genderRows, deviceRows] = await Promise.all([gaqlSearch(ageQuery), gaqlSearch(genderQuery), gaqlSearch(deviceQuery)]);
 
-    const age = aggregateDemoBuckets(ageRows, (r) => (extractNested(r, 'adGroupCriterion.ageRange.type') as string) || 'Unknown');
-    const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'adGroupCriterion.gender.type') as string) || 'Unknown');
+    const age = aggregateDemoBuckets(ageRows, (r) => (extractNested(r, 'ad_group_criterion.age_range.type') as string) || 'Unknown');
+    const gender = aggregateDemoBuckets(genderRows, (r) => (extractNested(r, 'ad_group_criterion.gender.type') as string) || 'Unknown');
     const device = aggregateDemoBuckets(deviceRows, (r) => (extractNested(r, 'segments.device') as string) || 'Unknown');
 
     return { pulledAt: new Date().toISOString(), days: effectiveDays, age, gender, device };
@@ -131,10 +133,11 @@ function extractNested(obj: unknown, path: string): unknown {
   return current;
 }
 
-const VALID_CAMPAIGN_STATUSES = new Set<CampaignMetrics['status']>(['enabled', 'paused', 'removed', 'limited', 'draft']);
-
-function normalizeCampaignStatus(raw: string | undefined): CampaignMetrics['status'] {
-  const status = (raw ?? 'unknown').toLowerCase() as CampaignMetrics['status'];
+function normalizeCampaignStatus(raw: unknown): CampaignMetrics['status'] {
+  if (typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(raw))) {
+    return GADS_STATUS_ENUM[Number(raw)] ?? 'unknown';
+  }
+  const status = String(raw ?? 'unknown').toLowerCase() as CampaignMetrics['status'];
   return VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown';
 }
 
@@ -159,8 +162,8 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const name = (extractNested(r, 'campaign.name') as string) || '';
   const parsed = parseCampaignName(name);
   const campaignId = String(extractNested(r, 'campaign.id') || '');
-  const budgetMicros = Number(extractNested(r, 'campaignBudget.amountMicros') || 0);
-  const costMicros = Number(extractNested(r, 'metrics.costMicros') || 0);
+  const budgetMicros = Number(extractNested(r, 'campaign_budget.amount_micros') || 0);
+  const costMicros = Number(extractNested(r, 'metrics.cost_micros') || 0);
   const impressions = Number(extractNested(r, 'metrics.impressions') || 0);
   const clicks = Number(extractNested(r, 'metrics.clicks') || 0);
   const conversions = Number(extractNested(r, 'metrics.conversions') || 0);
@@ -169,8 +172,8 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const expectedSpend = budgetDay * days;
   const pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
 
-  const startDate = (extractNested(r, 'campaign.startDate') as string) || '';
-  const endDate = (extractNested(r, 'campaign.endDate') as string) || '';
+  const startDate = (extractNested(r, 'campaign.start_date') as string) || '';
+  const endDate = (extractNested(r, 'campaign.end_date') as string) || '';
 
   let pacingLabel: PacingLabel = 'normal';
   if (pacingPct < 50) pacingLabel = 'underspending';
@@ -183,7 +186,7 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     eventName: parsed.baseName,
     adFormat: parsed.adFormat,
     targeting: parsed.targeting,
-    status: normalizeCampaignStatus(extractNested(r, 'campaign.status') as string | undefined),
+    status: normalizeCampaignStatus(extractNested(r, 'campaign.status')),
     startDate,
     endDate,
     budgetDay,
@@ -355,17 +358,17 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
 
 function parseKeywordRow(row: unknown): KeywordMetrics {
   const r = row as Record<string, unknown>;
-  const costMicros = Number(extractNested(r, 'metrics.costMicros') || 0);
+  const costMicros = Number(extractNested(r, 'metrics.cost_micros') || 0);
   const clicks = Number(extractNested(r, 'metrics.clicks') || 0);
   const campaignId = String(extractNested(r, 'campaign.id') || '');
   return {
-    keyword: (extractNested(r, 'adGroupCriterion.keyword.text') as string) || '',
-    matchType: (extractNested(r, 'adGroupCriterion.keyword.matchType') as string) || '',
-    qualityScore: (extractNested(r, 'adGroupCriterion.qualityInfo.qualityScore') as number) ?? null,
-    status: (extractNested(r, 'adGroupCriterion.status') as string) || '',
-    adGroup: (extractNested(r, 'adGroup.name') as string) || '',
-    adGroupId: String(extractNested(r, 'adGroup.id') || ''),
-    criterionId: String(extractNested(r, 'adGroupCriterion.criterionId') || ''),
+    keyword: (extractNested(r, 'ad_group_criterion.keyword.text') as string) || '',
+    matchType: (extractNested(r, 'ad_group_criterion.keyword.match_type') as string) || '',
+    qualityScore: (extractNested(r, 'ad_group_criterion.quality_info.quality_score') as number) ?? null,
+    status: (extractNested(r, 'ad_group_criterion.status') as string) || '',
+    adGroup: (extractNested(r, 'ad_group.name') as string) || '',
+    adGroupId: String(extractNested(r, 'ad_group.id') || ''),
+    criterionId: String(extractNested(r, 'ad_group_criterion.criterion_id') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
     googleAdsUrl: buildGoogleAdsUrl(campaignId),
@@ -387,7 +390,7 @@ function aggregateDemoBuckets(rows: unknown[], labelExtractor: (row: Record<stri
     const existing = buckets.get(label) || { label, impressions: 0, clicks: 0, ctr: 0, spend: 0, conversions: 0 };
     existing.impressions += Number(extractNested(r, 'metrics.impressions') || 0);
     existing.clicks += Number(extractNested(r, 'metrics.clicks') || 0);
-    existing.spend += Number(extractNested(r, 'metrics.costMicros') || 0) / 1_000_000;
+    existing.spend += Number(extractNested(r, 'metrics.cost_micros') || 0) / 1_000_000;
     existing.conversions += Number(extractNested(r, 'metrics.conversions') || 0);
     existing.ctr = existing.impressions > 0 ? (existing.clicks / existing.impressions) * 100 : 0;
     buckets.set(label, existing);
