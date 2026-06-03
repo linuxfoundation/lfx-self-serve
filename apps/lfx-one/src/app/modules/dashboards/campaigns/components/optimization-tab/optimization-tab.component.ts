@@ -1,25 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
-import type {
-  CampaignActionItem,
-  CampaignMetrics,
-  CampaignMonitorResponse,
-  KeywordActionType,
-  KeywordMetrics,
-  KeywordMetricsResponse,
-} from '@lfx-one/shared/interfaces';
+import type { CampaignMonitorResponse, DateRangeOption, KeywordActionType, KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
 
-type DateRangeOption = 7 | 14 | 30;
-
 @Component({
   selector: 'lfx-optimization-tab',
-  imports: [],
+  imports: [DecimalPipe, AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe],
   templateUrl: './optimization-tab.component.html',
   styleUrl: './optimization-tab.component.scss',
 })
@@ -29,7 +21,6 @@ export class OptimizationTabComponent implements OnInit {
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
 
-  protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
 
   protected readonly selectedDays = signal<DateRangeOption>(30);
@@ -60,10 +51,11 @@ export class OptimizationTabComponent implements OnInit {
     return all.filter((k) => k.qualityScore !== null && k.qualityScore <= 4).sort((a, b) => (a.qualityScore ?? 0) - (b.qualityScore ?? 0));
   });
 
-  protected readonly displayCampaigns = computed<CampaignMetrics[]>(() => {
+  protected readonly displayCampaigns = computed(() => {
     return this.campaigns()
       .filter((c) => !c.adFormat.toLowerCase().includes('search'))
-      .sort((a, b) => a.ctr - b.ctr);
+      .sort((a, b) => a.ctr - b.ctr)
+      .map((c) => ({ ...c, displayPacingPct: Math.min(c.pacingPct, 100) }));
   });
 
   protected readonly hasWastedKeywords = computed(() => this.wastedKeywords().length > 0);
@@ -197,55 +189,5 @@ export class OptimizationTabComponent implements OnInit {
           });
         },
       });
-  }
-
-  protected isActionInProgress(kw: KeywordMetrics): boolean {
-    return this.actionInProgress()[`${kw.adGroupId}-${kw.criterionId}`] ?? false;
-  }
-
-  protected getActionResult(kw: KeywordMetrics): { success: boolean; message: string } | null {
-    return this.actionResults()[`${kw.adGroupId}-${kw.criterionId}`] ?? null;
-  }
-
-  protected priorityClass(priority: CampaignActionItem['priority']): string {
-    switch (priority) {
-      case 'HIGH':
-        return 'bg-red-100 text-red-700';
-      case 'MED':
-        return 'bg-amber-100 text-amber-700';
-      default:
-        return 'bg-gray-100 text-gray-600';
-    }
-  }
-
-  protected pacingClass(campaign: CampaignMetrics): string {
-    const pct = campaign.pacingPct;
-    if (pct < CAMPAIGN_PACING_THRESHOLDS.underspending) return 'bg-red-500';
-    if (pct <= CAMPAIGN_PACING_THRESHOLDS.normal) return 'bg-green-500';
-    if (pct <= CAMPAIGN_PACING_THRESHOLDS.constrained) return 'bg-amber-500';
-    return 'bg-red-500';
-  }
-
-  protected qualityScoreClass(score: number | null): string {
-    if (score === null) return 'text-gray-400';
-    if (score >= 7) return 'text-green-700';
-    if (score >= 4) return 'text-amber-700';
-    return 'text-red-700';
-  }
-
-  protected eventLabel(campaignName: string): string {
-    return parseCampaignName(campaignName).baseName || campaignName;
-  }
-
-  protected formatCurrency(value: number): string {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
-  protected formatNumber(value: number): string {
-    return value.toLocaleString('en-US');
-  }
-
-  protected formatPct(value: number): string {
-    return `${value.toFixed(2)}%`;
   }
 }

@@ -13,6 +13,8 @@ export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limit
 
 export type CampaignType = 'search' | 'demand-gen';
 
+export type DateRangeOption = 7 | 14 | 30;
+
 export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead-generation' | 'engagement';
 
 export type CampaignTab = CampaignPhase;

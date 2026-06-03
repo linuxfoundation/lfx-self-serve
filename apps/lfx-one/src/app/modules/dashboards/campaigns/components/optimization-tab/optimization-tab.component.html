@@ -105,7 +105,7 @@
                 @for (item of actionItems(); track $index) {
                   <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'action-item-row-' + $index">
                     <td class="px-4 py-3">
-                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="priorityClass(item.priority)">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="item.priority | priorityClass">
                         {{ item.priority }}
                       </span>
                     </td>
@@ -114,7 +114,7 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ item.issue }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
-                    <td class="px-4 py-3 text-right text-gray-700">{{ formatCurrency(item.metrics.spend) }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
                     <td class="px-4 py-3 text-right">
                       <span
                         class="text-sm font-medium"
@@ -204,22 +204,22 @@
                       </span>
                     </td>
                     <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-medium" [class]="qualityScoreClass(kw.qualityScore)">
+                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
                         {{ kw.qualityScore ?? '–' }}
                       </span>
                     </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ eventLabel(kw.campaign) }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ formatCurrency(kw.spend) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.clicks) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatPct(kw.ctr) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.avgCpc) }}</td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
                     <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
                     <td class="px-4 py-2.5 text-center">
-                      @if (getActionResult(kw); as result) {
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
                         <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
                           {{ result.success ? 'Done' : 'Failed' }}
                         </span>
-                      } @else if (isActionInProgress(kw)) {
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
                       } @else {
                         <div class="flex items-center justify-center gap-1">
@@ -291,18 +291,18 @@
                       </span>
                     </td>
                     <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-semibold" [class]="qualityScoreClass(kw.qualityScore)"> {{ kw.qualityScore }}/10 </span>
+                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
                     </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ eventLabel(kw.campaign) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.impressions) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(kw.clicks) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(kw.spend) }}</td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
                     <td class="px-4 py-2.5 text-center">
-                      @if (getActionResult(kw); as result) {
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
                         <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
                           {{ result.success ? 'Done' : 'Failed' }}
                         </span>
-                      } @else if (isActionInProgress(kw)) {
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
                       } @else {
                         <div class="flex items-center justify-center gap-1">
@@ -366,19 +366,19 @@
                         {{ c.adFormat }}
                       </span>
                     </td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(c.impressions) }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatNumber(c.clicks) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.clicks | number }}</td>
                     <td class="px-4 py-2.5 text-right" [class]="c.ctr < 0.3 ? 'font-medium text-red-600' : 'text-gray-700'">
-                      {{ formatPct(c.ctr) }}
+                      {{ c.ctr | adsPct }}
                     </td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ formatCurrency(c.spend) }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
                     <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
-                      {{ formatNumber(c.conversions) }}
+                      {{ c.conversions | number }}
                     </td>
                     <td class="px-4 py-2.5">
                       <div class="flex items-center gap-2">
                         <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
-                          <div class="h-full rounded-full" [class]="pacingClass(c)" [style.width.%]="Math.min(c.pacingPct, 100)"></div>
+                          <div class="h-full rounded-full" [class]="c | pacingClass" [style.width.%]="c.displayPacingPct"></div>
                         </div>
                         <span class="text-xs text-gray-500">{{ c.pacingPct }}%</span>
                       </div>
