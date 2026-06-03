@@ -8,11 +8,12 @@ import { CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignTab } from '@lfx-one/shared/interfaces';
 
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
+import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 @Component({
   selector: 'lfx-campaigns',
-  imports: [PlanningTabComponent, ImplementationTabComponent],
+  imports: [PlanningTabComponent, ImplementationTabComponent, MonitoringTabComponent],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
 })

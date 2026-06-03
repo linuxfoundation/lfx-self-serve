@@ -764,7 +764,7 @@ export class CampaignProxyService {
       },
     ]);
     const budgetResource = budgetResult.results[0]?.resource_name;
-    if (!budgetResource) throw new Error('Budget creation did not return a resource_name');
+    if (!budgetResource) throw new Error('Search budget creation returned no resource name');
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     // 2. Create campaign
@@ -782,10 +782,11 @@ export class CampaignProxyService {
           target_search_network: true,
           target_content_network: false,
         },
+        contains_eu_political_advertising: enums.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
       },
     ]);
     const campaignResource = campaignResult.results[0]?.resource_name;
-    if (!campaignResource) throw new Error('Campaign creation did not return a resource_name');
+    if (!campaignResource) throw new Error('Search campaign creation returned no resource name');
     const campaignId = campaignResource.split('/').pop() || '';
     steps.push(`Created campaign: ${campaignName}`);
 
@@ -812,7 +813,7 @@ export class CampaignProxyService {
       },
     ]);
     const adGroupResource = adGroupResult.results[0]?.resource_name;
-    if (!adGroupResource) throw new Error('Ad group creation did not return a resource_name');
+    if (!adGroupResource) throw new Error('Search ad group creation returned no resource name');
     steps.push('Created ad group');
 
     // 5. Add keywords
@@ -880,7 +881,7 @@ export class CampaignProxyService {
       },
     ]);
     const budgetResource = budgetResult.results[0]?.resource_name;
-    if (!budgetResource) throw new Error('Budget creation did not return a resource_name');
+    if (!budgetResource) throw new Error('Demand Gen budget creation returned no resource name');
     steps.push(`Created budget: $${(budgetMicros / 1_000_000).toFixed(2)}/day`);
 
     const campaignResult = await customer.campaigns.create([
@@ -892,10 +893,11 @@ export class CampaignProxyService {
         start_date_time: `${body.startDate} 00:00:00`,
         end_date_time: `${body.endDate} 23:59:59`,
         target_spend: {},
+        contains_eu_political_advertising: enums.EuPoliticalAdvertisingStatus.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
       },
     ]);
     const campaignResource = campaignResult.results[0]?.resource_name;
-    if (!campaignResource) throw new Error('Campaign creation did not return a resource_name');
+    if (!campaignResource) throw new Error('Demand Gen campaign creation returned no resource name');
     const campaignId = campaignResource.split('/').pop() || '';
     steps.push(`Created Demand Gen campaign: ${campaignName}`);
 
@@ -903,12 +905,11 @@ export class CampaignProxyService {
       {
         name: `${body.eventName} - Display`,
         campaign: campaignResource,
-        type: enums.AdGroupType.DISPLAY_STANDARD,
         status: enums.AdGroupStatus.ENABLED,
       },
     ]);
     const adGroupResource = adGroupResult.results[0]?.resource_name;
-    if (!adGroupResource) throw new Error('Ad group creation did not return a resource_name');
+    if (!adGroupResource) throw new Error('Demand Gen ad group creation returned no resource name');
     steps.push('Created ad group');
 
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)

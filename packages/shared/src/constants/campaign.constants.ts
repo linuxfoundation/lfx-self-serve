@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoalOption, CampaignPlatformOption, CampaignTabOption } from '../interfaces/campaign.interface';
+import type { CampaignGoalOption, CampaignPlatformOption, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
-export const CAMPAIGN_TABS: CampaignTabOption[] = [
+export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
   { id: 'planning', label: 'Planning', icon: 'fa-light fa-clipboard-list' },
   { id: 'implementation', label: 'Implementation', icon: 'fa-light fa-rocket' },
-  { id: 'monitoring', label: 'Monitoring', icon: 'fa-light fa-chart-mixed' },
+  { id: 'insights', label: 'Insights', icon: 'fa-light fa-chart-mixed' },
   { id: 'optimization', label: 'Optimization', icon: 'fa-light fa-gauge-high' },
 ] as const;
 
@@ -61,3 +61,29 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
   displayBudgetPct: 30,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Campaign Name Convention
+// ---------------------------------------------------------------------------
+// Format: "Program | Base Name | Region | Objective | Targeting | Ad Format | Project | Funnel | Date"
+// Example: "Events | KubeCon NA 2025 | EMEA | Conversions | Intent | Search | CNCF | MoFU | 2025-06-01"
+
+export const CAMPAIGN_NAME_FIELDS = ['program', 'baseName', 'region', 'objective', 'targeting', 'adFormat', 'project', 'funnelStage', 'dateSuffix'] as const;
+
+export const CAMPAIGN_NAME_DELIMITER = ' | ';
+
+export function parseCampaignName(raw: string): ParsedCampaignName {
+  const parts = raw.split(CAMPAIGN_NAME_DELIMITER);
+  return {
+    program: parts[0] || '',
+    baseName: parts[1] || '',
+    region: parts[2] || '',
+    objective: parts[3] || '',
+    targeting: parts[4] || '',
+    adFormat: parts[5] || '',
+    project: parts[6] || '',
+    funnelStage: parts[7] || '',
+    dateSuffix: parts[8] || '',
+    raw,
+  };
+}
