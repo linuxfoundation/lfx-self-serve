@@ -62,7 +62,7 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
   displayBudgetPct: 30,
 } as const;
 
-export const VALID_CAMPAIGN_STATUSES = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
+export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
 
 export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
   2: 'enabled',
