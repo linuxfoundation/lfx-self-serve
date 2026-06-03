@@ -273,7 +273,7 @@ export class PublicMeetingController {
             transcript_enabled: meeting.transcript_enabled,
             youtube_upload_enabled: meeting.youtube_upload_enabled,
             show_meeting_attendees: meeting.show_meeting_attendees,
-            zoom_config: meeting.zoom_config ? { ai_companion_enabled: meeting.zoom_config.ai_companion_enabled } : undefined,
+            ai_summary_enabled: meeting.ai_summary_enabled,
             project_uid: meeting.project_uid,
             meeting_id: meeting.meeting_id,
           };

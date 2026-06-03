@@ -924,7 +924,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeHasAiCompanion(): Signal<boolean> {
-    return computed(() => this.meeting()?.zoom_config?.ai_companion_enabled || false);
+    return computed(() => this.meeting()?.ai_summary_enabled || false);
   }
 
   private initializeRestrictedView(): Signal<boolean> {

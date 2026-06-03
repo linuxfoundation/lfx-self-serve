@@ -63,21 +63,6 @@ export interface V1PastMeetingSummary {
 // ============================================================================
 
 /**
- * Zoom-specific meeting configuration
- * @description Settings specific to Zoom platform integration
- */
-export interface ZoomConfig {
-  /** Zoom meeting ID (response only) */
-  meeting_id?: string;
-  /** Zoom meeting passcode (response only) */
-  passcode?: string;
-  /** Enable/disable Zoom AI companion */
-  ai_companion_enabled?: boolean;
-  /** Require approval for AI summaries in LFX system */
-  ai_summary_require_approval?: boolean;
-}
-
-/**
  * Meeting recurrence configuration
  * @description Defines how and when a meeting repeats (compatible with Zoom API)
  */
@@ -199,8 +184,10 @@ export interface Meeting {
   organizers: string[];
   /** Meeting access password for private/restricted meetings */
   password: string | null;
-  /** Zoom-specific settings */
-  zoom_config?: ZoomConfig | null;
+  /** Whether Zoom AI Companion summary is enabled for the meeting */
+  ai_summary_enabled?: boolean | null;
+  /** Whether AI summary requires approval before being shared */
+  require_ai_summary_approval?: boolean | null;
 
   /** 6-digit Zoom host key */
   host_key?: string;
@@ -318,7 +305,8 @@ export interface CreateMeetingRequest {
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  zoom_config?: ZoomConfig; // Zoom-specific settings
+  ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
+  require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
 }
 
 export interface UpdateMeetingRequest {
@@ -344,7 +332,8 @@ export interface UpdateMeetingRequest {
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  zoom_config?: ZoomConfig | null; // Zoom-specific settings
+  ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
+  require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
 }
 
 export interface DeleteMeetingRequest {
