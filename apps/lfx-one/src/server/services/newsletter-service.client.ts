@@ -31,15 +31,7 @@ export class NewsletterServiceClient {
   private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
 
   public async createNewsletter(req: Request, projectUid: string, payload: CreateNewsletterRequest): Promise<Newsletter> {
-    return this.microserviceProxy.proxyRequest<Newsletter>(
-      req,
-      'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletters`,
-      'POST',
-      undefined,
-      payload,
-      this.edNameHeader(req)
-    );
+    return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters`, 'POST', undefined, payload);
   }
 
   public async getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
@@ -78,7 +70,6 @@ export class NewsletterServiceClient {
       undefined,
       payload,
       {
-        ...this.edNameHeader(req),
         'If-Match': `"${ifMatchVersion}"`,
       }
     );
@@ -91,8 +82,9 @@ export class NewsletterServiceClient {
   /**
    * Send a previously-saved newsletter draft. The Go service mints group_id,
    * resolves recipients, fans out to email-service, and persists the status
-   * transition — Express just forwards the user's identity (X-User-Name) so
-   * the Go service can stamp the sender attribution.
+   * transition. The sender's display name is resolved server-side from the
+   * signed JWT principal via the auth-service NATS lookup — Express forwards
+   * only the bearer token and the If-Match version.
    */
   public async sendNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterSendResult> {
     return this.microserviceProxy.proxyRequest<NewsletterSendResult>(
@@ -102,10 +94,7 @@ export class NewsletterServiceClient {
       'POST',
       undefined,
       {},
-      {
-        ...this.edNameHeader(req),
-        'If-Match': `"${ifMatchVersion}"`,
-      }
+      { 'If-Match': `"${ifMatchVersion}"` }
     );
   }
 
@@ -138,8 +127,7 @@ export class NewsletterServiceClient {
       `/projects/${projectUid}/newsletters/test-send`,
       'POST',
       undefined,
-      payload,
-      this.edNameHeader(req)
+      payload
     );
   }
 
@@ -150,18 +138,5 @@ export class NewsletterServiceClient {
       `/projects/${projectUid}/newsletters/${newsletterUid}/analytics`,
       'GET'
     );
-  }
-
-  /**
-   * Forwards the ED display name from the inbound Auth0 session so the Go
-   * service can stamp emails without needing access to the LFX user store.
-   */
-  private edNameHeader(req: Request): Record<string, string> {
-    const user = req.oidc?.user;
-    const name = (user?.['name'] as string) || (user?.['nickname'] as string) || (user?.['email'] as string) || '';
-    if (!name) {
-      return {};
-    }
-    return { 'X-User-Name': String(name) };
   }
 }
