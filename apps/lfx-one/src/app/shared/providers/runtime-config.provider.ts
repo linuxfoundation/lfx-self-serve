@@ -14,6 +14,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   dataDogRumApplicationId: '',
   allowedTracingUrls: [],
   intercomAppId: '',
+  stripePublishableKey: '',
 };
 
 /**
