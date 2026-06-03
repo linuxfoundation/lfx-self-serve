@@ -20,7 +20,7 @@ import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, of, startWith, switchMap, tap, toArray } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
 
 /** A search hit decorated with whether its email is already added to the textarea or already a member. */
 type DecoratedResult = UserSearchResult & { added: boolean; alreadyMember: boolean };
@@ -149,12 +149,10 @@ export class AddMemberDialogComponent {
     from(emails)
       .pipe(
         mergeMap(
-          (email) =>
+          (email): Observable<CommitteeInviteResult> =>
             this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role }).pipe(
-              map(() => ({ email, success: true }) as CommitteeInviteResult),
-              catchError(
-                (err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }) as ReturnType<typeof of<CommitteeInviteResult>>
-              )
+              map(() => ({ email, success: true })),
+              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
             ),
           INVITE_CONCURRENCY
         ),
