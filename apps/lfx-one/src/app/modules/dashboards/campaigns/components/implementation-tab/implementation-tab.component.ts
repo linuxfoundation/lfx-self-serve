@@ -225,8 +225,12 @@ export class ImplementationTabComponent {
             this.step.set('results');
           }
         },
-        error: () => {
-          this.errors.set(['Lost connection to the campaign creation process. Please try again or check Google Ads directly.']);
+        error: (error: unknown) => {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Lost connection to the campaign creation process. Please try again or check Google Ads directly.';
+          this.errors.set([message]);
           this.step.set('results');
         },
         complete: () => {
