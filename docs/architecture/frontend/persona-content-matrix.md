@@ -16,7 +16,7 @@ For background on how personas and lenses are resolved, see [Lens & Persona Syst
 | `board-member`       | Has a board committee membership on a foundation                |
 | `executive-director` | Has an ED committee membership, OR is a root writer (injected)  |
 
-A user can carry multiple personas simultaneously. The **primary** persona is the highest-priority one (`executive-director` > `board-member` > `maintainer` > `contributor`) and drives conditional sidebar sections.
+A user can carry multiple personas simultaneously. When no explicit selection has been made, `PersonaService` defaults to the highest-priority persona (`executive-director` > `board-member` > `maintainer` > `contributor`). A user can explicitly **pin** a lower-priority persona (e.g., switch from ED to board-member view) — `PersonaService` preserves that choice across refreshes as long as the persona is still in the allowed set (`userSelected` flag). The active `currentPersona()` signal — not a static priority rule — drives which conditional sidebar sections are shown.
 
 ## Lenses and access rules
 
@@ -25,17 +25,17 @@ A user can carry multiple personas simultaneously. The **primary** persona is th
 | `me`         | All authenticated users                                                             |
 | `foundation` | Users with `hasBoardRole` (`board-member` or `executive-director`), or root writers |
 | `project`    | Users with `hasProjectRole` (`maintainer` or `contributor`), or root writers        |
-| `org`        | All lenses users (feature-flagged via `ORG_LENS_ENABLED_FLAG`)                      |
+| `org`        | All users (feature-flagged via `ORG_LENS_ENABLED_FLAG`)                             |
 
 A user can carry both board and project roles and see both the `foundation` and `project` lenses simultaneously.
 
 ## Key conditions referenced in the matrix
 
-| Condition                 | Definition                                                                                                                         | Source                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `canWrite()`              | `ProjectContextService.canWrite` — reactive signal; true when the user has write/manage access to the active foundation or project | `project-context.service.ts`   |
-| `canSeeNewsletters()`     | `currentPersona() === 'executive-director' \|\| canWrite()`                                                                        | `main-layout.component.ts:535` |
-| `foundationHasProjects()` | True when the selected foundation has ≥1 project row in Snowflake; cleared while fetching                                          | `main-layout.component.ts:188` |
+| Condition                 | Definition                                                                                                                         | Source                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `canWrite()`              | `ProjectContextService.canWrite` — reactive signal; true when the user has write/manage access to the active foundation or project | `project-context.service.ts` |
+| `canSeeNewsletters()`     | `currentPersona() === 'executive-director' \|\| canWrite()`                                                                        | `main-layout.component.ts`   |
+| `foundationHasProjects()` | True when the selected foundation has ≥1 project row in Snowflake; cleared while fetching                                          | `main-layout.component.ts`   |
 
 ---
 
@@ -152,11 +152,11 @@ Available to `contributor`, `maintainer`, and root writers.
 
 Guards enforce access at the router level — regardless of whether a sidebar link is visible.
 
-| Guard                    | Protected routes                                                                        | Access rule                                 |
-| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`                            | `currentPersona() === 'executive-director'` |
-| `newsletterAccessGuard`  | `/foundation/newsletters`, `/project/newsletters`, and all nested newsletter routes     | `canSeeNewsletters()` — ED or `canWrite()`  |
-| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `canWrite()`                                |
+| Guard                    | Protected routes                                                                        | Access rule                                      |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`      |
+| `newsletterAccessGuard`  | `/foundation/newsletters`, `/project/newsletters`, and all nested newsletter routes     | `canSeeNewsletters()` — ED or `canWrite()`       |
+| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()` |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
