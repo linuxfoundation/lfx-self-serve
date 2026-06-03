@@ -140,6 +140,17 @@ export class ImplementationTabComponent {
 
     this.campaignService.createCampaign(request).subscribe({
       next: (response) => {
+        if (response.result) {
+          this.results.set(response.result.campaigns);
+          this.errors.set(response.result.errors);
+          this.step.set('results');
+          return;
+        }
+        if (response.error) {
+          this.errors.set([response.error]);
+          this.step.set('results');
+          return;
+        }
         if (!response.jobId) {
           this.errors.set(['Failed to start campaign creation.']);
           this.step.set('form');

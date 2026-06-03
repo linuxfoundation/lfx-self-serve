@@ -35,8 +35,8 @@ export class CampaignService {
     });
   }
 
-  public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string }> {
-    return this.http.post<{ jobId: string }>('/api/campaigns/create', request);
+  public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
   }
 
   public getCreateResult(jobId: string): Observable<CampaignCreateResponse | null> {
