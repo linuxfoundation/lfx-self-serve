@@ -185,9 +185,9 @@ export interface Meeting {
   /** Meeting access password for private/restricted meetings */
   password: string | null;
   /** Whether Zoom AI Companion summary is enabled for the meeting */
-  ai_summary_enabled?: boolean;
+  ai_summary_enabled?: boolean | null;
   /** Whether AI summary requires approval before being shared */
-  require_ai_summary_approval?: boolean;
+  require_ai_summary_approval?: boolean | null;
 
   /** 6-digit Zoom host key */
   host_key?: string;
@@ -305,8 +305,8 @@ export interface CreateMeetingRequest {
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
-  require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
+  ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
+  require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
 }
 
 export interface UpdateMeetingRequest {

@@ -498,7 +498,7 @@ export class MeetingManageComponent {
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
       show_meeting_attendees: false, // Coming Soon — disabled in form
       ai_summary_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
-      require_ai_summary_approval: formValue.recording_enabled ? formValue.require_ai_summary_approval || false : false,
+      require_ai_summary_approval: formValue.recording_enabled && formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
