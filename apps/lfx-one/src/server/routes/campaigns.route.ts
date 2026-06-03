@@ -16,5 +16,6 @@ router.post('/hubspot/utm/create', (req, res, next) => campaignController.create
 router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
+router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
 
 export default router;

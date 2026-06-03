@@ -232,6 +232,8 @@ export interface KeywordMetrics {
   qualityScore: number | null;
   status: string;
   adGroup: string;
+  adGroupId: string;
+  criterionId: string;
   campaign: string;
   campaignId: string;
   googleAdsUrl: string;
@@ -295,6 +297,39 @@ export interface ImpressionShareMetrics {
   rankLostShare: number | null;
   impressions: number;
   clicks: number;
+}
+
+// ---------------------------------------------------------------------------
+// Optimization Actions
+// ---------------------------------------------------------------------------
+
+export type KeywordActionType = 'pause' | 'remove';
+
+export interface KeywordActionRequest {
+  campaignId: string;
+  adGroupId: string;
+  criterionId: string;
+  action: KeywordActionType;
+}
+
+export interface KeywordActionResponse {
+  success: boolean;
+  action: KeywordActionType;
+  keyword: string;
+  message: string;
+}
+
+export interface BulkKeywordActionRequest {
+  keywords: KeywordActionRequest[];
+  action: KeywordActionType;
+}
+
+export interface BulkKeywordActionResponse {
+  success: boolean;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: KeywordActionResponse[];
 }
 
 export interface SearchTermMetrics {
