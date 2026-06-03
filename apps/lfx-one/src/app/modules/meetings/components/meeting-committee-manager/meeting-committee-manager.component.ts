@@ -6,7 +6,8 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
-import { COMMITTEE_LABEL, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
+import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -51,7 +52,7 @@ export class MeetingCommitteeManagerComponent {
   public filteredCommitteeMembers = this.initFilteredCommitteeMembers();
 
   // Voting status options for dropdown
-  public readonly votingStatusOptions = VOTING_STATUSES;
+  public readonly votingStatusOptions = MEETING_VOTING_STATUSES;
   public readonly committeeLabel = COMMITTEE_LABEL;
 
   // Computed signals
@@ -255,15 +256,17 @@ export class MeetingCommitteeManagerComponent {
         return members;
       }
 
-      // Filter members by selected voting statuses
-      // Members without voting status info are excluded from filtered results
+      // None is treated as Observer — normalize both sides so None-status members
+      // are included when Observer is selected.
+      const normalizeStatus = (s: string): string => (s === CommitteeMemberVotingStatus.NONE ? CommitteeMemberVotingStatus.OBSERVER : s);
+      const normalizedSelected = selectedVotingStatuses.map(normalizeStatus);
+
       return members.filter((member) => {
         const votingStatus = member.voting?.status;
-        // If member has no voting status, exclude them from filtered results
         if (!votingStatus) {
           return false;
         }
-        return selectedVotingStatuses.includes(votingStatus);
+        return normalizedSelected.includes(normalizeStatus(votingStatus));
       });
     });
   }
