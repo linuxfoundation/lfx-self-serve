@@ -142,7 +142,7 @@
                     </td>
                     <!-- NPS Score -->
                     <td class="px-4 py-3">
-                      @if (item.nps_value !== undefined && item.nps_value !== null) {
+                      @if (item.response_datetime && item.nps_value !== undefined && item.nps_value !== null) {
                         <span class="font-semibold" [class]="npsBandClass(item.nps_value)">{{ item.nps_value }}</span>
                       } @else {
                         <span class="text-slate-400">—</span>

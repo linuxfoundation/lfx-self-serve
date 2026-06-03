@@ -229,7 +229,7 @@ export class SurveyResponsesListComponent {
 
       const nps = this.npsFilter();
       if (nps !== 'all') {
-        rows = rows.filter((r) => getNpsBand(r.nps_value) === nps);
+        rows = rows.filter((r) => !!r.response_datetime && getNpsBand(r.nps_value) === nps);
       }
 
       const comment = this.commentFilter();
