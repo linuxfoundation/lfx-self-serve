@@ -186,6 +186,15 @@ export * from './org-lens-access.interface';
 export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';
 
+// Org People — Trainees tab (LFXV2-1876)
+export * from './org-people-trainees.interface';
+
+// Org People — Event Attendees tab (LFXV2-1875)
+export * from './org-people-event-attendees.interface';
+
+// Org People — Contributors tab (LFXV2-1874)
+export * from './org-people-contributors.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 
