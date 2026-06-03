@@ -144,11 +144,13 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
     const url = route.request().url();
     if (!url.includes(`lens=${lens}`)) {
       // Fulfill non-matching lens requests with empty items to keep the suite fully hermetic.
-      const otherLens = url.includes('lens=foundation') ? 'foundation' : 'project';
+      // Echo the requested lens param back so NavigationService routing logic stays correct for
+      // any lens value the app may prefetch (e.g. 'org', 'me'), not just 'foundation'/'project'.
+      const requestedLens = new URL(url).searchParams.get('lens') ?? lens;
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: [], next_page_token: null, upstream_failed: false, lens: otherLens }),
+        body: JSON.stringify({ items: [], next_page_token: null, upstream_failed: false, lens: requestedLens }),
       });
     }
     return route.fulfill({
