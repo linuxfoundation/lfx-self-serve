@@ -10,6 +10,8 @@
 //
 // All fixtures use synthetic placeholder identities — never real user data.
 
+import { describe, expect, it } from 'vitest';
+
 import { Committee, CommitteeMember } from '../interfaces';
 import { canManageCommitteeMembers, resolveCommitteeMemberPermission } from './committee.utils';
 

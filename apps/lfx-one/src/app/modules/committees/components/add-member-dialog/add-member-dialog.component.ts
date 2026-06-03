@@ -3,37 +3,43 @@
 
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COMMITTEE_PERMISSION_OPTIONS, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
 import {
+  CategorizedCommitteeEmails,
   Committee,
+  CommitteeInvite,
+  CommitteeInviteResult,
   CommitteeMember,
-  CommitteePermissionLevel,
-  CommitteeUser,
-  CreateCommitteeMemberRequest,
-  DialogMode,
-  OrganizationResolveResult,
+  DecoratedCommitteeSearchResult,
+  EmailListParseResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
-import { rankUserSearchResults } from '@lfx-one/shared/utils';
+import { hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
-import { MailingListService } from '@services/mailing-list.service';
 import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
 
+/**
+ * Invite people to a committee by email — single or bulk.
+ *
+ * The committee/registrant search corpus is not the LF identity directory, so this
+ * flow does not try to match every person to an existing account. Anyone is added by
+ * inviting their email (invite-and-forget); the invitee completes their own profile on
+ * accept, and an LFID is reconciled then. The typeahead is a convenience for finding
+ * people already known to v2 and appending their email — never a gate.
+ */
 @Component({
   selector: 'lfx-add-member-dialog',
   imports: [
@@ -43,43 +49,57 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, swi
     UserAvatarColorPipe,
     ButtonComponent,
     InputTextComponent,
-    OrganizationSearchComponent,
     SelectComponent,
-    CheckboxComponent,
+    TextareaComponent,
     SkeletonModule,
   ],
   templateUrl: './add-member-dialog.component.html',
   styleUrl: './add-member-dialog.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AddMemberDialogComponent {
   private readonly committeeService = inject(CommitteeService);
-  private readonly mailingListService = inject(MailingListService);
   private readonly searchService = inject(SearchService);
   private readonly messageService = inject(MessageService);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
-  private readonly existingEmails = new Set<string>(
-    ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m: CommitteeMember) => (m.email ?? '').toLowerCase())
+  private readonly existingMemberEmails = new Set<string>(
+    ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
-  public readonly searchForm = new FormGroup({ query: new FormControl('') });
-  public readonly configForm = new FormGroup({
-    role: new FormControl<string | null>(null, this.committee?.enable_voting ? [Validators.required] : []),
-    voting_status: new FormControl<string | null>(null, this.committee?.enable_voting ? [Validators.required] : []),
-    org_name: new FormControl<string>('', this.committee?.business_email_required || this.committee?.enable_voting ? [Validators.required] : []),
-    org_domain: new FormControl<string>(''),
-    org_id: new FormControl<string | null>(null),
-    subscribe_mailing_list: new FormControl<boolean>(true),
-    permission: new FormControl<CommitteePermissionLevel>('member'),
-  });
+  private readonly existingInviteEmails = new Set<string>(
+    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
+  );
 
-  public mode = signal<DialogMode>('search');
+  public readonly form = new FormGroup({
+    emails: new FormControl<string>('', { nonNullable: true }),
+    role: new FormControl<string | null>(null),
+  });
+  public readonly searchForm = new FormGroup({ query: new FormControl('') });
+
   public submitting = signal(false);
   public searchLoading = signal(false);
-  public selectedUser = signal<UserSearchResult | null>(null);
-  public searchResults: Signal<(UserSearchResult & { alreadyMember: boolean })[]> = this.initSearchResults();
+
+  private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+
+  public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
+  public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
+    const result: CategorizedCommitteeEmails = { toInvite: [], alreadyMembers: [], alreadyInvited: [] };
+    for (const email of this.parsed().valid) {
+      if (this.existingMemberEmails.has(email)) {
+        result.alreadyMembers.push(email);
+      } else if (this.existingInviteEmails.has(email)) {
+        result.alreadyInvited.push(email);
+      } else {
+        result.toInvite.push(email);
+      }
+    }
+    return result;
+  });
+  public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
+  public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
   public readonly queryValue = toSignal(
     this.searchForm.get('query')!.valueChanges.pipe(
@@ -88,68 +108,22 @@ export class AddMemberDialogComponent {
     ),
     { initialValue: '' }
   );
-
-  /** Tracks form validity as a signal for use in computed() */
-  private readonly formValid = toSignal(
-    this.configForm.statusChanges.pipe(
-      startWith(this.configForm.status),
-      map((s) => s === 'VALID')
-    ),
-    {
-      initialValue: this.configForm.valid,
-    }
-  );
-
-  public readonly canSubmit = computed(() => this.mode() === 'configure' && !!this.selectedUser() && this.formValid());
-  public readonly hasMailingList = computed(() => !!this.committee?.mailing_list);
-
-  public readonly requiresOrg = computed(() => !!(this.committee?.business_email_required || this.committee?.enable_voting));
+  public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
 
   public readonly roleOptions = MEMBER_ROLES;
-  public readonly votingStatusOptions = VOTING_STATUSES;
-  public readonly permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
-  private resolvedOrgName: string | null = null;
-
-  public constructor() {
-    // Reset org_id whenever org name diverges from the last CDP-resolved name.
-    // Using the resolved name (not just empty check) prevents sending a stale
-    // org id when the user edits to a different non-empty value after resolution.
-    this.configForm
-      .get('org_name')!
-      .valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((name) => {
-        const normalizedName = (name ?? '').trim();
-        if (!normalizedName || normalizedName !== this.resolvedOrgName) {
-          this.configForm.patchValue({ org_id: null }, { emitEvent: false });
-        }
-      });
-  }
-
-  public selectUser(user: UserSearchResult & { alreadyMember: boolean }): void {
-    if (user.alreadyMember) return;
-    this.selectedUser.set(user);
-    this.configForm.patchValue({
-      org_name: user.organization?.name ?? '',
-      org_domain: user.organization?.website ?? '',
-    });
-    this.mode.set('configure');
-  }
-
-  public clearSelection(): void {
-    this.selectedUser.set(null);
-    this.resolvedOrgName = null;
-    this.configForm.patchValue({ org_name: '', org_domain: '', org_id: null });
-    this.mode.set('search');
-  }
-
-  public onOrgResolved(result: OrganizationResolveResult): void {
-    this.resolvedOrgName = result.name;
-    this.configForm.patchValue({ org_id: result.id || null });
-  }
-
-  public showManualForm(): void {
-    this.dialogRef.close('manual');
+  /** Append a searched person's email to the textarea (autofill convenience). */
+  public addEmail(user: DecoratedCommitteeSearchResult): void {
+    if (user.alreadyMember || user.alreadyInvited || user.added) {
+      return;
+    }
+    const email = (user.email ?? '').trim();
+    if (!email) {
+      return;
+    }
+    const current = this.form.get('emails')!.value.trim();
+    this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
+    this.searchForm.get('query')!.setValue('');
   }
 
   public onCancel(): void {
@@ -157,145 +131,94 @@ export class AddMemberDialogComponent {
   }
 
   public onSubmit(): void {
-    this.submitAddMember();
-  }
-
-  private submitAddMember(): void {
-    const user = this.selectedUser();
-    const committee = this.committee;
-    if (!user || !committee || !committee.uid) return;
+    const committeeId = this.committee?.uid;
+    const emails = this.categorized().toInvite;
+    if (!committeeId || emails.length === 0) {
+      return;
+    }
 
     this.submitting.set(true);
+    const role = this.form.get('role')!.value || null;
 
-    const formValue = this.configForm.getRawValue();
-    const memberData: CreateCommitteeMemberRequest = {
-      email: user.email,
-      username: user.username ?? null,
-      first_name: user.first_name ?? null,
-      last_name: user.last_name ?? null,
-      job_title: user.job_title ?? null,
-      organization:
-        formValue.org_name || formValue.org_domain || formValue.org_id
-          ? { id: formValue.org_id || null, name: formValue.org_name || null, website: formValue.org_domain || null }
-          : null,
-      role: formValue.role ? { name: formValue.role as CommitteeMemberRole, start_date: null, end_date: null } : null,
-      voting: formValue.voting_status ? { status: formValue.voting_status as CommitteeMemberVotingStatus, start_date: null, end_date: null } : null,
-    };
-
-    this.committeeService
-      .createCommitteeMember(committee.uid, memberData)
+    // No bulk endpoint upstream — fan out one create-invite per email with bounded
+    // concurrency, catching per-email so one failure never aborts the rest.
+    from(emails)
       .pipe(
-        take(1),
-        switchMap(() => {
-          const permission = formValue.permission;
-          const username = user.username;
-
-          if (username && permission !== 'member') {
-            const memberAsUser: CommitteeUser = {
-              username,
-              email: user.email,
-              name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email,
-            };
-            const existingWriters = committee.writers ?? [];
-            const existingAuditors = committee.auditors ?? [];
-            const memberEmail = user.email?.toLowerCase();
-            const matchesMember = (u: CommitteeUser) => u.username === username || u.email?.toLowerCase() === memberEmail;
-            const writers = existingWriters.filter((w) => !matchesMember(w));
-            const auditors = existingAuditors.filter((a) => !matchesMember(a));
-
-            if (permission === 'manage') writers.push(memberAsUser);
-            else if (permission === 'review') auditors.push(memberAsUser);
-
-            return this.committeeService.updateCommitteePermissions(committee.uid, writers, auditors).pipe(
-              catchError(() => {
-                this.messageService.add({
-                  severity: 'warn',
-                  summary: 'Permission Update Failed',
-                  detail: 'Member added, but the permission could not be saved. Please try again from the member menu.',
-                  life: 6000,
-                });
-                return of(null);
-              })
-            );
-          }
-
-          if (permission !== 'member') {
-            this.messageService.add({
-              severity: 'warn',
-              summary: 'Permission Pending',
-              detail: 'Member added. Elevated permissions require a user account — grant this permission once the user signs in.',
-              life: 6000,
-            });
-          }
-
-          return of(null);
-        })
+        mergeMap(
+          (email): Observable<CommitteeInviteResult> =>
+            this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role }).pipe(
+              map(() => ({ email, success: true })),
+              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
+            ),
+          COMMITTEE_INVITE_CONCURRENCY
+        ),
+        toArray(),
+        takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe({
-        next: () => {
-          // Best-effort mailing list subscription (non-blocking — failure is silently swallowed)
-          const mailingListUid = committee.mailing_list;
-          if (formValue.subscribe_mailing_list && mailingListUid) {
-            this.mailingListService
-              .createMember(mailingListUid, {
-                email: user.email,
-                username: user.username ?? null,
-                first_name: user.first_name ?? null,
-                last_name: user.last_name ?? null,
-                organization: (formValue.org_name || user.organization?.name) ?? null,
-                job_title: user.job_title ?? null,
-              })
-              .pipe(
-                catchError(() => {
-                  this.messageService.add({
-                    severity: 'warn',
-                    summary: 'Mailing List',
-                    detail: 'Member added, but mailing list subscription failed. They can subscribe manually.',
-                    life: 5000,
-                  });
-                  return of(null);
-                })
-              )
-              .subscribe();
-          }
-
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Member Added',
-            detail: `${`${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email} has been added to the group.`,
-          });
+      .subscribe((results) => {
+        this.submitting.set(false);
+        this.summarize(results);
+        if (results.some((r) => r.success)) {
           this.dialogRef.close(true);
-        },
-        error: (err: HttpErrorResponse) => {
-          this.submitting.set(false);
-          const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
-          const detail = err.status === 409 ? 'This person is already a member of this group.' : (upstream ?? 'Failed to add member. Please try again.');
-          this.messageService.add({ severity: 'error', summary: 'Unable to Add Member', detail });
-        },
+        }
       });
   }
 
-  private initSearchResults(): Signal<(UserSearchResult & { alreadyMember: boolean })[]> {
-    const queryControl = this.searchForm.get('query')!;
+  private summarize(results: CommitteeInviteResult[]): void {
+    const succeeded = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
 
+    if (failed.length === 0) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Invitations Sent',
+        detail: succeeded.length === 1 ? `Invited ${succeeded[0].email}.` : `Invited ${succeeded.length} people to the group.`,
+      });
+      return;
+    }
+
+    if (succeeded.length === 0) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Unable to Invite',
+        detail: failed.length === 1 ? `Could not invite ${failed[0].email}: ${failed[0].reason}.` : `None of the ${failed.length} invitations could be sent.`,
+        life: 6000,
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Some Invitations Failed',
+      detail: `Invited ${succeeded.length} of ${results.length}. Could not invite: ${failed.map((f) => f.email).join(', ')}.`,
+      life: 8000,
+    });
+  }
+
+  private inviteFailureReason(err: HttpErrorResponse): string {
+    if (err.status === 409) {
+      return 'already invited or a member';
+    }
+    const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
+    return upstream ?? 'invite failed';
+  }
+
+  private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
     const rawResults = toSignal(
-      queryControl.valueChanges.pipe(
+      this.searchForm.get('query')!.valueChanges.pipe(
         startWith(''),
         debounceTime(300),
         distinctUntilChanged(),
         switchMap((q) => {
-          // Clear results immediately when query drops below threshold
           if (typeof q !== 'string' || q.trim().length < 2) {
             this.searchLoading.set(false);
             return of([] as UserSearchResult[]);
           }
           this.searchLoading.set(true);
-          const trimmedQuery = q.trim();
-          return this.searchService.searchUsers(trimmedQuery, 'committee_member').pipe(
-            // Re-rank so name matches surface first and incidental email/alias
-            // matches (upstream over-match) are demoted below them.
-            map((users) => rankUserSearchResults(users, trimmedQuery)),
+          const trimmed = q.trim();
+          return this.searchService.searchUsers(trimmed, 'committee_member').pipe(
+            // Re-rank so name matches surface first and incidental email/alias matches are demoted (LFXV2-2058).
+            map((users) => rankUserSearchResults(users, trimmed)),
             tap(() => this.searchLoading.set(false)),
             catchError(() => {
               this.searchLoading.set(false);
@@ -314,15 +237,27 @@ export class AddMemberDialogComponent {
     );
 
     return computed(() => {
+      const added = new Set(this.parsed().valid);
       const seen = new Set<string>();
       return rawResults()
         .filter((r) => {
           const key = (r.email ?? '').toLowerCase();
-          if (seen.has(key)) return false;
+          if (!key || seen.has(key)) {
+            return false;
+          }
           seen.add(key);
           return true;
         })
-        .map((r) => ({ ...r, alreadyMember: this.existingEmails.has((r.email ?? '').toLowerCase()) }));
+        .map((r) => {
+          const email = (r.email ?? '').toLowerCase();
+          return {
+            ...r,
+            added: added.has(email),
+            alreadyMember: this.existingMemberEmails.has(email),
+            alreadyInvited: this.existingInviteEmails.has(email),
+            lfAccount: hasLfAccount(r),
+          };
+        });
     });
   }
 }

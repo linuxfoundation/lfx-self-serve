@@ -5,6 +5,7 @@ import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
+import { UserSearchResult } from './search.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -49,49 +50,100 @@ export interface BehavioralClassDisplayConfig {
  */
 export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
-/** Status of a member invite */
-export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
+/**
+ * Status of a committee invite. Mirrors the committee-service `committee_invite`
+ * resource status enum (lfx-v2-committee-service): an invite is `pending` until the
+ * invitee accepts/declines, or an admin revokes it.
+ */
+export type CommitteeInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
 
 /**
- * A colleague-to-colleague or admin-to-user invitation to join a group.
+ * A pending/resolved invitation for a person (by email) to join a committee.
+ *
+ * Mirrors the committee-service `committee_invite` resource — the invite-and-forget
+ * primitive for adding people who may not yet have an LF account (LFID). The v2 query
+ * index has no identity/user resource type, so accounts can't be looked up directly;
+ * inviting by email is how anyone outside the existing committee/registrant corpus is
+ * added. On accept, the invite is reconciled into a `committee_member` with the
+ * person's LFID populated.
  */
-export interface GroupInvite {
-  /** Unique invite ID */
+export interface CommitteeInvite {
+  /** Invite UID */
   uid: string;
-  /** Committee this invite is for */
+  /** Committee this invite belongs to */
   committee_uid: string;
-  /** Email address of the invitee */
+  /** Email address the invite was delivered to */
   invitee_email: string;
-  /** Display name of the invitee (optional) */
-  invitee_name?: string;
-  /** UID of the user who sent the invite */
-  invited_by_uid: string;
-  /** Name of the person who sent the invite */
-  invited_by_name?: string;
-  /** Current status */
-  status: InviteStatus;
-  /** Optional personal message from inviter */
-  message?: string;
-  /** Role to assign on acceptance (default: 'Member') */
-  suggested_role?: string;
-  /** When the invite was created */
+  /** Suggested committee role for the invitee on acceptance (optional) */
+  role?: string | null;
+  /** Current invite status */
+  status: CommitteeInviteStatus;
+  /** Creation timestamp (RFC3339) */
   created_at: string;
-  /** When the invite expires (default: 14 days) */
-  expires_at: string;
-  /** When the invite was accepted / declined */
-  responded_at?: string;
 }
 
 /**
- * Payload to create one or more invites.
+ * Payload to create a single committee invite (committee-service create-invite).
+ * Only the invitee email is required; role is an optional suggestion.
  */
-export interface CreateGroupInviteRequest {
-  /** Email addresses to invite */
-  emails: string[];
-  /** Optional personal message included in the invite email */
-  message?: string;
-  /** Role to assign on acceptance */
-  suggested_role?: string;
+export interface CreateCommitteeInviteRequest {
+  /** Email of the person to invite (required) */
+  invitee_email: string;
+  /** Suggested role for the invitee (optional) */
+  role?: string | null;
+}
+
+/**
+ * Per-email outcome of one create-invite call within a bulk-invite batch.
+ *
+ * The committee-service exposes no bulk endpoint, so the client fans out one
+ * create-invite request per email and aggregates the individual outcomes here
+ * to drive a partial-success summary.
+ */
+export interface CommitteeInviteResult {
+  /** The normalized email this result is for */
+  email: string;
+  /** Whether the invite was created successfully */
+  success: boolean;
+  /** Human-readable failure reason when `success` is false */
+  reason?: string;
+}
+
+/**
+ * Result of parsing a free-text blob of email addresses (bulk invite input).
+ * Emails are normalized (trimmed + lowercased) and de-duplicated.
+ */
+export interface EmailListParseResult {
+  /** Unique, valid, normalized email addresses, in first-seen order */
+  valid: string[];
+  /** Non-empty tokens that failed email validation (original casing preserved) */
+  invalid: string[];
+  /** Normalized emails that appeared more than once (reported once each) */
+  duplicates: string[];
+}
+
+/**
+ * A committee user-search hit decorated for the add-member typeahead: whether its
+ * email is already added to the input, already a member, already invited, and
+ * whether the person has an LF account (LFID).
+ */
+export type DecoratedCommitteeSearchResult = UserSearchResult & {
+  added: boolean;
+  alreadyMember: boolean;
+  alreadyInvited: boolean;
+  lfAccount: boolean;
+};
+
+/**
+ * Parsed valid invite emails partitioned by what the add-member submit will do with each.
+ */
+export interface CategorizedCommitteeEmails {
+  /** Emails that will be invited (not already a member or pending invite). */
+  toInvite: string[];
+  /** Emails skipped because the person is already a member. */
+  alreadyMembers: string[];
+  /** Emails skipped because a pending invite already exists. */
+  alreadyInvited: string[];
 }
 
 /**
