@@ -15,13 +15,12 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate } from '@lfx-one/shared/utils';
+import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
 import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
@@ -100,7 +99,14 @@ export class CommitteeMeetingsComponent {
       filter(({ time, uid }) => time === 'past' && !!uid),
       distinctUntilChanged((a, b) => a.uid === b.uid),
       tap(() => this.pastMeetingsLoading.set(true)),
-      switchMap(({ uid }) => this.meetingService.getPastMeetingsByCommittee(uid!).pipe(finalize(() => this.pastMeetingsLoading.set(false))))
+      // Sort client-side: the query-service can't sort past meetings by start_time (only name/updated),
+      // so the descending date order must be applied here to render most-recent-first. (LFXV2-2053)
+      switchMap(({ uid }) =>
+        this.meetingService.getPastMeetingsByCommittee(uid!).pipe(
+          map((meetings) => sortPastMeetingsDescending(meetings)),
+          finalize(() => this.pastMeetingsLoading.set(false))
+        )
+      )
     ),
     { initialValue: [] }
   );
