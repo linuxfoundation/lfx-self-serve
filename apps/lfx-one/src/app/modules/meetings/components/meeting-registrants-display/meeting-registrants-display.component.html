@@ -17,9 +17,9 @@
       </div>
 
       <!-- Filter Dropdowns -->
-      @if (!pastMeeting()) {
-        <div class="flex flex-wrap items-start gap-2">
-          <!-- RSVP Filter -->
+      <div class="flex flex-wrap items-start gap-2">
+        @if (!pastMeeting()) {
+          <!-- RSVP Filter (upcoming meetings) -->
           <lfx-select
             [form]="filterForm"
             control="rsvpFilter"
@@ -30,22 +30,46 @@
             placeholder="RSVP"
             data-testid="rsvp-filter-select">
           </lfx-select>
+        } @else {
+          <!-- Attendance Filter (past meetings) -->
+          <lfx-select
+            [form]="filterForm"
+            control="attendanceFilter"
+            [options]="attendanceFilterOptions"
+            optionLabel="label"
+            optionValue="value"
+            [styleClass]="'text-[10px]'"
+            placeholder="Attendance"
+            data-testid="attendance-filter-select">
+          </lfx-select>
 
-          <!-- Group Filter (only show if meeting has committees) -->
-          @if (hasCommittees()) {
-            <lfx-select
-              [form]="filterForm"
-              control="groupFilter"
-              [options]="groupFilterOptions()"
-              optionLabel="label"
-              optionValue="value"
-              [styleClass]="'text-[10px]'"
-              placeholder="Group"
-              data-testid="group-filter-select">
-            </lfx-select>
-          }
-        </div>
-      }
+          <!-- Invitation Filter (past meetings) -->
+          <lfx-select
+            [form]="filterForm"
+            control="invitationFilter"
+            [options]="invitationFilterOptions"
+            optionLabel="label"
+            optionValue="value"
+            [styleClass]="'text-[10px]'"
+            placeholder="Invitation"
+            data-testid="invitation-filter-select">
+          </lfx-select>
+        }
+
+        <!-- Group Filter (only show if meeting has committees) -->
+        @if (hasCommittees()) {
+          <lfx-select
+            [form]="filterForm"
+            control="groupFilter"
+            [options]="groupFilterOptions()"
+            optionLabel="label"
+            optionValue="value"
+            [styleClass]="'text-[10px]'"
+            placeholder="Group"
+            data-testid="group-filter-select">
+          </lfx-select>
+        }
+      </div>
     </div>
 
     <!-- Loading State — skeleton cards -->
