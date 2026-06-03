@@ -42,7 +42,9 @@ export class CampaignMetricsService {
       ORDER BY metrics.cost_micros DESC`;
 
     const rows = await gaqlSearch(query);
-    const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays)).filter((c) => !c.name.toLowerCase().startsWith('zz'));
+    const rangeStart = queryRangeStart(effectiveDays);
+    const rangeEnd = todayIso();
+    const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays, rangeStart, rangeEnd)).filter((c) => !c.name.toLowerCase().startsWith('zz'));
     const actionItems = generateActionItems(campaigns);
 
     return {
@@ -158,7 +160,7 @@ function queryRangeStart(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
+function parseCampaignMetrics(row: unknown, days: number, rangeStart: string, rangeEnd: string): CampaignMetrics {
   const r = row as Record<string, unknown>;
   const name = (extractNested(r, 'campaign.name') as string) || '';
   const parsed = parseCampaignName(name);
@@ -185,8 +187,8 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     adFormat: parsed.adFormat,
     targeting: parsed.targeting,
     status: normalizeCampaignStatus(extractNested(r, 'campaign.status')),
-    startDate: queryRangeStart(days),
-    endDate: todayIso(),
+    startDate: rangeStart,
+    endDate: rangeEnd,
     budgetDay,
     totalBudget: computeTotalBudget(budgetDay, days),
     spend,
