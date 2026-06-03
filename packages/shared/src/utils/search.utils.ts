@@ -79,3 +79,17 @@ export function rankUserSearchResults<T extends RankableUser>(results: T[], quer
     .sort((a, b) => (a.score === b.score ? a.index - b.index : a.score - b.score))
     .map((entry) => entry.result);
 }
+
+/**
+ * Decides whether a search result corresponds to an existing LF account (LFID).
+ *
+ * "Has an LF account" is inferred solely from the presence of a non-empty, non-blank
+ * `username` (LFID) on the record. The v2 query index has no identity/user resource
+ * type — a person only carries a username once they appear in v2 with a reconciled
+ * LFID — so a blank/whitespace username means "no LFID yet" (use the invite-by-email
+ * path), NOT a definitive "this person has no account anywhere" claim. Treat it as a
+ * routing signal for the add-member flow, not an identity assertion.
+ */
+export function hasLfAccount(user: Pick<UserSearchResult, 'username'>): boolean {
+  return !!user.username && user.username.trim().length > 0;
+}
