@@ -8,6 +8,7 @@ import {
   CustomRecurrencePattern,
   Meeting,
   MeetingOccurrence,
+  MeetingRecurrence,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
@@ -110,11 +111,13 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
       // (the meeting-service has no distinct QUARTERLY type), so surface that cadence
       // by name rather than the literal "Every 3 months".
       //
-      // NOTE (LFXV2-2057): the cadence label is derived from this recurrence RULE.
-      // A meeting switched to quarterly in PCC only renders as "Quarterly" once the
-      // PCC→V2 sync updates repeat_interval to 3. If a quarterly meeting still shows
-      // "Monthly", the rule is stale upstream (repeat_interval=1 with only the
-      // occurrences spaced quarterly) — that is an upstream sync fix, not a UI one.
+      // NOTE (LFXV2-2066/LFXV2-2112): the cadence label is derived from whichever recurrence
+      // RULE the caller feeds in. When a meeting's cadence changes from a given occurrence
+      // onwards, the meeting's top-level `recurrence` is intentionally left as the original
+      // rule and the new cadence (e.g. repeat_interval=3 for quarterly) is carried on the
+      // affected occurrence's own `recurrence`. Callers must therefore resolve the
+      // occurrence-level override first (see `resolveOccurrenceRecurrence`); a quarterly
+      // meeting still showing "Monthly" is a UI lookup bug, not an upstream sync problem.
       let monthText: string;
       if (interval === 1) {
         monthText = 'Monthly';
@@ -247,6 +250,26 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Returns the recurrence that should drive the displayed cadence label for a given occurrence:
+ * the occurrence's own recurrence override when present (the cadence changed at/after this
+ * occurrence — LFXV2-2112), otherwise the meeting's top-level recurrence.
+ *
+ * Background: when a recurring meeting's cadence changes from a specific occurrence onwards,
+ * Zoom records it as an `all_following` update and the meeting-service's occurrence calculator
+ * stamps the new pattern onto that occurrence's `recurrence` (LFXV2-2066). The meeting's
+ * top-level `recurrence` is intentionally left as the original rule, so the occurrence-level
+ * override — when present — is the source of truth for the cadence label. Centralised here so
+ * every surface that renders a recurrence label shares one priority rule.
+ *
+ * @param meeting The meeting (only its top-level `recurrence` is read)
+ * @param occurrence The occurrence being displayed (its `recurrence` override wins when set)
+ * @returns The recurrence to feed the label formatter, or null when neither is available
+ */
+export function resolveOccurrenceRecurrence(meeting: Pick<Meeting, 'recurrence'>, occurrence?: MeetingOccurrence | null): MeetingRecurrence | null {
+  return occurrence?.recurrence ?? meeting?.recurrence ?? null;
 }
 
 /**
