@@ -34,7 +34,7 @@ export class CampaignMetricsService {
              campaign.start_date, campaign.end_date,
              campaign_budget.amount_micros,
              metrics.impressions, metrics.clicks, metrics.cost_micros,
-             metrics.conversions, metrics.ctr, metrics.average_cpc
+             metrics.conversions
       FROM campaign
       WHERE segments.date DURING ${gaqlRange}
         AND campaign.advertising_channel_type IN ('SEARCH', 'DEMAND_GEN')
