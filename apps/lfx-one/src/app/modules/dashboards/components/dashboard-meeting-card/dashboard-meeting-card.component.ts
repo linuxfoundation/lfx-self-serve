@@ -14,8 +14,10 @@ import {
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
+  MeetingRecurrence,
   MeetingTypeBadge,
   PastMeetingRecording,
+  resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -70,6 +72,9 @@ export class DashboardMeetingCardComponent {
   public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
+  // Recurrence rule for the cadence tooltip: the displayed occurrence's own override when
+  // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
+  public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.occurrence()));
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
   public readonly meetingDetailQueryParams: Signal<Record<string, string>> = this.initMeetingDetailQueryParams();
   public readonly meetingDetailHref: Signal<string> = this.initMeetingDetailHref();
@@ -178,7 +183,7 @@ export class DashboardMeetingCardComponent {
   }
 
   private initHasAiSummary(): Signal<boolean> {
-    return computed(() => this.meeting().zoom_config?.ai_companion_enabled || false);
+    return computed(() => this.meeting().ai_summary_enabled || false);
   }
 
   private initMeetingTitle(): Signal<string> {
