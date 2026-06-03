@@ -9,12 +9,12 @@ For background on how personas and lenses are resolved, see [Lens & Persona Syst
 
 ## Personas
 
-| Persona              | How acquired                                                    |
-| -------------------- | --------------------------------------------------------------- |
-| `contributor`        | Lowest-privilege; any authenticated user with no committee role |
-| `maintainer`         | Has a project-level maintainer committee membership             |
-| `board-member`       | Has a board committee membership on a foundation                |
-| `executive-director` | Has an ED committee membership, OR is a root writer (injected)  |
+| Persona              | How acquired                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `contributor`        | Default project-scoped persona; assigned when no other project detection matches, or as a fallback |
+| `maintainer`         | Has a `cdp_roles` detection carrying a `maintainer` role for a project                             |
+| `board-member`       | Has a `board_member` detection on a foundation                                                     |
+| `executive-director` | Has an `executive_director` detection on a foundation, OR is a root writer (injected)              |
 
 A user can carry multiple personas simultaneously. When no explicit selection has been made, `PersonaService` defaults to the highest-priority persona (`executive-director` > `board-member` > `maintainer` > `contributor`). A user can explicitly **pin** a lower-priority persona (e.g., switch from ED to board-member view) — `PersonaService` preserves that choice across refreshes as long as the persona is still in the allowed set (`userSelected` flag). The active `currentPersona()` signal — not a static priority rule — drives which conditional sidebar sections are shown.
 
@@ -27,7 +27,7 @@ A user can carry multiple personas simultaneously. When no explicit selection ha
 | `project`    | Users with `hasProjectRole` (`maintainer` or `contributor`), or root writers        |
 | `org`        | All users (feature-flagged via `ORG_LENS_ENABLED_FLAG`)                             |
 
-A user can carry both board and project roles and see both the `foundation` and `project` lenses simultaneously.
+A user can carry both board and project roles simultaneously. In the sidebar lens switcher, hybrid users see a single merged **project** lens entry instead of separate `foundation` and `project` buttons — `LensService.displayLenses` filters the `foundation` option for hybrids so the `project` button serves as the unified entry point for both.
 
 ## Key conditions referenced in the matrix
 
@@ -129,7 +129,7 @@ Available to `contributor`, `maintainer`, and root writers.
 
 ## Org Lens
 
-**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. Falls back to Me Lens items when the flag is off. Identical for all personas when enabled.
+**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. When the flag is off, `orgLensEnabledGuard` (CanMatch) blocks all `/org/*` routes and redirects to `/` — the routes are invisible to the router. When enabled, the Org Lens is identical for all personas.
 
 | Section         | Item                     | Route                |
 | --------------- | ------------------------ | -------------------- |
@@ -152,11 +152,12 @@ Available to `contributor`, `maintainer`, and root writers.
 
 Guards enforce access at the router level — regardless of whether a sidebar link is visible.
 
-| Guard                    | Protected routes                                                                        | Access rule                                      |
-| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`      |
-| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`       |
-| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()` |
+| Guard                    | Protected routes                                                                        | Access rule                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                        |
+| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                         |
+| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()`                   |
+| `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
