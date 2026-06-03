@@ -39,6 +39,7 @@ export class OptimizationTabComponent implements OnInit {
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
+  protected readonly keywordsError = signal<string | null>(null);
 
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
@@ -107,6 +108,8 @@ export class OptimizationTabComponent implements OnInit {
       });
 
     this.keywordsLoading.set(true);
+    this.keywordsData.set(null);
+    this.keywordsError.set(null);
     this.keywordsSub = this.campaignService
       .getKeywords(days)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -115,7 +118,8 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsData.set(data);
           this.keywordsLoading.set(false);
         },
-        error: () => {
+        error: (err) => {
+          this.keywordsError.set(err?.error?.message || err?.message || 'Failed to load keyword data');
           this.keywordsLoading.set(false);
         },
       });

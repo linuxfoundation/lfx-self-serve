@@ -216,6 +216,18 @@ export class CampaignController {
       return;
     }
 
+    for (const kw of body.keywords) {
+      if (!kw.campaignId || !kw.adGroupId || !kw.criterionId) {
+        next(
+          ServiceValidationError.forField('keywords', 'each keyword must include campaignId, adGroupId, and criterionId', {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+    }
+
     const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
 
     try {

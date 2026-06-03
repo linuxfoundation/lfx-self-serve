@@ -154,6 +154,11 @@
             Loading keyword data...
           </div>
         </div>
+      } @else if (keywordsError()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
+          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
+        </div>
       } @else if (!hasWastedKeywords()) {
         <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
           <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
@@ -188,7 +193,7 @@
                 </tr>
               </thead>
               <tbody>
-                @for (kw of wastedKeywords(); track kw.keyword + '-' + kw.campaignId) {
+                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
                   <tr class="border-b border-gray-100 last:border-0">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
@@ -277,7 +282,7 @@
                 </tr>
               </thead>
               <tbody>
-                @for (kw of lowQualityKeywords(); track kw.keyword + '-' + kw.campaignId) {
+                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
                   <tr class="border-b border-gray-100 last:border-0">
                     <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
                     <td class="px-4 py-2.5">
