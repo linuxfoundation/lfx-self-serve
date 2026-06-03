@@ -64,6 +64,7 @@ export class KeyContactsComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
+  protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -110,7 +111,6 @@ export class KeyContactsComponent {
 
   // Writer-FGA gate (UX); BFF still re-enforces on write.
   protected readonly canEdit: Signal<boolean> = computed(() => this.initCanEdit());
-  protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
 
   protected readonly ariaSortMap: Signal<Record<OrgKeyContactSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap: Signal<Record<OrgKeyContactSortColumn, string>> = computed(() => this.initSortIconMap());

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectorRef, Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
@@ -27,7 +27,6 @@ import { take } from 'rxjs';
   templateUrl: './reassign-key-contact-roles-modal.component.html',
 })
 export class ReassignKeyContactRolesModalComponent {
-  private readonly cdr = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignKeyContactRolesDialogData>>(DynamicDialogConfig);
@@ -178,7 +177,6 @@ export class ReassignKeyContactRolesModalComponent {
       .catch((e: unknown) => {
         this.isSaving.set(false);
         this.saveError.set(e instanceof Error ? e.message : 'Could not save changes. Please try again.');
-        this.cdr.markForCheck();
       });
   }
 
