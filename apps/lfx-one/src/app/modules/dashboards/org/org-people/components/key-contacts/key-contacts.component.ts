@@ -278,7 +278,7 @@ export class KeyContactsComponent {
     if (succeeded === 0) {
       throw new Error(this.cleanErrorMessage(failures[0].reason));
     }
-    throw new Error(`${succeeded} of ${total} reassignments succeeded. Close this dialog and re-open it to update the remaining roles.`);
+    throw new Error(`${succeeded} of ${total} reassignments succeeded. Reopen this dialog to retry the remaining roles with fresh state.`);
   }
 
   private toReassignBody(intent: ReassignKeyContactRolesSubmitEvent, contactType: OrgMembershipKeyContactType): ReplaceKeyContactRequest {
@@ -303,9 +303,9 @@ export class KeyContactsComponent {
   }
 
   private openEditModal(contact: OrgMembershipKeyContact, assignment: OrgKeyContactAssignmentVm, orgUid: string): void {
-    // Single-slot roles seed the modal directly into replace-form on the existing holder; multi-slot roles
-    // pre-select the row the user clicked from so the chooser opens already focused on that contact.
-    const editingPersonId = contact.maxContacts === 1 && contact.people.length === 1 ? contact.people[0].personId : assignment.contactUid;
+    // Single-slot roles seed the modal directly into replace-form on the lone holder. Multi-slot roles
+    // open the chooser; the modal does not use editingPersonId in chooser state, so we pass null.
+    const editingPersonId = contact.maxContacts === 1 && contact.people.length === 1 ? contact.people[0].personId : null;
     const ref = this.dialogService.open(EditKeyContactModalComponent, {
       header: 'Edit Key Contact',
       width: '560px',
@@ -400,7 +400,7 @@ export class KeyContactsComponent {
 
   private initCanEdit(): boolean {
     const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return true;
+    if (!uid) return false; // No edit until the org uid resolves; placeholder bootstrap state.
     return this.roleGrants.writerSet().has(uid);
   }
 
