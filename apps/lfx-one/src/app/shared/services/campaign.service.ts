@@ -6,6 +6,8 @@ import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
+  BulkKeywordActionRequest,
+  BulkKeywordActionResponse,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -71,6 +73,10 @@ export class CampaignService {
 
   public createHubSpotUtm(eventName: string): Observable<HubSpotUtmCreateResult> {
     return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName } });
+  }
+
+  public executeKeywordActions(request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
+    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request);
   }
 
   private pollJobStatus(jobId: string): Observable<CampaignJobStatus> {

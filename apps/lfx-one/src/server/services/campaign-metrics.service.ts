@@ -63,7 +63,8 @@ export class CampaignMetricsService {
     const query = `
       SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
              ad_group_criterion.quality_info.quality_score, ad_group_criterion.status,
-             ad_group.name, campaign.name, campaign.id,
+             ad_group_criterion.criterion_id,
+             ad_group.name, ad_group.id, campaign.name, campaign.id,
              metrics.impressions, metrics.clicks, metrics.ctr,
              metrics.cost_micros, metrics.conversions
       FROM keyword_view
@@ -230,8 +231,8 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
-        issue: 'Campaign limited by Google',
-        action: 'Switch bid to Maximize Clicks or expand keyword match types',
+        issue: `Campaign limited by Google — only ${c.impressions.toLocaleString()} impressions on $${c.budgetDay.toFixed(2)}/day budget`,
+        action: 'Switch bid strategy to Maximize Clicks, or expand keyword match types to increase eligible auctions',
         metrics: baseMetrics,
       });
     }
@@ -241,8 +242,8 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
-        issue: 'Placeholder $1/day budget',
-        action: 'Set real budget before activation',
+        issue: `Budget is $${c.budgetDay.toFixed(2)}/day — this is a placeholder and won't generate meaningful traffic`,
+        action: 'Set a real daily budget (typically $10–50/day for events) before expecting results',
         metrics: baseMetrics,
       });
     }
@@ -252,8 +253,8 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: 'Campaign paused',
-        action: 'Verify pause reason or activate',
+        issue: `Campaign is paused — spent $${c.spend.toFixed(2)} before pause`,
+        action: 'Check if this was intentionally paused or if the event is still upcoming and needs reactivation',
         metrics: baseMetrics,
       });
     }
@@ -263,8 +264,8 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: `Underspending (${c.pacingPct}% of budget)`,
-        action: 'Broaden targeting or increase bids',
+        issue: `Only spending ${c.pacingPct}% of $${c.budgetDay.toFixed(2)}/day budget — $${c.spend.toFixed(2)} spent vs $${(c.budgetDay * 30).toFixed(2)} expected`,
+        action: 'Broaden targeting (locations, audiences), add broad match keywords, or increase bids to win more auctions',
         metrics: baseMetrics,
       });
     }
@@ -274,41 +275,63 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: `Budget constrained (${c.pacingPct}%)`,
-        action: 'Consider budget increase',
+        issue: `Spending ${c.pacingPct}% of budget — demand exceeds $${c.budgetDay.toFixed(2)}/day cap, ads stop showing mid-day`,
+        action: 'Increase daily budget to capture missed impressions, or narrow targeting to focus spend on highest-value audiences',
         metrics: baseMetrics,
       });
     }
-    if (isSearch && c.ctr < 2 && c.clicks > 50) {
+    if (isSearch && c.ctr < 2 && c.clicks > 10) {
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: 'Low Search CTR (<2%)',
-        action: 'Review headline relevance, add negative keywords',
+        issue: `Search CTR is ${c.ctr.toFixed(2)}% (benchmark: 2%+) — ${c.clicks} clicks from ${c.impressions.toLocaleString()} impressions`,
+        action: 'Improve headline relevance to search intent, add negative keywords to filter irrelevant queries',
         metrics: baseMetrics,
       });
     }
-    if (!isSearch && c.ctr < 0.3 && c.clicks > 50) {
+    if (!isSearch && c.ctr < 0.3 && c.impressions > 1000) {
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: 'Low Display CTR (<0.3%)',
-        action: 'Refresh creative, check audience overlap',
+        issue: `Display CTR is ${c.ctr.toFixed(2)}% (benchmark: 0.3%+) — ${c.clicks} clicks from ${c.impressions.toLocaleString()} impressions`,
+        action: 'Refresh creative assets, check for audience overlap across campaigns, or narrow placement targeting',
         metrics: baseMetrics,
       });
     }
-    if (c.clicks > 100 && c.conversions === 0) {
+    if (c.clicks > 20 && c.conversions === 0) {
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: 'Clicks with zero conversions',
-        action: 'Audit conversion tracking setup',
+        issue: `${c.clicks} clicks ($${c.spend.toFixed(2)} spent) but 0 conversions — traffic is not converting`,
+        action: 'Verify conversion tracking is firing correctly, check landing page load speed, and review if the CTA matches the ad promise',
+        metrics: baseMetrics,
+      });
+    }
+    if (c.avgCpc > 5 && c.clicks > 10) {
+      items.push({
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
+        priority: 'MED',
+        issue: `Avg CPC is $${c.avgCpc.toFixed(2)} — spending $${c.spend.toFixed(2)} for only ${c.clicks} clicks`,
+        action: 'Switch to a Target CPA or Maximize Clicks bid strategy, add long-tail keywords with lower competition',
+        metrics: baseMetrics,
+      });
+    }
+    if (c.impressions > 0 && c.clicks === 0) {
+      items.push({
+        eventName: c.eventName,
+        campaigns: [c.shortName],
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
+        priority: 'MED',
+        issue: `${c.impressions.toLocaleString()} impressions but 0 clicks — ads are showing but no one is clicking`,
+        action: 'Rewrite ad copy to be more compelling, ensure headlines match search intent, test different CTAs',
         metrics: baseMetrics,
       });
     }
@@ -318,8 +341,8 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
         campaigns: [c.shortName],
         campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
-        issue: 'Campaign in draft',
-        action: 'Complete setup: upload images, publish, then pause',
+        issue: `Campaign is still in draft — $${c.budgetDay.toFixed(2)}/day budget allocated but not running`,
+        action: 'Upload creative assets, review ad groups, publish the campaign (then pause if not ready to go live)',
         metrics: baseMetrics,
       });
     }
@@ -341,6 +364,8 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     qualityScore: (extractNested(r, 'adGroupCriterion.qualityInfo.qualityScore') as number) ?? null,
     status: (extractNested(r, 'adGroupCriterion.status') as string) || '',
     adGroup: (extractNested(r, 'adGroup.name') as string) || '',
+    adGroupId: String(extractNested(r, 'adGroup.id') || ''),
+    criterionId: String(extractNested(r, 'adGroupCriterion.criterionId') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
     googleAdsUrl: buildGoogleAdsUrl(campaignId),
