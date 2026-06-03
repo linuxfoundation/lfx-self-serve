@@ -182,29 +182,8 @@ export class CommitteeMembersComponent implements OnInit {
       },
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | string | undefined) => {
-      if (result === true) {
-        this.refreshMembers();
-      } else if (result === 'manual') {
-        this.openManualMemberForm();
-      }
-    });
-  }
-
-  private openManualMemberForm(): void {
-    const dialogRef = this.dialogService.open(MemberFormComponent, {
-      header: 'Add Member',
-      width: '700px',
-      modal: true,
-      closable: true,
-      data: {
-        isEditing: false,
-        committee: this.committee(),
-      },
-    });
-
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      if (result) {
+      if (result === true) {
         this.refreshMembers();
       }
     });
