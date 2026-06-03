@@ -141,6 +141,18 @@ function buildGoogleAdsUrl(campaignId: string): string {
   return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${campaignId}` : '';
 }
 
+function computeTotalBudget(budgetDay: number, startDate: string, endDate: string, fallbackDays: number): number {
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+      const flightDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+      return budgetDay * flightDays;
+    }
+  }
+  return budgetDay * fallbackDays;
+}
+
 function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const r = row as Record<string, unknown>;
   const name = (extractNested(r, 'campaign.name') as string) || '';
@@ -156,6 +168,9 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const expectedSpend = budgetDay * days;
   const pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
 
+  const startDate = (extractNested(r, 'campaign.startDate') as string) || '';
+  const endDate = (extractNested(r, 'campaign.endDate') as string) || '';
+
   let pacingLabel: PacingLabel = 'normal';
   if (pacingPct < 50) pacingLabel = 'underspending';
   else if (pacingPct > 100) pacingLabel = 'overspending';
@@ -168,10 +183,10 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     adFormat: parsed.adFormat,
     targeting: parsed.targeting,
     status: normalizeCampaignStatus(extractNested(r, 'campaign.status') as string | undefined),
-    startDate: (extractNested(r, 'campaign.startDate') as string) || '',
-    endDate: (extractNested(r, 'campaign.endDate') as string) || '',
+    startDate,
+    endDate,
     budgetDay,
-    totalBudget: budgetDay * days,
+    totalBudget: computeTotalBudget(budgetDay, startDate, endDate, days),
     spend,
     impressions,
     clicks,

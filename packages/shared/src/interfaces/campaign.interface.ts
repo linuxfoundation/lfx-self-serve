@@ -284,6 +284,7 @@ export interface AudienceDemographics {
 // Optimization Insights
 // ---------------------------------------------------------------------------
 
+// Reserved for the Optimization tab (PR 9 in the Campaigns epic)
 export interface ImpressionShareMetrics {
   campaignName: string;
   eventName: string;

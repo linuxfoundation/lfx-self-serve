@@ -71,12 +71,4 @@ export class AudienceDemographicsComponent {
   protected formatNumber(value: number): string {
     return value.toLocaleString('en-US');
   }
-
-  protected formatPct(value: number): string {
-    return `${value.toFixed(2)}%`;
-  }
-
-  protected formatCurrency(value: number): string {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
 }
