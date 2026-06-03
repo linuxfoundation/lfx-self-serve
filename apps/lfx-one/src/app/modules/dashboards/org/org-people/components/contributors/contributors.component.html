@@ -1,0 +1,327 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="org-people-contributors">
+  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-people-contributors-filter-bar">
+    <div class="flex-1">
+      <lfx-input-text
+        [form]="filterForm"
+        control="search"
+        placeholder="Search contributors..."
+        icon="fa-light fa-magnifying-glass"
+        styleClass="w-full"
+        size="small"
+        dataTest="org-people-contributors-search-input" />
+    </div>
+    <div class="w-full md:w-56">
+      <lfx-select
+        [form]="filterForm"
+        control="foundation"
+        size="small"
+        [filter]="true"
+        filterPlaceholder="Search foundations"
+        emptyFilterMessage="No foundations match."
+        [options]="foundationOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by foundation"
+        dataTest="org-people-contributors-foundation-filter" />
+    </div>
+    <div class="w-full md:w-56">
+      <lfx-select
+        [form]="filterForm"
+        control="project"
+        size="small"
+        [filter]="true"
+        filterPlaceholder="Search projects"
+        emptyFilterMessage="No projects match."
+        [options]="projectOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by project"
+        dataTest="org-people-contributors-project-filter" />
+    </div>
+    <div class="w-full md:w-44">
+      <lfx-select
+        [form]="filterForm"
+        control="timeRange"
+        size="small"
+        [options]="timeRangeOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by time range"
+        dataTest="org-people-contributors-time-range-filter" />
+    </div>
+  </div>
+
+  @if (fetchError()) {
+    <div role="alert" data-testid="org-people-contributors-error">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-triangle-exclamation"
+        title="Failed to load contributors"
+        subtitle="Please try again."
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        (ctaClick)="retry()" />
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="org-people-contributors-stats">
+      @if (isLoading()) {
+        @for (label of statSkeletonLabels; track label) {
+          <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-skeleton">
+            <p-skeleton width="3rem" height="1.5rem" />
+            <div class="mt-2 text-xs text-gray-500">{{ label }}</div>
+          </div>
+        }
+      } @else {
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-maintainers">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.maintainers | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Maintainers</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-contributors">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.contributors | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Contributors</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-projects">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.projects | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Projects</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-foundations">
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.foundations | number }}</div>
+          <div class="mt-1 text-xs text-gray-500">Foundations</div>
+        </div>
+      }
+    </div>
+
+    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-people-contributors-table">
+      @if (isLoading()) {
+        <div class="divide-y divide-gray-100" data-testid="org-people-contributors-table-skeleton">
+          @for (i of tableSkeletonRows; track i) {
+            <div class="flex items-center gap-4 px-4 py-3">
+              <p-skeleton shape="circle" size="2.25rem" />
+              <div class="flex flex-1 flex-col gap-2">
+                <p-skeleton width="40%" height="0.875rem" />
+                <p-skeleton width="25%" height="0.75rem" />
+              </div>
+              <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="3rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="6rem" height="1.25rem" borderRadius="9999px" />
+              <p-skeleton width="6rem" height="1.25rem" borderRadius="9999px" />
+            </div>
+          }
+        </div>
+      } @else if (totalFiltered() === 0) {
+        <div class="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center" data-testid="org-people-contributors-empty">
+          <i class="fa-light fa-code text-2xl text-gray-300" aria-hidden="true"></i>
+          @if (isFiltering()) {
+            <p class="text-sm text-gray-700">No contributors match the current filters.</p>
+            <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
+          } @else {
+            <p class="text-sm text-gray-700">No contributors found for this organization.</p>
+          }
+        </div>
+      } @else {
+        <table class="w-full text-sm" data-testid="org-people-contributors-rows">
+          <thead class="bg-gray-50">
+            <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+              <th class="w-7 px-2 py-3"></th>
+              @let aria = ariaSortMap();
+              @let icons = sortIconMap();
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.name">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('name')">
+                  Name
+                  <i [class]="icons.name" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.role">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('role')">
+                  Role
+                  <i [class]="icons.role" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.commits">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('commits')">
+                  Commits
+                  <i [class]="icons.commits" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.lastActive">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('lastActive')">
+                  Last Active
+                  <i [class]="icons.lastActive" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.mostActiveProject">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('mostActiveProject')">
+                  Most Active Project
+                  <i [class]="icons.mostActiveProject" aria-hidden="true"></i>
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @let expanded = expansion();
+            @let allExpandedRows = expandedRowsMap();
+            @for (row of visibleRows(); track row.personKey) {
+              @let isExpanded = !!expanded[row.personKey];
+              @let projectRows = allExpandedRows[row.personKey];
+              <tr
+                class="cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                role="button"
+                tabindex="0"
+                [attr.data-testid]="'org-people-contributors-row-' + row.personKey"
+                [attr.aria-expanded]="isExpanded"
+                [attr.aria-label]="'Toggle projects for ' + row.displayName"
+                (click)="toggleRow(row.personKey)"
+                (keydown)="onRowKeydown($event, row.personKey)">
+                <td class="px-2 py-3 align-middle">
+                  <i class="fa-light fa-chevron-right block text-xs text-gray-400 transition-transform" [class.rotate-90]="isExpanded" aria-hidden="true"></i>
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  <button
+                    type="button"
+                    class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                    [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-name'"
+                    (click)="onPersonClick(row, $event)">
+                    <span
+                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      [class]="row.avatarColorClass"
+                      aria-hidden="true">
+                      {{ row.initials }}
+                    </span>
+                    <span class="flex min-w-0 flex-col">
+                      <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.displayName }}</span>
+                      @if (row.title) {
+                        <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
+                      }
+                    </span>
+                  </button>
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.role === 'Maintainer') {
+                    <span
+                      class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+                      Maintainer
+                    </span>
+                  } @else {
+                    <span
+                      class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
+                      Contributor
+                    </span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle font-medium text-gray-800">{{ row.commits | number }}</td>
+                <td class="px-4 py-3 align-middle text-gray-800">
+                  @if (row.lastActiveTs) {
+                    {{ row.lastActiveLabel }}
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+                <td class="px-4 py-3 align-middle">
+                  @if (row.mostActiveProjectName) {
+                    <div class="font-medium text-gray-800">{{ row.mostActiveProjectName }}</div>
+                    @if (row.mostActiveProjectFoundationName) {
+                      <div class="text-xs text-gray-500">{{ row.mostActiveProjectFoundationName }}</div>
+                    }
+                  } @else {
+                    <span class="text-xs text-gray-300">&mdash;</span>
+                  }
+                </td>
+              </tr>
+              @if (isExpanded) {
+                <tr class="bg-slate-50" [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-detail-row'">
+                  <td colspan="6" class="p-0">
+                    <div class="px-4 pb-4 pt-3 sm:pl-16">
+                      <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Projects Involved ({{ projectRows.length }})</div>
+                      <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+                        <table class="w-full border-collapse text-sm">
+                          <thead class="bg-gray-50">
+                            <tr class="text-left text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">
+                              <th class="border-b border-gray-200 px-3 py-2">Project</th>
+                              <th class="w-32 border-b border-gray-200 px-3 py-2">Role</th>
+                              <th class="w-24 border-b border-gray-200 px-3 py-2 text-right">Commits</th>
+                              <th class="w-36 border-b border-gray-200 px-3 py-2">Last Active</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (sub of projectRows; track sub.projectId) {
+                              <tr class="border-b border-gray-100 last:border-b-0">
+                                <td class="px-3 py-2.5">
+                                  <div class="text-[12.5px] font-medium text-gray-900">{{ sub.projectName }}</div>
+                                  @if (sub.foundationName) {
+                                    <div class="text-[11px] text-gray-500">{{ sub.foundationName }}</div>
+                                  }
+                                </td>
+                                <td class="px-3 py-2.5">
+                                  @if (sub.role === 'Maintainer') {
+                                    <span
+                                      class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                      Maintainer
+                                    </span>
+                                  } @else {
+                                    <span
+                                      class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                                      Contributor
+                                    </span>
+                                  }
+                                </td>
+                                <td class="px-3 py-2.5 text-right text-[12.5px] font-medium text-gray-700">{{ sub.commits | number }}</td>
+                                <td class="px-3 py-2.5 text-[12.5px] text-gray-700">
+                                  @if (sub.lastActiveTs) {
+                                    {{ sub.lastActiveLabel }}
+                                  } @else {
+                                    <span class="text-gray-300">&mdash;</span>
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+
+        @if (canShowMore() || totalFiltered() > initialLimit) {
+          <div class="grid grid-cols-3 items-center border-t border-gray-200 px-4 py-3" data-testid="org-people-contributors-show-all-footer">
+            <span class="text-xs italic text-gray-400">{{ footerCountLabel() }}</span>
+            <div class="text-center">
+              @if (canShowMore()) {
+                <button
+                  type="button"
+                  class="bg-transparent p-0 text-sm font-medium text-blue-600 hover:underline"
+                  data-testid="org-people-contributors-show-all-button"
+                  (click)="showAll()">
+                  Show All
+                </button>
+              }
+            </div>
+            <div></div>
+          </div>
+        }
+      }
+    </div>
+
+    <p class="text-xs text-gray-400" data-testid="org-people-contributors-sources">
+      Source: CDP (Crowd.dev) code-contribution activity, with declared maintainer flags from silver_dim_maintainers; retired projects excluded
+    </p>
+  }
+</div>

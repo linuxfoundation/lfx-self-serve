@@ -1,23 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import { ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgContributorTimeRange } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
+import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
+import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
+
+const VALID_CONTRIBUTOR_TIME_RANGES: ReadonlySet<OrgContributorTimeRange> = new Set(['30d', '90d', '12mo', 'all']);
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
   private readonly keyContactsService: OrgPeopleKeyContactsService;
+  private readonly traineesService: OrgPeopleTraineesService;
+  private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
+  private readonly contributorsService: OrgPeopleContributorsService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
+    this.traineesService = new OrgPeopleTraineesService();
+    this.eventAttendeesService = new OrgPeopleEventAttendeesService();
+    this.contributorsService = new OrgPeopleContributorsService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -105,6 +118,91 @@ export class OrgLensPeopleController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/people/trainees — bundled rows + details + stats + filter options for the Trainees tab (LFXV2-1876). */
+  public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_trainees', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_trainees');
+
+      const response = await this.traineesService.getTrainees(orgUid);
+
+      logger.success(req, 'get_org_lens_people_trainees', startTime, {
+        org_uid: orgUid,
+        trainee_count: response.trainees.length,
+        detail_count: response.details.length,
+        foundation_count: response.foundationOptions.length,
+        course_count: response.courseOptions.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/event-attendees — bundled rows + details + stats + filter options for the Event Attendees tab (LFXV2-1875). */
+  public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_event_attendees', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_event_attendees');
+
+      const response = await this.eventAttendeesService.getEventAttendees(orgUid);
+
+      logger.success(req, 'get_org_lens_people_event_attendees', startTime, {
+        org_uid: orgUid,
+        attendee_count: response.attendees.length,
+        detail_count: response.details.length,
+        foundation_count: response.foundationOptions.length,
+        event_count: response.eventOptions.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
+  public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_contributors';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'), operation);
+      const startTime = logger.startOperation(req, operation, {
+        org_uid: orgUid,
+        time_range: timeRange,
+      });
+
+      const response = await this.contributorsService.getContributors(orgUid, timeRange);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        time_range: timeRange,
+        contributor_count: response.contributors.length,
+        project_count: response.projects.length,
+        foundation_count: response.foundationOptions.length,
+        maintainers: response.stats.maintainers,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {
     if (!personKey || typeof personKey !== 'string') {
       throw ServiceValidationError.forField('personKey', 'personKey path parameter is required', { operation });
@@ -113,4 +211,15 @@ export class OrgLensPeopleController {
       throw ServiceValidationError.forField('personKey', 'Invalid personKey format', { operation });
     }
   }
+}
+
+/** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
+function parseContributorTimeRange(raw: string | undefined, operation: string): OrgContributorTimeRange {
+  if (!raw) {
+    return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
+  }
+  if (!VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
+    throw ServiceValidationError.forField('timeRange', `Invalid timeRange value. Allowed: ${[...VALID_CONTRIBUTOR_TIME_RANGES].join(', ')}`, { operation });
+  }
+  return raw as OrgContributorTimeRange;
 }
