@@ -22,6 +22,9 @@ export * from './auth.interface';
 // API interfaces
 export * from './api.interface';
 
+// Campaign interfaces
+export * from './campaign.interface';
+
 // Permissions interfaces
 export * from './permissions.interface';
 
@@ -30,9 +33,6 @@ export * from './meeting.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
-
-// Campaign interfaces
-export * from './campaign.interface';
 
 // Search interfaces
 export * from './search.interface';

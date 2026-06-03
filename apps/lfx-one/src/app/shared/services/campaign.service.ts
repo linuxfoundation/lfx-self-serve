@@ -3,6 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { CAMPAIGN_JOB_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
   CampaignBriefRequest,
@@ -19,8 +20,6 @@ import {
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
-
-const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
@@ -54,15 +53,15 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(days: number = 14): Observable<CampaignMonitorResponse> {
+  public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
   }
 
-  public getKeywords(days: number = 14): Observable<KeywordMetricsResponse> {
+  public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
     return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days } });
   }
 
-  public getAudience(days: number = 14): Observable<AudienceDemographics> {
+  public getAudience(days: number = 30): Observable<AudienceDemographics> {
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
   }
 
