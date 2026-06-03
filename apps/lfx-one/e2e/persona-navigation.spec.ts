@@ -31,7 +31,8 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import type { LensItem } from '@lfx-one/shared/interfaces';
+import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 // ─── Timeouts ─────────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ const ELEMENT_TIMEOUT = 10_000;
 
 const MOCK_FOUNDATION_SLUG = 'test-foundation';
 const MOCK_PROJECT_SLUG = 'test-project';
+const MOCK_PROJECT_UID = 'p0000000-0000-0000-0000-000000000001';
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: 'f0000000-0000-0000-0000-000000000001',
@@ -53,7 +55,7 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
 };
 
 const MOCK_PROJECT_ITEM: LensItem = {
-  uid: 'p0000000-0000-0000-0000-000000000001',
+  uid: MOCK_PROJECT_UID,
   slug: MOCK_PROJECT_SLUG,
   name: 'Test Project',
   logoUrl: null,
@@ -62,7 +64,7 @@ const MOCK_PROJECT_ITEM: LensItem = {
 
 function buildProjectStub(slug: string, writer: boolean) {
   return {
-    uid: 'p0000000-0000-0000-0000-000000000001',
+    uid: MOCK_PROJECT_UID,
     slug,
     name: 'Test Project',
     description: 'Test project for persona navigation regression tests',
@@ -157,8 +159,6 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   });
 }
 
-const MOCK_PROJECT_UID = 'p0000000-0000-0000-0000-000000000001';
-
 async function stubProjectApi(page: Page, slug: string, writer: boolean): Promise<void> {
   await page.route(`**/api/projects/${slug}*`, (route) =>
     route.fulfill({
@@ -175,6 +175,32 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
       body: JSON.stringify({ sfid: null }),
     })
   );
+}
+
+/**
+ * Seeds the SSR persona cookie so that Angular guards running server-side
+ * (e.g. executiveDirectorGuard, writerGuard) read the correct persona from
+ * the cookie rather than defaulting to 'contributor'.
+ *
+ * page.route() stubs only intercept browser-side XHR — they never reach the
+ * SSR Node.js process. Seeding the cookie via page.context().addCookies()
+ * causes Playwright to attach it to every request including the initial SSR
+ * navigation, making guard tests hermetic.
+ */
+async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
+  const state: PersistedPersonaState = {
+    primary: personas[0] as PersonaType,
+    all: personas as PersonaType[],
+  };
+  await page.context().addCookies([
+    {
+      name: PERSONA_COOKIE_KEY,
+      value: encodeURIComponent(JSON.stringify(state)),
+      domain: 'localhost',
+      path: '/',
+      sameSite: 'Lax',
+    },
+  ]);
 }
 
 function skipWhenAuthMissing(page: Page): void {
@@ -407,6 +433,7 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['board-member']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -424,6 +451,7 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['board-member']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -440,6 +468,7 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['board-member']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -458,6 +487,7 @@ test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona'
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
+    await setPersonaCookie(page, ['executive-director']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -476,6 +506,7 @@ test.describe('S9: Route guard — writerGuard redirects contributor without wri
     await stubPersona(page, ['contributor']);
     await stubNavLensItems(page, 'project');
     await stubProjectApi(page, MOCK_PROJECT_SLUG, false);
+    await setPersonaCookie(page, ['contributor']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -495,6 +526,7 @@ test.describe('S10: Route guard — writerGuard fast path for ED persona', () =>
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'project');
     await stubProjectApi(page, MOCK_PROJECT_SLUG, true);
+    await setPersonaCookie(page, ['executive-director']);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
