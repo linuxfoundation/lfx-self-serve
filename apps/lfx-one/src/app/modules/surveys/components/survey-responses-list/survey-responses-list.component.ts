@@ -12,7 +12,7 @@ import { NpsBand, Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces'
 import { getNpsBand, getResponseComment, getResponseDeliveryTimestamp } from '@lfx-one/shared/utils';
 import { SurveyService } from '@services/survey.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { debounceTime, distinctUntilChanged, finalize, map, merge, of, scan, startWith, Subject, switchMap, tap } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, scan, startWith, Subject, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-survey-responses-list',
@@ -154,15 +154,15 @@ export class SurveyResponsesListComponent {
 
   // === Private Initializers ===
   private initResponses(): Signal<SurveyResponseItem[]> {
-    const firstPage$ = toObservable(this.surveyId).pipe(
-      switchMap((id) => {
+    const firstPage$ = combineLatest([toObservable(this.surveyId), toObservable(this.projectUid)]).pipe(
+      switchMap(([id, projectUid]) => {
         this.pageToken.set(undefined);
         if (!id) {
           this.loading.set(false);
           return of({ data: [] as SurveyResponseItem[], token: undefined, reset: true });
         }
         this.loading.set(true);
-        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, undefined, this.projectUid() ?? undefined).pipe(
+        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, undefined, projectUid ?? undefined).pipe(
           map((page) => ({ data: page.data, token: this.normalizeToken(page.meta.page_token), reset: true })),
           finalize(() => this.loading.set(false))
         );
@@ -266,9 +266,10 @@ export class SurveyResponsesListComponent {
         const projectName = committee?.project_name || items[0]?.project?.name || '';
         const committeeName = committee?.committee_name || '';
         const label = [projectName, committeeName].filter(Boolean).join(' | ') || 'Responses';
-        // Prefer the committee's authoritative recipient total; fall back to the
-        // number of loaded rows when the survey aggregate isn't available.
-        const count = committee?.total_recipients ?? items.length;
+        // When filters/search are active, show the count of visible rows so the
+        // header matches what's rendered. When unfiltered, prefer the authoritative
+        // total from the survey aggregate (covers recipients not yet loaded).
+        const count = this.isFiltered() ? items.length : (committee?.total_recipients ?? items.length);
         return { key, label, count, items };
       });
     });

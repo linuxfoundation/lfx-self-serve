@@ -133,12 +133,15 @@ export class SurveyService {
 
     // Forward only the params the upstream endpoint supports; ignore anything else
     // the client may append so a stray param can't change upstream behavior.
+    // per_page is capped at 200 to prevent accidental or abusive large-page requests.
     const params: Record<string, any> = {};
-    for (const key of ['page_token', 'per_page', 'project_uid', 'project_uids'] as const) {
-      if (query[key] !== undefined) {
-        params[key] = query[key];
-      }
+    if (query['page_token'] !== undefined) params['page_token'] = query['page_token'];
+    if (query['per_page'] !== undefined) {
+      const perPage = parseInt(query['per_page'], 10);
+      if (!isNaN(perPage) && perPage > 0) params['per_page'] = Math.min(perPage, 200);
     }
+    if (query['project_uid'] !== undefined) params['project_uid'] = query['project_uid'];
+    if (query['project_uids'] !== undefined) params['project_uids'] = query['project_uids'];
 
     const page = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params);
 

@@ -90,7 +90,11 @@ export class SurveyService {
 
     return this.http.get<SurveyResponsesPage>(`/api/surveys/${surveyUid}/responses`, { params }).pipe(
       catchError((error) => {
-        console.error(`Failed to load responses for survey ${surveyUid}:`, error);
+        // 404 is expected when the upstream service release is not yet deployed —
+        // degrade quietly. Log unexpected statuses so real failures surface in DevTools.
+        if (error?.status !== 404) {
+          console.error(`Failed to load responses for survey ${surveyUid}:`, error);
+        }
         return of({ data: [], meta: {} } as SurveyResponsesPage);
       })
     );
