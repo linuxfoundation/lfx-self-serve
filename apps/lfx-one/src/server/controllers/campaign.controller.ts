@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import type { CampaignBriefRequest, CampaignSSEEventType, FlushableResponse } from '@lfx-one/shared/interfaces';
+import type { BulkKeywordActionRequest, CampaignBriefRequest, CampaignSSEEventType, FlushableResponse } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService } from '../services/campaign-metrics.service';
@@ -198,6 +198,42 @@ export class CampaignController {
       const data = await this.metricsService.getAudience(req, days);
       logger.success(req, 'campaign_audience', startTime, {});
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async executeKeywordActions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const body = req.body as BulkKeywordActionRequest;
+
+    if (!body.keywords || !Array.isArray(body.keywords) || body.keywords.length === 0) {
+      next(ServiceValidationError.forField('keywords', 'keywords array is required', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
+    if (!body.action || !['pause', 'remove'].includes(body.action)) {
+      next(ServiceValidationError.forField('action', 'action must be "pause" or "remove"', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
+    for (const kw of body.keywords) {
+      if (!kw || typeof kw !== 'object' || !kw.campaignId || !kw.adGroupId || !kw.criterionId) {
+        next(
+          ServiceValidationError.forField('keywords', 'each keyword must include campaignId, adGroupId, and criterionId', {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+    }
+
+    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
+
+    try {
+      const result = await this.proxyService.executeKeywordActions(req, body);
+      logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
+      res.json(result);
     } catch (error) {
       next(error);
     }
