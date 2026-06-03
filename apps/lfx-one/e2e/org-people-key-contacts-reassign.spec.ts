@@ -9,8 +9,8 @@ const PEOPLE_KEY_CONTACTS_URL = '/org/people?tab=contacts';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TOAST_TIMEOUT = 10_000;
 
-const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Industries';
 const MOCK_ACCOUNT_SLUG = 'acme-industries';
 
