@@ -134,7 +134,10 @@ export class MonitoringTabComponent implements OnInit {
         .writeText(name)
         .then(() => {
           this.copiedName.set(name);
-          const timer = setTimeout(() => this.copiedName.set(null), 2000);
+          const captured = name;
+          const timer = setTimeout(() => {
+            if (this.copiedName() === captured) this.copiedName.set(null);
+          }, 2000);
           this.destroyRef.onDestroy(() => clearTimeout(timer));
         })
         .catch(() => undefined);
