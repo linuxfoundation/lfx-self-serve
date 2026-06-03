@@ -269,7 +269,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
  * @returns The recurrence to feed the label formatter, or null when neither is available
  */
 export function resolveOccurrenceRecurrence(meeting: Pick<Meeting, 'recurrence'>, occurrence?: MeetingOccurrence | null): MeetingRecurrence | null {
-  return occurrence?.recurrence ?? meeting?.recurrence ?? null;
+  return occurrence?.recurrence ?? meeting.recurrence ?? null;
 }
 
 /**
