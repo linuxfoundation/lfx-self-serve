@@ -333,6 +333,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     dataDogRumApplicationId: process.env['DD_RUM_APPLICATION_ID'] || '',
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
+    stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {

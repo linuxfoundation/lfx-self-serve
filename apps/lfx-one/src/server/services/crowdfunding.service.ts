@@ -88,6 +88,24 @@ export class CrowdfundingService {
     return MOCK_PAYMENT_METHOD;
   }
 
+  // Mock for POST /api/crowdfunding/payment-method — replace with upstream proxy once the payment-method service is live.
+  public async saveMyPaymentMethod(req: Request, username: string, paymentMethodId: string): Promise<PaymentMethod> {
+    logger.debug(req, 'save_my_payment_method', 'Saving payment method for user', { username, paymentMethodId });
+
+    // Mock: Visa test card — real impl will proxy to POST /v1/me/payment-method.
+    const saved: PaymentMethod = {
+      paymentMethodId,
+      brand: 'visa',
+      lastFour: '4242',
+      expiryMonth: 12,
+      expiryYear: 2028,
+    };
+
+    logger.debug(req, 'save_my_payment_method', 'Payment method saved', { paymentMethodId });
+
+    return saved;
+  }
+
   public async getMyDonationStats(req: Request, username: string): Promise<DonationStats> {
     logger.debug(req, 'get_my_donation_stats', 'Fetching donation stats for user', { username });
 
