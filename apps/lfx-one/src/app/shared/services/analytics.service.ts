@@ -835,9 +835,9 @@ export class AnalyticsService {
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable of web activities summary response
    */
-  public getWebActivitiesSummary(foundationSlug: string, classification?: string): Observable<WebActivitiesSummaryResponse> {
+  public getWebActivitiesSummary(foundationSlug: string, classification?: string, month?: string): Observable<WebActivitiesSummaryResponse> {
     return this.http
-      .get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', { params: this.buildFoundationParams(foundationSlug, classification) })
+      .get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', { params: this.buildFoundationParams(foundationSlug, classification, month) })
       .pipe(
         catchError(() => {
           return of({
@@ -857,8 +857,8 @@ export class AnalyticsService {
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable of email CTR response
    */
-  public getEmailCtr(foundationSlug: string, classification?: string): Observable<EmailCtrResponse> {
-    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params: this.buildFoundationParams(foundationSlug, classification) }).pipe(
+  public getEmailCtr(foundationSlug: string, classification?: string, month?: string): Observable<EmailCtrResponse> {
+    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params: this.buildFoundationParams(foundationSlug, classification, month) }).pipe(
       catchError(() => {
         return of({
           currentCtr: 0,
@@ -880,8 +880,10 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug used to filter metrics
    * @returns Social media response with followers, platforms, engagement, and trend data
    */
-  public getSocialMedia(foundationSlug: string): Observable<SocialMediaResponse> {
-    return this.http.get<SocialMediaResponse>('/api/analytics/social-media', { params: { foundationSlug } }).pipe(
+  public getSocialMedia(foundationSlug: string, month?: string): Observable<SocialMediaResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (month) params['month'] = month;
+    return this.http.get<SocialMediaResponse>('/api/analytics/social-media', { params }).pipe(
       catchError(() => {
         return of({
           totalFollowers: 0,
@@ -901,27 +903,31 @@ export class AnalyticsService {
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Social reach response with ROAS, impressions, and monthly trends
    */
-  public getSocialReach(foundationSlug: string, classification?: string): Observable<SocialReachResponse> {
-    return this.http.get<SocialReachResponse>('/api/analytics/social-reach', { params: this.buildFoundationParams(foundationSlug, classification) }).pipe(
-      catchError(() => {
-        return of({
-          totalReach: 0,
-          roas: 0,
-          totalSpend: 0,
-          totalRevenue: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          monthlyData: [],
-          monthlyLabels: [],
-          monthlyRoas: [],
-          channelGroups: [],
-        });
-      })
-    );
+  public getSocialReach(foundationSlug: string, classification?: string, month?: string): Observable<SocialReachResponse> {
+    return this.http
+      .get<SocialReachResponse>('/api/analytics/social-reach', { params: this.buildFoundationParams(foundationSlug, classification, month) })
+      .pipe(
+        catchError(() => {
+          return of({
+            totalReach: 0,
+            roas: 0,
+            totalSpend: 0,
+            totalRevenue: 0,
+            changePercentage: 0,
+            trend: 'up' as const,
+            monthlyData: [],
+            monthlyLabels: [],
+            monthlyRoas: [],
+            channelGroups: [],
+          });
+        })
+      );
   }
 
-  public getKeywordPerformance(foundationSlug: string): Observable<KeywordPerformanceResponse> {
-    return this.http.get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params: { foundationSlug } }).pipe(
+  public getKeywordPerformance(foundationSlug: string, month?: string): Observable<KeywordPerformanceResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (month) params['month'] = month;
+    return this.http.get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params }).pipe(
       catchError(() => {
         return of({
           keywords: [],
@@ -1230,24 +1236,23 @@ export class AnalyticsService {
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @returns Observable emitting mention totals, sentiment percentages, and monthly history (or zeroed defaults on error)
    */
-  public getBrandHealth(foundationSlug: string, includeMentions = false): Observable<BrandHealthResponse> {
-    return this.http
-      .get<BrandHealthResponse>('/api/analytics/brand-health', { params: { foundationSlug, ...(includeMentions && { includeMentions: 'true' }) } })
-      .pipe(
-        catchError(() =>
-          of({
-            totalMentions: 0,
-            sentiment: { positive: 0, neutral: 0, negative: 0 },
-            sentimentMomChangePp: 0,
-            mentionMomChangePct: 0,
-            trend: 'up' as const,
-            monthlyMentions: [],
-            topProjects: [],
-            topPositiveMentions: [],
-            topNegativeMentions: [],
-          })
-        )
-      );
+  public getBrandHealth(foundationSlug: string, includeMentions = false, month?: string): Observable<BrandHealthResponse> {
+    const params: Record<string, string> = { foundationSlug, ...(includeMentions && { includeMentions: 'true' }), ...(month && { month }) };
+    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params }).pipe(
+      catchError(() =>
+        of({
+          totalMentions: 0,
+          sentiment: { positive: 0, neutral: 0, negative: 0 },
+          sentimentMomChangePp: 0,
+          mentionMomChangePct: 0,
+          trend: 'up' as const,
+          monthlyMentions: [],
+          topProjects: [],
+          topPositiveMentions: [],
+          topNegativeMentions: [],
+        })
+      )
+    );
   }
 
   /**
@@ -1256,24 +1261,26 @@ export class AnalyticsService {
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable emitting pipeline/revenue totals, attribution breakdowns, and event registration data (or zeroed defaults on error)
    */
-  public getRevenueImpact(foundationSlug: string, classification?: string): Observable<RevenueImpactResponse> {
-    return this.http.get<RevenueImpactResponse>('/api/analytics/revenue-impact', { params: this.buildFoundationParams(foundationSlug, classification) }).pipe(
-      catchError(() =>
-        of({
-          pipelineInfluenced: 0,
-          revenueAttributed: 0,
-          matchRate: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
-          engagementTypes: [],
-          paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
-          attributionChannels: [],
-          projectBreakdown: [],
-          eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
-        })
-      )
-    );
+  public getRevenueImpact(foundationSlug: string, classification?: string, month?: string): Observable<RevenueImpactResponse> {
+    return this.http
+      .get<RevenueImpactResponse>('/api/analytics/revenue-impact', { params: this.buildFoundationParams(foundationSlug, classification, month) })
+      .pipe(
+        catchError(() =>
+          of({
+            pipelineInfluenced: 0,
+            revenueAttributed: 0,
+            matchRate: 0,
+            changePercentage: 0,
+            trend: 'up' as const,
+            attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
+            engagementTypes: [],
+            paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
+            attributionChannels: [],
+            projectBreakdown: [],
+            eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
+          })
+        )
+      );
   }
 
   /**
@@ -1282,9 +1289,9 @@ export class AnalyticsService {
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable emitting channel summary + project drill-down (or empty defaults on error)
    */
-  public getMarketingAttribution(foundationSlug: string, classification?: string): Observable<MarketingAttributionResponse> {
+  public getMarketingAttribution(foundationSlug: string, classification?: string, month?: string): Observable<MarketingAttributionResponse> {
     return this.http
-      .get<MarketingAttributionResponse>('/api/analytics/marketing-attribution', { params: this.buildFoundationParams(foundationSlug, classification) })
+      .get<MarketingAttributionResponse>('/api/analytics/marketing-attribution', { params: this.buildFoundationParams(foundationSlug, classification, month) })
       .pipe(catchError(() => of({ channels: [], projects: [] })));
   }
 
@@ -1308,9 +1315,10 @@ export class AnalyticsService {
       );
   }
 
-  private buildFoundationParams(foundationSlug: string, classification?: string): Record<string, string> {
+  private buildFoundationParams(foundationSlug: string, classification?: string, month?: string): Record<string, string> {
     const params: Record<string, string> = { foundationSlug };
     if (classification) params['classification'] = classification;
+    if (month) params['month'] = month;
     return params;
   }
 }

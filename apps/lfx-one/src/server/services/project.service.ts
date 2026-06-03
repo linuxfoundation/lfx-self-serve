@@ -1935,17 +1935,20 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG (aggregates all projects under the foundation)
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g. 'Events', 'Corporate')
    */
-  public async getWebActivitiesSummary(foundationSlug: string, classification?: string): Promise<WebActivitiesSummaryResponse> {
+  public async getWebActivitiesSummary(foundationSlug: string, classification?: string, month?: string): Promise<WebActivitiesSummaryResponse> {
     logger.debug(undefined, 'get_web_activities_summary', 'Fetching web activities summary from Snowflake', {
       foundation_slug: foundationSlug,
       classification,
+      month,
     });
 
     try {
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
       // Query 1: Total sessions & page views per domain classification
+      // Uses pre-computed _LAST_30_DAYS columns — cannot be month-filtered
       const summaryQuery = `
         SELECT
           LF_SUB_DOMAIN_CLASSIFICATION,
@@ -1958,7 +1961,7 @@ export class ProjectService {
         ORDER BY TOTAL_SESSIONS DESC
       `;
 
-      // Query 2: Weekly sessions for trend chart (last 6 months)
+      // Query 2: Weekly sessions for trend chart (6 months ending at selected month)
       // WEB_ACTIVITIES_BY_PROJECT does not have LF_SUB_DOMAIN_CLASSIFICATION,
       // so the trend chart always shows all-program totals.
       const dailyQuery = `
@@ -1967,7 +1970,8 @@ export class ProjectService {
           SUM(DAILY_SESSIONS) AS DAILY_SESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_PROJECT
         WHERE FOUNDATION_SLUG = ?
-          AND ACTIVITY_DATE >= DATEADD('MONTH', -6, CURRENT_DATE())
+          AND ACTIVITY_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND ACTIVITY_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         GROUP BY DATE_TRUNC('WEEK', ACTIVITY_DATE)
         ORDER BY ACTIVITY_DATE ASC
       `;
@@ -2012,17 +2016,20 @@ export class ProjectService {
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g. 'Events', 'Corporate')
    * @returns Email CTR response with monthly trend and change percentage
    */
-  public async getEmailCtr(foundationSlug: string, classification?: string): Promise<EmailCtrResponse> {
+  public async getEmailCtr(foundationSlug: string, classification?: string, month?: string): Promise<EmailCtrResponse> {
     logger.debug(undefined, 'get_email_ctr', 'Fetching email CTR from Snowflake Platinum tables', {
       foundation_slug: foundationSlug,
       classification,
+      month,
     });
 
     try {
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
       // Query 1: KPI card — current CTR + MoM change from email_ctr_summary
+      // Uses pre-computed CTR_LAST_COMPLETED_MONTH — cannot be month-filtered
       const summaryQuery = `
         SELECT
           PROJECT_NAME,
@@ -2033,7 +2040,7 @@ export class ProjectService {
           ${classificationFilter}
       `;
 
-      // Query 2: Monthly CTR trend (bar chart, last 6 months) from email_ctr_by_month
+      // Query 2: Monthly CTR trend (bar chart, 6 months ending at selected month) from email_ctr_by_month
       // Aggregate across LF_SUB_DOMAIN_CLASSIFICATION rows (Corporate, Projects, Training, Events)
       // so we get one row per month with totals, not 4 rows per month.
       const monthlyQuery = `
@@ -2046,12 +2053,14 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
         WHERE FOUNDATION_SLUG = ?
           ${classificationFilter}
-          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND PUBLISHED_MONTH_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         GROUP BY PUBLISHED_MONTH, PUBLISHED_MONTH_DATE
         ORDER BY PUBLISHED_MONTH_DATE ASC
       `;
 
       // Query 3: CTR by campaign/project (horizontal bar) from email_ctr_summary — all projects
+      // Uses pre-computed CTR_LAST_6_MONTHS — cannot be month-filtered
       const campaignQuery = `
         SELECT
           PROJECT_NAME,
@@ -2063,7 +2072,7 @@ export class ProjectService {
         ORDER BY CTR_LAST_6_MONTHS DESC
       `;
 
-      // Query 4: Per-campaign performance from email_campaign_performance (last 6 months)
+      // Query 4: Per-campaign performance from email_campaign_performance (6 months ending at selected month)
       // Note: EMAIL_CAMPAIGN_PERFORMANCE does not have LF_SUB_DOMAIN_CLASSIFICATION — no classification filter here
       const campaignPerfQuery = `
         SELECT
@@ -2076,7 +2085,8 @@ export class ProjectService {
           ROUND(SUM(CLICKS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS CTR
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
         WHERE FOUNDATION_SLUG = ?
-          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND PUBLISHED_MONTH_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         GROUP BY MARKETING_EMAIL_NAME, EMAIL_TYPE
         ORDER BY TOTAL_SENDS DESC
       `;
@@ -2267,60 +2277,64 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG
    * @returns Social reach response with ROAS, impressions, spend, revenue, and monthly trends
    */
-  public async getSocialReach(foundationSlug: string, classification?: string): Promise<SocialReachResponse> {
-    logger.debug(undefined, 'get_social_reach', 'Fetching paid social reach from Snowflake', { foundation_slug: foundationSlug, classification });
+  public async getSocialReach(foundationSlug: string, classification?: string, month?: string): Promise<SocialReachResponse> {
+    logger.debug(undefined, 'get_social_reach', 'Fetching paid social reach from Snowflake', { foundation_slug: foundationSlug, classification, month });
 
     try {
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
-      // Block 1: Total impressions, spend, revenue (last 6 months)
+      // Block 1: Total impressions, spend, revenue (6 months ending at selected month)
       // Uses LAST_TOUCH_REVENUE as the default attribution model across all blocks
       const impressionsQuery = `
       SELECT SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS, SUM(SPEND) AS TOTAL_SPEND, SUM(LAST_TOUCH_REVENUE) AS TOTAL_REVENUE
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         AND FOUNDATION_SLUG = ?
         ${classificationFilter}
     `;
 
-      // Block 2: ROAS KPI — last two completed months for MoM (last-touch attribution)
+      // Block 2: ROAS KPI — last two completed months relative to selected month for MoM (last-touch attribution)
       const roasKpiQuery = `
       SELECT
         CAMPAIGN_MONTH,
         ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), NULLIF(SUM(SPEND), 0)), 2) AS ROAS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', CURRENT_DATE())
-        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -2, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', ${monthAnchor})
+        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -2, DATE_TRUNC('MONTH', ${monthAnchor}))
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH DESC
     `;
 
-      // Block 3: Monthly ROAS trend (bar chart, last 6 months, last-touch attribution)
+      // Block 3: Monthly ROAS trend (bar chart, 6 months ending at selected month, last-touch attribution)
       const monthlyRoasQuery = `
       SELECT CAMPAIGN_MONTH, ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), NULLIF(SUM(SPEND), 0)), 2) AS ROAS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         AND FOUNDATION_SLUG = ?
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
     `;
 
-      // Block 4: Monthly impressions (bar chart, last 6 months)
+      // Block 4: Monthly impressions (bar chart, 6 months ending at selected month)
       const monthlyImpressionsQuery = `
       SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         AND FOUNDATION_SLUG = ?
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
     `;
 
-      // Block 5: Project + campaign level performance breakdown (last 6 months)
+      // Block 5: Project + campaign level performance breakdown (6 months ending at selected month)
       // All blocks use LAST_TOUCH_REVENUE as the default attribution model
       const projectPerfQuery = `
       SELECT
@@ -2335,7 +2349,8 @@ export class ProjectService {
         SUM(CLICKS) AS CLICKS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         ${classificationFilter}
       GROUP BY PROJECT_NAME, CAMPAIGN_NAME, FUNNEL_STAGE
       ORDER BY SPEND DESC
@@ -2357,7 +2372,8 @@ export class ProjectService {
         SUM(CONV) AS CONVERSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         ${classificationFilter}
       GROUP BY CHANNEL, CAMPAIGN_NAME
       ORDER BY CHANNEL, SPEND DESC
@@ -2688,14 +2704,19 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug or 'tlf' for umbrella aggregation
    * @returns Channel summary + project drill-down
    */
-  public async getMarketingAttribution(foundationSlug: string, classification?: string): Promise<MarketingAttributionResponse> {
+  public async getMarketingAttribution(foundationSlug: string, classification?: string, month?: string): Promise<MarketingAttributionResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_marketing_attribution', 'Fetching marketing attribution from Snowflake', { foundation_slug: foundationSlug, classification });
+    logger.debug(undefined, 'get_marketing_attribution', 'Fetching marketing attribution from Snowflake', {
+      foundation_slug: foundationSlug,
+      classification,
+      month,
+    });
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
       const channelQuery = isUmbrella
         ? `
@@ -2708,7 +2729,8 @@ export class ProjectService {
                SUM(LINEAR_REVENUE) AS LINEAR_REVENUE,
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+        WHERE SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY CHANNEL
       `
@@ -2723,7 +2745,8 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          AND SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY CHANNEL
       `;
@@ -2739,7 +2762,8 @@ export class ProjectService {
                SUM(LINEAR_REVENUE) AS LINEAR_REVENUE,
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+        WHERE SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
       `
@@ -2754,7 +2778,8 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
+          AND SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
       `;
@@ -3008,11 +3033,14 @@ export class ProjectService {
    * @param foundationSlug - Foundation slug used to filter by FOUNDATION_SLUG
    * @returns Social media response with followers, platform breakdown, and trend data
    */
-  public async getSocialMedia(foundationSlug: string): Promise<SocialMediaResponse> {
-    logger.debug(undefined, 'get_social_media', 'Fetching social media data from Snowflake Platinum tables', { foundation_slug: foundationSlug });
+  public async getSocialMedia(foundationSlug: string, month?: string): Promise<SocialMediaResponse> {
+    logger.debug(undefined, 'get_social_media', 'Fetching social media data from Snowflake Platinum tables', { foundation_slug: foundationSlug, month });
 
     try {
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
+
       // Query 1: KPI cards — total followers, platforms, growth (aggregated)
+      // Uses pre-computed columns — cannot be month-filtered
       // Use MAX for PLATFORMS_ACTIVE to avoid double-counting across sub-project rows
       const overviewQuery = `
       SELECT
@@ -3030,6 +3058,7 @@ export class ProjectService {
     `;
 
       // Query 2: Platform breakdown table (aggregated per platform)
+      // Uses pre-computed POSTS_30D — cannot be month-filtered
       const platformQuery = `
       SELECT
         PLATFORM_NAME,
@@ -3046,14 +3075,15 @@ export class ProjectService {
       ORDER BY FOLLOWERS DESC
     `;
 
-      // Query 3: Follower growth trend (aggregated per month)
+      // Query 3: Follower growth trend (6 months ending at selected month, aggregated per month)
       const trendQuery = `
       SELECT
         SNAPSHOT_MONTH,
         SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS
       FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_FOLLOWER_TREND
       WHERE FOUNDATION_SLUG = ?
-        AND SNAPSHOT_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        AND SNAPSHOT_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND SNAPSHOT_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
       GROUP BY SNAPSHOT_MONTH
       ORDER BY SNAPSHOT_MONTH ASC
     `;
@@ -4858,9 +4888,9 @@ export class ProjectService {
    * Get brand health metrics from Snowflake (Share of Voice)
    * Queries ANALYTICS.PLATINUM_LFX_ONE.SHARE_OF_VOICE, SHARE_OF_VOICE_MONTHLY_TREND, SHARE_OF_VOICE_TOP_PROJECTS
    */
-  public async getBrandHealth(foundationSlug: string, includeMentions = false): Promise<BrandHealthResponse> {
+  public async getBrandHealth(foundationSlug: string, includeMentions = false, month?: string): Promise<BrandHealthResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_brand_health', 'Fetching brand health (Share of Voice) from Snowflake', { foundation_slug: foundationSlug });
+    logger.debug(undefined, 'get_brand_health', 'Fetching brand health (Share of Voice) from Snowflake', { foundation_slug: foundationSlug, month });
 
     const defaultResponse: BrandHealthResponse = {
       totalMentions: 0,
@@ -4879,8 +4909,10 @@ export class ProjectService {
       const isUmbrella = foundationSlug === 'tlf';
       const sovFilter = isUmbrella ? '' : 'WHERE FOUNDATION_SLUG = ?';
       const sovParams = isUmbrella ? [] : [foundationSlug];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
       // SHARE_OF_VOICE has per-platform rows with raw mention counts and sentiment percentages
+      // Uses pre-computed _30D columns — cannot be month-filtered
       const sovSummaryQuery = `
         SELECT SUM(TOTAL_MENTIONS_30D) AS TOTAL_MENTIONS,
                SUM(POSITIVE_MENTIONS_30D) AS POSITIVE,
@@ -4900,10 +4932,13 @@ export class ProjectService {
 
       // MOM_CHANGE_PCT in SHARE_OF_VOICE_MONTHLY_TREND is a mention-volume delta, not a sentiment delta.
       // Re-aggregate per-month mention counts (when umbrella) so monthlyMentions is correct across foundations.
+      // 6 months ending at the selected month.
       const monthlyTrendQuery = isUmbrella
         ? `
         SELECT MONTH_START_DATE, SUM(MENTION_COUNT) AS MENTION_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.SHARE_OF_VOICE_MONTHLY_TREND
+        WHERE MONTH_START_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND MONTH_START_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         GROUP BY MONTH_START_DATE
         ORDER BY MONTH_START_DATE DESC
         LIMIT 6
@@ -4912,10 +4947,13 @@ export class ProjectService {
         SELECT MONTH_START_DATE, MENTION_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.SHARE_OF_VOICE_MONTHLY_TREND
         WHERE FOUNDATION_SLUG = ?
+          AND MONTH_START_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND MONTH_START_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         ORDER BY MONTH_START_DATE DESC
         LIMIT 6
       `;
 
+      // Uses pre-computed _30D columns — cannot be month-filtered
       const topProjectsQuery = isUmbrella
         ? `
         SELECT PROJECT_NAME, SUM(MENTION_COUNT_30D) AS MENTION_COUNT_30D
@@ -5059,15 +5097,17 @@ export class ProjectService {
    * Get marketing-attributed revenue metrics from Snowflake
    * Queries ANALYTICS.PLATINUM_LFX_ONE.PIPELINE_SUMMARY and PAID_ADS_ATTRIBUTION
    */
-  public async getRevenueImpact(foundationSlug: string, classification?: string): Promise<RevenueImpactResponse> {
+  public async getRevenueImpact(foundationSlug: string, classification?: string, month?: string): Promise<RevenueImpactResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_revenue_impact', 'Fetching revenue impact from Snowflake', { foundation_slug: foundationSlug, classification });
+    logger.debug(undefined, 'get_revenue_impact', 'Fetching revenue impact from Snowflake', { foundation_slug: foundationSlug, classification, month });
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
+      // PIPELINE_SUMMARY uses pre-computed _YTD columns — cannot be month-filtered
       const pipelineQuery = isUmbrella
         ? `
         SELECT SUM(TOTAL_PIPELINE_YTD) AS TOTAL_PIPELINE_YTD, SUM(WON_REVENUE_YTD) AS WON_REVENUE_YTD,
@@ -5091,7 +5131,7 @@ export class ProjectService {
           ${classificationFilter}
       `;
 
-      // PAID_ADS_ATTRIBUTION has LF_SUB_DOMAIN_CLASSIFICATION
+      // PAID_ADS_ATTRIBUTION uses pre-computed _YTD columns — cannot be month-filtered
       const paidAdsQuery = isUmbrella
         ? `
         SELECT SUM(TOTAL_SPEND_YTD) AS TOTAL_SPEND_YTD, SUM(TOTAL_IMPRESSIONS_YTD) AS TOTAL_IMPRESSIONS_YTD,
@@ -5121,12 +5161,13 @@ export class ProjectService {
           ${classificationFilter}
       `;
 
-      // Attribution channels — last 6 months, aggregated by paid-social channel
+      // Attribution channels — 6 months ending at selected month, aggregated by paid-social channel
       const channelsQuery = isUmbrella
         ? `
         SELECT CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-        WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+        WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATEADD(month, 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY IMPRESSIONS DESC
@@ -5135,13 +5176,14 @@ export class ProjectService {
         SELECT CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE FOUNDATION_SLUG = ?
-          AND CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          AND CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATEADD(month, 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY IMPRESSIONS DESC
       `;
 
-      // Paid media monthly trend — last 6 complete months (exclude current in-progress month)
+      // Paid media monthly trend — 6 complete months ending before the selected month
       const monthlyTrendQuery = isUmbrella
         ? `
         SELECT CAMPAIGN_MONTH,
@@ -5150,8 +5192,8 @@ export class ProjectService {
                SUM(IMPRESSIONS) AS IMPRESSIONS,
                CASE WHEN SUM(SPEND) > 0 THEN SUM(FIRST_TOUCH_REVENUE) / SUM(SPEND) ELSE 0 END AS FIRST_TOUCH_ROAS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
-        WHERE CAMPAIGN_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND CAMPAIGN_MONTH < DATE_TRUNC('month', CURRENT_DATE())
+        WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
@@ -5165,20 +5207,21 @@ export class ProjectService {
                CASE WHEN SUM(SPEND) > 0 THEN SUM(FIRST_TOUCH_REVENUE) / SUM(SPEND) ELSE 0 END AS FIRST_TOUCH_ROAS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
         WHERE FOUNDATION_SLUG = ?
-          AND CAMPAIGN_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND CAMPAIGN_MONTH < DATE_TRUNC('month', CURRENT_DATE())
+          AND CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
         LIMIT 6
       `;
 
-      // Per-project per-channel impressions — rolling last 6 months
+      // Per-project per-channel impressions — 6 months ending at selected month
       const projectBreakdownQuery = isUmbrella
         ? `
         SELECT PROJECT_NAME, CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-        WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+        WHERE CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATEADD(month, 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
         ORDER BY PROJECT_NAME, IMPRESSIONS DESC
@@ -5187,13 +5230,14 @@ export class ProjectService {
         SELECT PROJECT_NAME, CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
         WHERE FOUNDATION_SLUG = ?
-          AND CAMPAIGN_MONTH >= DATEADD(month, -6, CURRENT_DATE())
+          AND CAMPAIGN_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND CAMPAIGN_MONTH < DATEADD(month, 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${classificationFilter}
         GROUP BY PROJECT_NAME, CHANNEL
         ORDER BY PROJECT_NAME, IMPRESSIONS DESC
       `;
 
-      // Event-registration attribution — per-channel totals, last 6 complete months
+      // Event-registration attribution — per-channel totals, 6 complete months before selected month
       const eventAttrChannelQuery = isUmbrella
         ? `
         SELECT CHANNEL,
@@ -5201,8 +5245,8 @@ export class ProjectService {
                SUM(UNIQUE_VISITORS) AS UNIQUE_VISITORS,
                SUM(LAST_TOUCH_REVENUE) AS LAST_TOUCH_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+        WHERE SESSION_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH <  DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY SESSIONS DESC
@@ -5214,8 +5258,8 @@ export class ProjectService {
                SUM(LAST_TOUCH_REVENUE) AS LAST_TOUCH_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          AND SESSION_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH <  DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY CHANNEL
         ORDER BY SESSIONS DESC
@@ -5226,8 +5270,8 @@ export class ProjectService {
         ? `
         SELECT TO_CHAR(SESSION_MONTH, 'YYYY-MM') AS MONTH, CHANNEL, SUM(SESSIONS) AS SESSIONS, SUM(LAST_TOUCH_REVENUE) AS LAST_TOUCH_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+        WHERE SESSION_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH <  DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY SESSION_MONTH, CHANNEL
         ORDER BY SESSION_MONTH ASC
@@ -5236,8 +5280,8 @@ export class ProjectService {
         SELECT TO_CHAR(SESSION_MONTH, 'YYYY-MM') AS MONTH, CHANNEL, SUM(SESSIONS) AS SESSIONS, SUM(LAST_TOUCH_REVENUE) AS LAST_TOUCH_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATE_TRUNC('month', DATEADD(month, -6, CURRENT_DATE()))
-          AND SESSION_MONTH <  DATE_TRUNC('month', CURRENT_DATE())
+          AND SESSION_MONTH >= DATEADD(month, -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND SESSION_MONTH <  DATE_TRUNC('MONTH', ${monthAnchor})
           ${classificationFilter}
         GROUP BY SESSION_MONTH, CHANNEL
         ORDER BY SESSION_MONTH ASC
@@ -5938,20 +5982,22 @@ export class ProjectService {
    * Queries PAID_ADS_KEYWORD_PERFORMANCE (daily grain, aggregated) and
    * PAID_ADS_KEYWORD_ATTRIBUTION (monthly grain, aggregated) for attributed revenue.
    */
-  public async getKeywordPerformance(foundationSlug: string): Promise<KeywordPerformanceResponse> {
-    logger.debug(undefined, 'get_keyword_performance', 'Fetching keyword performance from Snowflake', { foundation_slug: foundationSlug });
+  public async getKeywordPerformance(foundationSlug: string, month?: string): Promise<KeywordPerformanceResponse> {
+    logger.debug(undefined, 'get_keyword_performance', 'Fetching keyword performance from Snowflake', { foundation_slug: foundationSlug, month });
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
       const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
       const foundationParams = isUmbrella ? [] : [foundationSlug];
+      const monthAnchor = month ? `TO_DATE('${month}-01')` : 'CURRENT_DATE()';
 
       const perfQuery = `
       WITH top_keywords AS (
         SELECT KEYWORD_TEXT, KEYWORD_MATCH_TYPE, SUM(SPEND) AS KEYWORD_SPEND
         FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE
         WHERE RECORD_TYPE = 'keyword'
-          AND REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          AND REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+          AND REPORT_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
           ${foundationFilter}
         GROUP BY KEYWORD_TEXT, KEYWORD_MATCH_TYPE
         ORDER BY KEYWORD_SPEND DESC
@@ -5974,7 +6020,8 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE p
       INNER JOIN top_keywords k
         ON p.KEYWORD_TEXT = k.KEYWORD_TEXT AND p.KEYWORD_MATCH_TYPE = k.KEYWORD_MATCH_TYPE
-      WHERE p.REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      WHERE p.REPORT_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND p.REPORT_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         ${foundationFilter}
       GROUP BY p.KEYWORD_TEXT, p.KEYWORD_MATCH_TYPE, p.RECORD_TYPE, p.SEARCH_TERM, p.SEARCH_TERM_MATCH_TYPE
       ORDER BY k.KEYWORD_SPEND DESC, p.RECORD_TYPE
@@ -5991,7 +6038,8 @@ export class ProjectService {
         SUM(ATTRIBUTED_LT_CONVERSIONS) AS ATTRIBUTED_LT_CONVERSIONS,
         CASE WHEN SUM(KEYWORD_SPEND) > 0 THEN SUM(ATTRIBUTED_LT_REVENUE) / SUM(KEYWORD_SPEND) ELSE 0 END AS ATTRIBUTED_LT_ROAS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_ATTRIBUTION
-      WHERE STAT_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+      WHERE STAT_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', ${monthAnchor}))
+        AND STAT_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', ${monthAnchor}))
         ${foundationFilter}
       GROUP BY KEYWORD_TEXT, KEYWORD_MATCH_TYPE
       ORDER BY KEYWORD_SPEND DESC

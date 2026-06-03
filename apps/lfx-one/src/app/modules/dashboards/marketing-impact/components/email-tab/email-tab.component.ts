@@ -24,6 +24,7 @@ export class EmailTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -42,17 +43,18 @@ export class EmailTabComponent {
   private initEmailData(): Signal<EmailCtrResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      combineLatest([slug$, focus$]).pipe(
-        switchMap(([slug, focus]) => {
+      combineLatest([slug$, focus$, month$]).pipe(
+        switchMap(([slug, focus, month]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
-          return this.analyticsService.getEmailCtr(slug, classification).pipe(
+          return this.analyticsService.getEmailCtr(slug, classification, month || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );

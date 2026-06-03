@@ -5,7 +5,7 @@ import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, parseEntityType } from '../helpers/validation.helper';
+import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedMonth, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -1944,8 +1944,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_web_activities_summary');
+      const month = getValidatedMonth(req, 'get_web_activities_summary');
 
-      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification);
+      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification, month);
 
       logger.success(req, 'get_web_activities_summary', startTime, {
         foundation_slug: foundationSlug,
@@ -1989,8 +1990,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_email_ctr');
+      const month = getValidatedMonth(req, 'get_email_ctr');
 
-      const response = await this.projectService.getEmailCtr(foundationSlug, classification);
+      const response = await this.projectService.getEmailCtr(foundationSlug, classification, month);
 
       logger.success(req, 'get_email_ctr', startTime, {
         foundation_slug: foundationSlug,
@@ -2034,8 +2036,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_social_reach');
+      const month = getValidatedMonth(req, 'get_social_reach');
 
-      const response = await this.projectService.getSocialReach(foundationSlug, classification);
+      const response = await this.projectService.getSocialReach(foundationSlug, classification, month);
 
       logger.success(req, 'get_social_reach', startTime, {
         foundation_slug: foundationSlug,
@@ -2078,7 +2081,9 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getKeywordPerformance(foundationSlug);
+      const month = getValidatedMonth(req, 'get_keyword_performance');
+
+      const response = await this.projectService.getKeywordPerformance(foundationSlug, month);
 
       logger.success(req, 'get_keyword_performance', startTime, {
         foundation_slug: foundationSlug,
@@ -2119,7 +2124,9 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getSocialMedia(foundationSlug);
+      const month = getValidatedMonth(req, 'get_social_media');
+
+      const response = await this.projectService.getSocialMedia(foundationSlug, month);
 
       logger.success(req, 'get_social_media', startTime, {
         foundation_slug: foundationSlug,
@@ -2704,7 +2711,8 @@ export class AnalyticsController {
       }
 
       const includeMentions = getStringQueryParam(req, 'includeMentions') === 'true';
-      const response = await this.projectService.getBrandHealth(foundationSlug, includeMentions);
+      const month = getValidatedMonth(req, 'get_brand_health');
+      const response = await this.projectService.getBrandHealth(foundationSlug, includeMentions, month);
 
       logger.success(req, 'get_brand_health', startTime, {
         foundation_slug: foundationSlug,
@@ -2742,8 +2750,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_revenue_impact');
+      const month = getValidatedMonth(req, 'get_revenue_impact');
 
-      const response = await this.projectService.getRevenueImpact(foundationSlug, classification);
+      const response = await this.projectService.getRevenueImpact(foundationSlug, classification, month);
 
       logger.success(req, 'get_revenue_impact', startTime, {
         foundation_slug: foundationSlug,
@@ -2783,8 +2792,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_marketing_attribution');
+      const month = getValidatedMonth(req, 'get_marketing_attribution');
 
-      const response = await this.projectService.getMarketingAttribution(foundationSlug, classification);
+      const response = await this.projectService.getMarketingAttribution(foundationSlug, classification, month);
 
       logger.success(req, 'get_marketing_attribution', startTime, {
         foundation_slug: foundationSlug,

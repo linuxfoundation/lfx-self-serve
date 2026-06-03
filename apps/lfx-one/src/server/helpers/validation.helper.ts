@@ -162,6 +162,27 @@ export function getValidatedClassification(req: Request, operation: string): str
   return classification;
 }
 
+const MONTH_FORMAT_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export function getValidatedMonth(req: Request, operation: string): string | undefined {
+  const month = getStringQueryParam(req, 'month');
+  if (!month) return undefined;
+
+  if (!MONTH_FORMAT_REGEX.test(month)) {
+    throw ServiceValidationError.forField('month', 'Invalid month format. Expected YYYY-MM (e.g. 2026-05).', { operation });
+  }
+
+  const [year, mo] = month.split('-').map(Number);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  if (year > currentYear || (year === currentYear && mo > currentMonth)) {
+    throw ServiceValidationError.forField('month', 'Month cannot be in the future.', { operation });
+  }
+
+  return month;
+}
+
 /**
  * Validates that a request body exists
  * @param body The request body to validate

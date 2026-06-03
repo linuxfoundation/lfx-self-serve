@@ -43,10 +43,11 @@ export class OverviewTabComponent {
   private initOverviewKpiData(): Signal<OverviewKpiData> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      combineLatest([slug$, focus$]).pipe(
-        switchMap(([slug, focus]) => {
+      combineLatest([slug$, focus$, month$]).pipe(
+        switchMap(([slug, focus, month]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ revenueImpact: null, brandReach: null, emailCtr: null });
@@ -55,9 +56,11 @@ export class OverviewTabComponent {
           const classification = FOCUS_TO_CLASSIFICATION[focus];
           const isWebOnly = focus === 'projectWebsites';
           return forkJoin({
-            revenueImpact: isWebOnly ? of(null) : this.analyticsService.getRevenueImpact(slug, classification).pipe(catchError(() => of(null))),
+            revenueImpact: isWebOnly
+              ? of(null)
+              : this.analyticsService.getRevenueImpact(slug, classification, month || undefined).pipe(catchError(() => of(null))),
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
-            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification).pipe(catchError(() => of(null))),
+            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, month || undefined).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
