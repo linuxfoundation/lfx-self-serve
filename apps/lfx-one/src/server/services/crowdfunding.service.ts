@@ -18,14 +18,15 @@ import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
-  MOCK_DONATION_HISTORY,
   MOCK_DONATION_STATS,
   MOCK_INITIATIVES,
-  MOCK_PAYMENT_METHOD,
   MOCK_RECURRING_DONATIONS,
   MOCK_TRANSACTIONS,
 } from '../mock-data/crowdfunding.mock';
-import { mapDonationHistoryToMyDonation, mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
+import { BackendDonationListResponse, PaymentMethodWire } from '../types/crowdfunding.types';
+import { mapCfDonationToMyDonation, mapPaymentMethodWire, mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { fetchClientCredentialsToken } from '../utils/client-credentials-token.util';
 import { logger } from './logger.service';
 
 export class CrowdfundingService {
@@ -78,14 +79,43 @@ export class CrowdfundingService {
   }
 
   public async getMyPaymentMethod(req: Request, username: string): Promise<PaymentMethod | null> {
-    logger.debug(req, 'get_my_payment_method', 'Fetching payment method for user', { username });
+    logger.debug(req, 'get_my_payment_method', 'Fetching payment method from CF API', { username });
 
-    logger.debug(req, 'get_my_payment_method', 'Returning payment method', {
-      paymentMethodId: MOCK_PAYMENT_METHOD.paymentMethodId,
-      brand: MOCK_PAYMENT_METHOD.brand,
+    const baseUrl = process.env['CROWDFUNDING_API_BASE_URL'];
+    const audience = process.env['CROWDFUNDING_API_AUDIENCE'];
+
+    if (!baseUrl || !audience) {
+      logger.warning(req, 'get_my_payment_method', 'CROWDFUNDING_API_BASE_URL or CROWDFUNDING_API_AUDIENCE not set, returning null');
+      return null;
+    }
+
+    const token = await fetchClientCredentialsToken(req, {
+      issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+      clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+      clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+      audience,
+    });
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const response = await fetch(`${baseUrl}/v1/me/payment-account`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
     });
 
-    return MOCK_PAYMENT_METHOD;
+    if (response.status === 404) {
+      logger.debug(req, 'get_my_payment_method', 'No payment method on file for user', { username });
+      return null;
+    }
+
+    if (!response.ok) {
+      logger.warning(req, 'get_my_payment_method', 'CF API returned non-OK status', { status: response.status });
+      return null;
+    }
+
+    const wire = (await response.json()) as PaymentMethodWire;
+    return mapPaymentMethodWire(wire);
   }
 
   // Mock for POST /api/crowdfunding/payment-method — replace with upstream proxy once the payment-method service is live.
@@ -128,19 +158,49 @@ export class CrowdfundingService {
   }
 
   public async getMyDonations(req: Request, username: string, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
-    logger.debug(req, 'get_my_donations', 'Fetching donation history for user', { username, pageSize, offset });
-
-    const initiativeIdByName = new Map(MOCK_INITIATIVES.map((i) => [i.name, i.id]));
-    const allItems = MOCK_DONATION_HISTORY.map((item) => mapDonationHistoryToMyDonation(item, initiativeIdByName.get(item.initiativeName)));
-
-    const total = allItems.length;
-    const resolvedOffset = offset ?? 0;
     const resolvedPageSize = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
-    const page = allItems.slice(resolvedOffset, resolvedOffset + resolvedPageSize);
+    const resolvedOffset = offset ?? 0;
 
-    logger.debug(req, 'get_my_donations', 'Returning donation history', { total, page: page.length });
+    logger.debug(req, 'get_my_donations', 'Fetching donation history from CF API', { username, pageSize: resolvedPageSize, offset: resolvedOffset });
 
-    return { data: page, total, pageSize: resolvedPageSize, offset: resolvedOffset };
+    const baseUrl = process.env['CROWDFUNDING_API_BASE_URL'];
+    const audience = process.env['CROWDFUNDING_API_AUDIENCE'];
+
+    if (!baseUrl || !audience) {
+      logger.warning(req, 'get_my_donations', 'CROWDFUNDING_API_BASE_URL or CROWDFUNDING_API_AUDIENCE not set, returning empty');
+      return { data: [], total: 0, pageSize: resolvedPageSize, offset: resolvedOffset };
+    }
+
+    const token = await fetchClientCredentialsToken(req, {
+      issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+      clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+      clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+      audience,
+    });
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const url = new URL(`${baseUrl}/v1/me/donations`);
+    url.searchParams.set('limit', String(resolvedPageSize));
+    url.searchParams.set('offset', String(resolvedOffset));
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      logger.warning(req, 'get_my_donations', 'CF API returned non-OK status', { status: response.status });
+      return { data: [], total: 0, pageSize: resolvedPageSize, offset: resolvedOffset };
+    }
+
+    const body = (await response.json()) as BackendDonationListResponse;
+    const data = body.data.map(mapCfDonationToMyDonation);
+
+    logger.debug(req, 'get_my_donations', 'Returning donation history', { total: body.meta.total, page: data.length });
+
+    return { data, total: body.meta.total, pageSize: resolvedPageSize, offset: resolvedOffset };
   }
 
   public async getInitiativeTransactions(

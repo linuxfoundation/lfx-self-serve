@@ -88,3 +88,21 @@ export interface BackendTransactionList {
   from: number;
   size: number;
 }
+
+/** Raw snake_case donation shape from GET /v1/me/donations on the upstream crowdfunding service. */
+export interface BackendDonation {
+  id: string;
+  initiative_id: string;
+  category?: string;
+  amount_cents: number;
+  po_number?: string;
+  payment_method?: string;
+  status?: string;
+  created_on: string;
+  updated_on: string;
+}
+
+export interface BackendDonationListResponse {
+  data: BackendDonation[];
+  meta: { total: number; limit: number; offset: number };
+}

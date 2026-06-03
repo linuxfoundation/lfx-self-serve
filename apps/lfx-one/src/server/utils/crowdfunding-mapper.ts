@@ -13,10 +13,11 @@ import {
   CrowdfundingInitiativeStatus,
   MyDonation,
   DonationHistoryItem,
+  PaymentMethod,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
 
-import { BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction } from '../types/crowdfunding.types';
+import { BackendDonation, BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction, PaymentMethodWire } from '../types/crowdfunding.types';
 
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 
@@ -123,5 +124,27 @@ export function mapDonationHistoryToMyDonation(item: DonationHistoryItem, initia
     date: new Date(item.date).getTime(),
     initiativeId,
     initiativeName: item.initiativeName,
+  };
+}
+
+/** Maps a CF API CardDetails response (from GET /v1/me/payment-account) to the PaymentMethod shape. */
+export function mapPaymentMethodWire(w: PaymentMethodWire): PaymentMethod {
+  return {
+    paymentMethodId: w.payment_method_id,
+    brand: w.brand,
+    lastFour: w.last_four,
+    expiryMonth: w.expiry_month,
+    expiryYear: w.expiry_year,
+  };
+}
+
+/** Maps a CF API Donation (from GET /v1/me/donations) to the MyDonation wire shape. */
+export function mapCfDonationToMyDonation(d: BackendDonation): MyDonation {
+  return {
+    id: d.id,
+    donorType: 'member',
+    amountCents: d.amount_cents,
+    date: new Date(d.created_on).getTime(),
+    initiativeId: d.initiative_id || undefined,
   };
 }
