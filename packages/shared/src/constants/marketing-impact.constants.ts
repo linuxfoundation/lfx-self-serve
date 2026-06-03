@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { AttributionModelOption, MarketingImpactFocusProgram, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
+import type {
+  AttributionModelOption,
+  MarketingImpactFocusProgram,
+  MarketingImpactTab,
+  MarketingImpactTabOption,
+} from '../interfaces/marketing-impact.interface';
 
 /** Focus program filter options for the Marketing Impact FOCUS bar. Labels match Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
@@ -42,6 +47,15 @@ export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string
 };
 
 export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));
+
+/** Which tabs are visible for each focus area. Tabs without classification-aware data are hidden when a non-"all" focus is selected. */
+export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
+  all: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
+  lfCorporate: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfEvents: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfTraining: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  projectWebsites: new Set(['overview', 'attribution', 'performance-marketing', 'web-activity']),
+};
 
 /** Funnel stage filter options for the Performance Marketing tab. */
 export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [

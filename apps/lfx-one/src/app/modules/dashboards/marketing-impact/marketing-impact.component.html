@@ -50,7 +50,7 @@
 
     <!-- Section tabs -->
     <div class="flex gap-6 border-b border-gray-200" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
-      @for (tab of tabs; track tab.id) {
+      @for (tab of visibleTabs(); track tab.id) {
         <button
           type="button"
           role="tab"
