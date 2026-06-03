@@ -148,6 +148,16 @@ function computeTotalBudget(budgetDay: number, days: number): number {
   return budgetDay * days;
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function queryRangeStart(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+}
+
 function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
   const r = row as Record<string, unknown>;
   const name = (extractNested(r, 'campaign.name') as string) || '';
@@ -175,8 +185,8 @@ function parseCampaignMetrics(row: unknown, days: number): CampaignMetrics {
     adFormat: parsed.adFormat,
     targeting: parsed.targeting,
     status: normalizeCampaignStatus(extractNested(r, 'campaign.status')),
-    startDate: '',
-    endDate: '',
+    startDate: queryRangeStart(days),
+    endDate: todayIso(),
     budgetDay,
     totalBudget: computeTotalBudget(budgetDay, days),
     spend,
