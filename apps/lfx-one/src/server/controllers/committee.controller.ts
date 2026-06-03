@@ -569,8 +569,9 @@ export class CommitteeController {
       }
 
       const inviteData: CreateCommitteeInviteRequest = req.body;
+      const trimmedEmail = typeof inviteData?.invitee_email === 'string' ? inviteData.invitee_email.trim() : '';
 
-      if (!inviteData?.invitee_email || typeof inviteData.invitee_email !== 'string') {
+      if (!trimmedEmail) {
         next(
           ServiceValidationError.forField('invitee_email', 'Invitee email is required', {
             operation: 'create_committee_invite',
@@ -581,7 +582,7 @@ export class CommitteeController {
         return;
       }
 
-      const invite = await this.committeeService.createCommitteeInvite(req, id, inviteData);
+      const invite = await this.committeeService.createCommitteeInvite(req, id, { ...inviteData, invitee_email: trimmedEmail });
 
       logger.success(req, 'create_committee_invite', startTime, { committee_id: id, invite_id: invite.uid });
       res.status(201).json(invite);

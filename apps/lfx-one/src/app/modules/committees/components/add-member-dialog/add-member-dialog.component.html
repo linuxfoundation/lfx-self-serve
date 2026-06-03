@@ -38,15 +38,15 @@
         @for (result of searchResults(); track result.email) {
           <li
             role="option"
-            [attr.aria-disabled]="result.alreadyMember || result.added"
+            [attr.aria-disabled]="result.alreadyMember || result.alreadyInvited || result.added"
             [attr.aria-selected]="result.added"
             (click)="addEmail(result)"
             (keydown.enter)="addEmail(result)"
             (keydown.space)="$event.preventDefault(); addEmail(result)"
-            [tabindex]="result.alreadyMember || result.added ? -1 : 0"
+            [tabindex]="result.alreadyMember || result.alreadyInvited || result.added ? -1 : 0"
             class="flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors"
             [ngClass]="
-              result.alreadyMember || result.added
+              result.alreadyMember || result.alreadyInvited || result.added
                 ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
                 : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400'
             "
@@ -61,7 +61,7 @@
             <div class="flex flex-col gap-0.5 flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-medium text-gray-900 truncate">{{ result.first_name }} {{ result.last_name }}</span>
-                @if (result.username) {
+                @if (result.lfAccount) {
                   <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">
                     <i class="fa-light fa-shield-check text-[10px]" aria-hidden="true"></i> LF Account
                   </span>
@@ -74,6 +74,8 @@
               <span class="flex-none text-xs text-emerald-600 font-medium">Added</span>
             } @else if (result.alreadyMember) {
               <span class="flex-none text-xs text-gray-400 font-medium">Already member</span>
+            } @else if (result.alreadyInvited) {
+              <span class="flex-none text-xs text-gray-400 font-medium">Already invited</span>
             } @else {
               <i class="flex-none fa-light fa-plus text-gray-400" aria-hidden="true"></i>
             }

@@ -29,6 +29,7 @@ export function parseEmailList(raw: string | null | undefined): EmailListParseRe
   }
 
   const seen = new Set<string>();
+  const duplicatesSeen = new Set<string>();
 
   for (const token of raw.split(/[\s,;]+/)) {
     const trimmed = token.trim();
@@ -43,7 +44,10 @@ export function parseEmailList(raw: string | null | undefined): EmailListParseRe
     }
 
     if (seen.has(normalized)) {
-      if (!result.duplicates.includes(normalized)) {
+      // Report each duplicate once. Track reported dups in a Set rather than
+      // scanning result.duplicates (avoids O(n²) on large pastes).
+      if (!duplicatesSeen.has(normalized)) {
+        duplicatesSeen.add(normalized);
         result.duplicates.push(normalized);
       }
       continue;

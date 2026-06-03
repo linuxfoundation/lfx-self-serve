@@ -83,6 +83,8 @@ export class CommitteeMembersComponent implements OnInit {
   public memberFilterChip = signal<CommitteeMemberFilterChip>('all');
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
+  // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
+  public readonly noRoleSentinel = CommitteeMemberRole.NONE;
 
   // Computed signals — inline per component-organization.md
   // Driven by the API's effective `writer` flag, which already reflects access inherited

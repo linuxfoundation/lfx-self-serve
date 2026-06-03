@@ -3,8 +3,8 @@
 
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -12,7 +12,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEMBER_ROLES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeInvite, CommitteeInviteResult, CommitteeMember, EmailListParseResult, UserSearchResult } from '@lfx-one/shared/interfaces';
-import { parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
+import { hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -22,8 +22,8 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
 
-/** A search hit decorated with whether its email is already added to the textarea or already a member. */
-type DecoratedResult = UserSearchResult & { added: boolean; alreadyMember: boolean };
+/** A search hit decorated for the typeahead: whether it's already added/member/invited and has an LF account. */
+type DecoratedResult = UserSearchResult & { added: boolean; alreadyMember: boolean; alreadyInvited: boolean; lfAccount: boolean };
 
 /** Parsed valid emails partitioned by what the submit action will do with each. */
 interface CategorizedEmails {
@@ -69,6 +69,7 @@ export class AddMemberDialogComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
   private readonly existingMemberEmails = new Set<string>(
@@ -118,7 +119,7 @@ export class AddMemberDialogComponent {
 
   /** Append a searched person's email to the textarea (autofill convenience). */
   public addEmail(user: DecoratedResult): void {
-    if (user.alreadyMember || user.added) {
+    if (user.alreadyMember || user.alreadyInvited || user.added) {
       return;
     }
     const email = (user.email ?? '').trim();
@@ -156,7 +157,8 @@ export class AddMemberDialogComponent {
             ),
           INVITE_CONCURRENCY
         ),
-        toArray()
+        toArray(),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((results) => {
         this.submitting.set(false);
@@ -253,7 +255,13 @@ export class AddMemberDialogComponent {
         })
         .map((r) => {
           const email = (r.email ?? '').toLowerCase();
-          return { ...r, added: added.has(email), alreadyMember: this.existingMemberEmails.has(email) };
+          return {
+            ...r,
+            added: added.has(email),
+            alreadyMember: this.existingMemberEmails.has(email),
+            alreadyInvited: this.existingInviteEmails.has(email),
+            lfAccount: hasLfAccount(r),
+          };
         });
     });
   }

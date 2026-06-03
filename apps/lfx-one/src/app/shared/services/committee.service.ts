@@ -112,7 +112,7 @@ export class CommitteeService {
 
   /** Fetches all invites for a committee (caller filters to pending and handles errors). */
   public getCommitteeInvites(committeeId: string, params?: HttpParams): Observable<CommitteeInvite[]> {
-    return this.http.get<CommitteeInvite[]>(`/api/committees/${committeeId}/invites`, { params });
+    return this.http.get<CommitteeInvite[]>(`/api/committees/${committeeId}/invites`, { params }).pipe(take(1));
   }
 
   /** Creates a single committee invite. Bulk invite fans this out one call per email. */

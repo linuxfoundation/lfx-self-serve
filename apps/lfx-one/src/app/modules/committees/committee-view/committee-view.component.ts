@@ -25,7 +25,7 @@ import {
 } from '@lfx-one/shared';
 import { GroupsIOMailingList, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
-import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
+import { canManageCommitteeMembers, getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -550,7 +550,9 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          if (!committee?.uid) {
+          // Only managers can see pending invites — gate the fetch (not just the display) so
+          // non-managers never request invitee emails and we don't rely on upstream authz to reject.
+          if (!committee?.uid || !canManageCommitteeMembers(committee)) {
             this.invitesLoading.set(false);
             return of([] as CommitteeInvite[]);
           }
