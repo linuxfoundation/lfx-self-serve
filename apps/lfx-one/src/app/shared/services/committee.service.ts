@@ -110,9 +110,9 @@ export class CommitteeService {
   // have an LF account. Pending invites surface in the roster; on accept they
   // become committee members with their LFID reconciled.
 
-  /** Fetches all invites for a committee (caller filters to pending for display). */
+  /** Fetches all invites for a committee (caller filters to pending and handles errors). */
   public getCommitteeInvites(committeeId: string, params?: HttpParams): Observable<CommitteeInvite[]> {
-    return this.http.get<CommitteeInvite[]>(`/api/committees/${committeeId}/invites`, { params }).pipe(catchError(() => of([])));
+    return this.http.get<CommitteeInvite[]>(`/api/committees/${committeeId}/invites`, { params });
   }
 
   /** Creates a single committee invite. Bulk invite fans this out one call per email. */
