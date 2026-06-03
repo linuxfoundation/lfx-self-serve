@@ -104,7 +104,8 @@ export async function validateScrapeUrl(url: string): Promise<string> {
     throw new Error('DNS resolution failed — cannot verify host safety');
   }
   for (const addr of [...addresses4, ...addresses6]) {
-    if (PRIVATE_IP_PATTERNS.some((p) => p.test(addr))) {
+    const checkAddr = addr.replace(/^::ffff:/i, '');
+    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }
@@ -158,6 +159,7 @@ interface HubSpotUtmResult {
   hsUtm: string | null;
   campaignName: string;
   campaignId: string | null;
+  allMatches: { name: string; hsUtm: string }[];
 }
 
 function hsHeaders(): Record<string, string> {
@@ -191,7 +193,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const results = data.results ?? [];
 
   if (results.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
   const queryLower = eventName.toLowerCase();
@@ -207,13 +209,20 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   });
 
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0];
+  const matches = scored.filter((s) => s.score > 0);
 
-  if (best.score === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null };
+  if (matches.length === 0) {
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
-  return { found: true, hsUtm: best.hsUtm, campaignName: best.name, campaignId: best.id };
+  const best = matches[0];
+  return {
+    found: true,
+    hsUtm: best.hsUtm,
+    campaignName: best.name,
+    campaignId: best.id,
+    allMatches: matches.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
+  };
 }
 
 async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResult> {
@@ -259,7 +268,7 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     hsUtm = buildUtmTokenFallback(campaignUuid, eventName);
   }
 
-  return { found: true, hsUtm, campaignName: eventName, campaignId };
+  return { found: true, hsUtm, campaignName: eventName, campaignId, allMatches: [{ name: eventName, hsUtm: hsUtm! }] };
 }
 
 async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
@@ -499,7 +508,7 @@ export class CampaignProxyService {
       found: result.found,
       hs_utm: result.hsUtm,
       campaign_name: result.campaignName,
-      all_matches: result.found && result.hsUtm ? [{ name: result.campaignName, hs_utm: result.hsUtm }] : [],
+      all_matches: result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm })),
     };
   }
 
@@ -685,6 +694,7 @@ export class CampaignProxyService {
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
+    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes });
     const effectiveBody = { ...body };
     if (!effectiveBody.hsToken) {
       try {
@@ -699,7 +709,7 @@ export class CampaignProxyService {
     const errors: string[] = [];
 
     for (const campaignType of effectiveBody.campaignTypes) {
-      const startTime = Date.now();
+      const typeStartTime = Date.now();
       try {
         const result = campaignType === 'search' ? await this.createSearchCampaign(effectiveBody) : await this.createDemandGenCampaign(effectiveBody);
         results.push(result);
@@ -712,18 +722,29 @@ export class CampaignProxyService {
             continue;
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
-            logger.error(undefined, 'campaign_create_type', startTime, retryError as Error, { campaignType, detail });
+            logger.error(undefined, 'campaign_create_type', typeStartTime, retryError as Error, { campaignType, detail });
             errors.push(`${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
-        logger.error(undefined, 'campaign_create_type', startTime, error as Error, { campaignType, detail });
+        logger.error(undefined, 'campaign_create_type', typeStartTime, error as Error, { campaignType, detail });
         errors.push(`${campaignType}: ${detail}`);
       }
     }
 
-    completeJob(jobId, { success: errors.length === 0, campaigns: results, errors });
+    const response = { success: errors.length === 0, campaigns: results, errors };
+    completeJob(jobId, response);
+    if (errors.length > 0) {
+      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
+        jobId,
+        campaignCount: results.length,
+        errorCount: errors.length,
+        duration_ms: Date.now() - startTime,
+      });
+    } else {
+      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
+    }
   }
 
   private async createSearchCampaign(body: CampaignCreateRequest): Promise<CampaignCreateResult> {
@@ -1134,17 +1155,9 @@ function extractGadsErrorMessage(error: unknown): string {
 
   if (code && friendlyMessages[code]) return friendlyMessages[code];
 
-  if (error instanceof Error) return error.message;
+  const originalMessage = error instanceof Error ? error.message : '';
 
-  const e = error as Record<string, unknown>;
-  if (Array.isArray(e['errors']) && e['errors'].length > 0) {
-    const first = e['errors'][0] as Record<string, unknown>;
-    const msg = typeof first['message'] === 'string' ? first['message'] : '';
-    if (msg) return msg;
-  }
-
-  if (typeof e['message'] === 'string' && e['message']) return e['message'];
-  if (typeof e['details'] === 'string' && e['details']) return e['details'];
-
+  if (code) return `Campaign creation failed (error code: ${code}). Please try again or contact support.`;
+  if (originalMessage) return originalMessage;
   return 'Campaign creation failed. Please try again or contact support.';
 }
