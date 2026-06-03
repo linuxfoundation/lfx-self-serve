@@ -5,7 +5,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstValueFrom, map, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstValueFrom, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -46,18 +46,7 @@ import { KeyContactsService } from '../../services/key-contacts.service';
 import { ReassignKeyContactRolesModalComponent } from './components/reassign-key-contact-roles-modal.component';
 import { rolePillClass } from './helpers/key-contacts.helper';
 
-/**
- * Org Lens — People → Key Contacts tab.
- *
- * V1 (LFXV2-1873) shipped pure-read. LFXV2-2067 lights up TWO writer affordances on top of that:
- *   - Expanded-row pencil → spec-024 4-state modal (chooser/single-add/replace/remove) scoped to ONE
- *     (membership, role-TYPE) tuple.
- *   - Main-row pencil → "Reassign Key Contact Roles" modal scoped to ONE PERSON across N (membership,
- *     role-TYPE) tuples; fan-out PUTs replace the current contactUid on each selected role with the new
- *     person.
- * Both gates read `canEdit()` (writer-FGA via OrgRoleGrantsService.writerSet()), and both reuse the
- * transitional org-key-contacts-as-employees corpus until LFXV2-1677 lands the canonical employee feed.
- */
+/** Org Lens — People → Key Contacts tab; LFXV2-2067 adds the per-role and bulk-reassign edit affordances. */
 @Component({
   selector: 'lfx-org-people-key-contacts',
   imports: [DecimalPipe, ReactiveFormsModule, InputTextComponent, SelectComponent, SkeletonModule, EmptyStateComponent, ToastModule, TooltipModule],
@@ -119,21 +108,21 @@ export class KeyContactsComponent {
 
   protected readonly hasUnfilledRoles: Signal<boolean> = computed(() => this.stats().unfilledRequiredRoleCount > 0);
 
-  // LFXV2-2067 — writer-FGA gate (UX). When the uid is unknown we stay permissive; the BFF write
-  // proxy still enforces. Mirrors the membership-detail page's gate (spec 024 FR-027/028).
-  protected readonly canEdit: Signal<boolean> = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return true;
-    return this.roleGrants.writerSet().has(uid);
-  });
+  // Writer-FGA gate (UX); BFF still re-enforces on write.
+  protected readonly canEdit: Signal<boolean> = computed(() => this.initCanEdit());
   protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
 
   protected readonly ariaSortMap: Signal<Record<OrgKeyContactSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap: Signal<Record<OrgKeyContactSortColumn, string>> = computed(() => this.initSortIconMap());
 
+  // Cancels in-flight catalog GETs and closes any open edit/reassign dialog when the user switches account mid-flight.
+  private readonly accountCancel$ = new Subject<void>();
+
   public constructor() {
-    // Clear expansion/filter state only when the org uid actually changes (skip(1) drops the initial sync emission).
-    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetAllState());
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.accountCancel$.next();
+      this.resetAllState();
+    });
   }
 
   protected onSort(column: OrgKeyContactSortColumn): void {
@@ -170,9 +159,7 @@ export class KeyContactsComponent {
     this.retryTrigger.update((v) => v + 1);
   }
 
-  // LFXV2-2067 — expanded-row Edit pencil. Loads the (membership, role-TYPE) catalog row for the
-  // assignment then opens the spec-024 4-state modal scoped to that role; on success the table refetches
-  // via `retryTrigger`. Server still re-enforces writer-FGA on the write proxy (Constitution I).
+  // Expanded-row Edit pencil — opens the spec-024 4-state modal scoped to one (membership, role-TYPE).
   protected onPencilClick(assignment: OrgKeyContactAssignmentVm, event: Event): void {
     event.stopPropagation();
     if (!this.canEdit()) return;
@@ -183,7 +170,7 @@ export class KeyContactsComponent {
 
     this.membershipsService
       .getKeyContactCatalogBySlug(orgUid, assignment.foundationSlug)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(take(1), takeUntil(this.accountCancel$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
           const contact = response.contacts.find((c) => c.contactType === contactType);
@@ -211,9 +198,7 @@ export class KeyContactsComponent {
       });
   }
 
-  // LFXV2-2067 — main-row Reassign pencil. Stops propagation so the row's expansion toggle doesn't
-  // also fire. Builds the modal's role catalog from the person's current assignments (filtering out
-  // any non-canonical roles defensively — those wouldn't have a stable contactType for the PUT body).
+  // Main-row Reassign pencil — opens the bulk modal scoped to one person across N (membership, role-TYPE) tuples.
   protected onMainPencilClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
     event.stopPropagation();
     if (!this.canEdit()) return;
@@ -243,7 +228,7 @@ export class KeyContactsComponent {
       } satisfies ReassignKeyContactRolesDialogData,
     }) as DynamicDialogRef;
 
-    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => undefined);
+    this.wireDialogToAccountChange(ref);
   }
 
   private buildReassignRoleOptions(group: OrgKeyContactPersonGroupVm): ReassignKeyContactRolesRoleOption[] {
@@ -264,15 +249,12 @@ export class KeyContactsComponent {
     return options;
   }
 
-  // LFXV2-2067 — Reassign fan-out. Each selected role becomes one PUT (`replaceKeyContactBySlug`)
-  // against the existing contactUid; member-service finds-or-creates the new person on email match.
-  // Promise.allSettled lets every op run; we always refresh the table afterward so partial writes
-  // are reflected. On any failure we throw so the modal stays open with a retryable inline message.
-  // Caveat: re-saving on partial-success will 404 the already-replaced contactUids — the inline
-  // error nudges the user to close and reopen on fresh state rather than retry blindly.
+  // Fan-out: one PUT per selected role; refresh table afterward; throw on any failure so the modal can retry inline.
   private async performReassignWrite(intent: ReassignKeyContactRolesSubmitEvent, orgUid: string): Promise<void> {
     const ops = intent.selected.map((role) =>
-      firstValueFrom(this.membershipsService.replaceKeyContactBySlug(orgUid, role.foundationSlug, role.contactUid, this.toReassignBody(intent, role.contactType)))
+      firstValueFrom(
+        this.membershipsService.replaceKeyContactBySlug(orgUid, role.foundationSlug, role.contactUid, this.toReassignBody(intent, role.contactType))
+      )
     );
 
     const results = await Promise.allSettled(ops);
@@ -309,6 +291,11 @@ export class KeyContactsComponent {
     };
   }
 
+  // Closes the dialog if the user switches account before they confirm — prevents wrong-org writes.
+  private wireDialogToAccountChange(ref: DynamicDialogRef): void {
+    this.accountCancel$.pipe(takeUntil(ref.onClose), takeUntilDestroyed(this.destroyRef)).subscribe(() => ref.close(null));
+  }
+
   private deriveInitials(firstName: string, lastName: string): string {
     const f = (firstName ?? '').trim().charAt(0).toUpperCase();
     const l = (lastName ?? '').trim().charAt(0).toUpperCase();
@@ -335,12 +322,10 @@ export class KeyContactsComponent {
       } satisfies EditKeyContactDialogData,
     }) as DynamicDialogRef;
 
-    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => undefined);
+    this.wireDialogToAccountChange(ref);
   }
 
-  // Pessimistic write — modal stays open during the call and re-throws Error(message) so the modal can
-  // surface it inline. On success the org-wide People → Key Contacts dataset is refetched (cheaper than
-  // partial reconciliation here because the response is a per-membership catalog row, not the org list).
+  // Pessimistic write — modal stays open during the call and re-throws so it can surface an inline retry.
   private performWrite(intent: Exclude<EditKeyContactDialogResult, null>, orgUid: string, foundationSlug: string): Promise<void> {
     if (intent.kind === 'replace') return this.handleReplaceSubmit(intent.event, orgUid, foundationSlug);
     if (intent.kind === 'add') return this.handleAddSubmit(intent.event, orgUid, foundationSlug);
@@ -411,6 +396,12 @@ export class KeyContactsComponent {
       ...(removedPerson ? { detail: `${removedPerson.fullName} is no longer a ${event.contactTypeLabel}.` } : {}),
       life: 4000,
     });
+  }
+
+  private initCanEdit(): boolean {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    if (!uid) return true;
+    return this.roleGrants.writerSet().has(uid);
   }
 
   private initFoundationOptions(): OrgKeyContactDropdownOption[] {

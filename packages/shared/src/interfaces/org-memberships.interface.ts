@@ -153,12 +153,7 @@ export interface KeyContactMutationResponse {
   contact: OrgMembershipKeyContact;
 }
 
-/**
- * LFXV2-2067: response shape for the slug-keyed catalog GET used by the People → Key Contacts
- * tab to populate the 4-state edit modal (chooser/single-add/replace/remove). The membership-detail
- * page (spec 024) already gets the catalog inline as part of `OrgMembershipDetailResponse.keyContacts`,
- * so it does not need this endpoint.
- */
+/** LFXV2-2067: slug-keyed catalog response for the People → Key Contacts edit modal. */
 export interface KeyContactCatalogResponse {
   contacts: OrgMembershipKeyContact[];
 }

@@ -84,13 +84,7 @@ export interface OrgKeyContactPersonGroupVm extends OrgKeyContactPersonGroup {
   sortedAssignments: OrgKeyContactAssignmentVm[];
 }
 
-// ============================================================
-// LFXV2-2067 — main-row "Reassign Key Contact Roles" modal
-// ============================================================
-// The expanded-row pencil opens the spec-024 4-state modal scoped to ONE (membership, role-TYPE).
-// The main-row pencil opens the Reassign Key Contact Roles modal below — scoped to ONE PERSON
-// across ALL their (membership, role) tuples — for swap-in-bulk flows where the legal admin
-// just changed and every role this person held should move to the new person.
+// LFXV2-2067 — reassign-modal contracts.
 
 /** Stable identifier used by the modal's checkbox state map. `${membershipUid}:${contactType}`. */
 export type ReassignKeyContactRolesRoleKey = string;

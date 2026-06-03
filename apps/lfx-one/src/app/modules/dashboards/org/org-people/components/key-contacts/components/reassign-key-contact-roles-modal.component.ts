@@ -19,18 +19,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-/**
- * LFXV2-2067 — main-row "Reassign Key Contact Roles" modal.
- *
- * Scoped to ONE PERSON across N (membership, role-TYPE) tuples. The parent owns the fan-out write
- * (one PUT per selected role via `replaceKeyContactBySlug`) and reconciles the table on resolve;
- * this modal stays open during the call and surfaces a retryable inline error if the parent rejects.
- *
- * Mirrors `ReassignBoardRolesModalComponent` (board seats) for layout/state parity, and the
- * `EditKeyContactModalComponent` employee-search corpus for the "Assign to" typeahead. Uses the
- * same transitional org-key-contacts-as-employees corpus until LFXV2-1677 lands the canonical
- * employee feed.
- */
+/** LFXV2-2067 — bulk-reassign one person's N (membership, role-TYPE) tuples; parent fans out the PUTs. */
 @Component({
   selector: 'lfx-reassign-key-contact-roles-modal',
   standalone: true,
@@ -49,71 +38,33 @@ export class ReassignKeyContactRolesModalComponent {
   protected readonly roles: readonly ReassignKeyContactRolesRoleOption[] = this.dialogConfig.data?.roles ?? [];
   private readonly orgUid: string = this.dialogConfig.data?.orgUid ?? '';
 
-  // === Selection state ===
-  /** Per-(membership, role-TYPE) checkbox state. Default: all selected — matches the prototype's
-   *  "Select all preselected" intent so the most common workflow (full reassign) is one click. */
+  // Default: all selected so the most common workflow (full reassign) is one click.
   protected readonly selectedKeys = signal<Set<ReassignKeyContactRolesRoleKey>>(new Set(this.roles.map((r) => r.key)));
 
-  // === Form state ===
   protected readonly emailField = signal('');
   protected readonly firstNameField = signal('');
   protected readonly lastNameField = signal('');
-  protected readonly emailTouched = signal(false);
   protected readonly emailFormatError = signal<string | null>(null);
   protected readonly duplicateError = signal<string | null>(null);
 
-  // === Save / typeahead state ===
   protected readonly isSaving = signal(false);
   protected readonly saveError = signal<string | null>(null);
   protected readonly employees = signal<KeyContactEmployee[]>([]);
   protected readonly employeeSearchUnavailable = signal(false);
   protected readonly suggestionsOpen = signal(false);
 
-  // === Derived signals ===
   protected readonly checkedCount: Signal<number> = computed(() => this.selectedKeys().size);
-
-  protected readonly checkedFoundationCount: Signal<number> = computed(() => {
-    const selected = this.selectedKeys();
-    const slugs = new Set<string>();
-    for (const r of this.roles) if (selected.has(r.key)) slugs.add(r.foundationSlug);
-    return slugs.size;
-  });
-
   protected readonly allChecked: Signal<boolean> = computed(() => this.roles.length > 0 && this.selectedKeys().size === this.roles.length);
-
   protected readonly noneChecked: Signal<boolean> = computed(() => this.selectedKeys().size === 0);
-
-  protected readonly subtitle: Signal<string> = computed(() => {
-    const n = this.checkedCount();
-    const m = this.checkedFoundationCount();
-    return `${n} ${n === 1 ? 'role' : 'roles'} across ${m} ${m === 1 ? 'foundation' : 'foundations'}`;
-  });
-
-  protected readonly primaryButtonLabel: Signal<string> = computed(() => {
-    if (this.isSaving()) return 'Reassigning…';
-    const n = this.checkedCount();
-    return `Save Changes (${n} ${n === 1 ? 'role' : 'roles'})`;
-  });
-
-  /** Hide the current contact's own email from the typeahead — reassigning Hideo to Hideo is a no-op. */
-  private readonly excludedEmails = computed(() => {
-    const set = new Set<string>();
-    const currentEmail = this.person?.email?.trim().toLowerCase();
-    if (currentEmail) set.add(currentEmail);
-    return set;
-  });
-
-  protected readonly filteredEmployees: Signal<KeyContactEmployee[]> = computed(() => {
-    const query = this.emailField().trim().toLowerCase();
-    if (!query) return [];
-    const excluded = this.excludedEmails();
-    return this.employees()
-      .filter((e) => !excluded.has(e.email.trim().toLowerCase()))
-      .filter((e) => e.email.toLowerCase().includes(query) || e.fullName.toLowerCase().includes(query))
-      .slice(0, 8);
-  });
-
+  protected readonly checkedFoundationCount: Signal<number> = computed(() => this.initCheckedFoundationCount());
+  protected readonly subtitle: Signal<string> = computed(() => this.initSubtitle());
+  protected readonly primaryButtonLabel: Signal<string> = computed(() => this.initPrimaryButtonLabel());
+  protected readonly checkedKeyMap: Signal<Record<string, boolean>> = computed(() => this.initCheckedKeyMap());
+  protected readonly filteredEmployees: Signal<KeyContactEmployee[]> = computed(() => this.initFilteredEmployees());
   protected readonly saveEnabled: Signal<boolean> = computed(() => this.initSaveEnabled());
+
+  // Hide the current contact's own email from the typeahead — reassigning Hideo to Hideo is a no-op.
+  private readonly excludedEmails: Signal<Set<string>> = computed(() => this.initExcludedEmails());
 
   public constructor() {
     if (this.orgUid) {
@@ -147,11 +98,6 @@ export class ReassignKeyContactRolesModalComponent {
     });
   }
 
-  protected isRoleChecked(key: ReassignKeyContactRolesRoleKey): boolean {
-    return this.selectedKeys().has(key);
-  }
-
-  // === Form handlers ===
   protected onEmailFocus(): void {
     this.suggestionsOpen.set(true);
   }
@@ -168,7 +114,6 @@ export class ReassignKeyContactRolesModalComponent {
   protected onEmailBlur(): void {
     // Mousedown on a suggestion preventDefaults so click fires before blur — safe to close on blur.
     this.suggestionsOpen.set(false);
-    this.emailTouched.set(true);
     this.duplicateError.set(null);
     const value = this.emailField().trim();
     if (value && !EMAIL_REGEX.test(value)) {
@@ -243,6 +188,50 @@ export class ReassignKeyContactRolesModalComponent {
   }
 
   // === Computed helpers ===
+  private initCheckedFoundationCount(): number {
+    const selected = this.selectedKeys();
+    const slugs = new Set<string>();
+    for (const r of this.roles) if (selected.has(r.key)) slugs.add(r.foundationSlug);
+    return slugs.size;
+  }
+
+  private initSubtitle(): string {
+    const n = this.checkedCount();
+    const m = this.checkedFoundationCount();
+    return `${n} ${n === 1 ? 'role' : 'roles'} across ${m} ${m === 1 ? 'foundation' : 'foundations'}`;
+  }
+
+  private initPrimaryButtonLabel(): string {
+    if (this.isSaving()) return 'Reassigning…';
+    const n = this.checkedCount();
+    return `Save Changes (${n} ${n === 1 ? 'role' : 'roles'})`;
+  }
+
+  // O(1) per-row template lookup — avoids `isRoleChecked(role.key)` method calls inside @for.
+  private initCheckedKeyMap(): Record<string, boolean> {
+    const selected = this.selectedKeys();
+    const map: Record<string, boolean> = {};
+    for (const r of this.roles) map[r.key] = selected.has(r.key);
+    return map;
+  }
+
+  private initExcludedEmails(): Set<string> {
+    const set = new Set<string>();
+    const currentEmail = this.person?.email?.trim().toLowerCase();
+    if (currentEmail) set.add(currentEmail);
+    return set;
+  }
+
+  private initFilteredEmployees(): KeyContactEmployee[] {
+    const query = this.emailField().trim().toLowerCase();
+    if (!query) return [];
+    const excluded = this.excludedEmails();
+    return this.employees()
+      .filter((e) => !excluded.has(e.email.trim().toLowerCase()))
+      .filter((e) => e.email.toLowerCase().includes(query) || e.fullName.toLowerCase().includes(query))
+      .slice(0, 8);
+  }
+
   private initSaveEnabled(): boolean {
     if (this.isSaving()) return false;
     if (this.noneChecked()) return false;

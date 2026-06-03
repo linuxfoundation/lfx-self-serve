@@ -56,15 +56,11 @@ function buildOrgsRouter(): Router {
   router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
     orgLensKeyContactsController.removeKeyContact(req, res, next)
   );
-  // LFXV2-2067 — slug-keyed catalog GET + write proxies for the People → Key Contacts tab. The id-keyed
-  // routes above route through the org sfid → foundation_id bridge that the membership-detail page uses;
-  // the People tab already has the slug per assignment row, so these endpoints skip the bridge.
+  // LFXV2-2067 — slug-keyed proxies for the People → Key Contacts tab; skip the sfid→foundation_id bridge.
   router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) =>
     orgLensKeyContactsController.getKeyContactCatalogBySlug(req, res, next)
   );
-  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) =>
-    orgLensKeyContactsController.addKeyContactBySlug(req, res, next)
-  );
+  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) => orgLensKeyContactsController.addKeyContactBySlug(req, res, next));
   router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
     orgLensKeyContactsController.replaceKeyContactBySlug(req, res, next)
   );

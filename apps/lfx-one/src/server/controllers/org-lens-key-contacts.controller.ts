@@ -105,10 +105,7 @@ export class OrgLensKeyContactsController {
     }
   }
 
-  // LFXV2-2067 — slug-keyed catalog GET + write proxies, used by the People → Key Contacts tab.
-  // The id-keyed routes above route through the org sfid → foundation_id bridge that the membership-detail
-  // page needs; the People tab already has the foundation slug per assignment row, so these endpoints
-  // skip the round-trip and pass the slug straight through to the underlying service.
+  // LFXV2-2067 — slug-keyed proxies skip the sfid→foundation_id bridge that the membership-detail page needs.
 
   // GET /api/orgs/:orgUid/lens/key-contacts/membership/:foundationSlug
   public async getKeyContactCatalogBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {

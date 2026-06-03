@@ -110,9 +110,7 @@ export class OrgPeopleKeyContactsService {
       }
     }
 
-    // LFXV2-2067: writer-FGA gate is computed client-side via OrgRoleGrantsService.writerSet() (mirrors
-    // the membership-detail page in spec 024). Keeping the gate off the wire avoids a per-row server flag
-    // that would always equal a single org-level boolean; the BFF endpoints still re-enforce on write.
+    // LFXV2-2067: writer-FGA computed client-side via OrgRoleGrantsService.writerSet(); BFF re-enforces on write.
     return {
       assignments: rawAssignments,
       stats: this.computeStats(rawAssignments),

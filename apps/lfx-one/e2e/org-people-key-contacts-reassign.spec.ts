@@ -1,25 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Org People — Reassign Key Contact Roles E2E (LFXV2-2067 main-row pencil).
- *
- * Covers the user-perspective acceptance criteria for the bulk-reassign flow scoped to ONE PERSON
- * across N (membership, role-TYPE) tuples. Out of scope here: the expanded-row spec-024 4-state
- * modal, which is exercised by `org-membership-key-contacts.spec.ts`.
- *
- * Coverage map (18 user-perspective points):
- *   1–14, 17 baseline → "modal opens with the expected anatomy"
- *   17 reactive label → "save button label and subtitle update as roles toggle"
- *   15, 16            → "employee typeahead populates the name fields on selection"
- *   18 success+loading → "save fans out PUTs, shows the spinner, closes on full success"
- *   18 error           → "save failure keeps the modal open with a retryable inline error"
- *
- * Prerequisites:
- * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
- * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
- */
+/** Reassign Key Contact Roles modal E2E (LFXV2-2067 main-row pencil). */
 
 import { expect, Page, Route, test } from '@playwright/test';
 
@@ -108,10 +90,7 @@ const MOCK_EMPLOYEES = [
 
 test.setTimeout(120_000);
 
-/**
- * Bail out gracefully if Auth0 redirected the test (no TEST_USERNAME/TEST_PASSWORD set).
- * Mirrors the helper used by org-profile.spec.ts.
- */
+/** Skip the test when Auth0 redirected (no TEST_USERNAME/TEST_PASSWORD configured). */
 function skipWhenAuthMissing(page: Page): void {
   try {
     const { hostname } = new URL(page.url());
@@ -123,10 +102,7 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-/**
- * Persona + role-grants stubs so `selectedAccount().uid` resolves and `canEdit()` returns true.
- * Mirrors `stubOrgProfileContext` from org-profile.spec.ts but scoped to this fixture's org.
- */
+/** Stubs persona + role-grants so `selectedAccount().uid` resolves and `canEdit()` returns true. */
 async function stubAccountContext(page: Page, opts: { writers: string[] } = { writers: [MOCK_UID] }): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
@@ -179,10 +155,7 @@ async function stubEmployees(page: Page, employees: unknown[] = MOCK_EMPLOYEES, 
   });
 }
 
-/**
- * Stub the slug-keyed PUT proxy. The handler decides per-request what to return so individual tests
- * can compose loading-delays, partial failures, etc. Each route listener installs once per test.
- */
+/** Stubs the slug-keyed PUT proxy; the handler decides what to return per request. */
 async function stubReassignPut(page: Page, handler: (route: Route) => Promise<void> | void): Promise<void> {
   await page.route(/\/api\/orgs\/[^/]+\/lens\/key-contacts\/membership\/[^/]+\/[^/]+$/, async (route) => {
     if (route.request().method() !== 'PUT') return route.fallback();
@@ -356,7 +329,15 @@ test.describe('Org People → Key Contacts — Reassign Key Contact Roles modal 
             minContacts: 0,
             maxContacts: 10,
             people: [
-              { personId: 'kc-replacement-id', firstName: 'Cara', lastName: 'Dev', fullName: 'Cara Dev', email: MOCK_REPLACEMENT_EMAIL, jobTitle: null, initials: 'CD' },
+              {
+                personId: 'kc-replacement-id',
+                firstName: 'Cara',
+                lastName: 'Dev',
+                fullName: 'Cara Dev',
+                email: MOCK_REPLACEMENT_EMAIL,
+                jobTitle: null,
+                initials: 'CD',
+              },
             ],
           },
         }),
