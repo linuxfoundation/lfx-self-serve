@@ -684,7 +684,8 @@ export class CampaignProxyService {
     });
 
     const POLL_INTERVAL_MS = 500;
-    const deadline = Date.now() + JOB_TIMEOUT_MS;
+    const INLINE_WAIT_MS = 15_000;
+    const deadline = Date.now() + INLINE_WAIT_MS;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       const job = jobs.get(jobId);

@@ -156,7 +156,7 @@ function todayIso(): string {
 
 function queryRangeStart(days: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - (days - 1));
+  d.setUTCDate(d.getUTCDate() - (days - 1));
   return d.toISOString().slice(0, 10);
 }
 
