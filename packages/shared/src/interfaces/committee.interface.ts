@@ -5,6 +5,7 @@ import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
+import { UserSearchResult } from './search.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -119,6 +120,30 @@ export interface EmailListParseResult {
   invalid: string[];
   /** Normalized emails that appeared more than once (reported once each) */
   duplicates: string[];
+}
+
+/**
+ * A committee user-search hit decorated for the add-member typeahead: whether its
+ * email is already added to the input, already a member, already invited, and
+ * whether the person has an LF account (LFID).
+ */
+export type DecoratedCommitteeSearchResult = UserSearchResult & {
+  added: boolean;
+  alreadyMember: boolean;
+  alreadyInvited: boolean;
+  lfAccount: boolean;
+};
+
+/**
+ * Parsed valid invite emails partitioned by what the add-member submit will do with each.
+ */
+export interface CategorizedCommitteeEmails {
+  /** Emails that will be invited (not already a member or pending invite). */
+  toInvite: string[];
+  /** Emails skipped because the person is already a member. */
+  alreadyMembers: string[];
+  /** Emails skipped because a pending invite already exists. */
+  alreadyInvited: string[];
 }
 
 /**

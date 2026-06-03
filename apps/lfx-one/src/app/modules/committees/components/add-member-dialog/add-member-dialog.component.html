@@ -117,7 +117,7 @@
       }
       @if (parsed().invalid.length > 0) {
         <span class="text-amber-600">
-          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ parsed().invalid.join(', ') }}
+          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ invalidSummary() }}
         </span>
       }
     </div>

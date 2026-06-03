@@ -10,8 +10,17 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MEMBER_ROLES } from '@lfx-one/shared/constants';
-import { Committee, CommitteeInvite, CommitteeInviteResult, CommitteeMember, EmailListParseResult, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
+import {
+  CategorizedCommitteeEmails,
+  Committee,
+  CommitteeInvite,
+  CommitteeInviteResult,
+  CommitteeMember,
+  DecoratedCommitteeSearchResult,
+  EmailListParseResult,
+  UserSearchResult,
+} from '@lfx-one/shared/interfaces';
 import { hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
@@ -21,22 +30,6 @@ import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
-
-/** A search hit decorated for the typeahead: whether it's already added/member/invited and has an LF account. */
-type DecoratedResult = UserSearchResult & { added: boolean; alreadyMember: boolean; alreadyInvited: boolean; lfAccount: boolean };
-
-/** Parsed valid emails partitioned by what the submit action will do with each. */
-interface CategorizedEmails {
-  /** Emails that will be invited (not already a member or pending invite). */
-  toInvite: string[];
-  /** Emails skipped because the person is already a member. */
-  alreadyMembers: string[];
-  /** Emails skipped because a pending invite already exists. */
-  alreadyInvited: string[];
-}
-
-/** Max concurrent create-invite requests when fanning out a bulk invite. */
-const INVITE_CONCURRENCY = 5;
 
 /**
  * Invite people to a committee by email — single or bulk.
@@ -91,8 +84,8 @@ export class AddMemberDialogComponent {
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
-  public readonly categorized: Signal<CategorizedEmails> = computed(() => {
-    const result: CategorizedEmails = { toInvite: [], alreadyMembers: [], alreadyInvited: [] };
+  public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
+    const result: CategorizedCommitteeEmails = { toInvite: [], alreadyMembers: [], alreadyInvited: [] };
     for (const email of this.parsed().valid) {
       if (this.existingMemberEmails.has(email)) {
         result.alreadyMembers.push(email);
@@ -105,6 +98,8 @@ export class AddMemberDialogComponent {
     return result;
   });
   public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
+  public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
   public readonly queryValue = toSignal(
     this.searchForm.get('query')!.valueChanges.pipe(
@@ -113,12 +108,12 @@ export class AddMemberDialogComponent {
     ),
     { initialValue: '' }
   );
-  public searchResults: Signal<DecoratedResult[]> = this.initSearchResults();
+  public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
 
   public readonly roleOptions = MEMBER_ROLES;
 
   /** Append a searched person's email to the textarea (autofill convenience). */
-  public addEmail(user: DecoratedResult): void {
+  public addEmail(user: DecoratedCommitteeSearchResult): void {
     if (user.alreadyMember || user.alreadyInvited || user.added) {
       return;
     }
@@ -155,7 +150,7 @@ export class AddMemberDialogComponent {
               map(() => ({ email, success: true })),
               catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
             ),
-          INVITE_CONCURRENCY
+          COMMITTEE_INVITE_CONCURRENCY
         ),
         toArray(),
         takeUntilDestroyed(this.destroyRef)
@@ -208,7 +203,7 @@ export class AddMemberDialogComponent {
     return upstream ?? 'invite failed';
   }
 
-  private initSearchResults(): Signal<DecoratedResult[]> {
+  private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
     const rawResults = toSignal(
       this.searchForm.get('query')!.valueChanges.pipe(
         startWith(''),

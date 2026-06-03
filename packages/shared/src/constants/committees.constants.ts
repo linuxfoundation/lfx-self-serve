@@ -591,3 +591,6 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
     bgColor: 'bg-gray-50',
   },
 };
+
+/** Max concurrent create-invite requests when fanning out a bulk committee invite. */
+export const COMMITTEE_INVITE_CONCURRENCY = 5;
