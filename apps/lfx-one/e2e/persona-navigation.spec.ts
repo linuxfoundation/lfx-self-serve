@@ -68,7 +68,7 @@ function buildProjectStub(slug: string, writer: boolean) {
     description: 'Test project for persona navigation regression tests',
     public: true,
     parent_uid: '',
-    stage: 'graduated',
+    stage: 'Active',
     category: 'project',
     funding_model: [],
     charter_url: '',
@@ -140,7 +140,15 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   const resolvedItems = items ?? [lens === 'foundation' ? MOCK_FOUNDATION_ITEM : MOCK_PROJECT_ITEM];
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
-    if (!url.includes(`lens=${lens}`)) return route.continue();
+    if (!url.includes(`lens=${lens}`)) {
+      // Fulfill non-matching lens requests with empty items to keep the suite fully hermetic.
+      const otherLens = url.includes('lens=foundation') ? 'foundation' : 'project';
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], next_page_token: null, upstream_failed: false, lens: otherLens }),
+      });
+    }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -149,12 +157,22 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   });
 }
 
+const MOCK_PROJECT_UID = 'p0000000-0000-0000-0000-000000000001';
+
 async function stubProjectApi(page: Page, slug: string, writer: boolean): Promise<void> {
   await page.route(`**/api/projects/${slug}*`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildProjectStub(slug, writer)),
+    })
+  );
+  // Stub the UID-based sfid lookup (ProjectContextService.selectedFoundationSfid).
+  await page.route(`**/api/projects/${MOCK_PROJECT_UID}/sfid*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ sfid: null }),
     })
   );
 }
@@ -190,6 +208,7 @@ test.describe('S1: Foundation lens — executive-director persona', () => {
   test.beforeEach(async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
   });
 
@@ -438,6 +457,7 @@ test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona'
   test('ED navigating to /foundation/health-metrics is NOT redirected', async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -474,6 +494,7 @@ test.describe('S10: Route guard — writerGuard fast path for ED persona', () =>
   test('ED (synchronous fast path) navigating to /project/meetings/create is NOT redirected', async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'project');
+    await stubProjectApi(page, MOCK_PROJECT_SLUG, true);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
