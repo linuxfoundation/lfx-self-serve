@@ -49,7 +49,17 @@ const INVITE_CONCURRENCY = 5;
  */
 @Component({
   selector: 'lfx-add-member-dialog',
-  imports: [ReactiveFormsModule, NgClass, UserInitialsPipe, UserAvatarColorPipe, ButtonComponent, InputTextComponent, SelectComponent, TextareaComponent, SkeletonModule],
+  imports: [
+    ReactiveFormsModule,
+    NgClass,
+    UserInitialsPipe,
+    UserAvatarColorPipe,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    TextareaComponent,
+    SkeletonModule,
+  ],
   templateUrl: './add-member-dialog.component.html',
   styleUrl: './add-member-dialog.component.scss',
 })
@@ -95,7 +105,13 @@ export class AddMemberDialogComponent {
   });
   public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
 
-  public readonly queryValue = toSignal(this.searchForm.get('query')!.valueChanges.pipe(startWith(''), map((v) => (v ?? '').trim())), { initialValue: '' });
+  public readonly queryValue = toSignal(
+    this.searchForm.get('query')!.valueChanges.pipe(
+      startWith(''),
+      map((v) => (v ?? '').trim())
+    ),
+    { initialValue: '' }
+  );
   public searchResults: Signal<DecoratedResult[]> = this.initSearchResults();
 
   public readonly roleOptions = MEMBER_ROLES;
@@ -136,7 +152,9 @@ export class AddMemberDialogComponent {
           (email) =>
             this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role }).pipe(
               map(() => ({ email, success: true }) as CommitteeInviteResult),
-              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }) as ReturnType<typeof of<CommitteeInviteResult>>)
+              catchError(
+                (err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }) as ReturnType<typeof of<CommitteeInviteResult>>
+              )
             ),
           INVITE_CONCURRENCY
         ),
@@ -209,7 +227,12 @@ export class AddMemberDialogComponent {
             tap(() => this.searchLoading.set(false)),
             catchError(() => {
               this.searchLoading.set(false);
-              this.messageService.add({ severity: 'warn', summary: 'Search Unavailable', detail: 'Could not reach the user search service. Please try again.', life: 4000 });
+              this.messageService.add({
+                severity: 'warn',
+                summary: 'Search Unavailable',
+                detail: 'Could not reach the user search service. Please try again.',
+                life: 4000,
+              });
               return of([] as UserSearchResult[]);
             })
           );

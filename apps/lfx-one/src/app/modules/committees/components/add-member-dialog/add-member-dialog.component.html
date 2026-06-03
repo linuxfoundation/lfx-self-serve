@@ -3,8 +3,8 @@
 
 <div class="flex flex-col gap-5 px-1" data-testid="add-member-dialog">
   <p class="text-sm text-gray-500">
-    Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile, so you don't need to enter their
-    details. They appear as "Pending" until they accept.
+    Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile, so you don't need to enter
+    their details. They appear as "Pending" until they accept.
   </p>
 
   <!-- ── Find existing people (typeahead autofill, optional) ──────────────────── -->
@@ -100,7 +100,9 @@
 
     <div class="flex flex-col gap-1 text-xs" data-testid="add-member-preview">
       @if (categorized().toInvite.length > 0) {
-        <span class="text-emerald-600 font-medium"> <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite </span>
+        <span class="text-emerald-600 font-medium">
+          <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
+        </span>
       }
       @if (categorized().alreadyMembers.length > 0) {
         <span class="text-gray-400">{{ categorized().alreadyMembers.length }} already in the group — will be skipped</span>
@@ -112,7 +114,9 @@
         <span class="text-gray-400">{{ parsed().duplicates.length }} duplicate(s) removed</span>
       }
       @if (parsed().invalid.length > 0) {
-        <span class="text-amber-600"> <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ parsed().invalid.join(', ') }} </span>
+        <span class="text-amber-600">
+          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ parsed().invalid.join(', ') }}
+        </span>
       }
     </div>
   </div>
