@@ -35,11 +35,12 @@ export class AudienceDemographicsComponent {
   protected readonly deviceBuckets = computed(() => this.data()?.device ?? []);
   protected readonly pulledAt = computed(() => this.data()?.pulledAt ?? '');
 
-  // === Effects ===
-  private readonly fetchOnDaysChange = effect(() => {
-    const days = this.days();
-    this.refresh(days);
-  });
+  public constructor() {
+    effect(() => {
+      const days = this.days();
+      this.refresh(days);
+    });
+  }
 
   // === Protected Methods ===
   protected refresh(days?: number): void {
