@@ -426,7 +426,13 @@
         }
         @case ('members') {
           @if (isMembersTabVisible()) {
-            <lfx-committee-members [committee]="committee()" [members]="members()" [membersLoading]="membersLoading()" (refresh)="onMembersRefreshed()" />
+            <lfx-committee-members
+              [committee]="committee()"
+              [members]="members()"
+              [membersLoading]="membersLoading()"
+              [invites]="invites()"
+              [invitesLoading]="invitesLoading()"
+              (refresh)="onMembersRefreshed()" />
           }
         }
         @case ('votes') {

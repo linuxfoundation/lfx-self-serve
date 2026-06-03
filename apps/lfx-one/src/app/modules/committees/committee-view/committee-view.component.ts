@@ -15,6 +15,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberVisibility,
   CommitteePermissionLevel,
@@ -109,11 +110,14 @@ export class CommitteeViewComponent {
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
+  public invitesLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
+  // Pending invites share the members refresh trigger so adding/revoking refreshes both.
+  public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
 
   // Membership identity comes from server-enriched fields on the committee record,
   // resolved via the username-tagged membership query so visibility doesn't depend
@@ -539,6 +543,31 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initializeInvites(): Signal<CommitteeInvite[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
+        switchMap(([committee]) => {
+          if (!committee?.uid) {
+            this.invitesLoading.set(false);
+            return of([] as CommitteeInvite[]);
+          }
+
+          this.invitesLoading.set(true);
+
+          return this.committeeService.getCommitteeInvites(committee.uid).pipe(
+            // Only pending invites belong on the roster — accepted ones are already members,
+            // and declined/revoked ones shouldn't block re-inviting. Status casing varies
+            // upstream, so compare case-insensitively.
+            map((invites) => invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')),
+            catchError(() => of([] as CommitteeInvite[])),
+            finalize(() => this.invitesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as CommitteeInvite[] }
     );
   }
 

@@ -18,6 +18,7 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
@@ -70,12 +71,15 @@ export class CommitteeMembersComponent implements OnInit {
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
+  public invites = input<CommitteeInvite[]>([]);
+  public invitesLoading = input<boolean>(false);
 
   public readonly refresh = output<void>();
 
   // Simple writable signals
   public selectedMember = signal<CommitteeMember | null>(null);
   public isDeleting = signal<boolean>(false);
+  public revokingInviteUid = signal<string | null>(null);
   public memberFilterChip = signal<CommitteeMemberFilterChip>('all');
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
@@ -179,6 +183,7 @@ export class CommitteeMembersComponent implements OnInit {
       data: {
         committee: this.committee(),
         existingMembers: this.members(),
+        existingInvites: this.invites(),
       },
     });
 
@@ -186,6 +191,42 @@ export class CommitteeMembersComponent implements OnInit {
       if (result === true) {
         this.refreshMembers();
       }
+    });
+  }
+
+  public revokeInvite(invite: CommitteeInvite): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.revokingInviteUid()) return;
+
+    this.confirmationService.confirm({
+      message: `Revoke the pending invitation for ${invite.invitee_email}?`,
+      header: 'Revoke Invitation',
+      acceptLabel: 'Revoke',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        this.revokingInviteUid.set(invite.uid);
+        this.committeeService.revokeCommitteeInvite(committee.uid, invite.uid).subscribe({
+          next: () => {
+            this.revokingInviteUid.set(null);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Invitation Revoked',
+              detail: `The invitation for ${invite.invitee_email} has been revoked.`,
+            });
+            this.refreshMembers();
+          },
+          error: (err: HttpErrorResponse) => {
+            this.revokingInviteUid.set(null);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to Revoke',
+              detail: getHttpErrorDetail(err, 'Failed to revoke the invitation. Please try again.'),
+            });
+          },
+        });
+      },
     });
   }
 
