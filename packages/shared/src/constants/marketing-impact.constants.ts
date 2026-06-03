@@ -48,7 +48,7 @@ export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string
 
 export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));
 
-/** Which tabs are visible for each focus area. Tabs without classification-aware data are hidden when a non-"all" focus is selected. */
+/** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering); Email is additionally hidden for projectWebsites (no email campaign data). */
 export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
   all: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
   lfCorporate: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
