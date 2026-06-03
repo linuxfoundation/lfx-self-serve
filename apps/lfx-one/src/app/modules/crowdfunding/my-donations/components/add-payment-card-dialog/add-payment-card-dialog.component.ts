@@ -33,6 +33,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
 
   protected readonly isStripeKeySet = computed(() => this.stripeService.isStripeKeySet());
 
+
   // Guards mountStripeElements from running on an already-destroyed view.
   private destroyed = false;
 
