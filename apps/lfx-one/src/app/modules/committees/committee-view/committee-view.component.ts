@@ -15,6 +15,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberVisibility,
   CommitteePermissionLevel,
@@ -24,7 +25,7 @@ import {
 } from '@lfx-one/shared';
 import { GroupsIOMailingList, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
-import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
+import { canManageCommitteeMembers, getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -109,11 +110,14 @@ export class CommitteeViewComponent {
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
+  public invitesLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
+  // Pending invites share the members refresh trigger so adding/revoking refreshes both.
+  public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
 
   // Membership identity comes from server-enriched fields on the committee record,
   // resolved via the username-tagged membership query so visibility doesn't depend
@@ -539,6 +543,33 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initializeInvites(): Signal<CommitteeInvite[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only managers can see pending invites — gate the fetch (not just the display) so
+          // non-managers never request invitee emails and we don't rely on upstream authz to reject.
+          if (!committee?.uid || !canManageCommitteeMembers(committee)) {
+            this.invitesLoading.set(false);
+            return of([] as CommitteeInvite[]);
+          }
+
+          this.invitesLoading.set(true);
+
+          return this.committeeService.getCommitteeInvites(committee.uid).pipe(
+            // Only pending invites belong on the roster — accepted ones are already members,
+            // and declined/revoked ones shouldn't block re-inviting. Status casing varies
+            // upstream, so compare case-insensitively.
+            map((invites) => invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')),
+            catchError(() => of([] as CommitteeInvite[])),
+            finalize(() => this.invitesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as CommitteeInvite[] }
     );
   }
 

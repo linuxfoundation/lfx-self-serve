@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { rankUserSearchResults, scoreUserSearchResult } from './search.utils';
+import { hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
@@ -103,5 +103,23 @@ describe('rankUserSearchResults', () => {
   it('returns results unchanged for an empty query', () => {
     const input = [bob, ilona];
     expect(rankUserSearchResults(input, '   ')).toBe(input);
+  });
+});
+
+describe('hasLfAccount', () => {
+  it('is true when a non-empty username (LFID) is present', () => {
+    expect(hasLfAccount(user({ username: 'jdoe' }))).toBe(true);
+  });
+
+  it('is false when username is null (never reconciled to an LFID)', () => {
+    expect(hasLfAccount(user({ username: null }))).toBe(false);
+  });
+
+  it('is false when username is undefined', () => {
+    expect(hasLfAccount({ username: undefined })).toBe(false);
+  });
+
+  it('treats a whitespace-only username as no account (invite-by-email path)', () => {
+    expect(hasLfAccount(user({ username: '   ' }))).toBe(false);
   });
 });
