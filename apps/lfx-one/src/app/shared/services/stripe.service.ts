@@ -29,6 +29,7 @@ export class StripeService {
     const { stripePublishableKey } = getRuntimeConfig(this.transferState);
 
     if (!stripePublishableKey) {
+      console.error('Stripe publishable key is not set');
       return Promise.resolve(null);
     }
 
