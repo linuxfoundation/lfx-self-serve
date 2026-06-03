@@ -375,11 +375,13 @@ export class PlanningTabComponent implements OnInit {
     this.hsNotFound.set(false);
     this.hsUtm.set(null);
 
+    const capturedEvent = eventName;
     this.campaignService
       .lookupHubSpotUtm(eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
           if (result?.found && result.hs_utm) {
             this.hsUtm.set(result.hs_utm);
             this.hsMatches.set(result.all_matches ?? []);
@@ -391,6 +393,7 @@ export class PlanningTabComponent implements OnInit {
           this.hsSearching.set(false);
         },
         error: () => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
           this.hsStatus.set('HubSpot lookup failed');
           this.hsSearching.set(false);
         },

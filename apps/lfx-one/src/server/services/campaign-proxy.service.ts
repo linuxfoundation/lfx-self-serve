@@ -740,6 +740,7 @@ export class CampaignProxyService {
         jobId,
         campaignCount: results.length,
         errorCount: errors.length,
+        durationMs: Date.now() - startTime,
       });
     } else {
       logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
