@@ -92,7 +92,7 @@
 
     <!-- Content Section -->
     <div class="flex flex-col gap-6" data-testid="survey-results-drawer-content">
-      <!-- Tab Toggle: aggregate Overview vs. per-recipient Responses -->
+      <!-- Tab Toggle: aggregate Overview vs. per-recipient Responses (PMO only) -->
       <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit" data-testid="survey-results-drawer-tabs">
         <button
           type="button"
@@ -102,14 +102,16 @@
           data-testid="survey-results-drawer-tab-overview">
           Overview
         </button>
-        <button
-          type="button"
-          (click)="setTab('responses')"
-          class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
-          [class]="activeTab() === 'responses' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
-          data-testid="survey-results-drawer-tab-responses">
-          Responses
-        </button>
+        @if (hasPMOAccess()) {
+          <button
+            type="button"
+            (click)="setTab('responses')"
+            class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
+            [class]="activeTab() === 'responses' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+            data-testid="survey-results-drawer-tab-responses">
+            Responses
+          </button>
+        }
       </div>
 
       @if (activeTab() === 'responses') {

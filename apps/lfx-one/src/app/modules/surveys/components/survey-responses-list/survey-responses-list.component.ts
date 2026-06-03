@@ -306,6 +306,10 @@ export class SurveyResponsesListComponent {
     return [...rows].sort((a, b) => {
       const av = this.sortValue(a, field);
       const bv = this.sortValue(b, field);
+      // Infinity is the sentinel for missing/non-responded values — always sort last.
+      if (av === Infinity && bv === Infinity) return 0;
+      if (av === Infinity) return 1;
+      if (bv === Infinity) return -1;
       if (av < bv) return -1 * dir;
       if (av > bv) return 1 * dir;
       return 0;
@@ -320,11 +324,13 @@ export class SurveyResponsesListComponent {
         return (item.organization?.name ?? '').toLowerCase();
       case 'delivery':
         return (item.response_status ?? '').toLowerCase();
-      case 'responseDate':
-        return item.response_datetime ? new Date(item.response_datetime).getTime() : 0;
+      case 'responseDate': {
+        const ts = item.response_datetime ? new Date(item.response_datetime).getTime() : NaN;
+        return isNaN(ts) ? Infinity : ts;
+      }
       case 'nps':
-        // Missing scores sort below any real score (0-10) regardless of direction flip.
-        return typeof item.nps_value === 'number' ? item.nps_value : -1;
+        // Missing/non-responded scores always sort last regardless of direction.
+        return typeof item.nps_value === 'number' && !!item.response_datetime ? item.nps_value : Infinity;
       case 'comment':
         return (getResponseComment(item) ?? '').toLowerCase();
       default:

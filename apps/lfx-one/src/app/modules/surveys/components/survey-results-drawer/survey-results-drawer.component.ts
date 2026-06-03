@@ -76,7 +76,7 @@ export class SurveyResultsDrawerComponent {
   }
 
   protected setTab(tab: 'overview' | 'responses'): void {
-    this.activeTab.set(tab);
+    this.activeTab.set(tab === 'responses' && !this.hasPMOAccess() ? 'overview' : tab);
   }
 
   protected toggleAdminMenu(): void {
