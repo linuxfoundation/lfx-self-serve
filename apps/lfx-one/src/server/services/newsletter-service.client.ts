@@ -62,9 +62,17 @@ export class NewsletterServiceClient {
     ifMatchVersion: number,
     payload: UpdateNewsletterRequest
   ): Promise<Newsletter> {
-    return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}`, 'PUT', undefined, payload, {
-      'If-Match': `"${ifMatchVersion}"`,
-    });
+    return this.microserviceProxy.proxyRequest<Newsletter>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}`,
+      'PUT',
+      undefined,
+      payload,
+      {
+        'If-Match': `"${ifMatchVersion}"`,
+      }
+    );
   }
 
   public async deleteNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<void> {
@@ -113,7 +121,14 @@ export class NewsletterServiceClient {
   }
 
   public async testSend(req: Request, projectUid: string, payload: NewsletterTestSendPayload): Promise<{ ok: boolean }> {
-    return this.microserviceProxy.proxyRequest<{ ok: boolean }>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/test-send`, 'POST', undefined, payload);
+    return this.microserviceProxy.proxyRequest<{ ok: boolean }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/test-send`,
+      'POST',
+      undefined,
+      payload
+    );
   }
 
   public async getAnalytics(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAnalytics> {
@@ -124,5 +139,4 @@ export class NewsletterServiceClient {
       'GET'
     );
   }
-
 }
