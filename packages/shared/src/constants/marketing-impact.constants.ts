@@ -50,11 +50,11 @@ export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(
 
 /** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering); Email is additionally hidden for projectWebsites (no email campaign data). */
 export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
-  all: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
-  lfCorporate: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
-  lfEvents: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
-  lfTraining: new Set(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
-  projectWebsites: new Set(['overview', 'attribution', 'performance-marketing', 'web-activity']),
+  all: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
+  lfCorporate: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfEvents: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfTraining: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  projectWebsites: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'web-activity']),
 };
 
 /** Funnel stage filter options for the Performance Marketing tab. */
