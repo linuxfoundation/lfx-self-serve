@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="lfx-rich-editor flex flex-col rounded-md border border-gray-300 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500"
+  [attr.data-testid]="dataTest()">
+  <div class="lfx-rich-editor__toolbar flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 py-1.5" role="toolbar" aria-label="Formatting">
+    @for (button of buttons; track button.id) {
+      <button
+        type="button"
+        class="flex h-8 w-8 items-center justify-center rounded text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+        [class.bg-blue-50]="isActive(button)"
+        [class.text-blue-700]="isActive(button)"
+        [disabled]="!editorReady() || readonly()"
+        [attr.aria-label]="button.label"
+        [attr.aria-pressed]="isActive(button)"
+        [attr.title]="button.label"
+        [attr.data-testid]="'rich-editor-' + button.id"
+        (click)="runCommand(button)">
+        <i [class]="button.icon" aria-hidden="true"></i>
+      </button>
+      @if (hasDivider(button)) {
+        <span class="mx-1 h-5 w-px bg-gray-200" aria-hidden="true"></span>
+      }
+    }
+  </div>
+
+  <div #editorHost class="lfx-rich-editor__host overflow-y-auto px-3 py-2" [style]="editorStyle()"></div>
+</div>
