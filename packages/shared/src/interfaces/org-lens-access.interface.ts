@@ -10,6 +10,9 @@
 /** UI role value (compact). Maps to the FGA writer/auditor relations. */
 export type OrgAccessRole = 'admin' | 'viewer';
 
+/** Badge state rendered in access-aware cells — accepted role, or `'invited'` for principals still pending invite acceptance. */
+export type OrgAccessBadgeState = OrgAccessRole | 'invited';
+
 /** Invite lifecycle state surfaced from the settings record. */
 export type OrgAccessInviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 

@@ -176,21 +176,24 @@
               @let detailIsLoading = !!detailLoading()[detailKey];
               @let detailHasError = !!detailErrorMap()[detailKey];
               <tr
-                class="cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                role="button"
-                tabindex="0"
+                [class]="row.rowClass"
+                [attr.role]="row.isSynthetic ? null : 'button'"
+                [attr.tabindex]="row.isSynthetic ? null : 0"
                 [attr.data-testid]="'org-people-all-employees-row-' + row.personKey"
-                [attr.aria-expanded]="expanded"
-                [attr.aria-label]="'Toggle details for ' + row.name"
+                [attr.aria-expanded]="row.isSynthetic ? null : expanded"
+                [attr.aria-label]="row.isSynthetic ? null : 'Toggle details for ' + row.name"
                 (click)="toggleRow(row)"
                 (keydown)="onRowKeydown($event, row)">
                 <td class="px-2 py-3 align-middle">
-                  <i class="fa-light fa-chevron-right block text-xs text-gray-400 transition-transform" [class.rotate-90]="expanded" aria-hidden="true"></i>
+                  @if (!row.isSynthetic) {
+                    <i class="fa-light fa-chevron-right block text-xs text-gray-400 transition-transform" [class.rotate-90]="expanded" aria-hidden="true"></i>
+                  }
                 </td>
                 <td class="px-4 py-3 align-middle">
                   <button
                     type="button"
-                    class="flex min-w-0 items-center gap-3 text-left"
+                    class="group flex min-w-0 items-center gap-3 text-left disabled:cursor-default"
+                    [disabled]="row.isSynthetic"
                     [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-name'"
                     (click)="$event.stopPropagation(); onPersonClick(row)">
                     <span
@@ -200,7 +203,7 @@
                       {{ row.initials }}
                     </span>
                     <span class="flex min-w-0 flex-col">
-                      <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.name }}</span>
+                      <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
                       @if (row.title) {
                         <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
                       }
@@ -248,13 +251,32 @@
                   }
                 </td>
                 <td class="px-4 py-3 align-middle">
-                  <span
-                    class="text-xs text-gray-300"
-                    pTooltip="Coming in a future release"
-                    tooltipPosition="top"
-                    data-testid="org-people-all-employees-access-placeholder"
-                    >&mdash;</span
-                  >
+                  @switch (row.access) {
+                    @case ('admin') {
+                      <span
+                        class="inline-flex items-center rounded-full border border-blue-300 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-blue-700"
+                        [attr.data-testid]="'org-people-all-employees-access-' + row.personKey">
+                        Admin
+                      </span>
+                    }
+                    @case ('viewer') {
+                      <span
+                        class="inline-flex items-center rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-gray-600"
+                        [attr.data-testid]="'org-people-all-employees-access-' + row.personKey">
+                        Viewer
+                      </span>
+                    }
+                    @case ('invited') {
+                      <span
+                        class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-amber-700"
+                        [attr.data-testid]="'org-people-all-employees-access-' + row.personKey">
+                        Invited
+                      </span>
+                    }
+                    @default {
+                      <span class="text-xs text-gray-300" [attr.data-testid]="'org-people-all-employees-access-' + row.personKey">&mdash;</span>
+                    }
+                  }
                 </td>
               </tr>
               @if (expanded) {

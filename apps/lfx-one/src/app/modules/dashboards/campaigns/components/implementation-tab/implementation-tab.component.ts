@@ -152,7 +152,7 @@ export class ImplementationTabComponent {
           return;
         }
         if (!response.jobId) {
-          this.errors.set(['Failed to start campaign creation.']);
+          this.errors.set(['Campaign creation could not be started. The Google Ads integration may not be configured. Please contact your administrator.']);
           this.step.set('form');
           return;
         }
@@ -160,7 +160,7 @@ export class ImplementationTabComponent {
         this.pollJob(response.jobId);
       },
       error: () => {
-        this.errors.set(['Campaign creation request failed.']);
+        this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
         this.step.set('form');
       },
     });
@@ -225,13 +225,17 @@ export class ImplementationTabComponent {
             this.step.set('results');
           }
         },
-        error: () => {
-          this.errors.set(['Failed to retrieve campaign results.']);
+        error: (error: unknown) => {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Lost connection to the campaign creation process. Please try again or check Google Ads directly.';
+          this.errors.set([message]);
           this.step.set('results');
         },
         complete: () => {
           if (this.step() === 'creating') {
-            this.errors.set(['Campaign creation timed out. Check Google Ads for status.']);
+            this.errors.set(['Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.']);
             this.step.set('results');
           }
         },
