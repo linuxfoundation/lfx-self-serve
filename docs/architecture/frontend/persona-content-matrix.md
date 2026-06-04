@@ -152,11 +152,11 @@ Available to `contributor`, `maintainer`, and root writers.
 
 Guards enforce access at the router level — regardless of whether a sidebar link is visible.
 
-| Guard                    | Protected routes                                                                        | Access rule                                                        |
-| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                        |
-| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                         |
-| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()`                   |
+| Guard                    | Protected routes                                                                        | Access rule                                                                                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                                                                                                             |
+| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                              |
+| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()`                                                                                                        |
 | `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
