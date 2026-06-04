@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
 import { computed, Component, DestroyRef, inject, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -30,7 +29,6 @@ const TOAST_KEY = 'committee-invitations';
 @Component({
   selector: 'lfx-committee-invitations',
   imports: [ButtonComponent, TagComponent, ToastModule, InvitationSubtextPipe],
-  providers: [DatePipe],
   templateUrl: './committee-invitations.component.html',
   styleUrl: './committee-invitations.component.scss',
 })
