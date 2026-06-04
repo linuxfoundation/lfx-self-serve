@@ -53,12 +53,12 @@ export class InvitationService {
 
   /** Accepts an invitation. Upstream is invitee-authenticated; returns 204. */
   public acceptInvitation(committeeUid: string, inviteUid: string): Observable<void> {
-    return this.http.post<void>(`/api/committees/${committeeUid}/invites/${inviteUid}/accept`, {}).pipe(take(1));
+    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/accept`, {}).pipe(take(1));
   }
 
   /** Declines an invitation. Upstream is invitee-authenticated; returns 204. */
   public declineInvitation(committeeUid: string, inviteUid: string): Observable<void> {
-    return this.http.post<void>(`/api/committees/${committeeUid}/invites/${inviteUid}/decline`, {}).pipe(take(1));
+    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/decline`, {}).pipe(take(1));
   }
 
   /**

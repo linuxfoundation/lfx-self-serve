@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -18,7 +18,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
@@ -41,9 +41,6 @@ export class CommitteeDashboardComponent {
   private readonly invitationService = inject(InvitationService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
-
-  // Guards the one-time pending-invitations load when the Me lens first becomes active.
-  private invitationsLoaded = false;
 
   // Use the configurable label constants
   protected readonly committeeLabel = COMMITTEE_LABEL;
@@ -157,15 +154,20 @@ export class CommitteeDashboardComponent {
 
     this.behavioralClassCounts = this.initializeBehavioralClassCounts();
 
-    // Load the user's pending invitations once when the Me lens is active in the browser, so the
-    // invitations section above the My Groups table populates. Guarded so it runs a single time and
-    // never on the server (the section is a browser-only, interactive surface).
-    effect(() => {
-      if (isPlatformBrowser(this.platformId) && this.isMeLens() && !this.invitationsLoaded) {
-        this.invitationsLoaded = true;
-        this.invitationService.loadPendingInvitations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
-      }
-    });
+    // Load the user's pending invitations the first time the Me lens becomes active in the browser,
+    // so the invitations section above the My Groups table populates. Driven by toObservable +
+    // switchMap (not effect(), per the frontend convention for data loads); take(1) makes it
+    // one-shot and the browser guard keeps it off the server (an interactive, browser-only surface).
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.isMeLens)
+        .pipe(
+          filter((isMe) => isMe),
+          take(1),
+          switchMap(() => this.invitationService.loadPendingInvitations()),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe();
+    }
   }
 
   /**

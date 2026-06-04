@@ -105,22 +105,28 @@ export class CommitteeInvitationsComponent {
     }, DECLINE_UNDO_MS);
     this.pendingDeclines.set(invitation.uid, { committeeUid: invitation.committee_uid, timerId });
 
+    // life matches the undo window so the Undo affordance disappears exactly when the decline
+    // commits — never leaving a stale Undo that would falsely "restore" an already-declined invite.
     this.messageService.add({
       key: TOAST_KEY,
       severity: 'info',
       summary: 'Invite declined',
       data: { uid: invitation.uid, committeeUid: invitation.committee_uid },
-      sticky: true,
+      life: DECLINE_UNDO_MS,
       closable: true,
     });
   }
 
   public onUndoDecline(invitation: { uid: string; committeeUid: string }): void {
     const pending = this.pendingDeclines.get(invitation.uid);
-    if (pending) {
-      clearTimeout(pending.timerId);
-      this.pendingDeclines.delete(invitation.uid);
+    // If the timer already fired, the decline is committed upstream — there's nothing to undo.
+    // Restoring the row here would lie to the user (it would reappear, then vanish on next load).
+    if (!pending) {
+      this.messageService.clear(TOAST_KEY);
+      return;
     }
+    clearTimeout(pending.timerId);
+    this.pendingDeclines.delete(invitation.uid);
     this.invitationService.unmarkResolved(invitation.uid);
     this.messageService.clear(TOAST_KEY);
   }
