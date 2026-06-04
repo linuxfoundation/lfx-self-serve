@@ -21,6 +21,9 @@ router.get('/my-surveys', (req, res, next) => surveyController.getMySurveys(req,
 // GET /surveys/:uid/my-response - current user's submitted response (Me lens drawer)
 router.get('/:uid/my-response', (req, res, next) => surveyController.getMyResponse(req, res, next));
 
+// GET /surveys/:uid/responses - paginated per-recipient responses (PMO results drawer)
+router.get('/:uid/responses', (req, res, next) => surveyController.getSurveyResponses(req, res, next));
+
 // GET /surveys/:uid - get a single survey
 router.get('/:uid', (req, res, next) => surveyController.getSurveyById(req, res, next));
 
