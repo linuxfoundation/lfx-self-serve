@@ -687,7 +687,8 @@ export class CampaignProxyService {
     });
 
     const POLL_INTERVAL_MS = 500;
-    const INLINE_WAIT_MS = 120_000;
+    // Must stay under ingress-nginx proxy-read-timeout (default 60s)
+    const INLINE_WAIT_MS = 45_000;
     const deadline = Date.now() + INLINE_WAIT_MS;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
