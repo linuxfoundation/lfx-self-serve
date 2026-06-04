@@ -16,6 +16,9 @@ export * from './organization.interface';
 // Component interfaces
 export * from './components.interface';
 
+// Rich editor interfaces
+export * from './rich-editor.interface';
+
 // Auth interfaces
 export * from './auth.interface';
 
