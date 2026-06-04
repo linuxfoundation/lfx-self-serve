@@ -8,6 +8,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
 import { OrgLensAccessService } from '@services/org-lens-access.service';
 import {
   EMPTY_ORG_ACCESS_LIST_RESPONSE,
@@ -64,6 +65,7 @@ type OrgAccessRowVm = OrgAccessUser & {
 export class OrgLensAccessComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(OrgLensAccessService);
+  private readonly accessState = inject(OrgLensAccessStateService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
@@ -149,7 +151,12 @@ export class OrgLensAccessComponent {
         }),
         takeUntilDestroyed()
       )
-      .subscribe((res) => this.listData.set(res));
+      .subscribe((res) => {
+        this.listData.set(res);
+        // Mirror every authoritative load into the shared cache so the All Employees access cell renders
+        // without a duplicate fetch. EMPTY_ORG_ACCESS_LIST_RESPONSE carries no orgUid and is skipped by setRoster.
+        this.accessState.setRoster(res.orgUid, res);
+      });
 
     // Reset filters + pagination when the org actually changes (skip the initial sync emission).
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetState());
@@ -184,6 +191,9 @@ export class OrgLensAccessComponent {
       .subscribe({
         next: (res) => {
           this.isInviting.set(false);
+          // Always refresh the shared cache (even if the user switched orgs mid-flight) so a return visit
+          // to that org doesn't render stale access data on the All Employees tab.
+          this.accessState.setRoster(res.orgUid, res);
           // Drop the response if the selected org changed mid-flight. res.orgUid echoes the org the
           // request was issued for, so compare it to the LIVE selection (not the captured orgUid,
           // which it always equals) to avoid overwriting a newly-selected org's list.
@@ -227,6 +237,8 @@ export class OrgLensAccessComponent {
       .subscribe({
         next: (res) => {
           this.isSubmitting.set(false);
+          // Always refresh the shared cache (see comment in onInvite for rationale).
+          this.accessState.setRoster(res.orgUid, res);
           // Drop the response if the selected org changed mid-flight (compare the live selection;
           // res.orgUid always equals the captured orgUid the request was issued for).
           if (res.orgUid !== this.accountContext.selectedAccount().uid) return;
@@ -276,6 +288,8 @@ export class OrgLensAccessComponent {
       .subscribe({
         next: (res) => {
           this.isSubmitting.set(false);
+          // Always refresh the shared cache (see comment in onInvite for rationale).
+          this.accessState.setRoster(res.orgUid, res);
           // Drop the response if the selected org changed mid-flight (compare the live selection;
           // res.orgUid always equals the captured orgUid the request was issued for).
           if (res.orgUid !== this.accountContext.selectedAccount().uid) return;

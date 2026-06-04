@@ -5,13 +5,14 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
 import { PersonProfilePanelService } from '@services/person-profile-panel.service';
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
@@ -20,6 +21,7 @@ import type {
   OrgAllEmployeeActivityOption,
   OrgAllEmployeeDetail,
   OrgAllEmployeeRow,
+  OrgAllEmployeeRowVm,
   OrgAllEmployeesResponse,
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
@@ -30,12 +32,6 @@ import { AllEmployeesService } from '../../services/all-employees.service';
 
 import { AllEmployeesDetailComponent } from './all-employees-detail.component';
 
-/** File-local view model: shared wire row + per-row derivatives precomputed once so the template stays free of method calls. */
-type AllEmployeeRowVm = OrgAllEmployeeRow & {
-  initials: string;
-  avatarColorClass: string;
-};
-
 /** All Employees tab body — filter bar, 5 stat cards, sortable table with chevron-toggled detail rows. */
 @Component({
   selector: 'lfx-org-people-all-employees',
@@ -43,8 +39,16 @@ type AllEmployeeRowVm = OrgAllEmployeeRow & {
   templateUrl: './all-employees.component.html',
 })
 export class AllEmployeesComponent {
+  private static readonly rowClassActivity =
+    'cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+
+  private static readonly rowClassSynthetic = 'border-b border-gray-100';
+
+  private static readonly accessOnlyKeyPrefix = 'access:';
+
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(AllEmployeesService);
+  private readonly accessState = inject(OrgLensAccessStateService);
   private readonly personPanel = inject(PersonProfilePanelService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -126,11 +130,11 @@ export class AllEmployeesComponent {
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
 
   // Bake per-row derivatives (initials, avatar color) once per response; downstream filter/sort layers carry them through for free.
-  protected readonly viewRows: Signal<AllEmployeeRowVm[]> = computed(() => this.initViewRows());
+  protected readonly viewRows: Signal<OrgAllEmployeeRowVm[]> = computed(() => this.initViewRows());
 
-  protected readonly filteredRows: Signal<AllEmployeeRowVm[]> = computed(() => this.initFilteredRows());
+  protected readonly filteredRows: Signal<OrgAllEmployeeRowVm[]> = computed(() => this.initFilteredRows());
 
-  protected readonly sortedRows: Signal<AllEmployeeRowVm[]> = computed(() => this.initSortedRows());
+  protected readonly sortedRows: Signal<OrgAllEmployeeRowVm[]> = computed(() => this.initSortedRows());
 
   protected readonly totalFiltered = computed(() => this.sortedRows().length);
 
@@ -151,7 +155,28 @@ export class AllEmployeesComponent {
   // Exposed to the template so per-row @let blocks can build the composite (account, person) detail-cache key without reaching into private services.
   protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
+  // Lowercased email -> 'admin' | 'viewer' | 'invited' for the currently selected org. Empty until the
+  // shared cache hydrates (either from this tab's ensureLoaded below, or pushed in by the Access tab).
+  private readonly accessByEmail = this.accessState.accessByEmailFor(this.currentAccountId);
+
+  // Full roster signal — needed for the UNION step in initViewRows (which walks every roster entry,
+  // not just per-email lookups). `null` until the cache hydrates.
+  private readonly accessRoster = this.accessState.rosterForOrg(this.currentAccountId);
+
   public constructor() {
+    // Hydrate the shared Org Lens access cache for every org we see (including the initial one) so the
+    // access cell can render badges without each row triggering its own fetch. The service dedups concurrent
+    // calls and short-circuits cache hits, so this is cheap on re-visits. Per-fetch `catchError` keeps the
+    // outer stream alive on a transient backend failure — the Access tab still has its own error banner +
+    // retry CTA, so silent EMPTY here just means badges stay empty until the user visits Access or switches
+    // orgs and the next fetch succeeds.
+    this.orgUid$
+      .pipe(
+        switchMap((uid) => this.accessState.ensureLoaded(uid).pipe(catchError(() => EMPTY))),
+        takeUntilDestroyed()
+      )
+      .subscribe();
+
     // Reset all state and cancel in-flight detail fetches only when the actual org uid changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. Snowflake enrichment re-setting the same account) and wipe user search/filter state.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.detailCancel$.next();
@@ -180,7 +205,10 @@ export class AllEmployeesComponent {
     this.sortDirection.set(column === 'name' ? 1 : -1);
   }
 
-  protected onRowKeydown(event: KeyboardEvent, row: OrgAllEmployeeRow): void {
+  protected onRowKeydown(event: KeyboardEvent, row: OrgAllEmployeeRowVm): void {
+    // Synthetic UNION rows have no backing detail to fetch; the chevron is hidden and tabindex is dropped, but
+    // guard here too in case a programmatic dispatch ever lands a keypress on the row.
+    if (row.isSynthetic) return;
     // Ignore events bubbled from interactive descendants (e.g. the inner name <button>) so a keypress on the button doesn't also toggle the row.
     if (event.target !== event.currentTarget) return;
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -188,7 +216,8 @@ export class AllEmployeesComponent {
     this.toggleRow(row);
   }
 
-  protected toggleRow(row: OrgAllEmployeeRow): void {
+  protected toggleRow(row: OrgAllEmployeeRowVm): void {
+    if (row.isSynthetic) return;
     const open = !!this.expansion()[row.personKey];
     if (open) {
       this.expansion.update((state) => {
@@ -228,15 +257,62 @@ export class AllEmployeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...this.response().foundations.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
   }
 
-  private initViewRows(): AllEmployeeRowVm[] {
-    return this.response().rows.map((row) => ({
+  private initViewRows(): OrgAllEmployeeRowVm[] {
+    const byEmail = this.accessByEmail();
+    const activityRows = this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
+      // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
+      // always present, server-lowercased). Rows without an email can't be joined and render `—`.
+      access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
+      isSynthetic: false,
+      rowClass: AllEmployeesComponent.rowClassActivity,
     }));
+
+    // UNION step: append synthetic rows for access principals whose lowercased email doesn't match any
+    // activity row. The diagnostic intent (LFXV2-2082 journal, 2026-06-04): a principal granted Org Lens
+    // access who shows zero activity is itself a data-quality signal worth surfacing in the table.
+    const roster = this.accessRoster();
+    if (!roster) return activityRows;
+
+    const activityEmails = new Set<string>();
+    for (const row of activityRows) {
+      const email = row.email?.toLowerCase();
+      if (email) activityEmails.add(email);
+    }
+
+    const syntheticRows: OrgAllEmployeeRowVm[] = [];
+    for (const user of roster.users) {
+      const emailKey = user.email.toLowerCase();
+      if (activityEmails.has(emailKey)) continue;
+      const personKey = `${AllEmployeesComponent.accessOnlyKeyPrefix}${emailKey}`;
+      syntheticRows.push({
+        personKey,
+        lfid: null,
+        cdpMemberId: null,
+        name: user.name,
+        title: user.jobTitle,
+        email: user.email,
+        seatsCount: 0,
+        boardSeatsCount: 0,
+        committeeSeatsCount: 0,
+        commitsCount: 0,
+        eventsCount: 0,
+        coursesCount: 0,
+        engagedFoundationIds: [],
+        initials: AllEmployeesComponent.computeInitials(user.name),
+        avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(personKey),
+        access: user.isPending ? 'invited' : user.role,
+        isSynthetic: true,
+        rowClass: AllEmployeesComponent.rowClassSynthetic,
+      });
+    }
+
+    return [...activityRows, ...syntheticRows];
   }
 
-  private initFilteredRows(): AllEmployeeRowVm[] {
+  private initFilteredRows(): OrgAllEmployeeRowVm[] {
     const rows = this.viewRows();
     const q = this.searchTerm().trim().toLowerCase();
     const foundationId = this.selectedFoundationId();
@@ -262,7 +338,7 @@ export class AllEmployeesComponent {
     });
   }
 
-  private initSortedRows(): AllEmployeeRowVm[] {
+  private initSortedRows(): OrgAllEmployeeRowVm[] {
     const filtered = this.filteredRows();
     const col = this.sortColumn();
     const dir = this.sortDirection();
