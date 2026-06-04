@@ -143,7 +143,9 @@ const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
 // Replaced/void/embedded leaf elements carry visual content even when textContent is empty —
 // e.g. <p><img></p> is not an empty paragraph. Without this, isEmptyBlock would silently drop
 // any future content type the editor learns to render (images, media, embeds, form widgets).
-const CONTENT_LEAF_TAGS = new Set(['IMG', 'IFRAME', 'VIDEO', 'AUDIO', 'SOURCE', 'PICTURE', 'SVG', 'CANVAS', 'EMBED', 'OBJECT', 'INPUT', 'SELECT', 'TEXTAREA', 'HR']);
+// HTML elements always uppercase their tagName, but namespaced elements (SVG, MathML) preserve
+// case, so we normalize via toUpperCase() at the lookup site rather than maintaining both forms.
+const CONTENT_LEAF_TAGS = new Set(['IMG', 'IFRAME', 'VIDEO', 'AUDIO', 'SOURCE', 'PICTURE', 'SVG', 'MATH', 'CANVAS', 'EMBED', 'OBJECT', 'INPUT', 'SELECT', 'TEXTAREA', 'HR']);
 
 // Google Docs (and Word) inject empty <p style="height:11pt"><span></span></p> nodes as blank-line
 // spacers between content blocks. After style/class strip, the editor's `p { margin: 0 0 0.75rem }`
@@ -173,7 +175,7 @@ function isEmptyBlock(element: Element): boolean {
     if (child.tagName === 'BR') {
       continue;
     }
-    if (CONTENT_LEAF_TAGS.has(child.tagName)) {
+    if (CONTENT_LEAF_TAGS.has(child.tagName.toUpperCase())) {
       return false;
     }
     if (EMPTY_BLOCK_TAGS.has(child.tagName)) {
