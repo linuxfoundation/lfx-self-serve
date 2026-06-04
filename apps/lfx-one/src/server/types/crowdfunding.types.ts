@@ -106,3 +106,27 @@ export interface BackendDonationListResponse {
   data: BackendDonation[];
   meta: { total: number; limit: number; offset: number };
 }
+
+/** Raw snake_case subscription shape from GET /v1/me/subscriptions on the upstream crowdfunding service. */
+export interface BackendSubscription {
+  id: string;
+  initiative_id: string;
+  initiative_name: string;
+  initiative_logo_url?: string;
+  status: string;
+  amount_cents: number;
+  interval: string;
+  start_date: string;
+  next_charge_date?: string;
+  paused_at?: string;
+}
+
+export interface BackendSubscriptionListResponse {
+  data: BackendSubscription[];
+  meta: { total: number; limit: number; offset: number };
+}
+
+/** Raw snake_case response from POST /v1/me/setup-intent on the upstream crowdfunding service. */
+export interface BackendSetupIntent {
+  client_secret: string;
+}

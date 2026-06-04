@@ -23,6 +23,7 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   RecurringDonationsResponse,
+  SetupIntent,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
@@ -61,6 +62,10 @@ export class CrowdfundingService {
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {
     return this.http.get<PaymentMethod>('/api/crowdfunding/payment-method').pipe(catchError(() => of(null)));
+  }
+
+  public createSetupIntent(): Observable<SetupIntent | null> {
+    return this.http.post<SetupIntent>('/api/crowdfunding/setup-intent', {}).pipe(catchError(() => of(null)));
   }
 
   // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.

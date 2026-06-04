@@ -41,6 +41,9 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
   private cardExpiryEl: StripeCardExpiryElement | null = null;
   private cardCvcEl: StripeCardCvcElement | null = null;
 
+  // Stripe SetupIntent client secret — fetched when the dialog opens.
+  private clientSecret: string | null = null;
+
   // ─── Per-field focus state ────────────────────────────────────────────────
   protected readonly cardNumberFocused = signal(false);
   protected readonly cardExpiryFocused = signal(false);
@@ -60,7 +63,10 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
   protected readonly stripeError = signal('');
   protected readonly submitting = signal(false);
   protected readonly elementsReady = signal(false);
-  protected readonly formReady = computed(() => this.elementsReady() && this.cardNumberComplete() && this.cardExpiryComplete() && this.cardCvcComplete());
+  private readonly setupIntentReady = signal(false);
+  protected readonly formReady = computed(
+    () => this.elementsReady() && this.setupIntentReady() && this.cardNumberComplete() && this.cardExpiryComplete() && this.cardCvcComplete()
+  );
 
   public constructor() {
     // afterNextRender runs only in the browser, after the view is available — SSR safe.
@@ -77,7 +83,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
   // ─── Public methods ───────────────────────────────────────────────────────
 
   protected async onSubmit(): Promise<void> {
-    if (!this.cardNumberEl || !this.allComplete()) {
+    if (!this.cardNumberEl || !this.allComplete() || !this.clientSecret) {
       return;
     }
 
@@ -92,9 +98,8 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const { paymentMethod, error } = await stripe.createPaymentMethod({
-        type: 'card',
-        card: this.cardNumberEl,
+      const { setupIntent, error } = await stripe.confirmCardSetup(this.clientSecret, {
+        payment_method: { card: this.cardNumberEl },
       });
 
       if (error) {
@@ -102,7 +107,14 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethod.id));
+      const paymentMethodId = typeof setupIntent.payment_method === 'string' ? setupIntent.payment_method : setupIntent.payment_method?.id;
+
+      if (!paymentMethodId) {
+        this.stripeError.set('Failed to process card. Please try again.');
+        return;
+      }
+
+      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethodId));
 
       this.dialogRef.close({ added: true, paymentMethod: saved });
     } catch (err) {
@@ -124,7 +136,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
 
   private async mountStripeElements(): Promise<void> {
     try {
-      const stripe = await this.stripeService.getStripe();
+      const [stripe] = await Promise.all([this.stripeService.getStripe(), this.fetchSetupIntent()]);
 
       if (this.destroyed) return;
 
@@ -173,6 +185,20 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
       this.elementsReady.set(true);
     } catch (err) {
       this.stripeError.set(extractErrorMessage(err, 'Failed to mount Stripe elements. Please try again.'));
+    }
+  }
+
+  private async fetchSetupIntent(): Promise<void> {
+    try {
+      const result = await firstValueFrom(this.crowdfundingService.createSetupIntent());
+      if (result?.clientSecret) {
+        this.clientSecret = result.clientSecret;
+        this.setupIntentReady.set(true);
+      } else {
+        this.stripeError.set('Unable to initialize payment form. Please try again.');
+      }
+    } catch {
+      this.stripeError.set('Unable to initialize payment form. Please try again.');
     }
   }
 

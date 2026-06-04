@@ -257,3 +257,8 @@ export interface InitiativeMenuItem {
   danger?: boolean;
   command?: (event: unknown) => void;
 }
+
+/** Returned by POST /api/crowdfunding/setup-intent — holds the Stripe client secret for card attachment. */
+export interface SetupIntent {
+  clientSecret: string;
+}

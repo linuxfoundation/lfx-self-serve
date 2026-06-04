@@ -63,6 +63,11 @@ export class CrowdfundingController {
       const username = stripAuthPrefix(rawUsername);
       const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, username, paymentMethodId);
 
+      if (!paymentMethod) {
+        res.status(502).json({ message: 'Failed to save payment method' });
+        return;
+      }
+
       logger.success(req, 'save_my_payment_method', startTime, { paymentMethodId });
 
       res.json(paymentMethod);
@@ -202,6 +207,59 @@ export class CrowdfundingController {
       logger.success(req, 'get_initiatives_stats', startTime);
 
       res.json(stats);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // DELETE /api/crowdfunding/payment-method
+  public async deleteMyPaymentMethod(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'delete_my_payment_method');
+
+    try {
+      const rawUsername = await getUsernameFromAuth(req);
+
+      if (!rawUsername) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'delete_my_payment_method',
+        });
+      }
+
+      const username = stripAuthPrefix(rawUsername);
+      await this.crowdfundingService.deleteMyPaymentMethod(req, username);
+
+      logger.success(req, 'delete_my_payment_method', startTime);
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/crowdfunding/setup-intent
+  public async createSetupIntent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_setup_intent');
+
+    try {
+      const rawUsername = await getUsernameFromAuth(req);
+
+      if (!rawUsername) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'create_setup_intent',
+        });
+      }
+
+      const username = stripAuthPrefix(rawUsername);
+      const setupIntent = await this.crowdfundingService.createSetupIntent(req, username);
+
+      if (!setupIntent) {
+        res.status(502).json({ message: 'Failed to create setup intent' });
+        return;
+      }
+
+      logger.success(req, 'create_setup_intent', startTime);
+
+      res.json(setupIntent);
     } catch (error) {
       next(error);
     }

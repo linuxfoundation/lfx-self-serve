@@ -13,23 +13,36 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   RecurringDonationsResponse,
+  SetupIntent,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-import {
-  MOCK_DONATION_STATS,
-  MOCK_INITIATIVES,
-  MOCK_RECURRING_DONATIONS,
-  MOCK_TRANSACTIONS,
-} from '../mock-data/crowdfunding.mock';
-import { BackendDonationListResponse, PaymentMethodWire } from '../types/crowdfunding.types';
-import { mapCfDonationToMyDonation, mapPaymentMethodWire, mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
+import { MOCK_DONATION_STATS, MOCK_INITIATIVES, MOCK_TRANSACTIONS } from '../mock-data/crowdfunding.mock';
+import { BackendDonationListResponse, BackendSetupIntent, BackendSubscriptionListResponse, PaymentMethodWire } from '../types/crowdfunding.types';
+import { mapCfDonationToMyDonation, mapPaymentMethodWire, mapSubscriptionToRecurringDonation, mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
 import { getEffectiveUsername } from '../utils/auth-helper';
-import { fetchClientCredentialsToken } from '../utils/client-credentials-token.util';
+import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
 import { logger } from './logger.service';
 
 export class CrowdfundingService {
+  private async getToken(req: Request): Promise<string | null> {
+    const audience = process.env['CROWDFUNDING_API_AUDIENCE'];
+    if (!audience) return null;
+
+    return exchangeRefreshTokenForAudience(req, {
+      issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+      clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+      clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+      audience,
+      sessionKey: 'crowdfundingToken',
+    });
+  }
+
+  private getBaseUrl(): string | undefined {
+    return process.env['CROWDFUNDING_API_BASE_URL'];
+  }
+
   public async getMyInitiatives(req: Request, username: string): Promise<InitiativesResponse> {
     logger.debug(req, 'get_my_initiatives', 'Fetching crowdfunding initiatives for user', { username });
 
@@ -81,20 +94,18 @@ export class CrowdfundingService {
   public async getMyPaymentMethod(req: Request, username: string): Promise<PaymentMethod | null> {
     logger.debug(req, 'get_my_payment_method', 'Fetching payment method from CF API', { username });
 
-    const baseUrl = process.env['CROWDFUNDING_API_BASE_URL'];
-    const audience = process.env['CROWDFUNDING_API_AUDIENCE'];
-
-    if (!baseUrl || !audience) {
-      logger.warning(req, 'get_my_payment_method', 'CROWDFUNDING_API_BASE_URL or CROWDFUNDING_API_AUDIENCE not set, returning null');
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'get_my_payment_method', 'CROWDFUNDING_API_BASE_URL not set, returning null');
       return null;
     }
 
-    const token = await fetchClientCredentialsToken(req, {
-      issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
-      clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
-      clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
-      audience,
-    });
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'get_my_payment_method', 'Could not obtain user token for crowdfunding API, returning null');
+      return null;
+    }
+
     const effectiveUsername = getEffectiveUsername(req);
 
     const response = await fetch(`${baseUrl}/v1/me/payment-account`, {
@@ -110,7 +121,13 @@ export class CrowdfundingService {
     }
 
     if (!response.ok) {
-      logger.warning(req, 'get_my_payment_method', 'CF API returned non-OK status', { status: response.status });
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      logger.warning(req, 'get_my_payment_method', 'CF API returned non-OK status', { status: response.status, responseBody });
       return null;
     }
 
@@ -118,22 +135,122 @@ export class CrowdfundingService {
     return mapPaymentMethodWire(wire);
   }
 
-  // Mock for POST /api/crowdfunding/payment-method — replace with upstream proxy once the payment-method service is live.
-  public async saveMyPaymentMethod(req: Request, username: string, paymentMethodId: string): Promise<PaymentMethod> {
+  public async saveMyPaymentMethod(req: Request, username: string, paymentMethodId: string): Promise<PaymentMethod | null> {
     logger.debug(req, 'save_my_payment_method', 'Saving payment method for user', { username, paymentMethodId });
 
-    // Mock: Visa test card — real impl will proxy to POST /v1/me/payment-method.
-    const saved: PaymentMethod = {
-      paymentMethodId,
-      brand: 'visa',
-      lastFour: '4242',
-      expiryMonth: 12,
-      expiryYear: 2028,
-    };
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'save_my_payment_method', 'CROWDFUNDING_API_BASE_URL not set, returning null');
+      return null;
+    }
 
-    logger.debug(req, 'save_my_payment_method', 'Payment method saved', { paymentMethodId });
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'save_my_payment_method', 'Could not obtain user token for crowdfunding API, returning null');
+      return null;
+    }
 
-    return saved;
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const response = await fetch(`${baseUrl}/v1/me/payment-method`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
+      body: JSON.stringify({ payment_method_id: paymentMethodId }),
+    });
+
+    if (!response.ok) {
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      logger.warning(req, 'save_my_payment_method', 'CF API returned non-OK status', { status: response.status, responseBody });
+      return null;
+    }
+
+    const wire = (await response.json()) as PaymentMethodWire;
+    return mapPaymentMethodWire(wire);
+  }
+
+  public async deleteMyPaymentMethod(req: Request, username: string): Promise<void> {
+    logger.debug(req, 'delete_my_payment_method', 'Deleting payment method for user', { username });
+
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'delete_my_payment_method', 'CROWDFUNDING_API_BASE_URL not set');
+      return;
+    }
+
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'delete_my_payment_method', 'Could not obtain user token for crowdfunding API');
+      return;
+    }
+
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const response = await fetch(`${baseUrl}/v1/me/payment-method`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      logger.warning(req, 'delete_my_payment_method', 'CF API returned non-OK status', { status: response.status, responseBody });
+    }
+  }
+
+  public async createSetupIntent(req: Request, username: string): Promise<SetupIntent | null> {
+    logger.debug(req, 'create_setup_intent', 'Creating setup intent for user', { username });
+
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'create_setup_intent', 'CROWDFUNDING_API_BASE_URL not set, returning null');
+      return null;
+    }
+
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'create_setup_intent', 'Could not obtain user token for crowdfunding API, returning null');
+      return null;
+    }
+
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const response = await fetch(`${baseUrl}/v1/me/setup-intent`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      logger.warning(req, 'create_setup_intent', 'CF API returned non-OK status', { status: response.status, responseBody });
+      return null;
+    }
+
+    const wire = (await response.json()) as BackendSetupIntent;
+    return { clientSecret: wire.client_secret };
   }
 
   public async getMyDonationStats(req: Request, username: string): Promise<DonationStats> {
@@ -148,13 +265,46 @@ export class CrowdfundingService {
   }
 
   public async getMyRecurringDonations(req: Request, username: string): Promise<RecurringDonationsResponse> {
-    logger.debug(req, 'get_my_recurring_donations', 'Fetching recurring donations for user', { username });
+    logger.debug(req, 'get_my_recurring_donations', 'Fetching subscriptions from CF API', { username });
 
-    const total = MOCK_RECURRING_DONATIONS.length;
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'get_my_recurring_donations', 'CROWDFUNDING_API_BASE_URL not set, returning empty');
+      return { data: [], total: 0, pageSize: 0, offset: 0 };
+    }
 
-    logger.debug(req, 'get_my_recurring_donations', 'Returning recurring donations', { total });
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'get_my_recurring_donations', 'Could not obtain user token for crowdfunding API, returning empty');
+      return { data: [], total: 0, pageSize: 0, offset: 0 };
+    }
 
-    return { data: MOCK_RECURRING_DONATIONS, total, pageSize: total, offset: 0 };
+    const effectiveUsername = getEffectiveUsername(req);
+
+    const response = await fetch(`${baseUrl}/v1/me/subscriptions`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(effectiveUsername ? { 'X-Username': effectiveUsername } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      logger.warning(req, 'get_my_recurring_donations', 'CF API returned non-OK status', { status: response.status, responseBody });
+      return { data: [], total: 0, pageSize: 0, offset: 0 };
+    }
+
+    const body = (await response.json()) as BackendSubscriptionListResponse;
+    const data = body.data.map(mapSubscriptionToRecurringDonation);
+
+    logger.debug(req, 'get_my_recurring_donations', 'Returning subscriptions', { total: body.meta.total, page: data.length });
+
+    return { data, total: body.meta.total, pageSize: body.meta.limit, offset: body.meta.offset };
   }
 
   public async getMyDonations(req: Request, username: string, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
@@ -163,20 +313,18 @@ export class CrowdfundingService {
 
     logger.debug(req, 'get_my_donations', 'Fetching donation history from CF API', { username, pageSize: resolvedPageSize, offset: resolvedOffset });
 
-    const baseUrl = process.env['CROWDFUNDING_API_BASE_URL'];
-    const audience = process.env['CROWDFUNDING_API_AUDIENCE'];
-
-    if (!baseUrl || !audience) {
-      logger.warning(req, 'get_my_donations', 'CROWDFUNDING_API_BASE_URL or CROWDFUNDING_API_AUDIENCE not set, returning empty');
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      logger.warning(req, 'get_my_donations', 'CROWDFUNDING_API_BASE_URL not set, returning empty');
       return { data: [], total: 0, pageSize: resolvedPageSize, offset: resolvedOffset };
     }
 
-    const token = await fetchClientCredentialsToken(req, {
-      issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
-      clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
-      clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
-      audience,
-    });
+    const token = await this.getToken(req);
+    if (!token) {
+      logger.warning(req, 'get_my_donations', 'Could not obtain user token for crowdfunding API, returning empty');
+      return { data: [], total: 0, pageSize: resolvedPageSize, offset: resolvedOffset };
+    }
+
     const effectiveUsername = getEffectiveUsername(req);
 
     const url = new URL(`${baseUrl}/v1/me/donations`);

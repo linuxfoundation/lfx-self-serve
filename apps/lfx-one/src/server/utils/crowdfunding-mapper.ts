@@ -14,10 +14,12 @@ import {
   MyDonation,
   DonationHistoryItem,
   PaymentMethod,
+  RecurringDonation,
+  RecurringDonationStatus,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
 
-import { BackendDonation, BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction, PaymentMethodWire } from '../types/crowdfunding.types';
+import { BackendDonation, BackendGoal, BackendInitiative, BackendSponsor, BackendSubscription, BackendTransaction, PaymentMethodWire } from '../types/crowdfunding.types';
 
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 
@@ -146,5 +148,26 @@ export function mapCfDonationToMyDonation(d: BackendDonation): MyDonation {
     amountCents: d.amount_cents,
     date: new Date(d.created_on).getTime(),
     initiativeId: d.initiative_id || undefined,
+  };
+}
+
+const VALID_RECURRING_STATUSES: RecurringDonationStatus[] = ['active', 'paused'];
+
+function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
+  return VALID_RECURRING_STATUSES.includes(value as RecurringDonationStatus) ? (value as RecurringDonationStatus) : 'active';
+}
+
+/** Maps a CF API Subscription (from GET /v1/me/subscriptions) to the RecurringDonation shape. */
+export function mapSubscriptionToRecurringDonation(s: BackendSubscription): RecurringDonation {
+  return {
+    id: s.id,
+    name: s.initiative_name,
+    icon: s.initiative_logo_url ?? '',
+    status: toValidRecurringStatus(s.status),
+    amount: s.amount_cents / 100,
+    billingDescription: s.interval,
+    startDate: s.start_date,
+    nextChargeDate: s.next_charge_date,
+    pausedSince: s.paused_at,
   };
 }
