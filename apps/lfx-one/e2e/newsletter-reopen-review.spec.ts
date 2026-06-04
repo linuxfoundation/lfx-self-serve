@@ -173,24 +173,25 @@ async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
   ]);
 }
 
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test surface the failure naturally.
+// Gated on env vars rather than on URL sniffing so genuine auth-flow regressions
+// (expired storageState, broken Auth0 login helper) still fail loudly when creds
+// ARE configured. URL-based detection silently turned those into green skips.
+const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+
+function skipWhenAuthMissing(): void {
+  if (!AUTH_CREDS_PRESENT) {
+    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
 }
 
 async function gotoEditUrl(page: Page): Promise<void> {
+  skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
   await page.goto(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_ID}/edit?project=${MOCK_FOUNDATION_SLUG}`, {
     waitUntil: 'domcontentloaded',
   });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
 }
 
 test.describe('Newsletter reopen — Review landing screen', () => {
@@ -287,10 +288,11 @@ test.describe('Newsletter list — Draft tag parity', () => {
   });
 
   test('draft rows show a Draft tag mirroring the existing Sent tag', async ({ page }) => {
+    skipWhenAuthMissing();
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await page.goto(`/foundation/newsletters/list?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
 
     await expect(page.getByTestId('newsletter-list-table'), 'draft list table should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId(`newsletter-status-draft-${MOCK_NEWSLETTER_ID}`), 'Draft tag should appear on the draft row').toBeVisible({

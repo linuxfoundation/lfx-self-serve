@@ -154,26 +154,25 @@ async function stubBackend(page: Page, draft: Newsletter): Promise<void> {
   );
 }
 
-// Mirrors the content spec's skip behaviour so both files behave symmetrically on local setups
-// without TEST_USERNAME / TEST_PASSWORD configured (see global-setup.ts).
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test surface the failure naturally.
+// Gated on env vars rather than on URL sniffing so genuine auth-flow regressions
+// (expired storageState, broken Auth0 login helper) still fail loudly when creds
+// ARE configured. URL-based detection silently turned those into green skips.
+const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+
+function skipWhenAuthMissing(): void {
+  if (!AUTH_CREDS_PRESENT) {
+    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
 }
 
 async function gotoReview(page: Page): Promise<void> {
+  skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
   await page.goto(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_ID}/edit?project=${MOCK_FOUNDATION_SLUG}`, {
     waitUntil: 'domcontentloaded',
   });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
 }
 
 test.describe('Newsletter Reopen Review — Structural Tests', () => {
@@ -248,10 +247,11 @@ test.describe('Newsletter list — Draft tag testid (structural)', () => {
   test('draft row exposes the newsletter-status-draft-<id> testid', async ({ page }) => {
     await setPersonaCookie(page, ['executive-director']);
     await stubBackend(page, buildDraft());
+    skipWhenAuthMissing();
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await page.goto(`/foundation/newsletters/list?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('newsletter-list-table')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId(`newsletter-status-draft-${MOCK_NEWSLETTER_ID}`)).toBeAttached();
   });
