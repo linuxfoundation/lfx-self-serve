@@ -237,6 +237,46 @@ test.describe('Newsletter reopen — Review landing screen', () => {
   });
 });
 
+test.describe('Newsletter reopen — empty-state coverage', () => {
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['executive-director']);
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page);
+  });
+
+  test('audience empty-state copy renders when the draft has no committees selected', async ({ page }) => {
+    await stubNewsletterApis(page, buildDraft({ committee_uids: [] }));
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('newsletter-review-audience-empty'), 'audience empty-state copy should appear').toContainText('No groups selected yet');
+    // The summary line should NOT render when the empty-state branch is active.
+    await expect(page.getByTestId('newsletter-review-audience-summary')).toHaveCount(0);
+  });
+
+  test('content incomplete-state copy renders when subject and body are both blank', async ({ page }) => {
+    await stubNewsletterApis(page, buildDraft({ subject: '', body_html: '' }));
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('newsletter-review-content-incomplete'), 'content incomplete copy should appear for blank subject + body').toContainText(
+      'Add a subject and body'
+    );
+    // Untitled draft placeholder for the header subject.
+    await expect(page.getByTestId('newsletter-review-subject'), 'header should fall back to Untitled draft').toContainText('Untitled draft');
+  });
+
+  test('content incomplete-state distinguishes blank subject vs blank body', async ({ page }) => {
+    await stubNewsletterApis(page, buildDraft({ subject: '' }));
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review-content-incomplete'), 'subject-only blank copy should call out the subject').toContainText(
+      'Add a subject before sending'
+    );
+  });
+});
+
 test.describe('Newsletter list — Draft tag parity', () => {
   test.beforeEach(async ({ page }) => {
     await setPersonaCookie(page, ['executive-director']);

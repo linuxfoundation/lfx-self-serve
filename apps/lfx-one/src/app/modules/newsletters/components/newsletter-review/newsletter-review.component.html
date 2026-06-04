@@ -6,8 +6,9 @@
   <div class="flex flex-col gap-2" data-testid="newsletter-review-header">
     <div class="text-xs uppercase tracking-wide text-gray-500">Editing newsletter</div>
     <div class="flex flex-wrap items-center gap-3">
+      <!-- Allow long subjects to wrap; truncation would hide content without a tooltip on touch devices. -->
       <h2
-        class="text-xl font-semibold text-gray-900 truncate"
+        class="text-xl font-semibold text-gray-900 break-words min-w-0"
         [class.text-gray-500]="!hasSubject()"
         [class.italic]="!hasSubject()"
         data-testid="newsletter-review-subject">
@@ -83,8 +84,9 @@
           <div class="flex flex-col gap-2">
             <div>
               <div class="text-xs uppercase tracking-wide text-gray-500">Subject</div>
+              <!-- Wrap rather than truncate so the full subject is always readable on touch devices. -->
               <div
-                class="text-sm font-medium text-gray-900 mt-1 truncate"
+                class="text-sm font-medium text-gray-900 mt-1 break-words"
                 [class.text-gray-500]="!hasSubject()"
                 [class.italic]="!hasSubject()"
                 data-testid="newsletter-review-content-subject">

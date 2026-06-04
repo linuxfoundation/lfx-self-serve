@@ -75,11 +75,11 @@ export class NewsletterReviewComponent {
         switchMap((fg) => {
           const ctrl = fg.get(controlName);
           if (!ctrl) return EMPTY;
-          return ctrl.valueChanges.pipe(startWith(ctrl.value));
+          return ctrl.valueChanges.pipe(startWith(ctrl.value as T));
         }),
         takeUntilDestroyed(this.destroyRef)
       ),
       { initialValue: fallback }
-    ) as Signal<T>;
+    );
   }
 }

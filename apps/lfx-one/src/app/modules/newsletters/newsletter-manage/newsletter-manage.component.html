@@ -10,10 +10,15 @@
   </div>
 
   <!--
-    Edit mode lands on the Review summary (showReview); the stepper is reserved for first-time creation
-    and the per-section edit path. Without this split, returning users saw what looked like the create
-    wizard and hunted for an Edit button. See LFXV2-2131.
+    Page-level h1 stays outside both branches so the heading hierarchy is intact regardless of
+    review/step view. Edit mode lands on the Review summary (showReview); the stepper is reserved
+    for first-time creation and the per-section edit path. Without this split, returning users saw
+    what looked like the create wizard and hunted for an Edit button. See LFXV2-2131.
   -->
+  <h1 class="mb-6" data-testid="newsletter-manage-title">
+    {{ isEditMode() ? 'Edit Newsletter' : 'Create Newsletter' }}
+  </h1>
+
   @if (showReview()) {
     @if (draftLoading()) {
       <div class="flex flex-col gap-6" data-testid="newsletter-manage-loading">
@@ -46,10 +51,6 @@
       </lfx-newsletter-review>
     }
   } @else {
-    <h1 class="mb-6" data-testid="newsletter-manage-title">
-      {{ isEditMode() ? 'Edit Newsletter' : 'Create Newsletter' }}
-    </h1>
-
     @if (isEditMode() && !draftLoading()) {
       <div class="mb-4">
         <lfx-button
