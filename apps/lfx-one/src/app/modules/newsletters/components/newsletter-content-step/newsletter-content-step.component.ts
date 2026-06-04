@@ -4,8 +4,8 @@
 import { Component, computed, DestroyRef, inject, input, model, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { EditorComponent } from '@components/editor/editor.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
@@ -16,7 +16,7 @@ import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer
 
 @Component({
   selector: 'lfx-newsletter-content-step',
-  imports: [ReactiveFormsModule, EditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
+  imports: [ReactiveFormsModule, RichEditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
   templateUrl: './newsletter-content-step.component.html',
 })
 export class NewsletterContentStepComponent {

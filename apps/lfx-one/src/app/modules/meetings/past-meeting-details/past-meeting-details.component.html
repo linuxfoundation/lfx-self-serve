@@ -78,6 +78,12 @@
           @if (meetingTypeBadge(); as badge) {
             <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [styleClass]="badge.styleClass" data-testid="badge-type"></lfx-tag>
           }
+          <!--
+            Intentionally uses the top-level series recurrence (LFXV2-2112). A past meeting is a
+            single occurrence snapshot and the past-meeting payload exposes no per-occurrence
+            recurrence override to resolve against (no occurrences[]/current-occurrence here),
+            so resolveOccurrenceRecurrence has nothing to prefer — the series rule is all we have.
+          -->
           @if (meeting.recurrence) {
             <lfx-tag
               [value]="meeting.recurrence | recurrenceSummary"

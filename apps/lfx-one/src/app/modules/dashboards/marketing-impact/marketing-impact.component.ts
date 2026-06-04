@@ -7,7 +7,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
+import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactMonthOptions, getDefaultMarketingImpactMonth } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
@@ -71,11 +71,18 @@ export class MarketingImpactComponent {
   protected readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug);
   protected readonly selectedMonth: Signal<string> = this.initSelectedMonth();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
+  protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
     if (this.focusOptions.some((o) => o.id === focusId)) {
-      this.selectedFocus.set(focusId as MarketingImpactFocusProgram);
+      const focus = focusId as MarketingImpactFocusProgram;
+      this.selectedFocus.set(focus);
+
+      const allowed = FOCUS_VISIBLE_TABS[focus];
+      if (!allowed.has(this.selectedTab())) {
+        this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'overview');
+      }
     }
   }
 
@@ -87,6 +94,13 @@ export class MarketingImpactComponent {
   private initSelectedMonth(): Signal<string> {
     return toSignal(this.headerForm.controls.month.valueChanges.pipe(startWith(this.defaultMonth)), {
       initialValue: this.defaultMonth,
+    });
+  }
+
+  private initVisibleTabs(): Signal<MarketingImpactTabOption[]> {
+    return computed(() => {
+      const allowed = FOCUS_VISIBLE_TABS[this.selectedFocus()];
+      return this.tabs.filter((t) => allowed.has(t.id));
     });
   }
 

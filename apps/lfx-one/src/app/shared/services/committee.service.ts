@@ -7,10 +7,12 @@ import {
   Committee,
   CommitteeDocument,
   CommitteeDocumentType,
+  CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
@@ -101,6 +103,26 @@ export class CommitteeService {
 
   public deleteCommitteeMember(committeeId: string, memberId: string): Observable<void> {
     return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(take(1));
+  }
+
+  // ── Committee Invites ───────────────────────────────────────────────────────
+  // Invite-by-email add-member: lightweight invites for people who may not yet
+  // have an LF account. Pending invites surface in the roster; on accept they
+  // become committee members with their LFID reconciled.
+
+  /** Fetches all invites for a committee (caller filters to pending and handles errors). */
+  public getCommitteeInvites(committeeId: string, params?: HttpParams): Observable<CommitteeInvite[]> {
+    return this.http.get<CommitteeInvite[]>(`/api/committees/${committeeId}/invites`, { params }).pipe(take(1));
+  }
+
+  /** Creates a single committee invite. Bulk invite fans this out one call per email. */
+  public createCommitteeInvite(committeeId: string, data: CreateCommitteeInviteRequest): Observable<CommitteeInvite> {
+    return this.http.post<CommitteeInvite>(`/api/committees/${committeeId}/invites`, data).pipe(take(1));
+  }
+
+  /** Revokes a pending committee invite. */
+  public revokeCommitteeInvite(committeeId: string, inviteId: string): Observable<void> {
+    return this.http.delete<void>(`/api/committees/${committeeId}/invites/${inviteId}`).pipe(take(1));
   }
 
   // ── Join / Leave Methods ──────────────────────────────────────────────────

@@ -49,12 +49,14 @@ import {
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingOccurrence,
+  MeetingRecurrence,
   MEETING_TYPE_CONFIGS,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
+  resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
@@ -153,6 +155,9 @@ export class MeetingCardComponent implements OnInit {
   public readonly containerClass: Signal<string> = this.initContainerClass();
   public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
+  // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
+  public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
@@ -760,7 +765,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initHasAiCompanion(): Signal<boolean> {
     return computed(() => {
-      return this.meeting().zoom_config?.ai_companion_enabled || false;
+      return this.meeting().ai_summary_enabled || false;
     });
   }
 

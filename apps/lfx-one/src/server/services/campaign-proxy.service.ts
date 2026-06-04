@@ -676,12 +676,22 @@ export class CampaignProxyService {
 
   // === Campaign creation (async job) ===
 
-  public async createCampaign(_req: Request, body: CampaignCreateRequest): Promise<{ jobId: string }> {
+  public async createCampaign(_req: Request, body: CampaignCreateRequest): Promise<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
     const jobId = createJob();
 
     this.executeCampaignCreation(jobId, body).catch((error) => {
       failJob(jobId, error instanceof Error ? error.message : 'Campaign creation failed');
     });
+
+    const POLL_INTERVAL_MS = 500;
+    const INLINE_WAIT_MS = 15_000;
+    const deadline = Date.now() + INLINE_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const job = jobs.get(jobId);
+      if (job?.status === 'done') return { jobId, result: job.result };
+      if (job?.status === 'error') return { jobId, error: job.error };
+    }
 
     return { jobId };
   }

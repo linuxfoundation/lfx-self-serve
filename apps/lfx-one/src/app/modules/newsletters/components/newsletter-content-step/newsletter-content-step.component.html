@@ -44,13 +44,14 @@
         }
       </div>
     </div>
-    <lfx-editor
+    <lfx-rich-editor
       [form]="form()"
       control="bodyHtml"
       placeholder="Share updates, recognize contributors, or announce what's next…"
-      [style]="{ height: '480px' }"
+      [editorStyle]="{ minHeight: '480px' }"
       dataTest="newsletter-content-body">
-    </lfx-editor>
+    </lfx-rich-editor>
+    <p class="mt-1 text-xs text-gray-500">Paste directly from Google Docs or Word. Markdown isn't supported here.</p>
   </div>
 </div>
 

@@ -255,6 +255,13 @@ export const VOTING_STATUSES = [
 ];
 
 /**
+ * Voting status options for meeting committee filters.
+ * Excludes None — it is not a selectable value in meeting forms but remains
+ * a valid member status. None is treated as Observer for filtering purposes.
+ */
+export const MEETING_VOTING_STATUSES = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+
+/**
  * Available appointment sources for committee members
  * @description Defines how a member was appointed to the committee
  * @readonly
@@ -591,3 +598,6 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
     bgColor: 'bg-gray-50',
   },
 };
+
+/** Max concurrent create-invite requests when fanning out a bulk committee invite. */
+export const COMMITTEE_INVITE_CONCURRENCY = 5;
