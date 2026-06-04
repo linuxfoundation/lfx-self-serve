@@ -679,10 +679,11 @@ export class CampaignProxyService {
 
   public async createCampaign(_req: Request, body: CampaignCreateRequest): Promise<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
     const jobId = createJob();
+    const startTime = Date.now();
 
     this.executeCampaignCreation(jobId, body).catch((error: unknown) => {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.error(undefined, 'campaign_create_unhandled', Date.now(), err, { jobId });
+      logger.error(undefined, 'campaign_create_unhandled', startTime, err, { jobId });
       failJob(jobId, 'Campaign creation was unsuccessful. Please try again.');
     });
 
