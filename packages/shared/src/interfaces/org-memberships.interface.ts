@@ -153,6 +153,11 @@ export interface KeyContactMutationResponse {
   contact: OrgMembershipKeyContact;
 }
 
+/** LFXV2-2067: slug-keyed catalog response for the People → Key Contacts edit modal. */
+export interface KeyContactCatalogResponse {
+  contacts: OrgMembershipKeyContact[];
+}
+
 export interface OrgMembershipKeyContact {
   contactType: OrgMembershipKeyContactType;
   contactTypeLabel: string;
