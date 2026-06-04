@@ -6,8 +6,8 @@ const UNWRAP_TAGS = new Set(['SPAN', 'FONT', 'O:P']);
 const DROP_TAGS = new Set(['META', 'STYLE', 'SCRIPT', 'LINK', 'TITLE']);
 
 export function cleanPastedHtml(html: string): string {
-  if (!html) {
-    return '';
+  if (!html || typeof DOMParser === 'undefined') {
+    return html ?? '';
   }
 
   const doc = new DOMParser().parseFromString(html, 'text/html');
