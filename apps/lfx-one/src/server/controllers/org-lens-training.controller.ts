@@ -86,8 +86,8 @@ export class OrgLensTrainingController {
         sortOrder,
       };
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getOrgCertifications(req, sfid, options);
+      // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to the service.
+      const response = await this.service.getOrgCertifications(req, orgUid, options);
 
       logger.success(req, 'get_org_certifications', startTime, {
         org_uid: orgUid,
@@ -125,8 +125,8 @@ export class OrgLensTrainingController {
 
       const searchQuery = getStringQueryParam(req, 'searchQuery');
 
-      const sfid = (await this.orgSfidResolver.resolveSfid(req, orgUid)) ?? '';
-      const response = await this.service.getCertificationEmployees(req, sfid, courseId, status, searchQuery ?? undefined);
+      // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to the service.
+      const response = await this.service.getCertificationEmployees(req, orgUid, courseId, status, searchQuery ?? undefined);
 
       logger.success(req, 'get_certification_employees', startTime, {
         org_uid: orgUid,
