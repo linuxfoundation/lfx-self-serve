@@ -37,6 +37,10 @@ import { expect, Page, test } from '@playwright/test';
 
 // ─── Timeouts ─────────────────────────────────────────────────────────────────
 
+// Each test can do two full page navigations plus a 20s sidebar-load wait — the default
+// 30s Playwright timeout is too tight on slow CI runners.
+test.setTimeout(60_000);
+
 const SIDEBAR_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 
@@ -170,7 +174,10 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
     })
   );
   // Stub the UID-based sfid lookup (ProjectContextService.selectedFoundationSfid).
-  await page.route(`**/api/projects/${MOCK_PROJECT_UID}/sfid*`, (route) =>
+  // Wildcard UID so both project (MOCK_PROJECT_UID) and foundation (MOCK_FOUNDATION_ITEM.uid)
+  // sfid requests are intercepted — selectedFoundationSfid uses the foundation lens-item UID,
+  // not the project UID.
+  await page.route('**/api/projects/*/sfid*', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
