@@ -221,6 +221,18 @@ export class BoardCommitteeCardComponent {
     const seats: (BoardSeat | CommitteeSeat)[] = event.seatKind === 'board' ? this.boardSeats() : this.committeeSeats();
     const committeeUid = seats.find((s) => s.seatId === event.seatId)?.committeeUid ?? '';
 
+    // Fail fast (FR-016): if the seat's committeeUid can't be resolved (stale state / unexpected shape),
+    // the upstream reassign would 400 on an empty committee_uid and surface as a generic failure.
+    if (!committeeUid) {
+      this.messageService.add({
+        key: 'board-committee-refetch-error-toast',
+        severity: 'error',
+        summary: 'Reassignment failed — please retry.',
+        life: 5000,
+      });
+      return;
+    }
+
     this.service
       .reassignSeat(this.orgUid(), this.foundationId(), event.seatId, { committeeUid, ...event.body })
       .pipe(
@@ -243,7 +255,7 @@ export class BoardCommitteeCardComponent {
         this.messageService.add({
           key: 'board-toast-success-reassigned',
           severity: 'success',
-          summary: 'Board roles reassigned',
+          summary: event.seatKind === 'board' ? 'Board roles reassigned' : 'Committee seat reassigned',
           life: 3000,
         });
         this.refetchSeats(event.seatKind);

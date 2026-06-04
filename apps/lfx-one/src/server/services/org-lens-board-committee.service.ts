@@ -64,6 +64,9 @@ export class OrgLensBoardCommitteeService {
       committee_uid: body.committeeUid,
       upstream_path: upstreamPath,
     });
+    // Verb mapping (tech-spec §4 / Batch 5 B5.7): the BFF surface is PATCH (controller route), but the
+    // committee-service upstream defines reassign as PUT — so we deliberately issue PUT here. This is NOT a
+    // bug: committee-service implements PUT /committees/b2b-org/{uid}/seats/{member_uid}/reassign.
     const upstream = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat>(
       req,
       'LFX_V2_SERVICE',
@@ -106,6 +109,11 @@ export class OrgLensBoardCommitteeService {
     return seats ?? [];
   }
 
+  // Upstream exposes a single identifier per row (`uid`, the committee_member uid). For live seats the
+  // seat, the reassignment subject, and the person-in-seat are the *same* committee_member record, so
+  // `seatId`, `memberUid`, and `person.personId` intentionally collapse to `uid`. The three fields are
+  // kept distinct only because BoardSeat/CommitteeSeat/person reuse the spec 015/016 shape (where a
+  // person is a separate key_contact); committee-service has no distinct seat/person id to map.
   private toBoardSeat(s: CommitteeServiceOrgSeat): BoardSeat {
     return {
       seatId: s.uid,

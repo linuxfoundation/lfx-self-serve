@@ -96,7 +96,10 @@ const COMMITTEE_SEATS = [
   },
 ];
 
-const VOTING_HISTORY = [{ voteId: 'agl-vote-1', date: '2026-04-14', resolution: 'Approve 2026 budget allocation', vote: 'Yes', outcome: 'Passed (8-1)' }];
+// Voting history is deferred (D12): the BFF always returns an empty list, so the stub matches that
+// behavior — a non-empty stub would mask empty-state UI issues. Shape (for reference) was:
+// { voteId, date, resolution, vote, outcome }.
+const VOTING_HISTORY: unknown[] = [];
 
 interface StubOptions {
   board?: unknown[];
@@ -251,5 +254,40 @@ test.describe('US3 — Reassign', () => {
 
     await expect(page.getByText('Reassignment failed — please retry.')).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText('Board roles reassigned')).toHaveCount(0);
+  });
+
+  // The UI supports reassigning editable COMMITTEE seats too (agl-com-2). Same flow as Board, but the
+  // success toast is committee-specific ("Committee seat reassigned", not "Board roles reassigned").
+  test('committee happy path: reassign editable committee seat → committee success toast', async ({ page }) => {
+    await stubBoardCommittee(page);
+    await openBoardCommitteeTab(page);
+
+    await page.getByTestId('board-committee-section-committee-header').click();
+    await page.getByTestId('board-committee-committee-edit-agl-com-2').click();
+    await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
+    await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
+    await page.getByTestId('reassign-board-first-name-input').fill('Jane');
+    await page.getByTestId('reassign-board-last-name-input').fill('Doe');
+    await page.getByTestId('reassign-board-primary-button').click();
+
+    await expect(page.getByTestId('reassign-board-modal')).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Committee seat reassigned')).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText('Board roles reassigned')).toHaveCount(0);
+  });
+
+  test('committee failure path: write proxy 403 → error toast, no false success (FR-016)', async ({ page }) => {
+    await stubBoardCommittee(page, { reassignStatus: 403 });
+    await openBoardCommitteeTab(page);
+
+    await page.getByTestId('board-committee-section-committee-header').click();
+    await page.getByTestId('board-committee-committee-edit-agl-com-2').click();
+    await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
+    await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
+    await page.getByTestId('reassign-board-first-name-input').fill('Jane');
+    await page.getByTestId('reassign-board-last-name-input').fill('Doe');
+    await page.getByTestId('reassign-board-primary-button').click();
+
+    await expect(page.getByText('Reassignment failed — please retry.')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Committee seat reassigned')).toHaveCount(0);
   });
 });
