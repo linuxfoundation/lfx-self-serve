@@ -634,7 +634,7 @@ export class CommitteeController {
   }
 
   /**
-   * POST /committees/:id/invites/:inviteId/accept
+   * POST /api/committees/:id/invites/:inviteId/accept
    */
   public async acceptCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, inviteId } = req.params;
@@ -676,7 +676,7 @@ export class CommitteeController {
   }
 
   /**
-   * POST /committees/:id/invites/:inviteId/decline
+   * POST /api/committees/:id/invites/:inviteId/decline
    */
   public async declineCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, inviteId } = req.params;

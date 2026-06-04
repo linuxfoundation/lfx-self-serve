@@ -707,9 +707,9 @@ export class CommitteeService {
         invitee_email: invite.invitee_email,
         status: invite.status,
         created_at: invite.created_at,
-        // Not provided by the committee-service contract today — left undefined.
-        inviter_name: null,
-        expires_at: null,
+        // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
+        // optional fields not in the committee-service contract yet, so JSON drops them rather than
+        // sending an explicit null that consumers would have to disambiguate from "set".
       } satisfies PendingInvitation;
     });
   }

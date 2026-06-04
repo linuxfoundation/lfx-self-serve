@@ -3,7 +3,7 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
-import { buildInvitationSubtext } from '@lfx-one/shared/utils';
+import { buildInvitationSubtext, formatInviteExpiry } from '@lfx-one/shared/utils';
 
 /**
  * Builds the secondary line for a pending committee invitation row.
@@ -22,9 +22,8 @@ import { buildInvitationSubtext } from '@lfx-one/shared/utils';
 })
 export class InvitationSubtextPipe implements PipeTransform {
   public transform(invitation: PendingInvitation): string {
-    const formattedExpiry = invitation.expires_at
-      ? new Date(invitation.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
-    return buildInvitationSubtext(invitation, formattedExpiry);
+    // formatInviteExpiry guards malformed timestamps (returns null), so the subtext falls back to the
+    // base copy instead of rendering "Invalid Date".
+    return buildInvitationSubtext(invitation, formatInviteExpiry(invitation.expires_at));
   }
 }

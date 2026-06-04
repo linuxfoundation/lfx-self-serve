@@ -75,6 +75,7 @@ export class CommitteeInvitationsComponent {
       .pipe(take(1))
       .subscribe({
         next: () => {
+          this.invitationService.forgetResolved(invitation.uid);
           this.messageService.add({
             key: TOAST_KEY,
             severity: 'success',
@@ -146,6 +147,7 @@ export class CommitteeInvitationsComponent {
       .declineInvitation(committeeUid, inviteUid)
       .pipe(take(1))
       .subscribe({
+        next: () => this.invitationService.forgetResolved(inviteUid),
         error: () => {
           this.invitationService.unmarkResolved(inviteUid);
           this.messageService.add({

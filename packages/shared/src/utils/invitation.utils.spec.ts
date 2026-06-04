@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PendingInvitation } from '../interfaces/committee.interface';
-import { buildInvitationActions, buildInvitationSubtext, findPendingInvitationForCommittee } from './invitation.utils';
+import { buildInvitationActions, buildInvitationSubtext, findPendingInvitationForCommittee, formatInviteExpiry } from './invitation.utils';
 
 /** Minimal invitation builder — only the fields the helpers read. */
 function invitation(overrides: Partial<PendingInvitation> = {}): PendingInvitation {
@@ -51,9 +51,19 @@ describe('buildInvitationActions', () => {
     expect(action.text).toBe('Nirav Patel invited you to PyTorch TSC');
   });
 
-  it('omits the date when the invite carries no expiry, and sets it when present', () => {
+  it('omits the date when the invite carries no expiry', () => {
     expect(buildInvitationActions([invitation()])[0].date).toBeUndefined();
-    expect(buildInvitationActions([invitation({ expires_at: '2026-06-20T00:00:00Z' })])[0].date).toBe('2026-06-20T00:00:00Z');
+  });
+
+  it('sets a formatted (not raw ISO) display date when an expiry is present', () => {
+    const { date } = buildInvitationActions([invitation({ expires_at: '2026-06-20T12:00:00Z' })])[0];
+    expect(date).toBeDefined();
+    expect(date).not.toContain('T'); // not the raw ISO timestamp
+    expect(date).toMatch(/2026/); // human-readable, includes the year
+  });
+
+  it('omits the date when the expiry is an unparseable timestamp', () => {
+    expect(buildInvitationActions([invitation({ expires_at: 'not-a-date' })])[0].date).toBeUndefined();
   });
 
   it('maps each invitation in order', () => {
@@ -102,5 +112,25 @@ describe('findPendingInvitationForCommittee', () => {
 
   it('excludes an invite already resolved this session', () => {
     expect(findPendingInvitationForCommittee(invites, new Set(['i1']), 'c1')).toBeNull();
+  });
+});
+
+describe('formatInviteExpiry', () => {
+  it('returns null for missing values', () => {
+    expect(formatInviteExpiry(null)).toBeNull();
+    expect(formatInviteExpiry(undefined)).toBeNull();
+    expect(formatInviteExpiry('')).toBeNull();
+  });
+
+  it('returns null for an unparseable timestamp (no "Invalid Date")', () => {
+    expect(formatInviteExpiry('not-a-date')).toBeNull();
+  });
+
+  it('formats a valid RFC3339 timestamp as a human-readable date', () => {
+    const formatted = formatInviteExpiry('2026-06-20T12:00:00Z');
+    expect(formatted).not.toBeNull();
+    expect(formatted).not.toContain('T');
+    expect(formatted).not.toContain('Invalid');
+    expect(formatted).toMatch(/2026/);
   });
 });

@@ -544,6 +544,8 @@ export interface DecoratedPendingAction extends PendingActionItem {
   voteUsesDrawer: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
+  /** Invitation title text up to (and excluding) the group name — derived from `text` so the inline list renders the same copy as the drawer while linking just the group name. */
+  inviteTitlePrefix: string;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */

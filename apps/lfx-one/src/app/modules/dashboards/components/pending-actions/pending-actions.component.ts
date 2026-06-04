@@ -105,7 +105,12 @@ export class PendingActionsComponent {
       const pending = this.pendingDecline();
       if (!pending) return;
       this.clearDeclineTimer();
-      this.invitationService.declineInvitation(pending.committeeUid, pending.inviteUid).subscribe();
+      // Component is tearing down (no toast), but still roll back the optimistic hide on failure so the
+      // invite reappears on the next load / on the other surfaces rather than being lost for the session.
+      this.invitationService.declineInvitation(pending.committeeUid, pending.inviteUid).subscribe({
+        next: () => this.invitationService.forgetResolved(pending.inviteUid),
+        error: () => this.invitationService.unmarkResolved(pending.inviteUid),
+      });
     });
   }
 
@@ -163,6 +168,7 @@ export class PendingActionsComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
+          this.invitationService.forgetResolved(inviteUid);
           this.messageService.add({
             key: 'pending-actions-toast',
             severity: 'success',
@@ -376,6 +382,7 @@ export class PendingActionsComponent {
       .declineInvitation(committeeUid, inviteUid)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
+        next: () => this.invitationService.forgetResolved(inviteUid),
         error: () => {
           this.invitationService.unmarkResolved(inviteUid);
           this.messageService.add({
@@ -394,7 +401,14 @@ export class PendingActionsComponent {
     if (!pending) return;
     this.clearDeclineTimer();
     this.pendingDecline.set(null);
-    this.invitationService.declineInvitation(pending.committeeUid, pending.inviteUid).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+    this.invitationService
+      .declineInvitation(pending.committeeUid, pending.inviteUid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.invitationService.forgetResolved(pending.inviteUid),
+        // Roll back so a failed decline doesn't leave the invite hidden across the app for the session.
+        error: () => this.invitationService.unmarkResolved(pending.inviteUid),
+      });
   }
 
   private clearDeclineTimer(): void {
@@ -495,6 +509,11 @@ export class PendingActionsComponent {
         const voteUsesDrawerVal = !!vote && this.voteUsesDrawer(vote);
         const isInvitation = item.type === 'Invitation' && !!item.inviteUid;
         const inviteGroupName = item.inviteGroupName ?? item.badge;
+        // Render the title from the backend-built `text` (e.g. "You've been invited to {Group}") with
+        // the group name split off as a link — keeps the inline list and the drawer copy in sync and
+        // surfaces inviter context automatically if upstream ever provides it.
+        const nameIdx = item.text.lastIndexOf(inviteGroupName);
+        const inviteTitlePrefix = nameIdx >= 0 ? item.text.slice(0, nameIdx) : item.text;
         return {
           ...item,
           rowKey,
@@ -510,6 +529,7 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
+          inviteTitlePrefix,
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
           declineAriaLabel: `Decline invite to ${inviteGroupName}`,
         };

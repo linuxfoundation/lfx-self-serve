@@ -412,6 +412,7 @@ export class CommitteeViewComponent {
       .pipe(take(1))
       .subscribe({
         next: () => {
+          this.invitationService.forgetResolved(invite.uid);
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
           // Refresh so my_role populates — the banner hides and member-only tabs/CTAs unlock.
           this.refreshCommittee();
@@ -515,6 +516,7 @@ export class CommitteeViewComponent {
       .declineInvitation(committeeUid, inviteUid)
       .pipe(take(1))
       .subscribe({
+        next: () => this.invitationService.forgetResolved(inviteUid),
         error: () => {
           this.invitationService.unmarkResolved(inviteUid);
           this.messageService.add({

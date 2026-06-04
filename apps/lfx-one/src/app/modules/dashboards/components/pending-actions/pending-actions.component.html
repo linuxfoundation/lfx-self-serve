@@ -114,10 +114,10 @@
                     </a>
                   } @else if (item.isInvitation) {
                     <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
-                      <!-- Inviter copy isn't in the committee-service contract today, so the prefix is
-                           fixed and the group name is the link into the group (project-lens detail page). -->
+                      <!-- Title comes from the backend-built item.text (same copy as the drawer); the
+                           group name is split off as a link into the group (project-lens detail page). -->
                       <p class="text-sm text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
-                        You've been invited to
+                        {{ item.inviteTitlePrefix }}
                         <a
                           [routerLink]="['/groups', item.committeeUid]"
                           [state]="{ backLabel: 'My Dashboard' }"

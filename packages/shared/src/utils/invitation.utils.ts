@@ -6,29 +6,50 @@ import { PendingActionItem } from '../interfaces/components.interface';
 import { PendingInvitation } from '../interfaces/committee.interface';
 
 /**
+ * Formats an invite expiry (RFC3339) into a short display string (e.g. "Jun 20, 2026"), or null when
+ * the value is missing or not a parseable date. Guarding the parse keeps a malformed upstream
+ * timestamp from surfacing "Invalid Date" in the UI — callers fall back to no-expiry copy on null.
+ */
+export function formatInviteExpiry(expiresAt: string | null | undefined): string | null {
+  if (!expiresAt) {
+    return null;
+  }
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
  * Pure mapping from enriched pending committee invitations to dashboard pending-action rows.
  *
  * Extracted from the server aggregator so the row shape — the copy fallback, the accept/decline
  * identifiers, and the per-type tag tone — is unit-testable without standing up the Express stack.
  * Both the inviter name and the expiry are usually absent in the current committee-service contract;
  * the title degrades to "You've been invited to {Group}" and no `date` is set when `expires_at` is
- * missing, so the row never depends on email dispatch (the LFXV2-2117 fallback requirement).
+ * missing, so the row never depends on email dispatch (the LFXV2-2117 fallback requirement). When an
+ * expiry IS present it's formatted for display (`PendingActionItem.date` is a human-readable string,
+ * not a raw ISO timestamp).
  */
 export function buildInvitationActions(invitations: PendingInvitation[]): PendingActionItem[] {
-  return invitations.map((invitation) => ({
-    type: 'Invitation',
-    badge: invitation.project_name || invitation.committee_name,
-    text: invitation.inviter_name
-      ? `${invitation.inviter_name} invited you to ${invitation.committee_name}`
-      : `You've been invited to ${invitation.committee_name}`,
-    icon: PENDING_ACTION_BUTTON_ICON.Invitation,
-    severity: PENDING_ACTION_SEVERITY.Invitation,
-    buttonText: 'Accept',
-    inviteUid: invitation.uid,
-    committeeUid: invitation.committee_uid,
-    inviteGroupName: invitation.committee_name,
-    ...(invitation.expires_at ? { date: invitation.expires_at } : {}),
-  }));
+  return invitations.map((invitation) => {
+    const expiry = formatInviteExpiry(invitation.expires_at);
+    return {
+      type: 'Invitation',
+      badge: invitation.project_name || invitation.committee_name,
+      text: invitation.inviter_name
+        ? `${invitation.inviter_name} invited you to ${invitation.committee_name}`
+        : `You've been invited to ${invitation.committee_name}`,
+      icon: PENDING_ACTION_BUTTON_ICON.Invitation,
+      severity: PENDING_ACTION_SEVERITY.Invitation,
+      buttonText: 'Accept',
+      inviteUid: invitation.uid,
+      committeeUid: invitation.committee_uid,
+      inviteGroupName: invitation.committee_name,
+      ...(expiry ? { date: expiry } : {}),
+    };
+  });
 }
 
 /**
@@ -55,8 +76,8 @@ export function findPendingInvitationForCommittee(
  *
  * Base copy is "{inviter_name} invited you" when an inviter is known (usually it isn't), otherwise
  * "You've been invited". When the invite carries an expiry, " · expires {formattedExpiry}" is
- * appended — the caller passes the already-formatted date string (e.g. via Angular's `DatePipe`) so
- * this stays framework-free and testable.
+ * appended — the caller passes the already-formatted date string (e.g. via {@link formatInviteExpiry})
+ * so this stays framework-free and testable.
  */
 export function buildInvitationSubtext(invitation: PendingInvitation, formattedExpiry?: string | null): string {
   const base = invitation.inviter_name ? `${invitation.inviter_name} invited you` : `You've been invited`;

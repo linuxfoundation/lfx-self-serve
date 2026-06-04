@@ -11,8 +11,8 @@ import { catchError, Observable, of, take, tap } from 'rxjs';
  *
  * Holds a single source-of-truth signal so both surfaces that show invitations — the dashboard
  * pending-actions list and My Groups — stay in sync. Accept/decline optimistically remove a row
- * from the signal (both surfaces react instantly); `restoreToCache` supports undo / failure
- * rollback.
+ * from the signal (both surfaces react instantly); `unmarkResolved` supports undo / failure
+ * rollback, and `forgetResolved` drops the undo stash on terminal success.
  */
 @Injectable({
   providedIn: 'root',
@@ -47,7 +47,12 @@ export class InvitationService {
   public loadPendingInvitations(): Observable<PendingInvitation[]> {
     return this.http.get<PendingInvitation[]>('/api/user/pending-invitations').pipe(
       tap((invitations) => this.pendingInvitations.set(invitations)),
-      catchError(() => of([]))
+      catchError(() => {
+        // Clear the cache so a failed refresh can't leave stale invitations rendered on either
+        // surface (matches the "degrades to an empty list on error" contract above).
+        this.pendingInvitations.set([]);
+        return of([]);
+      })
     );
   }
 
@@ -102,5 +107,14 @@ export class InvitationService {
       this.resolvedStash.delete(inviteUid);
       this.pendingInvitations.update((invitations) => (invitations.some((existing) => existing.uid === stashed.uid) ? invitations : [...invitations, stashed]));
     }
+  }
+
+  /**
+   * Drops the undo stash entry for an invite whose accept/decline has terminally succeeded (no undo
+   * possible anymore), so the stash doesn't accumulate resolved invitations over a long session. The
+   * UID stays in {@link resolvedInviteUids}, so the row remains hidden.
+   */
+  public forgetResolved(inviteUid: string): void {
+    this.resolvedStash.delete(inviteUid);
   }
 }
