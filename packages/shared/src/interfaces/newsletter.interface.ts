@@ -5,6 +5,14 @@ export type NewsletterStatusTabId = 'draft' | 'sent';
 
 export type NewsletterStatus = 'draft' | 'sent';
 
+/**
+ * Top-level view shown by the newsletter manage screen.
+ *
+ * - `review`: summary cards over the saved draft with explicit edit affordances (default on reopen).
+ * - `step`: linear stepper (default for create, opt-in for edit when a section's "Edit" is clicked).
+ */
+export type NewsletterManageViewMode = 'review' | 'step';
+
 export interface NewsletterCommitteeOption {
   label: string;
   value: string;
