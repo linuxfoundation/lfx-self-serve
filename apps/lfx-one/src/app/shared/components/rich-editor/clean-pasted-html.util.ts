@@ -1,9 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-const STRIPPED_ATTRS = ['style', 'class', 'id', 'dir', 'lang', 'align', 'face', 'color', 'size', 'width', 'height'];
-const UNWRAP_TAGS = new Set(['SPAN', 'FONT', 'O:P']);
-const DROP_TAGS = new Set(['META', 'STYLE', 'SCRIPT', 'LINK', 'TITLE']);
+import { DROP_TAGS, STRIPPED_ATTRS, UNWRAP_TAGS } from '@lfx-one/shared/constants';
 
 export function cleanPastedHtml(html: string): string {
   if (!html || typeof DOMParser === 'undefined') {

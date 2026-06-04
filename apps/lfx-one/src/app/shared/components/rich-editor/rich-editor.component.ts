@@ -6,24 +6,10 @@ import { afterNextRender, Component, DestroyRef, ElementRef, inject, input, PLAT
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import type { Editor } from '@tiptap/core';
+import { RICH_EDITOR_TOOLBAR_BUTTONS } from '@lfx-one/shared/constants';
 import { RichEditorToolbarButton } from '@lfx-one/shared/interfaces';
 
 import { cleanPastedHtml } from './clean-pasted-html.util';
-
-const TOOLBAR_BUTTONS: readonly RichEditorToolbarButton[] = [
-  { id: 'h2', icon: 'fa-light fa-h2', label: 'Heading 2', command: 'h2', activeKey: 'heading', activeAttrs: { level: 2 } },
-  { id: 'h3', icon: 'fa-light fa-h3', label: 'Heading 3', command: 'h3', activeKey: 'heading', activeAttrs: { level: 3 } },
-  { id: 'bold', icon: 'fa-light fa-bold', label: 'Bold', command: 'bold', activeKey: 'bold' },
-  { id: 'italic', icon: 'fa-light fa-italic', label: 'Italic', command: 'italic', activeKey: 'italic' },
-  { id: 'underline', icon: 'fa-light fa-underline', label: 'Underline', command: 'underline', activeKey: 'underline' },
-  { id: 'strike', icon: 'fa-light fa-strikethrough', label: 'Strikethrough', command: 'strike', activeKey: 'strike' },
-  { id: 'bulletList', icon: 'fa-light fa-list-ul', label: 'Bullet list', command: 'bulletList', activeKey: 'bulletList' },
-  { id: 'orderedList', icon: 'fa-light fa-list-ol', label: 'Numbered list', command: 'orderedList', activeKey: 'orderedList' },
-  { id: 'link', icon: 'fa-light fa-link', label: 'Link', command: 'link', activeKey: 'link' },
-  { id: 'clear', icon: 'fa-light fa-eraser', label: 'Clear formatting', command: 'clear' },
-];
-
-const TOOLBAR_DIVIDERS = new Set(['underline', 'strike', 'orderedList']);
 
 @Component({
   selector: 'lfx-rich-editor',
@@ -50,7 +36,7 @@ export class RichEditorComponent {
   // 5. WritableSignals
   protected readonly editorReady = signal(false);
   protected readonly activeStates = signal<Record<string, boolean>>({});
-  protected readonly buttons = TOOLBAR_BUTTONS;
+  protected readonly buttons = RICH_EDITOR_TOOLBAR_BUTTONS;
 
   // Editor instance (browser-only, untracked by signals)
   private editor: Editor | null = null;
@@ -106,17 +92,6 @@ export class RichEditorComponent {
         chain.unsetAllMarks().clearNodes().run();
         break;
     }
-  }
-
-  protected isActive(button: RichEditorToolbarButton): boolean {
-    if (!button.activeKey) {
-      return false;
-    }
-    return this.activeStates()[button.id] ?? false;
-  }
-
-  protected hasDivider(button: RichEditorToolbarButton): boolean {
-    return TOOLBAR_DIVIDERS.has(button.id);
   }
 
   // 10. Private initializer
@@ -230,7 +205,7 @@ export class RichEditorComponent {
       return;
     }
     const next: Record<string, boolean> = {};
-    for (const button of TOOLBAR_BUTTONS) {
+    for (const button of RICH_EDITOR_TOOLBAR_BUTTONS) {
       if (!button.activeKey) {
         continue;
       }

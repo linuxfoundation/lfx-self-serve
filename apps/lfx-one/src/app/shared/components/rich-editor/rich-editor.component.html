@@ -9,17 +9,17 @@
       <button
         type="button"
         class="flex h-8 w-8 items-center justify-center rounded text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-        [class.bg-blue-50]="isActive(button)"
-        [class.text-blue-700]="isActive(button)"
+        [class.bg-blue-50]="activeStates()[button.id]"
+        [class.text-blue-700]="activeStates()[button.id]"
         [disabled]="!editorReady() || readonly()"
         [attr.aria-label]="button.label"
-        [attr.aria-pressed]="isActive(button)"
+        [attr.aria-pressed]="activeStates()[button.id]"
         [attr.title]="button.label"
         [attr.data-testid]="'rich-editor-' + button.id"
         (click)="runCommand(button)">
         <i [class]="button.icon" aria-hidden="true"></i>
       </button>
-      @if (hasDivider(button)) {
+      @if (button.divider) {
         <span class="mx-1 h-5 w-px bg-gray-200" aria-hidden="true"></span>
       }
     }
