@@ -8,7 +8,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TableComponent } from '@components/table/table.component';
-import { COMMITTEE_LABEL, VOTING_STATUSES } from '@lfx-one/shared';
+import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared';
+import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -57,7 +58,7 @@ export class MeetingCommitteeModalComponent {
   private committeesMembersCache = new Map<string, CommitteeMemberDisplay[]>();
 
   // Voting status options for dropdown
-  public readonly votingStatusOptions = VOTING_STATUSES;
+  public readonly votingStatusOptions = MEETING_VOTING_STATUSES;
   public readonly committeeLabel = COMMITTEE_LABEL;
 
   // Load committees using toSignal
@@ -314,9 +315,17 @@ export class MeetingCommitteeModalComponent {
         return members;
       }
 
-      // Filter members by selected voting statuses
+      // None is treated as Observer — normalize both sides so None-status members
+      // are included when Observer is selected.
+      const normalizeStatus = (s: string): string => (s === CommitteeMemberVotingStatus.NONE ? CommitteeMemberVotingStatus.OBSERVER : s);
+      const normalizedSelected = selectedVotingStatuses.map(normalizeStatus);
+
       return members.filter((member) => {
-        return member.voting?.status && selectedVotingStatuses.includes(member.voting.status);
+        const votingStatus = member.voting?.status;
+        if (!votingStatus) {
+          return false;
+        }
+        return normalizedSelected.includes(normalizeStatus(votingStatus));
       });
     });
   }
