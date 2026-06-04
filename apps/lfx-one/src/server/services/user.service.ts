@@ -1327,11 +1327,6 @@ export class UserService {
   }
 
   /**
-   * Build a "Cast Vote" pending action per active vote. Links to the My Votes page (me-lens of
-   * /votes) — there's no standalone vote-detail route, so the user lands on the list and picks
-   * the vote to cast.
-   */
-  /**
    * Transform pending committee invitations into pending action rows. Invitations carry no
    * closing window in the current committee-service contract, so the `date` field is only set
    * when `expires_at` is (reserved for a future upstream that emits it). The badge prefers the
@@ -1342,6 +1337,11 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
+  /**
+   * Build a "Cast Vote" pending action per active vote. Links to the My Votes page (me-lens of
+   * /votes) — there's no standalone vote-detail route, so the user lands on the list and picks
+   * the vote to cast.
+   */
   private transformVotesToActions(votes: Vote[]): PendingActionItem[] {
     return votes.map((vote) => {
       const endDate = new Date(vote.end_time);

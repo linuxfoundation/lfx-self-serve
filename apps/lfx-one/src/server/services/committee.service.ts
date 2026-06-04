@@ -647,7 +647,9 @@ export class CommitteeService {
       return [];
     }
 
-    logger.debug(req, 'get_my_pending_invitations', 'Fetching committee invitations for user', { invitee_email: normalizedEmail });
+    // Don't log the invitee email — it's PII and the request is already correlated by req.id and
+    // the authenticated session. The upstream query is still scoped to normalizedEmail.
+    logger.debug(req, 'get_my_pending_invitations', 'Fetching committee invitations for user');
 
     const invites = await fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
@@ -662,7 +664,7 @@ export class CommitteeService {
       return [];
     }
 
-    logger.debug(req, 'get_my_pending_invitations', 'Found pending invitations, enriching with committee data', {
+    logger.info(req, 'get_my_pending_invitations', 'Found pending invitations, enriching with committee data', {
       pending_count: pendingInvites.length,
     });
 
