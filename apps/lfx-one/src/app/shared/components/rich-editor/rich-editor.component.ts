@@ -205,16 +205,23 @@ export class RichEditorComponent {
   }
 
   private toggleLink(editor: Editor): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     const previous = editor.getAttributes('link')['href'];
-    const url = typeof window !== 'undefined' ? window.prompt('Link URL', previous ?? 'https://') : null;
+    const url = window.prompt('Link URL', previous ?? 'https://');
     if (url === null) {
       return;
     }
-    if (url === '') {
+    const trimmed = url.trim();
+    if (trimmed === '') {
       editor.chain().focus().extendMarkRange('link').unsetLink().run();
       return;
     }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    if (!/^(https?:\/\/|mailto:)/i.test(trimmed)) {
+      return;
+    }
+    editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
   }
 
   private refreshActiveStates(): void {
