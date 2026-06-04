@@ -1,6 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<p-toast position="top-right" key="org-people-key-contact-toast-success" data-testid="org-people-key-contacts-toast-success" />
+<p-toast position="top-right" key="org-people-key-contact-toast-remove" data-testid="org-people-key-contacts-toast-remove" />
+<p-toast position="top-right" key="org-people-key-contact-toast-error" data-testid="org-people-key-contacts-toast-error" />
+
 <div class="flex flex-col gap-6" data-testid="org-people-key-contacts">
   <!-- Filter bar -->
   <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-people-key-contacts-filter-bar">
@@ -144,11 +148,14 @@
                 </button>
               </th>
               <!--
-                V1 is read-only: no Actions column on the main row and no per-assignment Edit on the
-                expanded sub-table. Spec FR-005's reassign pencil + FR-006's expanded-row Edit pencil
-                are both gated on LFXV2-1677 (broader employee-source typeahead) before they can ship.
-                See spec.md lines 167–199.
+                LFXV2-2067: main-row Actions column carries the bulk-Reassign pencil — opens the
+                "Reassign Key Contact Roles" modal scoped to one PERSON across N (membership, role)
+                tuples. The expanded-row pencil scopes to ONE (membership, role-TYPE). Both gates
+                read `canEdit()`.
               -->
+              <th class="w-12 px-4 py-3 text-right">
+                <span class="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -193,21 +200,38 @@
                     group.foundationCount
                   }}</span>
                 </td>
+                <td class="px-4 py-3 text-right">
+                  <span class="inline-flex" [pTooltip]="canEdit() ? 'Reassign key contact roles' : editDisabledTooltip" tooltipPosition="left">
+                    <button
+                      type="button"
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                      [disabled]="!canEdit()"
+                      [attr.aria-label]="'Reassign key contact roles for ' + group.displayName"
+                      [attr.data-testid]="'org-people-key-contacts-reassign-' + group.email"
+                      (click)="onMainPencilClick(group, $event)">
+                      <i class="fa-light fa-pencil" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </td>
               </tr>
               @if (expanded) {
                 <tr class="bg-slate-50" [attr.data-testid]="'org-people-key-contacts-expanded-' + group.email">
-                  <td colspan="4" class="p-0 pl-11">
+                  <td colspan="5" class="p-0 pl-11">
                     <table class="w-full border-collapse">
                       <thead>
                         <!--
-                          Expanded sub-table: Foundation | Contact Role only. Per-assignment Edit pencil
-                          is intentionally omitted in V1 — see spec.md FR-006/FR-009 and V1 status footnote
-                          (lines 167–199): expanded-row add/replace/remove is post-V1, gated on T036 and
-                          LFXV2-1677. The main-row pencil (above) provides writer-gated bulk-reassign.
+                          LFXV2-2067: expanded sub-table now carries the per-(membership, role-TYPE) Edit
+                          pencil. Click opens the spec-024 4-state modal (chooser/single-add/replace/remove);
+                          writer entitlement is enforced both in the UX (`canEdit()`) and on the BFF write
+                          proxy. The Actions column always renders so column widths stay stable across
+                          reader/writer personas.
                         -->
                         <tr class="border-b border-gray-200 bg-slate-100 text-left text-xs font-semibold uppercase text-gray-400">
                           <th class="px-4 py-2.5">Foundation</th>
                           <th class="px-4 py-2.5">Contact Role</th>
+                          <th class="w-12 px-4 py-2.5 text-right">
+                            <span class="sr-only">Actions</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -222,6 +246,19 @@
                               <span class="inline-block rounded-full border px-2 py-0.5 text-xs font-medium" [class]="assignment.pillClass">{{
                                 assignment.role
                               }}</span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right">
+                              <span class="inline-flex" [pTooltip]="canEdit() ? 'Edit contact' : editDisabledTooltip" tooltipPosition="top">
+                                <button
+                                  type="button"
+                                  class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                                  [disabled]="!canEdit()"
+                                  [attr.aria-label]="'Edit ' + assignment.role + ' for ' + assignment.foundationLabel"
+                                  [attr.data-testid]="'org-people-key-contacts-edit-' + assignment.contactUid"
+                                  (click)="onPencilClick(assignment, $event)">
+                                  <i class="fa-light fa-pencil" aria-hidden="true"></i>
+                                </button>
+                              </span>
                             </td>
                           </tr>
                         }
