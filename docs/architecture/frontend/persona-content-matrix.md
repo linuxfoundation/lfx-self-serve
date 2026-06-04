@@ -129,7 +129,7 @@ Available to `contributor`, `maintainer`, and root writers.
 
 ## Org Lens
 
-**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. When the flag is off, `orgLensEnabledGuard` (CanMatch) blocks all `/org/*` routes and redirects to `/` — the routes are invisible to the router. When enabled, the Org Lens is identical for all personas.
+**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. When the flag is off, `orgLensEnabledGuard` (CanMatch) blocks all `/org/*` routes in the browser and redirects to `/` — the routes are invisible to the router. On the server during SSR, LaunchDarkly is unavailable, so the guard returns `true` and defers the real enforcement to the browser after hydration. When the flag is enabled, the Org Lens is identical for all personas.
 
 | Section         | Item                     | Route                |
 | --------------- | ------------------------ | -------------------- |
@@ -157,7 +157,7 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 | `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                        |
 | `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                         |
 | `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()`                   |
-| `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise |
+| `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
