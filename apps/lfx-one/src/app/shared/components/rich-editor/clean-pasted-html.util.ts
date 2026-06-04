@@ -44,6 +44,10 @@ function walkAndClean(root: Element): void {
       continue;
     }
 
+    // Promote GDocs-style inline formatting (font-weight, font-style, text-decoration)
+    // to semantic tags before the style attr gets stripped or the wrapper unwrapped.
+    promoteInlineStyles(node);
+
     if (UNWRAP_TAGS.has(tag)) {
       unwrap(node);
       continue;
@@ -64,6 +68,60 @@ function walkAndClean(root: Element): void {
   }
 
   removeComments(root);
+}
+
+function promoteInlineStyles(node: Element): void {
+  const style = node.getAttribute('style');
+  if (!style) {
+    return;
+  }
+
+  const weight = /font-weight\s*:\s*([^;]+)/i.exec(style)?.[1]?.trim().toLowerCase();
+  const fontStyle = /font-style\s*:\s*([^;]+)/i.exec(style)?.[1]?.trim().toLowerCase();
+  const textDeco = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(style)?.[1]?.trim().toLowerCase();
+
+  const numericWeight = weight ? parseInt(weight, 10) : NaN;
+  const isBold = weight === 'bold' || weight === 'bolder' || (!Number.isNaN(numericWeight) && numericWeight >= 600);
+  const isItalic = fontStyle === 'italic' || fontStyle === 'oblique';
+  const isUnderline = !!textDeco?.includes('underline');
+  const isStrike = !!textDeco?.includes('line-through');
+
+  if (!isBold && !isItalic && !isUnderline && !isStrike) {
+    return;
+  }
+
+  if (!node.hasChildNodes()) {
+    return;
+  }
+
+  const doc = node.ownerDocument;
+  const tags: string[] = [];
+  if (isBold) tags.push('strong');
+  if (isItalic) tags.push('em');
+  if (isUnderline) tags.push('u');
+  if (isStrike) tags.push('s');
+
+  let outer: Element | null = null;
+  let inner: Element | null = null;
+  for (const tag of tags) {
+    const el = doc.createElement(tag);
+    if (!outer) {
+      outer = el;
+    }
+    if (inner) {
+      inner.appendChild(el);
+    }
+    inner = el;
+  }
+
+  if (!outer || !inner) {
+    return;
+  }
+
+  while (node.firstChild) {
+    inner.appendChild(node.firstChild);
+  }
+  node.appendChild(outer);
 }
 
 function unwrap(node: Element): void {
