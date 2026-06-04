@@ -194,6 +194,15 @@ interface ProjectLinkQueryResult {
   updated_at?: string;
 }
 
+function buildFoundationFilter(foundationSlug: string): { filter: string; filterAnd: string; params: string[] } {
+  const isUmbrella = foundationSlug === 'tlf';
+  return {
+    filter: isUmbrella ? '' : 'WHERE FOUNDATION_SLUG = ?',
+    filterAnd: isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?',
+    params: isUmbrella ? [] : [foundationSlug],
+  };
+}
+
 /**
  * Service for handling project business logic
  */
@@ -6008,9 +6017,7 @@ export class ProjectService {
     logger.debug(undefined, 'get_keyword_performance', 'Fetching keyword performance from Snowflake', { foundation_slug: foundationSlug, month });
 
     try {
-      const isUmbrella = foundationSlug === 'tlf';
-      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
-      const foundationParams = isUmbrella ? [] : [foundationSlug];
+      const { filterAnd: foundationFilter, params: foundationParams } = buildFoundationFilter(foundationSlug);
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
 
       const perfQuery = `
