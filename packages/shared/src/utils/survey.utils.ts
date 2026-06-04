@@ -3,7 +3,7 @@
 
 import { COMBINED_SURVEY_STATUS, type CombinedSurveyStatus } from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import type { SurveyDisplayStatusInput, SurveyStatusInput } from '../interfaces/survey.interface';
+import type { NpsBand, SurveyDisplayStatusInput, SurveyResponseItem, SurveyStatusInput } from '../interfaces/survey.interface';
 
 /**
  * Sentinel value the API uses on `response_status` to signal that responses
@@ -94,4 +94,78 @@ export function getSurveyDisplayStatus(survey: SurveyDisplayStatusInput): Survey
   }
 
   return getEffectiveSurveyStatus(survey);
+}
+
+/** Returns the first non-empty trimmed string from the candidates, or null. */
+function firstNonEmpty(...candidates: (string | null | undefined)[]): string | null {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim() !== '') {
+      return c;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve the timestamp that matches a response's delivery status.
+ * @description The Responses table shows a status label with a timestamp beneath
+ * it; SES exposes a distinct time per funnel stage, so the displayed time should
+ * match the label (a "Clicked" row should show the click time, not the delivery
+ * time). Falls back down the funnel — and finally to `created_at` — so a missing
+ * SES field never blanks the cell. Unknown/Failed/Pending statuses fall back to
+ * `created_at`.
+ * @param item - The per-recipient survey response
+ * @returns An RFC3339 timestamp string, or null when none is available
+ */
+export function getResponseDeliveryTimestamp(item: SurveyResponseItem): string | null {
+  const status = item.response_status?.toLowerCase();
+
+  switch (status) {
+    case 'responded':
+      return firstNonEmpty(item.response_datetime, item.ses_link_clicked_last_time, item.ses_email_opened_last_time, item.last_received_time, item.created_at);
+    case 'clicked':
+      return firstNonEmpty(item.ses_link_clicked_last_time, item.ses_email_opened_last_time, item.last_received_time, item.created_at);
+    case 'opened':
+      return firstNonEmpty(item.ses_email_opened_last_time, item.last_received_time, item.created_at);
+    case 'delivered':
+      return firstNonEmpty(item.last_received_time, item.created_at);
+    default:
+      return firstNonEmpty(item.created_at);
+  }
+}
+
+/**
+ * Classify an individual NPS score (0-10) into its band.
+ * @description promoter = 9-10, passive = 7-8, detractor = 0-6. Returns null when
+ * the score is absent or out of range so callers can render a neutral placeholder.
+ * @param value - The individual NPS score
+ * @returns The band, or null when there is no valid score
+ */
+export function getNpsBand(value: number | null | undefined): NpsBand | null {
+  if (value === null || value === undefined || Number.isNaN(value) || value < 0 || value > 10) {
+    return null;
+  }
+  if (value >= 9) return 'promoter';
+  if (value >= 7) return 'passive';
+  return 'detractor';
+}
+
+/**
+ * Extract a recipient's free-text comment from their question answers.
+ * @description NPS surveys typically pair the score with an open-ended follow-up;
+ * this pulls the first free-text answer (a text without a choice_id, i.e. not a
+ * multiple-choice label) so the Responses table can surface it in the Comment
+ * column. Returns null when the recipient left no free-text answer.
+ * @param item - The per-recipient survey response
+ * @returns The comment text, or null when none exists
+ */
+export function getResponseComment(item: SurveyResponseItem): string | null {
+  for (const qa of item.survey_monkey_question_answers ?? []) {
+    for (const answer of qa.answers ?? []) {
+      if (!answer.choice_id && typeof answer.text === 'string' && answer.text.trim() !== '') {
+        return answer.text;
+      }
+    }
+  }
+  return null;
 }

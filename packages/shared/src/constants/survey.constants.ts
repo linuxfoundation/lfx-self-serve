@@ -297,6 +297,11 @@ export const SURVEY_EMAIL_TEMPLATE_VARIABLES = {
 } as const;
 
 /**
+ * Page size for the per-recipient survey responses list.
+ */
+export const SURVEY_RESPONSES_PAGE_SIZE = 25;
+
+/**
  * Survey template options (NPS surveys)
  * @description Available NPS survey templates for selection
  * TEMPORARY: Dev-only SurveyMonkey IDs — see LFXV2-1332 for dynamic template fetch via ITX v1 endpoint

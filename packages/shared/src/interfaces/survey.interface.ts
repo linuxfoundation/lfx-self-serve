@@ -202,6 +202,134 @@ export interface SurveyResponseRecord {
 }
 
 /**
+ * Organization attached to a per-recipient survey response.
+ * @description Mirrors `SurveyResponseOrg` from lfx-v2-survey-service.
+ */
+export interface SurveyResponseOrg {
+  /** Organization ID */
+  id?: string;
+  /** Organization name */
+  name?: string;
+}
+
+/**
+ * Project a per-recipient survey response belongs to.
+ * @description Mirrors `SurveyResponseProj` from lfx-v2-survey-service (V2 UUIDs).
+ */
+export interface SurveyResponseProj {
+  /** Project UID (V2) */
+  uid?: string;
+  /** Project name */
+  name?: string;
+}
+
+/**
+ * An individual survey response submitted by (or pending from) a single recipient.
+ * @description Mirrors `SurveyResponseItem` from lfx-v2-survey-service's
+ * `GET /surveys/{survey_uid}/responses`. Backs the per-recipient Responses view.
+ * The question-answer shape is shared with {@link MySurveyResponse} — both come
+ * from the same v2-indexed SurveyMonkey payload — so it reuses
+ * {@link MySurveyQuestionAnswer} rather than redefining an identical type.
+ */
+export interface SurveyResponseItem {
+  /** Response identifier */
+  id: string;
+  /** Survey identifier */
+  survey_uid: string;
+  /** Personal survey link for the recipient */
+  survey_link?: string;
+  /** Committee UID (V2) this response belongs to */
+  committee_uid?: string;
+  /** Recipient email address */
+  email?: string;
+  /** Recipient first name */
+  first_name?: string;
+  /** Recipient last name */
+  last_name?: string;
+  /** Linux Foundation username */
+  username?: string;
+  /** Recipient's role in the committee */
+  role?: string;
+  /** Recipient's job title */
+  job_title?: string;
+  /** Recipient's membership tier */
+  membership_tier?: string;
+  /** Recipient's voting status */
+  voting_status?: string;
+  /** Recipient's organization */
+  organization?: SurveyResponseOrg;
+  /** Project this response belongs to */
+  project?: SurveyResponseProj;
+  /** Delivery/response state: Responded, Clicked, Opened, Delivered, Failed, Pending */
+  response_status?: string;
+  /** When the response record was created (RFC3339) */
+  created_at?: string;
+  /** When the recipient submitted their response (RFC3339); absent until responded */
+  response_datetime?: string;
+  /** Last time the survey email was received (RFC3339) */
+  last_received_time?: string;
+  /** Count of reminder emails received */
+  num_automated_reminders_received?: number;
+  /** NPS score given (0-10) */
+  nps_value?: number;
+  /** SurveyMonkey respondent identifier */
+  survey_monkey_respondent_id?: string;
+  /** Per-question answers submitted by the recipient */
+  survey_monkey_question_answers?: MySurveyQuestionAnswer[];
+  /** SES message identifier */
+  ses_message_id?: string;
+  /** Whether SES delivery succeeded */
+  ses_delivery_successful?: boolean;
+  /** SES bounce type (Undetermined, Permanent, Transient) */
+  ses_bounce_type?: string;
+  /** SES bounce subtype */
+  ses_bounce_subtype?: string;
+  /** SES bounce diagnostic code */
+  ses_bounce_diagnostic_code?: string;
+  /** Whether a spam complaint was filed */
+  ses_complaint_exists?: boolean;
+  /** SES complaint type */
+  ses_complaint_type?: string;
+  /** When the complaint was filed (RFC3339) */
+  ses_complaint_date?: string;
+  /** Whether the recipient opened the email */
+  ses_email_opened?: boolean;
+  /** Last email open time (RFC3339) */
+  ses_email_opened_last_time?: string;
+  /** Whether the recipient clicked the survey link */
+  ses_link_clicked?: boolean;
+  /** Last survey link click time (RFC3339) */
+  ses_link_clicked_last_time?: string;
+}
+
+/**
+ * Pagination metadata for a page of survey responses.
+ * @description Mirrors `SurveyResponsePageMeta` from lfx-v2-survey-service.
+ */
+export interface SurveyResponsePageMeta {
+  /** Opaque cursor for the next page; empty string on the last page */
+  page_token?: string;
+  /** Total number of pages */
+  total_pages?: number;
+  /** Total responses across all pages */
+  total_results?: number;
+  /** Number of results per page */
+  per_page?: number;
+}
+
+/**
+ * A paginated page of individual survey responses per recipient.
+ * @description Mirrors `SurveyResponsesPage` from lfx-v2-survey-service's
+ * `GET /surveys/{survey_uid}/responses`.
+ */
+export interface SurveyResponsesPage {
+  /** List of per-recipient responses */
+  data: SurveyResponseItem[];
+  /** Pagination metadata */
+  meta: SurveyResponsePageMeta;
+}
+
+/**
  * NPS breakdown data
  * @description Breakdown of NPS responses into promoters, passives, and detractors
  */
@@ -260,6 +388,12 @@ export interface SurveyResultsDetail extends Survey {
  * @description Available size presets for the NPS gauge component
  */
 export type NpsGaugeSize = 'small' | 'medium' | 'large';
+
+/**
+ * NPS band for an individual score (not the aggregate -100..+100 NPS).
+ * @description promoter = 9-10, passive = 7-8, detractor = 0-6.
+ */
+export type NpsBand = 'promoter' | 'passive' | 'detractor';
 
 // ============================================================================
 // Survey API Request Interfaces
