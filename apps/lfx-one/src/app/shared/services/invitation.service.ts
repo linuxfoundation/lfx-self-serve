@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, tap } from 'rxjs';
+import { catchError, finalize, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
  * Shared client for the current user's pending committee invitations.
@@ -40,30 +40,42 @@ export class InvitationService {
    */
   private readonly resolvedStash = new Map<string, PendingInvitation>();
 
+  /** In-flight load shared across concurrent callers (dashboard Me-lens + group-page) to dedupe the GET. */
+  private inFlightLoad: Observable<PendingInvitation[]> | null = null;
+
   /**
    * Loads the user's pending invitations and tees the result into {@link pendingInvitations}.
-   * Degrades to an empty list on error so neither surface breaks.
+   * Degrades to an empty list on error so neither surface breaks. Concurrent callers (the Me-lens
+   * dashboard and a direct group navigation can both trigger a load) share one in-flight request.
    */
   public loadPendingInvitations(): Observable<PendingInvitation[]> {
-    return this.http.get<PendingInvitation[]>('/api/user/pending-invitations').pipe(
+    if (this.inFlightLoad) {
+      return this.inFlightLoad;
+    }
+    this.inFlightLoad = this.http.get<PendingInvitation[]>('/api/user/pending-invitations').pipe(
       tap((invitations) => this.pendingInvitations.set(invitations)),
       catchError(() => {
         // Clear the cache so a failed refresh can't leave stale invitations rendered on either
         // surface (matches the "degrades to an empty list on error" contract above).
         this.pendingInvitations.set([]);
-        return of([]);
-      })
+        return of([] as PendingInvitation[]);
+      }),
+      finalize(() => {
+        this.inFlightLoad = null;
+      }),
+      shareReplay(1)
     );
+    return this.inFlightLoad;
   }
 
   /** Accepts an invitation. Upstream is invitee-authenticated; returns 204. */
   public acceptInvitation(committeeUid: string, inviteUid: string): Observable<void> {
-    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/accept`, {}).pipe(take(1));
+    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/accept`, {});
   }
 
   /** Declines an invitation. Upstream is invitee-authenticated; returns 204. */
   public declineInvitation(committeeUid: string, inviteUid: string): Observable<void> {
-    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/decline`, {}).pipe(take(1));
+    return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/decline`, {});
   }
 
   /**

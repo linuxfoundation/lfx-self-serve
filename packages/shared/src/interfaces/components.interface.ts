@@ -511,6 +511,8 @@ export interface PendingActionItem {
   committeeUid?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
+  /** Invitation title text up to (and excluding) the group name (set on Invitation action types), e.g. "You've been invited to " — built alongside `text` so the UI can link just the group name without runtime string-splitting. */
+  inviteTitlePrefix?: string;
 }
 
 /**
@@ -544,8 +546,6 @@ export interface DecoratedPendingAction extends PendingActionItem {
   voteUsesDrawer: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
-  /** Invitation title text up to (and excluding) the group name — derived from `text` so the inline list renders the same copy as the drawer while linking just the group name. */
-  inviteTitlePrefix: string;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */

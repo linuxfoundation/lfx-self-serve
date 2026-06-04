@@ -32,6 +32,19 @@
             <span>View meeting details</span>
           </a>
         }
+      </div>
+    </div>
+  </ng-template>
+</p-toast>
+
+<!-- Dedicated toast for the deferred-decline Undo, on its own key so clearing it on Undo can't dismiss
+     unrelated RSVP/vote/meeting toasts that share the 'pending-actions-toast' key. -->
+<p-toast [key]="undoToastKey" position="top-right" styleClass="pending-actions-toast">
+  <ng-template let-message pTemplate="message">
+    <div class="flex items-start gap-3 w-full">
+      <i class="fa-light fa-circle-info text-blue-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+      <div class="flex flex-col gap-1 min-w-0 flex-1">
+        <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
         @if (message.data?.undoInviteUid) {
           <button
             type="button"

@@ -6,12 +6,11 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
 import { RouterLink } from '@angular/router';
+import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { InvitationService } from '@services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { take } from 'rxjs';
-
-import { InvitationSubtextPipe } from '../../../../shared/pipes/invitation-subtext.pipe';
 
 /** Window before a declined invite is actually sent upstream, during which the user can undo. */
 const DECLINE_UNDO_MS = 5000;

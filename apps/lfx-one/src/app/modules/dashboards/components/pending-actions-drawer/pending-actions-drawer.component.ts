@@ -230,7 +230,8 @@ export class PendingActionsDrawerComponent {
           const meetingLoadFailed = !!item.meetingUid && failed.has(item.meetingUid);
           const isRsvpInline = item.type === 'RSVP' && !!item.meetingUid && !meetingLoadFailed;
           const isVoteInline = item.type === 'Vote' && !!item.voteUid;
-          const isInvitation = item.type === 'Invitation' && !!item.inviteUid;
+          // Require committeeUid too — Accept/Decline delegate to the parent which calls the API with it.
+          const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
           const inviteGroupName = item.inviteGroupName ?? item.badge;
           return {
             ...item,

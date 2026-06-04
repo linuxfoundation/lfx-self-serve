@@ -35,12 +35,14 @@ export function formatInviteExpiry(expiresAt: string | null | undefined): string
 export function buildInvitationActions(invitations: PendingInvitation[]): PendingActionItem[] {
   return invitations.map((invitation) => {
     const expiry = formatInviteExpiry(invitation.expires_at);
+    // Build the title and its prefix from the same inputs so the UI can link just the group name
+    // without runtime string-splitting (`text` = `${prefix}${committee_name}`).
+    const titlePrefix = invitation.inviter_name ? `${invitation.inviter_name} invited you to ` : `You've been invited to `;
     return {
       type: 'Invitation',
       badge: invitation.project_name || invitation.committee_name,
-      text: invitation.inviter_name
-        ? `${invitation.inviter_name} invited you to ${invitation.committee_name}`
-        : `You've been invited to ${invitation.committee_name}`,
+      text: `${titlePrefix}${invitation.committee_name}`,
+      inviteTitlePrefix: titlePrefix,
       icon: PENDING_ACTION_BUTTON_ICON.Invitation,
       severity: PENDING_ACTION_SEVERITY.Invitation,
       buttonText: 'Accept',

@@ -19,6 +19,7 @@ import { buildInvitationSubtext, formatInviteExpiry } from '@lfx-one/shared/util
  */
 @Pipe({
   name: 'invitationSubtext',
+  standalone: true,
 })
 export class InvitationSubtextPipe implements PipeTransform {
   public transform(invitation: PendingInvitation): string {

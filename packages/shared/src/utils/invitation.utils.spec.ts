@@ -51,6 +51,14 @@ describe('buildInvitationActions', () => {
     expect(action.text).toBe('Nirav Patel invited you to PyTorch TSC');
   });
 
+  it('sets inviteTitlePrefix to the title minus the group name (so the UI links just the name without parsing)', () => {
+    expect(buildInvitationActions([invitation()])[0].inviteTitlePrefix).toBe("You've been invited to ");
+    expect(buildInvitationActions([invitation({ inviter_name: 'Nirav Patel' })])[0].inviteTitlePrefix).toBe('Nirav Patel invited you to ');
+    // text === prefix + committee_name
+    const [a] = buildInvitationActions([invitation()]);
+    expect(a.text).toBe(`${a.inviteTitlePrefix}PyTorch TSC`);
+  });
+
   it('omits the date when the invite carries no expiry', () => {
     expect(buildInvitationActions([invitation()])[0].date).toBeUndefined();
   });

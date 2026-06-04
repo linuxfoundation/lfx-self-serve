@@ -25,6 +25,10 @@ import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, P
 /** Deferred-undo window (ms) before an optimistic decline is committed upstream. */
 const INVITE_DECLINE_UNDO_MS = 5000;
 
+/** Dedicated toast key for the decline Undo, isolated from the shared 'pending-actions-toast' so
+ *  clearing it on Undo can't dismiss unrelated RSVP/vote/meeting toasts. */
+const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
+
 @Component({
   selector: 'lfx-pending-actions',
   imports: [
@@ -78,6 +82,8 @@ export class PendingActionsComponent {
   protected readonly pendingDecline = signal<PendingDecline | null>(null);
   // setTimeout handle for the in-flight deferred decline; cleared on undo or when the timer fires.
   private declineTimerId: ReturnType<typeof setTimeout> | null = null;
+  // Dedicated toast key for the decline Undo, exposed to the template's keyed <p-toast>.
+  protected readonly undoToastKey = INVITE_UNDO_TOAST_KEY;
 
   // Clamped display limit shared by slicing, hasMore, and skeleton-swap arrival logic — rejects NaN/Infinity, floors fractional values, default 2.
   protected readonly safeDisplayLimit: Signal<number> = this.initSafeDisplayLimit();
@@ -204,7 +210,7 @@ export class PendingActionsComponent {
     this.declineTimerId = setTimeout(() => this.fireDecline(inviteUid, committeeUid), INVITE_DECLINE_UNDO_MS);
 
     this.messageService.add({
-      key: 'pending-actions-toast',
+      key: INVITE_UNDO_TOAST_KEY,
       severity: 'info',
       summary: 'Invite declined',
       data: { undoInviteUid: inviteUid },
@@ -212,14 +218,14 @@ export class PendingActionsComponent {
     });
   }
 
-  // Undo a still-pending decline: cancel the timer, restore the row, and clear the toast.
+  // Undo a still-pending decline: cancel the timer, restore the row, and clear only the undo toast.
   protected onUndoDecline(): void {
     const pending = this.pendingDecline();
     if (!pending) return;
     this.clearDeclineTimer();
     this.invitationService.unmarkResolved(pending.inviteUid);
     this.pendingDecline.set(null);
-    this.messageService.clear('pending-actions-toast');
+    this.messageService.clear(INVITE_UNDO_TOAST_KEY);
   }
 
   protected openDrawer(): void {
@@ -507,13 +513,10 @@ export class PendingActionsComponent {
         const isVoteLoading = !!item.voteUid && loadingVoteUids.has(item.voteUid);
         const isVoteInlineExpanded = isVoteInline && expandedVoteKey === rowKey;
         const voteUsesDrawerVal = !!vote && this.voteUsesDrawer(vote);
-        const isInvitation = item.type === 'Invitation' && !!item.inviteUid;
+        // Require committeeUid too — the invitation branch builds a routerLink to /groups/:committeeUid
+        // and calls accept/decline with it, so a row missing it would render /groups/undefined.
+        const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
         const inviteGroupName = item.inviteGroupName ?? item.badge;
-        // Render the title from the backend-built `text` (e.g. "You've been invited to {Group}") with
-        // the group name split off as a link — keeps the inline list and the drawer copy in sync and
-        // surfaces inviter context automatically if upstream ever provides it.
-        const nameIdx = item.text.lastIndexOf(inviteGroupName);
-        const inviteTitlePrefix = nameIdx >= 0 ? item.text.slice(0, nameIdx) : item.text;
         return {
           ...item,
           rowKey,
@@ -529,7 +532,6 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
-          inviteTitlePrefix,
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
           declineAriaLabel: `Decline invite to ${inviteGroupName}`,
         };
