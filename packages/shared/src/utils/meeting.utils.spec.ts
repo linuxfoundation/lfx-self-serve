@@ -8,8 +8,9 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { PastMeeting } from '../interfaces';
-import { sortPastMeetingsDescending } from './meeting.utils';
+import { RecurrenceType } from '../enums';
+import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting } from '../interfaces';
+import { buildRecurrenceSummary, resolveOccurrenceRecurrence, sortPastMeetingsDescending } from './meeting.utils';
 
 /**
  * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
@@ -83,5 +84,54 @@ describe('sortPastMeetingsDescending', () => {
     const merged = sortPastMeetingsDescending([...page1, ...page2]);
 
     expect(uids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
+  });
+});
+
+describe('resolveOccurrenceRecurrence', () => {
+  // Top-level series rule: monthly on the 1st Thursday (the original, intentionally-stale cadence).
+  const monthly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_week: 1, monthly_week_day: 5 };
+  // Per-occurrence override stamped after an all_following cadence change: quarterly on the 1st Thursday.
+  const quarterly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 3, monthly_week: 1, monthly_week_day: 5 };
+
+  const occurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
+    ({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence }) as MeetingOccurrence;
+
+  const meeting = (recurrence: MeetingRecurrence | null): Pick<Meeting, 'recurrence'> => ({ recurrence });
+
+  it('prefers the occurrence-level recurrence override when present', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly))).toBe(quarterly);
+  });
+
+  it('falls back to the top-level recurrence when the occurrence has none', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(null))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(undefined))).toBe(monthly);
+  });
+
+  it('falls back to the top-level recurrence when no occurrence is supplied', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), null)).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly))).toBe(monthly);
+  });
+
+  it('is null-safe when neither the occurrence nor the meeting carries a recurrence', () => {
+    expect(resolveOccurrenceRecurrence(meeting(null), occurrence(null))).toBeNull();
+    expect(resolveOccurrenceRecurrence(meeting(null), null)).toBeNull();
+  });
+
+  it('end-to-end label (meeting 92079944361): stale monthly top-level + quarterly occurrence override yields "Quarterly on the 1st Thursday"', () => {
+    // Mirrors the pipe: the resolved recurrence is fed to buildRecurrenceSummary after the
+    // monthly/day-of-week shape is applied. The override (repeat_interval=3) must win over the
+    // stale top-level monthly rule so the label reads "Quarterly", not "Monthly".
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly));
+    const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
+
+    expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Quarterly on the 1st Thursday');
+  });
+
+  it('end-to-end label: with no occurrence override the same surfaces still render the stale top-level "Monthly on the 1st Thursday"', () => {
+    // Documents current behaviour: without an override the label falls back to the series rule.
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(null));
+    const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
+
+    expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
   });
 });
