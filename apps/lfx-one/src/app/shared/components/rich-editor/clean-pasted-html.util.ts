@@ -37,7 +37,11 @@ function unwrapGoogleDocsWrapper(body: HTMLElement): void {
 // to flush-left and loses its visual relationship to the bullet. Move such paragraphs into the last <li>
 // of the preceding list while inline styles are still readable.
 function absorbListContinuationParagraphs(body: HTMLElement): void {
-  const lists = Array.from(body.querySelectorAll<HTMLElement>('ul, ol'));
+  // Walk deepest list first. If we processed outer-then-inner and the outer absorbed a paragraph
+  // into its last <li>, that paragraph would become a sibling of any nested inner list inside that
+  // <li>, and the inner list's pass could re-absorb it. Processing inner first means an inner list's
+  // nextElementSibling can only be its original sibling, never a paragraph the outer just moved in.
+  const lists = Array.from(body.querySelectorAll<HTMLElement>('ul, ol')).reverse();
 
   for (const list of lists) {
     const lastItem = list.querySelector<HTMLElement>(':scope > li:last-child');
@@ -92,7 +96,12 @@ function readMarginLeftPt(element: Element): number {
   if (!Number.isFinite(value)) {
     return 0;
   }
-  const unit = (match[2] ?? 'px').toLowerCase();
+  // CSS requires a unit on every non-zero margin. A unitless non-zero value is malformed and
+  // could come from quirky source HTML — treat it as no indent rather than guessing pixels.
+  if (!match[2] && value !== 0) {
+    return 0;
+  }
+  const unit = (match[2] ?? 'pt').toLowerCase();
   switch (unit) {
     case 'pt':
       return value;
@@ -131,6 +140,11 @@ function isEmptyInlineContainer(element: Element): boolean {
 
 const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
 
+// Replaced/void/embedded leaf elements carry visual content even when textContent is empty —
+// e.g. <p><img></p> is not an empty paragraph. Without this, isEmptyBlock would silently drop
+// any future content type the editor learns to render (images, media, embeds, form widgets).
+const CONTENT_LEAF_TAGS = new Set(['IMG', 'IFRAME', 'VIDEO', 'AUDIO', 'SOURCE', 'PICTURE', 'SVG', 'CANVAS', 'EMBED', 'OBJECT', 'INPUT', 'SELECT', 'TEXTAREA', 'HR']);
+
 // Google Docs (and Word) inject empty <p style="height:11pt"><span></span></p> nodes as blank-line
 // spacers between content blocks. After style/class strip, the editor's `p { margin: 0 0 0.75rem }`
 // renders each as ~14px of dead space — multiple spacers stack into the gaps the user is reporting.
@@ -158,6 +172,9 @@ function isEmptyBlock(element: Element): boolean {
   for (const child of Array.from(element.children)) {
     if (child.tagName === 'BR') {
       continue;
+    }
+    if (CONTENT_LEAF_TAGS.has(child.tagName)) {
+      return false;
     }
     if (EMPTY_BLOCK_TAGS.has(child.tagName)) {
       // A list with all-empty children would have had its children removed earlier in the
