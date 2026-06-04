@@ -187,16 +187,30 @@ export interface OrgMembershipDetailResponse {
 /**
  * One row in the Board Seats table. Carries an embedded `person` (reuses the
  * spec 015 `OrgMembershipKeyContactPerson`), the seat name, a categorical
- * `tagLabel` (distinct from seat name — e.g., "Voting Rep"), voting
- * percentage, and the `isOrgEditable` boolean that drives whether the
- * Actions cell renders a pencil OR a "Why can't I edit?" link.
+ * `tagLabel` (distinct from seat name — e.g., "Voting Rep"), and the
+ * `isOrgEditable` boolean that drives whether the Actions cell renders a pencil
+ * OR a "Why can't I edit?" link.
+ *
+ * Spec 026 (live data): `votingPercentage` is removed (live `committee_member`
+ * has no percentage) in favour of the upstream `voting.status` string
+ * (`votingStatus`); `appointedBy`/`committeeCategory`/`committeeUid`/`memberUid`
+ * mirror the upstream seat for edit-gating, grouping, and reassignment.
  */
 export interface BoardSeat {
   seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
   person: OrgMembershipKeyContactPerson;
   seatName: string;
   tagLabel: string;
-  votingPercentage: number | null;
+  /** Upstream committee category — "Board" rows render in the Board subsection (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string, e.g. "Voting Rep" / "Non-voting" (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
   isOrgEditable: boolean;
   reason: string | null;
 }
@@ -207,13 +221,26 @@ export interface BoardSeat {
  * person's role within the committee — e.g., "Chair", "Member"), and
  * `tagLabel` is OMITTED (the Role column AND the Reassign modal pill both
  * source from `role` directly per spec 016 Q1 round 3 clarification).
+ *
+ * Spec 026 (live data): same field changes as `BoardSeat` —
+ * `votingPercentage` → `votingStatus`, plus `appointedBy`/`committeeCategory`/
+ * `committeeUid`/`memberUid`.
  */
 export interface CommitteeSeat {
   seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
   person: OrgMembershipKeyContactPerson;
   committeeName: string;
   role: string;
-  votingPercentage: number | null;
+  /** Upstream committee category (Board vs other) (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
   isOrgEditable: boolean;
   reason: string | null;
 }
@@ -228,6 +255,24 @@ export interface VotingRecord {
   outcome: string;
 }
 
+/** Spec 026: one seat row as returned by committee-service `GET /committees/b2b-org/{uid}/seats` (flat upstream DTO). */
+export interface CommitteeServiceOrgSeat {
+  uid: string;
+  committee_uid: string;
+  committee_name: string;
+  committee_category: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  job_title?: string | null;
+  role_name: string;
+  voting_status: string;
+  appointed_by: string;
+  organization_id: string;
+  is_org_editable: boolean;
+  reason?: string | null;
+}
+
 /** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/board-seats`. */
 export interface OrgMembershipBoardSeatsResponse {
   accountId: string;
@@ -240,6 +285,21 @@ export interface OrgMembershipCommitteeSeatsResponse {
   accountId: string;
   foundationId: string;
   committeeSeats: CommitteeSeat[];
+}
+
+/** Spec 026: body for the BFF reassign proxy `PATCH …/committee-seats/:seatId/reassign`. */
+export interface ReassignCommitteeSeatRequest {
+  committeeUid: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+/** Spec 026: response envelope for the reassign proxy — the reassigned seat (board or committee). */
+export interface OrgMembershipReassignSeatResponse {
+  accountId: string;
+  foundationId: string;
+  seat: BoardSeat | CommitteeSeat;
 }
 
 /** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/voting-history`. */

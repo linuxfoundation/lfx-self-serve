@@ -4,73 +4,151 @@
 import type {
   BoardSeat,
   CommitteeSeat,
+  CommitteeServiceOrgSeat,
   OrgMembershipBoardSeatsResponse,
   OrgMembershipCommitteeSeatsResponse,
+  OrgMembershipKeyContactPerson,
+  OrgMembershipReassignSeatResponse,
   OrgMembershipVotingHistoryResponse,
-  VotingRecord,
+  ReassignCommitteeSeatRequest,
 } from '@lfx-one/shared/interfaces';
+import { Request } from 'express';
 
-import sharedFixture from './fixtures/org-membership-board-committee.mock.json';
+import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * Shared mock Board & Committee payload for all three SSR endpoints (spec 016
- * FR-009a / FR-009c / FR-010 / FR-010a). Loaded once at module-load via
- * TypeScript JSON module import — every call returns the same arrays for any
- * requested `foundationId` in v1. Only the `accountId` and `foundationId`
- * envelope fields adapt per-request.
- *
- * FR-009e (future): the three GETs will eventually proxy to:
- *   - GET /memberships/{uid}/board_seats?v=1     on lfx-v2-member-service
- *   - GET /memberships/{uid}/committee_seats?v=1 on lfx-v2-member-service
- *   - GET /memberships/{uid}/voting_history?v=1  on lfx-v2-vote-service (TBD)
- * The SSR boundary transformation step (FR-009e2) will convert flat snake_case
- * arrays to the camelCase shapes this service returns today.
- *
- * FR-009-mock-realism: this file MUST NOT contain (and currently does not):
- *   - mock M2M JWT acquisition or getM2mToken() stub
- *   - synthesized per-call latency (setTimeout/delay/Promise(resolve))
- *   - would-be upstream URL logging
- *   - Server-Timing response header
- *   - retry-with-backoff stub
- *   - mock-mode flag / if (mockMode) branch
- * Also no SnowflakeService import, no HTTP egress, no network I/O of any kind.
+ * Board & Committee tab service (spec 026, live data). Board/committee reads proxy to committee-service
+ * `GET /committees/b2b-org/{orgUid}/seats` (user token → Heimdall `b2b_org#auditor`), splitting Board
+ * vs other by `committee_category` (FR-003). Voting history is deferred (D12) with no live source, so
+ * it returns an empty list. No mock fixture — committee-service owns the data.
  */
-const SHARED_FIXTURE = sharedFixture as {
-  sharedBoardSeats: BoardSeat[];
-  sharedCommitteeSeats: CommitteeSeat[];
-  sharedVotingHistory: VotingRecord[];
-};
-
-/** Three-method service for the Board & Committee tab on the Org Membership Detail page. */
 export class OrgLensBoardCommitteeService {
-  /**
-   * Returns the board seats for the given foundation. In v1 mock, returns the
-   * same shared fixture regardless of `foundationId` (FR-009c). `accountId`
-   * and `foundationId` are echoed back in the envelope per FR-009d.
-   */
-  public getBoardSeats(accountId: string, foundationId: string): OrgMembershipBoardSeatsResponse {
-    return {
-      accountId,
-      foundationId,
-      boardSeats: structuredClone(SHARED_FIXTURE.sharedBoardSeats),
-    };
+  private readonly microserviceProxy: MicroserviceProxyService;
+
+  public constructor() {
+    this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Same v1-mock semantics as `getBoardSeats` for committee seats. */
-  public getCommitteeSeats(accountId: string, foundationId: string): OrgMembershipCommitteeSeatsResponse {
-    return {
-      accountId,
-      foundationId,
-      committeeSeats: structuredClone(SHARED_FIXTURE.sharedCommitteeSeats),
-    };
+  /** Board seats: live committee-service seats with `committee_category === "Board"`. */
+  public async getBoardSeats(req: Request, accountId: string, foundationId: string): Promise<OrgMembershipBoardSeatsResponse> {
+    const seats = await this.fetchOrgSeats(req, accountId);
+    const boardSeats = seats.filter((s) => s.committee_category === 'Board').map((s) => this.toBoardSeat(s));
+    return { accountId, foundationId, boardSeats };
   }
 
-  /** Same v1-mock semantics; voting history is read-only and never refetched after a Reassign (FR-008j). */
+  /** Committee seats: live committee-service seats with `committee_category !== "Board"`. */
+  public async getCommitteeSeats(req: Request, accountId: string, foundationId: string): Promise<OrgMembershipCommitteeSeatsResponse> {
+    const seats = await this.fetchOrgSeats(req, accountId);
+    const committeeSeats = seats.filter((s) => s.committee_category !== 'Board').map((s) => this.toCommitteeSeat(s));
+    return { accountId, foundationId, committeeSeats };
+  }
+
+  /** Voting history is deferred (D12) with no live source — returns an empty list. */
   public getVotingHistory(accountId: string, foundationId: string): OrgMembershipVotingHistoryResponse {
+    return { accountId, foundationId, votingHistory: [] };
+  }
+
+  /** Reassign a Membership-Entitlement seat (FR-006/FR-007): always proxies to committee-service (user token → Heimdall `b2b_org#writer`; entitlement guard upstream). */
+  public async reassignSeat(
+    req: Request,
+    accountId: string,
+    foundationId: string,
+    seatId: string,
+    body: ReassignCommitteeSeatRequest
+  ): Promise<OrgMembershipReassignSeatResponse> {
+    const upstreamPath = `/committees/b2b-org/${accountId}/seats/${seatId}/reassign`;
+    logger.debug(req, 'reassign_committee_seat_proxy', 'Proxying reassign to committee-service', {
+      org_uid: accountId,
+      seat_id: seatId,
+      committee_uid: body.committeeUid,
+      upstream_path: upstreamPath,
+    });
+    const upstream = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat>(
+      req,
+      'LFX_V2_SERVICE',
+      upstreamPath,
+      'PUT',
+      { v: '1' },
+      {
+        committee_uid: body.committeeUid,
+        first_name: body.firstName,
+        last_name: body.lastName,
+        email: body.email,
+      }
+    );
+    const seat = upstream.committee_category === 'Board' ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
+    logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
+      org_uid: accountId,
+      seat_id: seat.seatId,
+      committee_category: upstream.committee_category,
+    });
+    return { accountId, foundationId, seat };
+  }
+
+  /** Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`). */
+  private async fetchOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+    // TODO(spec 026 T014): resolve the project family (ProjectService.getFoundationProjectUids) and pass
+    // project_uids so committee-service scopes seats to the foundation root + descendants; currently
+    // org-only scope (committee-service filters by organization_id + any project_uids it receives).
+    const upstreamPath = `/committees/b2b-org/${orgUid}/seats`;
+    logger.debug(req, 'get_org_committee_seats_proxy', 'Proxying org committee seats read to committee-service', {
+      org_uid: orgUid,
+      upstream_path: upstreamPath,
+    });
+    const seats = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat[]>(req, 'LFX_V2_SERVICE', upstreamPath, 'GET', {
+      v: '1',
+    });
+    logger.debug(req, 'get_org_committee_seats_proxy', 'committee-service returned org committee seats', {
+      org_uid: orgUid,
+      seat_count: seats?.length ?? 0,
+    });
+    return seats ?? [];
+  }
+
+  private toBoardSeat(s: CommitteeServiceOrgSeat): BoardSeat {
     return {
-      accountId,
-      foundationId,
-      votingHistory: structuredClone(SHARED_FIXTURE.sharedVotingHistory),
+      seatId: s.uid,
+      memberUid: s.uid,
+      committeeUid: s.committee_uid,
+      person: this.toPerson(s),
+      seatName: s.committee_name,
+      tagLabel: s.voting_status,
+      committeeCategory: s.committee_category,
+      votingStatus: s.voting_status,
+      appointedBy: s.appointed_by,
+      isOrgEditable: s.is_org_editable,
+      reason: s.reason ?? null,
+    };
+  }
+
+  private toCommitteeSeat(s: CommitteeServiceOrgSeat): CommitteeSeat {
+    return {
+      seatId: s.uid,
+      memberUid: s.uid,
+      committeeUid: s.committee_uid,
+      person: this.toPerson(s),
+      committeeName: s.committee_name,
+      role: s.role_name,
+      committeeCategory: s.committee_category,
+      votingStatus: s.voting_status,
+      appointedBy: s.appointed_by,
+      isOrgEditable: s.is_org_editable,
+      reason: s.reason ?? null,
+    };
+  }
+
+  private toPerson(s: CommitteeServiceOrgSeat): OrgMembershipKeyContactPerson {
+    const fullName = `${s.first_name} ${s.last_name}`.trim();
+    const initials = `${s.first_name.charAt(0)}${s.last_name.charAt(0)}`.toUpperCase();
+    return {
+      personId: s.uid,
+      firstName: s.first_name,
+      lastName: s.last_name,
+      fullName,
+      email: s.email,
+      jobTitle: s.job_title ?? null,
+      initials,
     };
   }
 }
