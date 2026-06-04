@@ -131,7 +131,7 @@ export class OrgLensTrainingService {
         ${searchFilter}
         ${levelFilter}
       ORDER BY ${sortField} ${sortOrder}, b.COURSE_NAME ASC
-      LIMIT ${pageSize} OFFSET ${offset}
+      LIMIT ${Number(pageSize)} OFFSET ${Number(offset)}
     `;
 
     const binds: string[] = [accountId];
