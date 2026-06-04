@@ -3,7 +3,7 @@
 
 <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); onSubmit()" novalidate data-testid="add-card-form">
   @if (isStripeKeySet()) {
-    <p class="text-sm font-medium text-gray-700">Add a payment card to your account</p>
+    <p class="text-sm font-medium text-gray-700">Add a payment card to your account.</p>
   } @else {
     <p class="text-sm font-medium text-gray-700">Stripe is not available. Please try again later.</p>
   }
