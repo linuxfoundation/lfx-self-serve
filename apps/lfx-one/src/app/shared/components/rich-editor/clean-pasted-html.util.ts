@@ -59,11 +59,16 @@ function walkAndClean(root: Element): void {
       }
     }
 
-    // Drop every data-* attribute (GDocs leaves data-pm-slice and friends).
+    // Drop every data-* attribute (GDocs leaves data-pm-slice and friends) and any
+    // inline event handler (on*) that could execute script from pasted content.
     for (const attr of Array.from(node.attributes)) {
-      if (attr.name.startsWith('data-')) {
+      if (attr.name.startsWith('data-') || /^on/i.test(attr.name)) {
         node.removeAttribute(attr.name);
       }
+    }
+
+    if (tag === 'A' && node.hasAttribute('href') && !/^(https?:\/\/|mailto:)/i.test(node.getAttribute('href') ?? '')) {
+      node.removeAttribute('href');
     }
   }
 

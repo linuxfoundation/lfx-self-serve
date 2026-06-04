@@ -173,7 +173,7 @@ export class RichEditorComponent {
           return;
         }
         if (control.value !== html) {
-          control.setValue(html, { emitEvent: false });
+          control.setValue(html);
           control.markAsDirty();
         }
         this.refreshActiveStates();
