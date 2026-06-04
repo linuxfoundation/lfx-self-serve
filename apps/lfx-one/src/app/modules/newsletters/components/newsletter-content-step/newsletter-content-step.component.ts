@@ -4,9 +4,9 @@
 import { Component, computed, DestroyRef, inject, input, model, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { EditorComponent } from '@components/editor/editor.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { GenerateNewsletterResponse, NewsletterContextType } from '@lfx-one/shared/interfaces';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -16,7 +16,7 @@ import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer
 
 @Component({
   selector: 'lfx-newsletter-content-step',
-  imports: [ReactiveFormsModule, EditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
+  imports: [ReactiveFormsModule, RichEditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
   templateUrl: './newsletter-content-step.component.html',
 })
 export class NewsletterContentStepComponent {
@@ -26,7 +26,10 @@ export class NewsletterContentStepComponent {
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
-  public readonly contextType = input.required<NewsletterContextType>();
+  // contextType is retained because the AI prompt template references it for
+  // tonal cues; the newsletter feature itself is project-only at the API
+  // boundary.
+  public readonly contextType = input<'foundation' | 'project'>('project');
   public readonly contextName = input.required<string>();
   public readonly hasContext = input<boolean>(false);
   public readonly savedLabel = input<string | null>(null);
@@ -52,6 +55,7 @@ export class NewsletterContentStepComponent {
     const hasBody = this.bodyFilled();
     if (hasSubject || hasBody) {
       this.confirmationService.confirm({
+        key: 'newsletter-content-step',
         header: 'Replace existing content?',
         message: 'This will overwrite your current subject and body with the AI-generated newsletter. You can still edit the result before sending.',
         icon: 'pi pi-exclamation-triangle',

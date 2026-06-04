@@ -147,25 +147,20 @@ test.describe('Org Membership Detail — modal save flows + toasts', () => {
     await expect(page.getByTestId('key-contact-toast-success-added')).toBeVisible();
   });
 
-  test('Remove flow shows the interactive Undo toast and undo restores the row', async ({ page }) => {
+  test('Remove flow shows the removed toast and drops the row (no undo)', async ({ page }) => {
     await page.getByTestId('membership-detail-key-contacts-edit-billing').click();
     await page.getByTestId('edit-key-contact-chooser-remove').click();
     await page.getByTestId('edit-key-contact-remove-candidate-agl-kc-bill-1').click();
     await page.getByTestId('edit-key-contact-primary-button').click();
     await expect(page.getByTestId('edit-key-contact-modal')).not.toBeVisible({ timeout: 5_000 });
 
-    // Interactive Undo toast (FR-016g)
+    // "Key contact removed" toast — Undo was removed, so no undo button.
     await expect(page.getByTestId('key-contact-toast-remove')).toBeVisible();
-    await expect(page.getByTestId('key-contact-toast-undo')).toBeVisible();
-    // Row should now have only 1 person
+    await expect(page.getByTestId('key-contact-toast-undo')).toHaveCount(0);
+    // Row should now have only 1 person, and the removal is not reversible from the toast.
     const billingRow = page.getByTestId('membership-detail-key-contacts-row-billing');
     await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-1')).not.toBeVisible();
     await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-2')).toBeVisible();
-
-    // Undo
-    await page.getByTestId('key-contact-toast-undo').click();
-    await expect(page.getByTestId('key-contact-toast-undone')).toBeVisible();
-    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-1')).toBeVisible();
   });
 
   test('in-row duplicate Email blocks Save with inline error (FR-016f)', async ({ page }) => {

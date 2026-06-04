@@ -28,6 +28,10 @@ The LFX One frontend is built with Angular 20 using stable zoneless change detec
 
 ## 📋 Documentation Sections
 
+### [Persona × Lens Content Matrix](./persona-content-matrix.md)
+
+See which sidebar links and pages each persona can access in each lens, plus route guard wiring.
+
 ### [Angular Patterns](./angular-patterns.md)
 
 Learn about Angular 20 features, zoneless change detection, and SSR configuration.

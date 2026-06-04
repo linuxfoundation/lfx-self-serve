@@ -21,7 +21,7 @@
     <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
     @if (selectedRoleLabel()) {
       <span
-        [attr.aria-label]="'Role: ' + selectedRoleLabel()"
+        [attr.aria-label]="selectedRoleTooltip() ? 'Role: ' + selectedRoleLabel() + '; ' + selectedRoleTooltip() : 'Role: ' + selectedRoleLabel()"
         class="inline-flex items-center gap-1.5 max-w-full px-2.5 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700 text-xs font-medium leading-tight truncate"
         data-testid="org-selector-trigger-role-badge"
         [attr.data-role-persona]="selectedRolePersona()"
@@ -110,8 +110,15 @@
               @if (displayItem.roleLabel) {
                 <span
                   class="inline-flex items-center gap-1.5 mt-1 max-w-full px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700 text-xs font-medium leading-tight truncate"
+                  [attr.aria-label]="
+                    displayItem.roleTooltip ? 'Role: ' + displayItem.roleLabel + '; ' + displayItem.roleTooltip : 'Role: ' + displayItem.roleLabel
+                  "
                   [attr.data-testid]="'org-item-' + displayItem.item.uid + '-role-badge'"
-                  [attr.data-role-label]="displayItem.roleLabel">
+                  [attr.data-role-label]="displayItem.roleLabel"
+                  [attr.data-role-tooltip]="displayItem.roleTooltip || null"
+                  [pTooltip]="displayItem.roleTooltip"
+                  tooltipPosition="top"
+                  [tooltipDisabled]="!displayItem.roleTooltip">
                   <i [ngClass]="displayItem.roleIcon" class="text-[10px] shrink-0" aria-hidden="true"></i>
                   <span class="truncate">{{ displayItem.roleLabel }}</span>
                 </span>

@@ -29,6 +29,7 @@ import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switc
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
 import { VoteReviewComponent } from '../components/vote-review/vote-review.component';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
   selector: 'lfx-vote-manage',
@@ -90,6 +91,7 @@ export class VoteManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    evictOnWriteAccessLoss();
   }
 
   public nextStep(): void {

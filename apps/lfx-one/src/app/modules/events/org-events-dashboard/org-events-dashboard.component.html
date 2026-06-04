@@ -1,0 +1,176 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-events-page">
+  <!-- Page Header -->
+  <header class="flex items-start justify-between" data-testid="org-events-header">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-events-title">
+        @if (companyName()) {
+          Events &mdash; {{ companyName() }}
+        } @else {
+          Events
+        }
+      </h1>
+      <p class="text-sm text-gray-500" data-testid="org-events-subtitle">Your organization's event footprint across LF events.</p>
+    </div>
+    <lfx-discover-events-button testId="org-events-discover-button" />
+  </header>
+
+  <!-- Stat Strip -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-events-stat-strip">
+    <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+      <!-- Upcoming Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        [class.bg-blue-50]="activeStatFilter() === 'upcoming'"
+        [class.ring-2]="activeStatFilter() === 'upcoming'"
+        [class.ring-inset]="activeStatFilter() === 'upcoming'"
+        [class.ring-blue-500]="activeStatFilter() === 'upcoming'"
+        [attr.aria-pressed]="activeStatFilter() === 'upcoming'"
+        (click)="applyEventsStatFilter('upcoming')"
+        data-testid="org-events-stat-upcoming"
+        aria-label="Filter by upcoming events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+          <i class="fa-light fa-calendar-plus text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.upcomingEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Upcoming Events</p>
+        </div>
+      </button>
+
+      <!-- Past Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        [class.bg-blue-50]="activeStatFilter() === 'past'"
+        [class.ring-2]="activeStatFilter() === 'past'"
+        [class.ring-inset]="activeStatFilter() === 'past'"
+        [class.ring-blue-500]="activeStatFilter() === 'past'"
+        [attr.aria-pressed]="activeStatFilter() === 'past'"
+        (click)="applyEventsStatFilter('past')"
+        data-testid="org-events-stat-past"
+        aria-label="Filter by past events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+          <i class="fa-light fa-calendar-check text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.pastEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Past Events</p>
+        </div>
+      </button>
+
+      <!-- Total Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        [class.bg-blue-50]="activeStatFilter() === 'total'"
+        [class.ring-2]="activeStatFilter() === 'total'"
+        [class.ring-inset]="activeStatFilter() === 'total'"
+        [class.ring-blue-500]="activeStatFilter() === 'total'"
+        [attr.aria-pressed]="activeStatFilter() === 'total'"
+        (click)="applyEventsStatFilter('total')"
+        data-testid="org-events-stat-total"
+        aria-label="Filter by total events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+          <i class="fa-light fa-ticket text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.totalEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Total Events</p>
+        </div>
+      </button>
+    </div>
+  </lfx-card>
+
+  <!-- Filter Bar -->
+  <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="org-events-filter-bar">
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div class="flex-1 relative">
+        <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+        <label for="org-events-search-id" class="sr-only">Search events</label>
+        <input
+          id="org-events-search-id"
+          pInputText
+          type="text"
+          placeholder="Search events..."
+          class="w-full pl-9"
+          data-testid="org-events-search-input"
+          [ngModel]="searchTerm()"
+          (ngModelChange)="searchTerm.set($event)" />
+      </div>
+      <div class="w-full sm:w-48" data-testid="org-events-status-filter">
+        <label for="org-events-status-id" class="sr-only">Filter by status</label>
+        <p-select
+          inputId="org-events-status-id"
+          ariaLabel="Filter by status"
+          [options]="statusOptions"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="w-full"
+          [ngModel]="selectedStatus()"
+          (ngModelChange)="selectedStatus.set($event)" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab Strip -->
+  <div
+    role="tablist"
+    aria-label="Events sections"
+    class="flex items-center gap-1 border-b border-gray-200 overflow-x-auto"
+    data-testid="org-events-tab-bar"
+    (keydown)="onTabKeydown($event)">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
+        [id]="'org-events-tab-' + tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-controls]="'org-events-panel-' + tab.id"
+        [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+        [attr.data-testid]="'org-events-tab-' + tab.id"
+        [class.border-blue-600]="activeTab() === tab.id"
+        [class.text-blue-600]="activeTab() === tab.id"
+        [class.border-transparent]="activeTab() !== tab.id"
+        [class.text-gray-500]="activeTab() !== tab.id"
+        [class.hover:text-gray-700]="activeTab() !== tab.id"
+        (click)="switchTab(tab.id)">
+        <i [class]="tab.icon" aria-hidden="true"></i>
+        {{ tab.label }}
+      </button>
+    }
+  </div>
+
+  <!-- Tab Panels -->
+  @if (activeTab() === 'upcoming') {
+    <section role="tabpanel" id="org-events-panel-upcoming" aria-labelledby="org-events-tab-upcoming" data-testid="org-events-panel-upcoming">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-calendar-plus"
+        title="Coming soon"
+        subtitle="Upcoming events for your organization are being built. Check back later."
+        data-testid="org-events-upcoming-coming-soon" />
+    </section>
+  }
+
+  @if (activeTab() === 'past') {
+    <section role="tabpanel" id="org-events-panel-past" aria-labelledby="org-events-tab-past" data-testid="org-events-panel-past">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-calendar-check"
+        title="Coming soon"
+        subtitle="Past events for your organization are being built. Check back later."
+        data-testid="org-events-past-coming-soon" />
+    </section>
+  }
+</main>

@@ -28,11 +28,13 @@
             <th><span class="text-sm font-inter text-gray-500">Username</span></th>
             <th><span class="text-sm font-inter text-gray-500">Email</span></th>
             <th><span class="text-sm font-inter text-gray-500">Role</span></th>
-            <th class="text-center">
-              <div class="flex justify-center">
-                <span class="text-sm font-inter text-gray-500">Actions</span>
-              </div>
-            </th>
+            @if (canWrite()) {
+              <th class="text-center">
+                <div class="flex justify-center">
+                  <span class="text-sm font-inter text-gray-500">Actions</span>
+                </div>
+              </th>
+            }
           </tr>
         </ng-template>
 
@@ -73,26 +75,28 @@
               </span>
             </td>
 
-            <!-- Actions Column -->
-            <td class="text-right relative">
-              <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
-              <lfx-button
-                [icon]="isRemoving() === (user.username || user.email) ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
-                [text]="true"
-                [rounded]="true"
-                size="small"
-                severity="secondary"
-                [disabled]="isRemoving() === (user.username || user.email)"
-                (onClick)="toggleUserActionMenu($event, user, userActionMenu)"
-                data-testid="user-actions-menu">
-              </lfx-button>
-            </td>
+            @if (canWrite()) {
+              <!-- Actions Column -->
+              <td class="text-right relative">
+                <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+                <lfx-button
+                  [icon]="isRemoving() === (user.username || user.email) ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
+                  [text]="true"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  [disabled]="isRemoving() === (user.username || user.email)"
+                  (onClick)="toggleUserActionMenu($event, user, userActionMenu)"
+                  data-testid="user-actions-menu">
+                </lfx-button>
+              </td>
+            }
           </tr>
         </ng-template>
 
         <ng-template #emptymessage>
           <tr>
-            <td colspan="6" class="text-center py-8">
+            <td [attr.colspan]="canWrite() ? 6 : 5" class="text-center py-8">
               <div class="text-center py-8 text-gray-500">
                 <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
                 <h3 class="text-lg font-medium text-gray-900 mb-2">No User Permissions</h3>

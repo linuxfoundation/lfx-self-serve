@@ -16,6 +16,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 import { CommitteeBasicInfoComponent } from '../components/committee-basic-info/committee-basic-info.component';
 import { CommitteeCategorySelectionComponent } from '../components/committee-category-selection/committee-category-selection.component';
@@ -89,6 +90,7 @@ export class CommitteeManageComponent {
   public readonly committeeLabelPlural = COMMITTEE_LABEL.plural;
 
   public constructor() {
+    evictOnWriteAccessLoss();
     // Initialize step based on mode
     this.currentStep = toSignal(
       this.route.queryParamMap.pipe(

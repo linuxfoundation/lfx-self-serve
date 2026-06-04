@@ -24,7 +24,7 @@ export interface MarketingImpactTabOption {
 }
 
 /** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
-export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'lfxPlatform' | 'projectWebsites';
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'projectWebsites';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
 export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';

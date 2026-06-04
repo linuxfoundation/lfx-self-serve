@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgAccessBadgeState } from './org-lens-access.interface';
+
 /** Tab identifier for the Org People page tab strip. */
-export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training';
+export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
 
 /** Tab definition for the Org People page. */
 export interface PeopleTabConfig {
@@ -57,6 +59,18 @@ export interface OrgAllEmployeeRow {
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];
+}
+
+/** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
+export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
+  initials: string;
+  avatarColorClass: string;
+  /** Org Lens access for the current org, or `null` when the employee has no access record. Drives the access cell badge. */
+  access: OrgAccessBadgeState | null;
+  /** `true` when this row was synthesised from the access roster (no detected activity, no detail to fetch). */
+  isSynthetic: boolean;
+  /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
+  rowClass: string;
 }
 
 /** Account-level engagement totals for the 5 stat cards above the table. */

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="220" viewBox="0 0 72 220" role="img" aria-label="LFX left navigation rail with the Organizations tab highlighted">
+  <title>LFX left navigation rail with the Organizations tab highlighted</title>
+
+  <!-- Rail background -->
+  <rect width="72" height="220" rx="10" fill="#1B2A45"/>
+
+  <!-- LF brand mark -->
+  <rect x="20" y="12" width="32" height="32" rx="6" fill="#3B82F6"/>
+  <rect x="26" y="18" width="12" height="12" rx="2" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="30" y="23" width="12" height="12" rx="2" fill="#FFFFFF" opacity="0.5"/>
+
+  <!-- Divider -->
+  <rect x="16" y="52" width="40" height="1" rx="0.5" fill="#FFFFFF" opacity="0.15"/>
+
+  <!-- Me -->
+  <circle cx="36" cy="80" r="11" fill="none" stroke="#A5B4FC" stroke-width="1.5"/>
+  <circle cx="36" cy="77" r="4" fill="#A5B4FC"/>
+  <path d="M27 91 Q27 86 36 86 Q45 86 45 91" fill="#A5B4FC"/>
+  <text x="36" y="103" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8" fill="#A5B4FC" font-weight="500">Me</text>
+
+  <!-- Projects -->
+  <path d="M24 130 L36 124 L48 130 L36 136 Z" fill="none" stroke="#A5B4FC" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M24 137 L36 143 L48 137" fill="none" stroke="#A5B4FC" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M24 143 L36 149 L48 143" fill="none" stroke="#A5B4FC" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="36" y="161" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8" fill="#A5B4FC" font-weight="500">Projects</text>
+
+  <!-- Organizations (highlighted) -->
+  <rect x="20" y="172" width="32" height="32" rx="8" fill="#3B9CF4"/>
+  <rect x="26" y="178" width="8" height="8" rx="1.5" fill="#FFFFFF"/>
+  <rect x="38" y="178" width="8" height="8" rx="1.5" fill="#FFFFFF"/>
+  <rect x="26" y="190" width="8" height="8" rx="1.5" fill="#FFFFFF"/>
+  <rect x="38" y="190" width="8" height="8" rx="1.5" fill="#FFFFFF"/>
+  <text x="36" y="216" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8" fill="#7DD3FC" font-weight="500">Organiz.</text>
+</svg>

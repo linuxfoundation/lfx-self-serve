@@ -25,7 +25,10 @@ export enum NatsSubjects {
   PERSONAS_GET = 'lfx.personas-api.get',
   IMPERSONATION_TOKEN_EXCHANGE = 'lfx.auth-service.impersonation.token_exchange',
   INVITE_ACCEPTED = 'lfx.invite.accepted',
-  EMAIL_SERVICE_SEND_EMAIL = 'lfx.email-service.send_email',
-  EMAIL_SERVICE_GET_EMAIL_STATUS = 'lfx.email-service.get_email_status',
-  EMAIL_SERVICE_GET_EMAIL_ENGAGEMENT_ANALYTICS = 'lfx.email-service.get_email_engagement_analytics',
+  // Alias claim (auth-service) — claims <alias>@<domain> as a system-managed linked identity
+  ADD_ALIAS = 'lfx.auth-service.add_alias',
+  // Email forwarding (forwards-service) — stateless proxy to forwardemail.net
+  FORWARDS_CHECK_ALIAS = 'lfx.forwards-service.check_alias',
+  FORWARDS_SET_TARGET = 'lfx.forwards-service.set_target',
+  FORWARDS_GET_FORWARD = 'lfx.forwards-service.get_forward',
 }

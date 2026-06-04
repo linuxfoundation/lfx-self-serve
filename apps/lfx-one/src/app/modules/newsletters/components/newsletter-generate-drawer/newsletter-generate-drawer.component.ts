@@ -14,8 +14,10 @@ import {
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { GenerateNewsletterResponse, NewsletterContextType } from '@lfx-one/shared/interfaces';
+import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
+import { htmlClipboardToText } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { debounceTime, finalize, take } from 'rxjs';
@@ -28,11 +30,14 @@ import { debounceTime, finalize, take } from 'rxjs';
 export class NewsletterGenerateDrawerComponent {
   // === Services ===
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
-  public readonly contextType = input.required<NewsletterContextType>();
+  // contextType is retained to drive AI prompt tone (foundation vs project),
+  // independent of where the newsletter is sent from at the API.
+  public readonly contextType = input<'foundation' | 'project'>('project');
   public readonly contextName = input.required<string>();
 
   // === Model Signals (two-way) ===
@@ -108,8 +113,18 @@ export class NewsletterGenerateDrawerComponent {
     if (!this.canGenerate()) return;
     this.generating.set(true);
 
+    const projectUid = this.projectContextService.activeContextUid();
+    if (!projectUid) {
+      this.generating.set(false);
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'No project selected',
+        detail: 'Switch to a project before generating a newsletter.',
+      });
+      return;
+    }
     this.newsletterService
-      .generate({
+      .generate(projectUid, {
         rawContent: this.form.controls.rawContent.value.trim(),
         contextType: this.contextType(),
         contextName: this.contextName(),
@@ -133,6 +148,38 @@ export class NewsletterGenerateDrawerComponent {
           });
         },
       });
+  }
+
+  // Preserve hyperlinks when pasting rich content. A textarea would otherwise drop
+  // hrefs and keep only visible text, hiding URLs from the AI generator downstream.
+  protected onRawContentPaste(event: ClipboardEvent): void {
+    const html = event.clipboardData?.getData('text/html') ?? '';
+    if (!html) return;
+
+    const textarea = event.target;
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+
+    event.preventDefault();
+
+    const converted = htmlClipboardToText(html);
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const current = textarea.value;
+    const next = current.slice(0, start) + converted + current.slice(end);
+
+    const control = this.form.controls.rawContent;
+    control.setValue(next);
+    // setValue bypasses the value accessor, so dirty/touched would not flip
+    // the way a native paste does. Set them explicitly so validators that gate
+    // on touched (e.g., error display) behave consistently with manual typing.
+    control.markAsDirty();
+    control.markAsTouched();
+
+    const caret = start + converted.length;
+    queueMicrotask(() => {
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+    });
   }
 
   private restoreCustomPrompt(): void {

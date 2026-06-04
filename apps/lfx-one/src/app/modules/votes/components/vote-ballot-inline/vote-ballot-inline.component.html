@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2 w-full" data-testid="dashboard-pending-actions-vote-ballot">
+  <p class="text-xs font-medium text-gray-700">{{ question()?.prompt }}</p>
+
+  <div [formGroup]="form">
+    @if (isMultipleChoice()) {
+      <div class="flex flex-wrap gap-3">
+        @for (choice of question()?.choices ?? []; track choice.choice_id) {
+          <label class="flex items-center gap-1.5 text-xs" [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id">
+            <p-checkbox [value]="choice.choice_id" [formControlName]="question()!.question_id" [binary]="false" />
+            <span>{{ choice.choice_text }}</span>
+          </label>
+        }
+      </div>
+    } @else {
+      <div class="flex flex-wrap gap-3">
+        @for (choice of question()?.choices ?? []; track choice.choice_id) {
+          <lfx-radio-button
+            [form]="form"
+            [control]="question()!.question_id"
+            [name]="question()!.question_id"
+            [value]="choice.choice_id"
+            [inputId]="'vote-ballot-inline-choice-' + choice.choice_id"
+            [label]="choice.choice_text"
+            [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id" />
+        }
+      </div>
+    }
+  </div>
+
+  <div class="flex items-center justify-end gap-2 pt-1">
+    @if (allowAbstain()) {
+      <label class="flex items-center gap-1.5 text-xs text-gray-600" data-testid="dashboard-pending-actions-vote-abstain-label">
+        <p-checkbox [formControl]="abstainControl" [binary]="true" data-testid="dashboard-pending-actions-vote-abstain" />
+        <span>Abstain</span>
+      </label>
+    }
+    <lfx-button
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      label="Cancel"
+      (onClick)="cancelled.emit()"
+      data-testid="dashboard-pending-actions-vote-cancel" />
+    <lfx-button
+      size="small"
+      severity="primary"
+      label="Submit"
+      [disabled]="submitDisabled()"
+      [loading]="submitting()"
+      (onClick)="onSubmit()"
+      data-testid="dashboard-pending-actions-vote-submit" />
+  </div>
+</div>

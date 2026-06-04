@@ -38,7 +38,11 @@ export class NewsletterAnalyticsComponent {
 
   // === Computed (complex bodies extracted to private init* methods) ===
   protected readonly openRatePercent: Signal<number | null> = this.initOpenRatePercent();
-  protected readonly hasOpens = computed(() => (this.analytics()?.totalOpens ?? 0) > 0);
+  protected readonly hasOpens = computed(() => (this.analytics()?.total_opens ?? 0) > 0);
+  // Upstream can return a non-zero `total_opens` rollup with an empty `daily_opens`
+  // (e.g. shortly after send, before the daily bucketing job completes). Gate the
+  // chart on real per-day data so we never render an empty axis with no series.
+  protected readonly hasDailyBreakdown = computed(() => (this.analytics()?.daily_opens?.length ?? 0) > 0);
   protected readonly chartData: Signal<NewsletterChartData | null> = this.initChartData();
   protected readonly chartOptions: Signal<Record<string, unknown>> = this.initChartOptions();
 
@@ -48,18 +52,22 @@ export class NewsletterAnalyticsComponent {
       this.canRenderChart.set(true);
     }
 
+    // Read project_uid and newsletter id from the route. Both are required
+    // segments per newsletters.routes.ts, so we don't need to wait for any
+    // ambient context to hydrate — the URL carries everything we need.
     this.route.paramMap
       .pipe(
         switchMap((params) => {
           const id = params.get('id');
-          if (!id) {
+          const projectUid = params.get('projectUid');
+          if (!id || !projectUid) {
             this.loading.set(false);
-            this.loadError.set('Missing newsletter id.');
+            this.loadError.set('Missing newsletter id or project.');
             return of(null);
           }
           this.loading.set(true);
           this.loadError.set(null);
-          return this.newsletterService.getAnalytics(id).pipe(
+          return this.newsletterService.getAnalytics(projectUid, id).pipe(
             take(1),
             catchError((err: HttpErrorResponse) => {
               this.loadError.set(err?.error?.message || err?.message || 'Could not load analytics. Please try again.');
@@ -81,15 +89,19 @@ export class NewsletterAnalyticsComponent {
   }
 
   // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.
+  // Analytics is only reachable from the Sent tab, so anchor Back there explicitly.
   protected goBack(): void {
-    this.router.navigate(['list'], { relativeTo: this.route.parent });
+    this.router.navigate(['list'], {
+      relativeTo: this.route.parent,
+      queryParams: { tab: 'sent' },
+    });
   }
 
   private initOpenRatePercent(): Signal<number | null> {
     return computed(() => {
       const a = this.analytics();
       if (!a) return null;
-      return Math.round((a.openRate ?? 0) * 100);
+      return Math.round((a.open_rate ?? 0) * 100);
     });
   }
 
@@ -98,11 +110,11 @@ export class NewsletterAnalyticsComponent {
       const a = this.analytics();
       if (!a || !this.canRenderChart()) return null;
       return {
-        labels: a.dailyOpens.map((d) => d.date),
+        labels: a.daily_opens.map((d) => d.date),
         datasets: [
           {
             label: 'Total opens',
-            data: a.dailyOpens.map((d) => d.opens),
+            data: a.daily_opens.map((d) => d.opens),
             borderColor: lfxColors.blue[600],
             backgroundColor: this.alpha(lfxColors.blue[500], 0.1),
             tension: 0.3,
@@ -110,7 +122,7 @@ export class NewsletterAnalyticsComponent {
           },
           {
             label: 'Unique opens',
-            data: a.dailyOpens.map((d) => d.uniqueOpens),
+            data: a.daily_opens.map((d) => d.unique_opens),
             borderColor: lfxColors.emerald[500],
             backgroundColor: this.alpha(lfxColors.emerald[500], 0.1),
             tension: 0.3,

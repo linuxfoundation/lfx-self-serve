@@ -12,10 +12,23 @@ import { AccountContextService } from '@services/account-context.service';
 import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
 import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
+import { ContributorsComponent } from './components/contributors/contributors.component';
+import { EventAttendeesComponent } from './components/event-attendees/event-attendees.component';
+import { KeyContactsComponent } from './components/key-contacts/key-contacts.component';
+import { OrgLensAccessComponent } from './components/org-lens-access/org-lens-access.component';
+import { TraineesComponent } from './components/trainees/trainees.component';
 
 @Component({
   selector: 'lfx-org-people',
-  imports: [EmptyStateComponent, AllEmployeesComponent],
+  imports: [
+    EmptyStateComponent,
+    AllEmployeesComponent,
+    KeyContactsComponent,
+    TraineesComponent,
+    EventAttendeesComponent,
+    ContributorsComponent,
+    OrgLensAccessComponent,
+  ],
   templateUrl: './org-people.component.html',
 })
 export class OrgPeopleComponent {
@@ -36,7 +49,7 @@ export class OrgPeopleComponent {
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
-  protected readonly hasCompany = computed(() => this.accountContext.selectedAccount().accountId !== '');
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
 
   protected readonly heading: Signal<string> = computed(() => this.initHeading());
 

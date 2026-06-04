@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_ID_PATTERN, SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensMembershipsService } from '../services/org-lens-memberships.service';
@@ -17,24 +18,24 @@ export class OrgLensMembershipsController {
     this.service = new OrgLensMembershipsService();
   }
 
-  /** GET /api/orgs/:accountId/lens/memberships/active */
+  /** GET /api/orgs/:orgUid/lens/memberships/active */
   public async getActiveMemberships(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_memberships_active', {
-      account_id: accountId,
+      org_uid: orgUid,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_memberships_active');
+      assertOrgUid(orgUid, 'get_org_lens_memberships_active');
 
       const search = getStringQueryParam(req, 'search');
       const tier = getStringQueryParam(req, 'tier');
       const renewal = getStringQueryParam(req, 'renewal');
 
-      const response = await this.service.getActiveMemberships(accountId, search, tier, renewal);
+      const response = await this.service.getActiveMemberships(orgUid, search, tier, renewal);
 
       logger.success(req, 'get_org_lens_memberships_active', startTime, {
-        account_id: accountId,
+        org_uid: orgUid,
         membership_count: response.memberships.length,
       });
 
@@ -45,22 +46,22 @@ export class OrgLensMembershipsController {
     }
   }
 
-  /** GET /api/orgs/:accountId/lens/memberships/expired */
+  /** GET /api/orgs/:orgUid/lens/memberships/expired */
   public async getExpiredMemberships(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_memberships_expired', {
-      account_id: accountId,
+      org_uid: orgUid,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_memberships_expired');
+      assertOrgUid(orgUid, 'get_org_lens_memberships_expired');
 
       const search = getStringQueryParam(req, 'search');
 
-      const response = await this.service.getExpiredMemberships(accountId, search);
+      const response = await this.service.getExpiredMemberships(orgUid, search);
 
       logger.success(req, 'get_org_lens_memberships_expired', startTime, {
-        account_id: accountId,
+        org_uid: orgUid,
         membership_count: response.memberships.length,
       });
 
@@ -71,24 +72,26 @@ export class OrgLensMembershipsController {
     }
   }
 
-  /** GET /api/orgs/:accountId/lens/memberships/:foundationId */
+  /** GET /api/orgs/:orgUid/lens/memberships/:foundationSlug */
   public async getMembershipDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
-    const foundationId = req.params['foundationId'];
+    const orgUid = req.params['orgUid'];
+    const foundationSlug = req.params['foundationSlug'];
     const startTime = logger.startOperation(req, 'get_org_membership_detail', {
-      account_id: accountId,
-      foundation_id: foundationId,
+      org_uid: orgUid,
+      foundation_slug: foundationSlug,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_membership_detail');
-      this.assertFoundationId(foundationId, 'get_org_membership_detail');
+      assertOrgUid(orgUid, 'get_org_membership_detail');
+      this.assertFoundationSlug(foundationSlug, 'get_org_membership_detail');
 
-      const response = await this.service.getMembershipDetail(accountId, foundationId);
+      // Spec 002: orgUid is the SFID; the service's uid (query-service tag) and sfid (Snowflake) args are now the same value.
+      const response = await this.service.getMembershipDetail(req, orgUid, orgUid, foundationSlug);
 
       logger.success(req, 'get_org_membership_detail', startTime, {
-        account_id: accountId,
-        foundation_id: foundationId,
+        org_uid: orgUid,
+        foundation_slug: foundationSlug,
+        foundation_found: response.foundation !== null,
         contact_count: response.keyContacts.reduce((acc, c) => acc + c.people.length, 0),
       });
 
@@ -99,20 +102,20 @@ export class OrgLensMembershipsController {
     }
   }
 
-  /** GET /api/orgs/:accountId/lens/memberships/discover */
+  /** GET /api/orgs/:orgUid/lens/memberships/discover */
   public async getDiscoverOpportunities(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_memberships_discover', {
-      account_id: accountId,
+      org_uid: orgUid,
     });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_memberships_discover');
+      assertOrgUid(orgUid, 'get_org_lens_memberships_discover');
 
-      const response = await this.service.getDiscoverOpportunities(accountId);
+      const response = await this.service.getDiscoverOpportunities(orgUid);
 
       logger.success(req, 'get_org_lens_memberships_discover', startTime, {
-        account_id: accountId,
+        org_uid: orgUid,
         opportunity_count: response.opportunities.length,
       });
 
@@ -123,21 +126,14 @@ export class OrgLensMembershipsController {
     }
   }
 
-  private assertAccountId(accountId: string | undefined, operation: string): asserts accountId is string {
-    if (!accountId || typeof accountId !== 'string') {
-      throw ServiceValidationError.forField('accountId', 'accountId path parameter is required', { operation });
+  // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also
+  // covers the foundation slug shape, so it is reused here for the slug-keyed detail route.
+  private assertFoundationSlug(foundationSlug: string | undefined, operation: string): asserts foundationSlug is string {
+    if (!foundationSlug || typeof foundationSlug !== 'string') {
+      throw ServiceValidationError.forField('foundationSlug', 'foundationSlug path parameter is required', { operation });
     }
-    if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
-      throw ServiceValidationError.forField('accountId', 'Invalid Salesforce accountId format', { operation });
-    }
-  }
-
-  private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
-    if (!foundationId || typeof foundationId !== 'string') {
-      throw ServiceValidationError.forField('foundationId', 'foundationId path parameter is required', { operation });
-    }
-    if (!FOUNDATION_ID_PATTERN.test(foundationId)) {
-      throw ServiceValidationError.forField('foundationId', 'Invalid foundationId format', { operation });
+    if (!FOUNDATION_ID_PATTERN.test(foundationSlug)) {
+      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
     }
   }
 }

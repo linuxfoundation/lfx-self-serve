@@ -7,6 +7,8 @@ import {
   PastMeetingAttachment,
   PastMeetingRecording,
   PastMeetingSummary,
+  PastMeetingTranscript,
+  PastMeetingTranscriptContent,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -168,6 +170,96 @@ export class PastMeetingController {
 
       // Send the recording data to the client
       res.json(recording);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /past-meetings/:uid/transcript
+   */
+  public async getPastMeetingTranscript(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_past_meeting_transcript', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_transcript',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting transcript
+      const transcript: PastMeetingTranscript | null = await this.meetingService.getPastMeetingTranscript(req, uid);
+
+      // If no transcript found, return 404
+      if (!transcript) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: `No transcript found for past meeting ${uid}`,
+        });
+        return;
+      }
+
+      // Log the success
+      logger.success(req, 'get_past_meeting_transcript', startTime, {
+        past_meeting_id: uid,
+        session_count: transcript.sessions?.length || 0,
+      });
+
+      // Send the transcript data to the client
+      res.json(transcript);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /past-meetings/:uid/transcript/content
+   */
+  public async getPastMeetingTranscriptContent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_past_meeting_transcript_content', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_transcript_content',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting transcript content
+      const transcript: PastMeetingTranscriptContent | null = await this.meetingService.getPastMeetingTranscriptContent(req, uid);
+
+      // If no transcript content found, return 404
+      if (!transcript) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: `No transcript content found for past meeting ${uid}`,
+        });
+        return;
+      }
+
+      // Log the success
+      logger.success(req, 'get_past_meeting_transcript_content', startTime, {
+        past_meeting_id: uid,
+        content_length: transcript.content?.length || 0,
+      });
+
+      // Send the transcript content to the client
+      res.json(transcript);
     } catch (error) {
       next(error);
     }

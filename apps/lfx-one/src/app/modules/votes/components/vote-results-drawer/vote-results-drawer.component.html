@@ -83,6 +83,14 @@
     </ng-template>
 
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
+      <!-- LFXV2-1587 inline cast CTA — creator scope only; voter scope uses the dedicated State A panel below. -->
+      @if (audience() === 'creator' && !isLoading() && canCastVoteFromDrawer()) {
+        <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-center justify-between gap-3" data-testid="vote-results-drawer-cast-cta">
+          <p class="text-sm text-blue-900">You haven't cast your vote yet.</p>
+          <lfx-button size="small" severity="primary" label="Cast Vote" (onClick)="onCastVote()" data-testid="vote-results-drawer-cast-button" />
+        </div>
+      }
+
       @if (audience() === 'voter') {
         <!-- VOTER PANEL (LFXV2-1917) — blind results until close, no creator note, no stats card.
              State A (not_voted) is a defensive fallback: the dashboard normally routes ACTIVE+AWAITING

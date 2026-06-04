@@ -15,12 +15,15 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
+  getPastMeetingTranscriptUrl,
+  isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
+  PastMeetingTranscript,
   TagSeverity,
 } from '@lfx-one/shared';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -73,6 +76,7 @@ export class PastMeetingDetailsComponent {
   // Complex signals via init functions
   public meeting: Signal<PastMeeting | null> = this.initMeeting();
   public recording: Signal<PastMeetingRecording | null> = this.initRecording();
+  public transcript: Signal<PastMeetingTranscript | null> = this.initTranscript();
   public summary: Signal<PastMeetingSummary | null> = this.initSummary();
   public attachments: Signal<PastMeetingAttachment[]> = this.initAttachments();
   public participants: Signal<EnrichedPastMeetingParticipant[]> = this.initParticipants();
@@ -107,10 +111,12 @@ export class PastMeetingDetailsComponent {
   public attendancePercentage = this.initAttendancePercentage();
   public attendanceBarColor = this.initAttendanceBarColor();
   public hasRecording = this.initHasRecording();
+  public hasTranscript = this.initHasTranscript();
   public recordingShareUrl = this.initRecordingShareUrl();
   public hasSummary = this.initHasSummary();
   public summaryContent = this.initSummaryContent();
   public summaryApproved = this.initSummaryApproved();
+  public summaryAwaitingApproval = this.initSummaryAwaitingApproval();
 
   // Public methods
   public goBack(): void {
@@ -195,6 +201,19 @@ export class PastMeetingDetailsComponent {
         distinctUntilChanged(),
         take(1),
         switchMap((id) => this.meetingService.getPastMeetingRecording(id).pipe(catchError(() => of(null))))
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initTranscript(): Signal<PastMeetingTranscript | null> {
+    return toSignal(
+      toObservable(this.meeting).pipe(
+        filter((m): m is PastMeeting => !!m?.id),
+        map((m) => m.id),
+        distinctUntilChanged(),
+        take(1),
+        switchMap((id) => this.meetingService.getPastMeetingTranscript(id).pipe(catchError(() => of(null))))
       ),
       { initialValue: null }
     );
@@ -310,6 +329,10 @@ export class PastMeetingDetailsComponent {
     return computed(() => this.recordingShareUrl() !== null);
   }
 
+  private initHasTranscript(): Signal<boolean> {
+    return computed(() => getPastMeetingTranscriptUrl(this.transcript()) !== null);
+  }
+
   private initSummaryContent(): Signal<string | null> {
     return computed(() => {
       const s = this.summary();
@@ -322,7 +345,15 @@ export class PastMeetingDetailsComponent {
     return computed(() => this.summary()?.approved || false);
   }
 
+  // "Pending" only applies when the summary requires approval and isn't approved
+  // yet — summaries that never required approval are not pending.
+  private initSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.summary()));
+  }
+
   private initHasSummary(): Signal<boolean> {
-    return computed(() => this.summaryContent() !== null);
+    // Require real content: a summary record can exist with empty content (the AI
+    // result was never populated), which must not surface an "AI Summary" affordance.
+    return computed(() => !!this.summaryContent());
   }
 }

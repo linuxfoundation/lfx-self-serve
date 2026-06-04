@@ -1,0 +1,137 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// meeting.utils transitively imports @angular/common/http (HttpParams), whose declarations need the
+// Angular JIT compiler when loaded outside an Angular bootstrap (as under Vitest). Importing the
+// compiler first provides that facade so the module can be imported.
+import '@angular/compiler';
+
+import { describe, expect, it } from 'vitest';
+
+import { RecurrenceType } from '../enums';
+import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting } from '../interfaces';
+import { buildRecurrenceSummary, resolveOccurrenceRecurrence, sortPastMeetingsDescending } from './meeting.utils';
+
+/**
+ * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
+ * so only those plus an identifying `uid` are set; the rest is cast to satisfy the interface.
+ */
+function pastMeeting(partial: { uid: string; scheduled_start_time?: string; start_time?: string }): PastMeeting {
+  return {
+    uid: partial.uid,
+    scheduled_start_time: partial.scheduled_start_time as string,
+    start_time: partial.start_time as string,
+  } as PastMeeting;
+}
+
+const uids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.uid);
+
+describe('sortPastMeetingsDescending', () => {
+  it('orders past meetings most-recent-first by scheduled_start_time', () => {
+    const input = [
+      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ uid: 'middle', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+    ];
+
+    expect(uids(sortPastMeetingsDescending(input))).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('falls back to start_time when scheduled_start_time is absent', () => {
+    const input = [pastMeeting({ uid: 'a', start_time: '2026-01-01T10:00:00Z' }), pastMeeting({ uid: 'b', start_time: '2026-05-01T10:00:00Z' })];
+
+    expect(uids(sortPastMeetingsDescending(input))).toEqual(['b', 'a']);
+  });
+
+  it('prefers scheduled_start_time over start_time when both are present', () => {
+    const input = [
+      // start_time would sort this first, but scheduled_start_time (the authoritative field) is older
+      pastMeeting({ uid: 'scheduled-older', scheduled_start_time: '2026-01-01T10:00:00Z', start_time: '2026-09-01T10:00:00Z' }),
+      pastMeeting({ uid: 'scheduled-newer', scheduled_start_time: '2026-06-01T10:00:00Z', start_time: '2026-02-01T10:00:00Z' }),
+    ];
+
+    expect(uids(sortPastMeetingsDescending(input))).toEqual(['scheduled-newer', 'scheduled-older']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [
+      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+    ];
+    const originalOrder = uids(input);
+
+    sortPastMeetingsDescending(input);
+
+    expect(uids(input)).toEqual(originalOrder);
+  });
+
+  it('returns an empty array unchanged', () => {
+    expect(sortPastMeetingsDescending([])).toEqual([]);
+  });
+
+  it('keeps a globally descending order when pages are appended out of date order (paginated case)', () => {
+    // Mirrors the dashboard scan: a name-cursor page may arrive with meetings more recent than
+    // ones already loaded, so the merged accumulator must be re-sorted to stay most-recent-first.
+    const page1 = [
+      pastMeeting({ uid: 'p1-feb', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ uid: 'p1-jan', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+    ];
+    const page2 = [
+      pastMeeting({ uid: 'p2-may', scheduled_start_time: '2026-05-01T10:00:00Z' }),
+      pastMeeting({ uid: 'p2-mar', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+    ];
+
+    const merged = sortPastMeetingsDescending([...page1, ...page2]);
+
+    expect(uids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
+  });
+});
+
+describe('resolveOccurrenceRecurrence', () => {
+  // Top-level series rule: monthly on the 1st Thursday (the original, intentionally-stale cadence).
+  const monthly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_week: 1, monthly_week_day: 5 };
+  // Per-occurrence override stamped after an all_following cadence change: quarterly on the 1st Thursday.
+  const quarterly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 3, monthly_week: 1, monthly_week_day: 5 };
+
+  const occurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
+    ({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence }) as MeetingOccurrence;
+
+  const meeting = (recurrence: MeetingRecurrence | null): Pick<Meeting, 'recurrence'> => ({ recurrence });
+
+  it('prefers the occurrence-level recurrence override when present', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly))).toBe(quarterly);
+  });
+
+  it('falls back to the top-level recurrence when the occurrence has none', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(null))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(undefined))).toBe(monthly);
+  });
+
+  it('falls back to the top-level recurrence when no occurrence is supplied', () => {
+    expect(resolveOccurrenceRecurrence(meeting(monthly), null)).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly))).toBe(monthly);
+  });
+
+  it('is null-safe when neither the occurrence nor the meeting carries a recurrence', () => {
+    expect(resolveOccurrenceRecurrence(meeting(null), occurrence(null))).toBeNull();
+    expect(resolveOccurrenceRecurrence(meeting(null), null)).toBeNull();
+  });
+
+  it('end-to-end label (meeting 92079944361): stale monthly top-level + quarterly occurrence override yields "Quarterly on the 1st Thursday"', () => {
+    // Mirrors the pipe: the resolved recurrence is fed to buildRecurrenceSummary after the
+    // monthly/day-of-week shape is applied. The override (repeat_interval=3) must win over the
+    // stale top-level monthly rule so the label reads "Quarterly", not "Monthly".
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly));
+    const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
+
+    expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Quarterly on the 1st Thursday');
+  });
+
+  it('end-to-end label: with no occurrence override the same surfaces still render the stale top-level "Monthly on the 1st Thursday"', () => {
+    // Documents current behaviour: without an override the label falls back to the series rule.
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(null));
+    const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
+
+    expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
+  });
+});

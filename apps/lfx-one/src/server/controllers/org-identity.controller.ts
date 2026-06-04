@@ -1,14 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { UUID_REGEX } from '@lfx-one/shared/constants';
+import { ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
-  OrgAddressesResponse,
-  OrgCanonicalMockExtras,
   OrgCanonicalRecord,
-  OrgItem,
   OrgUpdateRequest,
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -16,25 +13,22 @@ import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
-import orgAddressesMock from '../services/fixtures/org-addresses.mock.json';
-import orgSelectorMock from '../services/fixtures/org-selector.mock.json';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { OrgIdentityResolver } from '../services/org-identity-resolver.service';
+import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
-import { getEffectiveUsername } from '../utils/auth-helper';
-import { isMockOrgItemsEnabled } from '../utils/mock-org-items.util';
+import { getEffectiveSub } from '../utils/auth-helper';
 
-/** BFF for org-identity routes: `/me/role-grants` + polymorphic canonical-record endpoint. See contracts/bff-org-*.md. */
+/** BFF for org-identity routes: `/me/role-grants` + account-id-keyed canonical-record endpoint. See contracts/bff-org-*.md. */
 export class OrgIdentityController {
   private readonly orgRoleGrantsService: OrgRoleGrantsService;
-  private readonly orgIdentityResolver: OrgIdentityResolver;
   private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly orgLensAddressesService: OrgLensAddressesService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
-    this.orgIdentityResolver = OrgIdentityResolver.getInstance();
     this.microserviceProxy = new MicroserviceProxyService();
+    this.orgLensAddressesService = new OrgLensAddressesService();
   }
 
   /** `GET /api/orgs/me/role-grants` — caller's writer/auditor uid sets (contracts/bff-org-role-grants.md). */
@@ -42,7 +36,10 @@ export class OrgIdentityController {
     const startTime = logger.startOperation(req, 'get_org_role_grants');
 
     try {
-      const username = getEffectiveUsername(req);
+      // Spec 022 — use the full auth0 sub (e.g. "auth0|lguerra") rather than the nickname (`lguerra`)
+      // because the upstream `b2b_org_settings` index stores `data.writers[].username` and the
+      // `member:` / `writers.username:` tags in the prefixed form. Nickname-form misses every row.
+      const username = getEffectiveSub(req);
       if (!username) {
         throw ServiceValidationError.forField('username', 'Authenticated username is required', {
           operation: 'get_org_role_grants',
@@ -62,76 +59,32 @@ export class OrgIdentityController {
     }
   }
 
-  /** Polymorphic canonical-record endpoint backing `/uid/:uid`, `/sfid/:accountId`, and `/:id` (contracts/bff-org-canonical-record.md). */
+  /** Canonical-record endpoint backing `/uid/:uid` and `/:id` — both keyed by the org account id (18-char SFID, spec 002). See contracts/bff-org-canonical-record.md. */
   public async getCanonicalRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_canonical_record');
 
     try {
-      const { identifier, identifierKind } = this.extractIdentifier(req);
-
-      if (isMockOrgItemsEnabled()) {
-        const mockResponse = this.getMockCanonicalRecord(identifier, identifierKind);
-        if (!mockResponse) {
-          res.status(404).json({ error: 'Organization not found' });
-          logger.success(req, 'get_org_canonical_record', startTime, { identifier_kind: identifierKind, uid: null, status_code: 404, mock: true });
-          return;
-        }
-        logger.success(req, 'get_org_canonical_record', startTime, {
-          identifier_kind: identifierKind,
-          uid: mockResponse.uid,
-          has_parent: !!mockResponse.parentUid,
-          mock: true,
-        });
-        res.setHeader('Cache-Control', 'no-store');
-        res.json(mockResponse);
-        return;
-      }
-
-      // `identifier_cache_hit` is null for uid-routed requests (no resolver lookup) so the metric reflects true LRU state.
-      let uid: string | null = identifier;
-      let identifierCacheHit: boolean | null = null;
-      if (identifierKind === 'sfid') {
-        const result = await this.orgIdentityResolver.getUidBySfid(identifier, req);
-        uid = result.uid;
-        identifierCacheHit = result.cacheHit;
-        if (!uid) {
-          res.status(404).json({ error: 'Organization not found' });
-          logger.success(req, 'get_org_canonical_record', startTime, {
-            identifier_kind: identifierKind,
-            uid: null,
-            status_code: 404,
-            identifier_cache_hit: identifierCacheHit,
-          });
-          return;
-        }
-      }
+      const uid = this.extractUid(req);
 
       const record = await this.fetchCanonicalRecord(req, uid);
       if (!record) {
         res.status(404).json({ error: 'Organization not found' });
-        logger.success(req, 'get_org_canonical_record', startTime, {
-          identifier_kind: identifierKind,
-          uid,
-          status_code: 404,
-          identifier_cache_hit: identifierCacheHit,
-        });
+        logger.success(req, 'get_org_canonical_record', startTime, { uid, status_code: 404 });
         return;
       }
 
       const response = this.toCanonicalRecord(record);
 
       logger.success(req, 'get_org_canonical_record', startTime, {
-        identifier_kind: identifierKind,
         uid: response.uid,
         has_parent: !!response.parentUid,
-        identifier_cache_hit: identifierCacheHit,
       });
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
     } catch (error) {
-      // Map member-service 5xx → 502 Bad Gateway per FR-020. Resolver upstream failures bubble here too.
-      if (error instanceof MicroserviceError && error.statusCode >= 500) {
+      // Map member-service 5xx/408 → 502 Bad Gateway per FR-020. Resolver upstream failures bubble here too.
+      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
         logger.warning(req, 'get_org_canonical_record', 'Upstream failure', { err: error, upstream_status: error.statusCode });
         res.status(502).json({ error: 'Upstream member-service failure' });
         return;
@@ -152,7 +105,7 @@ export class OrgIdentityController {
     try {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'update_org_canonical_record', req.path);
-      if (!UUID_REGEX.test(uid)) {
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
         throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
           operation: 'update_org_canonical_record',
           service: 'org_identity_controller',
@@ -195,65 +148,72 @@ export class OrgIdentityController {
     }
   }
 
-  /** Spec 021 — `GET /api/orgs/uid/:uid/addresses`. Returns mock fixture when `isMockOrgItemsEnabled()`; otherwise 404 until member-service exposes upstream address fields (fail-closed, mirrors `getCanonicalRecord`). */
+  /**
+   * Spec 023/002 — `GET /api/orgs/uid/:uid/addresses`. The route uid is the org account id (18-char SFID); queries the Snowflake platinum table directly, maps SHIPPING→primaryAddress and BILLING→billingAddress. Returns 200 with nulls for lookup/data failures; validation errors still propagate.
+   *
+   * Access model: auth-gated, NOT org-membership-gated. Any authenticated LFX user can fetch any org's addresses by uid — deliberately matching the canonical-record route (`GET /api/orgs/uid/:uid`), since org profile/address data is treated as non-secret among authenticated LFX users. Do not add an FGA grant check here without a product decision.
+   */
   public async getOrgAddresses(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_addresses');
+    const emptyResponse = { primaryAddress: null, billingAddress: null };
 
     try {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'get_org_addresses', req.path);
-      if (!UUID_REGEX.test(uid)) {
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
         throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
           operation: 'get_org_addresses',
           service: 'org_identity_controller',
           path: req.path,
         });
       }
-
-      if (!isMockOrgItemsEnabled()) {
-        // Fail-closed per rulebook (mock fixtures gated on flag && NODE_ENV !== 'production').
-        // Real upstream address fields land in a follow-up spec; until then, no fixture in prod.
-        res.status(404).json({ error: 'Addresses unavailable' });
-        logger.success(req, 'get_org_addresses', startTime, { uid, status_code: 404, mock: false });
-        return;
-      }
-
-      const response: OrgAddressesResponse = {
-        primaryAddress: orgAddressesMock.primaryAddress,
-        billingAddress: orgAddressesMock.billingAddress,
-      };
-
-      logger.success(req, 'get_org_addresses', startTime, { uid, mock: true });
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
     } catch (error) {
       next(error);
+      return;
+    }
+
+    // Spec 002: the route uid IS the org account id (SFID); query Snowflake directly (no resolver).
+    const uid = req.params['uid']!;
+    const sfid: string = uid;
+
+    try {
+      const result = await this.orgLensAddressesService.getAddresses(sfid);
+
+      logger.success(req, 'get_org_addresses', startTime, {
+        uid,
+        sfid,
+        has_primary: !!result.primaryAddress,
+        has_billing: !!result.billingAddress,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        next(error);
+        return;
+      }
+      logger.warning(req, 'get_org_addresses', 'Address warehouse lookup failed; returning empty', { err: error, uid, sfid });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(emptyResponse);
     }
   }
 
-  /** Parses `req.params` into `{ identifier, identifierKind }`; polymorphic `/:id` uses UUID_REGEX to dispatch (mirrors project.controller pattern). */
-  private extractIdentifier(req: Request): { identifier: string; identifierKind: 'uid' | 'sfid' } {
-    const { uid, accountId, id } = req.params;
-    if (uid) {
-      this.assertNonEmpty(uid, 'uid', 'get_org_canonical_record', req.path);
-      return { identifier: uid, identifierKind: 'uid' };
+  /** Extracts and validates the org account id (SFID) from `/uid/:uid` or the catch-all `/:id` route (spec 002). */
+  private extractUid(req: Request): string {
+    const uid = req.params['uid'] ?? req.params['id'];
+    this.assertNonEmpty(uid, 'uid', 'get_org_canonical_record', req.path);
+    if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
+      throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        operation: 'get_org_canonical_record',
+        service: 'org_identity_controller',
+        path: req.path,
+      });
     }
-    if (accountId) {
-      this.assertNonEmpty(accountId, 'accountId', 'get_org_canonical_record', req.path);
-      return { identifier: accountId, identifierKind: 'sfid' };
-    }
-    if (id) {
-      this.assertNonEmpty(id, 'id', 'get_org_canonical_record', req.path);
-      return { identifier: id, identifierKind: UUID_REGEX.test(id) ? 'uid' : 'sfid' };
-    }
-    throw ServiceValidationError.forField('id', 'Identifier path parameter is required', {
-      operation: 'get_org_canonical_record',
-      service: 'org_identity_controller',
-      path: req.path,
-    });
+    return uid;
   }
 
-  private assertNonEmpty(value: string, field: string, operation: string, path: string): void {
+  private assertNonEmpty(value: string | undefined, field: string, operation: string, path: string): asserts value is string {
     if (typeof value !== 'string' || value.trim() === '') {
       throw ServiceValidationError.forField(field, `${field} is required`, { operation, service: 'org_identity_controller', path });
     }
@@ -267,31 +227,6 @@ export class OrgIdentityController {
       if (error instanceof MicroserviceError && error.statusCode === 404) return null;
       throw error;
     }
-  }
-
-  /** MOCK_ORG_ITEMS dev branch — looks up the fixture row by uid or sfid; overlays `canonicalExtras` when defined. */
-  private getMockCanonicalRecord(identifier: string, identifierKind: 'uid' | 'sfid'): OrgCanonicalRecord | null {
-    const items = orgSelectorMock.items as OrgItem[];
-    const match = identifierKind === 'uid' ? items.find((item) => item.uid === identifier) : items.find((item) => item.accountId === identifier);
-    if (!match) return null;
-    const extrasMap = (orgSelectorMock.canonicalExtras ?? {}) as Record<string, OrgCanonicalMockExtras>;
-    const extras = extrasMap[match.uid] ?? {};
-    return {
-      uid: match.uid,
-      accountId: match.accountId ?? null,
-      name: match.name,
-      description: extras.description ?? null,
-      website: extras.website ?? null,
-      primaryDomain: match.primaryDomain ?? null,
-      logoUrl: match.logoUrl ?? null,
-      industry: extras.industry ?? null,
-      sector: extras.sector ?? null,
-      numberOfEmployees: extras.numberOfEmployees ?? null,
-      crunchBaseUrl: extras.crunchBaseUrl ?? null,
-      updatedAt: extras.updatedAt ?? null,
-      parentUid: extras.parentUid ?? null,
-      isMember: match.isMember ?? false,
-    };
   }
 
   /** Spec 021 — Whitelist + camelCase → snake_case transform for the PUT body; `name`/`logoUrl` stripped (FR-011/012); `undefined` omitted to preserve upstream "no change" semantics. */
@@ -311,9 +246,14 @@ export class OrgIdentityController {
 
   /** Transforms member-service snake_case response to the BFF camelCase contract. */
   private toCanonicalRecord(raw: MemberServiceB2bOrgResponse): OrgCanonicalRecord {
+    // Spec 002: member-service v0.7.0 makes the canonical b2b_org uid the 18-char SFID, so the
+    // account id IS the uid (no resolver). Prefer an explicit sfid if upstream ever serializes one.
+    const accountId = raw.sfid ?? raw.uid;
     return {
-      uid: raw.uid,
-      accountId: raw.sfid ?? null,
+      // Spec 002: uid and accountId are the same canonical 18-char SFID. Anchor both to `accountId`
+      // so they can never diverge if member-service later serializes `sfid` separately.
+      uid: accountId,
+      accountId,
       name: raw.name,
       description: raw.description ?? null,
       website: raw.website ?? null,

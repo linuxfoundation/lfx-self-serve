@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col items-center h-full bg-blue-900 py-6" data-testid="docs-sidebar-nav">
+  <!-- LF Logo -->
+  <a
+    routerLink="/docs"
+    class="mb-4 flex items-center justify-center px-3 focus:outline-none"
+    aria-label="LFX Self Serve Documentation"
+    data-testid="docs-sidebar-logo">
+    <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
+  </a>
+
+  <hr class="w-6 border-white/35 mb-3" />
+
+  <div class="flex flex-col items-center gap-3 flex-1">
+    <a
+      routerLink="/docs"
+      data-testid="docs-sidebar-docs-button"
+      aria-label="Documentation"
+      pTooltip="Documentation"
+      tooltipPosition="right"
+      class="group flex flex-col items-center gap-1 w-full transition-colors"
+      [ngClass]="isDocsActive() ? 'text-white' : 'text-blue-200/75 hover:text-white'">
+      <div
+        class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
+        [ngClass]="{
+          'bg-blue-500': isDocsActive(),
+          'group-hover:bg-white/10': !isDocsActive(),
+        }">
+        <i class="fa-light fa-book text-xl"></i>
+      </div>
+    </a>
+  </div>
+
+  <div class="flex flex-col items-center gap-3 mt-auto">
+    <!--
+      What's New — for unauthenticated visitors the changelog API requires
+      auth, so the icon deep-links to the sign-in flow (with returnTo).
+    -->
+    <a
+      [href]="whatsNewHref()"
+      data-testid="docs-sidebar-changelog-button"
+      aria-label="What's New (sign in)"
+      pTooltip="What's New"
+      tooltipPosition="right"
+      class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
+      <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+        <i class="fa-light fa-bullhorn text-xl"></i>
+      </div>
+    </a>
+
+    <hr class="w-6 border-white/35" />
+
+    <!-- Sign-in entry point -->
+    <a
+      [href]="signInUrl()"
+      data-testid="docs-sidebar-signin-button"
+      aria-label="Sign in"
+      pTooltip="Sign in"
+      tooltipPosition="right"
+      class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
+      <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+        <i class="fa-light fa-arrow-right-to-bracket text-xl"></i>
+      </div>
+    </a>
+  </div>
+</div>

@@ -32,6 +32,7 @@ export class UserPermissionsTableComponent {
   // State signals
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
+  public canWrite = input<boolean>(false);
   public project = computed(() => this.projectContextService.activeContext());
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);

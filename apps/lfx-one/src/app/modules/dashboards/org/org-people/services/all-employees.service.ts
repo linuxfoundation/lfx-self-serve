@@ -12,11 +12,11 @@ import type { OrgAllEmployeeDetail, OrgAllEmployeesResponse } from '@lfx-one/sha
 export class AllEmployeesService {
   private readonly http = inject(HttpClient);
 
-  public getAllEmployees(accountId: string): Observable<OrgAllEmployeesResponse> {
-    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/people/all`);
+  public getAllEmployees(orgUid: string): Observable<OrgAllEmployeesResponse> {
+    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`);
   }
 
-  public getEmployeeDetail(accountId: string, personKey: string): Observable<OrgAllEmployeeDetail> {
-    return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(accountId)}/lens/people/${encodeURIComponent(personKey)}/detail`);
+  public getEmployeeDetail(orgUid: string, personKey: string): Observable<OrgAllEmployeeDetail> {
+    return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`);
   }
 }

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, formatDate } from '@angular/common';
-import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
@@ -26,7 +27,7 @@ import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, sha
 
 @Component({
   selector: 'lfx-vote-results-drawer',
-  imports: [DrawerModule, TagComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule, TooltipModule],
+  imports: [DrawerModule, TagComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule, ButtonComponent, TooltipModule],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
 })
@@ -39,6 +40,9 @@ export class VoteResultsDrawerComponent {
   public readonly listVote = input<Vote | null>(null);
   /** Selects the voter-blind panel (B/C/D states, no live tallies, no creator note) when 'voter'; defaults to the unchanged creator UI. The /me/votes dashboard passes 'voter'. */
   public readonly audience = input<'voter' | 'creator'>('creator');
+
+  // === Outputs ===
+  public readonly castVoteRequested = output<string>();
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -66,6 +70,8 @@ export class VoteResultsDrawerComponent {
   protected readonly isLoading: Signal<boolean> = computed(
     () => this.loadingVoteDetails() || this.loadingVoteResults() || (this.audience() === 'voter' && this.myResponseLoading())
   );
+  /** Creator-scope inline cast CTA gate: active vote where the viewer is also a voter awaiting response. Voter audience uses the dedicated State A panel instead. */
+  protected readonly canCastVoteFromDrawer: Signal<boolean> = this.initCanCastVoteFromDrawer();
   protected readonly participationStats: Signal<VoteParticipationStats> = this.initParticipationStats();
   protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
@@ -84,6 +90,12 @@ export class VoteResultsDrawerComponent {
 
   // === Protected Methods ===
   protected onClose(): void {
+    this.visible.set(false);
+  }
+
+  protected onCastVote(): void {
+    const id = this.vote()?.uid;
+    if (id) this.castVoteRequested.emit(id);
     this.visible.set(false);
   }
 
@@ -139,6 +151,15 @@ export class VoteResultsDrawerComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initCanCastVoteFromDrawer(): Signal<boolean> {
+    return computed(() => {
+      const v = this.vote();
+      if (!v) return false;
+      if (v.status !== PollStatus.ACTIVE) return false;
+      return v.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+    });
   }
 
   private initIsGenericPoll(): Signal<boolean> {

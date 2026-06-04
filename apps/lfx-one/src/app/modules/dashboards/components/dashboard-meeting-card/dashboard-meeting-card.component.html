@@ -137,7 +137,7 @@
         @if (isRecurring()) {
           <span
             class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
-            [pTooltip]="meeting().recurrence | recurrenceSummary"
+            [pTooltip]="displayRecurrence() | recurrenceSummary"
             tooltipPosition="top"
             data-testid="dashboard-meeting-card-recurring-chip">
             <i class="fa-light fa-arrows-rotate text-[10px]"></i>

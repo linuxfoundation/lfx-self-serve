@@ -16,11 +16,17 @@ export * from './organization.interface';
 // Component interfaces
 export * from './components.interface';
 
+// Rich editor interfaces
+export * from './rich-editor.interface';
+
 // Auth interfaces
 export * from './auth.interface';
 
 // API interfaces
 export * from './api.interface';
+
+// Campaign interfaces
+export * from './campaign.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';
@@ -171,15 +177,38 @@ export * from './enrollment.interface';
 
 // Org Memberships interfaces
 export * from './org-memberships.interface';
+export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
 export * from './org-people.interface';
 
+// Org Lens Access tab (spec 025)
+export * from './org-lens-access.interface';
+
+// Org People — Key Contacts tab (spec 005)
+export * from './org-people-key-contacts.interface';
+export * from './org-people-key-contacts.internal.interface';
+
+// Org People — Trainees tab (LFXV2-1876)
+export * from './org-people-trainees.interface';
+
+// Org People — Event Attendees tab (LFXV2-1875)
+export * from './org-people-event-attendees.interface';
+
+// Org People — Contributors tab (LFXV2-1874)
+export * from './org-people-contributors.interface';
+
+// Org Events interfaces
+export * from './org-events.interface';
+
 // Newsletter interfaces
 export * from './newsletter.interface';
 
-// Email service interfaces
-export * from './email-service.interface';
-
 // Invite interfaces
 export * from './invite.interface';
+
+// Docs portal interfaces (build artifacts + runtime models for /docs)
+export * from './docs.interface';
+
+// Linux.com email alias interfaces
+export * from './linux-email.interface';

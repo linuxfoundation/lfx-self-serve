@@ -19,15 +19,26 @@ export class IntercomService {
 
   private isLoaded = false;
 
+  private scriptElement: HTMLScriptElement | null = null;
+
   // Fire-and-forget: stub queue absorbs calls before the script loads and replays them on load.
   public boot(options: IntercomBootOptions): void {
-    if (typeof window === 'undefined' || !options.app_id || this.isBootRequested) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!options.app_id) {
+      console.warn('Intercom: boot called without app_id');
+      return;
+    }
+    if (this.isBootRequested) {
+      console.info('Intercom: boot ignored — already requested');
       return;
     }
 
     this.loadIntercomScript(options.app_id, options.api_base);
     window.Intercom!('boot', options);
     this.isBootRequested = true;
+    console.info('Intercom: boot command dispatched to widget');
   }
 
   public show(): void {
@@ -53,6 +64,11 @@ export class IntercomService {
       return;
     }
 
+    const scriptSrc = `https://widget.intercom.io/widget/${appId}`;
+    if (this.scriptElement?.isConnected || document.querySelector(`script[src="${scriptSrc}"]`)) {
+      return;
+    }
+
     window.intercomSettings = {
       api_base: apiBase || 'https://api-iam.intercom.io',
       app_id: appId,
@@ -63,15 +79,19 @@ export class IntercomService {
     const script = document.createElement('script');
     script.type = 'text/javascript';
     script.async = true;
-    script.src = `https://widget.intercom.io/widget/${appId}`;
+    script.src = scriptSrc;
+    this.scriptElement = script;
 
     script.onload = () => {
       this.isLoaded = true;
+      console.info('Intercom: widget script loaded');
     };
 
     script.onerror = (error) => {
       this.isBootRequested = false;
-      console.error('IntercomService: Failed to load script', error);
+      script.remove();
+      this.scriptElement = null;
+      console.error('Intercom: failed to load widget script', error);
       // Surface to RUM so "users stuck in Jira fallback" is dashboardable.
       this.dataDogRumService.addError(new Error('Intercom script failed to load'), { context: 'intercom_load' });
     };

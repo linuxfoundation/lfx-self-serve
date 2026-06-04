@@ -9,6 +9,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
+import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -23,12 +24,16 @@ import {
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
+  isPastMeetingSummaryAwaitingApproval,
   Meeting,
   MEETING_TYPE_CONFIGS,
+  getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
+  MeetingRecurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  resolveOccurrenceRecurrence,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
@@ -128,6 +133,12 @@ export class MeetingJoinComponent implements OnInit {
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
   public meeting: Signal<Meeting & { project: Partial<Project> | null }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
+  // Recurrence rule that drives the cadence badge: the displayed occurrence's own override when
+  // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule. NOTE: the
+  // detail/join view loads the meeting via the live ITX endpoint, which does not currently carry
+  // the per-occurrence override (occurrence.recurrence is null there), so this resolves to the
+  // top-level rule until that backend path stamps the effective recurrence. Forward-compatible.
+  public displayRecurrence: Signal<MeetingRecurrence | null>;
   private occurrenceContext: Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }>;
   protected previousOccurrenceUrl: Signal<string | null>;
   protected nextOccurrenceUrl: Signal<string | null>;
@@ -176,6 +187,8 @@ export class MeetingJoinComponent implements OnInit {
   public restrictedView: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
+  protected hasSummaryContent: Signal<boolean>;
+  protected summaryAwaitingApproval: Signal<boolean>;
   private pastMeetingRecording: Signal<PastMeetingRecording | null>;
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
@@ -259,6 +272,7 @@ export class MeetingJoinComponent implements OnInit {
     this.authenticated = this.userService.authenticated;
     this.meeting = this.initializeMeeting();
     this.currentOccurrence = this.initializeCurrentOccurrence();
+    this.displayRecurrence = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
     this.occurrenceContext = this.initializeOccurrenceContext();
     this.previousOccurrenceUrl = this.initializePreviousOccurrenceUrl();
     this.nextOccurrenceUrl = this.initializeNextOccurrenceUrl();
@@ -273,6 +287,8 @@ export class MeetingJoinComponent implements OnInit {
     this.restrictedView = this.initializeRestrictedView();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
+    this.hasSummaryContent = this.initializeHasSummaryContent();
+    this.summaryAwaitingApproval = this.initializeSummaryAwaitingApproval();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
     this.pastMeetingAttachments = this.initializePastMeetingAttachments();
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
@@ -461,6 +477,20 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  public openTranscriptModal(): void {
+    const meeting = this.meeting();
+    if (!meeting?.id) return;
+
+    this.dialogService.open(TranscriptModalComponent, {
+      header: 'Transcript',
+      width: '700px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { pastMeetingUid: meeting.id, meetingTitle: meeting.title },
+    });
+  }
+
   private initializeAutoJoin(): void {
     // Use toObservable to create an Observable from the signals, then subscribe once
     // This executes only when all conditions are met
@@ -596,7 +626,7 @@ export class MeetingJoinComponent implements OnInit {
       const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
       if (requestedOccurrence && meeting?.occurrences?.length) {
         const requestedTime = parseInt(requestedOccurrence, 10);
-        const active = getActiveOccurrences(meeting.occurrences);
+        const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
         const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
         if (match) return match;
       }
@@ -608,7 +638,7 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting?.occurrences?.length) return { sorted: [], currentIdx: -1 };
-      const sorted = getActiveOccurrences(meeting.occurrences).sort(
+      const sorted = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).sort(
         (a: MeetingOccurrence, b: MeetingOccurrence) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
       const current = this.currentOccurrence();
@@ -903,7 +933,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeHasAiCompanion(): Signal<boolean> {
-    return computed(() => this.meeting()?.zoom_config?.ai_companion_enabled || false);
+    return computed(() => this.meeting()?.ai_summary_enabled || false);
   }
 
   private initializeRestrictedView(): Signal<boolean> {
@@ -1100,14 +1130,34 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  private initializeTranscriptUrl(): Signal<string | null> {
+  private initializeHasSummaryContent(): Signal<boolean> {
     return computed(() => {
-      const recording = this.pastMeetingRecording();
-      if (!recording?.recording_files?.length) return null;
-
-      const transcript = recording.recording_files.find((f) => f.file_type === 'TRANSCRIPT');
-      return transcript?.download_url ?? null;
+      const data = this.pastMeetingSummary()?.summary_data;
+      return !!(data?.edited_content || data?.content);
     });
+  }
+
+  // "Pending" only applies when the summary requires approval and isn't approved
+  // yet — summaries that never required approval are not pending.
+  private initializeSummaryAwaitingApproval(): Signal<boolean> {
+    return computed(() => isPastMeetingSummaryAwaitingApproval(this.pastMeetingSummary()));
+  }
+
+  private initializeTranscriptUrl(): Signal<string | null> {
+    // Transcripts are a separate query-service resource — NOT part of the
+    // recording's recording_files — so they must be fetched independently.
+    return toSignal(
+      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
+        switchMap(([hasAccess, meeting]) => {
+          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingTranscript(meeting.id).pipe(
+            map((transcript) => getPastMeetingTranscriptUrl(transcript)),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   private initializeParentProject(): Signal<Project | null> {

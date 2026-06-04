@@ -50,11 +50,13 @@
     "build:production": "tsc",
     "build:staging": "tsc",
     "watch": "tsc --watch",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@fullcalendar/core": "^6.1.19",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vitest": "^4.1.8"
   },
   "peerDependencies": {
     "@angular/core": "^20.3.15",

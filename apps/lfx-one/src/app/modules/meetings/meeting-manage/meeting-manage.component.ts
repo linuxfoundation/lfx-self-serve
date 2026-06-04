@@ -58,6 +58,7 @@ import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform
 import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -140,6 +141,7 @@ export class MeetingManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    evictOnWriteAccessLoss();
 
     // Initialize step based on mode
     // In edit mode, read from query parameters
@@ -495,10 +497,8 @@ export class MeetingManageComponent {
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
       show_meeting_attendees: false, // Coming Soon — disabled in form
-      zoom_config: {
-        ai_companion_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
-        ai_summary_require_approval: formValue.recording_enabled ? formValue.require_ai_summary_approval || false : false,
-      },
+      ai_summary_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
+      require_ai_summary_approval: formValue.recording_enabled && formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
@@ -760,8 +760,8 @@ export class MeetingManageComponent {
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
       show_meeting_attendees: meeting.show_meeting_attendees || false,
-      zoom_ai_enabled: meeting.zoom_config?.ai_companion_enabled || false,
-      require_ai_summary_approval: meeting.zoom_config?.ai_summary_require_approval ?? false,
+      zoom_ai_enabled: meeting.ai_summary_enabled || false,
+      require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
       recurrenceType: finalRecurrenceValue,
       committees: meeting.committees || [],

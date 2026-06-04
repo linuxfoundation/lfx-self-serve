@@ -3,7 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { parseLocalDateString } from './date-time.utils';
 import { EnrollmentDisplayStatus, IndividualEnrollment } from '../interfaces/enrollment.interface';
 
 // Status derivation mirrors enrollment.plugin.js:197–226 from myprofile
@@ -16,11 +15,8 @@ export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDi
   const endDateString = membership.EndDate.length >= 10 ? membership.EndDate.slice(0, 10) : membership.EndDate;
   let endDate: Date;
   if (/^\d{4}-\d{2}-\d{2}$/.test(endDateString)) {
-    try {
-      endDate = parseLocalDateString(endDateString);
-    } catch {
-      endDate = new Date(membership.EndDate);
-    }
+    const [y, m, d] = endDateString.split('-').map(Number);
+    endDate = new Date(Date.UTC(y, m - 1, d));
   } else {
     endDate = new Date(membership.EndDate);
   }

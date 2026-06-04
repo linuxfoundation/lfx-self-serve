@@ -19,11 +19,15 @@
   <div class="rounded-lg border border-gray-200 bg-white p-6">
     <!-- Logo + Upload Logo button (disabled per FR-012). -->
     <header class="flex items-center gap-4 border-b border-gray-100 pb-4">
-      <div
-        class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
-        data-testid="org-profile-edit-logo-initials">
-        {{ (record().name | initials) || 'OR' }}
-      </div>
+      @if (record().logoUrl) {
+        <img [src]="record().logoUrl" [alt]="record().name + ' logo'" class="h-20 w-20 rounded-md object-contain" data-testid="org-profile-edit-logo-image" />
+      } @else {
+        <div
+          class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
+          data-testid="org-profile-edit-logo-initials">
+          {{ (record().name | initials) || 'OR' }}
+        </div>
+      }
       <div class="flex flex-col gap-1">
         <p-button
           label="Upload Logo"

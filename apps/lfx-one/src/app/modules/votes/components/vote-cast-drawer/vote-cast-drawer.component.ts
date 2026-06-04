@@ -11,7 +11,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollType } from '@lfx-one/shared';
-import { CreateVoteResponseRequest, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
+import { PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -19,9 +20,7 @@ import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, take, takeUntil, throwError } from 'rxjs';
-
-const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
+import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, takeUntil } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -157,21 +156,9 @@ export class VoteCastDrawerComponent {
 
     this.submitting.set(true);
 
-    // The voting service pre-allocates one vote_response row per invitee — POST /vote_responses MUST reuse that uid.
     this.voteService
-      .getMyVoteResponse(vote.uid)
+      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent })
       .pipe(
-        take(1),
-        switchMap((myResponse) => {
-          if (!myResponse?.uid) return throwError(() => new Error(INVITATION_NOT_FOUND));
-          const payload: CreateVoteResponseRequest = {
-            vote_response_uid: myResponse.uid,
-            vote_uid: vote.uid,
-            abstain: isAbstain,
-            user_vote_content: userVoteContent,
-          };
-          return this.voteService.createVoteResponse(payload);
-        }),
         takeUntil(this.cancelSubmit$),
         takeUntilDestroyed(this.destroyRef),
         finalize(() => this.submitting.set(false))

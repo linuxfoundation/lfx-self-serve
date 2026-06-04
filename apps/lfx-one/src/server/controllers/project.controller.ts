@@ -260,11 +260,14 @@ export class ProjectController {
         return;
       }
 
-      // Check if manual user data is provided (for users not found in directory)
+      // Check if manual user data is provided (for users not found in directory).
+      // name is always present for manual adds and never present for directory email lookups,
+      // so it's the correct discriminator — using email alone would misclassify a plain
+      // { email, role } directory-lookup request as a manual add.
       let manualUserInfo: { name: string; email: string; username?: string; avatar?: string } | undefined;
-      if (userData.name || userData.email || userData.avatar) {
+      if (userData.name) {
         manualUserInfo = {
-          name: userData.name || '',
+          name: userData.name,
           email: userData.email || '',
           // username is optional for manually-added users — preserve whatever was provided
           username: userData.username || undefined,

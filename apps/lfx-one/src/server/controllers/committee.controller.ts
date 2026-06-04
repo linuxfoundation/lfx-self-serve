@@ -7,6 +7,7 @@ import {
   CommitteeCreateData,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
@@ -123,10 +124,15 @@ export class CommitteeController {
       }
 
       // Get the committee by ID — include caller membership so the UI can render
-      // visitor / member / chair states without a second round-trip, and enrich with
+      // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
-      // -> project_slug for navigation.
-      const committee = await this.committeeService.getCommitteeById(req, id, { includeMembership: true, includeProjectMetadata: true });
+      // -> project_slug for navigation, and include inherited (parent-project) permissions
+      // so the members roster can label foundation-level managers correctly (LFXV2-2059).
+      const committee = await this.committeeService.getCommitteeById(req, id, {
+        includeMembership: true,
+        includeProjectMetadata: true,
+        includeInheritedPermissions: true,
+      });
 
       // Log the success
       logger.success(req, 'get_committee_by_id', startTime, {
@@ -506,6 +512,123 @@ export class CommitteeController {
       res.status(204).send();
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  // ── Invite Endpoints ──────────────────────────────────────────────────────
+
+  /**
+   * GET /committees/:id/invites
+   */
+  public async getCommitteeInvites(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_committee_invites', { committee_id: id });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'get_committee_invites',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const invites = await this.committeeService.getCommitteeInvites(req, id, req.query);
+
+      logger.success(req, 'get_committee_invites', startTime, { committee_id: id, invite_count: invites.length });
+      res.json(invites);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/invites
+   */
+  public async createCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'create_committee_invite', {
+      committee_id: id,
+      invite_data: logger.sanitize(req.body),
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'create_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const inviteData: CreateCommitteeInviteRequest = req.body;
+      const trimmedEmail = typeof inviteData?.invitee_email === 'string' ? inviteData.invitee_email.trim() : '';
+
+      if (!trimmedEmail) {
+        next(
+          ServiceValidationError.forField('invitee_email', 'Invitee email is required', {
+            operation: 'create_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const invite = await this.committeeService.createCommitteeInvite(req, id, { ...inviteData, invitee_email: trimmedEmail });
+
+      logger.success(req, 'create_committee_invite', startTime, { committee_id: id, invite_id: invite.uid });
+      res.status(201).json(invite);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /committees/:id/invites/:inviteId
+   */
+  public async revokeCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, inviteId } = req.params;
+    const startTime = logger.startOperation(req, 'revoke_committee_invite', {
+      committee_id: id,
+      invite_id: inviteId,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'revoke_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!inviteId) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Invite ID is required', {
+            operation: 'revoke_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.committeeService.revokeCommitteeInvite(req, id, inviteId);
+
+      logger.success(req, 'revoke_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }

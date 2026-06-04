@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex min-h-screen bg-white">
+  <!-- Auth-aware left rail: existing lens-switcher when signed in, public minimal nav otherwise.
+       Hidden under `lg:` to keep the desktop visual identical; below the breakpoint we render a
+       compact top bar (see below) so the docs nav and sign-in CTA remain reachable on phones / tablets. -->
+  <div class="hidden lg:block flex-shrink-0 fixed left-0 top-0 bottom-0 z-40 w-16">
+    @if (isAuthenticated()) {
+      <lfx-lens-switcher data-testid="docs-shell-authed" />
+    } @else {
+      <lfx-docs-sidebar-nav data-testid="docs-shell-public" />
+    }
+  </div>
+
+  <!-- Main content -->
+  <main class="flex flex-1 flex-col lg:ml-16" data-testid="docs-content">
+    <!-- Mobile / tablet top bar — surfaces the same docs and sign-in/account affordances
+         that the lg+ left rail provides. Hidden at lg+ where the rail does the same job. -->
+    <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden" data-testid="docs-shell-mobile">
+      <a
+        routerLink="/docs"
+        class="flex items-center gap-2 text-sm font-semibold text-gray-900"
+        data-testid="docs-shell-mobile-home"
+        aria-label="LFX Documentation home">
+        <i class="fa-light fa-book text-blue-600" aria-hidden="true"></i>
+        <span>LFX Documentation</span>
+      </a>
+      @if (!isAuthenticated()) {
+        <a
+          [href]="signInHref()"
+          class="rounded-md border border-blue-500 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+          data-testid="docs-shell-mobile-signin">
+          Sign in
+        </a>
+      } @else {
+        <a routerLink="/" class="text-xs font-semibold text-blue-700 hover:underline" data-testid="docs-shell-mobile-app"> Back to app </a>
+      }
+    </div>
+
+    <div class="flex-grow px-5 md:px-8 py-6">
+      <router-outlet />
+    </div>
+  </main>
+</div>

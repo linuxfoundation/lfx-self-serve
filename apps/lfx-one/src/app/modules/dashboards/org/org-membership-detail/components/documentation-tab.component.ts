@@ -29,7 +29,8 @@ export class DocumentationTabComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // 2. Public fields from inputs
-  public readonly accountId = input.required<string>();
+  /** Spec 002: the selected org's account id (SFID); forwarded to the account-id-keyed documents BFF route. */
+  public readonly orgUid = input.required<string>();
   public readonly foundationId = input.required<string>();
 
   /** CSV export "Organization" column (FR-032a col 1). */
@@ -100,21 +101,17 @@ export class DocumentationTabComponent {
 
   // 10. Private initializer functions (grouped)
   private initDocsData(): Signal<OrgMembershipDocumentsResponse | null> {
-    const accountId$ = toObservable(this.accountId);
+    const orgUid$ = toObservable(this.orgUid);
     const foundationId$ = toObservable(this.foundationId);
     const retryTrigger$ = toObservable(this.retryTrigger);
 
-    const docs$ = combineLatest([
-      accountId$.pipe(filter((id): id is string => !!id)),
-      foundationId$.pipe(filter((id): id is string => !!id)),
-      retryTrigger$,
-    ]).pipe(
+    const docs$ = combineLatest([orgUid$.pipe(filter((id): id is string => !!id)), foundationId$.pipe(filter((id): id is string => !!id)), retryTrigger$]).pipe(
       tap(() => {
         this.fetchLoading.set(true);
         this.fetchError.set(false);
       }),
-      switchMap(([accountId, foundationId]) =>
-        this.service.getMembershipDocuments(accountId, foundationId).pipe(
+      switchMap(([orgUid, foundationId]) =>
+        this.service.getMembershipDocuments(orgUid, foundationId).pipe(
           catchError(() => {
             this.fetchError.set(true);
             this.fetchLoading.set(false);

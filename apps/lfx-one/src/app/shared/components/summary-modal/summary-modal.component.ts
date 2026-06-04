@@ -26,6 +26,10 @@ export class SummaryModalComponent {
   // Inputs from dialog config
   private readonly summaryUid = this.dialogConfig.data.summaryUid as string;
   private readonly pastMeetingUid = this.dialogConfig.data.pastMeetingUid as string;
+  // Optional callback so the opener reflects edit/approve changes immediately,
+  // independent of how the dialog is dismissed (Close button, X, or backdrop) —
+  // the onClose payload is only produced by the Close button.
+  private readonly onSummaryUpdated = this.dialogConfig.data.onSummaryUpdated as ((update: { content: string; approved: boolean }) => void) | undefined;
   public readonly meetingTitle = this.dialogConfig.data.meetingTitle as string;
   public readonly readOnly = signal(!!(this.dialogConfig.data.readOnly as boolean | undefined));
 
@@ -74,6 +78,7 @@ export class SummaryModalComponent {
           this.wasUpdated.set(true);
           this.isSaving.set(false);
           this.isEditMode.set(false);
+          this.onSummaryUpdated?.({ content: editedContent, approved: this.isApproved() });
         },
         error: (error: unknown) => {
           this.messageService.add({
@@ -103,6 +108,7 @@ export class SummaryModalComponent {
           this.isApproved.set(true);
           this.wasUpdated.set(true);
           this.isApproving.set(false);
+          this.onSummaryUpdated?.({ content: this.originalContent(), approved: true });
         },
         error: (error: unknown) => {
           this.messageService.add({

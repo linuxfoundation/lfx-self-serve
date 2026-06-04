@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
+import { writerGuard } from '@shared/guards/writer.guard';
 
 export const MEETING_ROUTES: Routes = [
   {
@@ -14,10 +15,12 @@ export const MEETING_ROUTES: Routes = [
   {
     path: 'create',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    canActivate: [authGuard, writerGuard],
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    canActivate: [authGuard, writerGuard],
   },
   {
     path: ':id/details',

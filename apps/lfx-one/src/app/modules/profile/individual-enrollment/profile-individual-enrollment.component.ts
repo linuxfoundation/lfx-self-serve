@@ -6,12 +6,10 @@
 import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { DisplayEnrollment, EnrollmentsState } from '@lfx-one/shared/interfaces';
 import { deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ToastModule } from 'primeng/toast';
 import { finalize, take } from 'rxjs';
 
@@ -24,7 +22,7 @@ import { EnrollmentService } from '@services/enrollment.service';
 
 @Component({
   selector: 'lfx-profile-individual-enrollment',
-  imports: [ButtonComponent, CardComponent, ConfirmDialogModule, DatePipe, EmptyStateComponent, FormsModule, TagComponent, ToggleSwitchModule, ToastModule],
+  imports: [ButtonComponent, CardComponent, ConfirmDialogModule, DatePipe, EmptyStateComponent, TagComponent, ToastModule],
   templateUrl: './profile-individual-enrollment.component.html',
   styleUrl: './profile-individual-enrollment.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -66,6 +64,7 @@ export class ProfileIndividualEnrollmentComponent {
                 severity: enrollmentStatusSeverity(displayStatus),
                 enrollHref: `${base}${item.ctaPath}`,
                 renewHref: `${base}${item.ctaPath}&renew=true`,
+                pending: false,
               };
             })
           );
@@ -83,32 +82,32 @@ export class ProfileIndividualEnrollmentComponent {
 
     const membershipId = item.membership.ID;
 
-    // Optimistically apply new value so the toggle does not flicker back
-    this.autoRenewOverrides.update((m) => {
-      const next = new Map(m);
-      next.set(membershipId, newValue);
-      return next;
-    });
-
     const endDate = item.membership.EndDate ? formatDate(item.membership.EndDate, 'mediumDate', 'en-US', 'UTC') : '';
     const message = newValue
-      ? `This will Enable auto renew for your membership, your next payment will be charged on ${endDate}.`
-      : `This will Disable auto renew for your membership, your current membership will expire on ${endDate}.`;
+      ? `This will enable auto-renew for your membership; your next payment will be charged on ${endDate}.`
+      : `This will disable auto-renew for your membership; your current membership will expire on ${endDate}.`;
 
     this.confirmationService.confirm({
-      header: 'Update Membership',
+      header: newValue ? 'Enable auto-renew' : 'Disable auto-renew',
       message,
-      acceptLabel: newValue ? 'Enable' : 'Disable',
+      acceptLabel: newValue ? 'Enable auto-renew' : 'Disable auto-renew',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-primary p-button-sm',
       rejectButtonStyleClass: 'p-button-text p-button-sm',
+      // Apply the change only once the user confirms — nothing happens on reject.
       accept: () => void this.performAutoRenewUpdate(membershipId, newValue),
-      reject: () => this.clearAutoRenewOverride(membershipId),
     });
   }
 
   private performAutoRenewUpdate(membershipId: string, newValue: boolean): void {
     this.pendingIds.update((s) => new Set([...s, membershipId]));
+
+    // Optimistically reflect the confirmed value while the PATCH is in flight.
+    this.autoRenewOverrides.update((m) => {
+      const next = new Map(m);
+      next.set(membershipId, newValue);
+      return next;
+    });
 
     this.enrollmentService
       .updateAutoRenew(membershipId, newValue)
@@ -170,16 +169,18 @@ export class ProfileIndividualEnrollmentComponent {
     return computed(() => {
       const list = this.enrollments();
       const overrides = this.autoRenewOverrides();
+      const pending = this.pendingIds();
       if (!list) return list;
       return list.map((item) => {
         const membershipId = item.membership?.ID;
+        const isPending = membershipId ? pending.has(membershipId) : false;
         if (membershipId && overrides.has(membershipId)) {
           const autoRenew = overrides.get(membershipId)!;
           const updatedMembership = { ...item.membership!, AutoRenew: autoRenew };
           const displayStatus = deriveEnrollmentStatus({ ...item, membership: updatedMembership });
-          return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus) };
+          return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus), pending: isPending };
         }
-        return item;
+        return { ...item, pending: isPending };
       });
     });
   }

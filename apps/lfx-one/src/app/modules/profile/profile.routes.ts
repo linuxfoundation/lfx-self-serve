@@ -29,6 +29,12 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
+      // Linux.com Email tab
+      {
+        path: 'linux-email',
+        loadComponent: () => import('./linux-email/profile-linux-email.component').then((m) => m.ProfileLinuxEmailComponent),
+      },
+
       // Direct-URL-only routes (no tab, but still accessible)
       {
         path: 'password',

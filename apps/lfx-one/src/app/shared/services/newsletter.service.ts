@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
-  CreateNewsletterDraftRequest,
+  CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
@@ -14,73 +14,85 @@ import {
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
-  NewsletterSendPayload,
   NewsletterSendResult,
   NewsletterTestSendPayload,
-  UpdateNewsletterDraftRequest,
+  UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
+/**
+ * Angular HTTP client for the newsletter feature.
+ *
+ * All endpoints are project-scoped: callers supply `projectUid` (the active
+ * project context UID). The Express backend mounts the router at
+ * `/api/projects/:projectUid/newsletters` and proxies to lfx-v2-newsletter-service.
+ *
+ * Path-segment values are passed through `encodeURIComponent` for defense in
+ * depth: project / newsletter UIDs are alphanumeric today, but a future format
+ * containing `/`, `?`, or `%` would otherwise corrupt routing.
+ */
 @Injectable({
   providedIn: 'root',
 })
 export class NewsletterService {
   private readonly http = inject(HttpClient);
 
-  public getRecipientCount(payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
-    return this.http.post<NewsletterRecipientCount>('/api/newsletters/recipient-count', payload).pipe(take(1));
+  public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
+    return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
   }
 
-  public getRecipients(payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientsResponse> {
-    return this.http.post<NewsletterRecipientsResponse>('/api/newsletters/recipients', payload).pipe(take(1));
+  public getRecipients(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientsResponse> {
+    return this.http.post<NewsletterRecipientsResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/recipients`, payload).pipe(take(1));
   }
 
-  public testSend(payload: NewsletterTestSendPayload): Observable<{ ok: true }> {
-    return this.http.post<{ ok: true }>('/api/newsletters/test-send', payload).pipe(take(1));
+  public testSend(projectUid: string, payload: NewsletterTestSendPayload): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`/api/projects/${this.enc(projectUid)}/newsletters/test-send`, payload).pipe(take(1));
   }
 
-  public send(payload: NewsletterSendPayload): Observable<NewsletterSendResult> {
-    return this.http.post<NewsletterSendResult>('/api/newsletters/send', payload).pipe(take(1));
+  public generate(projectUid: string, payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {
+    return this.http.post<GenerateNewsletterResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/generate`, payload).pipe(take(1));
   }
 
-  public generate(payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {
-    return this.http.post<GenerateNewsletterResponse>('/api/newsletters/generate', payload).pipe(take(1));
-  }
-
-  public listNewsletters(params: NewsletterListParams): Observable<NewsletterListResponse> {
-    let httpParams = new HttpParams().set('contextType', params.contextType).set('contextUid', params.contextUid);
+  public listNewsletters(projectUid: string, params: NewsletterListParams): Observable<NewsletterListResponse> {
+    let httpParams = new HttpParams();
     if (params.status) {
       httpParams = httpParams.set('status', params.status);
     }
-    if (params.pageToken) {
-      httpParams = httpParams.set('pageToken', params.pageToken);
+    if (params.page_token) {
+      httpParams = httpParams.set('page_token', params.page_token);
     }
-    return this.http.get<NewsletterListResponse>('/api/newsletters', { params: httpParams }).pipe(take(1));
+    return this.http.get<NewsletterListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters`, { params: httpParams }).pipe(take(1));
   }
 
-  public getAnalytics(id: string): Observable<NewsletterAnalytics> {
-    return this.http.get<NewsletterAnalytics>(`/api/newsletters/${id}/analytics`).pipe(take(1));
+  public getAnalytics(projectUid: string, newsletterUid: string): Observable<NewsletterAnalytics> {
+    return this.http.get<NewsletterAnalytics>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics`).pipe(take(1));
   }
 
-  public createDraft(payload: CreateNewsletterDraftRequest): Observable<Newsletter> {
-    return this.http.post<Newsletter>('/api/newsletters/drafts', payload).pipe(take(1));
+  public createNewsletter(projectUid: string, payload: CreateNewsletterRequest): Observable<Newsletter> {
+    return this.http.post<Newsletter>(`/api/projects/${this.enc(projectUid)}/newsletters`, payload).pipe(take(1));
   }
 
-  public getDraft(id: string): Observable<Newsletter> {
-    return this.http.get<Newsletter>(`/api/newsletters/drafts/${id}`).pipe(take(1));
+  public getNewsletter(projectUid: string, newsletterUid: string): Observable<Newsletter> {
+    return this.http.get<Newsletter>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}`).pipe(take(1));
   }
 
-  public updateDraft(id: string, version: number, payload: UpdateNewsletterDraftRequest): Observable<Newsletter> {
+  public updateNewsletter(projectUid: string, newsletterUid: string, version: number, payload: UpdateNewsletterRequest): Observable<Newsletter> {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
-    return this.http.put<Newsletter>(`/api/newsletters/drafts/${id}`, payload, { headers }).pipe(take(1));
+    return this.http.put<Newsletter>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}`, payload, { headers }).pipe(take(1));
   }
 
-  public deleteDraft(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/newsletters/drafts/${id}`).pipe(take(1));
+  public deleteNewsletter(projectUid: string, newsletterUid: string): Observable<void> {
+    return this.http.delete<void>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}`).pipe(take(1));
   }
 
-  public sendDraft(id: string, version: number): Observable<NewsletterSendResult> {
+  public sendNewsletter(projectUid: string, newsletterUid: string, version: number): Observable<NewsletterSendResult> {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
-    return this.http.post<NewsletterSendResult>(`/api/newsletters/drafts/${id}/send`, {}, { headers }).pipe(take(1));
+    return this.http
+      .post<NewsletterSendResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/send`, {}, { headers })
+      .pipe(take(1));
+  }
+
+  private enc(value: string): string {
+    return encodeURIComponent(value);
   }
 }

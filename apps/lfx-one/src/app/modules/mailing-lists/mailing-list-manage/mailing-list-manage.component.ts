@@ -21,6 +21,7 @@ import { catchError, filter, Observable, of, switchMap, tap, throwError } from '
 
 import { MailingListBasicInfoComponent } from '../components/mailing-list-basic-info/mailing-list-basic-info.component';
 import { MailingListSettingsComponent } from '../components/mailing-list-settings/mailing-list-settings.component';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
   selector: 'lfx-mailing-list-manage',
@@ -76,6 +77,10 @@ export class MailingListManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public readonly initialPublicValue: Signal<boolean | null> = this.initInitialPublicValue();
   public currentStep: Signal<number> = this.initCurrentStep();
+
+  public constructor() {
+    evictOnWriteAccessLoss();
+  }
 
   public nextStep(): void {
     const next = this.currentStep() + 1;

@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="transcript-modal-container">
+  <!-- Meeting Title -->
+  <div>
+    <h4 class="text-lg font-semibold text-gray-900">{{ meetingTitle }}</h4>
+    <p class="text-sm text-gray-500">Meeting transcript</p>
+  </div>
+
+  <!-- Transcript content -->
+  @if (loading()) {
+    <div class="bg-gray-50 rounded-lg p-6 border border-gray-200 flex items-center justify-center gap-2" data-testid="transcript-loading">
+      <i class="fa-light fa-spinner-third fa-spin text-gray-400"></i>
+      <span class="text-sm text-gray-500">Loading transcript…</span>
+    </div>
+  } @else if (cues().length > 0) {
+    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 max-h-[500px] overflow-y-auto flex flex-col gap-3" data-testid="transcript-content">
+      @for (cue of cues(); track $index) {
+        <div class="flex flex-col gap-0.5">
+          <div class="flex items-center gap-2">
+            @if (cue.speaker) {
+              <span class="text-sm font-semibold text-gray-800">{{ cue.speaker }}</span>
+            }
+            <span class="text-xs text-gray-400">{{ cue.timestamp }}</span>
+          </div>
+          <p class="text-sm text-gray-700 leading-relaxed tracking-tight">{{ cue.text }}</p>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
+      <p class="text-sm text-gray-500 text-center py-4" data-testid="transcript-empty">No transcript content available.</p>
+    </div>
+  }
+</div>

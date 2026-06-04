@@ -86,6 +86,12 @@ export class PendingActionsDrawerComponent {
     this.startCompletion(item);
   }
 
+  protected handleDismiss(item: DrawerActionRow): void {
+    this.hiddenActionsService.dismissAction(item);
+    // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
+    this.startCompletion(item, true);
+  }
+
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {
     this.messageService.add({
       key: 'pending-actions-toast',
@@ -135,10 +141,12 @@ export class PendingActionsDrawerComponent {
       });
   }
 
-  // Persist the hide synchronously, then drive the fade animation through a single timer.
-  private startCompletion(item: PendingActionItem): void {
+  // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), then drive the fade animation through a single timer.
+  private startCompletion(item: PendingActionItem, skipHide = false): void {
     const rowKey = this.getRowKey(item);
-    this.hiddenActionsService.hideAction(item);
+    if (!skipHide) {
+      this.hiddenActionsService.hideAction(item);
+    }
 
     this.completingRowKeys.update((keys) => new Set(keys).add(rowKey));
     timer(PENDING_ACTION_FADE_OUT_MS)

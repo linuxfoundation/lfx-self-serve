@@ -17,10 +17,6 @@ export class OrgProfileService {
     return this.http.get<OrgCanonicalRecord>(`/api/orgs/uid/${encodeURIComponent(uid)}`);
   }
 
-  public getCanonicalRecordByAccountId(accountId: string): Observable<OrgCanonicalRecord> {
-    return this.http.get<OrgCanonicalRecord>(`/api/orgs/sfid/${encodeURIComponent(accountId)}`);
-  }
-
   public getAddresses(uid: string): Observable<OrgAddressesResponse> {
     return this.http.get<OrgAddressesResponse>(`/api/orgs/uid/${encodeURIComponent(uid)}/addresses`);
   }

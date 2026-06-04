@@ -18,6 +18,13 @@
 
     <!-- Mobile account actions -->
     <div class="ml-auto flex items-center gap-2">
+      <a
+        routerLink="/docs"
+        data-testid="lens-mobile-docs"
+        aria-label="Documentation"
+        class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+        <i class="fa-light fa-book text-sm"></i>
+      </a>
       @if (canImpersonate() && !isImpersonating()) {
         <lfx-button
           icon="fa-light fa-user-secret"
@@ -99,6 +106,25 @@
 
     <!-- Footer -->
     <div class="flex flex-col items-center gap-3 mt-auto">
+      <!-- Documentation (LFXV2-2001) -->
+      <a
+        routerLink="/docs"
+        data-testid="lens-docs-button"
+        aria-label="Documentation"
+        pTooltip="Documentation"
+        tooltipPosition="right"
+        class="group flex flex-col items-center gap-1 w-full transition-colors"
+        [ngClass]="isDocsActive() ? 'text-white' : 'text-blue-200/75 hover:text-white'">
+        <div
+          class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
+          [ngClass]="{
+            'bg-blue-500': isDocsActive(),
+            'group-hover:bg-white/10': !isDocsActive(),
+          }">
+          <i class="fa-light fa-book text-xl"></i>
+        </div>
+      </a>
+
       <!-- Changelog (What's New) -->
       <button
         type="button"

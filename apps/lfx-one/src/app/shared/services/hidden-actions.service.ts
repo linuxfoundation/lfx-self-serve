@@ -19,7 +19,9 @@ export class HiddenActionsService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly cookiePrefix = 'lfx_hidden_';
+  private readonly dismissCookiePrefix = 'lfx_dismissed_';
   private readonly maxAgeDays = 1; // 24 hours
+  private readonly permanentExpireDays = 3650; // ~10 years
 
   /**
    * Hide an action for 24 hours by setting a cookie.
@@ -40,16 +42,33 @@ export class HiddenActionsService {
   }
 
   /**
-   * Check if an action is currently hidden by checking for cookie existence.
-   * If the cookie expired, the browser already removed it, so this returns false.
+   * Permanently dismiss an action by setting a long-lived cookie (~10 years).
+   * The item will never reappear for this user in this browser.
+   *
+   * @param item The pending action item to dismiss
+   */
+  public dismissAction(item: PendingActionItem): void {
+    const identifier = this.getActionIdentifier(item);
+    const cookieName = `${this.dismissCookiePrefix}${this.hashString(identifier)}`;
+    this.cookieService.set(cookieName, '1', {
+      expires: this.permanentExpireDays,
+      path: '/',
+      sameSite: 'Strict',
+      secure: process.env['NODE_ENV'] === 'production',
+    });
+    this.cookieRegistry.registerCookie(cookieName);
+  }
+
+  /**
+   * Check if an action is currently hidden — either via a 24h completion cookie or a permanent dismiss cookie.
    *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise
    */
   public isActionHidden(item: PendingActionItem): boolean {
     const identifier = this.getActionIdentifier(item);
-    const cookieName = this.getCookieName(identifier);
-    return this.cookieService.check(cookieName);
+    const hash = this.hashString(identifier);
+    return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);
   }
 
   // Prefer intrinsic IDs (meetingUid, voteUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.

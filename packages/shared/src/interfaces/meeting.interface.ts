@@ -63,21 +63,6 @@ export interface V1PastMeetingSummary {
 // ============================================================================
 
 /**
- * Zoom-specific meeting configuration
- * @description Settings specific to Zoom platform integration
- */
-export interface ZoomConfig {
-  /** Zoom meeting ID (response only) */
-  meeting_id?: string;
-  /** Zoom meeting passcode (response only) */
-  passcode?: string;
-  /** Enable/disable Zoom AI companion */
-  ai_companion_enabled?: boolean;
-  /** Require approval for AI summaries in LFX system */
-  ai_summary_require_approval?: boolean;
-}
-
-/**
  * Meeting recurrence configuration
  * @description Defines how and when a meeting repeats (compatible with Zoom API)
  */
@@ -199,8 +184,10 @@ export interface Meeting {
   organizers: string[];
   /** Meeting access password for private/restricted meetings */
   password: string | null;
-  /** Zoom-specific settings */
-  zoom_config?: ZoomConfig | null;
+  /** Whether Zoom AI Companion summary is enabled for the meeting */
+  ai_summary_enabled?: boolean | null;
+  /** Whether AI summary requires approval before being shared */
+  require_ai_summary_approval?: boolean | null;
 
   /** 6-digit Zoom host key */
   host_key?: string;
@@ -228,6 +215,24 @@ export interface Meeting {
   attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
+  /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
+   * Present on both the query-service list payload and the ITX detail payload; empty or absent when
+   * no future occurrence exists. Lets recurring cards show the next scheduled date instead of the
+   * series origin (`start_time`) when the list payload's `occurrences` array isn't usable. */
+  next_occurrence_start_time?: string;
+  /**
+   * Cancelled occurrence IDs — the canonical `occurrence_id` keys (each the occurrence start
+   * as a 10-digit Unix-second timestamp, per the upstream meeting-service contract; distinct
+   * from the 13-digit Unix-millisecond timestamps the UI builds for past-meeting URLs and
+   * `meeting_and_occurrence_id`).
+   *
+   * The meetings LIST endpoint signals occurrence cancellation this way and leaves each
+   * occurrence's `status` unset, whereas the single-meeting endpoint instead marks the
+   * occurrence with `status: 'cancel'`. Both signals must be honoured so a cancelled
+   * occurrence is dropped consistently across the card (list) and detail (single) views —
+   * see `getActiveOccurrences` (LFXV2-2057).
+   */
+  cancelled_occurrences?: string[];
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;
@@ -260,6 +265,17 @@ export interface MeetingOccurrence {
   status?: string;
   /** Total registrant count for this occurrence */
   registrant_count?: number;
+  /**
+   * Per-occurrence recurrence override. When a recurring meeting's cadence changes from a
+   * specific occurrence onwards, Zoom records it as an `all_following` update and the
+   * meeting-service's occurrence calculator stamps the new pattern (e.g. `repeat_interval: 3`
+   * for quarterly) onto the ANCHOR occurrence of that segment (LFXV2-2066). When present it
+   * supersedes the meeting's top-level `recurrence` for the cadence label — see
+   * `resolveOccurrenceRecurrence`. Only the query-service (list/index) payload populates this;
+   * it is null/absent on non-anchor occurrences and on the live ITX detail payload, which does
+   * not compute the effective recurrence.
+   */
+  recurrence?: MeetingRecurrence | null;
 }
 
 /**
@@ -300,7 +316,8 @@ export interface CreateMeetingRequest {
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  zoom_config?: ZoomConfig; // Zoom-specific settings
+  ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
+  require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
 }
 
 export interface UpdateMeetingRequest {
@@ -326,7 +343,8 @@ export interface UpdateMeetingRequest {
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  zoom_config?: ZoomConfig | null; // Zoom-specific settings
+  ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
+  require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
 }
 
 export interface DeleteMeetingRequest {
@@ -696,6 +714,12 @@ export interface PastMeetingParticipant {
  * Past meeting participant enriched with committee membership data from meeting registrants
  */
 export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
+  /**
+   * All committee UIDs this participant belongs to (from committee member data) — used to
+   * match the group filter. An array because a participant can sit on multiple committees;
+   * the singular `committee_*` display fields below reflect the first/primary committee.
+   */
+  committee_uids?: string[] | null;
   /** Committee name (from committee member data) */
   committee_name?: string | null;
   /** Role within the committee (from committee member data) */
@@ -704,6 +728,28 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
+}
+
+/** Attendance filter for the past-meeting participant list. */
+export type PastParticipantAttendanceFilter = 'all' | 'attended' | 'absent';
+/** Invitation filter for the past-meeting participant list. */
+export type PastParticipantInvitationFilter = 'all' | 'invited' | 'uninvited';
+
+/**
+ * Filter criteria for the past-meeting participant list.
+ * @description Mirrors the upcoming-registrant filters, mapped to the fields a past
+ *   participant actually carries: attendance (`is_attended`), invitation (`is_invited`),
+ *   and committee association (`committee_uids`, from enrichment).
+ */
+export interface PastParticipantFilters {
+  /** Free-text query matched against name, email, and organization. */
+  search?: string;
+  /** Attendance filter: `all`, `attended` (is_attended), or `absent` (not attended). */
+  attendance?: PastParticipantAttendanceFilter;
+  /** Invitation filter: `all`, `invited` (is_invited), or `uninvited` (not invited). */
+  invitation?: PastParticipantInvitationFilter;
+  /** Committee UID to filter by, or `all` for no committee filter. */
+  group?: string;
 }
 
 /**
@@ -782,6 +828,54 @@ export interface PastMeetingRecording {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
+}
+
+/**
+ * Past meeting transcript information
+ * @description Transcript data for a completed past meeting. Transcripts are a
+ * separate query-service resource (v1_past_meeting_transcript) from recordings —
+ * they are NOT part of PastMeetingRecording.recording_files.
+ */
+export interface PastMeetingTranscript {
+  /** Resource id (equals meeting_and_occurrence_id for transcripts) */
+  id?: string;
+  /** Original meeting UID */
+  meeting_id?: string;
+  /** Composite meeting + occurrence id */
+  meeting_and_occurrence_id?: string;
+  /** Transcript title */
+  title?: string;
+  /**
+   * Transcript-related files, each carrying a download URL. The viewable
+   * transcript is the TRANSCRIPT/CC file (resolved by getPastMeetingTranscriptUrl);
+   * the array may also include non-transcript files such as a TIMELINE.
+   */
+  recording_files?: RecordingFile[];
+  /** Recording sessions carrying the shareable URL */
+  sessions?: RecordingSession[];
+}
+
+/**
+ * The fetched, viewable content of a past meeting transcript.
+ * @description Server-fetched body of the transcript file (WebVTT) so the UI can
+ * render it inline instead of triggering a download.
+ */
+export interface PastMeetingTranscriptContent {
+  /** Raw transcript file content (WebVTT) */
+  content: string;
+}
+
+/**
+ * A single parsed transcript cue.
+ * @description One spoken line parsed from a WebVTT transcript.
+ */
+export interface TranscriptCue {
+  /** Cue start time, trimmed to HH:MM:SS */
+  timestamp: string;
+  /** Speaker name (empty when the cue has no speaker prefix) */
+  speaker: string;
+  /** Spoken text */
+  text: string;
 }
 
 /**

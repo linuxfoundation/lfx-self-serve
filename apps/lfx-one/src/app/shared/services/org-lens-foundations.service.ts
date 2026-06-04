@@ -8,7 +8,7 @@ import { Observable } from 'rxjs';
 import type { OrgLensFoundationsAndProjectsResponse } from '@lfx-one/shared/interfaces';
 
 /**
- * Client-side proxy for GET /api/orgs/:accountId/lens/foundations-and-projects.
+ * Client-side proxy for GET /api/orgs/:orgUid/lens/foundations-and-projects.
  * Backs the Org Lens "Foundations and Projects" section on /org/overview.
  */
 @Injectable({
@@ -17,7 +17,7 @@ import type { OrgLensFoundationsAndProjectsResponse } from '@lfx-one/shared/inte
 export class OrgLensFoundationsService {
   private readonly http = inject(HttpClient);
 
-  public getFoundationsAndProjects(accountId: string): Observable<OrgLensFoundationsAndProjectsResponse> {
-    return this.http.get<OrgLensFoundationsAndProjectsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/foundations-and-projects`);
+  public getFoundationsAndProjects(orgUid: string): Observable<OrgLensFoundationsAndProjectsResponse> {
+    return this.http.get<OrgLensFoundationsAndProjectsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/foundations-and-projects`);
   }
 }

@@ -12,15 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import {
-  FilterPillOption,
-  NewsletterContextType,
-  NewsletterListItem,
-  NewsletterRow,
-  NewsletterStatus,
-  NewsletterStatusTabId,
-  ProjectContext,
-} from '@lfx-one/shared/interfaces';
+import { FilterPillOption, NewsletterListItem, NewsletterRow, NewsletterStatus, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -75,34 +67,28 @@ export class NewsletterListComponent {
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
 
   // === Reactive context ===
-  public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
-  public readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
-  public readonly contextUid: Signal<string> = this.projectContextService.activeContextUid;
-  public readonly contextType: Signal<NewsletterContextType> = computed(() => (this.isFoundationContext() ? 'foundation' : 'project'));
-  public readonly hasContext: Signal<boolean> = computed(() => this.contextUid().length > 0);
-  protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore());
+  public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
+  protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
   protected readonly rows: Signal<NewsletterRow[]> = computed(() =>
     this.newsletters().map((n) => {
-      const total = n.totalRecipients ?? 0;
-      const opens = n.uniqueOpens ?? 0;
-      const groupCount = n.committeeUids?.length ?? 0;
-      const openRateLabel = n.openRate === undefined || n.openRate === null ? '—' : `${Math.round(n.openRate * 100)}%`;
+      const total = n.total_recipients ?? 0;
+      const opens = n.unique_opens ?? 0;
+      const groupCount = n.committee_uids?.length ?? 0;
+      const openRateLabel = n.open_rate === undefined || n.open_rate === null ? '—' : `${Math.round(n.open_rate * 100)}%`;
       return {
         ...n,
         openRateLabel,
         openRateTooltip: `${opens} of ${total} recipients opened`,
-        recipientsLabel: n.totalRecipients !== undefined && n.totalRecipients !== null ? String(n.totalRecipients) : '—',
+        recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
         groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
       };
     })
   );
 
   public constructor() {
-    // Seed statusTab from the `?tab=` query param so post-send navigation
-    // (and any deep links) land on the right tab — defaults to 'draft'.
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
     if (tabFromQuery === 'sent' || tabFromQuery === 'draft') {
       this.statusTab.set(tabFromQuery);
@@ -122,7 +108,9 @@ export class NewsletterListComponent {
 
   protected goToRow(item: NewsletterListItem): void {
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
-    this.router.navigate(['..', item.id, target], { relativeTo: this.route });
+    // Carry the newsletter's own project_uid in the URL instead of relying on
+    // ambient context — see newsletters.routes.ts for the rationale.
+    this.router.navigate(['..', item.project_uid, item.id, target], { relativeTo: this.route });
   }
 
   protected openPreview(item: NewsletterListItem, event: Event): void {
@@ -133,14 +121,12 @@ export class NewsletterListComponent {
 
   protected loadMore(): void {
     const token = this.nextPageToken();
-    if (!token || this.loadingMore()) return;
+    if (!token || this.loadingMore() || !this.projectUid()) return;
     this.loadingMore.set(true);
     this.newsletterService
-      .listNewsletters({
-        contextType: this.contextType(),
-        contextUid: this.contextUid(),
+      .listNewsletters(this.projectUid(), {
         status: this.statusTab() as NewsletterStatus,
-        pageToken: token,
+        page_token: token,
       })
       .pipe(
         take(1),
@@ -149,7 +135,7 @@ export class NewsletterListComponent {
       .subscribe({
         next: (response) => {
           this.newsletters.update((current) => [...current, ...response.newsletters]);
-          this.nextPageToken.set(response.nextPageToken);
+          this.nextPageToken.set(response.next_page_token);
         },
         error: (err: HttpErrorResponse) => this.showLoadError(err),
       });
@@ -158,6 +144,7 @@ export class NewsletterListComponent {
   protected onDeleteDraft(item: NewsletterListItem, event: Event): void {
     event.stopPropagation();
     this.confirmationService.confirm({
+      key: 'newsletter-list',
       header: 'Delete draft?',
       message: `Are you sure you want to delete "${item.subject || 'Untitled draft'}"? This action cannot be undone.`,
       icon: 'pi pi-trash',
@@ -170,9 +157,10 @@ export class NewsletterListComponent {
   }
 
   private runDelete(id: string): void {
+    if (!this.projectUid()) return;
     this.deletingId.set(id);
     this.newsletterService
-      .deleteDraft(id)
+      .deleteNewsletter(this.projectUid(), id)
       .pipe(
         take(1),
         finalize(() => this.deletingId.set(null))
@@ -193,13 +181,12 @@ export class NewsletterListComponent {
   }
 
   private initLoadOnContextOrTab(): void {
-    combineLatest([toObservable(this.contextUid), toObservable(this.statusTab)])
+    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
       .pipe(
         distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(([uid, status]) => {
-        // Reset any open preview so stale newsletter content doesn't bleed across context/tab changes.
         this.previewVisible.set(false);
         this.selectedNewsletter.set(null);
         if (uid) {
@@ -216,11 +203,7 @@ export class NewsletterListComponent {
     this.nextPageToken.set(undefined);
     this.newsletters.set([]);
     this.newsletterService
-      .listNewsletters({
-        contextType: this.contextType(),
-        contextUid: this.contextUid(),
-        status,
-      })
+      .listNewsletters(this.projectUid(), { status })
       .pipe(
         take(1),
         finalize(() => this.loading.set(false))
@@ -228,7 +211,7 @@ export class NewsletterListComponent {
       .subscribe({
         next: (response) => {
           this.newsletters.set(response.newsletters);
-          this.nextPageToken.set(response.nextPageToken);
+          this.nextPageToken.set(response.next_page_token);
         },
         error: (err: HttpErrorResponse) => this.showLoadError(err),
       });

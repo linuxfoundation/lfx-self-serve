@@ -3,7 +3,7 @@
 
 import { computed, Injectable, Signal, signal } from '@angular/core';
 import { User } from '@lfx-one/shared';
-import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents } from '@openfeature/web-sdk';
+import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
 
 @Injectable({
   providedIn: 'root',
@@ -11,10 +11,14 @@ import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents } fro
 export class FeatureFlagService {
   private client: Client | null = null;
   private readonly isInitialized = signal<boolean>(false);
+  private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
 
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
+
+  /** True once the OpenFeature provider reaches READY (real flag values streamed); distinct from `initialized` (user context applied). */
+  public readonly providerReady = this.isProviderReady.asReadonly();
 
   /**
    * Initialize OpenFeature client with user context
@@ -38,7 +42,16 @@ export class FeatureFlagService {
       this.context.set(userContext);
       this.isInitialized.set(true);
 
+      // Register handlers BEFORE seeding from the current status so a READY
+      // transition that lands in the gap can't be missed: the Ready handler
+      // covers the slower streaming case, and the status seed below covers the
+      // already-READY case (the app initializer awaits setProviderAndWait before
+      // bootstrap). Setting the signal twice is idempotent.
       this.setupEventHandlers();
+
+      if (this.client.providerStatus === ProviderStatus.READY) {
+        this.isProviderReady.set(true);
+      }
     } catch (error) {
       console.error('Failed to initialize feature flag service:', error);
       this.isInitialized.set(false);
@@ -147,7 +160,10 @@ export class FeatureFlagService {
     };
 
     // Set up event handlers for flag changes
-    this.client.addHandler(ProviderEvents.Ready, forceSignalUpdate);
+    this.client.addHandler(ProviderEvents.Ready, () => {
+      this.isProviderReady.set(true);
+      forceSignalUpdate();
+    });
     this.client.addHandler(ProviderEvents.ConfigurationChanged, forceSignalUpdate);
     this.client.addHandler(ProviderEvents.ContextChanged, forceSignalUpdate);
     this.client.addHandler(ProviderEvents.Reconciling, forceSignalUpdate);

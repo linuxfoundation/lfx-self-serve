@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import typography from '@tailwindcss/typography';
 import { lfxColors, lfxFontSizes } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
@@ -64,6 +65,116 @@ export default {
         normal: 1.5,
         relaxed: 1.75,
       },
+      // `prose-lfx` typography preset for the docs portal (US5 / T046).
+      // Maps every prose color slot to LFX brand tokens via `lfxColors` —
+      // never raw hex. Used by the `prose prose-lfx` container in
+      // DocsArticleComponent to render sanitized markdown HTML.
+      typography: {
+        lfx: {
+          css: {
+            '--tw-prose-body': lfxColors.gray[700],
+            '--tw-prose-headings': lfxColors.gray[900],
+            '--tw-prose-lead': lfxColors.gray[600],
+            '--tw-prose-links': lfxColors.blue[600],
+            '--tw-prose-bold': lfxColors.gray[900],
+            '--tw-prose-counters': lfxColors.gray[500],
+            '--tw-prose-bullets': lfxColors.gray[300],
+            '--tw-prose-hr': lfxColors.gray[200],
+            '--tw-prose-quotes': lfxColors.gray[700],
+            '--tw-prose-quote-borders': lfxColors.gray[200],
+            '--tw-prose-captions': lfxColors.gray[500],
+            '--tw-prose-code': lfxColors.gray[800],
+            '--tw-prose-pre-code': lfxColors.gray[100],
+            '--tw-prose-pre-bg': lfxColors.gray[900],
+            '--tw-prose-th-borders': lfxColors.gray[300],
+            '--tw-prose-td-borders': lfxColors.gray[200],
+            color: lfxColors.gray[700],
+            maxWidth: 'none',
+            a: {
+              color: lfxColors.blue[600],
+              fontWeight: '500',
+              textDecoration: 'underline',
+              textUnderlineOffset: '2px',
+              transitionProperty: 'color',
+              transitionDuration: '150ms',
+              '&:hover': {
+                color: lfxColors.blue[700],
+              },
+            },
+            'h1, h2, h3, h4, h5, h6': {
+              fontFamily: ['Inter', 'sans-serif'],
+              fontWeight: '700',
+              color: lfxColors.gray[900],
+              letterSpacing: '-0.01em',
+            },
+            h1: { fontSize: '2.25rem', lineHeight: '1.15', marginTop: '0', marginBottom: '1rem' },
+            h2: { fontSize: '1.75rem', lineHeight: '1.2', marginTop: '2rem', marginBottom: '0.75rem' },
+            h3: { fontSize: '1.375rem', lineHeight: '1.3', marginTop: '1.5rem', marginBottom: '0.5rem' },
+            h4: { fontSize: '1.125rem', lineHeight: '1.4', marginTop: '1.25rem', marginBottom: '0.5rem' },
+            code: {
+              backgroundColor: lfxColors.gray[100],
+              color: lfxColors.gray[800],
+              borderRadius: '0.25rem',
+              padding: '0.15rem 0.35rem',
+              fontWeight: '500',
+              fontFamily: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+              fontSize: '0.875em',
+            },
+            'code::before': { content: '""' },
+            'code::after': { content: '""' },
+            pre: {
+              backgroundColor: lfxColors.gray[900],
+              color: lfxColors.gray[100],
+              borderRadius: '0.5rem',
+              padding: '1rem 1.25rem',
+              overflowX: 'auto',
+              fontFamily: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
+            'pre code': {
+              backgroundColor: 'transparent',
+              color: 'inherit',
+              padding: '0',
+              fontWeight: 'inherit',
+              fontSize: '0.875em',
+            },
+            blockquote: {
+              borderLeftColor: lfxColors.blue[400],
+              backgroundColor: lfxColors.blue[50],
+              color: lfxColors.gray[700],
+              fontStyle: 'normal',
+              padding: '0.75rem 1rem',
+              borderRadius: '0.375rem',
+              fontWeight: '400',
+            },
+            'blockquote p:first-of-type::before': { content: '""' },
+            'blockquote p:last-of-type::after': { content: '""' },
+            table: {
+              fontSize: '0.875rem',
+              borderCollapse: 'collapse',
+            },
+            'thead th': {
+              borderBottomColor: lfxColors.gray[300],
+              color: lfxColors.gray[900],
+            },
+            'tbody td, tbody th': {
+              borderBottomColor: lfxColors.gray[200],
+            },
+            hr: {
+              borderColor: lfxColors.gray[200],
+              marginTop: '2rem',
+              marginBottom: '2rem',
+            },
+            img: {
+              borderRadius: '0.5rem',
+              marginTop: '1.5rem',
+              marginBottom: '1.5rem',
+            },
+            figure: { marginTop: '1.5rem', marginBottom: '1.5rem' },
+            'ul > li::marker': { color: lfxColors.gray[400] },
+            'ol > li::marker': { color: lfxColors.gray[500] },
+          },
+        },
+      },
     },
     fontSize: lfxFontSizes,
     fontFamily: {
@@ -73,5 +184,5 @@ export default {
       mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
     },
   },
-  plugins: [PrimeUI],
+  plugins: [PrimeUI, typography],
 };

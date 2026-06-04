@@ -1,4 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-tag [value]="value()" [severity]="severity()" [icon]="icon()" [rounded]="rounded()" [styleClass]="styleClass()"> </p-tag>
+<p-tag [value]="value()" [severity]="severity()" [icon]="dot() ? undefined : icon()" [rounded]="rounded()" [styleClass]="styleClass()">
+  @if (dot()) {
+    <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true"></span>
+  }
+</p-tag>

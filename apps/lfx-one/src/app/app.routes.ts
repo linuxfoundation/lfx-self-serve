@@ -49,6 +49,13 @@ export const routes: Routes = [
         canActivate: [executiveDirectorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
+      // Foundation Lens — Campaigns page (ED-only)
+      {
+        path: 'foundation/campaigns',
+        data: { lens: 'foundation' },
+        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
@@ -91,7 +98,7 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
           },
           {
-            path: 'memberships/:foundationId',
+            path: 'memberships/:foundationSlug',
             data: {
               lens: 'org',
               title: 'Membership Detail',
@@ -134,7 +141,7 @@ export const routes: Routes = [
           {
             path: 'events',
             data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
           },
           {
             path: 'training',
@@ -144,7 +151,7 @@ export const routes: Routes = [
               description: 'Training enrollments and certifications across your organization.',
               icon: 'fa-light fa-graduation-cap',
             },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
           },
           {
             path: 'meetings',
@@ -339,6 +346,17 @@ export const routes: Routes = [
         pathMatch: 'full',
       },
     ],
+  },
+  // Public-facing user documentation portal (LFXV2-2001).
+  // Sibling of the authGuard'd root: every /docs/** URL renders inside
+  // DocsLayoutComponent without requiring authentication. The auth-aware
+  // shell (full chrome for signed-in users vs. minimal docs sidebar for
+  // unauthenticated visitors) is implemented inside DocsLayoutComponent
+  // itself (research R6) so the URL is identical across auth states (FR-009c).
+  {
+    path: 'docs',
+    loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
+    loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
   },
   {
     path: 'meetings/not-found',

@@ -6,14 +6,19 @@ import {
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
+  CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeSettingsData,
   CommitteeUpdateData,
+  CommitteeUser,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
+  Project,
+  ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UploadCommitteeDocumentRequest,
@@ -227,11 +232,19 @@ export class CommitteeService {
    *   that need slug-based navigation (e.g. the GET /committees/:id controller for the
    *   detail page's Parent Project link). Internal callers (existence checks, meeting
    *   fan-out, member CRUD) should leave this off — they don't use these fields.
+   * @param options.includeInheritedPermissions When true, enriches the response with
+   *   `inherited_writers` / `inherited_auditors` — the manage/review grants the committee
+   *   inherits from its project/foundation ancestry, so the members roster can label
+   *   inherited managers correctly (see LFXV2-2059). Walks the project ancestry (up to
+   *   `MAX_DEPTH` levels) making two parallel upstream reads per level — 2-4 calls for the
+   *   typical 1-2-level hierarchy. Best-effort (a level the caller can't read contributes
+   *   nothing and never blocks the fetch), so default is `false`. Enable only on the
+   *   user-facing detail read (GET /committees/:id).
    */
   public async getCommitteeById(
     req: Request,
     committeeId: string,
-    options: { includeMembership?: boolean; includeProjectMetadata?: boolean } = {}
+    options: { includeMembership?: boolean; includeProjectMetadata?: boolean; includeInheritedPermissions?: boolean } = {}
   ): Promise<Committee> {
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
@@ -243,17 +256,20 @@ export class CommitteeService {
       });
     }
 
-    // Fetch settings, optional caller membership, and access in parallel
-    const [settings, membership, withAccess] = await Promise.all([
+    // Fetch settings, optional caller membership, access, and optional inherited
+    // (parent-project) permissions in parallel.
+    const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
       this.getCommitteeSettings(req, committeeId),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
+      options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
     ]);
 
     const merged = {
       ...withAccess,
       ...settings,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
+      ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
     };
 
     if (!options.includeProjectMetadata) {
@@ -546,6 +562,62 @@ export class CommitteeService {
     logger.debug(req, 'delete_committee_member', 'Committee member deleted successfully', {
       committee_uid: committeeId,
       member_uid: memberId,
+    });
+  }
+
+  // ── Committee Invites ───────────────────────────────────────────────────
+  // Invite-by-email is the add-member primitive for people who may not yet have
+  // an LF account. Pending/resolved invites are read from the query index
+  // (committee_invite resource); create/revoke go through the committee-service.
+
+  /**
+   * Fetches all invites for a committee from the query index. Callers filter by
+   * status (e.g. pending) client-side; the roster only surfaces pending ones.
+   */
+  public async getCommitteeInvites(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeInvite[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_invite',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+  }
+
+  /**
+   * Creates a single committee invite. The committee-service has no bulk endpoint,
+   * so bulk invite is the frontend fanning out one call per email.
+   */
+  public async createCommitteeInvite(req: Request, committeeId: string, data: CreateCommitteeInviteRequest): Promise<CommitteeInvite> {
+    const invite = await this.microserviceProxy.proxyRequest<CommitteeInvite>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites`, 'POST', {}, data);
+
+    logger.debug(req, 'create_committee_invite', 'Committee invite created successfully', {
+      committee_uid: committeeId,
+      invite_uid: invite.uid,
+    });
+
+    return invite;
+  }
+
+  /**
+   * Revokes a pending committee invite. The upstream revoke-invite endpoint is a
+   * plain DELETE (no ETag concurrency control).
+   */
+  public async revokeCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}`, 'DELETE');
+
+    logger.debug(req, 'revoke_committee_invite', 'Committee invite revoked successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
     });
   }
 
@@ -1216,6 +1288,111 @@ export class CommitteeService {
       });
       return {};
     }
+  }
+
+  /**
+   * Collects the manage/review grants the committee inherits from its project ancestry so the
+   * members roster can label users who hold a "Manage" / "Reviewer" grant at the project or
+   * foundation level rather than directly on the committee (LFXV2-2059).
+   *
+   * Walks the chain `committee's project_uid -> parent -> ... -> foundation root`, reading each
+   * level's project settings and unioning the writers/auditors. This mirrors the authorization
+   * model, which inherits at every hop (`committee#writer` derives from `writer from project`,
+   * and `project#writer` from `writer from parent`), so a grant anywhere up the chain — most
+   * importantly a foundation-level "Manage" — is an effective committee grant. Reading only the
+   * immediate project (the round-1 behaviour) missed grants stored higher up, which is why a
+   * foundation manager still showed as a plain member.
+   *
+   * Best-effort and never throws — inherited labels are display-only and must not break the
+   * committee fetch. A level the caller cannot read (or a missing project) simply contributes no
+   * grants. The walk is depth-capped and visited-guarded so a malformed parent link cannot loop.
+   *
+   * @returns Deduped writers/auditors mapped to `CommitteeUser`, matching the shape of the
+   *   committee-scoped `writers` / `auditors` lists.
+   */
+  private async getInheritedPermissions(req: Request, projectUid?: string): Promise<{ writers: CommitteeUser[]; auditors: CommitteeUser[] }> {
+    if (!projectUid) {
+      return { writers: [], auditors: [] };
+    }
+
+    // Project UserInfo -> CommitteeUser (username is optional upstream; default to '' so roster
+    // matching falls back to email, mirroring how committee writers/auditors match).
+    const toCommitteeUser = (u: { name: string; email: string; username?: string; avatar?: string }): CommitteeUser => ({
+      username: u.username ?? '',
+      email: u.email,
+      name: u.name,
+      avatar: u.avatar,
+    });
+    // Dedup key: prefer the Auth0 username, fall back to email — the same identity keys the
+    // roster matches on, so a user granted at two levels collapses to one entry.
+    const keyOf = (u: CommitteeUser): string => (u.username || u.email || '').toLowerCase();
+
+    const writersByKey = new Map<string, CommitteeUser>();
+    const auditorsByKey = new Map<string, CommitteeUser>();
+    const visited = new Set<string>();
+    // The documented use case is a foundation-level grant 1-2 levels above the committee, so cap
+    // the walk at 3 levels (<=6 upstream calls) — enough to cover the known hierarchy with a small
+    // margin while bounding the per-request cost. Truncation is logged below (never silent), and
+    // the constant can be raised if deeper trees need support.
+    const MAX_DEPTH = 3;
+
+    let currentUid: string | undefined = projectUid;
+    while (currentUid && !visited.has(currentUid) && visited.size < MAX_DEPTH) {
+      const levelUid: string = currentUid;
+      visited.add(levelUid);
+
+      // This level's grants and the project record (to find the parent) in parallel; both are
+      // best-effort so an unreadable level contributes nothing and the walk still continues.
+      // Capture the error at debug — a caller lacking read access to an ancestor is an expected
+      // outcome (not a system fault), but the failure must remain diagnosable since it silently
+      // shrinks the inherited lists this feature surfaces.
+      const [settings, project]: [ProjectSettings | null, Project | null] = await Promise.all([
+        this.projectService.getProjectSettings(req, levelUid).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project settings; skipping level', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+        this.projectService.getProjectById(req, levelUid, false).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project record; stopping ancestry walk', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+      ]);
+
+      for (const u of settings?.writers ?? []) {
+        const cu = toCommitteeUser(u);
+        writersByKey.set(keyOf(cu), cu);
+      }
+      for (const u of settings?.auditors ?? []) {
+        const cu = toCommitteeUser(u);
+        auditorsByKey.set(keyOf(cu), cu);
+      }
+
+      currentUid = project?.parent_uid || undefined;
+    }
+
+    // Surface a truncated walk (more ancestry remained when the depth cap was hit) so a missed
+    // deep-hierarchy grant is diagnosable rather than a silent cap.
+    if (currentUid && !visited.has(currentUid)) {
+      logger.debug(req, 'get_inherited_permissions', 'Ancestry walk truncated at MAX_DEPTH; deeper grants not collected', {
+        project_uid: projectUid,
+        max_depth: MAX_DEPTH,
+        next_unvisited_project_uid: currentUid,
+      });
+    }
+
+    logger.debug(req, 'get_inherited_permissions', 'Collected inherited committee permissions from project ancestry', {
+      project_uid: projectUid,
+      levels_visited: visited.size,
+      inherited_writers: writersByKey.size,
+      inherited_auditors: auditorsByKey.size,
+    });
+
+    return { writers: [...writersByKey.values()], auditors: [...auditorsByKey.values()] };
   }
 
   /**

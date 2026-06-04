@@ -122,6 +122,40 @@ export class SurveyController {
   }
 
   /**
+   * GET /surveys/:uid/responses — paginated list of individual per-recipient responses.
+   * Forwards page_token / per_page / project_uid(s) to the upstream survey service.
+   */
+  public async getSurveyResponses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const startTime = logger.startOperation(req, 'get_survey_responses', {
+      survey_uid: surveyUid,
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      if (
+        !validateUidParameter(surveyUid, req, next, {
+          operation: 'get_survey_responses',
+          service: 'survey_controller',
+        })
+      ) {
+        return;
+      }
+
+      const page = await this.surveyService.getSurveyResponses(req, surveyUid, req.query as Record<string, any>);
+
+      logger.success(req, 'get_survey_responses', startTime, {
+        survey_uid: surveyUid,
+        response_count: page.data.length,
+      });
+
+      res.json(page);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /surveys/:uid
    */
   public async getSurveyById(req: Request, res: Response, next: NextFunction): Promise<void> {
