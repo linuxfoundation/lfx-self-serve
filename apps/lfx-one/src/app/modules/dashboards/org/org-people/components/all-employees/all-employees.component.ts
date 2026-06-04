@@ -235,7 +235,8 @@ export class AllEmployeesComponent {
     this.limit.set(this.totalFiltered());
   }
 
-  protected onPersonClick(row: OrgAllEmployeeRow): void {
+  protected onPersonClick(row: OrgAllEmployeeRowVm): void {
+    if (row.isSynthetic) return;
     this.personPanel.open(row.name);
   }
 

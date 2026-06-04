@@ -192,7 +192,8 @@
                 <td class="px-4 py-3 align-middle">
                   <button
                     type="button"
-                    class="flex min-w-0 items-center gap-3 text-left"
+                    class="group flex min-w-0 items-center gap-3 text-left disabled:cursor-default"
+                    [disabled]="row.isSynthetic"
                     [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-name'"
                     (click)="$event.stopPropagation(); onPersonClick(row)">
                     <span
@@ -202,7 +203,7 @@
                       {{ row.initials }}
                     </span>
                     <span class="flex min-w-0 flex-col">
-                      <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.name }}</span>
+                      <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
                       @if (row.title) {
                         <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
                       }
