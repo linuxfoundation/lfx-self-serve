@@ -5,6 +5,7 @@ import { computed, Component, DestroyRef, inject, output, Signal } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
+import { RouterLink } from '@angular/router';
 import { InvitationService } from '@services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -28,7 +29,7 @@ const TOAST_KEY = 'committee-invitations';
  */
 @Component({
   selector: 'lfx-committee-invitations',
-  imports: [ButtonComponent, TagComponent, ToastModule, InvitationSubtextPipe],
+  imports: [ButtonComponent, TagComponent, ToastModule, InvitationSubtextPipe, RouterLink],
   templateUrl: './committee-invitations.component.html',
   styleUrl: './committee-invitations.component.scss',
 })

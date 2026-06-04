@@ -52,9 +52,15 @@
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <lfx-tag value="Invited" severity="info" icon="fa-light fa-envelope" styleClass="whitespace-nowrap shrink-0" />
             <div class="flex flex-col gap-0.5 min-w-0">
-              <span class="text-sm font-medium text-gray-900 truncate" [attr.title]="invitation.committee_name" data-testid="committee-invitations-name">
+              <a
+                [routerLink]="['/groups', invitation.committee_uid]"
+                [state]="{ backLabel: 'My Groups' }"
+                class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate"
+                [attr.title]="invitation.committee_name"
+                [attr.aria-label]="'Open group ' + invitation.committee_name"
+                data-testid="committee-invitations-name">
                 {{ invitation.committee_name }}
-              </span>
+              </a>
               <span class="text-xs text-gray-500 truncate" data-testid="committee-invitations-subtext">
                 {{ invitation | invitationSubtext }}
               </span>

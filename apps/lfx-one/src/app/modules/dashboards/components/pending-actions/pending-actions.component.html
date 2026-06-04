@@ -114,8 +114,19 @@
                     </a>
                   } @else if (item.isInvitation) {
                     <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
-                      <p class="text-sm font-medium text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
-                        {{ item.text }}
+                      <!-- Inviter copy isn't in the committee-service contract today, so the prefix is
+                           fixed and the group name is the link into the group (project-lens detail page). -->
+                      <p class="text-sm text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
+                        You've been invited to
+                        <a
+                          [routerLink]="['/groups', item.committeeUid]"
+                          [state]="{ backLabel: 'My Dashboard' }"
+                          (click)="$event.stopPropagation()"
+                          class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                          [attr.aria-label]="'Open group ' + item.inviteGroupName"
+                          data-testid="dashboard-pending-actions-invitation-link"
+                          >{{ item.inviteGroupName }}</a
+                        >
                       </p>
                       @if (item.date) {
                         <span class="text-xs text-gray-500" data-testid="dashboard-pending-actions-invitation-expiry"> Expires {{ item.date }} </span>
