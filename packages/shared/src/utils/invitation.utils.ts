@@ -32,6 +32,25 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
 }
 
 /**
+ * Finds the current user's unresolved pending invitation for a specific committee, or null.
+ *
+ * Shared by the group-detail invite banner: it matches the shared invitation cache against the
+ * committee being viewed, excluding any invite already accepted/declined this session (so the banner
+ * disappears the moment the user acts, in sync with the other surfaces). Returns null when there is
+ * no committee UID or no matching pending invite.
+ */
+export function findPendingInvitationForCommittee(
+  invitations: PendingInvitation[],
+  resolvedUids: ReadonlySet<string>,
+  committeeUid: string | null | undefined
+): PendingInvitation | null {
+  if (!committeeUid) {
+    return null;
+  }
+  return invitations.find((invite) => invite.committee_uid === committeeUid && !resolvedUids.has(invite.uid)) ?? null;
+}
+
+/**
  * Pure builder for the secondary line on a pending-invitation row.
  *
  * Base copy is "{inviter_name} invited you" when an inviter is known (usually it isn't), otherwise

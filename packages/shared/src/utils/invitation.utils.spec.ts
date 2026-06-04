@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PendingInvitation } from '../interfaces/committee.interface';
-import { buildInvitationActions, buildInvitationSubtext } from './invitation.utils';
+import { buildInvitationActions, buildInvitationSubtext, findPendingInvitationForCommittee } from './invitation.utils';
 
 /** Minimal invitation builder — only the fields the helpers read. */
 function invitation(overrides: Partial<PendingInvitation> = {}): PendingInvitation {
@@ -81,5 +81,26 @@ describe('buildInvitationSubtext', () => {
 
   it('falls back to base copy when the expiry is set but formatting produced nothing', () => {
     expect(buildInvitationSubtext(invitation({ expires_at: '2026-06-20T00:00:00Z' }), null)).toBe("You've been invited");
+  });
+});
+
+describe('findPendingInvitationForCommittee', () => {
+  const invites = [invitation({ uid: 'i1', committee_uid: 'c1' }), invitation({ uid: 'i2', committee_uid: 'c2' })];
+
+  it('returns the unresolved invite matching the committee UID', () => {
+    expect(findPendingInvitationForCommittee(invites, new Set(), 'c2')?.uid).toBe('i2');
+  });
+
+  it('returns null when no invite matches the committee', () => {
+    expect(findPendingInvitationForCommittee(invites, new Set(), 'c3')).toBeNull();
+  });
+
+  it('returns null when the committee UID is missing', () => {
+    expect(findPendingInvitationForCommittee(invites, new Set(), null)).toBeNull();
+    expect(findPendingInvitationForCommittee(invites, new Set(), undefined)).toBeNull();
+  });
+
+  it('excludes an invite already resolved this session', () => {
+    expect(findPendingInvitationForCommittee(invites, new Set(['i1']), 'c1')).toBeNull();
   });
 });

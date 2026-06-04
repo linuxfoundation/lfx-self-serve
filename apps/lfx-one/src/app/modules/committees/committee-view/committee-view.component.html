@@ -2,6 +2,39 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto py-6 px-8">
+  <!-- Invitation decline toast — carries the Undo affordance for the deferred decline. -->
+  <p-toast [key]="inviteToastKey" position="top-right" styleClass="committee-view-invite-toast">
+    <ng-template let-message pTemplate="message">
+      <div class="flex items-start gap-3 w-full">
+        @switch (message.severity) {
+          @case ('error') {
+            <i class="fa-light fa-circle-xmark text-red-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+          }
+          @case ('info') {
+            <i class="fa-light fa-circle-info text-blue-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+          }
+          @default {
+            <i class="fa-light fa-circle-check text-emerald-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+          }
+        }
+        <div class="flex flex-col gap-1 min-w-0 flex-1">
+          <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
+          @if (message.data?.uid) {
+            <button
+              type="button"
+              class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 mt-1 self-start"
+              (click)="onUndoDecline(message.data.uid)"
+              aria-label="Undo declining the invitation"
+              data-testid="committee-view-invitation-undo">
+              <i class="fa-light fa-rotate-left text-[10px]" aria-hidden="true"></i>
+              <span>Undo</span>
+            </button>
+          }
+        </div>
+      </div>
+    </ng-template>
+  </p-toast>
+
   <!-- Loading State -->
   @if (loading()) {
     <lfx-route-loading />
@@ -32,6 +65,46 @@
   } @else if (committee()?.uid) {
     <!-- Committee Dashboard Content -->
     <div class="flex flex-col gap-6">
+      <!-- Pending-invitation banner — accept/decline right from the group page (in sync with the
+           dashboard + My Groups surfaces). Renders nothing unless the user is invited to this group. -->
+      @if (pendingInvitation(); as invite) {
+        <div
+          class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 sm:flex-row sm:items-center"
+          role="region"
+          aria-label="Group invitation"
+          data-testid="committee-view-invitation-banner">
+          <div class="flex flex-1 items-start gap-3">
+            <i class="fa-light fa-user-plus mt-0.5 text-lg text-blue-600" aria-hidden="true"></i>
+            <div class="flex flex-col gap-0.5">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-gray-900">You've been invited to {{ committee()?.name }}</span>
+                <lfx-tag value="Invited" severity="info" />
+              </div>
+              @if (invite.inviter_name || invite.expires_at) {
+                <span class="text-xs text-gray-600">{{ invite | invitationSubtext }}</span>
+              }
+            </div>
+          </div>
+          <div class="flex items-center gap-2 sm:shrink-0">
+            <lfx-button
+              label="Accept"
+              icon="fa-light fa-check"
+              severity="info"
+              size="small"
+              [ariaLabel]="'Accept invite to ' + (committee()?.name || 'this group')"
+              (onClick)="onAcceptInvite(invite)"
+              data-testid="committee-view-invitation-accept" />
+            <lfx-button
+              label="Decline"
+              severity="secondary"
+              [text]="true"
+              size="small"
+              [ariaLabel]="'Decline invite to ' + (committee()?.name || 'this group')"
+              (onClick)="onDeclineInvite(invite)"
+              data-testid="committee-view-invitation-decline" />
+          </div>
+        </div>
+      }
       <!-- Header Section -->
       <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-view-header">
         <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
