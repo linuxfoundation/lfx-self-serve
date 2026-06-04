@@ -881,9 +881,7 @@ export class AnalyticsService {
    * @returns Social media response with followers, platforms, engagement, and trend data
    */
   public getSocialMedia(foundationSlug: string, month?: string): Observable<SocialMediaResponse> {
-    const params: Record<string, string> = { foundationSlug };
-    if (month) params['month'] = month;
-    return this.http.get<SocialMediaResponse>('/api/analytics/social-media', { params }).pipe(
+    return this.http.get<SocialMediaResponse>('/api/analytics/social-media', { params: this.buildFoundationParams(foundationSlug, undefined, month) }).pipe(
       catchError(() => {
         return of({
           totalFollowers: 0,
@@ -925,16 +923,16 @@ export class AnalyticsService {
   }
 
   public getKeywordPerformance(foundationSlug: string, month?: string): Observable<KeywordPerformanceResponse> {
-    const params: Record<string, string> = { foundationSlug };
-    if (month) params['month'] = month;
-    return this.http.get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params }).pipe(
-      catchError(() => {
-        return of({
-          keywords: [],
-          totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 },
-        });
-      })
-    );
+    return this.http
+      .get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params: this.buildFoundationParams(foundationSlug, undefined, month) })
+      .pipe(
+        catchError(() => {
+          return of({
+            keywords: [],
+            totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 },
+          });
+        })
+      );
   }
 
   // North Star Metrics

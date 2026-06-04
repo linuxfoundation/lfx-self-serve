@@ -25,7 +25,7 @@ export class OverviewTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
-  public readonly selectedMonth = input.required<string>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -59,6 +59,7 @@ export class OverviewTabComponent {
             revenueImpact: isWebOnly
               ? of(null)
               : this.analyticsService.getRevenueImpact(slug, classification, month || undefined).pipe(catchError(() => of(null))),
+            // getBrandReach uses pre-computed _30D columns that cannot be month-filtered
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
             emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, month || undefined).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));

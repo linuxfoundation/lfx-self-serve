@@ -164,6 +164,7 @@ export function getValidatedClassification(req: Request, operation: string): str
 
 const MONTH_FORMAT_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** Validates an optional `month` query param (YYYY-MM). Returns the validated string or undefined. Throws ServiceValidationError for invalid format or future months. */
 export function getValidatedMonth(req: Request, operation: string): string | undefined {
   const month = getStringQueryParam(req, 'month');
   if (!month) return undefined;
