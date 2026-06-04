@@ -633,6 +633,90 @@ export class CommitteeController {
     }
   }
 
+  /**
+   * POST /committees/:id/invites/:inviteId/accept
+   */
+  public async acceptCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, inviteId } = req.params;
+    const startTime = logger.startOperation(req, 'accept_committee_invite', {
+      committee_id: id,
+      invite_id: inviteId,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!inviteId) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Invite ID is required', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId);
+
+      logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/invites/:inviteId/decline
+   */
+  public async declineCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, inviteId } = req.params;
+    const startTime = logger.startOperation(req, 'decline_committee_invite', {
+      committee_id: id,
+      invite_id: inviteId,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'decline_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!inviteId) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Invite ID is required', {
+            operation: 'decline_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.committeeService.declineCommitteeInvite(req, id, inviteId);
+
+      logger.success(req, 'decline_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ── Document Endpoints ──────────────────────────────────────────────────
 
   /**

@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,6 +12,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, getGroupBehavioralClass } from '@lfx-one/shared/constants';
 import { Committee, GroupBehavioralClass, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -19,11 +21,12 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
+  imports: [ButtonComponent, CardComponent, CommitteeInvitationsComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -35,6 +38,12 @@ export class CommitteeDashboardComponent {
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
+  private readonly invitationService = inject(InvitationService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
+
+  // Guards the one-time pending-invitations load when the Me lens first becomes active.
+  private invitationsLoaded = false;
 
   // Use the configurable label constants
   protected readonly committeeLabel = COMMITTEE_LABEL;
@@ -147,6 +156,25 @@ export class CommitteeDashboardComponent {
     ]);
 
     this.behavioralClassCounts = this.initializeBehavioralClassCounts();
+
+    // Load the user's pending invitations once when the Me lens is active in the browser, so the
+    // invitations section above the My Groups table populates. Guarded so it runs a single time and
+    // never on the server (the section is a browser-only, interactive surface).
+    effect(() => {
+      if (isPlatformBrowser(this.platformId) && this.isMeLens() && !this.invitationsLoaded) {
+        this.invitationsLoaded = true;
+        this.invitationService.loadPendingInvitations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+      }
+    });
+  }
+
+  /**
+   * Re-triggers the My Committees fetch so an accepted invitation surfaces in the active list. Reuses
+   * the shared `refresh` trigger that already drives `initializeMyCommittees()`.
+   */
+  public reloadMyCommittees(): void {
+    this.myCommitteesLoading.set(true);
+    this.refresh.update((v) => v + 1);
   }
 
   public openCreateDialog(): void {

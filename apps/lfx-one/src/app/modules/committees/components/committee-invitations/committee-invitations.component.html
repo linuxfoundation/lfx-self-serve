@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-toast [key]="toastKey" position="top-right" styleClass="committee-invitations-toast">
+  <ng-template let-message pTemplate="message">
+    <div class="flex items-start gap-3 w-full">
+      @switch (message.severity) {
+        @case ('error') {
+          <i class="fa-light fa-circle-xmark text-red-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+        @case ('info') {
+          <i class="fa-light fa-circle-info text-blue-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+        @default {
+          <i class="fa-light fa-circle-check text-emerald-500 text-xl mt-0.5 shrink-0" aria-hidden="true"></i>
+        }
+      }
+      <div class="flex flex-col gap-1 min-w-0 flex-1">
+        <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
+        @if (message.data?.uid) {
+          <button
+            type="button"
+            class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 mt-1 self-start"
+            (click)="onUndoDecline({ uid: message.data.uid, committeeUid: message.data.committeeUid })"
+            aria-label="Undo declining the invitation"
+            data-testid="committee-invitations-toast-undo">
+            <i class="fa-light fa-rotate-left text-[10px]" aria-hidden="true"></i>
+            <span>Undo</span>
+          </button>
+        }
+      </div>
+    </div>
+  </ng-template>
+</p-toast>
+
+@if (invitations().length > 0) {
+  <section class="flex flex-col gap-4" data-testid="committee-invitations-section">
+    <div class="flex items-center gap-3">
+      <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+        <i class="fa-light fa-envelope-open-text text-lg" aria-hidden="true"></i>
+        <span>Invitations ({{ invitations().length }})</span>
+      </h2>
+      <div class="flex-1 border-t border-gray-200 self-center"></div>
+    </div>
+
+    <ul class="flex flex-col gap-3 list-none p-0 m-0" role="list" aria-label="Pending invitations" data-testid="committee-invitations-list">
+      @for (invitation of invitations(); track invitation.uid) {
+        <li
+          role="listitem"
+          class="flex flex-col sm:flex-row sm:items-center gap-3 bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-3"
+          data-testid="committee-invitations-item">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <lfx-tag value="Invited" severity="info" icon="fa-light fa-envelope" styleClass="whitespace-nowrap shrink-0" />
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <span class="text-sm font-medium text-gray-900 truncate" [attr.title]="invitation.committee_name" data-testid="committee-invitations-name">
+                {{ invitation.committee_name }}
+              </span>
+              <span class="text-xs text-gray-500 truncate" data-testid="committee-invitations-subtext">
+                {{ invitation | invitationSubtext }}
+              </span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 self-start sm:self-auto sm:shrink-0">
+            <lfx-button
+              size="small"
+              severity="primary"
+              label="Accept"
+              [ariaLabel]="'Accept invite to ' + invitation.committee_name"
+              (onClick)="onAccept(invitation)"
+              data-testid="committee-invitations-accept" />
+            <lfx-button
+              size="small"
+              severity="secondary"
+              [text]="true"
+              label="Decline"
+              [ariaLabel]="'Decline invite to ' + invitation.committee_name"
+              (onClick)="onDecline(invitation)"
+              data-testid="committee-invitations-decline" />
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
+}

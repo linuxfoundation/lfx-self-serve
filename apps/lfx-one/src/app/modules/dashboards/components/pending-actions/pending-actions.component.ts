@@ -14,12 +14,16 @@ import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
+import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
 import { timer } from 'rxjs';
 
-import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
+import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, PendingDecline, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
+
+/** Deferred-undo window (ms) before an optimistic decline is committed upstream. */
+const INVITE_DECLINE_UNDO_MS = 5000;
 
 @Component({
   selector: 'lfx-pending-actions',
@@ -40,6 +44,7 @@ export class PendingActionsComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
   private readonly voteService = inject(VoteService);
+  private readonly invitationService = inject(InvitationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -69,6 +74,11 @@ export class PendingActionsComponent {
   private readonly loadingVoteUids = signal<ReadonlySet<string>>(new Set());
   private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
 
+  // The decline currently inside its deferred-undo window — drives the Undo affordance in the toast. Null when no decline is pending.
+  protected readonly pendingDecline = signal<PendingDecline | null>(null);
+  // setTimeout handle for the in-flight deferred decline; cleared on undo or when the timer fires.
+  private declineTimerId: ReturnType<typeof setTimeout> | null = null;
+
   // Clamped display limit shared by slicing, hasMore, and skeleton-swap arrival logic — rejects NaN/Infinity, floors fractional values, default 2.
   protected readonly safeDisplayLimit: Signal<number> = this.initSafeDisplayLimit();
   protected readonly visibleActionsUnlimited: Signal<PendingActionItem[]> = this.initVisibleActionsUnlimited();
@@ -88,6 +98,15 @@ export class PendingActionsComponent {
           }
         }
       });
+
+    // If the user navigates away while a decline is still in its undo window, commit it immediately so
+    // leaving the page doesn't silently drop the decline (clear the timer first so it can't double-fire).
+    this.destroyRef.onDestroy(() => {
+      const pending = this.pendingDecline();
+      if (!pending) return;
+      this.clearDeclineTimer();
+      this.invitationService.declineInvitation(pending.committeeUid, pending.inviteUid).subscribe();
+    });
   }
 
   protected handleAgendaOrOtherClick(item: DecoratedPendingAction): void {
@@ -128,6 +147,73 @@ export class PendingActionsComponent {
     if (this.expandedVoteKey() === this.getRowKey(item)) {
       this.expandedVoteKey.set(null);
     }
+  }
+
+  // Accept a committee invitation. Optimistically removes the row (markResolved → resolvedInviteUids filter), then commits
+  // upstream; on failure the row is restored (unmarkResolved) and an error toast is shown.
+  protected onAcceptInvitation(item: PendingActionItem): void {
+    const inviteUid = item.inviteUid;
+    const committeeUid = item.committeeUid;
+    if (!inviteUid || !committeeUid) return;
+
+    const groupName = item.inviteGroupName ?? item.badge;
+    this.invitationService.markResolved(inviteUid);
+    this.invitationService
+      .acceptInvitation(committeeUid, inviteUid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            key: 'pending-actions-toast',
+            severity: 'success',
+            summary: `You've joined ${groupName}`,
+            life: 5000,
+          });
+        },
+        error: () => {
+          this.invitationService.unmarkResolved(inviteUid);
+          this.messageService.add({
+            key: 'pending-actions-toast',
+            severity: 'error',
+            summary: "Couldn't accept — try again.",
+            life: 5000,
+          });
+        },
+      });
+  }
+
+  // Decline a committee invitation with a true (deferred) undo: optimistically remove the row, schedule the real decline
+  // ~5s out, and surface an Undo toast. Undo (or destroy) cancels the timer; only one decline can be pending at a time, so
+  // a new decline first commits any in-flight one.
+  protected onDeclineInvitation(item: PendingActionItem): void {
+    const inviteUid = item.inviteUid;
+    const committeeUid = item.committeeUid;
+    if (!inviteUid || !committeeUid) return;
+
+    // If a previous decline is still mid-window, commit it now before starting a new one.
+    this.commitPendingDecline();
+
+    this.invitationService.markResolved(inviteUid);
+    this.pendingDecline.set({ inviteUid, committeeUid });
+    this.declineTimerId = setTimeout(() => this.fireDecline(inviteUid, committeeUid), INVITE_DECLINE_UNDO_MS);
+
+    this.messageService.add({
+      key: 'pending-actions-toast',
+      severity: 'info',
+      summary: 'Invite declined',
+      data: { undoInviteUid: inviteUid },
+      life: INVITE_DECLINE_UNDO_MS,
+    });
+  }
+
+  // Undo a still-pending decline: cancel the timer, restore the row, and clear the toast.
+  protected onUndoDecline(): void {
+    const pending = this.pendingDecline();
+    if (!pending) return;
+    this.clearDeclineTimer();
+    this.invitationService.unmarkResolved(pending.inviteUid);
+    this.pendingDecline.set(null);
+    this.messageService.clear('pending-actions-toast');
   }
 
   protected openDrawer(): void {
@@ -279,6 +365,45 @@ export class PendingActionsComponent {
       });
   }
 
+  // Commit the deferred decline upstream once its undo window elapses. The row is already optimistically removed; on
+  // failure restore it and surface an inline error toast. Only acts while this UID is still the pending decline.
+  private fireDecline(inviteUid: string, committeeUid: string): void {
+    const pending = this.pendingDecline();
+    if (!pending || pending.inviteUid !== inviteUid) return;
+    this.declineTimerId = null;
+    this.pendingDecline.set(null);
+    this.invitationService
+      .declineInvitation(committeeUid, inviteUid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: () => {
+          this.invitationService.unmarkResolved(inviteUid);
+          this.messageService.add({
+            key: 'pending-actions-toast',
+            severity: 'error',
+            summary: "Couldn't decline — try again.",
+            life: 5000,
+          });
+        },
+      });
+  }
+
+  // Flush a still-pending decline synchronously (e.g. a new decline supersedes it): clear the timer and fire the API now.
+  private commitPendingDecline(): void {
+    const pending = this.pendingDecline();
+    if (!pending) return;
+    this.clearDeclineTimer();
+    this.pendingDecline.set(null);
+    this.invitationService.declineInvitation(pending.committeeUid, pending.inviteUid).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+  }
+
+  private clearDeclineTimer(): void {
+    if (this.declineTimerId !== null) {
+      clearTimeout(this.declineTimerId);
+      this.declineTimerId = null;
+    }
+  }
+
   private removeFromSet(keys: ReadonlySet<string>, rowKey: string): ReadonlySet<string> {
     if (!keys.has(rowKey)) return keys;
     const next = new Set(keys);
@@ -329,10 +454,19 @@ export class PendingActionsComponent {
   private initVisibleActionsUnlimited(): Signal<PendingActionItem[]> {
     return computed(() => {
       this.hiddenActionsVersion();
+      // Invitations are resolved server-side, not cookie-hidden: drop any invite the user accepted/declined this session
+      // (tracked in the shared resolvedInviteUids signal) so the row disappears across every surface. Reading the signal
+      // here makes this computed re-run automatically on accept/decline/undo.
+      const resolvedInvites = this.invitationService.resolvedInviteUids();
       const pinned = new Set<string>();
       this.completingRowKeys().forEach((k) => pinned.add(k));
       this.swappingRowKeys().forEach((k) => pinned.add(k));
-      return this.pendingActions().filter((item) => pinned.has(this.getRowKey(item)) || !this.hiddenActionsService.isActionHidden(item));
+      return this.pendingActions().filter((item) => {
+        if (item.type === 'Invitation' && !!item.inviteUid && resolvedInvites.has(item.inviteUid)) {
+          return false;
+        }
+        return pinned.has(this.getRowKey(item)) || !this.hiddenActionsService.isActionHidden(item);
+      });
     });
   }
 
@@ -359,6 +493,8 @@ export class PendingActionsComponent {
         const isVoteLoading = !!item.voteUid && loadingVoteUids.has(item.voteUid);
         const isVoteInlineExpanded = isVoteInline && expandedVoteKey === rowKey;
         const voteUsesDrawerVal = !!vote && this.voteUsesDrawer(vote);
+        const isInvitation = item.type === 'Invitation' && !!item.inviteUid;
+        const inviteGroupName = item.inviteGroupName ?? item.badge;
         return {
           ...item,
           rowKey,
@@ -373,6 +509,9 @@ export class PendingActionsComponent {
           isVoteLoading,
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
+          isInvitation,
+          acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
+          declineAriaLabel: `Decline invite to ${inviteGroupName}`,
         };
       });
     });

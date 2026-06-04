@@ -23,6 +23,7 @@ import {
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
+  PendingInvitation,
   QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
@@ -33,13 +34,14 @@ import {
   UserPullRequestsRow,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { getCurrentOrNextOccurrence, hasMeetingEnded, parseToInt } from '@lfx-one/shared/utils';
+import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -60,6 +62,7 @@ export class UserService {
   private projectService: ProjectService;
   private microserviceProxy: MicroserviceProxyService;
   private accessCheckService: AccessCheckService;
+  private committeeService: CommitteeService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
   private readonly bufferMinutes = 40;
@@ -71,6 +74,7 @@ export class UserService {
     this.projectService = new ProjectService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.accessCheckService = new AccessCheckService();
+    this.committeeService = new CommitteeService();
   }
 
   /**
@@ -391,6 +395,18 @@ export class UserService {
   ): Promise<PendingActionItem[]> {
     const actions = await this.getUserPendingActions(req, email, projectSlug, projectUid);
     return limit && limit > 0 && actions.length > limit ? actions.slice(0, limit) : actions;
+  }
+
+  /**
+   * Returns the current user's pending committee invitations (enriched), for the dashboard
+   * and My Groups surfaces. Thin passthrough to the committee service so both surfaces share a
+   * single BFF endpoint and the frontend can keep one shared signal in sync.
+   * @param req - Express request object
+   * @param email - User email (impersonation-aware, resolved by the controller)
+   * @returns Array of enriched pending invitations
+   */
+  public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
+    return this.committeeService.getMyPendingInvitations(req, email);
   }
 
   /**
@@ -1018,8 +1034,15 @@ export class UserService {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
 
-    // Phase 1: surveys, meetings, and pending votes are independent — issue them in parallel.
-    const [surveys, meetings, pendingVotes] = await Promise.all([
+    // Pending committee invitations only belong on the unscoped Me-lens path — they're personal
+    // to the user (by email) and not tied to a project lens. On a project/foundation lens, skip
+    // the lookup entirely.
+    const isMeLens = !projectUid && !projectSlug;
+
+    // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
+    // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
+    // can't wipe the whole list.
+    const [surveys, meetings, pendingVotes, pendingInvitations] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
@@ -1034,11 +1057,19 @@ export class UserService {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending votes', { err: error });
         return [] as Vote[];
       }),
+
+      isMeLens
+        ? this.committeeService.getMyPendingInvitations(req, email).catch((error) => {
+            logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending invitations', { err: error });
+            return [] as PendingInvitation[];
+          })
+        : Promise.resolve([] as PendingInvitation[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
+    const invitationActions = this.transformInvitationsToActions(pendingInvitations);
 
     // Phase 2: RSVP + registrant lookups are only meaningful when there are in-window meetings
     // to evaluate. Skip them otherwise — avoids two full paginated per-user scans per request
@@ -1060,11 +1091,12 @@ export class UserService {
       }
     }
 
-    // Order by actionability: someone is waiting on RSVPs and votes have closing windows, so
-    // those go first. Surveys are time-bounded by their cutoff. Review Agenda is informational
-    // (read-before-meeting) and goes last — with the 5-item display cap, plentiful meetings
-    // shouldn't crowd out the rows the user actually has to respond to.
-    return [...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    // Order by actionability: pending invitations are the most actionable (someone is waiting on
+    // the user to join) and only ever appear on the Me lens, so they lead. RSVPs and votes have
+    // closing windows next. Surveys are time-bounded by their cutoff. Review Agenda is
+    // informational (read-before-meeting) and goes last — with the 5-item display cap, plentiful
+    // meetings shouldn't crowd out the rows the user actually has to respond to.
+    return [...invitationActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
   }
 
   /**
@@ -1299,6 +1331,17 @@ export class UserService {
    * /votes) — there's no standalone vote-detail route, so the user lands on the list and picks
    * the vote to cast.
    */
+  /**
+   * Transform pending committee invitations into pending action rows. Invitations carry no
+   * closing window in the current committee-service contract, so the `date` field is only set
+   * when `expires_at` is (reserved for a future upstream that emits it). The badge prefers the
+   * project name and falls back to the committee name. `inviteUid` / `committeeUid` are carried
+   * through so the dashboard can call accept/decline inline.
+   */
+  private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
+    return buildInvitationActions(invitations);
+  }
+
   private transformVotesToActions(votes: Vote[]): PendingActionItem[] {
     return votes.map((vote) => {
       const endDate = new Date(vote.end_time);
