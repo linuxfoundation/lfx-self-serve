@@ -31,6 +31,8 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
   protected readonly cardExpiryContainer = viewChild<ElementRef<HTMLElement>>('cardExpiryContainer');
   protected readonly cardCvcContainer = viewChild<ElementRef<HTMLElement>>('cardCvcContainer');
 
+  protected readonly isStripeKeySet = computed(() => this.stripeService.isStripeKeySet());
+
   // Guards mountStripeElements from running on an already-destroyed view.
   private destroyed = false;
 

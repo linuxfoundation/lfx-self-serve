@@ -45,4 +45,9 @@ export class StripeService {
 
     return this.stripePromise;
   }
+
+  public isStripeKeySet(): boolean {
+    const { stripePublishableKey } = getRuntimeConfig(this.transferState);
+    return !!stripePublishableKey;
+  }
 }
