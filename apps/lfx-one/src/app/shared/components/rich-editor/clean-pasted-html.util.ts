@@ -145,7 +145,23 @@ const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
 // any future content type the editor learns to render (images, media, embeds, form widgets).
 // HTML elements always uppercase their tagName, but namespaced elements (SVG, MathML) preserve
 // case, so we normalize via toUpperCase() at the lookup site rather than maintaining both forms.
-const CONTENT_LEAF_TAGS = new Set(['IMG', 'IFRAME', 'VIDEO', 'AUDIO', 'SOURCE', 'PICTURE', 'SVG', 'MATH', 'CANVAS', 'EMBED', 'OBJECT', 'INPUT', 'SELECT', 'TEXTAREA', 'HR']);
+const CONTENT_LEAF_TAGS = new Set([
+  'IMG',
+  'IFRAME',
+  'VIDEO',
+  'AUDIO',
+  'SOURCE',
+  'PICTURE',
+  'SVG',
+  'MATH',
+  'CANVAS',
+  'EMBED',
+  'OBJECT',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+  'HR',
+]);
 
 // Google Docs (and Word) inject empty <p style="height:11pt"><span></span></p> nodes as blank-line
 // spacers between content blocks. After style/class strip, the editor's `p { margin: 0 0 0.75rem }`
