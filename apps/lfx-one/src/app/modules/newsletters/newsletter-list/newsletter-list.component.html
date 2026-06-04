@@ -111,15 +111,18 @@
                     <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
                   </td>
                   <td class="text-right">
-                    <lfx-button
-                      label="Delete"
-                      severity="danger"
-                      size="small"
-                      [text]="true"
-                      (onClick)="onDeleteDraft(newsletter, $event)"
-                      [disabled]="deletingId() === newsletter.id"
-                      [attr.data-testid]="'newsletter-delete-' + newsletter.id">
-                    </lfx-button>
+                    <div class="flex items-center justify-end gap-2">
+                      <lfx-button
+                        label="Delete"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        (onClick)="onDeleteDraft(newsletter, $event)"
+                        [disabled]="deletingId() === newsletter.id"
+                        [attr.data-testid]="'newsletter-delete-' + newsletter.id">
+                      </lfx-button>
+                      <lfx-tag value="Draft" severity="warn" [attr.data-testid]="'newsletter-status-draft-' + newsletter.id"></lfx-tag>
+                    </div>
                   </td>
                 }
               </tr>

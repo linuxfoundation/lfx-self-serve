@@ -12,6 +12,7 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
+  NewsletterManageViewMode,
   NewsletterSendResult,
   ProjectContext,
   UpdateNewsletterRequest,
@@ -45,6 +46,7 @@ import {
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
 import { NewsletterContentStepComponent } from '../components/newsletter-content-step/newsletter-content-step.component';
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+import { NewsletterReviewComponent } from '../components/newsletter-review/newsletter-review.component';
 import { NewsletterSendStepComponent } from '../components/newsletter-send-step/newsletter-send-step.component';
 
 @Component({
@@ -60,6 +62,7 @@ import { NewsletterSendStepComponent } from '../components/newsletter-send-step/
     NewsletterContentStepComponent,
     NewsletterSendStepComponent,
     NewsletterPreviewDrawerComponent,
+    NewsletterReviewComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './newsletter-manage.component.html',
@@ -96,12 +99,18 @@ export class NewsletterManageComponent {
   public readonly savedAt = signal<Date | null>(null);
   public readonly savingDraft = signal<boolean>(false);
   public readonly manualSaving = signal<boolean>(false);
+  public readonly deletingDraft = signal<boolean>(false);
   public readonly previewDrawerVisible = signal<boolean>(false);
 
   // === Step state ===
   private readonly internalStep = signal<number>(1);
   public readonly totalSteps = NEWSLETTER_TOTAL_STEPS;
   public readonly currentStep: Signal<number> = this.initCurrentStep();
+  // Edit mode lands on the Review summary; create flow always uses the stepper.
+  // Driven by the URL so refresh / deep links restore the right view (see initViewMode).
+  public readonly viewMode: Signal<NewsletterManageViewMode> = this.initViewMode();
+  public readonly showReview = computed(() => this.viewMode() === 'review');
+  public readonly showStepper = computed(() => this.viewMode() === 'step');
 
   // === Project context ===
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
@@ -187,6 +196,48 @@ export class NewsletterManageComponent {
 
   protected previousStep(): void {
     if (this.canGoPrevious()) this.goToStep(this.currentStep() - 1);
+  }
+
+  // Enter the stepper at a specific step from the Review screen.
+  protected enterStep(step: number): void {
+    if (step < 1 || step > this.totalSteps) return;
+    if (!this.isEditMode()) {
+      this.internalStep.set(step);
+      return;
+    }
+    // Drop ?view=review so the stepper takes over, and pin ?step=N for refresh stability.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { step, view: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  protected backToReview(): void {
+    if (!this.isEditMode()) return;
+    // Clear ?step so the review-mode default applies on refresh.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view: 'review', step: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  protected onDeleteDraft(): void {
+    const id = this.newsletterId();
+    if (!id || this.deletingDraft()) return;
+    const subjectLabel = this.subjectValue().trim() || 'Untitled draft';
+    this.confirmationService.confirm({
+      key: 'newsletter-manage',
+      header: 'Delete draft?',
+      message: `Are you sure you want to delete "${subjectLabel}"? This action cannot be undone.`,
+      icon: 'pi pi-trash',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runDeleteDraft(id),
+    });
   }
 
   protected onCancel(): void {
@@ -370,6 +421,53 @@ export class NewsletterManageComponent {
       ),
       { initialValue: initialStep }
     );
+  }
+
+  private initViewMode(): Signal<NewsletterManageViewMode> {
+    // Initial-value path runs synchronously before isEditMode reacts to the loaded
+    // newsletterId; derive editMode from the snapshot id param so first paint is correct.
+    const initialIsEdit = this.route.snapshot.paramMap.get('id') !== null;
+    const initial = this.deriveViewMode(initialIsEdit, this.route.snapshot.queryParamMap.get('view'), this.route.snapshot.queryParamMap.get('step'));
+
+    return toSignal(
+      combineLatest([toObservable(this.isEditMode), this.route.queryParamMap]).pipe(
+        map(([editMode, params]) => this.deriveViewMode(editMode, params.get('view'), params.get('step')))
+      ),
+      { initialValue: initial }
+    );
+  }
+
+  private deriveViewMode(isEdit: boolean, view: string | null, step: string | null): NewsletterManageViewMode {
+    if (!isEdit) return 'step';
+    if (view === 'review') return 'review';
+    // Step param means the user explicitly entered the stepper (or bookmarked / refreshed there).
+    if (step) return 'step';
+    return 'review';
+  }
+
+  private runDeleteDraft(id: string): void {
+    const projectUid = this.projectUid();
+    if (!projectUid) return;
+    this.deletingDraft.set(true);
+    this.newsletterService
+      .deleteNewsletter(projectUid, id)
+      .pipe(
+        take(1),
+        finalize(() => this.deletingDraft.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Draft deleted', detail: 'The draft has been removed.' });
+          this.goToList();
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: err?.error?.message || err?.message || 'Could not delete the draft. Please try again.',
+          });
+        },
+      });
   }
 
   private parseStepParam(raw: string | null): number {
