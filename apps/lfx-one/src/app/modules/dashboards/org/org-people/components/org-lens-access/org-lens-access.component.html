@@ -2,27 +2,58 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6" data-testid="org-lens-access" [attr.data-state]="dataState()" [attr.data-can-manage]="canManage()">
-  <!-- Header + legend -->
-  <div class="flex flex-col gap-2">
-    <div class="flex flex-col gap-1">
-      <h2 class="text-lg font-semibold text-gray-900" data-testid="org-access-heading">Org Lens Access</h2>
-      <p class="text-sm text-gray-500">People who can view or manage this organization in Org Lens.</p>
-    </div>
-    <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500" data-testid="org-access-legend">
-      <span class="inline-flex items-center gap-1.5">
-        <span class="inline-block h-2 w-2 rounded-full bg-blue-600" aria-hidden="true"></span>
-        <span><strong class="font-medium text-gray-700">Admin</strong> — can view &amp; manage</span>
-      </span>
-      <span class="inline-flex items-center gap-1.5">
-        <span class="inline-block h-2 w-2 rounded-full bg-gray-400" aria-hidden="true"></span>
-        <span><strong class="font-medium text-gray-700">Viewer</strong> — read-only</span>
-      </span>
+  <!-- Permissions information banner: explains what Org Lens access means and what each role can do. -->
+  <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50 p-5 sm:flex-row sm:items-center sm:gap-6" data-testid="org-access-info-banner">
+    <img
+      src="/images/org-lens-nav-rail.svg"
+      alt="LFX left navigation rail with the Organizations tab highlighted"
+      class="h-40 w-auto flex-shrink-0 self-center sm:h-52"
+      data-testid="org-access-info-banner-illustration" />
+    <div class="flex flex-col gap-3">
+      <p class="text-sm leading-relaxed text-gray-700">
+        In the left navigation, LFX allows users to view their profile, their projects, and their company's involvement. Company involvement is restricted to a
+        small set of users with specific permissions. This page shows who has these permissions and lets you grant it to other employees.
+      </p>
+      <div class="flex flex-col gap-3 md:flex-row md:gap-6">
+        <div class="flex items-start gap-2 md:flex-1">
+          <span
+            class="inline-flex flex-shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-blue-700"
+            data-testid="org-access-info-role-editor">
+            Org Admin - Editor
+          </span>
+          <span class="text-xs text-gray-600">
+            Full access to manage your organization's Org Lens — can update member profiles, manage Org Lens user access, and configure organization settings.
+          </span>
+        </div>
+        <div class="flex items-start gap-2 md:flex-1">
+          <span
+            class="inline-flex flex-shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-gray-600"
+            data-testid="org-access-info-role-viewer">
+            Org Admin - Viewer
+          </span>
+          <span class="text-xs text-gray-600">
+            Read-only access to the Org Lens — can view all data and reports but cannot make changes or manage access for other users.
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Toolbar -->
-  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-    <div class="flex-1">
+  <!-- Toolbar: Add Users on the left (primary action), search + filter on the right. -->
+  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-3">
+    @if (canManage()) {
+      <button
+        type="button"
+        class="inline-flex flex-shrink-0 items-center justify-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="isInviting()"
+        aria-label="Add users to Org Lens access"
+        data-testid="org-access-add-users"
+        (click)="openAdd()">
+        <i class="fa-light fa-plus" aria-hidden="true"></i>
+        <span>Add Users</span>
+      </button>
+    }
+    <div class="md:flex-1">
       <div class="relative">
         <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
         <input
@@ -47,18 +78,6 @@
         ariaLabel="Filter by access type"
         data-testid="org-access-type-filter" />
     </div>
-    @if (canManage()) {
-      <button
-        type="button"
-        class="inline-flex items-center justify-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        [disabled]="isInviting()"
-        aria-label="Add users to Org Lens access"
-        data-testid="org-access-add-users"
-        (click)="openAdd()">
-        <i class="fa-light fa-plus" aria-hidden="true"></i>
-        <span>Add Users</span>
-      </button>
-    }
   </div>
 
   @if (fetchError()) {
