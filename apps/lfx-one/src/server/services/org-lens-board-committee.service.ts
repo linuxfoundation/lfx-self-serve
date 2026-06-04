@@ -91,6 +91,11 @@ export class OrgLensBoardCommitteeService {
 
   /** Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`). */
   private async fetchOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+    // TODO(spec 026 — perf follow-up): getBoardSeats + getCommitteeSeats both call this same upstream
+    // read, and the card fetches both on initial load, so a page load triggers TWO identical
+    // committee-service reads. Optimize via a single combined `GET .../seats` BFF endpoint (fetch once,
+    // split board vs committee in the client) or request-scoped coalescing. Deferred while the tab is
+    // WIP — the three-endpoint contract (FR-009) is kept for now.
     // TODO(spec 026 T014): resolve the project family (ProjectService.getFoundationProjectUids) and pass
     // project_uids so committee-service scopes seats to the foundation root + descendants; currently
     // org-only scope (committee-service filters by organization_id + any project_uids it receives).

@@ -137,8 +137,13 @@ async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<v
     if (opts.reassignStatus && opts.reassignStatus >= 400) {
       return route.fulfill({ status: opts.reassignStatus, contentType: 'application/json', body: JSON.stringify({ error: 'reassignment failed' }) });
     }
+    // Derive the reassigned seat from the request URL so the response seatId matches the requested
+    // seat (board OR committee). The UI applies the returned seat by seatId, so echoing the matching
+    // seat (rather than always BOARD_SEATS[0]) keeps the committee path realistic and catches regressions.
+    const requestedSeatId = decodeURIComponent(route.request().url().match(/committee-seats\/([^/]+)\/reassign/)?.[1] ?? '');
+    const original = [...BOARD_SEATS, ...COMMITTEE_SEATS].find((s) => s.seatId === requestedSeatId) ?? BOARD_SEATS[0];
     const updated = {
-      ...BOARD_SEATS[0],
+      ...original,
       person: { personId: 'new', firstName: 'Jane', lastName: 'Doe', fullName: 'Jane Doe', email: 'jane.doe@example.com', jobTitle: null, initials: 'JD' },
     };
     return route.fulfill({
