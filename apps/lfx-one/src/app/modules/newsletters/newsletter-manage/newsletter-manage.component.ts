@@ -110,7 +110,6 @@ export class NewsletterManageComponent {
   // Driven by the URL so refresh / deep links restore the right view (see initViewMode).
   public readonly viewMode: Signal<NewsletterManageViewMode> = this.initViewMode();
   public readonly showReview = computed(() => this.viewMode() === 'review');
-  public readonly showStepper = computed(() => this.viewMode() === 'step');
 
   // === Project context ===
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
@@ -447,7 +446,16 @@ export class NewsletterManageComponent {
 
   private runDeleteDraft(id: string): void {
     const projectUid = this.projectUid();
-    if (!projectUid) return;
+    if (!projectUid) {
+      // Mirrors the runSend guard — without surfacing this, the user clicks Delete, confirms,
+      // and nothing happens.
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Project context unavailable',
+        detail: 'Reload the page and try again.',
+      });
+      return;
+    }
     this.deletingDraft.set(true);
     this.newsletterService
       .deleteNewsletter(projectUid, id)
