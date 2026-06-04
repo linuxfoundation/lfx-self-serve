@@ -1,0 +1,203 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="newsletter-review">
+  <!-- Header -->
+  <div class="flex flex-col gap-2" data-testid="newsletter-review-header">
+    <div class="text-xs uppercase tracking-wide text-gray-500">Editing newsletter</div>
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- Allow long subjects to wrap; truncation would hide content without a tooltip on touch devices. -->
+      <h2
+        class="text-xl font-semibold text-gray-900 break-words min-w-0"
+        [class.text-gray-500]="!hasSubject()"
+        [class.italic]="!hasSubject()"
+        data-testid="newsletter-review-subject">
+        {{ subjectDisplay() }}
+      </h2>
+      <lfx-tag value="Draft" severity="warn" data-testid="newsletter-review-draft-tag"></lfx-tag>
+      @if (savedLabel(); as label) {
+        <span class="flex items-center gap-1 text-xs text-gray-500" data-testid="newsletter-review-saved-indicator">
+          <i class="fa-light fa-circle-check text-emerald-500"></i>
+          {{ label }}
+        </span>
+      }
+    </div>
+    <p class="text-sm text-gray-500">Review what's in your draft and jump back into any section to make changes.</p>
+  </div>
+
+  <!-- Audience card -->
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 flex flex-col gap-4" data-testid="newsletter-review-audience-card">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start gap-3 flex-1 min-w-0">
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 shrink-0">
+          <i class="fa-light fa-users"></i>
+        </span>
+        <div class="flex flex-col gap-1 min-w-0">
+          <h3 class="text-base font-semibold text-gray-900">Audience</h3>
+          @if (audienceEmpty()) {
+            <p class="text-sm text-amber-600" data-testid="newsletter-review-audience-empty">No groups selected yet — add at least one to send.</p>
+          } @else {
+            <p class="text-sm text-gray-700" data-testid="newsletter-review-audience-summary">
+              {{ groupsLabel() }}
+              @if (recipientCountLoading()) {
+                · <span class="text-gray-500">counting recipients…</span>
+              } @else if (recipientsLabel(); as label) {
+                · {{ label }}
+              }
+            </p>
+          }
+        </div>
+      </div>
+      <lfx-button
+        label="Edit"
+        icon="fa-light fa-pen"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="editAudience.emit()"
+        ariaLabel="Edit audience"
+        data-testid="newsletter-review-audience-edit-btn">
+      </lfx-button>
+    </div>
+  </div>
+
+  <!-- Content card -->
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 flex flex-col gap-4" data-testid="newsletter-review-content-card">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start gap-3 flex-1 min-w-0">
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 shrink-0">
+          <i class="fa-light fa-envelope"></i>
+        </span>
+        <div class="flex flex-col gap-3 min-w-0 flex-1">
+          <h3 class="text-base font-semibold text-gray-900">Content</h3>
+          @if (contentIncomplete()) {
+            <p class="text-sm text-amber-600" data-testid="newsletter-review-content-incomplete">
+              @if (!hasSubject() && !hasBody()) {
+                Add a subject and body before sending.
+              } @else if (!hasSubject()) {
+                Add a subject before sending.
+              } @else {
+                Add body content before sending.
+              }
+            </p>
+          }
+          <div class="flex flex-col gap-2">
+            <div>
+              <div class="text-xs uppercase tracking-wide text-gray-500">Subject</div>
+              <!-- Wrap rather than truncate so the full subject is always readable on touch devices. -->
+              <div
+                class="text-sm font-medium text-gray-900 mt-1 break-words"
+                [class.text-gray-500]="!hasSubject()"
+                [class.italic]="!hasSubject()"
+                data-testid="newsletter-review-content-subject">
+                {{ subjectDisplay() }}
+              </div>
+            </div>
+            @if (hasBody()) {
+              <div>
+                <div class="text-xs uppercase tracking-wide text-gray-500">Preview</div>
+                <p class="text-sm text-gray-700 mt-1 line-clamp-3" data-testid="newsletter-review-content-preview">
+                  {{ bodyPreview() }}
+                </p>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+      <lfx-button
+        label="Edit"
+        icon="fa-light fa-pen"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="editContent.emit()"
+        ariaLabel="Edit content"
+        data-testid="newsletter-review-content-edit-btn">
+      </lfx-button>
+    </div>
+    @if (hasBody()) {
+      <div class="flex justify-start">
+        <lfx-button
+          label="Preview"
+          icon="fa-regular fa-eye"
+          severity="secondary"
+          [text]="true"
+          size="small"
+          (onClick)="preview.emit()"
+          data-testid="newsletter-review-preview-btn">
+        </lfx-button>
+      </div>
+    }
+  </div>
+
+  <!-- Send card -->
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 flex flex-col gap-4" data-testid="newsletter-review-send-card">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start gap-3 flex-1 min-w-0">
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 shrink-0">
+          <i class="fa-light fa-paper-plane"></i>
+        </span>
+        <div class="flex flex-col gap-2 min-w-0 flex-1">
+          <h3 class="text-base font-semibold text-gray-900">Send</h3>
+          <div class="text-sm text-gray-700" data-testid="newsletter-review-send-summary">
+            From <span class="font-medium text-gray-900">{{ edName() || '—' }}</span>
+            @if (displayName()) {
+              on behalf of <span class="font-medium text-gray-900">{{ displayName() }}</span>
+            }
+            @if (edEmail()) {
+              · replies to <span class="font-medium text-gray-900">{{ edEmail() }}</span>
+            }
+          </div>
+        </div>
+      </div>
+      <lfx-button
+        label="Edit"
+        icon="fa-light fa-pen"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="editSend.emit()"
+        ariaLabel="Edit send settings"
+        data-testid="newsletter-review-send-edit-btn">
+      </lfx-button>
+    </div>
+    <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
+      <lfx-button
+        label="Send test"
+        icon="fa-regular fa-paper-plane"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        [disabled]="!canSendTest()"
+        [loading]="testSending()"
+        (onClick)="sendTest.emit()"
+        [ariaLabel]="'Send a test newsletter to ' + edEmail()"
+        data-testid="newsletter-review-send-test-btn">
+      </lfx-button>
+      <lfx-button
+        label="Send now"
+        icon="fa-regular fa-paper-plane"
+        severity="primary"
+        size="small"
+        [disabled]="!canSend()"
+        [loading]="sending()"
+        (onClick)="send.emit()"
+        data-testid="newsletter-review-send-now-btn">
+      </lfx-button>
+    </div>
+  </div>
+
+  <!-- Destructive actions -->
+  <div class="flex justify-start">
+    <lfx-button
+      label="Delete draft"
+      icon="fa-light fa-trash"
+      severity="danger"
+      [text]="true"
+      size="small"
+      [loading]="deleting()"
+      (onClick)="delete.emit()"
+      data-testid="newsletter-review-delete-btn">
+    </lfx-button>
+  </div>
+</div>

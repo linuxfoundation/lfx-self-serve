@@ -1,0 +1,187 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="survey-responses-list">
+  <!-- Toolbar: count + filters -->
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex items-center gap-2">
+      <h2 class="text-base font-semibold text-slate-900" data-testid="survey-responses-count">{{ respondedCount() }} / {{ totalRecipients() }} Responses</h2>
+      <i
+        class="fa-light fa-circle-info text-slate-400 text-sm"
+        pTooltip="Recipients who submitted a response out of everyone the survey was sent to."
+        tooltipPosition="top"></i>
+    </div>
+
+    <form [formGroup]="filterForm" class="flex flex-wrap items-center gap-3">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-medium text-slate-600 whitespace-nowrap">NPS Score:</label>
+        <lfx-select [form]="filterForm" control="nps" [options]="npsOptions" placeholder="All" dataTest="survey-responses-filter-nps" />
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-medium text-slate-600 whitespace-nowrap">Comment:</label>
+        <lfx-select [form]="filterForm" control="comment" [options]="commentOptions" placeholder="All" dataTest="survey-responses-filter-comment" />
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-medium text-slate-600 whitespace-nowrap">Delivery Status:</label>
+        <lfx-select [form]="filterForm" control="delivery" [options]="deliveryOptions" placeholder="All" dataTest="survey-responses-filter-delivery" />
+      </div>
+      <lfx-input-text
+        [form]="filterForm"
+        control="search"
+        placeholder="Search Respondents"
+        icon="fa-light fa-magnifying-glass"
+        dataTest="survey-responses-search" />
+    </form>
+  </div>
+
+  @if (loading()) {
+    <!-- Loading state -->
+    <div class="flex items-center justify-center py-12" data-testid="survey-responses-loading">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-slate-400"></i>
+    </div>
+  } @else if (groups().length === 0) {
+    <!-- Empty state -->
+    <div class="text-center py-12 border border-slate-200 rounded-lg" data-testid="survey-responses-empty">
+      <i class="fa-light fa-inbox text-3xl text-slate-300"></i>
+      <p class="text-sm text-slate-500 mt-3">
+        @if (isFiltered()) {
+          No respondents match your filters.
+        } @else {
+          No responses yet.
+        }
+      </p>
+    </div>
+  } @else {
+    <!-- Grouped response tables -->
+    @for (group of groups(); track group.key) {
+      <div class="border border-slate-200 rounded-lg overflow-hidden" data-testid="survey-responses-group">
+        <!-- Group header -->
+        <button
+          type="button"
+          (click)="toggleGroup(group.key)"
+          class="w-full flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+          [attr.data-testid]="'survey-responses-group-header-' + group.key">
+          <span class="text-sm font-semibold text-slate-800">{{ group.label }} ({{ group.count }})</span>
+          <i class="fa-light text-slate-500" [class.fa-chevron-up]="!isGroupCollapsed(group.key)" [class.fa-chevron-down]="isGroupCollapsed(group.key)"></i>
+        </button>
+
+        @if (!isGroupCollapsed(group.key)) {
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm" data-testid="survey-responses-table">
+              <thead>
+                <tr class="border-t border-slate-200 text-left text-xs font-medium text-slate-500">
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('recipient')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      Recipient <i [class]="sortIcon('recipient')"></i>
+                    </button>
+                  </th>
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('organization')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      Organization <i [class]="sortIcon('organization')"></i>
+                    </button>
+                  </th>
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('delivery')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      Delivery Status <i [class]="sortIcon('delivery')"></i>
+                    </button>
+                  </th>
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('responseDate')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      Response Date <i [class]="sortIcon('responseDate')"></i>
+                    </button>
+                  </th>
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('nps')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      NPS Score <i [class]="sortIcon('nps')"></i>
+                    </button>
+                  </th>
+                  <th class="px-4 py-3">
+                    <button type="button" (click)="onSort('comment')" class="inline-flex items-center gap-1 hover:text-slate-700">
+                      Comment <i [class]="sortIcon('comment')"></i>
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of group.items; track item.id) {
+                  <tr class="border-t border-slate-100 align-top hover:bg-slate-50" data-testid="survey-responses-row">
+                    <!-- Recipient -->
+                    <td class="px-4 py-3">
+                      <div class="flex flex-col gap-0.5">
+                        <span class="font-medium text-slate-900">{{ recipientName(item) }}</span>
+                        @if (item.email) {
+                          <a [href]="'mailto:' + item.email" class="text-blue-600 hover:underline">{{ item.email }}</a>
+                        }
+                      </div>
+                    </td>
+                    <!-- Organization -->
+                    <td class="px-4 py-3">
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-slate-800">{{ item.organization?.name || '—' }}</span>
+                        @if (item.job_title) {
+                          <span class="text-xs text-slate-500">{{ item.job_title }}</span>
+                        }
+                      </div>
+                    </td>
+                    <!-- Delivery Status -->
+                    <td class="px-4 py-3">
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-slate-800">{{ item.response_status || '—' }}</span>
+                        @if (deliveryTimestamp(item); as ts) {
+                          <span class="text-xs text-slate-500">{{ ts | date: 'd MMM y h:mm a' }}</span>
+                        }
+                      </div>
+                    </td>
+                    <!-- Response Date -->
+                    <td class="px-4 py-3 text-slate-800">
+                      @if (item.response_datetime) {
+                        {{ item.response_datetime | date: 'd MMM y h:mm a' }}
+                      } @else {
+                        <span class="text-slate-400">—</span>
+                      }
+                    </td>
+                    <!-- NPS Score -->
+                    <td class="px-4 py-3">
+                      @if (item.response_datetime && item.nps_value !== undefined && item.nps_value !== null) {
+                        <span class="font-semibold" [class]="npsBandClass(item.nps_value)">{{ item.nps_value }}</span>
+                      } @else {
+                        <span class="text-slate-400">—</span>
+                      }
+                    </td>
+                    <!-- Comment -->
+                    <td class="px-4 py-3 max-w-xs">
+                      @if (comment(item); as text) {
+                        <span class="text-slate-700">{{ text }}</span>
+                      } @else {
+                        <span class="text-slate-400">—</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Load more -->
+    @if (hasMore()) {
+      <div class="flex justify-center pt-2">
+        <button
+          type="button"
+          (click)="loadMore()"
+          [disabled]="loadingMore()"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-60"
+          data-testid="survey-responses-load-more">
+          @if (loadingMore()) {
+            <i class="fa-light fa-spinner-third fa-spin"></i>
+            Loading…
+          } @else {
+            Load more responses
+          }
+        </button>
+      </div>
+    }
+  }
+</div>

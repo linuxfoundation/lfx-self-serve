@@ -95,7 +95,6 @@ export class OrgPeopleKeyContactsService {
         role,
         foundationSlug,
         foundationName: this.resolveFoundationName(membership),
-        canEdit: false,
       });
     }
 
@@ -111,7 +110,7 @@ export class OrgPeopleKeyContactsService {
       }
     }
 
-    // T027 writer-FGA check is deferred until LFXV2-1677 lands the edit affordances; `canEdit` stays `false`.
+    // LFXV2-2067: writer-FGA computed client-side via OrgRoleGrantsService.writerSet(); BFF re-enforces on write.
     return {
       assignments: rawAssignments,
       stats: this.computeStats(rawAssignments),
