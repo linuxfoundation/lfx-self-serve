@@ -56,6 +56,17 @@ function buildOrgsRouter(): Router {
   router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
     orgLensKeyContactsController.removeKeyContact(req, res, next)
   );
+  // LFXV2-2067 — slug-keyed proxies for the People → Key Contacts tab; skip the sfid→foundation_id bridge.
+  router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) =>
+    orgLensKeyContactsController.getKeyContactCatalogBySlug(req, res, next)
+  );
+  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) => orgLensKeyContactsController.addKeyContactBySlug(req, res, next));
+  router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+    orgLensKeyContactsController.replaceKeyContactBySlug(req, res, next)
+  );
+  router.delete('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+    orgLensKeyContactsController.removeKeyContactBySlug(req, res, next)
+  );
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
