@@ -5,6 +5,7 @@ import type {
   BoardSeat,
   CommitteeSeat,
   CommitteeServiceOrgSeat,
+  CommitteeServiceOrgSeatPage,
   OrgMembershipBoardSeatsResponse,
   OrgMembershipCommitteeSeatsResponse,
   OrgMembershipKeyContactPerson,
@@ -104,14 +105,33 @@ export class OrgLensBoardCommitteeService {
       org_uid: orgUid,
       upstream_path: upstreamPath,
     });
-    const seats = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat[]>(req, 'LFX_V2_SERVICE', upstreamPath, 'GET', {
-      v: '1',
-    });
+
+    // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and
+    // CSV export need the org's FULL roster, so drain every page by following the opaque cursor. The cap
+    // is a safety stop against a pathological cursor loop (max 200 pages × 500 = 100k seats).
+    const maxPages = 200;
+    const seats: CommitteeServiceOrgSeat[] = [];
+    let pageToken: string | undefined;
+    let pages = 0;
+    do {
+      const params: Record<string, string> = { v: '1', page_size: '500' };
+      if (pageToken) {
+        params['page_token'] = pageToken;
+      }
+      const page = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeatPage>(req, 'LFX_V2_SERVICE', upstreamPath, 'GET', params);
+      if (page?.seats?.length) {
+        seats.push(...page.seats);
+      }
+      pageToken = page?.page_token ?? undefined;
+      pages += 1;
+    } while (pageToken && pages < maxPages);
+
     logger.debug(req, 'get_org_committee_seats_proxy', 'committee-service returned org committee seats', {
       org_uid: orgUid,
-      seat_count: seats?.length ?? 0,
+      seat_count: seats.length,
+      pages,
     });
-    return seats ?? [];
+    return seats;
   }
 
   // Upstream exposes a single identifier per row (`uid`, the committee_member uid). For live seats the

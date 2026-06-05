@@ -273,6 +273,16 @@ export interface CommitteeServiceOrgSeat {
   reason?: string | null;
 }
 
+/**
+ * Paginated upstream result of committee-service `GET /committees/b2b-org/{uid}/seats` (LFXV2-1865).
+ * `page_token` is an opaque cursor; absent/empty when there are no further pages. The BFF drains all
+ * pages to build the full board/committee roster (the grouped view + CSV export need the complete list).
+ */
+export interface CommitteeServiceOrgSeatPage {
+  seats: CommitteeServiceOrgSeat[];
+  page_token?: string | null;
+}
+
 /** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/board-seats`. */
 export interface OrgMembershipBoardSeatsResponse {
   accountId: string;
