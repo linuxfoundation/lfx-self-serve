@@ -21,7 +21,7 @@
  * Prerequisites:
  * - Dev server running on localhost:4200 (auto via Playwright webServer)
  * - User authenticated via Auth0 (auto via global-setup, .env credentials)
- * - `org-lens-enabled` LaunchDarkly flag on (handled by org-lens-flag-toggle skill defaults)
+ * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  * - Organization context selected (existing AccountContextService default applies)
  *
  * Mock semantics (v1): every foundationId returns the same shared payload (FR-009c),
@@ -32,7 +32,7 @@
 import { expect, test } from '@playwright/test';
 
 const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
-const DETAIL_URL_BOARD = '/org/memberships/sample-foundation#board';
+const DETAIL_URL_BOARD = `${DETAIL_URL_FOUNDATION}#board`;
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);
