@@ -101,11 +101,20 @@ const COMMITTEE_SEATS = [
 // { voteId, date, resolution, vote, outcome }.
 const VOTING_HISTORY: unknown[] = [];
 
+// Org-wide people picker (spec 026): the Reassign modal's email combobox is fed by
+// GET /api/orgs/:orgUid/lens/employees (key contacts + committee members, deduped).
+const EMPLOYEES = [
+  { email: 'ada.lovelace@example.com', firstName: 'Ada', lastName: 'Lovelace', fullName: 'Ada Lovelace', jobTitle: 'CTO', initials: 'AL' },
+  { email: 'grace.hopper@example.com', firstName: 'Grace', lastName: 'Hopper', fullName: 'Grace Hopper', jobTitle: 'Engineer', initials: 'GH' },
+];
+
 interface StubOptions {
   board?: unknown[];
   committee?: unknown[];
   voting?: unknown[];
+  employees?: unknown[];
   reassignStatus?: number;
+  employeesStatus?: number;
 }
 
 /** Stub all BFF board-committee `/api/...` routes (anchored API prefix per the e2e rulebook). */
@@ -131,6 +140,15 @@ async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<v
       body: JSON.stringify({ accountId: 'org-1', foundationId: 'agl-001', votingHistory: voting }),
     })
   );
+
+  // Reassign modal employee picker (spec 026). Error path drives the "search unavailable" fallback.
+  const employees = opts.employees ?? EMPLOYEES;
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/employees$/, (route) => {
+    if (opts.employeesStatus && opts.employeesStatus >= 400) {
+      return route.fulfill({ status: opts.employeesStatus, contentType: 'application/json', body: JSON.stringify({ error: 'employees unavailable' }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orgUid: 'org-1', employees }) });
+  });
 
   // Reassign write path — success returns the updated seat; error path returns the configured status.
   await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/committee-seats\/[^/]+\/reassign$/, (route) => {
@@ -247,6 +265,47 @@ test.describe('US3 — Reassign', () => {
     await page.getByTestId('reassign-board-last-name-input').fill('Doe');
     await page.getByTestId('reassign-board-primary-button').click();
 
+    await expect(page.getByTestId('reassign-board-modal')).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Board roles reassigned')).toBeVisible({ timeout: 3_000 });
+  });
+
+  test('employee picker: typing filters suggestions; selecting fills email + first + last', async ({ page }) => {
+    await stubBoardCommittee(page);
+    await openBoardCommitteeTab(page);
+
+    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
+
+    // Typing a partial query opens the combobox with only matching people.
+    await page.getByTestId('reassign-board-email-input').fill('grace');
+    await expect(page.getByTestId('reassign-board-employee-suggestions')).toBeVisible();
+    await expect(page.getByTestId('reassign-board-employee-option-grace.hopper@example.com')).toBeVisible();
+    await expect(page.getByTestId('reassign-board-employee-option-ada.lovelace@example.com')).toHaveCount(0);
+
+    // Selecting a person fills email + name (select-to-fill) and the reassign write proceeds.
+    await page.getByTestId('reassign-board-employee-option-grace.hopper@example.com').click();
+    await expect(page.getByTestId('reassign-board-email-input')).toHaveValue('grace.hopper@example.com');
+    await expect(page.getByTestId('reassign-board-first-name-input')).toHaveValue('Grace');
+    await expect(page.getByTestId('reassign-board-last-name-input')).toHaveValue('Hopper');
+
+    await page.getByTestId('reassign-board-primary-button').click();
+    await expect(page.getByTestId('reassign-board-modal')).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Board roles reassigned')).toBeVisible({ timeout: 3_000 });
+  });
+
+  test('employee picker: endpoint failure shows the manual-entry fallback (search unavailable)', async ({ page }) => {
+    await stubBoardCommittee(page, { employeesStatus: 500 });
+    await openBoardCommitteeTab(page);
+
+    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('reassign-board-search-unavailable')).toBeVisible();
+
+    // Manual entry still works end to end when the picker source is down.
+    await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
+    await page.getByTestId('reassign-board-first-name-input').fill('Jane');
+    await page.getByTestId('reassign-board-last-name-input').fill('Doe');
+    await page.getByTestId('reassign-board-primary-button').click();
     await expect(page.getByTestId('reassign-board-modal')).not.toBeVisible({ timeout: 5_000 });
     await expect(page.getByText('Board roles reassigned')).toBeVisible({ timeout: 3_000 });
   });

@@ -189,6 +189,7 @@ export class BoardCommitteeCardComponent {
         seat,
         seatKind: kind,
         foundationName: this.foundationName(),
+        orgUid: this.orgUid(),
       } satisfies ReassignBoardRolesDialogData,
     }) as DynamicDialogRef;
 

@@ -130,6 +130,14 @@ export interface KeyContactEmployeesResponse {
   employees: KeyContactEmployee[];
 }
 
+/** Response envelope for `GET /api/orgs/:orgUid/lens/employees` (spec 026) — key contacts + committee members, deduped by email. */
+export interface OrgLensEmployeesResponse {
+  /** The org's canonical account id (SFID, the route identifier) echoed back. */
+  orgUid: string;
+  /** Deduped by lowercased email, merging key contacts + committee members across the org. */
+  employees: KeyContactEmployee[];
+}
+
 /** Spec 024 (FR-014): body for `POST …/key-contacts`. */
 export interface AddKeyContactRequest {
   contactType: OrgMembershipKeyContactType;
@@ -426,6 +434,8 @@ export interface ReassignBoardRolesDialogData {
   seat: BoardSeat | CommitteeSeat;
   seatKind: 'board' | 'committee';
   foundationName: string;
+  /** Org SFID — used to load the employee picker (`GET /api/orgs/:orgUid/lens/employees`). */
+  orgUid: string;
 }
 
 export type ReassignBoardRolesDialogResult = ReassignSubmitEvent | null;

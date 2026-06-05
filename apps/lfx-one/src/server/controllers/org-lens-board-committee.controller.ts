@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
-import type { ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
+import type { OrgLensEmployeesResponse, ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -105,6 +105,28 @@ export class OrgLensBoardCommitteeController {
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/employees — org-wide people picker (key contacts + committee members) for the Reassign modal. */
+  public async getEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_employees', { org_uid: orgUid });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_employees');
+
+      const employees = await this.service.getOrgEmployees(req, orgUid);
+
+      logger.success(req, 'get_org_employees', startTime, {
+        org_uid: orgUid,
+        row_count: employees.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ orgUid, employees } satisfies OrgLensEmployeesResponse);
     } catch (error) {
       next(error);
     }

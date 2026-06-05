@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { OrgLensBoardCommitteeService } from '@services/org-lens-board-committee.service';
 import { EMAIL_REGEX, SIMULATED_SAVE_DELAY_MS } from '@lfx-one/shared/constants';
-import type { BoardSeat, CommitteeSeat, ReassignBoardRolesDialogData, ReassignBoardRolesDialogResult } from '@lfx-one/shared/interfaces';
+import type { BoardSeat, CommitteeSeat, KeyContactEmployee, ReassignBoardRolesDialogData, ReassignBoardRolesDialogResult } from '@lfx-one/shared/interfaces';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-reassign-board-roles-modal',
@@ -19,11 +22,18 @@ export class ReassignBoardRolesModalComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignBoardRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly boardCommitteeService = inject(OrgLensBoardCommitteeService);
 
   // === Dialog-injected data ===
   protected readonly seat: BoardSeat | CommitteeSeat | null = this.dialogConfig.data?.seat ?? null;
   protected readonly seatKind: 'board' | 'committee' = this.dialogConfig.data?.seatKind ?? 'board';
   protected readonly foundationName: string = this.dialogConfig.data?.foundationName ?? '';
+  private readonly orgUid: string = this.dialogConfig.data?.orgUid ?? '';
+
+  // === Employee picker (loaded once on open, filtered client-side; manual entry stays available on failure) ===
+  protected readonly employees = signal<KeyContactEmployee[]>([]);
+  protected readonly employeeSearchUnavailable = signal(false);
+  protected readonly suggestionsOpen = signal(false);
 
   // === Internal state ===
   protected readonly isSaving = signal(false);
@@ -42,6 +52,18 @@ export class ReassignBoardRolesModalComponent {
   protected readonly subtitle: Signal<string> = computed(() => this.initSubtitle());
   protected readonly primaryButtonLabel: Signal<string> = computed(() => this.initPrimaryButtonLabel());
   protected readonly currentMember = computed(() => this.seat?.person ?? null);
+
+  /** Suggestions matching the typed query (email or name), excluding the current member, capped at 8. */
+  protected readonly filteredEmployees = computed<KeyContactEmployee[]>(() => {
+    const query = this.emailField().trim().toLowerCase();
+    if (!query) return [];
+    const currentEmail = this.currentMember()?.email?.trim().toLowerCase() ?? '';
+    return this.employees()
+      .filter((e) => e.email.trim().toLowerCase() !== currentEmail)
+      .filter((e) => e.email.includes(query) || e.fullName.toLowerCase().includes(query))
+      .slice(0, 8);
+  });
+
   protected readonly seatLabel: Signal<string> = computed(() => this.initSeatLabel());
   protected readonly tagPillText: Signal<string> = computed(() => this.initTagPillText());
   protected readonly badgeLabel = computed(() => (this.seatKind === 'board' ? 'Board' : 'Committee'));
@@ -59,10 +81,47 @@ export class ReassignBoardRolesModalComponent {
         this.saveTimerId = null;
       }
     });
+
+    // Load the org's people (key contacts + committee members) once; filter client-side as the user types.
+    if (this.orgUid) {
+      this.boardCommitteeService
+        .getOrgEmployees(this.orgUid)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (res) => this.employees.set(res.employees ?? []),
+          error: () => this.employeeSearchUnavailable.set(true), // manual entry stays usable
+        });
+    }
+  }
+
+  // === Employee-picker interactions ===
+  protected onEmailFocus(): void {
+    this.suggestionsOpen.set(true);
+  }
+
+  protected onEmailChange(value: string): void {
+    this.emailField.set(value);
+    this.suggestionsOpen.set(true);
+    this.duplicateError.set(null);
+    if (this.emailFormatError() && EMAIL_REGEX.test(value.trim())) {
+      this.emailFormatError.set(null);
+    }
+  }
+
+  protected onSelectEmployee(employee: KeyContactEmployee): void {
+    this.emailField.set(employee.email);
+    this.firstNameField.set(employee.firstName);
+    this.lastNameField.set(employee.lastName);
+    this.emailFormatError.set(null);
+    this.duplicateError.set(null);
+    this.suggestionsOpen.set(false);
   }
 
   // === Event handlers ===
   protected onEmailBlur(): void {
+    // Close the suggestion list on blur. Option clicks use (mousedown)="$event.preventDefault()" so
+    // selection still fires before blur — this only closes the list when focus genuinely leaves the field.
+    this.suggestionsOpen.set(false);
     this.emailTouched.set(true);
     const email = this.emailField().trim();
     if (email && !EMAIL_REGEX.test(email)) {

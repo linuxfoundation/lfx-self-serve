@@ -6,6 +6,7 @@ import type {
   CommitteeSeat,
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
+  KeyContactEmployee,
   OrgMembershipBoardSeatsResponse,
   OrgMembershipCommitteeSeatsResponse,
   OrgMembershipKeyContactPerson,
@@ -13,10 +14,12 @@ import type {
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
 } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 
 /**
  * Board & Committee tab service (spec 026, live data). Board/committee reads proxy to committee-service
@@ -26,9 +29,11 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  */
 export class OrgLensBoardCommitteeService {
   private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly keyContactsService: OrgLensKeyContactsService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
+    this.keyContactsService = new OrgLensKeyContactsService();
   }
 
   /** Board seats: live committee-service seats with `committee_category === "Board"`. */
@@ -48,6 +53,53 @@ export class OrgLensBoardCommitteeService {
   /** Voting history is deferred (D12) with no live source — returns an empty list. */
   public getVotingHistory(accountId: string, foundationId: string): OrgMembershipVotingHistoryResponse {
     return { accountId, foundationId, votingHistory: [] };
+  }
+
+  /** Org-wide people picker for the Reassign modal (spec 026): key contacts + committee members, deduped by lowercased email; fail-soft per source. */
+  public async getOrgEmployees(req: Request, orgUid: string): Promise<KeyContactEmployee[]> {
+    if (!orgUid || !isFilterSafeIdentifier(orgUid)) {
+      return [];
+    }
+
+    const [keyContacts, seats] = await Promise.allSettled([this.keyContactsService.getEmployees(req, orgUid), this.fetchOrgSeats(req, orgUid)]);
+
+    // Both sources down: re-throw so the controller maps the failure and the modal shows "search
+    // unavailable" — don't collapse a full outage into a misleading empty 200.
+    if (keyContacts.status === 'rejected' && seats.status === 'rejected') {
+      throw keyContacts.reason;
+    }
+
+    // Key contacts first so their job-title/name enrichment wins on email collisions with a seat holder.
+    const byEmail = new Map<string, KeyContactEmployee>();
+    if (keyContacts.status === 'fulfilled') {
+      for (const emp of keyContacts.value) {
+        const key = emp.email.trim().toLowerCase();
+        if (key && !byEmail.has(key)) {
+          byEmail.set(key, emp);
+        }
+      }
+    } else {
+      logger.info(req, 'get_org_employees', 'key-contact source failed; serving committee members only', {
+        org_uid: orgUid,
+        error: keyContacts.reason instanceof Error ? keyContacts.reason.message : String(keyContacts.reason),
+      });
+    }
+
+    if (seats.status === 'fulfilled') {
+      for (const seat of seats.value) {
+        const emp = this.seatToEmployee(seat);
+        if (emp.email && !byEmail.has(emp.email)) {
+          byEmail.set(emp.email, emp);
+        }
+      }
+    } else {
+      logger.info(req, 'get_org_employees', 'committee-member source failed; serving key contacts only', {
+        org_uid: orgUid,
+        error: seats.reason instanceof Error ? seats.reason.message : String(seats.reason),
+      });
+    }
+
+    return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
   /** Reassign a Membership-Entitlement seat (FR-006/FR-007): always proxies to committee-service (user token → Heimdall `b2b_org#writer`; entitlement guard upstream). */
@@ -70,7 +122,7 @@ export class OrgLensBoardCommitteeService {
     // bug: committee-service implements PUT /committees/b2b-org/{uid}/seats/{member_uid}/reassign.
     const upstream = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat>(
       req,
-      'LFX_V2_SERVICE',
+      'LFX_V2_COMMITTEE_SERVICE',
       upstreamPath,
       'PUT',
       { v: '1' },
@@ -118,7 +170,7 @@ export class OrgLensBoardCommitteeService {
       if (pageToken) {
         params['page_token'] = pageToken;
       }
-      const page = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeatPage>(req, 'LFX_V2_SERVICE', upstreamPath, 'GET', params);
+      const page = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeatPage>(req, 'LFX_V2_COMMITTEE_SERVICE', upstreamPath, 'GET', params);
       if (page?.seats?.length) {
         seats.push(...page.seats);
       }
@@ -182,6 +234,21 @@ export class OrgLensBoardCommitteeService {
       email: s.email,
       jobTitle: s.job_title ?? null,
       initials,
+    };
+  }
+
+  // Maps a committee-service seat to the shared employee-picker shape. Email is lowercased so it
+  // dedupes case-insensitively against the key-contact source (whose identity is also lowercased email).
+  private seatToEmployee(s: CommitteeServiceOrgSeat): KeyContactEmployee {
+    const firstName = (s.first_name ?? '').trim();
+    const lastName = (s.last_name ?? '').trim();
+    return {
+      email: (s.email ?? '').trim().toLowerCase(),
+      firstName,
+      lastName,
+      fullName: `${firstName} ${lastName}`.trim(),
+      jobTitle: s.job_title?.trim() ? s.job_title.trim() : null,
+      initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
     };
   }
 }

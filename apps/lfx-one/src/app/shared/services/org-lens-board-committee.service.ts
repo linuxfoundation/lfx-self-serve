@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
+  OrgLensEmployeesResponse,
   OrgMembershipBoardSeatsResponse,
   OrgMembershipCommitteeSeatsResponse,
   OrgMembershipReassignSeatResponse,
@@ -47,5 +48,10 @@ export class OrgLensBoardCommitteeService {
       `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/committee-seats/${encodeURIComponent(seatId)}/reassign`,
       body
     );
+  }
+
+  /** Org-wide people picker (key contacts + committee members) for the Reassign modal (spec 026). */
+  public getOrgEmployees(orgUid: string): Observable<OrgLensEmployeesResponse> {
+    return this.http.get<OrgLensEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/employees`);
   }
 }
