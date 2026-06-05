@@ -13,7 +13,23 @@ export const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
 
 // Replaced/void/embedded leaf elements that carry visual content even when textContent
 // is empty — keep paragraphs/list-items that hold these even if no text is present.
-export const CONTENT_LEAF_TAGS = new Set(['IMG', 'IFRAME', 'VIDEO', 'AUDIO', 'SOURCE', 'PICTURE', 'SVG', 'MATH', 'CANVAS', 'EMBED', 'OBJECT', 'INPUT', 'SELECT', 'TEXTAREA', 'HR']);
+export const CONTENT_LEAF_TAGS = new Set([
+  'IMG',
+  'IFRAME',
+  'VIDEO',
+  'AUDIO',
+  'SOURCE',
+  'PICTURE',
+  'SVG',
+  'MATH',
+  'CANVAS',
+  'EMBED',
+  'OBJECT',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+  'HR',
+]);
 
 // Paragraph-like containers where a <br> child is a legitimate hard break (not a
 // block-flow spacer). Used to decide whether a pasted <br> should be preserved.
