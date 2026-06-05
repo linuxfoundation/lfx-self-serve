@@ -27,7 +27,7 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 ## AI Service
 
-- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
+- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content)
 - **AI Environment Variables**: `AI_PROXY_URL` and `AI_API_KEY` required for AI functionality
 - **M2M Environment Variables**: `M2M_AUTH_CLIENT_ID`, `M2M_AUTH_CLIENT_SECRET` for machine-to-machine auth
 

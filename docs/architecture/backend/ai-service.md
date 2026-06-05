@@ -2,23 +2,25 @@
 
 ## 🤖 Overview
 
-The LFX One AI Service provides intelligent meeting agenda generation using **Claude Sonnet 4** through a **LiteLLM proxy**. The service integrates with the meeting creation workflow to automatically generate professional, structured meeting agendas based on meeting type, context, and project information.
+The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information) and **newsletter content** generation. The two public entry points are `generateMeetingAgenda` and `generateNewsletter`, and the service is consumed by the meetings, newsletters, and campaigns flows.
 
 ## 🏗 Architecture
 
 ### Service Architecture
 
 ```text
-Frontend Request → Meeting API → AI Service → LiteLLM Proxy → Claude Sonnet 4
-     ↓              ↓              ↓              ↓
-   Angular       Express.js     Business      OpenAI-Compatible
-   Service       Controller      Logic           Proxy
+Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude Sonnet 4
+     ↓             ↓             ↓             ↓
+   Angular      Express.js    Business     OpenAI-Compatible
+   Service      Controller     Logic           Proxy
 ```
+
+The "Feature API" is whichever controller fronts the request: `meeting.controller.ts` (agenda generation), `newsletter.controller.ts` (newsletter generation), and the campaigns flow, which also routes AI briefs through this layer.
 
 ### Core Components
 
-- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration
-- **Meeting API** (`/server/routes/meetings.ts`): HTTP endpoints for AI-powered features
+- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda` and `generateNewsletter`
+- **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features; the campaigns flow consumes the same service
 - **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 
@@ -75,6 +77,10 @@ export interface GenerateAgendaResponse {
   estimatedDuration: number; // Estimated meeting duration in minutes
 }
 ```
+
+#### Generate Newsletter
+
+The service also exposes `generateNewsletter(req, request: GenerateNewsletterRequest): Promise<GenerateNewsletterResponse>` for AI newsletter drafting, consumed by `newsletter.controller.ts`. Its request/response contracts live in `@lfx-one/shared`, and the implementation mirrors the agenda path: the same `isAiConfigured()` guard, JSON-schema-validated response, and the parse → fallback strategy described below (with its own `buildNewsletterPrompt`/`extractNewsletter`).
 
 ### JSON Schema Validation
 
