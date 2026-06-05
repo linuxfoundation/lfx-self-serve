@@ -67,26 +67,6 @@ export interface GetOrgCertificationsOptions {
   sortOrder: 'ASC' | 'DESC';
 }
 
-/** Raw Snowflake row for the org certifications query. */
-export interface OrgCertificationRow {
-  COURSE_ID: string;
-  COURSE_NAME: string | null;
-  FOUNDATION_NAME: string | null;
-  LEVEL: string | null;
-  LOGO_URL: string | null;
-  CERTIFIED_COUNT: number;
-  IN_PROGRESS_COUNT: number;
-  TOTAL_RECORDS: number;
-}
-
-/** Raw Snowflake row for the certification-employees roster query. */
-export interface OrgCertEmployeeRow {
-  CONTACT_ID: string;
-  NAME: string | null;
-  JOB_TITLE: string | null;
-  CERTIFICATION_NAME: string | null;
-}
-
 /** Summary statistics for the org training & certifications stat strip */
 export interface OrgTrainingStats {
   /** Count of distinct employees who completed at least one certification (STATUS = 'Certified') */

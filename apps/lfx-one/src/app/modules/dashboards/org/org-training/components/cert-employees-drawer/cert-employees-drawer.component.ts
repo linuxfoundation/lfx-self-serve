@@ -9,7 +9,7 @@ import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.s
 import type { OrgCertEmployee, OrgCertEmployeesResponse, OrgCertEmployeeStatus } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
-import { catchError, finalize, of, skip, switchMap } from 'rxjs';
+import { catchError, finalize, of, switchMap } from 'rxjs';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 
 const AVATAR_COLORS = ['bg-blue-600', 'bg-purple-600', 'bg-emerald-600', 'bg-orange-500', 'bg-red-500', 'bg-teal-600', 'bg-indigo-600', 'bg-amber-500'];
@@ -70,19 +70,29 @@ export class CertEmployeesDrawerComponent {
   }
 
   private initEmployeesData() {
+    // Key the fetch off the full target (visible + orgUid + courseId + status), not visible alone,
+    // so the roster refreshes if the active certification changes while the drawer stays open.
+    const trigger$ = toObservable(
+      computed(() => ({
+        visible: this.visible(),
+        orgUid: this.orgUid(),
+        courseId: this.courseId(),
+        status: this.status(),
+      }))
+    );
+
     return toSignal(
-      toObservable(this.visible).pipe(
-        skip(1),
-        switchMap((isVisible) => {
-          if (!isVisible || !this.orgUid() || !this.courseId()) return of(null);
+      trigger$.pipe(
+        switchMap(({ visible, orgUid, courseId, status }) => {
+          if (!visible || !orgUid || !courseId) return of(null);
           this.searchTerm.set('');
           this.loading.set(true);
-          return this.trainingService.getCertificationEmployees(this.orgUid(), this.courseId(), this.status()).pipe(
+          return this.trainingService.getCertificationEmployees(orgUid, courseId, status).pipe(
             catchError(() =>
               of({
-                courseId: this.courseId(),
+                courseId,
                 certificationName: this.certificationName(),
-                status: this.status(),
+                status,
                 total: 0,
                 data: [],
               } as OrgCertEmployeesResponse)

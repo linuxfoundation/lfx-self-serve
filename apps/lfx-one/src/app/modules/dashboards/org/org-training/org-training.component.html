@@ -130,15 +130,23 @@
       @if (activeTab() === tab.id) {
         <section [id]="'org-training-panel-' + tab.id" [attr.data-testid]="'org-training-panel-' + tab.id" class="p-5">
           @if (tab.id === 'certifications') {
-            <lfx-org-certifications-table
-              [certificationsResponse]="certifications()"
-              [loading]="certificationsLoading()"
-              [sortField]="certSortField()"
-              [sortOrder]="certSortOrder()"
-              (pageChange)="onCertPageChange($event)"
-              (sortChange)="onCertSortChange($event)"
-              (certifiedClick)="onCertifiedClick($event)"
-              (inProgressClick)="onInProgressClick($event)" />
+            @if (certificationsError()) {
+              <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-certifications-error">
+                <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
+                <h3 class="text-gray-700 font-medium">Couldn't load certifications</h3>
+                <p class="text-sm text-gray-500">Something went wrong fetching this organization's certifications. Please try again.</p>
+              </div>
+            } @else {
+              <lfx-org-certifications-table
+                [certificationsResponse]="certifications()"
+                [loading]="certificationsLoading()"
+                [sortField]="certSortField()"
+                [sortOrder]="certSortOrder()"
+                (pageChange)="onCertPageChange($event)"
+                (sortChange)="onCertSortChange($event)"
+                (certifiedClick)="onCertifiedClick($event)"
+                (inProgressClick)="onInProgressClick($event)" />
+            }
           } @else {
             <lfx-empty-state
               [icon]="tab.icon"

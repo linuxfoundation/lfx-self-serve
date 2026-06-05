@@ -3,14 +3,13 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
 import type {
   GetOrgCertificationsOptions,
   OrgCertEmployee,
-  OrgCertEmployeeRow,
   OrgCertEmployeesResponse,
   OrgCertEmployeeStatus,
   OrgCertification,
-  OrgCertificationRow,
   OrgCertificationsResponse,
   OrgTrainingStats,
 } from '@lfx-one/shared/interfaces';
@@ -24,6 +23,26 @@ interface OrgTrainingStatsRow {
   CERTIFICATIONS_EARNED: number;
   EMPLOYEES_IN_TRAINING: number;
   TRAINING_COURSES_ENROLLED: number;
+}
+
+// Raw Snowflake row shapes (UPPERCASE_SNAKE_CASE) — server-internal, co-located with the service
+// that maps them to camelCase wire contracts (matches the repo pattern, e.g. org-lens-people.service.ts).
+interface OrgCertificationRow {
+  COURSE_ID: string;
+  COURSE_NAME: string | null;
+  FOUNDATION_NAME: string | null;
+  LEVEL: string | null;
+  LOGO_URL: string | null;
+  CERTIFIED_COUNT: number;
+  IN_PROGRESS_COUNT: number;
+  TOTAL_RECORDS: number;
+}
+
+interface OrgCertEmployeeRow {
+  CONTACT_ID: string;
+  NAME: string | null;
+  JOB_TITLE: string | null;
+  CERTIFICATION_NAME: string | null;
 }
 
 /** Aggregates training & certification counts from ORG_PEOPLE_TRAINING for an org account. */
@@ -138,16 +157,9 @@ export class OrgLensTrainingService {
     if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     if (level) binds.push(level.toUpperCase());
 
-    let result;
-    try {
-      result = await this.snowflakeService.execute<OrgCertificationRow>(sql, binds);
-    } catch (error) {
-      logger.warning(req, 'get_org_certifications', 'Snowflake query failed, returning empty certifications', {
-        error: error instanceof Error ? error.message : String(error),
-        account_id: accountId,
-      });
-      return { data: [], total: 0, pageSize, offset };
-    }
+    // Let Snowflake failures propagate (consistent with getTrainingStats) so the controller returns
+    // an error response and the UI can distinguish an outage from a genuinely empty result.
+    const result = await this.snowflakeService.execute<OrgCertificationRow>(sql, binds);
 
     const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
     const data = result.rows.map((row) => this.mapRowToOrgCertification(row));
@@ -193,22 +205,15 @@ export class OrgLensTrainingService {
         ${searchFilter}
       GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
       ORDER BY p.NAME ASC NULLS LAST
+      LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
     const binds: string[] = [accountId, courseId];
     if (searchQuery) binds.push(`%${searchQuery}%`);
 
-    let result;
-    try {
-      result = await this.snowflakeService.execute<OrgCertEmployeeRow>(sql, binds);
-    } catch (error) {
-      logger.warning(req, 'get_certification_employees', 'Snowflake query failed, returning empty roster', {
-        error: error instanceof Error ? error.message : String(error),
-        account_id: accountId,
-        course_id: courseId,
-      });
-      return { courseId, certificationName: '', status, total: 0, data: [] };
-    }
+    // Bounded by MAX_ORG_CERT_EMPLOYEES so a large org can't return an unbounded roster in one
+    // request. Failures propagate (consistent with getTrainingStats) rather than masking as empty.
+    const result = await this.snowflakeService.execute<OrgCertEmployeeRow>(sql, binds);
 
     const certificationName = result.rows[0]?.CERTIFICATION_NAME ?? '';
     const data: OrgCertEmployee[] = result.rows.map((row) => ({

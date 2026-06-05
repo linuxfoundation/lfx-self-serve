@@ -75,6 +75,7 @@ export class OrgTrainingComponent {
   protected readonly statsError = signal(false);
 
   protected readonly certificationsLoading = signal(false);
+  protected readonly certificationsError = signal(false);
   protected readonly certSortField = signal<string>(DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD);
   protected readonly certSortOrder = signal<'ASC' | 'DESC'>(DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER);
   protected readonly certOffset = signal(0);
@@ -202,6 +203,7 @@ export class OrgTrainingComponent {
     // emits the new object and switchMap cancels any in-flight request for the prior query.
     const query$ = toObservable(
       computed(() => ({
+        activeTab: this.activeTab(),
         orgUid: this.accountContext.selectedAccount()?.uid ?? null,
         searchQuery: this.searchValue(),
         level: this.levelValue(),
@@ -215,12 +217,16 @@ export class OrgTrainingComponent {
     return toSignal(
       query$.pipe(
         switchMap((query) => {
-          if (!query.orgUid) {
+          // Only query Snowflake when the Certifications tab is active and an org is selected —
+          // avoids avoidable load when the Trainings tab is showing or no org is resolved yet.
+          if (query.activeTab !== 'certifications' || !query.orgUid) {
             this.certificationsLoading.set(false);
+            this.certificationsError.set(false);
             return of(EMPTY_ORG_CERTIFICATIONS_RESPONSE);
           }
 
           this.certificationsLoading.set(true);
+          this.certificationsError.set(false);
 
           return this.trainingService
             .getOrgCertifications(query.orgUid, {
@@ -232,7 +238,11 @@ export class OrgTrainingComponent {
               pageSize: query.pageSize,
             })
             .pipe(
-              catchError(() => of(EMPTY_ORG_CERTIFICATIONS_RESPONSE)),
+              // Distinguish a real failure from an empty result so the template can show an error state.
+              catchError(() => {
+                this.certificationsError.set(true);
+                return of(EMPTY_ORG_CERTIFICATIONS_RESPONSE);
+              }),
               finalize(() => this.certificationsLoading.set(false))
             );
         })

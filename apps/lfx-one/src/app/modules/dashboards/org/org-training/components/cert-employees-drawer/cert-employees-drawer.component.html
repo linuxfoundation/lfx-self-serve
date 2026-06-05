@@ -58,8 +58,7 @@
           <li class="flex items-center gap-3 py-3" [attr.data-testid]="'cert-employee-' + employee.contactId">
             <!-- Avatar -->
             <div
-              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0"
-              [class]="avatarColor(employee.name)"
+              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ avatarColor(employee.name) }}"
               aria-hidden="true">
               {{ initials(employee.name) }}
             </div>
@@ -71,7 +70,7 @@
               }
             </div>
             <!-- Status badge -->
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-shrink-0" [class]="statusBadgeClass()">{{ statusLabel() }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 {{ statusBadgeClass() }}">{{ statusLabel() }}</span>
           </li>
         }
       </ul>

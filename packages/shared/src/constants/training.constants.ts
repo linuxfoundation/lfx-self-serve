@@ -27,6 +27,10 @@ export const VALID_ORG_TRAINING_LEVEL_VALUES: ReadonlySet<string> = new Set(ORG_
 export const DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE = 10;
 export const MAX_ORG_CERTIFICATIONS_PAGE_SIZE = 100;
 
+/** Hard cap on rows returned by the certification-employees roster query — bounds response size for
+ * large orgs while the drawer keeps its single-fetch, client-side-search UX. */
+export const MAX_ORG_CERT_EMPLOYEES = 500;
+
 export const DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD = 'CERTIFIED_COUNT';
 export const DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER: 'ASC' | 'DESC' = 'DESC';
 
