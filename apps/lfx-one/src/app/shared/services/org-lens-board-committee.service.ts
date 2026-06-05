@@ -3,7 +3,14 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgMembershipBoardSeatsResponse, OrgMembershipCommitteeSeatsResponse, OrgMembershipVotingHistoryResponse } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensEmployeesResponse,
+  OrgMembershipBoardSeatsResponse,
+  OrgMembershipCommitteeSeatsResponse,
+  OrgMembershipReassignSeatResponse,
+  OrgMembershipVotingHistoryResponse,
+  ReassignCommitteeSeatRequest,
+} from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**
@@ -34,5 +41,17 @@ export class OrgLensBoardCommitteeService {
     return this.http.get<OrgMembershipVotingHistoryResponse>(
       `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/voting-history`
     );
+  }
+
+  public reassignSeat(orgUid: string, foundationId: string, seatId: string, body: ReassignCommitteeSeatRequest): Observable<OrgMembershipReassignSeatResponse> {
+    return this.http.patch<OrgMembershipReassignSeatResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/committee-seats/${encodeURIComponent(seatId)}/reassign`,
+      body
+    );
+  }
+
+  /** Org-wide people picker (key contacts + committee members) for the Reassign modal (spec 026). */
+  public getOrgEmployees(orgUid: string): Observable<OrgLensEmployeesResponse> {
+    return this.http.get<OrgLensEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/employees`);
   }
 }

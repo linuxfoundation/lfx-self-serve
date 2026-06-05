@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgLensEmployeesResponse, ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -38,7 +39,7 @@ export class OrgLensBoardCommitteeController {
       assertOrgUid(orgUid, 'get_board_seats');
       this.assertFoundationId(foundationId, 'get_board_seats');
 
-      const response = this.service.getBoardSeats(orgUid, foundationId);
+      const response = await this.service.getBoardSeats(req, orgUid, foundationId);
 
       logger.success(req, 'get_board_seats', startTime, {
         org_uid: orgUid,
@@ -66,7 +67,7 @@ export class OrgLensBoardCommitteeController {
       assertOrgUid(orgUid, 'get_committee_seats');
       this.assertFoundationId(foundationId, 'get_committee_seats');
 
-      const response = this.service.getCommitteeSeats(orgUid, foundationId);
+      const response = await this.service.getCommitteeSeats(req, orgUid, foundationId);
 
       logger.success(req, 'get_committee_seats', startTime, {
         org_uid: orgUid,
@@ -107,6 +108,67 @@ export class OrgLensBoardCommitteeController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/employees — org-wide people picker (key contacts + committee members) for the Reassign modal. */
+  public async getEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_employees', { org_uid: orgUid });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_employees');
+
+      const employees = await this.service.getOrgEmployees(req, orgUid);
+
+      logger.success(req, 'get_org_employees', startTime, {
+        org_uid: orgUid,
+        row_count: employees.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ orgUid, employees } satisfies OrgLensEmployeesResponse);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/orgs/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign */
+  public async reassignSeat(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationId = req.params['foundationId'];
+    const seatId = req.params['seatId'];
+    const startTime = logger.startOperation(req, 'reassign_committee_seat', {
+      org_uid: orgUid,
+      foundation_id: foundationId,
+      seat_id: seatId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'reassign_committee_seat');
+      this.assertFoundationId(foundationId, 'reassign_committee_seat');
+      const body = this.assertReassignBody(req.body, 'reassign_committee_seat');
+
+      const response = await this.service.reassignSeat(req, orgUid, foundationId, seatId, body);
+
+      logger.success(req, 'reassign_committee_seat', startTime, {
+        org_uid: orgUid,
+        foundation_id: foundationId,
+        seat_id: seatId,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  private assertReassignBody(body: unknown, operation: string): ReassignCommitteeSeatRequest {
+    const b = (body ?? {}) as Partial<ReassignCommitteeSeatRequest>;
+    if (!b.committeeUid || !b.email || !b.firstName || !b.lastName) {
+      throw ServiceValidationError.forField('body', 'committeeUid, firstName, lastName and email are required', { operation });
+    }
+    return { committeeUid: b.committeeUid, firstName: b.firstName, lastName: b.lastName, email: b.email };
   }
 
   private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {

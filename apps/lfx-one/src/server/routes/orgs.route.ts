@@ -47,6 +47,11 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/memberships/:foundationId/board-seats', (req, res, next) => orgLensBoardCommitteeController.getBoardSeats(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/committee-seats', (req, res, next) => orgLensBoardCommitteeController.getCommitteeSeats(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/voting-history', (req, res, next) => orgLensBoardCommitteeController.getVotingHistory(req, res, next));
+  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', (req, res, next) =>
+    orgLensBoardCommitteeController.reassignSeat(req, res, next)
+  );
+  // Spec 026 — org-wide people picker (key contacts + committee members) for the Reassign modal.
+  router.get('/:orgUid/lens/employees', (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/documents', (req, res, next) => orgLensDocumentsController.getMembershipDocuments(req, res, next));
   router.get('/:orgUid/lens/key-contacts/employees', (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
   router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', (req, res, next) => orgLensKeyContactsController.addKeyContact(req, res, next));

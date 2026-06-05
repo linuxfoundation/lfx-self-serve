@@ -7,7 +7,6 @@ import { FormsModule } from '@angular/forms';
 import type {
   BoardSeat,
   CommitteeSeat,
-  OrgMembershipKeyContactPerson,
   VotingRecord,
   SectionLoadState,
   ReassignSubmitEvent,
@@ -72,9 +71,9 @@ export class BoardCommitteeCardComponent {
   // === Search ===
   protected readonly searchTerm = signal('');
 
-  /** Computed: filtered Board Seats by name OR email (case-insensitive substring). */
-  protected readonly filteredBoardSeats = computed(() => this.applyFilter(this.boardSeats()));
-  protected readonly filteredCommitteeSeats = computed(() => this.applyFilter(this.committeeSeats()));
+  /** Filtered + ordered seats (FR-011 search, FR-017 ordering: committee A–Z then last name). */
+  protected readonly filteredBoardSeats = computed(() => this.sortSeats(this.applyFilter(this.boardSeats())));
+  protected readonly filteredCommitteeSeats = computed(() => this.sortSeats(this.applyFilter(this.committeeSeats())));
 
   // === Pre-computed voting history with formatted date and chip class ===
   protected readonly votingHistoryWithMeta: Signal<VotingRecordRow[]> = computed(() => this.initVotingHistoryWithMeta());
@@ -190,6 +189,7 @@ export class BoardCommitteeCardComponent {
         seat,
         seatKind: kind,
         foundationName: this.foundationName(),
+        orgUid: this.orgUid(),
       } satisfies ReassignBoardRolesDialogData,
     }) as DynamicDialogRef;
 
@@ -217,74 +217,70 @@ export class BoardCommitteeCardComponent {
     });
   }
 
-  /** Receives the reassign submit from the modal; applies optimistic update + refetch (FR-008h + FR-008j + FR-011d.4). */
+  /** Receives the reassign submit from the modal; calls the write proxy, then optimistic update + refetch (FR-007/FR-009/FR-016). */
   protected onReassignSubmit(event: ReassignSubmitEvent): void {
-    const initials = (event.body.firstName.charAt(0) + event.body.lastName.charAt(0)).toUpperCase();
-    const tempPerson: OrgMembershipKeyContactPerson = {
-      personId: `temp-${this.generateUuid()}`,
-      firstName: event.body.firstName,
-      lastName: event.body.lastName,
-      fullName: `${event.body.firstName} ${event.body.lastName}`,
-      email: event.body.email,
-      jobTitle: null,
-      initials,
-    };
+    const seats: (BoardSeat | CommitteeSeat)[] = event.seatKind === 'board' ? this.boardSeats() : this.committeeSeats();
+    const committeeUid = seats.find((s) => s.seatId === event.seatId)?.committeeUid ?? '';
 
-    if (event.seatKind === 'board') {
-      this.boardSeats.update((seats) => seats.map((s) => (s.seatId === event.seatId ? { ...s, person: tempPerson, votingPercentage: null } : s)));
-    } else {
-      this.committeeSeats.update((seats) => seats.map((s) => (s.seatId === event.seatId ? { ...s, person: tempPerson, votingPercentage: null } : s)));
+    // Fail fast (FR-016): if the seat's committeeUid can't be resolved (stale state / unexpected shape),
+    // the upstream reassign would 400 on an empty committee_uid and surface as a generic failure.
+    if (!committeeUid) {
+      this.messageService.add({
+        key: 'board-committee-refetch-error-toast',
+        severity: 'error',
+        summary: 'Reassignment failed — please retry.',
+        life: 5000,
+      });
+      return;
     }
 
-    this.messageService.add({
-      key: 'board-toast-success-reassigned',
-      severity: 'success',
-      summary: 'Board roles reassigned',
-      life: 3000,
-    });
-
-    if (event.seatKind === 'board') {
-      this.service
-        .getBoardSeats(this.orgUid(), this.foundationId())
-        .pipe(
-          catchError(() => {
-            this.messageService.add({
-              key: 'board-committee-refetch-error-toast',
-              severity: 'error',
-              summary: 'Could not refresh board seats — please retry.',
-              life: 5000,
-            });
-            return of(null);
-          }),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe((response) => {
-          if (response) this.boardSeats.set(response.boardSeats);
+    this.service
+      .reassignSeat(this.orgUid(), this.foundationId(), event.seatId, { committeeUid, ...event.body })
+      .pipe(
+        catchError(() => {
+          // FR-016: a reassignment that can't be completed surfaces an error rather than failing silently.
+          this.messageService.add({
+            key: 'board-committee-refetch-error-toast',
+            severity: 'error',
+            summary: 'Reassignment failed — please retry.',
+            life: 5000,
+          });
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        if (!response) return;
+        // FR-007: only the holder changes — the returned seat preserves role/voting/appointment.
+        this.applyReassignedSeat(event.seatKind, response.seat);
+        this.messageService.add({
+          key: 'board-toast-success-reassigned',
+          severity: 'success',
+          summary: event.seatKind === 'board' ? 'Board roles reassigned' : 'Committee seat reassigned',
+          life: 3000,
         });
-    } else {
-      this.service
-        .getCommitteeSeats(this.orgUid(), this.foundationId())
-        .pipe(
-          catchError(() => {
-            this.messageService.add({
-              key: 'board-committee-refetch-error-toast',
-              severity: 'error',
-              summary: 'Could not refresh committee seats — please retry.',
-              life: 5000,
-            });
-            return of(null);
-          }),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe((response) => {
-          if (response) this.committeeSeats.set(response.committeeSeats);
-        });
-    }
+        this.refetchSeats(event.seatKind);
+      });
   }
 
   /** Why-can't-I-edit Contact Foundation handler — explicit no-op in v1 (FR-012c). */
   protected onContactFoundationClick(seatId: string): void {
     console.info('[board] contact foundation clicked for', seatId);
+  }
+
+  /** FR-012: download a CSV of the org's full seat list (board + committee), independent of the search filter. */
+  protected exportCsv(): void {
+    const csv = this.buildCsv();
+    if (typeof document === 'undefined') {
+      return; // SSR guard — unreachable in the browser
+    }
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `board-committee-${this.foundationId() || this.orgUid()}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   // === Private helpers ===
@@ -331,16 +327,82 @@ export class BoardCommitteeCardComponent {
     }
   }
 
-  private applyFilter<T extends { person: OrgMembershipKeyContactPerson }>(rows: T[]): T[] {
+  private applyFilter<T extends BoardSeat | CommitteeSeat>(rows: T[]): T[] {
     const term = this.searchTerm().trim().toLowerCase();
     if (!term) return rows;
-    return rows.filter((r) => r.person.fullName.toLowerCase().includes(term) || r.person.email.toLowerCase().includes(term));
+    return rows.filter((r) => this.seatSearchText(r).includes(term));
   }
 
-  private generateUuid(): string {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
+  /**
+   * FR-011: search matches name, job title, role, appointed-by, voting status, committee name, and email
+   * (case-insensitive substring). Board rows expose `seatName`; committee rows expose `role`/`committeeName`.
+   */
+  private seatSearchText(seat: BoardSeat | CommitteeSeat): string {
+    const parts: (string | null | undefined)[] = [
+      seat.person.fullName,
+      seat.person.email,
+      seat.person.jobTitle,
+      seat.appointedBy,
+      seat.votingStatus,
+      'seatName' in seat ? seat.seatName : undefined,
+      'role' in seat ? seat.role : undefined,
+      'committeeName' in seat ? seat.committeeName : undefined,
+    ];
+    return parts
+      .filter((p): p is string => Boolean(p))
+      .join(' ')
+      .toLowerCase();
+  }
+
+  /** FR-017: order by committee/seat group name (A–Z), then by last name within each group. */
+  private sortSeats<T extends BoardSeat | CommitteeSeat>(rows: T[]): T[] {
+    return [...rows].sort((a, b) => {
+      const groupCmp = this.seatGroupName(a).localeCompare(this.seatGroupName(b), undefined, { sensitivity: 'base' });
+      if (groupCmp !== 0) {
+        return groupCmp;
+      }
+      return a.person.lastName.localeCompare(b.person.lastName, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  private seatGroupName(seat: BoardSeat | CommitteeSeat): string {
+    return 'committeeName' in seat ? seat.committeeName : seat.seatName;
+  }
+
+  /** Builds the FR-012 CSV (one row per member-per-committee) over the full, unfiltered seat list. */
+  private buildCsv(): string {
+    const header = ['Committee', 'Category', 'Name', 'Job Title', 'Role', 'Appointed By', 'Voting Status', 'Email'];
+    const rows: string[][] = [];
+    for (const s of this.boardSeats()) {
+      rows.push([s.seatName, s.committeeCategory, s.person.fullName, s.person.jobTitle ?? '', '', s.appointedBy, s.votingStatus, s.person.email]);
     }
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    for (const s of this.committeeSeats()) {
+      rows.push([s.committeeName, s.committeeCategory, s.person.fullName, s.person.jobTitle ?? '', s.role, s.appointedBy, s.votingStatus, s.person.email]);
+    }
+    return [header, ...rows].map((row) => row.map((cell) => this.csvCell(cell)).join(',')).join('\r\n');
+  }
+
+  /** RFC 4180 cell escaping: quote and double embedded quotes when the value has a comma/quote/newline. */
+  private csvCell(value: string): string {
+    const v = value ?? '';
+    return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  }
+
+  /** Replace the reassigned seat in the right list with the authoritative seat returned by the write. */
+  private applyReassignedSeat(kind: 'board' | 'committee', seat: BoardSeat | CommitteeSeat): void {
+    if (kind === 'board') {
+      this.boardSeats.update((seats) => seats.map((s) => (s.seatId === seat.seatId ? (seat as BoardSeat) : s)));
+    } else {
+      this.committeeSeats.update((seats) => seats.map((s) => (s.seatId === seat.seatId ? (seat as CommitteeSeat) : s)));
+    }
+  }
+
+  /** Refetch the affected section after a successful reassignment (FR-009: no manual reload). */
+  private refetchSeats(kind: 'board' | 'committee'): void {
+    if (kind === 'board') {
+      this.fetchBoard();
+    } else {
+      this.fetchCommittee();
+    }
   }
 }
