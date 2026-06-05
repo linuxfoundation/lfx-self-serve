@@ -140,7 +140,12 @@ async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<v
     // Derive the reassigned seat from the request URL so the response seatId matches the requested
     // seat (board OR committee). The UI applies the returned seat by seatId, so echoing the matching
     // seat (rather than always BOARD_SEATS[0]) keeps the committee path realistic and catches regressions.
-    const requestedSeatId = decodeURIComponent(route.request().url().match(/committee-seats\/([^/]+)\/reassign/)?.[1] ?? '');
+    const requestedSeatId = decodeURIComponent(
+      route
+        .request()
+        .url()
+        .match(/committee-seats\/([^/]+)\/reassign/)?.[1] ?? ''
+    );
     const original = [...BOARD_SEATS, ...COMMITTEE_SEATS].find((s) => s.seatId === requestedSeatId) ?? BOARD_SEATS[0];
     const updated = {
       ...original,
