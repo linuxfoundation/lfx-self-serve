@@ -40,6 +40,7 @@ export class AttributionSectionComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -64,17 +65,18 @@ export class AttributionSectionComponent {
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      combineLatest([slug$, focus$]).pipe(
-        switchMap(([slug, focus]) => {
+      combineLatest([slug$, focus$, month$]).pipe(
+        switchMap(([slug, focus, month]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
-          return this.analyticsService.getMarketingAttribution(slug, classification).pipe(
+          return this.analyticsService.getMarketingAttribution(slug, classification, month || undefined).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );

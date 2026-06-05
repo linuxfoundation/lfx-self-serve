@@ -15,7 +15,9 @@ export function cleanPastedHtml(html: string): string {
   }
 
   unwrapGoogleDocsWrapper(body);
+  absorbListContinuationParagraphs(body);
   walkAndClean(body);
+  collapseEmptyBlocks(body);
 
   return body.innerHTML;
 }
@@ -28,6 +30,180 @@ function unwrapGoogleDocsWrapper(body: HTMLElement): void {
     }
     wrapper.remove();
   }
+}
+
+// Google Docs models continuation paragraphs under a bullet as a top-level <p style="margin-left:36pt">
+// sandwiched between two <ul>/<ol> blocks. Stripping style erases the indent, so the paragraph collapses
+// to flush-left and loses its visual relationship to the bullet. Move such paragraphs into the last <li>
+// of the preceding list while inline styles are still readable.
+function absorbListContinuationParagraphs(body: HTMLElement): void {
+  // Walk deepest list first. If we processed outer-then-inner and the outer absorbed a paragraph
+  // into its last <li>, that paragraph would become a sibling of any nested inner list inside that
+  // <li>, and the inner list's pass could re-absorb it. Processing inner first means an inner list's
+  // nextElementSibling can only be its original sibling, never a paragraph the outer just moved in.
+  const lists = Array.from(body.querySelectorAll<HTMLElement>('ul, ol')).reverse();
+
+  for (const list of lists) {
+    const lastItem = list.querySelector<HTMLElement>(':scope > li:last-child');
+    if (!lastItem) {
+      continue;
+    }
+    const listIndent = readMarginLeftPt(lastItem) || readMarginLeftPt(list);
+    if (listIndent <= 0) {
+      // Without an explicit indent on the list, we can't tell whether a following indented
+      // paragraph is a bullet continuation or unrelated content. Skip.
+      continue;
+    }
+
+    let cursor: Element | null = list.nextElementSibling;
+    while (cursor) {
+      if (cursor.tagName !== 'P') {
+        break;
+      }
+
+      if (isEmptyInlineContainer(cursor)) {
+        // Skip Google Docs spacer paragraphs; Pass B will drop them.
+        cursor = cursor.nextElementSibling;
+        continue;
+      }
+
+      const paragraphIndent = readMarginLeftPt(cursor);
+      // Allow ~1pt tolerance for rounding across unit conversions.
+      if (paragraphIndent + 1 < listIndent) {
+        break;
+      }
+
+      const next = cursor.nextElementSibling;
+      lastItem.appendChild(cursor);
+      cursor = next;
+    }
+  }
+}
+
+// Read margin-left from an element's inline style and normalize to points so we can compare values
+// across units. We only care about relative magnitude (does this paragraph sit at or beyond the list's
+// indent), so the approximations are good enough.
+function readMarginLeftPt(element: Element): number {
+  const style = element.getAttribute('style');
+  if (!style) {
+    return 0;
+  }
+  const match = /margin-left\s*:\s*(-?[\d.]+)\s*(pt|px|em|rem|in|cm|mm|%)?/i.exec(style);
+  if (!match) {
+    return 0;
+  }
+  const value = parseFloat(match[1]);
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  // CSS requires a unit on every non-zero margin. A unitless non-zero value is malformed and
+  // could come from quirky source HTML — treat it as no indent rather than guessing pixels.
+  if (!match[2] && value !== 0) {
+    return 0;
+  }
+  const unit = (match[2] ?? 'pt').toLowerCase();
+  switch (unit) {
+    case 'pt':
+      return value;
+    case 'px':
+      return value * 0.75;
+    case 'em':
+    case 'rem':
+      return value * 12;
+    case 'in':
+      return value * 72;
+    case 'cm':
+      return value * 28.3464567;
+    case 'mm':
+      return value * 2.83464567;
+    case '%':
+      return value;
+    default:
+      return value;
+  }
+}
+
+function isEmptyInlineContainer(element: Element): boolean {
+  if (element.textContent && element.textContent.replace(/[\s\u00A0]/g, '') !== '') {
+    return false;
+  }
+  for (const child of Array.from(element.children)) {
+    if (child.tagName === 'BR') {
+      continue;
+    }
+    if (!isEmptyInlineContainer(child)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
+
+// Replaced/void/embedded leaf elements carry visual content even when textContent is empty —
+// e.g. <p><img></p> is not an empty paragraph. Without this, isEmptyBlock would silently drop
+// any future content type the editor learns to render (images, media, embeds, form widgets).
+// HTML elements always uppercase their tagName, but namespaced elements (SVG, MathML) preserve
+// case, so we normalize via toUpperCase() at the lookup site rather than maintaining both forms.
+const CONTENT_LEAF_TAGS = new Set([
+  'IMG',
+  'IFRAME',
+  'VIDEO',
+  'AUDIO',
+  'SOURCE',
+  'PICTURE',
+  'SVG',
+  'MATH',
+  'CANVAS',
+  'EMBED',
+  'OBJECT',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+  'HR',
+]);
+
+// Google Docs (and Word) inject empty <p style="height:11pt"><span></span></p> nodes as blank-line
+// spacers between content blocks. After style/class strip, the editor's `p { margin: 0 0 0.75rem }`
+// renders each as ~14px of dead space — multiple spacers stack into the gaps the user is reporting.
+// Walk inside-out so that lists which contain only empty <li> children also drop.
+function collapseEmptyBlocks(root: HTMLElement): void {
+  const nodes = Array.from(root.querySelectorAll<HTMLElement>('p, h2, h3, li, ul, ol'));
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const node = nodes[i];
+    if (!EMPTY_BLOCK_TAGS.has(node.tagName)) {
+      continue;
+    }
+    if (!node.isConnected) {
+      continue;
+    }
+    if (isEmptyBlock(node)) {
+      node.remove();
+    }
+  }
+}
+
+function isEmptyBlock(element: Element): boolean {
+  if (element.textContent && element.textContent.replace(/[\s\u00A0]/g, '') !== '') {
+    return false;
+  }
+  for (const child of Array.from(element.children)) {
+    if (child.tagName === 'BR') {
+      continue;
+    }
+    if (CONTENT_LEAF_TAGS.has(child.tagName.toUpperCase())) {
+      return false;
+    }
+    if (EMPTY_BLOCK_TAGS.has(child.tagName)) {
+      // A list with all-empty children would have had its children removed earlier in the
+      // inside-out walk, so reaching here means a non-empty descendant survived.
+      return false;
+    }
+    if (!isEmptyBlock(child)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function walkAndClean(root: Element): void {

@@ -47,6 +47,12 @@
 
     > p {
       margin: 0;
+
+      // Continuation paragraphs absorbed under a bullet (e.g. from a Google Docs paste) need
+      // breathing room from the bullet's first paragraph; otherwise they visually merge into one block.
+      &:not(:first-child) {
+        margin-top: 0.5rem;
+      }
     }
   }
 
