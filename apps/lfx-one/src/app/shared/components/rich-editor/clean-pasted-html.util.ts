@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DROP_TAGS, STRIPPED_ATTRS, UNWRAP_TAGS } from '@lfx-one/shared/constants';
+import { CONTENT_LEAF_TAGS, DROP_TAGS, EMPTY_BLOCK_TAGS, PARAGRAPH_LIKE_TAGS, STRIPPED_ATTRS, UNWRAP_TAGS } from '@lfx-one/shared/constants';
+
+// CSS selector derived from PARAGRAPH_LIKE_TAGS for closest() lookups. closest() needs
+// lowercase tag names in a comma-separated string; the Set is the source of truth.
+const PARAGRAPH_LIKE_SELECTOR = Array.from(PARAGRAPH_LIKE_TAGS)
+  .map((tag) => tag.toLowerCase())
+  .join(',');
 
 export function cleanPastedHtml(html: string): string {
   if (!html || typeof DOMParser === 'undefined') {
@@ -37,17 +43,12 @@ function unwrapGoogleDocsWrapper(body: HTMLElement): void {
 // at the block-flow level (siblings of <p>), not with empty <p> spacers. ProseMirror's schema
 // doesn't allow <br> at block level, so it wraps each orphan <br> in a paragraph — producing
 // <p><br></p> empty paragraphs in the final document. Remove these orphan breaks before
-// ProseMirror parses; a <br> nested inside a paragraph-like element stays (legitimate hard break).
-const PARAGRAPH_LIKE_TAGS = new Set(['P', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'FIGCAPTION', 'CAPTION', 'PRE']);
-
+// ProseMirror parses; a <br> with any paragraph-like ancestor stays (legitimate hard break,
+// including breaks inside inline wrappers like <p><span>line 1<br>line 2</span></p>).
 function removeBlockLevelBreaks(root: HTMLElement): void {
   const breaks = Array.from(root.querySelectorAll<HTMLBRElement>('br'));
   for (const br of breaks) {
-    const parent = br.parentElement;
-    if (!parent) {
-      continue;
-    }
-    if (PARAGRAPH_LIKE_TAGS.has(parent.tagName)) {
+    if (br.closest(PARAGRAPH_LIKE_SELECTOR)) {
       continue;
     }
     br.remove();
@@ -159,31 +160,6 @@ function isEmptyInlineContainer(element: Element): boolean {
   }
   return true;
 }
-
-const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
-
-// Replaced/void/embedded leaf elements carry visual content even when textContent is empty —
-// e.g. <p><img></p> is not an empty paragraph. Without this, isEmptyBlock would silently drop
-// any future content type the editor learns to render (images, media, embeds, form widgets).
-// HTML elements always uppercase their tagName, but namespaced elements (SVG, MathML) preserve
-// case, so we normalize via toUpperCase() at the lookup site rather than maintaining both forms.
-const CONTENT_LEAF_TAGS = new Set([
-  'IMG',
-  'IFRAME',
-  'VIDEO',
-  'AUDIO',
-  'SOURCE',
-  'PICTURE',
-  'SVG',
-  'MATH',
-  'CANVAS',
-  'EMBED',
-  'OBJECT',
-  'INPUT',
-  'SELECT',
-  'TEXTAREA',
-  'HR',
-]);
 
 // Google Docs (and Word) inject empty <p style="height:11pt"><span></span></p> nodes as blank-line
 // spacers between content blocks. After style/class strip, the editor's `p { margin: 0 0 0.75rem }`
