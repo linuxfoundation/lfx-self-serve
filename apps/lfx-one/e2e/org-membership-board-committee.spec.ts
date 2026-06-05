@@ -22,24 +22,24 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-const DETAIL_URL_AGL_BOARD = '/org/memberships/agl-001#board';
+const DETAIL_URL_BOARD = '/org/memberships/sample-foundation#board';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);
 
 const BOARD_SEATS = [
   {
-    seatId: 'agl-board-1',
-    memberUid: 'agl-board-1',
+    seatId: 'board-1',
+    memberUid: 'board-1',
     committeeUid: 'cmte-board',
     person: {
-      personId: 'agl-board-1',
+      personId: 'board-1',
       firstName: 'Alex',
       lastName: 'Rivera',
       fullName: 'Alex Rivera',
       email: 'alex.rivera@example.com',
       jobTitle: 'Principal Engineer',
-      initials: 'MI',
+      initials: 'AR',
     },
     seatName: 'Governing Board',
     tagLabel: 'Voting Rep',
@@ -53,17 +53,17 @@ const BOARD_SEATS = [
 
 const COMMITTEE_SEATS = [
   {
-    seatId: 'agl-com-1',
-    memberUid: 'agl-com-1',
+    seatId: 'com-1',
+    memberUid: 'com-1',
     committeeUid: 'cmte-tsc',
     person: {
-      personId: 'agl-com-1',
+      personId: 'com-1',
       firstName: 'Alex',
       lastName: 'Rivera',
       fullName: 'Alex Rivera',
       email: 'alex.rivera@example.com',
       jobTitle: 'Principal Engineer',
-      initials: 'MI',
+      initials: 'AR',
     },
     committeeName: 'Technical Steering Committee',
     role: 'Chair',
@@ -74,17 +74,17 @@ const COMMITTEE_SEATS = [
     reason: "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
   },
   {
-    seatId: 'agl-com-2',
-    memberUid: 'agl-com-2',
+    seatId: 'com-2',
+    memberUid: 'com-2',
     committeeUid: 'cmte-mkt',
     person: {
-      personId: 'agl-com-2',
+      personId: 'com-2',
       firstName: 'Jordan',
       lastName: 'Kim',
       fullName: 'Jordan Kim',
       email: 'jordan.kim@example.com',
       jobTitle: 'Engineer',
-      initials: 'KH',
+      initials: 'JK',
     },
     committeeName: 'Marketing Committee',
     role: 'Member',
@@ -124,20 +124,24 @@ async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<v
   const voting = opts.voting ?? VOTING_HISTORY;
 
   await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/board-seats$/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ accountId: 'org-1', foundationId: 'agl-001', boardSeats: board }) })
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', boardSeats: board }),
+    })
   );
   await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/committee-seats$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'agl-001', committeeSeats: committee }),
+      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', committeeSeats: committee }),
     })
   );
   await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/voting-history$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'agl-001', votingHistory: voting }),
+      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', votingHistory: voting }),
     })
   );
 
@@ -172,13 +176,13 @@ async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<v
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'agl-001', seat: updated }),
+      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', seat: updated }),
     });
   });
 }
 
 async function openBoardCommitteeTab(page: Page): Promise<void> {
-  await page.goto(DETAIL_URL_AGL_BOARD, { waitUntil: 'domcontentloaded' });
+  await page.goto(DETAIL_URL_BOARD, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await expect(page.getByTestId('board-committee-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -204,19 +208,19 @@ test.describe('US1 — Board & Committee tab (live data)', () => {
   });
 
   test('Board seat renders the votingStatus STRING (not a percentage) + pencil for editable seat', async ({ page }) => {
-    const row = page.getByTestId('board-committee-board-row-agl-board-1');
+    const row = page.getByTestId('board-committee-board-row-board-1');
     await expect(row).toContainText('Alex Rivera');
     await expect(row).toContainText('Governing Board');
     await expect(row).toContainText('Voting Rep');
     await expect(row).not.toContainText('%');
-    await expect(page.getByTestId('board-committee-board-edit-agl-board-1')).toBeVisible();
+    await expect(page.getByTestId('board-committee-board-edit-board-1')).toBeVisible();
   });
 
   test('foundation-controlled committee seat shows "Why can\'t I edit?" (not a pencil)', async ({ page }) => {
     await page.getByTestId('board-committee-section-committee-header').click();
-    await expect(page.getByTestId('board-committee-committee-why-agl-com-1')).toBeVisible();
-    await expect(page.getByTestId('board-committee-committee-edit-agl-com-1')).toHaveCount(0);
-    await expect(page.getByTestId('board-committee-committee-edit-agl-com-2')).toBeVisible();
+    await expect(page.getByTestId('board-committee-committee-why-com-1')).toBeVisible();
+    await expect(page.getByTestId('board-committee-committee-edit-com-1')).toHaveCount(0);
+    await expect(page.getByTestId('board-committee-committee-edit-com-2')).toBeVisible();
   });
 
   test('empty state when the org holds no seats', async ({ page }) => {
@@ -230,8 +234,8 @@ test.describe('US1 — Board & Committee tab (live data)', () => {
     await page.getByTestId('board-committee-section-committee-header').click();
     await page.getByTestId('board-committee-search-input').fill('marketing');
     await page.waitForTimeout(300);
-    await expect(page.getByTestId('board-committee-committee-row-agl-com-2')).toBeVisible();
-    await expect(page.getByTestId('board-committee-committee-row-agl-com-1')).toHaveCount(0);
+    await expect(page.getByTestId('board-committee-committee-row-com-2')).toBeVisible();
+    await expect(page.getByTestId('board-committee-committee-row-com-1')).toHaveCount(0);
   });
 });
 
@@ -258,7 +262,7 @@ test.describe('US3 — Reassign', () => {
     await stubBoardCommittee(page);
     await openBoardCommitteeTab(page);
 
-    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await page.getByTestId('board-committee-board-edit-board-1').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
     await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
     await page.getByTestId('reassign-board-first-name-input').fill('Jane');
@@ -273,7 +277,7 @@ test.describe('US3 — Reassign', () => {
     await stubBoardCommittee(page);
     await openBoardCommitteeTab(page);
 
-    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await page.getByTestId('board-committee-board-edit-board-1').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
 
     // Typing a partial query opens the combobox with only matching people.
@@ -297,7 +301,7 @@ test.describe('US3 — Reassign', () => {
     await stubBoardCommittee(page, { employeesStatus: 500 });
     await openBoardCommitteeTab(page);
 
-    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await page.getByTestId('board-committee-board-edit-board-1').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId('reassign-board-search-unavailable')).toBeVisible();
 
@@ -314,7 +318,7 @@ test.describe('US3 — Reassign', () => {
     await stubBoardCommittee(page, { reassignStatus: 403 });
     await openBoardCommitteeTab(page);
 
-    await page.getByTestId('board-committee-board-edit-agl-board-1').click();
+    await page.getByTestId('board-committee-board-edit-board-1').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
     await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
     await page.getByTestId('reassign-board-first-name-input').fill('Jane');
@@ -325,14 +329,14 @@ test.describe('US3 — Reassign', () => {
     await expect(page.getByText('Board roles reassigned')).toHaveCount(0);
   });
 
-  // The UI supports reassigning editable COMMITTEE seats too (agl-com-2). Same flow as Board, but the
+  // The UI supports reassigning editable COMMITTEE seats too (com-2). Same flow as Board, but the
   // success toast is committee-specific ("Committee seat reassigned", not "Board roles reassigned").
   test('committee happy path: reassign editable committee seat → committee success toast', async ({ page }) => {
     await stubBoardCommittee(page);
     await openBoardCommitteeTab(page);
 
     await page.getByTestId('board-committee-section-committee-header').click();
-    await page.getByTestId('board-committee-committee-edit-agl-com-2').click();
+    await page.getByTestId('board-committee-committee-edit-com-2').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
     await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
     await page.getByTestId('reassign-board-first-name-input').fill('Jane');
@@ -349,7 +353,7 @@ test.describe('US3 — Reassign', () => {
     await openBoardCommitteeTab(page);
 
     await page.getByTestId('board-committee-section-committee-header').click();
-    await page.getByTestId('board-committee-committee-edit-agl-com-2').click();
+    await page.getByTestId('board-committee-committee-edit-com-2').click();
     await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
     await page.getByTestId('reassign-board-email-input').fill('jane.doe@example.com');
     await page.getByTestId('reassign-board-first-name-input').fill('Jane');
