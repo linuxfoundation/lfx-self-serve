@@ -16,6 +16,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -41,6 +42,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     DueDateLabelPipe,
+    DueDateLabelColorPipe,
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
