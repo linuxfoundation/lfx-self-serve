@@ -56,6 +56,7 @@ export class PerformanceMarketingTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -129,10 +130,11 @@ export class PerformanceMarketingTabComponent {
   private initSocialReachData(): Signal<SocialReachResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      combineLatest([slug$, focus$]).pipe(
-        switchMap(([slug, focus]) => {
+      combineLatest([slug$, focus$, month$]).pipe(
+        switchMap(([slug, focus, month]) => {
           this.expandedProjects.set(new Set());
           this.expandedPlatforms.set(new Set());
           if (!slug) {
@@ -141,7 +143,7 @@ export class PerformanceMarketingTabComponent {
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
-          return this.analyticsService.getSocialReach(slug, classification).pipe(
+          return this.analyticsService.getSocialReach(slug, classification, month || undefined).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );
@@ -327,17 +329,18 @@ export class PerformanceMarketingTabComponent {
 
   private initKeywordData(): Signal<KeywordPerformanceResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, month$]).pipe(
+        switchMap(([slug, month]) => {
           this.expandedKeywords.set(new Set());
           if (!slug) {
             this.keywordLoading.set(false);
             return of(null);
           }
           this.keywordLoading.set(true);
-          return this.analyticsService.getKeywordPerformance(slug).pipe(
+          return this.analyticsService.getKeywordPerformance(slug, month || undefined).pipe(
             catchError(() => of(null)),
             finalize(() => this.keywordLoading.set(false))
           );
