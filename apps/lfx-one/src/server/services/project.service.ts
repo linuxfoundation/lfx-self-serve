@@ -1186,10 +1186,34 @@ export class ProjectService {
    */
   public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
     const isUmbrella = foundationSlug === 'tlf';
-    const slugFilter = isUmbrella ? '' : 'AND PROJECT_SLUG = ?';
     const slugParams = isUmbrella ? [] : [foundationSlug];
 
-    const query = `
+    const query = isUmbrella
+      ? `
+      WITH monthly_counts AS (
+        SELECT
+          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
+          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
+        GROUP BY DATE_TRUNC('MONTH', START_DATE)
+      ),
+      cumulative AS (
+        SELECT
+          MONTH_START,
+          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
+        FROM monthly_counts
+      )
+      SELECT
+        NULL AS PROJECT_ID,
+        'The Linux Foundation' AS PROJECT_NAME,
+        'tlf' AS PROJECT_SLUG,
+        MONTH_START,
+        MEMBER_COUNT
+      FROM cumulative
+      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      ORDER BY MONTH_START ASC
+    `
+      : `
       WITH monthly_counts AS (
         SELECT
           PROJECT_ID,
@@ -1198,8 +1222,7 @@ export class ProjectService {
           DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
           COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE 1=1
-          ${slugFilter}
+        WHERE PROJECT_SLUG = ?
         GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
       ),
       cumulative AS (
@@ -3396,10 +3419,10 @@ export class ProjectService {
 
     try {
       const isUmbrella = foundationSlug === 'tlf';
-      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
       const foundationParams = isUmbrella ? [] : [foundationSlug];
 
-      const query = `
+      const query = isUmbrella
+        ? `
         SELECT
           MONTH_START_DATE,
           SUM(NEWSLETTER_SUBSCRIBERS) AS NEWSLETTER_SUBSCRIBERS,
@@ -3412,9 +3435,24 @@ export class ProjectService {
           SUM(TOTAL_ENGAGED_MEMBERS) AS TOTAL_ENGAGED_MEMBERS,
           AVG(MOM_CHANGE_PERCENTAGE) AS MOM_CHANGE_PERCENTAGE
         FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_ENGAGED_COMMUNITY
-        WHERE 1=1
-          ${foundationFilter}
         GROUP BY MONTH_START_DATE
+        ORDER BY MONTH_START_DATE DESC
+        LIMIT 6
+      `
+        : `
+        SELECT
+          MONTH_START_DATE,
+          NEWSLETTER_SUBSCRIBERS,
+          COMMUNITY_MEMBERS,
+          WORKING_GROUP_MEMBERS,
+          CERTIFIED_INDIVIDUALS,
+          WEB_VISITORS,
+          CODE_CONTRIBUTORS,
+          TRAINING_ENROLLEES,
+          TOTAL_ENGAGED_MEMBERS,
+          MOM_CHANGE_PERCENTAGE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_ENGAGED_COMMUNITY
+        WHERE FOUNDATION_SLUG = ?
         ORDER BY MONTH_START_DATE DESC
         LIMIT 6
       `;
