@@ -133,7 +133,7 @@ export class RichEditorComponent {
       editable: !this.readonly(),
       editorProps: {
         attributes: {
-          class: 'lfx-rich-editor__content prose prose-sm max-w-none focus:outline-none',
+          class: 'lfx-rich-editor__content max-w-none focus:outline-none',
           'data-testid': this.dataTest() ?? '',
         },
         transformPastedHTML: (html: string) => cleanPastedHtml(html),
