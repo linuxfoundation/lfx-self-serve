@@ -1185,6 +1185,10 @@ export class ProjectService {
    * @returns Foundation total members response with cumulative monthly data and metadata
    */
   public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
+    const isUmbrella = foundationSlug === 'tlf';
+    const slugFilter = isUmbrella ? '' : 'AND PROJECT_SLUG = ?';
+    const slugParams = isUmbrella ? [] : [foundationSlug];
+
     const query = `
       WITH monthly_counts AS (
         SELECT
@@ -1194,7 +1198,8 @@ export class ProjectService {
           DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
           COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG = ?
+        WHERE 1=1
+          ${slugFilter}
         GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
       ),
       cumulative AS (
@@ -1217,7 +1222,7 @@ export class ProjectService {
       ORDER BY MONTH_START ASC
     `;
 
-    const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
 
     // Convert monthly data to arrays of counts and labels
     const monthlyData = result.rows.map((row) => row.MEMBER_COUNT);
@@ -1952,6 +1957,9 @@ export class ProjectService {
     });
 
     try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
@@ -1964,7 +1972,8 @@ export class ProjectService {
           SUM(TOTAL_SESSIONS_LAST_30_DAYS) AS TOTAL_SESSIONS,
           SUM(TOTAL_PAGE_VIEWS_LAST_30_DAYS) AS TOTAL_PAGE_VIEWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY
-        WHERE FOUNDATION_SLUG = ?
+        WHERE 1=1
+          ${foundationFilter}
           ${classificationFilter}
         GROUP BY LF_SUB_DOMAIN_CLASSIFICATION
         ORDER BY TOTAL_SESSIONS DESC
@@ -1978,19 +1987,19 @@ export class ProjectService {
           DATE_TRUNC('WEEK', ACTIVITY_DATE) AS ACTIVITY_DATE,
           SUM(DAILY_SESSIONS) AS DAILY_SESSIONS
         FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_PROJECT
-        WHERE FOUNDATION_SLUG = ?
-          AND ACTIVITY_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+        WHERE ACTIVITY_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
           AND ACTIVITY_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+          ${foundationFilter}
         GROUP BY DATE_TRUNC('WEEK', ACTIVITY_DATE)
         ORDER BY ACTIVITY_DATE ASC
       `;
 
       const [summaryResult, dailyResult] = await Promise.all([
         this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number; TOTAL_PAGE_VIEWS: number }>(summaryQuery, [
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, [foundationSlug, monthDate, monthDate]),
+        this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, [monthDate, monthDate, ...foundationParams]),
       ]);
 
       const domainGroups = summaryResult.rows.map((row) => ({
@@ -2033,6 +2042,9 @@ export class ProjectService {
     });
 
     try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
@@ -2045,7 +2057,8 @@ export class ProjectService {
           CTR_LAST_COMPLETED_MONTH,
           CTR_MOM_CHANGE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
-        WHERE FOUNDATION_SLUG = ?
+        WHERE 1=1
+          ${foundationFilter}
           ${classificationFilter}
       `;
 
@@ -2060,10 +2073,10 @@ export class ProjectService {
           SUM(TOTAL_SENDS) AS TOTAL_SENDS,
           SUM(TOTAL_OPENS) AS TOTAL_OPENS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
-        WHERE FOUNDATION_SLUG = ?
-          ${classificationFilter}
-          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+        WHERE PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
           AND PUBLISHED_MONTH_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+          ${foundationFilter}
+          ${classificationFilter}
         GROUP BY PUBLISHED_MONTH, PUBLISHED_MONTH_DATE
         ORDER BY PUBLISHED_MONTH_DATE ASC
       `;
@@ -2076,7 +2089,8 @@ export class ProjectService {
           LF_SUB_DOMAIN_CLASSIFICATION,
           CTR_LAST_6_MONTHS AS AVG_CTR
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
-        WHERE FOUNDATION_SLUG = ?
+        WHERE 1=1
+          ${foundationFilter}
           ${classificationFilter}
         ORDER BY CTR_LAST_6_MONTHS DESC
       `;
@@ -2093,24 +2107,24 @@ export class ProjectService {
           ROUND(SUM(OPENS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS OPEN_RATE,
           ROUND(SUM(CLICKS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS CTR
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
-        WHERE FOUNDATION_SLUG = ?
-          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+        WHERE PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
           AND PUBLISHED_MONTH_DATE < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+          ${foundationFilter}
         GROUP BY MARKETING_EMAIL_NAME, EMAIL_TYPE
         ORDER BY TOTAL_SENDS DESC
       `;
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
         this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
           monthlyQuery,
-          [foundationSlug, ...classificationParams, monthDate, monthDate]
+          [monthDate, monthDate, ...foundationParams, ...classificationParams]
         ),
         this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
         this.snowflakeService
@@ -2122,7 +2136,7 @@ export class ProjectService {
             TOTAL_CLICKS: number;
             OPEN_RATE: number;
             CTR: number;
-          }>(campaignPerfQuery, [foundationSlug, monthDate, monthDate])
+          }>(campaignPerfQuery, [monthDate, monthDate, ...foundationParams])
           .catch((error) => {
             logger.warning(undefined, 'get_email_ctr', 'Optional campaign breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
@@ -2290,6 +2304,9 @@ export class ProjectService {
     logger.debug(undefined, 'get_social_reach', 'Fetching paid social reach from Snowflake', { foundation_slug: foundationSlug, classification, month });
 
     try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
@@ -2301,7 +2318,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
-        AND FOUNDATION_SLUG = ?
+        ${foundationFilter}
         ${classificationFilter}
     `;
 
@@ -2311,9 +2328,9 @@ export class ProjectService {
         CAMPAIGN_MONTH,
         ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), NULLIF(SUM(SPEND), 0)), 2) AS ROAS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH < DATE_TRUNC('MONTH', TO_DATE(?))
+      WHERE CAMPAIGN_MONTH < DATE_TRUNC('MONTH', TO_DATE(?))
         AND CAMPAIGN_MONTH >= DATEADD('MONTH', -2, DATE_TRUNC('MONTH', TO_DATE(?)))
+        ${foundationFilter}
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH DESC
@@ -2325,7 +2342,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
-        AND FOUNDATION_SLUG = ?
+        ${foundationFilter}
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
@@ -2337,7 +2354,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
-        AND FOUNDATION_SLUG = ?
+        ${foundationFilter}
         ${classificationFilter}
       GROUP BY CAMPAIGN_MONTH
       ORDER BY CAMPAIGN_MONTH
@@ -2357,9 +2374,9 @@ export class ProjectService {
         SUM(IMPRESSIONS) AS IMPRESSIONS,
         SUM(CLICKS) AS CLICKS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+        ${foundationFilter}
         ${classificationFilter}
       GROUP BY PROJECT_NAME, CAMPAIGN_NAME, FUNNEL_STAGE
       ORDER BY SPEND DESC
@@ -2380,9 +2397,9 @@ export class ProjectService {
         ROUND(DIV0(SUM(CONV), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
         SUM(CONV) AS CONVERSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE FOUNDATION_SLUG = ?
-        AND CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+      WHERE CAMPAIGN_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND CAMPAIGN_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+        ${foundationFilter}
         ${classificationFilter}
       GROUP BY CHANNEL, CAMPAIGN_NAME
       ORDER BY CHANNEL, SPEND DESC
@@ -2392,20 +2409,25 @@ export class ProjectService {
         this.snowflakeService.execute<{ TOTAL_IMPRESSIONS: number; TOTAL_SPEND: number; TOTAL_REVENUE: number }>(impressionsQuery, [
           monthDate,
           monthDate,
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(roasKpiQuery, [foundationSlug, monthDate, monthDate, ...classificationParams]),
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(roasKpiQuery, [
+          monthDate,
+          monthDate,
+          ...foundationParams,
+          ...classificationParams,
+        ]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, [
           monthDate,
           monthDate,
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [
           monthDate,
           monthDate,
-          foundationSlug,
+          ...foundationParams,
           ...classificationParams,
         ]),
         this.snowflakeService
@@ -2422,7 +2444,7 @@ export class ProjectService {
             SESSIONS: number;
             IMPRESSIONS: number;
             CLICKS: number;
-          }>(projectPerfQuery, [foundationSlug, monthDate, monthDate, ...classificationParams])
+          }>(projectPerfQuery, [monthDate, monthDate, ...foundationParams, ...classificationParams])
           .catch((error) => {
             logger.warning(undefined, 'get_social_reach', 'Optional project breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
@@ -2458,7 +2480,7 @@ export class ProjectService {
             CPC: number;
             CONV_RATE: number;
             CONVERSIONS: number;
-          }>(platformPerfQuery, [foundationSlug, monthDate, monthDate, ...classificationParams])
+          }>(platformPerfQuery, [monthDate, monthDate, ...foundationParams, ...classificationParams])
           .catch((error) => {
             logger.warning(undefined, 'get_social_reach', 'Optional platform breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
@@ -3059,6 +3081,9 @@ export class ProjectService {
     logger.debug(undefined, 'get_social_media', 'Fetching social media data from Snowflake Platinum tables', { foundation_slug: foundationSlug, month });
 
     try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
 
       // Query 1: KPI cards — total followers, platforms, growth (aggregated)
@@ -3076,7 +3101,8 @@ export class ProjectService {
             )
         END AS FOLLOWER_GROWTH_PCT
       FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW
-      WHERE FOUNDATION_SLUG = ?
+      WHERE 1=1
+        ${foundationFilter}
     `;
 
       // Query 2: Platform breakdown table (aggregated per platform)
@@ -3092,7 +3118,8 @@ export class ProjectService {
         SUM(POSTS_30D) AS POSTS_30D,
         SUM(IMPRESSIONS) AS IMPRESSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_PLATFORM_BREAKDOWN
-      WHERE FOUNDATION_SLUG = ?
+      WHERE 1=1
+        ${foundationFilter}
       GROUP BY PLATFORM_NAME
       ORDER BY FOLLOWERS DESC
     `;
@@ -3103,16 +3130,16 @@ export class ProjectService {
         SNAPSHOT_MONTH,
         SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS
       FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_FOLLOWER_TREND
-      WHERE FOUNDATION_SLUG = ?
-        AND SNAPSHOT_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
+      WHERE SNAPSHOT_MONTH >= DATEADD('MONTH', -5, DATE_TRUNC('MONTH', TO_DATE(?)))
         AND SNAPSHOT_MONTH < DATEADD('MONTH', 1, DATE_TRUNC('MONTH', TO_DATE(?)))
+        ${foundationFilter}
       GROUP BY SNAPSHOT_MONTH
       ORDER BY SNAPSHOT_MONTH ASC
     `;
 
       const [overviewResult, platformResult, trendResult] = await Promise.all([
         this.snowflakeService.execute<{ TOTAL_FOLLOWERS: number; PLATFORMS_ACTIVE: number; FOLLOWER_GROWTH_PCT: number | null }>(overviewQuery, [
-          foundationSlug,
+          ...foundationParams,
         ]),
         this.snowflakeService.execute<{
           PLATFORM_NAME: string;
@@ -3120,8 +3147,8 @@ export class ProjectService {
           ENGAGEMENT_RATE_PCT: number | null;
           POSTS_30D: number;
           IMPRESSIONS: number;
-        }>(platformQuery, [foundationSlug]),
-        this.snowflakeService.execute<{ SNAPSHOT_MONTH: string; TOTAL_FOLLOWERS: number }>(trendQuery, [foundationSlug, monthDate, monthDate]),
+        }>(platformQuery, [...foundationParams]),
+        this.snowflakeService.execute<{ SNAPSHOT_MONTH: string; TOTAL_FOLLOWERS: number }>(trendQuery, [monthDate, monthDate, ...foundationParams]),
       ]);
 
       if (overviewResult.rows.length === 0) {
@@ -3183,7 +3210,22 @@ export class ProjectService {
     logger.debug(undefined, 'get_member_retention', 'Fetching member retention from Snowflake', { foundation_slug: foundationSlug });
 
     try {
-      const query = `
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
+
+      const query = isUmbrella
+        ? `
+        SELECT
+          MONTH_START_DATE,
+          AVG(RENEWAL_RATE) AS RENEWAL_RATE,
+          AVG(NET_REVENUE_RETENTION) AS NET_REVENUE_RETENTION,
+          AVG(MOM_CHANGE_PERCENTAGE) AS MOM_CHANGE_PERCENTAGE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_MEMBER_RETENTION
+        GROUP BY MONTH_START_DATE
+        ORDER BY MONTH_START_DATE DESC
+        LIMIT 6
+      `
+        : `
         SELECT
           MONTH_START_DATE,
           RENEWAL_RATE,
@@ -3200,7 +3242,7 @@ export class ProjectService {
         RENEWAL_RATE: number;
         NET_REVENUE_RETENTION: number;
         MOM_CHANGE_PERCENTAGE: number;
-      }>(query, [foundationSlug]);
+      }>(query, [...foundationParams]);
 
       if (result.rows.length === 0) {
         return {
@@ -3267,7 +3309,23 @@ export class ProjectService {
     };
 
     try {
-      const acquisitionQuery = `
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
+
+      const acquisitionQuery = isUmbrella
+        ? `
+        SELECT
+          QUARTER_START_DATE,
+          QUARTER_LABEL,
+          SUM(NEW_MEMBERS) AS NEW_MEMBERS,
+          SUM(NEW_MEMBER_REVENUE) AS NEW_MEMBER_REVENUE,
+          AVG(QOQ_CHANGE_PERCENTAGE) AS QOQ_CHANGE_PERCENTAGE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_MEMBER_ACQUISITION
+        GROUP BY QUARTER_START_DATE, QUARTER_LABEL
+        ORDER BY QUARTER_START_DATE DESC
+        LIMIT 8
+      `
+        : `
         SELECT
           QUARTER_START_DATE,
           QUARTER_LABEL,
@@ -3289,7 +3347,7 @@ export class ProjectService {
           NEW_MEMBERS: number;
           NEW_MEMBER_REVENUE: number;
           QOQ_CHANGE_PERCENTAGE: number;
-        }>(acquisitionQuery, [foundationSlug]),
+        }>(acquisitionQuery, [...foundationParams]),
       ]);
 
       if (result.rows.length === 0) {
@@ -3337,20 +3395,26 @@ export class ProjectService {
     logger.debug(undefined, 'get_engaged_community', 'Fetching engaged community from Snowflake', { foundation_slug: foundationSlug });
 
     try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
+
       const query = `
         SELECT
           MONTH_START_DATE,
-          NEWSLETTER_SUBSCRIBERS,
-          COMMUNITY_MEMBERS,
-          WORKING_GROUP_MEMBERS,
-          CERTIFIED_INDIVIDUALS,
-          WEB_VISITORS,
-          CODE_CONTRIBUTORS,
-          TRAINING_ENROLLEES,
-          TOTAL_ENGAGED_MEMBERS,
-          MOM_CHANGE_PERCENTAGE
+          SUM(NEWSLETTER_SUBSCRIBERS) AS NEWSLETTER_SUBSCRIBERS,
+          SUM(COMMUNITY_MEMBERS) AS COMMUNITY_MEMBERS,
+          SUM(WORKING_GROUP_MEMBERS) AS WORKING_GROUP_MEMBERS,
+          SUM(CERTIFIED_INDIVIDUALS) AS CERTIFIED_INDIVIDUALS,
+          SUM(WEB_VISITORS) AS WEB_VISITORS,
+          SUM(CODE_CONTRIBUTORS) AS CODE_CONTRIBUTORS,
+          SUM(TRAINING_ENROLLEES) AS TRAINING_ENROLLEES,
+          SUM(TOTAL_ENGAGED_MEMBERS) AS TOTAL_ENGAGED_MEMBERS,
+          AVG(MOM_CHANGE_PERCENTAGE) AS MOM_CHANGE_PERCENTAGE
         FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_ENGAGED_COMMUNITY
-        WHERE FOUNDATION_SLUG = ?
+        WHERE 1=1
+          ${foundationFilter}
+        GROUP BY MONTH_START_DATE
         ORDER BY MONTH_START_DATE DESC
         LIMIT 6
       `;
@@ -3366,7 +3430,7 @@ export class ProjectService {
         TRAINING_ENROLLEES: number;
         TOTAL_ENGAGED_MEMBERS: number;
         MOM_CHANGE_PERCENTAGE: number;
-      }>(query, [foundationSlug]);
+      }>(query, [...foundationParams]);
 
       if (result.rows.length === 0) {
         return {
