@@ -53,14 +53,17 @@
         </p>
       </div>
     } @else {
+      @if (isRosterCapped()) {
+        <p class="text-xs text-gray-500" data-testid="cert-employees-cap-note">Showing first {{ rosterCap | number }} of {{ count() | number }} {{ statusLabel() }}.</p>
+      }
       <ul class="flex flex-col divide-y divide-gray-100" data-testid="cert-employees-list">
         @for (employee of filteredEmployees(); track employee.contactId) {
           <li class="flex items-center gap-3 py-3" [attr.data-testid]="'cert-employee-' + employee.contactId">
             <!-- Avatar -->
             <div
-              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ avatarColor(employee.name) }}"
+              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ employee.avatarColorClass }}"
               aria-hidden="true">
-              {{ initials(employee.name) }}
+              {{ employee.initials }}
             </div>
             <!-- Name + title -->
             <div class="flex flex-col gap-0.5 min-w-0 flex-1">

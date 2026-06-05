@@ -38,6 +38,12 @@ export interface OrgCertEmployee {
   readonly jobTitle: string | null;
 }
 
+/** Cert employee row with presentation fields pre-baked for template rendering (avoids method calls in template). */
+export interface OrgCertEmployeeVm extends OrgCertEmployee {
+  readonly initials: string;
+  readonly avatarColorClass: string;
+}
+
 /** Drill-down roster of org employees for a single certification + status. */
 export interface OrgCertEmployeesResponse {
   readonly courseId: string;

@@ -3,34 +3,21 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.service';
-import type { OrgCertEmployee, OrgCertEmployeesResponse, OrgCertEmployeeStatus } from '@lfx-one/shared/interfaces';
+import { computePersonAvatarColorClass, computePersonInitials } from '@app/shared/utils/person-avatar.util';
+import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
+import type { OrgCertEmployeesResponse, OrgCertEmployeeStatus, OrgCertEmployeeVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, finalize, of, switchMap } from 'rxjs';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-
-const AVATAR_COLORS = ['bg-blue-600', 'bg-purple-600', 'bg-emerald-600', 'bg-orange-500', 'bg-red-500', 'bg-teal-600', 'bg-indigo-600', 'bg-amber-500'];
-
-function avatarColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) % AVATAR_COLORS.length;
-  }
-  return AVATAR_COLORS[Math.abs(hash)];
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
 
 @Component({
   selector: 'lfx-cert-employees-drawer',
-  imports: [FormsModule, DrawerModule, InputTextModule],
+  imports: [FormsModule, DrawerModule, InputTextModule, DecimalPipe],
   templateUrl: './cert-employees-drawer.component.html',
 })
 export class CertEmployeesDrawerComponent {
@@ -54,20 +41,16 @@ export class CertEmployeesDrawerComponent {
     this.status() === 'certified' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
   );
 
-  protected readonly filteredEmployees = computed<OrgCertEmployee[]>(() => {
+  protected readonly filteredEmployees = computed<OrgCertEmployeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.employeesData()?.data ?? [];
-    if (!term) return [...data];
-    return data.filter((e) => e.name.toLowerCase().includes(term) || (e.jobTitle ?? '').toLowerCase().includes(term));
+    const matched = !term ? data : data.filter((e) => e.name.toLowerCase().includes(term) || (e.jobTitle ?? '').toLowerCase().includes(term));
+    return matched.map((e) => ({ ...e, initials: computePersonInitials(e.name), avatarColorClass: computePersonAvatarColorClass(e.contactId) }));
   });
 
-  protected avatarColor(name: string): string {
-    return avatarColor(name);
-  }
-
-  protected initials(name: string): string {
-    return initials(name);
-  }
+  // The roster is capped server-side at MAX_ORG_CERT_EMPLOYEES, while count() is the org-wide total — surface the gap so a truncated list isn't mistaken for the full set.
+  protected readonly rosterCap = MAX_ORG_CERT_EMPLOYEES;
+  protected readonly isRosterCapped = computed<boolean>(() => this.count() > MAX_ORG_CERT_EMPLOYEES);
 
   private initEmployeesData() {
     // Key the fetch off the full target (visible + orgUid + courseId + status), not visible alone,
