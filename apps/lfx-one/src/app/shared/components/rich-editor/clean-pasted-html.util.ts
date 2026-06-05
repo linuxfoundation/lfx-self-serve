@@ -15,6 +15,7 @@ export function cleanPastedHtml(html: string): string {
   }
 
   unwrapGoogleDocsWrapper(body);
+  removeBlockLevelBreaks(body);
   absorbListContinuationParagraphs(body);
   walkAndClean(body);
   collapseEmptyBlocks(body);
@@ -29,6 +30,27 @@ function unwrapGoogleDocsWrapper(body: HTMLElement): void {
       body.insertBefore(wrapper.firstChild, wrapper);
     }
     wrapper.remove();
+  }
+}
+
+// Google Docs' Cmd+C clipboard format separates paragraphs with standalone <br /> elements
+// at the block-flow level (siblings of <p>), not with empty <p> spacers. ProseMirror's schema
+// doesn't allow <br> at block level, so it wraps each orphan <br> in a paragraph — producing
+// <p><br></p> empty paragraphs in the final document. Remove these orphan breaks before
+// ProseMirror parses; a <br> nested inside a paragraph-like element stays (legitimate hard break).
+const PARAGRAPH_LIKE_TAGS = new Set(['P', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'FIGCAPTION', 'CAPTION', 'PRE']);
+
+function removeBlockLevelBreaks(root: HTMLElement): void {
+  const breaks = Array.from(root.querySelectorAll<HTMLBRElement>('br'));
+  for (const br of breaks) {
+    const parent = br.parentElement;
+    if (!parent) {
+      continue;
+    }
+    if (PARAGRAPH_LIKE_TAGS.has(parent.tagName)) {
+      continue;
+    }
+    br.remove();
   }
 }
 
