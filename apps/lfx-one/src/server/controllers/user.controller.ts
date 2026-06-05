@@ -113,6 +113,39 @@ export class UserController {
   }
 
   /**
+   * GET /api/user/pending-invitations - Get the authenticated user's pending committee invitations
+   */
+  public async getPendingInvitations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_pending_invitations');
+
+    try {
+      // Extract user email from auth context (impersonation-aware)
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+          operation: 'get_pending_invitations',
+          service: 'user_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const invitations = await this.userService.getMyPendingInvitations(req, userEmail);
+
+      logger.success(req, 'get_pending_invitations', startTime, { invitation_count: invitations.length });
+
+      // Private, revalidate-every-time — server recomputes for the real authenticated identity on
+      // every hit, mirroring getPendingActions.
+      res.set('Cache-Control', 'private, no-cache');
+      res.json(invitations);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/user/meetings - Get meetings for the authenticated user
    * Returns meetings the user has direct FGA access to (host, participant, organizer), optionally filtered by project
    * @query projectUid - Optional project UID to filter meetings

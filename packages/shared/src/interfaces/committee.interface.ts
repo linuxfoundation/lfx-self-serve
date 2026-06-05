@@ -83,6 +83,61 @@ export interface CommitteeInvite {
 }
 
 /**
+ * Enriched, person-facing view model for a committee invitation surfaced to the
+ * invitee (dashboard pending-actions + My Groups). Built server-side by joining a
+ * committee-service `committee_invite` resource with its `committee` resource for
+ * display context (committee name, project name, category).
+ *
+ * The underlying `committee_invite` resource carries ONLY: uid, committee_uid,
+ * invitee_email, role, status, created_at. There is NO inviter name and NO expiry in
+ * the current committee-service contract — so {@link inviter_name} and
+ * {@link expires_at} are reserved, optional fields that stay `undefined` until/unless
+ * the committee-service starts emitting them. Do NOT fabricate either on the BFF.
+ */
+export interface PendingInvitation {
+  /** committee_invite UID — used for accept/decline */
+  uid: string;
+  /** Committee this invitation is for */
+  committee_uid: string;
+  /** Committee display name — enriched from the committee resource */
+  committee_name: string;
+  /** Project display name — enriched (optional) */
+  project_name?: string | null;
+  /** Committee category, for the My Groups class badge (optional) */
+  category?: string | null;
+  /** Suggested role on acceptance (from the invite) */
+  role?: string | null;
+  /** Email address the invitation was delivered to */
+  invitee_email: string;
+  /** Current invite status (surfaced rows are `pending`) */
+  status: CommitteeInviteStatus;
+  /** Creation timestamp (RFC3339) */
+  created_at: string;
+  /**
+   * Name of the person who sent the invitation. NOT in the current committee-service
+   * contract — populated only if upstream adds it. Stays `undefined` otherwise.
+   */
+  inviter_name?: string | null;
+  /**
+   * Expiration timestamp (RFC3339). NOT in the current committee-service contract —
+   * populated only if upstream adds it. Stays `undefined` otherwise.
+   */
+  expires_at?: string | null;
+}
+
+/**
+ * A decline that has been optimistically applied but not yet committed upstream — held while the
+ * deferred-undo timer runs so the dashboard can either fire the real decline when the timer elapses
+ * (or on component destroy) or roll it back if the user hits Undo.
+ */
+export interface PendingDecline {
+  /** committee_invite UID being declined */
+  inviteUid: string;
+  /** committee_uid the invite belongs to */
+  committeeUid: string;
+}
+
+/**
  * Payload to create a single committee invite (committee-service create-invite).
  * Only the invitee email is required; role is an optional suggestion.
  */

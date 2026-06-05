@@ -11,6 +11,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL } from '@lfx-one/shared/constants';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
+import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -27,6 +28,7 @@ import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, RsvpResp
 export class PendingActionsDrawerComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
+  private readonly invitationService = inject(InvitationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -40,6 +42,10 @@ export class PendingActionsDrawerComponent {
   public readonly actionCompleted = output<PendingActionItem>();
   // Emits voteUid when a Vote row's CTA is clicked so the parent dashboard can open the cast drawer inline.
   public readonly castVoteRequested = output<string>();
+  // Invitation Accept/Decline are delegated to the parent so the optimistic markResolved, the success/error toasts, and the
+  // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
+  public readonly acceptInvitationRequested = output<PendingActionItem>();
+  public readonly declineInvitationRequested = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
@@ -90,6 +96,17 @@ export class PendingActionsDrawerComponent {
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
+  }
+
+  // Delegate invitation Accept/Decline to the parent (it owns the optimistic markResolved, toasts, and deferred undo).
+  // The shared resolvedInviteUids signal drives this drawer's filter too, so the row disappears here the moment the
+  // parent resolves it — no local completion animation needed.
+  protected onAcceptInvitation(item: DrawerActionRow): void {
+    this.acceptInvitationRequested.emit(item);
+  }
+
+  protected onDeclineInvitation(item: DrawerActionRow): void {
+    this.declineInvitationRequested.emit(item);
   }
 
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {
@@ -193,18 +210,29 @@ export class PendingActionsDrawerComponent {
   private initVisibleRows(): Signal<DrawerActionRow[]> {
     return computed(() => {
       this.hiddenActionsVersion();
+      // Invitations are resolved server-side, not cookie-hidden: drop any invite resolved this session (shared signal) so
+      // the row disappears in lockstep with the inline list. Reading the signal makes this computed re-run on accept/decline/undo.
+      const resolvedInvites = this.invitationService.resolvedInviteUids();
       const completing = this.completingRowKeys();
       const cache = this.meetingCache();
       const loading = this.loadingMeetingUids();
       const failed = this.failedMeetingUids();
       return this.pendingActions()
-        .filter((item) => completing.has(this.getRowKey(item)) || !this.hiddenActionsService.isActionHidden(item))
+        .filter((item) => {
+          if (item.type === 'Invitation' && !!item.inviteUid && resolvedInvites.has(item.inviteUid)) {
+            return false;
+          }
+          return completing.has(this.getRowKey(item)) || !this.hiddenActionsService.isActionHidden(item);
+        })
         .map((item) => {
           const rowKey = this.getRowKey(item);
           // When the meeting fetch fails, fall back to the regular buttonLink/CTA branch so users still have a working action.
           const meetingLoadFailed = !!item.meetingUid && failed.has(item.meetingUid);
           const isRsvpInline = item.type === 'RSVP' && !!item.meetingUid && !meetingLoadFailed;
           const isVoteInline = item.type === 'Vote' && !!item.voteUid;
+          // Require committeeUid too — Accept/Decline delegate to the parent which calls the API with it.
+          const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
+          const inviteGroupName = item.inviteGroupName ?? item.badge;
           return {
             ...item,
             rowKey,
@@ -213,6 +241,9 @@ export class PendingActionsDrawerComponent {
             meeting: item.meetingUid ? (cache[item.meetingUid] ?? null) : null,
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
+            isInvitation,
+            acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
+            declineAriaLabel: `Decline invite to ${inviteGroupName}`,
           };
         });
     });

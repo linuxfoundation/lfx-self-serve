@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
+import { ToastModule } from 'primeng/toast';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -23,16 +24,25 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
-import { canManageCommitteeMembers, getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
+import {
+  canManageCommitteeMembers,
+  findPendingInvitationForCommittee,
+  getChatPlatformIcon,
+  getChatPlatformLabel,
+  getRepoPlatformIcon,
+  getRepoPlatformLabel,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
+import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
@@ -51,6 +61,12 @@ import { CommitteeSettingsTabComponent } from '../components/committee-settings-
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
 
+/** Window before a declined invite is actually sent upstream, during which the user can undo. */
+const INVITE_DECLINE_UNDO_MS = 5000;
+
+/** Dedicated toast key so the inline undo template renders only for this component's decline toast. */
+const INVITE_TOAST_KEY = 'committee-view-invite';
+
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -62,8 +78,10 @@ import { CommitteeVotesComponent } from '../components/committee-votes/committee
     NgClass,
     PopoverModule,
     SkeletonModule,
+    ToastModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
+    InvitationSubtextPipe,
     JoinModeLabelPipe,
     MailingListEmailPipe,
     SafeUrlPipe,
@@ -91,6 +109,9 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly invitationService = inject(InvitationService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
 
@@ -129,6 +150,22 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+
+  // Pending invitation for THIS committee, surfaced from the shared cross-surface cache so a user
+  // landing on a group they were invited to can accept/decline right here. Excludes invites already
+  // resolved this session, and is suppressed once the user is a member (my_role populated).
+  public readonly inviteToastKey = INVITE_TOAST_KEY;
+  public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
+    const committee = this.committee();
+    if (!committee?.uid || !this.isVisitor()) {
+      return null;
+    }
+    return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
+  });
+
+  // Deferred-decline timers keyed by invite UID (committee UID stored alongside since the invite is
+  // out of the cache by the time the timer/destroy flush fires). Mirrors the dashboard/My Groups UX.
+  private readonly pendingDeclines = new Map<string, { committeeUid: string; timerId: ReturnType<typeof setTimeout> }>();
 
   public categorySeverity: Signal<TagSeverity> = computed(() => {
     const category = this.committee()?.category;
@@ -218,6 +255,20 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+
+    // Populate the shared invitation cache once in the browser so a direct landing on an invited
+    // group (e.g. via the email link) can surface the Accept/Decline banner. Browser-only: the
+    // banner is an interactive surface and the list is per-user.
+    if (isPlatformBrowser(this.platformId)) {
+      this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
+    }
+
+    // Flush any deferred decline on destroy so navigating away still commits it.
+    this.destroyRef.onDestroy(() => {
+      for (const inviteUid of [...this.pendingDeclines.keys()]) {
+        this.flushDecline(inviteUid);
+      }
+    });
   }
 
   // -- Public methods --
@@ -352,6 +403,66 @@ export class CommitteeViewComponent {
       });
   }
 
+  public onAcceptInvite(invite: PendingInvitation): void {
+    const committeeName = this.committee()?.name ?? 'this group';
+    // Optimistic: hide the banner everywhere immediately, then commit upstream.
+    this.invitationService.markResolved(invite.uid);
+    this.invitationService
+      .acceptInvitation(invite.committee_uid, invite.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.invitationService.forgetResolved(invite.uid);
+          this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
+          // Refresh so my_role populates — the banner hides and member-only tabs/CTAs unlock.
+          this.refreshCommittee();
+          this.membersRefresh.update((v) => v + 1);
+        },
+        error: () => {
+          this.invitationService.unmarkResolved(invite.uid);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Accept',
+            detail: `Couldn't accept the invitation to "${committeeName}". Please try again.`,
+            life: 6000,
+          });
+        },
+      });
+  }
+
+  public onDeclineInvite(invite: PendingInvitation): void {
+    // Optimistic + deferred-undo: hide the banner now, only send the decline after the undo window.
+    this.invitationService.markResolved(invite.uid);
+
+    const timerId = setTimeout(() => {
+      this.pendingDeclines.delete(invite.uid);
+      this.sendDecline(invite.committee_uid, invite.uid);
+    }, INVITE_DECLINE_UNDO_MS);
+    this.pendingDeclines.set(invite.uid, { committeeUid: invite.committee_uid, timerId });
+
+    this.messageService.add({
+      key: INVITE_TOAST_KEY,
+      severity: 'info',
+      summary: 'Invitation declined',
+      data: { uid: invite.uid },
+      life: INVITE_DECLINE_UNDO_MS,
+      closable: true,
+    });
+  }
+
+  public onUndoDecline(inviteUid: string): void {
+    const pending = this.pendingDeclines.get(inviteUid);
+    // Timer already fired -> the decline is committed upstream; restoring would lie to the user.
+    if (!pending) {
+      this.messageService.clear(INVITE_TOAST_KEY);
+      return;
+    }
+    clearTimeout(pending.timerId);
+    this.pendingDeclines.delete(inviteUid);
+    this.invitationService.unmarkResolved(inviteUid);
+    this.messageService.clear(INVITE_TOAST_KEY);
+  }
+
   public navigateToParentGroup(): void {
     const parent = this.parentGroup();
     if (parent?.uid) {
@@ -389,6 +500,35 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+  /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
+  private flushDecline(inviteUid: string): void {
+    const pending = this.pendingDeclines.get(inviteUid);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timerId);
+    this.pendingDeclines.delete(inviteUid);
+    this.sendDecline(pending.committeeUid, inviteUid);
+  }
+
+  private sendDecline(committeeUid: string, inviteUid: string): void {
+    this.invitationService
+      .declineInvitation(committeeUid, inviteUid)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.invitationService.forgetResolved(inviteUid),
+        error: () => {
+          this.invitationService.unmarkResolved(inviteUid);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Decline',
+            detail: `Couldn't decline the invitation. Please try again.`,
+            life: 6000,
+          });
+        },
+      });
+  }
+
   private openApplicationDialog(committeeUid: string, committeeName: string, mode: 'application' | 'invite_only'): void {
     const isApplication = mode === 'application';
 

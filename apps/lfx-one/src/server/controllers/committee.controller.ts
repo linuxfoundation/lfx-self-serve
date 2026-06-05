@@ -633,6 +633,116 @@ export class CommitteeController {
     }
   }
 
+  /**
+   * POST /api/committees/:id/invites/:inviteId/accept
+   */
+  public async acceptCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, inviteId } = req.params;
+    const startTime = logger.startOperation(req, 'accept_committee_invite', {
+      committee_id: id,
+      invite_id: inviteId,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!inviteId) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Invite ID is required', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Validate UUID format (path params are decoded before routing) — consistent with the rest of
+      // this controller and avoids forwarding a malformed UID pair upstream.
+      if (!FOLDER_UID_PATTERN.test(id) || !FOLDER_UID_PATTERN.test(inviteId)) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Committee ID and Invite ID must be valid UUIDs', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId);
+
+      logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/committees/:id/invites/:inviteId/decline
+   */
+  public async declineCommitteeInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, inviteId } = req.params;
+    const startTime = logger.startOperation(req, 'decline_committee_invite', {
+      committee_id: id,
+      invite_id: inviteId,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'decline_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!inviteId) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Invite ID is required', {
+            operation: 'decline_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Validate UUID format (path params are decoded before routing) — consistent with the rest of
+      // this controller and avoids forwarding a malformed UID pair upstream.
+      if (!FOLDER_UID_PATTERN.test(id) || !FOLDER_UID_PATTERN.test(inviteId)) {
+        next(
+          ServiceValidationError.forField('inviteId', 'Committee ID and Invite ID must be valid UUIDs', {
+            operation: 'decline_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      await this.committeeService.declineCommitteeInvite(req, id, inviteId);
+
+      logger.success(req, 'decline_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ── Document Endpoints ──────────────────────────────────────────────────
 
   /**
