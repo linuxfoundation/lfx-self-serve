@@ -11,10 +11,12 @@ import {
   PaymentMethod,
   RecurringDonationsResponse,
 } from '@lfx-one/shared/interfaces';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
   BackendCrowdfundingResponse,
+  BackendInitiative,
   BackendTransactionList,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
@@ -35,7 +37,12 @@ async function cfFetch<T>(
     throw new Error(`No crowdfunding token available for ${operation}`);
   }
 
-  const url = `${cfBaseUrl()}${path}`;
+  const baseUrl = cfBaseUrl();
+  if (!baseUrl) {
+    throw new Error(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`);
+  }
+
+  const url = `${baseUrl}${path}`;
   const init: RequestInit = {
     method: options.method ?? 'GET',
     headers: {
@@ -48,6 +55,41 @@ async function cfFetch<T>(
   }
 
   const response = await fetch(url, init);
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`CF API ${operation} returned ${response.status}: ${text}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+// cfFetchNullable calls cfFetch but returns null on 404 instead of throwing.
+// All other errors (401, 403, 5xx, network) are rethrown so the error handler
+// can return an appropriate status rather than silently reporting "not found".
+async function cfFetchNullable<T>(
+  req: Request,
+  operation: string,
+  path: string,
+): Promise<T | null> {
+  const token = req.crowdfundingToken;
+  if (!token) {
+    throw new Error(`No crowdfunding token available for ${operation}`);
+  }
+
+  const baseUrl = cfBaseUrl();
+  if (!baseUrl) {
+    throw new Error(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`);
+  }
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`CF API ${operation} returned ${response.status}: ${text}`);
@@ -79,12 +121,12 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // GET /v1/initiatives/{slug} resolves slug directly (public endpoint).
-    const raw = await cfFetch<{ data?: ReturnType<typeof mapToInitiativeDetail> } | null>(
+    // CF returns a bare initiative object for GET /v1/initiatives/{slug} (not a { data: [...] } array).
+    const raw = await cfFetchNullable<BackendInitiative>(
       req,
       'getInitiativeBySlug',
       `/v1/initiatives/${encodeURIComponent(slug)}`,
-    ).catch(() => null);
+    );
 
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
@@ -92,16 +134,13 @@ export class CrowdfundingService {
     }
 
     logger.success(req, 'cf_get_initiative_by_slug', startTime);
-
-    // CF returns a single initiative object (not wrapped in data array) for GET /v1/initiatives/{id}.
-    // Use mapToInitiativeDetail directly on the raw object.
-    return mapToInitiativeDetail(raw as Parameters<typeof mapToInitiativeDetail>[0]);
+    return mapToInitiativeDetail(raw);
   }
 
   public async getMyPaymentMethod(req: Request): Promise<PaymentMethod | null> {
     const startTime = logger.startOperation(req, 'cf_get_my_payment_method');
 
-    const raw = await cfFetch<PaymentMethodWire>(req, 'getMyPaymentMethod', '/v1/me/payment-account').catch(() => null);
+    const raw = await cfFetchNullable<PaymentMethodWire>(req, 'getMyPaymentMethod', '/v1/me/payment-account');
     if (!raw) return null;
 
     logger.success(req, 'cf_get_my_payment_method', startTime);
@@ -135,7 +174,7 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    const raw = await cfFetch<{ data: { status: string; amount_cents: number }[]; meta: { total: number } }>(
+    const raw = await cfFetch<{ data: { status: string; amount_cents: number; initiative_id?: string }[]; meta: { total: number } }>(
       req,
       'getMyDonationStats',
       '/v1/me/donations?limit=500',
@@ -146,7 +185,8 @@ export class CrowdfundingService {
     const activeRecurringAmount = raw.data
       .filter((d) => d.status === 'active')
       .reduce((sum, d) => sum + d.amount_cents, 0) / 100;
-    const initiativesSupported = new Set(raw.data.map((d) => (d as unknown as { initiative_id?: string }).initiative_id)).size;
+    // Filter to valid string IDs before counting — donations without initiative_id are excluded.
+    const initiativesSupported = new Set(raw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
 
     logger.success(req, 'cf_get_my_donation_stats', startTime);
     return { totalDonated, activeRecurringCount, activeRecurringAmount, initiativesSupported };
@@ -168,7 +208,7 @@ export class CrowdfundingService {
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_donations', { pageSize, offset });
 
-    const limit = pageSize ?? 20;
+    const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
     const raw = await cfFetch<{ data: MyDonationsResponse['data']; meta: { total: number; limit: number; offset: number } }>(
       req,
@@ -196,14 +236,14 @@ export class CrowdfundingService {
     const qs = params.toString();
 
     // GET /v1/initiatives/{slug}/transactions — public endpoint, accepts slug directly.
-    const raw = await cfFetch<BackendTransactionList>(
+    const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
       `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
-    ).catch(() => null);
+    );
 
     if (!raw) {
-      logger.warning(req, 'cf_get_initiative_transactions', 'Not found or error', { slug });
+      logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
       return null;
     }
 
