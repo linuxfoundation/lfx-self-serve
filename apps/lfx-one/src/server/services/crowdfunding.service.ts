@@ -1,12 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import {
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
-  CrowdfundingTransaction,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
@@ -14,164 +11,208 @@ import {
   PaymentMethod,
   RecurringDonationsResponse,
 } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
-  MOCK_DONATION_HISTORY,
-  MOCK_DONATION_STATS,
-  MOCK_INITIATIVES,
-  MOCK_PAYMENT_METHOD,
-  MOCK_RECURRING_DONATIONS,
-  MOCK_TRANSACTIONS,
-} from '../mock-data/crowdfunding.mock';
-import { mapDonationHistoryToMyDonation, mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
+  BackendCrowdfundingResponse,
+  BackendTransactionList,
+  PaymentMethodWire,
+} from '../types/crowdfunding.types';
+import { mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
 
+const cfBaseUrl = (): string =>
+  (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
+
+async function cfFetch<T>(
+  req: Request,
+  operation: string,
+  path: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const token = req.crowdfundingToken;
+  if (!token) {
+    throw new Error(`No crowdfunding token available for ${operation}`);
+  }
+
+  const url = `${cfBaseUrl()}${path}`;
+  const init: RequestInit = {
+    method: options.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (options.body !== undefined) {
+    (init as { body?: string }).body = JSON.stringify(options.body);
+  }
+
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`CF API ${operation} returned ${response.status}: ${text}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export class CrowdfundingService {
-  public async getMyInitiatives(req: Request, username: string): Promise<InitiativesResponse> {
-    logger.debug(req, 'get_my_initiatives', 'Fetching crowdfunding initiatives for user', { username });
+  public async getMyInitiatives(req: Request): Promise<InitiativesResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_initiatives');
 
-    const initiatives = MOCK_INITIATIVES.map(mapToInitiativeBase);
+    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', '/v1/me/initiatives');
+    const data = raw.data.map(mapToInitiativeBase);
 
-    logger.debug(req, 'get_my_initiatives', 'Returning initiatives', { count: initiatives.length });
+    logger.success(req, 'cf_get_my_initiatives', startTime, { count: data.length });
+    return { data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+  }
 
+  public async getInitiativesStats(req: Request): Promise<CrowdfundingInitiativesStats> {
+    const { data } = await this.getMyInitiatives(req);
     return {
-      data: initiatives,
-      total: initiatives.length,
-      pageSize: initiatives.length,
-      offset: 0,
+      activeCount: data.filter((i) => i.status === 'active').length,
+      totalRaised: data.reduce((sum, i) => sum + (i.fundingStatus?.amountRaisedCents ?? 0), 0) / 100,
+      monthlyGain: 0,
+      totalSponsors: data.reduce((sum, i) => sum + (i.initiativeStats?.supporters ?? 0), 0),
     };
   }
 
-  public async getInitiativesStats(req: Request, username: string): Promise<CrowdfundingInitiativesStats> {
-    logger.debug(req, 'get_initiatives_stats', 'Computing initiatives stats for user', { username });
+  public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
+    const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    const initiatives = MOCK_INITIATIVES.map(mapToInitiativeBase);
+    // GET /v1/initiatives/{slug} resolves slug directly (public endpoint).
+    const raw = await cfFetch<{ data?: ReturnType<typeof mapToInitiativeDetail> } | null>(
+      req,
+      'getInitiativeBySlug',
+      `/v1/initiatives/${encodeURIComponent(slug)}`,
+    ).catch(() => null);
 
-    const stats: CrowdfundingInitiativesStats = {
-      activeCount: initiatives.filter((i) => i.status === 'active').length,
-      totalRaised: initiatives.reduce((sum, i) => sum + (i.fundingStatus?.amountRaisedCents ?? 0), 0) / 100,
-      monthlyGain: 0, // TODO: derive from real API once upstream exposes monthly gain
-      totalSponsors: initiatives.reduce((sum, i) => sum + (i.initiativeStats?.supporters ?? 0), 0),
-    };
-
-    logger.debug(req, 'get_initiatives_stats', 'Returning initiatives stats', {
-      activeCount: stats.activeCount,
-      totalSponsors: stats.totalSponsors,
-    });
-
-    return stats;
-  }
-
-  public async getInitiativeBySlug(req: Request, username: string, slug: string): Promise<InitiativeDetail | null> {
-    logger.debug(req, 'get_initiative_by_slug', 'Fetching initiative by slug', { username, slug });
-
-    const initiative = MOCK_INITIATIVES.find((i) => i.slug === slug);
-
-    if (!initiative) {
-      logger.warning(req, 'get_initiative_by_slug', 'Initiative not found', { slug });
+    if (!raw) {
+      logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
     }
 
-    return mapToInitiativeDetail(initiative);
+    logger.success(req, 'cf_get_initiative_by_slug', startTime);
+
+    // CF returns a single initiative object (not wrapped in data array) for GET /v1/initiatives/{id}.
+    // Use mapToInitiativeDetail directly on the raw object.
+    return mapToInitiativeDetail(raw as Parameters<typeof mapToInitiativeDetail>[0]);
   }
 
-  public async getMyPaymentMethod(req: Request, username: string): Promise<PaymentMethod | null> {
-    logger.debug(req, 'get_my_payment_method', 'Fetching payment method for user', { username });
+  public async getMyPaymentMethod(req: Request): Promise<PaymentMethod | null> {
+    const startTime = logger.startOperation(req, 'cf_get_my_payment_method');
 
-    logger.debug(req, 'get_my_payment_method', 'Returning payment method', {
-      paymentMethodId: MOCK_PAYMENT_METHOD.paymentMethodId,
-      brand: MOCK_PAYMENT_METHOD.brand,
-    });
+    const raw = await cfFetch<PaymentMethodWire>(req, 'getMyPaymentMethod', '/v1/me/payment-account').catch(() => null);
+    if (!raw) return null;
 
-    return MOCK_PAYMENT_METHOD;
-  }
-
-  // Mock for POST /api/crowdfunding/payment-method — replace with upstream proxy once the payment-method service is live.
-  public async saveMyPaymentMethod(req: Request, username: string, paymentMethodId: string): Promise<PaymentMethod> {
-    logger.debug(req, 'save_my_payment_method', 'Saving payment method for user', { username, paymentMethodId });
-
-    // Mock: Visa test card — real impl will proxy to POST /v1/me/payment-method.
-    const saved: PaymentMethod = {
-      paymentMethodId,
-      brand: 'visa',
-      lastFour: '4242',
-      expiryMonth: 12,
-      expiryYear: 2028,
+    logger.success(req, 'cf_get_my_payment_method', startTime);
+    return {
+      paymentMethodId: raw.payment_method_id,
+      lastFour: raw.last_four,
+      brand: raw.brand,
+      expiryMonth: raw.expiry_month,
+      expiryYear: raw.expiry_year,
     };
-
-    logger.debug(req, 'save_my_payment_method', 'Payment method saved', { paymentMethodId });
-
-    return saved;
   }
 
-  public async getMyDonationStats(req: Request, username: string): Promise<DonationStats> {
-    logger.debug(req, 'get_my_donation_stats', 'Fetching donation stats for user', { username });
+  public async saveMyPaymentMethod(req: Request, paymentMethodId: string): Promise<PaymentMethod> {
+    const startTime = logger.startOperation(req, 'cf_save_my_payment_method');
 
-    logger.debug(req, 'get_my_donation_stats', 'Returning donation stats', {
-      totalDonated: MOCK_DONATION_STATS.totalDonated,
-      activeRecurringCount: MOCK_DONATION_STATS.activeRecurringCount,
+    const raw = await cfFetch<PaymentMethodWire>(req, 'saveMyPaymentMethod', '/v1/me/payment-method', {
+      method: 'POST',
+      body: { payment_method_id: paymentMethodId },
     });
 
-    return MOCK_DONATION_STATS;
+    logger.success(req, 'cf_save_my_payment_method', startTime);
+    return {
+      paymentMethodId: raw.payment_method_id,
+      lastFour: raw.last_four,
+      brand: raw.brand,
+      expiryMonth: raw.expiry_month,
+      expiryYear: raw.expiry_year,
+    };
   }
 
-  public async getMyRecurringDonations(req: Request, username: string): Promise<RecurringDonationsResponse> {
-    logger.debug(req, 'get_my_recurring_donations', 'Fetching recurring donations for user', { username });
+  public async getMyDonationStats(req: Request): Promise<DonationStats> {
+    const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    const total = MOCK_RECURRING_DONATIONS.length;
+    const raw = await cfFetch<{ data: { status: string; amount_cents: number }[]; meta: { total: number } }>(
+      req,
+      'getMyDonationStats',
+      '/v1/me/donations?limit=500',
+    );
 
-    logger.debug(req, 'get_my_recurring_donations', 'Returning recurring donations', { total });
+    const totalDonated = raw.data.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
+    const activeRecurringCount = raw.data.filter((d) => d.status === 'active').length;
+    const activeRecurringAmount = raw.data
+      .filter((d) => d.status === 'active')
+      .reduce((sum, d) => sum + d.amount_cents, 0) / 100;
+    const initiativesSupported = new Set(raw.data.map((d) => (d as unknown as { initiative_id?: string }).initiative_id)).size;
 
-    return { data: MOCK_RECURRING_DONATIONS, total, pageSize: total, offset: 0 };
+    logger.success(req, 'cf_get_my_donation_stats', startTime);
+    return { totalDonated, activeRecurringCount, activeRecurringAmount, initiativesSupported };
   }
 
-  public async getMyDonations(req: Request, username: string, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
-    logger.debug(req, 'get_my_donations', 'Fetching donation history for user', { username, pageSize, offset });
+  public async getMyRecurringDonations(req: Request): Promise<RecurringDonationsResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_recurring_donations');
 
-    const initiativeIdByName = new Map(MOCK_INITIATIVES.map((i) => [i.name, i.id]));
-    const allItems = MOCK_DONATION_HISTORY.map((item) => mapDonationHistoryToMyDonation(item, initiativeIdByName.get(item.initiativeName)));
+    const raw = await cfFetch<{ data: RecurringDonationsResponse['data']; meta: { total: number; limit: number; offset: number } }>(
+      req,
+      'getMyRecurringDonations',
+      '/v1/me/subscriptions',
+    );
 
-    const total = allItems.length;
-    const resolvedOffset = offset ?? 0;
-    const resolvedPageSize = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
-    const page = allItems.slice(resolvedOffset, resolvedOffset + resolvedPageSize);
+    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
+    return { data: raw.data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+  }
 
-    logger.debug(req, 'get_my_donations', 'Returning donation history', { total, page: page.length });
+  public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_donations', { pageSize, offset });
 
-    return { data: page, total, pageSize: resolvedPageSize, offset: resolvedOffset };
+    const limit = pageSize ?? 20;
+    const off = offset ?? 0;
+    const raw = await cfFetch<{ data: MyDonationsResponse['data']; meta: { total: number; limit: number; offset: number } }>(
+      req,
+      'getMyDonations',
+      `/v1/me/donations?limit=${limit}&offset=${off}`,
+    );
+
+    logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
+    return { data: raw.data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
   public async getInitiativeTransactions(
     req: Request,
-    username: string,
     slug: string,
-    type?: CrowdfundingTransaction['type'],
+    type?: 'donations' | 'expenses',
     size?: number,
-    from?: number
+    from?: number,
   ): Promise<CrowdfundingTransactionList | null> {
-    logger.debug(req, 'get_initiative_transactions', 'Fetching transactions for initiative', { username, slug, type, size, from });
+    const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from });
 
-    const allTransactions = MOCK_TRANSACTIONS[slug];
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (size != null) params.set('limit', String(size));
+    if (from != null) params.set('offset', String(from));
+    const qs = params.toString();
 
-    if (allTransactions === undefined) {
-      logger.warning(req, 'get_initiative_transactions', 'Initiative not found', { slug });
+    // GET /v1/initiatives/{slug}/transactions — public endpoint, accepts slug directly.
+    const raw = await cfFetch<BackendTransactionList>(
+      req,
+      'getInitiativeTransactions',
+      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
+    ).catch(() => null);
+
+    if (!raw) {
+      logger.warning(req, 'cf_get_initiative_transactions', 'Not found or error', { slug });
       return null;
     }
 
-    const filtered = type ? allTransactions.filter((t) => t.type === type) : allTransactions;
-    const pageSize = size ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
-    const offset = from ?? 0;
-    const page = filtered.slice(offset, offset + pageSize);
-
-    logger.debug(req, 'get_initiative_transactions', 'Returning transactions', { total: filtered.length, page: page.length });
-
+    logger.success(req, 'cf_get_initiative_transactions', startTime, { total: raw.total_count });
     return {
-      data: page.map(mapToTransaction),
-      totalCount: filtered.length,
-      from: offset,
-      size: pageSize,
+      data: raw.data.map(mapToTransaction),
+      totalCount: raw.total_count,
+      from: raw.from,
+      size: raw.size,
     };
   }
 }

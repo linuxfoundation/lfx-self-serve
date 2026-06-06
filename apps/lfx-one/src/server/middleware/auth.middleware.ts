@@ -319,6 +319,101 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
 }
 
 /**
+ * Silently fetches an access token scoped to the LFX Crowdfunding API audience.
+ * Uses the existing refresh token from the OIDC session — no user interaction required.
+ * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.crowdfundingToken.
+ * Failures are non-blocking; the request continues without the token.
+ *
+ * The resulting token is a user-issued access token (not M2M) carrying the
+ * https://sso.linuxfoundation.org/claims/username claim and access:me scope.
+ */
+async function extractCrowdfundingToken(req: Request): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
+      req.crowdfundingToken = req.appSession.crowdfundingToken;
+      logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
+      return;
+    }
+
+    const crowdfundingAudience = process.env['CROWDFUNDING_API_AUDIENCE'];
+    if (!crowdfundingAudience) {
+      logger.warning(req, 'crowdfunding_token', 'CROWDFUNDING_API_AUDIENCE env var is not set, skipping token fetch');
+      return;
+    }
+
+    const refreshToken = req.appSession?.['refresh_token'] as string | undefined;
+    if (!refreshToken) {
+      logger.warning(req, 'crowdfunding_token', 'No refresh_token in OIDC session — ensure offline_access scope is requested');
+      return;
+    }
+
+    const issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
+    const clientId = process.env['PCC_AUTH0_CLIENT_ID'] || '';
+    const clientSecret = process.env['PCC_AUTH0_CLIENT_SECRET'] || '';
+    const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
+
+    let response: Awaited<ReturnType<typeof fetch>>;
+
+    if (isAuthelia) {
+      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      response = await fetch(`${issuerBaseUrl}/api/oidc/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${credentials}`,
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          audience: crowdfundingAudience,
+        }),
+      });
+    } else {
+      response = await fetch(`${issuerBaseUrl}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+          audience: crowdfundingAudience,
+        }),
+      });
+    }
+
+    if (!response.ok) {
+      logger.warning(req, 'crowdfunding_token', 'Crowdfunding token fetch returned non-OK status', { status: response.status });
+      return;
+    }
+
+    const data = (await response.json()) as { access_token: string; expires_in: number };
+    const rawExpiresAt = now + data.expires_in - TOKEN_EXPIRY_BUFFER_SECONDS;
+    const expiresAt = rawExpiresAt <= now ? now + Math.floor(data.expires_in / 2) : rawExpiresAt;
+
+    if (rawExpiresAt <= now) {
+      logger.warning(req, 'crowdfunding_token', 'Token expires_in too short for buffer, using half of raw expiry as fallback', {
+        expires_in: data.expires_in,
+        buffer: TOKEN_EXPIRY_BUFFER_SECONDS,
+      });
+    }
+
+    req.crowdfundingToken = data.access_token;
+
+    if (!req.appSession) req.appSession = {};
+    req.appSession.crowdfundingToken = data.access_token;
+    req.appSession.crowdfundingTokenExpiresAt = expiresAt;
+
+    logger.debug(req, 'crowdfunding_token', 'Crowdfunding token fetched and cached');
+  } catch (error) {
+    logger.warning(req, 'crowdfunding_token', 'Crowdfunding token fetch failed, continuing without it', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
  * Makes authentication decision based on route config and auth status
  */
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
@@ -533,6 +628,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       // 4. Silently fetch secondary API Gateway token when the user is authenticated
       if (hasToken) {
         await extractApiGatewayToken(req);
+        await extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making
