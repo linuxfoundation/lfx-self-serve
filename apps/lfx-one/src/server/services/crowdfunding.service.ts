@@ -16,12 +16,13 @@ import { Request } from 'express';
 
 import {
   BackendCrowdfundingResponse,
+  BackendDonation,
   BackendInitiative,
   BackendSubscription,
   BackendTransactionList,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
-import { mapToInitiativeBase, mapToInitiativeDetail, mapToRecurringDonation, mapToTransaction } from '../utils/crowdfunding-mapper';
+import { mapToInitiativeBase, mapToInitiativeDetail, mapToMyDonation, mapToRecurringDonation, mapToTransaction } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
 
 const cfBaseUrl = (): string =>
@@ -122,17 +123,27 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // CF returns a bare initiative object for GET /v1/initiatives/{slug} (not a { data: [...] } array).
-    const raw = await cfFetchNullable<BackendInitiative>(
-      req,
-      'getInitiativeBySlug',
-      `/v1/initiatives/${encodeURIComponent(slug)}`,
-    );
-
-    if (!raw) {
+    // GET /v1/initiatives/{slug} — public CF endpoint (no auth required).
+    // Token is sent when available but must not be required, so we bypass cfFetchNullable
+    // which throws without a token (same pattern as getInitiativeTransactions).
+    const baseUrl = cfBaseUrl();
+    if (!baseUrl) {
+      throw new Error('CROWDFUNDING_API_BASE_URL is not configured — cannot call getInitiativeBySlug');
+    }
+    const slugHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (req.crowdfundingToken) {
+      slugHeaders['Authorization'] = `Bearer ${req.crowdfundingToken}`;
+    }
+    const slugResponse = await fetch(`${baseUrl}/v1/initiatives/${encodeURIComponent(slug)}`, { headers: slugHeaders });
+    if (slugResponse.status === 404) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
     }
+    if (!slugResponse.ok) {
+      const text = await slugResponse.text().catch(() => '');
+      throw new Error(`CF API getInitiativeBySlug returned ${slugResponse.status}: ${text}`);
+    }
+    const raw = (await slugResponse.json()) as BackendInitiative;
 
     logger.success(req, 'cf_get_initiative_by_slug', startTime);
     return mapToInitiativeDetail(raw);
@@ -221,14 +232,14 @@ export class CrowdfundingService {
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<{ data: MyDonationsResponse['data']; meta: { total: number; limit: number; offset: number } }>(
+    const raw = await cfFetch<{ data: BackendDonation[]; meta: { total: number; limit: number; offset: number } }>(
       req,
       'getMyDonations',
       `/v1/me/donations?limit=${limit}&offset=${off}`,
     );
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    return { data: raw.data.map(mapToMyDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
   public async getInitiativeTransactions(

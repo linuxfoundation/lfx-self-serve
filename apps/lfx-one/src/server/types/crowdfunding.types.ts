@@ -73,6 +73,18 @@ export interface BackendTransaction {
   donor_username?: string;
 }
 
+/** Raw snake_case response from GET /v1/me/donations on the upstream crowdfunding service. */
+export interface BackendDonation {
+  id: string;
+  amount_cents: number;
+  created_on: string;
+  initiative_id?: string;
+  initiative_name?: string;
+  donor_name?: string;
+  donor_type?: string;
+  donor_logo_url?: string;
+}
+
 /** Raw snake_case response from GET /v1/me/subscriptions on the upstream crowdfunding service. */
 export interface BackendSubscription {
   id: string;

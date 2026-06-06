@@ -18,7 +18,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
 
-import { BackendGoal, BackendInitiative, BackendSponsor, BackendSubscription, BackendTransaction } from '../types/crowdfunding.types';
+import { BackendDonation, BackendGoal, BackendInitiative, BackendSponsor, BackendSubscription, BackendTransaction } from '../types/crowdfunding.types';
 
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 
@@ -112,6 +112,20 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
     donorUsername: b.donor_username,
+  };
+}
+
+// Maps a raw CF Donation (snake_case) from GET /v1/me/donations to the frontend MyDonation shape.
+export function mapToMyDonation(b: BackendDonation): MyDonation {
+  return {
+    id: b.id,
+    donorName: b.donor_name,
+    donorLogoUrl: b.donor_logo_url,
+    donorType: (b.donor_type as 'organization' | 'member') ?? 'member',
+    amountCents: b.amount_cents,
+    date: new Date(b.created_on).getTime(),
+    initiativeId: b.initiative_id,
+    initiativeName: b.initiative_name,
   };
 }
 
