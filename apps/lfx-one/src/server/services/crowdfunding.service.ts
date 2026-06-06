@@ -17,10 +17,11 @@ import { Request } from 'express';
 import {
   BackendCrowdfundingResponse,
   BackendInitiative,
+  BackendSubscription,
   BackendTransactionList,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
-import { mapToInitiativeBase, mapToInitiativeDetail, mapToTransaction } from '../utils/crowdfunding-mapper';
+import { mapToInitiativeBase, mapToInitiativeDetail, mapToRecurringDonation, mapToTransaction } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
 
 const cfBaseUrl = (): string =>
@@ -174,19 +175,29 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    const raw = await cfFetch<{ data: { status: string; amount_cents: number; initiative_id?: string }[]; meta: { total: number } }>(
-      req,
-      'getMyDonationStats',
-      '/v1/me/donations?limit=500',
-    );
+    // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
+    const [donationsRaw, subscriptionsRaw] = await Promise.all([
+      cfFetch<{ data: { amount_cents: number; initiative_id?: string }[]; meta: { total: number } }>(
+        req,
+        'getMyDonationStats_donations',
+        '/v1/me/donations?limit=500',
+      ),
+      cfFetch<{ data: { status: string; amount_cents: number }[]; meta: { total: number } }>( // eslint-disable-line @typescript-eslint/naming-convention
+        req,
+        'getMyDonationStats_subscriptions',
+        '/v1/me/subscriptions?limit=500',
+      ),
+    ]);
 
-    const totalDonated = raw.data.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
-    const activeRecurringCount = raw.data.filter((d) => d.status === 'active').length;
-    const activeRecurringAmount = raw.data
-      .filter((d) => d.status === 'active')
-      .reduce((sum, d) => sum + d.amount_cents, 0) / 100;
+    const totalDonated = donationsRaw.data.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
     // Filter to valid string IDs before counting — donations without initiative_id are excluded.
-    const initiativesSupported = new Set(raw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
+    const initiativesSupported = new Set(
+      donationsRaw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string'),
+    ).size;
+    // Recurring counts and amounts come from active subscriptions, not one-time donations.
+    const activeSubscriptions = subscriptionsRaw.data.filter((s) => s.status === 'active');
+    const activeRecurringCount = activeSubscriptions.length;
+    const activeRecurringAmount = activeSubscriptions.reduce((sum, s) => sum + s.amount_cents, 0) / 100;
 
     logger.success(req, 'cf_get_my_donation_stats', startTime);
     return { totalDonated, activeRecurringCount, activeRecurringAmount, initiativesSupported };
@@ -195,14 +206,14 @@ export class CrowdfundingService {
   public async getMyRecurringDonations(req: Request): Promise<RecurringDonationsResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_recurring_donations');
 
-    const raw = await cfFetch<{ data: RecurringDonationsResponse['data']; meta: { total: number; limit: number; offset: number } }>(
+    const raw = await cfFetch<{ data: BackendSubscription[]; meta: { total: number; limit: number; offset: number } }>(
       req,
       'getMyRecurringDonations',
       '/v1/me/subscriptions',
     );
 
     logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    return { data: raw.data.map(mapToRecurringDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
@@ -235,17 +246,28 @@ export class CrowdfundingService {
     if (from != null) params.set('offset', String(from));
     const qs = params.toString();
 
-    // GET /v1/initiatives/{slug}/transactions — public endpoint, accepts slug directly.
-    const raw = await cfFetchNullable<BackendTransactionList>(
-      req,
-      'getInitiativeTransactions',
-      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
-    );
-
-    if (!raw) {
+    // GET /v1/initiatives/{slug}/transactions — public CF endpoint (no auth required).
+    // Token is sent when available (e.g. for future authenticated features) but absence
+    // must not block the call, so we bypass cfFetchNullable which throws without a token.
+    const baseUrl = cfBaseUrl();
+    if (!baseUrl) {
+      throw new Error('CROWDFUNDING_API_BASE_URL is not configured — cannot call getInitiativeTransactions');
+    }
+    const txHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (req.crowdfundingToken) {
+      txHeaders['Authorization'] = `Bearer ${req.crowdfundingToken}`;
+    }
+    const txUrl = `${baseUrl}/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`;
+    const txResponse = await fetch(txUrl, { headers: txHeaders });
+    if (txResponse.status === 404) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
       return null;
     }
+    if (!txResponse.ok) {
+      const text = await txResponse.text().catch(() => '');
+      throw new Error(`CF API getInitiativeTransactions returned ${txResponse.status}: ${text}`);
+    }
+    const raw = (await txResponse.json()) as BackendTransactionList;
 
     logger.success(req, 'cf_get_initiative_transactions', startTime, { total: raw.total_count });
     return {

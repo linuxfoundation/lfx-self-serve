@@ -13,10 +13,12 @@ import {
   CrowdfundingInitiativeStatus,
   MyDonation,
   DonationHistoryItem,
+  RecurringDonation,
+  RecurringDonationStatus,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
 
-import { BackendGoal, BackendInitiative, BackendSponsor, BackendTransaction } from '../types/crowdfunding.types';
+import { BackendGoal, BackendInitiative, BackendSponsor, BackendSubscription, BackendTransaction } from '../types/crowdfunding.types';
 
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 
@@ -110,6 +112,22 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
     donorUsername: b.donor_username,
+  };
+}
+
+// Maps a raw CF Subscription (snake_case) to the frontend RecurringDonation shape.
+// CF subscription model has no initiative name/icon inline — initiative_id is used as a
+// placeholder name. TODO: enrich with initiative details via a separate lookup.
+export function mapToRecurringDonation(b: BackendSubscription): RecurringDonation {
+  return {
+    id: b.id,
+    name: b.initiative_id,
+    icon: '',
+    status: b.status as RecurringDonationStatus,
+    amount: b.amount_cents / 100,
+    billingDescription: b.frequency ?? '',
+    startDate: b.created_on,
+    // nextChargeDate and pausedSince have no equivalent in the CF subscription model.
   };
 }
 

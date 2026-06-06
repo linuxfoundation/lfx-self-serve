@@ -367,6 +367,7 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
           audience: crowdfundingAudience,
+          scope: 'access:me',
         }),
       });
     } else {
@@ -379,6 +380,7 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
           client_id: clientId,
           client_secret: clientSecret,
           audience: crowdfundingAudience,
+          scope: 'access:me',
         }),
       });
     }
@@ -400,6 +402,16 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
     }
 
     req.crowdfundingToken = data.access_token;
+
+    // Warn early if the token is missing access:me — all /v1/me/* CF endpoints will
+    // return 403 until auth0-terraform PR #325 (adds access:me to CF-audience tokens) is deployed.
+    const cfClaims = decodeJwtPayload(data.access_token);
+    const cfScope = typeof cfClaims?.['scope'] === 'string' ? cfClaims['scope'] : '';
+    if (!cfScope.includes('access:me')) {
+      logger.warning(req, 'crowdfunding_token', 'CF token does not contain access:me scope — /v1/me/* calls will return 403 until auth0-terraform PR #325 is deployed', {
+        scope: cfScope || 'none',
+      });
+    }
 
     if (!req.appSession) req.appSession = {};
     req.appSession.crowdfundingToken = data.access_token;

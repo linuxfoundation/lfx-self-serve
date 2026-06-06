@@ -213,7 +213,9 @@ export interface DonationStats {
   activeRecurringCount: number;
 }
 
-export type RecurringDonationStatus = 'active' | 'paused';
+// CF subscription statuses: active, past_due, canceled, incomplete.
+// 'paused' is retained for backward-compatibility with any existing frontend checks.
+export type RecurringDonationStatus = 'active' | 'paused' | 'past_due' | 'canceled' | 'incomplete';
 export type DonationKind = 'one-time' | 'monthly';
 
 export interface RecurringDonation {
