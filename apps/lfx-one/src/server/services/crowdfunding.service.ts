@@ -22,6 +22,8 @@ import {
   BackendTransactionList,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
+import { MicroserviceError } from '../errors';
+import { getHttpErrorCode } from '../helpers/http-status.helper';
 import { mapToInitiativeBase, mapToInitiativeDetail, mapToMyDonation, mapToRecurringDonation, mapToTransaction } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
 
@@ -36,12 +38,12 @@ async function cfFetch<T>(
 ): Promise<T> {
   const token = req.crowdfundingToken;
   if (!token) {
-    throw new Error(`No crowdfunding token available for ${operation}`);
+    throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 
   const baseUrl = cfBaseUrl();
   if (!baseUrl) {
-    throw new Error(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`);
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
   }
 
   const url = `${baseUrl}${path}`;
@@ -59,12 +61,12 @@ async function cfFetch<T>(
   const response = await fetch(url, init);
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`CF API ${operation} returned ${response.status}: ${text}`);
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
   }
   return response.json() as Promise<T>;
 }
 
-// cfFetchNullable calls cfFetch but returns null on 404 instead of throwing.
+// cfFetchNullable calls the authenticated CF API but returns null on 404 instead of throwing.
 // All other errors (401, 403, 5xx, network) are rethrown so the error handler
 // can return an appropriate status rather than silently reporting "not found".
 async function cfFetchNullable<T>(
@@ -74,12 +76,12 @@ async function cfFetchNullable<T>(
 ): Promise<T | null> {
   const token = req.crowdfundingToken;
   if (!token) {
-    throw new Error(`No crowdfunding token available for ${operation}`);
+    throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 
   const baseUrl = cfBaseUrl();
   if (!baseUrl) {
-    throw new Error(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`);
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
   }
 
   const response = await fetch(`${baseUrl}${path}`, {
@@ -94,7 +96,34 @@ async function cfFetchNullable<T>(
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`CF API ${operation} returned ${response.status}: ${text}`);
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
+  }
+  return response.json() as Promise<T>;
+}
+
+// cfFetchPublic fetches a public CF endpoint (no authentication required).
+// The request's crowdfunding token is forwarded when available, but its absence
+// must not block the call. Returns null on 404; throws MicroserviceError otherwise.
+async function cfFetchPublic<T>(
+  req: Request,
+  operation: string,
+  path: string,
+): Promise<T | null> {
+  const baseUrl = cfBaseUrl();
+  if (!baseUrl) {
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
+  }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (req.crowdfundingToken) {
+    headers['Authorization'] = `Bearer ${req.crowdfundingToken}`;
+  }
+  const response = await fetch(`${baseUrl}${path}`, { headers });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
   }
   return response.json() as Promise<T>;
 }
@@ -123,27 +152,12 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // GET /v1/initiatives/{slug} — public CF endpoint (no auth required).
-    // Token is sent when available but must not be required, so we bypass cfFetchNullable
-    // which throws without a token (same pattern as getInitiativeTransactions).
-    const baseUrl = cfBaseUrl();
-    if (!baseUrl) {
-      throw new Error('CROWDFUNDING_API_BASE_URL is not configured — cannot call getInitiativeBySlug');
-    }
-    const slugHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (req.crowdfundingToken) {
-      slugHeaders['Authorization'] = `Bearer ${req.crowdfundingToken}`;
-    }
-    const slugResponse = await fetch(`${baseUrl}/v1/initiatives/${encodeURIComponent(slug)}`, { headers: slugHeaders });
-    if (slugResponse.status === 404) {
+    // GET /v1/initiatives/{slug} — public CF endpoint (no auth required); token forwarded if present.
+    const raw = await cfFetchPublic<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/initiatives/${encodeURIComponent(slug)}`);
+    if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
     }
-    if (!slugResponse.ok) {
-      const text = await slugResponse.text().catch(() => '');
-      throw new Error(`CF API getInitiativeBySlug returned ${slugResponse.status}: ${text}`);
-    }
-    const raw = (await slugResponse.json()) as BackendInitiative;
 
     logger.success(req, 'cf_get_initiative_by_slug', startTime);
     return mapToInitiativeDetail(raw);
@@ -257,28 +271,16 @@ export class CrowdfundingService {
     if (from != null) params.set('offset', String(from));
     const qs = params.toString();
 
-    // GET /v1/initiatives/{slug}/transactions — public CF endpoint (no auth required).
-    // Token is sent when available (e.g. for future authenticated features) but absence
-    // must not block the call, so we bypass cfFetchNullable which throws without a token.
-    const baseUrl = cfBaseUrl();
-    if (!baseUrl) {
-      throw new Error('CROWDFUNDING_API_BASE_URL is not configured — cannot call getInitiativeTransactions');
-    }
-    const txHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (req.crowdfundingToken) {
-      txHeaders['Authorization'] = `Bearer ${req.crowdfundingToken}`;
-    }
-    const txUrl = `${baseUrl}/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`;
-    const txResponse = await fetch(txUrl, { headers: txHeaders });
-    if (txResponse.status === 404) {
+    // GET /v1/initiatives/{slug}/transactions — public CF endpoint (no auth required); token forwarded if present.
+    const raw = await cfFetchPublic<BackendTransactionList>(
+      req,
+      'getInitiativeTransactions',
+      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
+    );
+    if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
       return null;
     }
-    if (!txResponse.ok) {
-      const text = await txResponse.text().catch(() => '');
-      throw new Error(`CF API getInitiativeTransactions returned ${txResponse.status}: ${text}`);
-    }
-    const raw = (await txResponse.json()) as BackendTransactionList;
 
     logger.success(req, 'cf_get_initiative_transactions', startTime, { total: raw.total_count });
     return {

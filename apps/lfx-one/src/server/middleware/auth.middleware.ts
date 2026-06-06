@@ -313,7 +313,7 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
   } catch (error) {
     // Non-blocking — log and continue without the token
     logger.warning(req, 'api_gateway_token', 'Silent API Gateway token fetch failed, continuing without it', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      err: error instanceof Error ? error : new Error(String(error)),
     });
   }
 }
@@ -420,7 +420,7 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
     logger.debug(req, 'crowdfunding_token', 'Crowdfunding token fetched and cached');
   } catch (error) {
     logger.warning(req, 'crowdfunding_token', 'Crowdfunding token fetch failed, continuing without it', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      err: error instanceof Error ? error : new Error(String(error)),
     });
   }
 }

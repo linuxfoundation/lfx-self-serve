@@ -121,7 +121,7 @@ export function mapToMyDonation(b: BackendDonation): MyDonation {
     id: b.id,
     donorName: b.donor_name,
     donorLogoUrl: b.donor_logo_url,
-    donorType: (b.donor_type as 'organization' | 'member') ?? 'member',
+    donorType: (['organization', 'member'] as const).includes(b.donor_type as 'organization' | 'member') ? (b.donor_type as 'organization' | 'member') : 'member',
     amountCents: b.amount_cents,
     date: new Date(b.created_on).getTime(),
     initiativeId: b.initiative_id,
