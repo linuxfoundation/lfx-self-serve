@@ -192,7 +192,7 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
   india: { label: 'India', urn: 'urn:li:geo:102713980' },
   singapore: { label: 'Singapore', urn: 'urn:li:geo:102454443' },
-  'south korea': { label: 'South Korea', urn: 'urn:li:geo:101452733' },
+  'south korea': { label: 'South Korea', urn: 'urn:li:geo:105149562' },
   australia: { label: 'Australia', urn: 'urn:li:geo:101452733' },
   taiwan: { label: 'Taiwan', urn: 'urn:li:geo:104441761' },
   'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
