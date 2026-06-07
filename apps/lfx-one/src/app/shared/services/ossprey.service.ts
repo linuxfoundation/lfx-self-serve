@@ -44,7 +44,7 @@ export class OsspreyService {
       healthBreakdown: ['15 / 40', '22 / 35', '15 / 25'],
       assessment: null,
       advisories: [],
-      history: [['Imported from Insights/CDP critical set', 'May 28', '']],
+      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
     },
     {
       id: 'chalk',
@@ -77,7 +77,7 @@ export class OsspreyService {
       healthBreakdown: ['28 / 40', '26 / 35', '18 / 25'],
       assessment: null,
       advisories: [],
-      history: [['Imported from Insights/CDP critical set', 'May 28', '']],
+      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
     },
     {
       id: 'debug',
@@ -117,7 +117,7 @@ export class OsspreyService {
           state: 'Open',
         },
       ],
-      history: [['Imported from Insights/CDP critical set', 'May 28', '']],
+      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
     },
     {
       id: 'express',
@@ -150,7 +150,7 @@ export class OsspreyService {
       healthBreakdown: ['34 / 40', '30 / 35', '17 / 25'],
       assessment: null,
       advisories: [],
-      history: [['Imported from Insights/CDP critical set', 'May 28', '']],
+      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
     },
     {
       id: 'log4j',
@@ -196,7 +196,7 @@ export class OsspreyService {
           state: 'Patched',
         },
       ],
-      history: [['Escalated from review queue', 'Jun 4', 'danger']],
+      history: [{ label: 'Escalated from review queue', timeAgo: 'Jun 4', type: 'danger' as const }],
     },
     {
       id: 'guava',
@@ -229,20 +229,20 @@ export class OsspreyService {
       healthBreakdown: ['33 / 40', '31 / 35', '21 / 25'],
       assessment: null,
       advisories: [],
-      history: [['Imported from Insights/CDP critical set', 'May 28', '']],
+      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
     },
   ];
 
-  protected getPackages(): Observable<OsspreyPackage[]> {
+  public getPackages(): Observable<OsspreyPackage[]> {
     return of(this.mockPackages);
   }
 
-  protected getPackage(id: string): Observable<OsspreyPackage | null> {
+  public getPackage(id: string): Observable<OsspreyPackage | null> {
     const pkg = this.mockPackages.find((p) => p.id === id);
     return of(pkg || null);
   }
 
-  protected getStats(): Observable<OsspreyStats> {
+  public getStats(): Observable<OsspreyStats> {
     const stats: OsspreyStats = {
       totalPackages: this.mockPackages.length,
       coveragePct: 67,

@@ -12,7 +12,6 @@ import { OsspreyService } from '@shared/services/ossprey.service';
 
 @Component({
   selector: 'lfx-ossprey-package-drawer',
-  standalone: true,
   imports: [CommonModule, DrawerModule],
   templateUrl: './ossprey-package-drawer.component.html',
   styleUrl: './ossprey-package-drawer.component.scss',
@@ -26,7 +25,7 @@ export class OsspreyPackageDrawerComponent {
   protected readonly activeTab = signal<'overview' | 'security' | 'provenance'>('overview');
   protected readonly packageData = signal<OsspreyPackage | null>(null);
 
-  protected constructor() {
+  constructor() {
     // Load package data when visible changes
     toObservable(this.visible)
       .pipe(

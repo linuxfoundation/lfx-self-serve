@@ -11,7 +11,6 @@ import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-dra
 
 @Component({
   selector: 'lfx-ossprey-dashboard',
-  standalone: true,
   imports: [CommonModule, OsspreyPackageDrawerComponent],
   templateUrl: './ossprey-dashboard.component.html',
   styleUrl: './ossprey-dashboard.component.scss',
@@ -152,7 +151,7 @@ export class OsspreyDashboardComponent {
     };
   });
 
-  protected constructor() {
+  constructor() {
     // Sync tab from query params
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       const tab = params['tab'];

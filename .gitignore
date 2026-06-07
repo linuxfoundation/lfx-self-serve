@@ -65,3 +65,6 @@ snowflake.log
 
 # Playwright MCP
 .playwright-mcp
+
+# Design reference files (Cowork session artifacts, not source code)
+design/
