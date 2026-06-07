@@ -289,10 +289,12 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 // AI service helpers (LiteLLM proxy — same pattern as ai.service.ts)
 // ---------------------------------------------------------------------------
 
-async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096): Promise<string> {
+async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?: AbortSignal, maxTokens = 4096): Promise<string> {
   const aiProxyUrl = getEnv('AI_PROXY_URL');
   const aiApiKey = getEnv('AI_API_KEY');
   if (!aiProxyUrl || !aiApiKey) throw new Error('AI_PROXY_URL and AI_API_KEY required');
+
+  const signal = externalSignal ? AbortSignal.any([externalSignal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
 
   const response = await fetch(aiProxyUrl, {
     method: 'POST',
@@ -309,7 +311,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal,
   });
 
   if (!response.ok) {
@@ -718,32 +720,36 @@ export class CampaignProxyService {
       return;
     }
 
-    yield { type: 'status', data: 'Regenerating keywords...' };
+    const platforms = body.platforms || ['google-ads'];
+    if (platforms.includes('google-ads')) {
+      yield { type: 'status', data: 'Regenerating keywords...' };
 
-    try {
-      const kwPrompt = buildRefineKeywordPrompt(body);
-      let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt)).trim();
-      if (kwText.startsWith('```')) {
-        const firstNl = kwText.indexOf('\n');
-        if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
-        const lastFence = kwText.lastIndexOf('```');
-        if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
-        kwText = kwText.trim();
+      try {
+        const kwPrompt = buildRefineKeywordPrompt(body);
+        let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt, signal)).trim();
+        if (kwText.startsWith('```')) {
+          const firstNl = kwText.indexOf('\n');
+          if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
+          const lastFence = kwText.lastIndexOf('```');
+          if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
+          kwText = kwText.trim();
+        }
+        let kwList = JSON.parse(kwText);
+        if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
+          kwList = kwList.keywords;
+        }
+        const keywords = (kwList as Record<string, string>[]).map((k) => ({
+          term: k['term'] || k['keyword'] || '',
+          matchType: k['match_type'] || k['matchType'] || 'Broad',
+          intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
+          notes: k['notes'] || '',
+        }));
+        yield { type: 'keywords', data: keywords };
+      } catch (error) {
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
+        yield { type: 'status', data: 'Keyword regeneration failed, keeping existing keywords...' };
       }
-      let kwList = JSON.parse(kwText);
-      if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
-        kwList = kwList.keywords;
-      }
-      const keywords = (kwList as Record<string, string>[]).map((k) => ({
-        term: k['term'] || k['keyword'] || '',
-        matchType: k['match_type'] || k['matchType'] || 'Broad',
-        intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
-        notes: k['notes'] || '',
-      }));
-      yield { type: 'keywords', data: keywords };
-    } catch (error) {
-      logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
-      yield { type: 'status', data: 'Keyword regeneration failed, keeping existing keywords...' };
     }
 
     yield { type: 'done', data: null };

@@ -129,6 +129,16 @@ export class CampaignController {
       return;
     }
 
+    if (body.currentKeywords && !Array.isArray(body.currentKeywords)) {
+      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be an array', {
+        operation: 'campaign_refine_brief',
+        service: 'campaign_controller',
+        path: req.path,
+      });
+      _next(validationError);
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'campaign_refine_brief', {});
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -156,12 +166,18 @@ export class CampaignController {
     };
 
     try {
+      let hadError = false;
       for await (const event of this.proxyService.streamRefinedBrief(req, body, abortController.signal)) {
         if (clientDisconnected) return;
+        if (event.type === 'error') hadError = true;
         sendEvent(event.type, event.data);
       }
 
-      logger.success(req, 'campaign_refine_brief', startTime, {});
+      if (hadError) {
+        logger.warning(req, 'campaign_refine_brief', 'Refine stream completed with error event', {});
+      } else {
+        logger.success(req, 'campaign_refine_brief', startTime, {});
+      }
     } catch (error) {
       if (clientDisconnected) return;
       logger.error(req, 'campaign_refine_brief', startTime, error, {});

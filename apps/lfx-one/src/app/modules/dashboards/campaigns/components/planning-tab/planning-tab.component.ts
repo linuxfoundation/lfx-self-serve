@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
@@ -28,7 +28,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -211,6 +211,9 @@ export class PlanningTabComponent implements OnInit {
     this.errorMessage.set(null);
     this.isEditing.set(false);
     this.isRefining.set(false);
+    this.isRefineStreaming.set(false);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
     this.lastAppliedFeedback.set(null);
     this.refineCount.set(0);
   }
@@ -403,8 +406,6 @@ export class PlanningTabComponent implements OnInit {
         },
         complete: () => {
           this.isRefineStreaming.set(false);
-          this.isRefining.set(false);
-          this.refineFeedback.set('');
         },
       });
   }

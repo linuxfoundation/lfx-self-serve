@@ -272,7 +272,7 @@
     <!-- Success / Refined Banner -->
     <div
       class="rounded-lg border p-4"
-      [class]="lastAppliedFeedback() ? 'border-violet-200 bg-violet-50' : 'border-green-200 bg-green-50'"
+      [ngClass]="lastAppliedFeedback() ? 'border-violet-200 bg-violet-50' : 'border-green-200 bg-green-50'"
       data-testid="planning-success-banner">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -832,7 +832,7 @@
 
           @if (refineStatusMessages().length > 0) {
             <div class="mt-2 flex flex-col gap-1">
-              @for (msg of refineStatusMessages(); track msg) {
+              @for (msg of refineStatusMessages(); track $index) {
                 <span class="text-xs text-blue-600"><i class="fa-light fa-circle-info mr-1"></i>{{ msg }}</span>
               }
             </div>
