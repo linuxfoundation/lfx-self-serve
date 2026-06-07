@@ -9,6 +9,8 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
 
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 
+export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 export type CampaignType = 'search' | 'demand-gen';
@@ -107,6 +109,57 @@ export interface CampaignBriefOutput {
   totalBudget: number | null;
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
+  selectedPlatforms?: CampaignPlatform[];
+  linkedInCopy?: LinkedInBriefCopy;
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn Ads
+// ---------------------------------------------------------------------------
+
+export interface LinkedInGeoTarget {
+  label: string;
+  urn: string;
+}
+
+export interface LinkedInCreativeVariant {
+  introText: string;
+  headline: string;
+  imageUrl?: string;
+}
+
+export interface LinkedInBriefCopy {
+  variants: LinkedInCreativeVariant[];
+  recommendedGeoTargets: LinkedInGeoTarget[];
+  recommendedTargetingProfile: LinkedInTargetingProfile;
+}
+
+export interface LinkedInCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  dates: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  startDate: string;
+  endDate: string;
+  geoTargets: LinkedInGeoTarget[];
+  targetingProfile: LinkedInTargetingProfile;
+  variants: LinkedInCreativeVariant[];
+  project?: string;
+  driveFolderUrl?: string;
+}
+
+export interface LinkedInCampaignCreateResult {
+  platform: 'linkedin-ads';
+  campaignGroupName: string;
+  campaignGroupId: string;
+  campaignName: string;
+  campaignId: string;
+  creativeCount: number;
+  linkedInUrl: string;
+  steps: string[];
 }
 
 export interface CampaignBriefRefineRequest {
@@ -142,9 +195,12 @@ export interface CampaignCreateRequest {
   geoTargets: string[];
   project?: string;
   driveFolderUrl?: string;
+  platforms?: CampaignPlatform[];
+  linkedInConfig?: LinkedInCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {
+  platform?: CampaignPlatform;
   type: CampaignType;
   campaignName: string;
   campaignId: string;

@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoalOption, CampaignPlatformOption, CampaignStatus, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
+import type {
+  CampaignGoalOption,
+  CampaignPlatformOption,
+  CampaignStatus,
+  CampaignTabOption,
+  LinkedInGeoTarget,
+  LinkedInTargetingProfile,
+  ParsedCampaignName,
+} from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
@@ -14,7 +22,7 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
-  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin', disabled: true },
+  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
@@ -95,3 +103,101 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
     raw,
   };
 }
+
+// ---------------------------------------------------------------------------
+// LinkedIn Ads Constants
+// ---------------------------------------------------------------------------
+
+export const LINKEDIN_API_VERSION = '202602';
+
+export const LINKEDIN_CHAR_LIMITS = {
+  introText: 600,
+  headline: 200,
+} as const;
+
+export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; orgId: string }[] = [
+  { accountId: '538170226', label: 'The Linux Foundation', orgId: '208777' },
+  { accountId: '509430019', label: 'LF Events', orgId: '208777' },
+] as const;
+
+export const LINKEDIN_EMPLOYER_EXCLUSIONS: readonly string[] = ['urn:li:company:33275771', 'urn:li:company:12893459'] as const;
+
+export interface LinkedInTargetingProfileConfig {
+  id: LinkedInTargetingProfile;
+  label: string;
+  skills: readonly string[];
+  groups: readonly string[];
+}
+
+export const LINKEDIN_TARGETING_PROFILES: readonly LinkedInTargetingProfileConfig[] = [
+  {
+    id: 'cloud-native',
+    label: 'Cloud Native / CNCF',
+    skills: [
+      'urn:li:skill:55158',
+      'urn:li:skill:56347',
+      'urn:li:skill:56319',
+      'urn:li:skill:18442',
+      'urn:li:skill:1500290',
+      'urn:li:skill:55734',
+      'urn:li:skill:55383',
+      'urn:li:skill:1500358',
+      'urn:li:skill:56908',
+      'urn:li:skill:58498',
+      'urn:li:skill:55644',
+      'urn:li:skill:55102',
+      'urn:li:skill:56912',
+      'urn:li:skill:18443',
+      'urn:li:skill:25168',
+      'urn:li:skill:56320',
+      'urn:li:skill:25154',
+      'urn:li:skill:56580',
+      'urn:li:skill:56581',
+      'urn:li:skill:55385',
+    ],
+    groups: [
+      'urn:li:group:6821178',
+      'urn:li:group:9375272',
+      'urn:li:group:12405624',
+      'urn:li:group:12391549',
+      'urn:li:group:8553150',
+      'urn:li:group:13681295',
+      'urn:li:group:4490628',
+      'urn:li:group:2602008',
+      'urn:li:group:50985',
+      'urn:li:group:6585490',
+      'urn:li:group:3779791',
+      'urn:li:group:13799412',
+    ],
+  },
+  {
+    id: 'mcp',
+    label: 'MCP / Agentic AI',
+    skills: [
+      'urn:li:skill:59695',
+      'urn:li:skill:59040',
+      'urn:li:skill:61790',
+      'urn:li:skill:2407',
+      'urn:li:skill:3289',
+      'urn:li:skill:56912',
+      'urn:li:skill:61642',
+      'urn:li:skill:59698',
+      'urn:li:skill:5835',
+    ],
+    groups: ['urn:li:group:6672014', 'urn:li:group:6608681', 'urn:li:group:6773450', 'urn:li:group:10321152', 'urn:li:group:6731624', 'urn:li:group:961087'],
+  },
+] as const;
+
+export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
+  japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
+  india: { label: 'India', urn: 'urn:li:geo:102713980' },
+  singapore: { label: 'Singapore', urn: 'urn:li:geo:102454443' },
+  'south korea': { label: 'South Korea', urn: 'urn:li:geo:101452733' },
+  australia: { label: 'Australia', urn: 'urn:li:geo:101452733' },
+  taiwan: { label: 'Taiwan', urn: 'urn:li:geo:104441761' },
+  'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
+  'united states': { label: 'United States', urn: 'urn:li:geo:103644278' },
+  usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
+  germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
+  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+} as const;
