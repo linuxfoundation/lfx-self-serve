@@ -151,7 +151,7 @@ export class OsspreyDashboardComponent {
     };
   });
 
-  constructor() {
+  public constructor() {
     // Sync tab from query params
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       const tab = params['tab'];

@@ -25,7 +25,7 @@ export class OsspreyPackageDrawerComponent {
   protected readonly activeTab = signal<'overview' | 'security' | 'provenance'>('overview');
   protected readonly packageData = signal<OsspreyPackage | null>(null);
 
-  constructor() {
+  public constructor() {
     // Load package data when visible changes
     toObservable(this.visible)
       .pipe(
