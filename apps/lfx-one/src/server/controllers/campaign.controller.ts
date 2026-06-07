@@ -3,7 +3,13 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import type { BulkKeywordActionRequest, CampaignBriefRequest, CampaignSSEEventType, FlushableResponse } from '@lfx-one/shared/interfaces';
+import type {
+  BulkKeywordActionRequest,
+  CampaignBriefRefineRequest,
+  CampaignBriefRequest,
+  CampaignSSEEventType,
+  FlushableResponse,
+} from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService } from '../services/campaign-metrics.service';
@@ -87,6 +93,79 @@ export class CampaignController {
       if (clientDisconnected) return;
       logger.error(req, 'campaign_generate_brief', startTime, error, {});
       sendEvent('error', 'Brief generation failed. Please try again.');
+    } finally {
+      this.activeStreams.delete(res);
+      if (!clientDisconnected) {
+        res.end();
+      }
+    }
+  }
+
+  public async refineBrief(req: Request, res: Response, _next: NextFunction): Promise<void> {
+    if (isShuttingDown()) {
+      res.status(503).json({ status: 'shutting_down' });
+      return;
+    }
+
+    const body = req.body as CampaignBriefRefineRequest;
+
+    if (!body.feedback || typeof body.feedback !== 'string' || !body.feedback.trim()) {
+      const validationError = ServiceValidationError.forField('feedback', 'feedback is required', {
+        operation: 'campaign_refine_brief',
+        service: 'campaign_controller',
+        path: req.path,
+      });
+      _next(validationError);
+      return;
+    }
+
+    if (!body.currentCopy || typeof body.currentCopy !== 'object') {
+      const validationError = ServiceValidationError.forField('currentCopy', 'currentCopy is required', {
+        operation: 'campaign_refine_brief',
+        service: 'campaign_controller',
+        path: req.path,
+      });
+      _next(validationError);
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_refine_brief', {});
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Content-Encoding', 'identity');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    res.socket?.setNoDelay(true);
+
+    const abortController = new AbortController();
+    let clientDisconnected = false;
+
+    this.activeStreams.add(res);
+    res.on('close', () => {
+      clientDisconnected = true;
+      this.activeStreams.delete(res);
+      abortController.abort();
+    });
+
+    const sendEvent = (type: CampaignSSEEventType, data: unknown): void => {
+      if (clientDisconnected || isShuttingDown()) return;
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+      (res as FlushableResponse).flush?.();
+    };
+
+    try {
+      for await (const event of this.proxyService.streamRefinedBrief(req, body, abortController.signal)) {
+        if (clientDisconnected) return;
+        sendEvent(event.type, event.data);
+      }
+
+      logger.success(req, 'campaign_refine_brief', startTime, {});
+    } catch (error) {
+      if (clientDisconnected) return;
+      logger.error(req, 'campaign_refine_brief', startTime, error, {});
+      sendEvent('error', 'Brief refinement failed. Please try again.');
     } finally {
       this.activeStreams.delete(res);
       if (!clientDisconnected) {

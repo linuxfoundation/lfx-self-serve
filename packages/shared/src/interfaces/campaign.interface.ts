@@ -109,6 +109,14 @@ export interface CampaignBriefOutput {
   campaignGoal: CampaignGoal | null;
 }
 
+export interface CampaignBriefRefineRequest {
+  currentCopy: Record<string, unknown>;
+  currentKeywords: CampaignKeyword[];
+  feedback: string;
+  eventDetails?: CampaignEventDetails | null;
+  platforms?: CampaignPlatform[];
+}
+
 // ---------------------------------------------------------------------------
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------

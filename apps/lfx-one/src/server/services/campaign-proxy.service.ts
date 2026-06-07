@@ -6,6 +6,7 @@ import { AI_MODEL } from '@lfx-one/shared/constants';
 import type {
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -675,6 +676,79 @@ export class CampaignProxyService {
     yield { type: 'done', data: null };
   }
 
+  // === Brief refinement (SSE stream) ===
+
+  public async *streamRefinedBrief(
+    req: Request,
+    body: CampaignBriefRefineRequest,
+    signal: AbortSignal
+  ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
+    checkRequiredEnv(req);
+
+    yield { type: 'status', data: 'Refining brief based on your feedback...' };
+
+    const userPrompt = buildRefinePrompt(body);
+    let fullCopy = '';
+
+    try {
+      for await (const token of aiChatStream(COPY_SYSTEM_PROMPT, userPrompt, signal)) {
+        yield { type: 'copy_token', data: token };
+        fullCopy += token;
+      }
+      yield { type: 'copy_done', data: null };
+
+      try {
+        let text = fullCopy.trim();
+        if (text.startsWith('```')) {
+          const firstNewline = text.indexOf('\n');
+          if (firstNewline !== -1) text = text.slice(firstNewline + 1);
+          const lastFence = text.lastIndexOf('```');
+          if (lastFence !== -1) text = text.slice(0, lastFence);
+          text = text.trim();
+        }
+        const structured = JSON.parse(text) as Record<string, unknown>;
+        truncateAdCopy(structured);
+        yield { type: 'copy_structured', data: structured };
+      } catch {
+        yield { type: 'copy_structured', data: { raw: fullCopy } };
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+      return;
+    }
+
+    yield { type: 'status', data: 'Regenerating keywords...' };
+
+    try {
+      const kwPrompt = buildRefineKeywordPrompt(body);
+      let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt)).trim();
+      if (kwText.startsWith('```')) {
+        const firstNl = kwText.indexOf('\n');
+        if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
+        const lastFence = kwText.lastIndexOf('```');
+        if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
+        kwText = kwText.trim();
+      }
+      let kwList = JSON.parse(kwText);
+      if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
+        kwList = kwList.keywords;
+      }
+      const keywords = (kwList as Record<string, string>[]).map((k) => ({
+        term: k['term'] || k['keyword'] || '',
+        matchType: k['match_type'] || k['matchType'] || 'Broad',
+        intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
+        notes: k['notes'] || '',
+      }));
+      yield { type: 'keywords', data: keywords };
+    } catch (error) {
+      logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
+      yield { type: 'status', data: 'Keyword regeneration failed, keeping existing keywords...' };
+    }
+
+    yield { type: 'done', data: null };
+  }
+
   // === Campaign creation (async job) ===
 
   public async createCampaign(_req: Request, body: CampaignCreateRequest): Promise<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
@@ -1149,6 +1223,43 @@ CRITICAL RULES:
 - The event year is ${eventYear}. NEVER use any other year in keywords.
 - Prefer HIGH INTENT — keywords that indicate someone actively searching for this event.
 - Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
+}
+
+function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
+  const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
+
+  return `I have existing Google Ads copy that needs refinement based on user feedback.
+
+CURRENT AD COPY:
+${JSON.stringify(body.currentCopy, null, 2)}
+${eventBlock}
+USER FEEDBACK:
+${body.feedback}
+
+Please regenerate the ad copy incorporating the user's feedback while maintaining the same JSON structure.
+Respect all character limits from the system prompt. Return the same JSON format with keys "google_search" and "google_display".`;
+}
+
+function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {
+  const currentKws = body.currentKeywords.map((kw) => kw.term).join(', ');
+  const eventName = body.eventDetails?.name || '';
+
+  return `Regenerate keywords for this event based on user feedback.
+
+EVENT: ${eventName}
+CURRENT KEYWORDS: ${currentKws}
+
+USER FEEDBACK: ${body.feedback}
+
+Based on the feedback, generate 25-40 refined Google Search keywords.
+
+Return a JSON array where each object has EXACTLY these keys:
+- "term": the keyword string
+- "match_type": "Exact", "Phrase", or "Broad"
+- "intent_level": "High" (direct event search), "Medium" (related topic), "Low" (broad)
+- "notes": any flag (e.g. "added per user feedback")
+
+Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
 }
 
 const REGION_MAP: Record<string, string> = {
