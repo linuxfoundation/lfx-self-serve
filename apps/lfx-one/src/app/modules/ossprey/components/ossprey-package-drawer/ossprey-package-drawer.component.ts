@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, input, model, signal, effect, inject } from '@angular/core';
-import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, inject, input, model, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { DrawerModule } from 'primeng/drawer';
+import { skip, switchMap } from 'rxjs';
+
 import { OsspreyPackage } from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
-import { skip, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-ossprey-package-drawer',
@@ -19,13 +20,13 @@ import { skip, switchMap } from 'rxjs';
 export class OsspreyPackageDrawerComponent {
   private readonly osspreyService = inject(OsspreyService);
 
-  readonly visible = model(false);
-  readonly packageId = input<string | null>(null);
+  protected readonly visible = model(false);
+  protected readonly packageId = input<string | null>(null);
 
   protected readonly activeTab = signal<'overview' | 'security' | 'provenance'>('overview');
   protected readonly packageData = signal<OsspreyPackage | null>(null);
 
-  constructor() {
+  protected constructor() {
     // Load package data when visible changes
     toObservable(this.visible)
       .pipe(

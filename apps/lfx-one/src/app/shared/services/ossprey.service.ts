@@ -233,16 +233,16 @@ export class OsspreyService {
     },
   ];
 
-  getPackages(): Observable<OsspreyPackage[]> {
+  protected getPackages(): Observable<OsspreyPackage[]> {
     return of(this.mockPackages);
   }
 
-  getPackage(id: string): Observable<OsspreyPackage | null> {
+  protected getPackage(id: string): Observable<OsspreyPackage | null> {
     const pkg = this.mockPackages.find((p) => p.id === id);
     return of(pkg || null);
   }
 
-  getStats(): Observable<OsspreyStats> {
+  protected getStats(): Observable<OsspreyStats> {
     const stats: OsspreyStats = {
       totalPackages: this.mockPackages.length,
       coveragePct: 67,

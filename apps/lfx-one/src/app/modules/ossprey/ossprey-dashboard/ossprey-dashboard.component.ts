@@ -3,11 +3,10 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { OsspreyFilterState, OsspreyPackage, OsspreyStats, OsspreyStatus } from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
-import { filter, map, startWith } from 'rxjs';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
 
 @Component({
@@ -153,7 +152,7 @@ export class OsspreyDashboardComponent {
     };
   });
 
-  constructor() {
+  protected constructor() {
     // Sync tab from query params
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       const tab = params['tab'];
@@ -183,6 +182,10 @@ export class OsspreyDashboardComponent {
 
   protected onFilterChange(partial: Partial<OsspreyFilterState>): void {
     this.filters.update((current) => ({ ...current, ...partial }));
+  }
+
+  protected onSortChange(value: string): void {
+    this.onFilterChange({ sort: value as any });
   }
 
   protected onClearFilters(): void {

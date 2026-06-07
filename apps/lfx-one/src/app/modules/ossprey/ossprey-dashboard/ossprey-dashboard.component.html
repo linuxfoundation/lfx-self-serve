@@ -17,8 +17,7 @@
         class="px-4 py-2 text-sm font-medium text-gray-700 border-b-2 border-transparent transition-colors"
         [class.border-amber-600]="activeTab() === 'overview'"
         [class.text-amber-700]="activeTab() === 'overview'"
-        data-testid="ossprey-tab-overview"
-      >
+        data-testid="ossprey-tab-overview">
         Overview
       </button>
       <button
@@ -27,8 +26,7 @@
         class="px-4 py-2 text-sm font-medium text-gray-700 border-b-2 border-transparent transition-colors"
         [class.border-amber-600]="activeTab() === 'packages'"
         [class.text-amber-700]="activeTab() === 'packages'"
-        data-testid="ossprey-tab-packages"
-      >
+        data-testid="ossprey-tab-packages">
         Packages
       </button>
       <button
@@ -37,8 +35,7 @@
         class="px-4 py-2 text-sm font-medium text-gray-700 border-b-2 border-transparent transition-colors"
         [class.border-amber-600]="activeTab() === 'triage'"
         [class.text-amber-700]="activeTab() === 'triage'"
-        data-testid="ossprey-tab-triage"
-      >
+        data-testid="ossprey-tab-triage">
         Triage Board
       </button>
     </div>
@@ -47,345 +44,331 @@
   <!-- Content Area -->
   <div class="flex-1 overflow-auto">
     <!-- Overview Tab -->
-    <div *ngIf="activeTab() === 'overview'" class="p-8">
-      <div class="grid grid-cols-3 gap-6">
-        <!-- Left: Activity Feed -->
-        <div class="col-span-2">
-          <div class="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 class="text-lg font-semibold text-slate-900 mb-4">Recent Activity</h2>
-            <p class="text-sm text-gray-500">Activity feed coming soon</p>
-          </div>
-        </div>
-
-        <!-- Right: Summary Stats -->
-        <div class="flex flex-col gap-4">
-          <!-- Total Coverage Card -->
-          <div class="bg-white rounded-lg border border-gray-200 p-5">
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Coverage</div>
-            <div class="text-3xl font-semibold text-slate-900 mb-3">{{ stats().coveragePct }}%</div>
-            <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-              <div class="bg-emerald-500 h-full" [style.width.%]="stats().coveragePct"></div>
+    @if (activeTab() === 'overview') {
+      <div class="p-8">
+        <div class="grid grid-cols-3 gap-6">
+          <!-- Left: Activity Feed -->
+          <div class="col-span-2">
+            <div class="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 class="text-lg font-semibold text-slate-900 mb-4">Recent Activity</h2>
+              <p class="text-sm text-gray-500">Activity feed coming soon</p>
             </div>
-            <div class="text-xs text-gray-600 mt-2">{{ stats().totalPackages }} packages tracked</div>
           </div>
 
-          <!-- Critical Coverage Card -->
-          <div class="bg-white rounded-lg border border-gray-200 p-5">
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Critical Coverage</div>
-            <div class="text-3xl font-semibold text-slate-900 mb-3">45%</div>
-            <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-              <div class="bg-blue-500 h-full" style="width: 45%"></div>
+          <!-- Right: Summary Stats -->
+          <div class="flex flex-col gap-4">
+            <!-- Total Coverage Card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-5">
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Coverage</div>
+              <div class="text-3xl font-semibold text-slate-900 mb-3">{{ stats().coveragePct }}%</div>
+              <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div class="bg-emerald-500 h-full" [style.width.%]="stats().coveragePct"></div>
+              </div>
+              <div class="text-xs text-gray-600 mt-2">{{ stats().totalPackages }} packages tracked</div>
             </div>
-            <div class="text-xs text-gray-600 mt-2">Critical packages with stewards</div>
+
+            <!-- Critical Coverage Card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-5">
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Critical Coverage</div>
+              <div class="text-3xl font-semibold text-slate-900 mb-3">45%</div>
+              <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div class="bg-blue-500 h-full" style="width: 45%"></div>
+              </div>
+              <div class="text-xs text-gray-600 mt-2">Critical packages with stewards</div>
+            </div>
+
+            <!-- Quick Stats -->
+            <button
+              (click)="onStatusClick('unassigned')"
+              class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
+              data-testid="ossprey-stat-unassigned">
+              <div class="text-xs font-semibold text-gray-500 uppercase">Unassigned</div>
+              <div class="text-2xl font-semibold text-slate-900 mt-1">{{ statusCounts().unassigned }}</div>
+            </button>
+
+            <button
+              (click)="onStatusClick('needs_attention')"
+              class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
+              data-testid="ossprey-stat-needs-attention">
+              <div class="text-xs font-semibold text-gray-500 uppercase">Needs Attention</div>
+              <div class="text-2xl font-semibold text-red-600 mt-1">{{ statusCounts().needs_attention }}</div>
+            </button>
+
+            <button
+              (click)="onStatusClick('escalated')"
+              class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
+              data-testid="ossprey-stat-escalated">
+              <div class="text-xs font-semibold text-gray-500 uppercase">Escalated</div>
+              <div class="text-2xl font-semibold text-red-600 mt-1">{{ statusCounts().escalated }}</div>
+            </button>
           </div>
-
-          <!-- Quick Stats -->
-          <button
-            (click)="onStatusClick('unassigned')"
-            class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
-            data-testid="ossprey-stat-unassigned"
-          >
-            <div class="text-xs font-semibold text-gray-500 uppercase">Unassigned</div>
-            <div class="text-2xl font-semibold text-slate-900 mt-1">{{ statusCounts().unassigned }}</div>
-          </button>
-
-          <button
-            (click)="onStatusClick('needs_attention')"
-            class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
-            data-testid="ossprey-stat-needs-attention"
-          >
-            <div class="text-xs font-semibold text-gray-500 uppercase">Needs Attention</div>
-            <div class="text-2xl font-semibold text-red-600 mt-1">{{ statusCounts().needs_attention }}</div>
-          </button>
-
-          <button
-            (click)="onStatusClick('escalated')"
-            class="text-left bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
-            data-testid="ossprey-stat-escalated"
-          >
-            <div class="text-xs font-semibold text-gray-500 uppercase">Escalated</div>
-            <div class="text-2xl font-semibold text-red-600 mt-1">{{ statusCounts().escalated }}</div>
-          </button>
         </div>
       </div>
-    </div>
+    }
 
     <!-- Packages Tab -->
-    <div *ngIf="activeTab() === 'packages'" class="p-8">
-      <!-- Toolbar -->
-      <div class="mb-6 flex flex-col gap-4">
-        <div class="flex items-center gap-3">
-          <div class="flex-1 flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
-            <span class="text-gray-400">🔍</span>
-            <input
-              type="text"
-              placeholder="Search packages..."
-              [value]="filters().search"
-              (input)="onFilterChange({ search: $event.target.value })"
-              class="flex-1 outline-none text-sm bg-transparent"
-              data-testid="ossprey-search-input"
-            />
+    @if (activeTab() === 'packages') {
+      <div class="p-8">
+        <!-- Toolbar -->
+        <div class="mb-6 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="flex-1 flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+              <span class="text-gray-400">🔍</span>
+              <input
+                type="text"
+                placeholder="Search packages..."
+                [value]="filters().search"
+                (input)="onFilterChange({ search: $event.target.value })"
+                class="flex-1 outline-none text-sm bg-transparent"
+                data-testid="ossprey-search-input" />
+            </div>
+            <select
+              [value]="filters().sort"
+              (change)="onSortChange($event.target.value)"
+              class="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+              data-testid="ossprey-sort-select">
+              <option value="risk">Sort by Risk</option>
+              <option value="impact">Sort by Impact</option>
+              <option value="health">Sort by Health</option>
+              <option value="vulns">Sort by Vulnerabilities</option>
+              <option value="name">Sort by Name</option>
+            </select>
           </div>
-          <select
-            [value]="filters().sort"
-            (change)="onFilterChange({ sort: $event.target.value as any })"
-            class="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
-            data-testid="ossprey-sort-select"
-          >
-            <option value="risk">Sort by Risk</option>
-            <option value="impact">Sort by Impact</option>
-            <option value="health">Sort by Health</option>
-            <option value="vulns">Sort by Vulnerabilities</option>
-            <option value="name">Sort by Name</option>
-          </select>
+
+          <!-- Status Tab Pills -->
+          <div class="flex flex-wrap gap-2">
+            <button
+              (click)="onFilterChange({ tab: 'all' })"
+              [class.bg-amber-100]="filters().tab === 'all'"
+              [class.text-amber-700]="filters().tab === 'all'"
+              [class.text-gray-700]="filters().tab !== 'all'"
+              [class.bg-white]="filters().tab !== 'all'"
+              class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
+              data-testid="ossprey-status-all">
+              All <span class="ml-1 text-xs font-semibold">{{ statusCounts().all }}</span>
+            </button>
+            <button
+              (click)="onFilterChange({ tab: 'unassigned' })"
+              [class.bg-amber-100]="filters().tab === 'unassigned'"
+              [class.text-amber-700]="filters().tab === 'unassigned'"
+              [class.text-gray-700]="filters().tab !== 'unassigned'"
+              [class.bg-white]="filters().tab !== 'unassigned'"
+              class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
+              data-testid="ossprey-status-unassigned">
+              Unassigned <span class="ml-1 text-xs font-semibold">{{ statusCounts().unassigned }}</span>
+            </button>
+            <button
+              (click)="onFilterChange({ tab: 'open' })"
+              [class.bg-amber-100]="filters().tab === 'open'"
+              [class.text-amber-700]="filters().tab === 'open'"
+              [class.text-gray-700]="filters().tab !== 'open'"
+              [class.bg-white]="filters().tab !== 'open'"
+              class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
+              data-testid="ossprey-status-open">
+              Open <span class="ml-1 text-xs font-semibold">{{ statusCounts().open }}</span>
+            </button>
+            <button
+              (click)="onFilterChange({ tab: 'needs_attention' })"
+              [class.bg-red-100]="filters().tab === 'needs_attention'"
+              [class.text-red-700]="filters().tab === 'needs_attention'"
+              [class.text-gray-700]="filters().tab !== 'needs_attention'"
+              [class.bg-white]="filters().tab !== 'needs_attention'"
+              class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
+              data-testid="ossprey-status-needs-attention">
+              Needs Attention <span class="ml-1 text-xs font-semibold">{{ statusCounts().needs_attention }}</span>
+            </button>
+            <button
+              (click)="onFilterChange({ tab: 'active' })"
+              [class.bg-emerald-100]="filters().tab === 'active'"
+              [class.text-emerald-700]="filters().tab === 'active'"
+              [class.text-gray-700]="filters().tab !== 'active'"
+              [class.bg-white]="filters().tab !== 'active'"
+              class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
+              data-testid="ossprey-status-active">
+              Active <span class="ml-1 text-xs font-semibold">{{ statusCounts().active }}</span>
+            </button>
+          </div>
         </div>
 
-        <!-- Status Tab Pills -->
-        <div class="flex flex-wrap gap-2">
-          <button
-            (click)="onFilterChange({ tab: 'all' })"
-            [class.bg-amber-100]="filters().tab === 'all'"
-            [class.text-amber-700]="filters().tab === 'all'"
-            [class.text-gray-700]="filters().tab !== 'all'"
-            [class.bg-white]="filters().tab !== 'all'"
-            class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
-            data-testid="ossprey-status-all"
-          >
-            All <span class="ml-1 text-xs font-semibold">{{ statusCounts().all }}</span>
-          </button>
-          <button
-            (click)="onFilterChange({ tab: 'unassigned' })"
-            [class.bg-amber-100]="filters().tab === 'unassigned'"
-            [class.text-amber-700]="filters().tab === 'unassigned'"
-            [class.text-gray-700]="filters().tab !== 'unassigned'"
-            [class.bg-white]="filters().tab !== 'unassigned'"
-            class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
-            data-testid="ossprey-status-unassigned"
-          >
-            Unassigned <span class="ml-1 text-xs font-semibold">{{ statusCounts().unassigned }}</span>
-          </button>
-          <button
-            (click)="onFilterChange({ tab: 'open' })"
-            [class.bg-amber-100]="filters().tab === 'open'"
-            [class.text-amber-700]="filters().tab === 'open'"
-            [class.text-gray-700]="filters().tab !== 'open'"
-            [class.bg-white]="filters().tab !== 'open'"
-            class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
-            data-testid="ossprey-status-open"
-          >
-            Open <span class="ml-1 text-xs font-semibold">{{ statusCounts().open }}</span>
-          </button>
-          <button
-            (click)="onFilterChange({ tab: 'needs_attention' })"
-            [class.bg-red-100]="filters().tab === 'needs_attention'"
-            [class.text-red-700]="filters().tab === 'needs_attention'"
-            [class.text-gray-700]="filters().tab !== 'needs_attention'"
-            [class.bg-white]="filters().tab !== 'needs_attention'"
-            class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
-            data-testid="ossprey-status-needs-attention"
-          >
-            Needs Attention <span class="ml-1 text-xs font-semibold">{{ statusCounts().needs_attention }}</span>
-          </button>
-          <button
-            (click)="onFilterChange({ tab: 'active' })"
-            [class.bg-emerald-100]="filters().tab === 'active'"
-            [class.text-emerald-700]="filters().tab === 'active'"
-            [class.text-gray-700]="filters().tab !== 'active'"
-            [class.bg-white]="filters().tab !== 'active'"
-            class="px-3 py-1 rounded-full text-sm font-medium border border-gray-200 transition-colors"
-            data-testid="ossprey-status-active"
-          >
-            Active <span class="ml-1 text-xs font-semibold">{{ statusCounts().active }}</span>
-          </button>
+        <!-- Package Table -->
+        <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm" data-testid="ossprey-packages-table">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Package</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Ecosystem</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Lifecycle</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Health</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Impact</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Vulns</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Stewardship</th>
+                  <th class="px-6 py-3 text-left font-semibold text-gray-700">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (pkg of filteredPackages(); track pkg.id) {
+                  <tr
+                    (click)="onPackageClick(pkg.id)"
+                    class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
+                    [data-testid]="'ossprey-package-row-' + pkg.id">
+                    <td class="px-6 py-4 font-medium text-slate-900">
+                      <div>{{ pkg.name }}</div>
+                      <div class="text-xs text-gray-500 font-mono">{{ pkg.purl }}</div>
+                    </td>
+                    <td class="px-6 py-4 text-gray-700 capitalize">{{ pkg.ecosystem }}</td>
+                    <td class="px-6 py-4">
+                      <span
+                        class="inline-flex px-2 py-1 rounded text-xs font-semibold"
+                        [ngClass]="
+                          pkg.lifecycle === 'active'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : pkg.lifecycle === 'stable'
+                              ? 'bg-blue-100 text-blue-700'
+                              : pkg.lifecycle === 'declining'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-red-100 text-red-700'
+                        ">
+                        {{ getLifecycleLabel(pkg.lifecycle) }}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="flex items-center gap-2">
+                        <div
+                          class="w-8 h-8 rounded flex items-center justify-center text-xs font-semibold text-white"
+                          [ngClass]="
+                            getHealthBand(pkg.healthScore) === 'healthy'
+                              ? 'bg-emerald-600'
+                              : getHealthBand(pkg.healthScore) === 'fair'
+                                ? 'bg-amber-600'
+                                : getHealthBand(pkg.healthScore) === 'concerning'
+                                  ? 'bg-orange-600'
+                                  : 'bg-red-600'
+                          ">
+                          {{ pkg.healthScore }}
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="font-semibold text-slate-900">{{ pkg.impactScore }}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold text-slate-900">{{ pkg.vulnCount }}</span>
+                        @if (pkg.vulnSeverity) {
+                          <span
+                            class="inline-flex px-2 py-0.5 rounded text-xs font-semibold"
+                            [ngClass]="
+                              pkg.vulnSeverity === 'critical'
+                                ? 'bg-red-100 text-red-700'
+                                : pkg.vulnSeverity === 'high'
+                                  ? 'bg-orange-100 text-orange-700'
+                                  : pkg.vulnSeverity === 'medium'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-blue-100 text-blue-700'
+                            ">
+                            {{ pkg.vulnSeverity }}
+                          </span>
+                        }
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="text-xs">
+                        @if (pkg.stewardIds.length === 0) {
+                          <div class="text-gray-500 italic">Unassigned</div>
+                        }
+                        @if (pkg.stewardIds.length > 0) {
+                          <div class="text-gray-700">{{ pkg.stewardIds.length }} steward(s)</div>
+                        }
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <span
+                        class="inline-flex px-2 py-1 rounded text-xs font-semibold"
+                        [ngClass]="
+                          pkg.status === 'active'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : pkg.status === 'unassigned'
+                              ? 'bg-gray-100 text-gray-700'
+                              : pkg.status === 'needs_attention'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                        ">
+                        {{ pkg.status.replace(/_/g, ' ') }}
+                      </span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-600">
+            Showing {{ filteredPackages().length }} of {{ packages().length }} packages
+          </div>
         </div>
       </div>
-
-      <!-- Package Table -->
-      <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm" data-testid="ossprey-packages-table">
-            <thead>
-              <tr class="border-b border-gray-200 bg-gray-50">
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Package</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Ecosystem</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Lifecycle</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Health</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Impact</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Vulns</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Stewardship</th>
-                <th class="px-6 py-3 text-left font-semibold text-gray-700">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                *ngFor="let pkg of filteredPackages()"
-                (click)="onPackageClick(pkg.id)"
-                class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
-                [data-testid]="'ossprey-package-row-' + pkg.id"
-              >
-                <td class="px-6 py-4 font-medium text-slate-900">
-                  <div>{{ pkg.name }}</div>
-                  <div class="text-xs text-gray-500 font-mono">{{ pkg.purl }}</div>
-                </td>
-                <td class="px-6 py-4 text-gray-700 capitalize">{{ pkg.ecosystem }}</td>
-                <td class="px-6 py-4">
-                  <span
-                    class="inline-flex px-2 py-1 rounded text-xs font-semibold"
-                    [ngClass]="
-                      pkg.lifecycle === 'active'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : pkg.lifecycle === 'stable'
-                          ? 'bg-blue-100 text-blue-700'
-                          : pkg.lifecycle === 'declining'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-red-100 text-red-700'
-                    "
-                  >
-                    {{ getLifecycleLabel(pkg.lifecycle) }}
-                  </span>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded flex items-center justify-center text-xs font-semibold text-white"
-                      [ngClass]="
-                        getHealthBand(pkg.healthScore) === 'healthy'
-                          ? 'bg-emerald-600'
-                          : getHealthBand(pkg.healthScore) === 'fair'
-                            ? 'bg-amber-600'
-                            : getHealthBand(pkg.healthScore) === 'concerning'
-                              ? 'bg-orange-600'
-                              : 'bg-red-600'
-                      "
-                    >
-                      {{ pkg.healthScore }}
-                    </div>
-                  </div>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="font-semibold text-slate-900">{{ pkg.impactScore }}</div>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-2">
-                    <span class="font-semibold text-slate-900">{{ pkg.vulnCount }}</span>
-                    <span
-                      *ngIf="pkg.vulnSeverity"
-                      class="inline-flex px-2 py-0.5 rounded text-xs font-semibold"
-                      [ngClass]="
-                        pkg.vulnSeverity === 'critical'
-                          ? 'bg-red-100 text-red-700'
-                          : pkg.vulnSeverity === 'high'
-                            ? 'bg-orange-100 text-orange-700'
-                            : pkg.vulnSeverity === 'medium'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-blue-100 text-blue-700'
-                      "
-                    >
-                      {{ pkg.vulnSeverity }}
-                    </span>
-                  </div>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="text-xs">
-                    <div *ngIf="pkg.stewardIds.length === 0" class="text-gray-500 italic">Unassigned</div>
-                    <div *ngIf="pkg.stewardIds.length > 0" class="text-gray-700">{{ pkg.stewardIds.length }} steward(s)</div>
-                  </div>
-                </td>
-                <td class="px-6 py-4">
-                  <span
-                    class="inline-flex px-2 py-1 rounded text-xs font-semibold"
-                    [ngClass]="
-                      pkg.status === 'active'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : pkg.status === 'unassigned'
-                          ? 'bg-gray-100 text-gray-700'
-                          : pkg.status === 'needs_attention'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-amber-100 text-amber-700'
-                    "
-                  >
-                    {{ pkg.status.replace(/_/g, ' ') }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-600">
-          Showing {{ filteredPackages().length }} of {{ packages().length }} packages
-        </div>
-      </div>
-    </div>
+    }
 
     <!-- Triage Tab -->
-    <div *ngIf="activeTab() === 'triage'" class="p-8">
-      <div class="grid grid-cols-5 gap-6">
-        <!-- Unassigned Column -->
-        <div class="flex flex-col gap-3">
-          <div class="font-semibold text-gray-900">Unassigned ({{ statusCounts().unassigned }})</div>
-          <div
-            *ngFor="let pkg of filteredPackages() | slice: 0: 3"
-            (click)="onPackageClick(pkg.id)"
-            class="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div class="font-medium text-sm text-slate-900">{{ pkg.name }}</div>
-            <div class="flex items-center gap-2 mt-2">
-              <span class="inline-block w-6 h-6 rounded text-xs font-semibold text-white flex items-center justify-center"
-                [ngClass]="
-                  getHealthBand(pkg.healthScore) === 'healthy'
-                    ? 'bg-emerald-600'
-                    : 'bg-red-600'
-                "
-              >
-                {{ pkg.healthScore }}
-              </span>
-              <span class="text-xs text-gray-600">Risk: {{ pkg.impactScore }}</span>
-            </div>
+    @if (activeTab() === 'triage') {
+      <div class="p-8">
+        <div class="grid grid-cols-5 gap-6">
+          <!-- Unassigned Column -->
+          <div class="flex flex-col gap-3">
+            <div class="font-semibold text-gray-900">Unassigned ({{ statusCounts().unassigned }})</div>
+            @for (pkg of filteredPackages() | slice: 0 : 3; track pkg.id) {
+              <div (click)="onPackageClick(pkg.id)" class="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow">
+                <div class="font-medium text-sm text-slate-900">{{ pkg.name }}</div>
+                <div class="flex items-center gap-2 mt-2">
+                  <span
+                    class="inline-block w-6 h-6 rounded text-xs font-semibold text-white flex items-center justify-center"
+                    [ngClass]="getHealthBand(pkg.healthScore) === 'healthy' ? 'bg-emerald-600' : 'bg-red-600'">
+                    {{ pkg.healthScore }}
+                  </span>
+                  <span class="text-xs text-gray-600">Risk: {{ pkg.impactScore }}</span>
+                </div>
+              </div>
+            }
           </div>
-        </div>
 
-        <!-- Needs Attention Column -->
-        <div class="flex flex-col gap-3">
-          <div class="font-semibold text-red-700">Needs Attention ({{ statusCounts().needs_attention }})</div>
-          <div
-            *ngFor="let pkg of filteredPackages() | slice: 0: 2"
-            (click)="onPackageClick(pkg.id)"
-            class="bg-white border-l-4 border-l-red-500 border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div class="font-medium text-sm text-slate-900">{{ pkg.name }}</div>
-            <div class="flex items-center gap-2 mt-2">
-              <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
-                {{ pkg.vulnCount }} vulns
-              </span>
-            </div>
+          <!-- Needs Attention Column -->
+          <div class="flex flex-col gap-3">
+            <div class="font-semibold text-red-700">Needs Attention ({{ statusCounts().needs_attention }})</div>
+            @for (pkg of filteredPackages() | slice: 0 : 2; track pkg.id) {
+              <div
+                (click)="onPackageClick(pkg.id)"
+                class="bg-white border-l-4 border-l-red-500 border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow">
+                <div class="font-medium text-sm text-slate-900">{{ pkg.name }}</div>
+                <div class="flex items-center gap-2 mt-2">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700"> {{ pkg.vulnCount }} vulns </span>
+                </div>
+              </div>
+            }
           </div>
-        </div>
 
-        <!-- Escalated Column -->
-        <div class="flex flex-col gap-3">
-          <div class="font-semibold text-gray-900">Escalated ({{ statusCounts().escalated }})</div>
-          <div class="text-sm text-gray-500 italic">No escalated packages</div>
-        </div>
+          <!-- Escalated Column -->
+          <div class="flex flex-col gap-3">
+            <div class="font-semibold text-gray-900">Escalated ({{ statusCounts().escalated }})</div>
+            <div class="text-sm text-gray-500 italic">No escalated packages</div>
+          </div>
 
-        <!-- Blocked Column -->
-        <div class="flex flex-col gap-3">
-          <div class="font-semibold text-gray-900">Blocked (0)</div>
-          <div class="text-sm text-gray-500 italic">No blocked packages</div>
-        </div>
+          <!-- Blocked Column -->
+          <div class="flex flex-col gap-3">
+            <div class="font-semibold text-gray-900">Blocked (0)</div>
+            <div class="text-sm text-gray-500 italic">No blocked packages</div>
+          </div>
 
-        <!-- Inactive Column -->
-        <div class="flex flex-col gap-3">
-          <div class="font-semibold text-gray-900">Inactive (0)</div>
-          <div class="text-sm text-gray-500 italic">No inactive packages</div>
+          <!-- Inactive Column -->
+          <div class="flex flex-col gap-3">
+            <div class="font-semibold text-gray-900">Inactive (0)</div>
+            <div class="text-sm text-gray-500 italic">No inactive packages</div>
+          </div>
         </div>
       </div>
-    </div>
+    }
   </div>
 </div>
 
 <!-- Package Detail Drawer -->
-<lfx-ossprey-package-drawer
-  [(visible)]="drawerVisible"
-  [packageId]="selectedPackageId()"
-  (visibleChange)="$event || onDrawerClose()"
->
+<lfx-ossprey-package-drawer [(visible)]="drawerVisible" [packageId]="selectedPackageId()" (visibleChange)="$event || onDrawerClose()">
 </lfx-ossprey-package-drawer>
