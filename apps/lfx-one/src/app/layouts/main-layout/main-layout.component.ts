@@ -130,6 +130,18 @@ export class MainLayoutComponent {
       ],
     },
     {
+      label: 'Security',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'OSSPREY Program',
+          icon: 'fa-light fa-radar',
+          routerLink: '/ossprey',
+        },
+      ],
+    },
+    {
       label: 'My Growth',
       isSection: true,
       expanded: true,
