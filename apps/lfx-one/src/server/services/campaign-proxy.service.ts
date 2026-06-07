@@ -16,9 +16,11 @@ import type {
   CampaignKeyword,
   CampaignSSEEventType,
   KeywordActionResponse,
+  LinkedInCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { executeLinkedInCampaignCreation } from './linkedin-ads.service';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -534,9 +536,10 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const unsupported = (body.platforms ?? []).filter((p) => p !== 'google-ads');
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Only google-ads is currently supported.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
       return;
     }
 
@@ -823,7 +826,7 @@ export class CampaignProxyService {
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
-    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes });
+    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes, platforms: body.platforms });
     const effectiveBody = { ...body };
     if (!effectiveBody.hsToken) {
       try {
@@ -834,9 +837,56 @@ export class CampaignProxyService {
       }
     }
 
-    const results: CampaignResult[] = [];
+    const platforms = effectiveBody.platforms || ['google-ads'];
+    const includeGoogle = platforms.includes('google-ads');
+    const includeLinkedIn = platforms.includes('linkedin-ads');
+
+    const results: CampaignCreateResult[] = [];
+    const linkedInResults: LinkedInCampaignCreateResult[] = [];
     const errors: string[] = [];
 
+    const promises: Promise<void>[] = [];
+
+    if (includeGoogle) {
+      promises.push(this.executeGoogleCampaignCreation(effectiveBody, results, errors));
+    }
+
+    if (includeLinkedIn && effectiveBody.linkedInConfig) {
+      promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
+    }
+
+    await Promise.allSettled(promises);
+
+    const allCampaigns = [
+      ...results,
+      ...linkedInResults.map((li) => ({
+        platform: 'linkedin-ads' as const,
+        type: 'search' as const,
+        campaignName: li.campaignName,
+        campaignId: li.campaignId,
+        adGroupCount: 1,
+        keywordCount: 0,
+        adCount: li.creativeCount,
+        googleAdsUrl: li.linkedInUrl,
+        steps: li.steps,
+      })),
+    ];
+
+    const response: CampaignCreateResponse = { success: errors.length === 0, campaigns: allCampaigns, errors };
+    completeJob(jobId, response);
+    if (errors.length > 0) {
+      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
+        jobId,
+        campaignCount: allCampaigns.length,
+        errorCount: errors.length,
+        duration_ms: Date.now() - startTime,
+      });
+    } else {
+      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: allCampaigns.length });
+    }
+  }
+
+  private async executeGoogleCampaignCreation(effectiveBody: CampaignCreateRequest, results: CampaignCreateResult[], errors: string[]): Promise<void> {
     for (const campaignType of effectiveBody.campaignTypes) {
       const typeStartTime = Date.now();
       try {
@@ -852,27 +902,38 @@ export class CampaignProxyService {
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
             logger.error(undefined, 'campaign_create_type', typeStartTime, retryError as Error, { campaignType, detail });
-            errors.push(`${campaignType}: ${detail}`);
+            errors.push(`google-ads/${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
         logger.error(undefined, 'campaign_create_type', typeStartTime, error as Error, { campaignType, detail });
-        errors.push(`${campaignType}: ${detail}`);
+        errors.push(`google-ads/${campaignType}: ${detail}`);
       }
     }
+  }
 
-    const response = { success: errors.length === 0, campaigns: results, errors };
-    completeJob(jobId, response);
-    if (errors.length > 0) {
-      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
-        jobId,
-        campaignCount: results.length,
-        errorCount: errors.length,
-        duration_ms: Date.now() - startTime,
+  private async executeLinkedInDispatch(body: CampaignCreateRequest, results: LinkedInCampaignCreateResult[], errors: string[]): Promise<void> {
+    const config = body.linkedInConfig!;
+    try {
+      const result = await executeLinkedInCampaignCreation(undefined, {
+        eventName: config.eventName || body.eventName,
+        eventSlug: config.eventSlug || body.eventSlug,
+        registrationUrl: config.registrationUrl || body.registrationUrl,
+        hsToken: config.hsToken || body.hsToken,
+        budgetUsd: config.budgetUsd,
+        lifetimeBudget: config.lifetimeBudget,
+        startDate: config.startDate || body.startDate,
+        endDate: config.endDate || body.endDate,
+        geoTargets: config.geoTargets,
+        targetingProfile: config.targetingProfile,
+        variants: config.variants,
+        project: config.project || body.project,
       });
-    } else {
-      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
+      results.push(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Unknown LinkedIn error';
+      errors.push(`linkedin-ads: ${msg}`);
     }
   }
 
