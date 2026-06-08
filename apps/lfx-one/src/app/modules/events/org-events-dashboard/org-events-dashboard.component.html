@@ -126,7 +126,7 @@
     <div class="px-5 pb-5">
       @if (activeTab() === 'upcoming') {
         <section id="org-events-panel-upcoming" data-testid="org-events-panel-upcoming">
-          <lfx-org-upcoming-events-table
+          <lfx-org-events-table
             [eventsResponse]="upcomingEvents()"
             [loading]="upcomingEventsLoading()"
             [sortField]="upcomingSortField()"
@@ -141,12 +141,19 @@
 
       @if (activeTab() === 'past') {
         <section id="org-events-panel-past" data-testid="org-events-panel-past">
-          <lfx-empty-state
-            [withCard]="false"
-            icon="fa-light fa-calendar-check"
-            title="Coming soon"
-            subtitle="Past events for your organization are being built. Check back later."
-            data-testid="org-events-past-coming-soon" />
+          <lfx-org-events-table
+            [eventsResponse]="pastEvents()"
+            [loading]="pastEventsLoading()"
+            [sortField]="pastSortField()"
+            [sortOrder]="pastSortOrder()"
+            [showAction]="false"
+            emptyStateTitle="No past events"
+            emptyStateSubtitle="No past events were found for your organization."
+            (pageChange)="onPastPageChange($event)"
+            (sortChange)="onPastSortChange($event)"
+            (attendeesClick)="onAttendeesClick($event)"
+            (speakersClick)="onSpeakersClick($event)"
+            data-testid="org-events-past-table" />
         </section>
       }
     </div>

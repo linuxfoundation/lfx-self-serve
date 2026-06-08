@@ -154,8 +154,8 @@ test.describe('Org Events Dashboard', () => {
   test('supports sorting, pagination, and action CTAs', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-upcoming-events-data-table')).toBeVisible();
-    await expect(page.getByTestId('org-upcoming-event-action-event-1').getByRole('link', { name: 'Register' })).toBeVisible();
+    await expect(page.getByTestId('org-events-data-table')).toBeVisible();
+    await expect(page.getByTestId('org-event-action-event-1').getByRole('link', { name: 'Register' })).toBeVisible();
 
     const sortRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());
@@ -172,18 +172,36 @@ test.describe('Org Events Dashboard', () => {
     await pageRequest;
   });
 
+  test('past tab renders the events table without the Action column', async ({ page }) => {
+    await gotoOrgEventsPage(page);
+    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const pastRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/events`) && url.searchParams.get('isPast') === 'true';
+    });
+    await page.getByTestId('org-events-stat-past').click();
+    await pastRequest;
+
+    await expect(page.getByTestId('org-events-panel-past')).toBeVisible();
+    await expect(page.getByTestId('org-events-data-table')).toBeVisible();
+    // Shared columns still render, but the Action column is dropped on the past tab.
+    await expect(page.getByTestId('org-event-attendees-event-1')).toBeVisible();
+    await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
+  });
+
   test('opens attendee and speaker drawers with non-PII row test ids', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('org-upcoming-event-attendees-event-1').getByRole('button').click();
+    await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer')).toBeVisible();
     await expect(page.getByTestId('event-attendee-0')).toBeVisible();
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('event-attendees-drawer')).not.toBeVisible();
 
-    await page.getByTestId('org-upcoming-event-speakers-event-1').getByRole('button').click();
+    await page.getByTestId('org-event-speakers-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-speakers-drawer')).toBeVisible();
     await expect(page.getByTestId('event-speaker-0')).toBeVisible();
   });

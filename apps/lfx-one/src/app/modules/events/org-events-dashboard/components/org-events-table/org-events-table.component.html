@@ -15,7 +15,7 @@
   currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
   paginatorPosition="bottom"
   (onPage)="onPageChange($event)"
-  data-testid="org-upcoming-events-data-table">
+  data-testid="org-events-data-table">
   <ng-template #header>
     <tr>
       <th scope="col" [attr.aria-sort]="sortAriaMap()['EVENT_NAME']" data-testid="sort-event-name">
@@ -52,12 +52,14 @@
         <span class="block text-gray-400 font-normal">Accepted / Submitted</span>
       </th>
       <th scope="col" class="text-xs text-gray-500 font-medium">Event Sponsor</th>
-      <th scope="col" class="text-xs text-gray-500 font-medium">Action</th>
+      @if (showAction()) {
+        <th scope="col" class="text-xs text-gray-500 font-medium">Action</th>
+      }
     </tr>
   </ng-template>
 
   <ng-template #body let-event let-rowIndex="rowIndex">
-    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-upcoming-event-row-' + event.eventId">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-event-row-' + event.eventId">
       <!-- Event Name -->
       <td>
         @if (event.eventUrl) {
@@ -66,11 +68,11 @@
             target="_blank"
             rel="noopener noreferrer"
             class="lfx-table-name-link text-sm"
-            [attr.data-testid]="'org-upcoming-event-name-' + event.eventId">
+            [attr.data-testid]="'org-event-name-' + event.eventId">
             {{ event.eventName }}
           </a>
         } @else {
-          <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-upcoming-event-name-' + event.eventId">
+          <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-event-name-' + event.eventId">
             {{ event.eventName }}
           </span>
         }
@@ -79,7 +81,7 @@
       <!-- Foundation -->
       <td>
         @if (event.foundation) {
-          <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-upcoming-event-foundation-' + event.eventId" />
+          <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-event-foundation-' + event.eventId" />
         } @else {
           <span class="text-xs text-gray-400">&mdash;</span>
         }
@@ -106,7 +108,7 @@
       </td>
 
       <!-- Event Attendees: My Org / Goal -->
-      <td [attr.data-testid]="'org-upcoming-event-attendees-' + event.eventId">
+      <td [attr.data-testid]="'org-event-attendees-' + event.eventId">
         @if (event.orgAttendeeCount > 0) {
           <button
             type="button"
@@ -128,7 +130,7 @@
       </td>
 
       <!-- Event Speakers: Accepted / Submitted -->
-      <td [attr.data-testid]="'org-upcoming-event-speakers-' + event.eventId">
+      <td [attr.data-testid]="'org-event-speakers-' + event.eventId">
         @if (event.orgSpeakerAcceptedCount > 0 || event.orgSpeakerSubmittedCount > 0) {
           <button
             type="button"
@@ -142,44 +144,46 @@
       </td>
 
       <!-- Event Sponsor -->
-      <td [attr.data-testid]="'org-upcoming-event-sponsor-' + event.eventId">
+      <td [attr.data-testid]="'org-event-sponsor-' + event.eventId">
         <span class="text-sm text-gray-700">{{ event.isOrgSponsor ? 'Yes' : 'No' }}</span>
       </td>
 
       <!-- Action -->
-      <td [attr.data-testid]="'org-upcoming-event-action-' + event.eventId">
-        @if (event.eventRegistrationUrl) {
-          <a
-            [href]="event.eventRegistrationUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
-            Register
-          </a>
-        } @else if (event.eventUrl) {
-          <a
-            [href]="event.eventUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
-            View
-          </a>
-        } @else {
-          <span class="text-xs text-gray-400">&mdash;</span>
-        }
-      </td>
+      @if (showAction()) {
+        <td [attr.data-testid]="'org-event-action-' + event.eventId">
+          @if (event.eventRegistrationUrl) {
+            <a
+              [href]="event.eventRegistrationUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
+              Register
+            </a>
+          } @else if (event.eventUrl) {
+            <a
+              [href]="event.eventUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
+              View
+            </a>
+          } @else {
+            <span class="text-xs text-gray-400">&mdash;</span>
+          }
+        </td>
+      }
     </tr>
   </ng-template>
 
   <ng-template #emptymessage>
     <tr>
-      <td colspan="8" class="text-center py-10">
+      <td [attr.colspan]="showAction() ? 8 : 7" class="text-center py-10">
         <div class="flex items-center justify-center p-16">
           <div class="text-center max-w-md">
             <div class="text-gray-400 mb-4">
               <i class="fa-light fa-calendar-plus text-3xl mb-4"></i>
-              <h3 class="text-gray-600 mt-2">No upcoming events</h3>
-              <p class="text-sm text-gray-400 mt-1">No upcoming events were found for your organization.</p>
+              <h3 class="text-gray-600 mt-2">{{ emptyStateTitle() }}</h3>
+              <p class="text-sm text-gray-400 mt-1">{{ emptyStateSubtitle() }}</p>
             </div>
           </div>
         </div>

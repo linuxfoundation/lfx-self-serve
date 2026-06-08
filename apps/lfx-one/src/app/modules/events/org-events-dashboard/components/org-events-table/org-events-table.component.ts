@@ -10,15 +10,19 @@ import { TagComponent } from '@components/tag/tag.component';
 import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 
 @Component({
-  selector: 'lfx-org-upcoming-events-table',
+  selector: 'lfx-org-events-table',
   imports: [TableComponent, TagComponent, DecimalPipe],
-  templateUrl: './org-upcoming-events-table.component.html',
+  templateUrl: './org-events-table.component.html',
 })
-export class OrgUpcomingEventsTableComponent {
+export class OrgEventsTableComponent {
   public readonly eventsResponse = input.required<OrgEventsResponse>();
   public readonly loading = input<boolean>(false);
   public readonly sortField = input<string>('EVENT_START_DATE');
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
+  // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
+  public readonly showAction = input<boolean>(true);
+  public readonly emptyStateTitle = input<string>('No upcoming events');
+  public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your organization.');
 
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();
