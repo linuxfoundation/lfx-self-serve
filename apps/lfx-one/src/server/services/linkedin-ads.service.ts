@@ -215,6 +215,7 @@ export async function findOrCreateCampaignGroup(name: string, startDate: string,
 
   const data = await linkedInRequest('POST', groupsPath, body);
   const id = (data.id as string) || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for campaign group');
   return id.includes(':') ? id.split(':').pop()! : id;
 }
 
@@ -260,6 +261,7 @@ export async function createCampaign(
 
   const data = await linkedInRequest('POST', campaignsPath, body);
   const id = (data.id as string) || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for campaign');
   return id.includes(':') ? id.split(':').pop()! : id;
 }
 
@@ -289,7 +291,9 @@ export async function createDarkPost(introText: string, headline: string, destUr
   };
 
   const data = await linkedInRequest('POST', 'posts', body);
-  return data.id || '';
+  const id = data.id || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for dark post');
+  return id;
 }
 
 export async function createCreative(campaignId: string, shareUrn: string, adName: string): Promise<string> {
@@ -301,7 +305,9 @@ export async function createCreative(campaignId: string, shareUrn: string, adNam
   };
 
   const data = await linkedInRequest('POST', `adAccounts/${getAccountId()}/creatives`, body);
-  return data.id || '';
+  const id = data.id || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for creative');
+  return id;
 }
 
 export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrns: string[]): Record<string, unknown> {
