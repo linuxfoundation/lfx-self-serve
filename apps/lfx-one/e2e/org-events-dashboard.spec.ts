@@ -190,6 +190,31 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
 
+  test('past tab shows the past-specific empty state when there are no past events', async ({ page }) => {
+    await gotoOrgEventsPage(page);
+    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Override only the isPast=true response with an empty payload; registered after the
+    // base stub so it takes precedence, falling back to the base stub for upcoming requests.
+    await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events?**`, (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('isPast') === 'true') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: [], total: 0, pageSize: 10, offset: 0 }),
+        });
+      }
+      return route.fallback();
+    });
+
+    await page.getByTestId('org-events-stat-past').click();
+
+    const panel = page.getByTestId('org-events-panel-past');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('No past events', { exact: true })).toBeVisible();
+  });
+
   test('opens attendee and speaker drawers with non-PII row test ids', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

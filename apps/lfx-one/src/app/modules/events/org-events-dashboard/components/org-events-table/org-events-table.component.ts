@@ -23,6 +23,7 @@ export class OrgEventsTableComponent {
   public readonly showAction = input<boolean>(true);
   public readonly emptyStateTitle = input<string>('No upcoming events');
   public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your organization.');
+  public readonly emptyStateIcon = input<string>('fa-light fa-calendar-plus');
 
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();
@@ -30,6 +31,9 @@ export class OrgEventsTableComponent {
   public readonly speakersClick = output<OrgEvent>();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
+
+  // Single source of truth for the empty-row colspan: 8 columns with the Action column, 7 without.
+  protected readonly columnCount = computed<number>(() => (this.showAction() ? 8 : 7));
 
   // Pre-bake the formatted date range per row so the template reads a property instead of calling a method each CD cycle.
   protected readonly rows = computed<OrgEventRowVm[]>(() =>

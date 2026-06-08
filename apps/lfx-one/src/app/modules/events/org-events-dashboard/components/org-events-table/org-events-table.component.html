@@ -177,11 +177,11 @@
 
   <ng-template #emptymessage>
     <tr>
-      <td [attr.colspan]="showAction() ? 8 : 7" class="text-center py-10">
+      <td [attr.colspan]="columnCount()" class="text-center py-10">
         <div class="flex items-center justify-center p-16">
           <div class="text-center max-w-md">
             <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-calendar-plus text-3xl mb-4"></i>
+              <i [class]="emptyStateIcon() + ' text-3xl mb-4'"></i>
               <h3 class="text-gray-600 mt-2">{{ emptyStateTitle() }}</h3>
               <p class="text-sm text-gray-400 mt-1">{{ emptyStateSubtitle() }}</p>
             </div>

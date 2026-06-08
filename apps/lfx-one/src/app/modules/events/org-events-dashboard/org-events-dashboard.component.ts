@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -85,8 +85,24 @@ export class OrgEventsDashboardComponent {
   public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
   public readonly activeTab: Signal<OrgEventsTabId> = this.initActiveTab();
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
-  public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initUpcomingEvents();
-  public readonly pastEvents: Signal<OrgEventsResponse> = this.initPastEvents();
+  public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
+    tab: 'upcoming',
+    page: this.upcomingEventsPage,
+    sortField: this.upcomingSortField,
+    sortOrder: this.upcomingSortOrder,
+    loading: this.upcomingEventsLoading,
+    isPast: false,
+    errorDetail: 'Failed to load upcoming events. Please try again.',
+  });
+  public readonly pastEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
+    tab: 'past',
+    page: this.pastEventsPage,
+    sortField: this.pastSortField,
+    sortOrder: this.pastSortOrder,
+    loading: this.pastEventsLoading,
+    isPast: true,
+    errorDetail: 'Failed to load past events. Please try again.',
+  });
   public readonly tabPillOptions = computed<FilterPillOption[]>(() => {
     const summary = this.eventsSummary();
     return ORG_EVENTS_TABS.map((tab) => {
@@ -192,79 +208,48 @@ export class OrgEventsDashboardComponent {
     );
   }
 
-  private initUpcomingEvents(): Signal<OrgEventsResponse> {
+  // Shared events query pipeline for both tabs; only the active tab fetches, the inactive tab keeps its last value.
+  private initEventsPipeline(opts: {
+    tab: OrgEventsTabId;
+    page: Signal<PageChangeEvent>;
+    sortField: Signal<string>;
+    sortOrder: Signal<'ASC' | 'DESC'>;
+    loading: WritableSignal<boolean>;
+    isPast: boolean;
+    errorDetail: string;
+  }): Signal<OrgEventsResponse> {
+    const { tab, page, sortField, sortOrder, loading, isPast, errorDetail } = opts;
     return toSignal(
       toObservable(
         computed(() => {
-          // Only fetch when the upcoming tab is active — the inactive tab keeps its last value.
-          if (this.activeTab() !== 'upcoming') return null;
+          if (this.activeTab() !== tab) return null;
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return null;
           return {
             accountId,
-            ...this.upcomingEventsPage(),
+            ...page(),
             searchQuery: this.debouncedSearchTerm() || undefined,
             status: this.selectedStatus() ?? null,
-            sortField: this.upcomingSortField(),
-            sortOrder: this.upcomingSortOrder(),
+            sortField: sortField(),
+            sortOrder: sortOrder(),
           };
         })
       ).pipe(
         debounceTime(0),
         filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => this.upcomingEventsLoading.set(true)),
+        tap(() => loading.set(true)),
         switchMap(({ accountId, ...params }) =>
-          this.eventsService.getOrgEvents(accountId, { ...params, isPast: false }).pipe(
+          this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
             catchError(() => {
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
-                detail: 'Failed to load upcoming events. Please try again.',
+                detail: errorDetail,
               });
-              const { pageSize, offset } = this.upcomingEventsPage();
+              const { pageSize, offset } = page();
               return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
             }),
-            finalize(() => this.upcomingEventsLoading.set(false))
-          )
-        )
-      ),
-      { initialValue: EMPTY_ORG_EVENTS_RESPONSE }
-    );
-  }
-
-  private initPastEvents(): Signal<OrgEventsResponse> {
-    return toSignal(
-      toObservable(
-        computed(() => {
-          // Lazy-load: only fetch past events once the past tab is opened.
-          if (this.activeTab() !== 'past') return null;
-          const accountId = this.accountContext.selectedAccount().accountId;
-          if (!accountId) return null;
-          return {
-            accountId,
-            ...this.pastEventsPage(),
-            searchQuery: this.debouncedSearchTerm() || undefined,
-            status: this.selectedStatus() ?? null,
-            sortField: this.pastSortField(),
-            sortOrder: this.pastSortOrder(),
-          };
-        })
-      ).pipe(
-        debounceTime(0),
-        filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => this.pastEventsLoading.set(true)),
-        switchMap(({ accountId, ...params }) =>
-          this.eventsService.getOrgEvents(accountId, { ...params, isPast: true }).pipe(
-            catchError(() => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'Failed to load past events. Please try again.',
-              });
-              const { pageSize, offset } = this.pastEventsPage();
-              return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
-            }),
-            finalize(() => this.pastEventsLoading.set(false))
+            finalize(() => loading.set(false))
           )
         )
       ),
