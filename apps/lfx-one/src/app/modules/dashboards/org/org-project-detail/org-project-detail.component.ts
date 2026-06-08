@@ -9,6 +9,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
+import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
@@ -65,7 +66,7 @@ const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> =
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [BreadcrumbComponent, EmptyStateComponent, MetricCardComponent],
+  imports: [BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -106,6 +107,11 @@ export class OrgProjectDetailComponent {
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => (this.detail()?.technical ?? []).map((card) => this.toTechnicalCard(card)));
   protected readonly ecosystemCards = computed(() => (this.detail()?.ecosystem ?? []).map((card) => this.toEcosystemCard(card)));
+
+  // Influence Trend chart — Combined / Technical / Ecosystem overlays (legend toggles each line).
+  protected readonly hasTrendHistory = computed(() => (this.detail()?.trend.length ?? 0) >= 3);
+  protected readonly trendChartData = computed<ChartData<ChartType>>(() => this.buildTrendData());
+  protected readonly trendChartOptions: ChartOptions<ChartType> = this.buildTrendOptions();
 
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
@@ -289,5 +295,64 @@ export class OrgProjectDetailComponent {
         },
       },
     };
+  }
+
+  private buildTrendData(): ChartData<ChartType> {
+    const trend = this.detail()?.trend ?? [];
+    const labels = trend.map((point) => this.formatTrendMonth(point.month));
+    const line = (label: string, data: number[], color: string) => ({
+      label,
+      data,
+      borderColor: color,
+      backgroundColor: color,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      fill: false,
+    });
+    return {
+      labels,
+      datasets: [
+        line(
+          'Combined',
+          trend.map((p) => p.combined),
+          lfxColors.blue[500]
+        ),
+        line(
+          'Technical',
+          trend.map((p) => p.technical),
+          lfxColors.emerald[500]
+        ),
+        line(
+          'Ecosystem',
+          trend.map((p) => p.ecosystem),
+          lfxColors.violet[500]
+        ),
+      ],
+    };
+  }
+
+  private buildTrendOptions(): ChartOptions<ChartType> {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 8 } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: false, grace: '5%', ticks: { maxTicksLimit: 6 } },
+      },
+    };
+  }
+
+  /** "2025-07" → "Jul 2025" for the trend x-axis. */
+  private formatTrendMonth(month: string): string {
+    const [year, mon] = month.split('-').map((n) => Number(n));
+    if (!year || !mon) return month;
+    return new Date(year, mon - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   }
 }

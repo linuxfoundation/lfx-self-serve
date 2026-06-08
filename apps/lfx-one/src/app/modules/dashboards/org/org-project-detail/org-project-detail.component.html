@@ -183,6 +183,20 @@
                   }
                 </div>
               </section>
+
+              <!-- Influence Trend -->
+              <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
+                <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
+                <div class="rounded-lg border border-gray-200 bg-white p-4">
+                  @if (hasTrendHistory()) {
+                    <div class="h-72" data-testid="project-detail-trend-chart">
+                      <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%" />
+                    </div>
+                  } @else {
+                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-trend-empty">Not enough history yet.</p>
+                  }
+                </div>
+              </section>
             </div>
           }
           @case ('pd-leaderboards') {
