@@ -185,15 +185,11 @@ export class CrowdfundingController {
     }
   }
 
-  /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug. */
+  /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug (public endpoint). */
   public async getInitiativeBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
     try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_by_slug' });
-      }
-
       const { slug } = req.params;
       const initiative = await this.crowdfundingService.getInitiativeBySlug(req, slug);
 
@@ -210,15 +206,11 @@ export class CrowdfundingController {
     }
   }
 
-  /** GET /api/crowdfunding/initiatives/:slug/transactions — paginated transactions list. */
+  /** GET /api/crowdfunding/initiatives/:slug/transactions — paginated transactions list (public endpoint). */
   public async getInitiativeTransactions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 
     try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_transactions' });
-      }
-
       const { slug } = req.params;
       const { type, size, from } = req.query;
 

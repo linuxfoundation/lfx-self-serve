@@ -65,10 +65,11 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
   const response = await fetch(url, init);
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
       operation,
       service: 'crowdfunding',
       path,
+      errorBody: text,
     });
   }
   return response.json() as Promise<T>;
@@ -103,10 +104,11 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
       operation,
       service: 'crowdfunding',
       path,
+      errorBody: text,
     });
   }
   return response.json() as Promise<T>;
@@ -133,10 +135,11 @@ async function cfFetchPublic<T>(req: Request, operation: string, path: string): 
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
       operation,
       service: 'crowdfunding',
       path,
+      errorBody: text,
     });
   }
   return response.json() as Promise<T>;
@@ -213,9 +216,11 @@ export class CrowdfundingService {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new MicroserviceError(`CF API deleteMyPaymentMethod returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+      throw new MicroserviceError(`CF API deleteMyPaymentMethod returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
         operation: 'deleteMyPaymentMethod',
         service: 'crowdfunding',
+        path: '/v1/me/payment-method',
+        errorBody: text,
       });
     }
 

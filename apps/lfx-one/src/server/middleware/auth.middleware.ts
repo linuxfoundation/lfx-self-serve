@@ -41,6 +41,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Profile auth start — needs auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
+  // Public crowdfunding initiative endpoints — no auth required; CF token forwarded when present.
+  // Regex patterns must come before the /api catch-all so these routes are not blocked by the
+  // global auth: required rule. The transactions pattern must come first (more specific).
+  { pattern: /^\/api\/crowdfunding\/initiatives\/[^/]+\/transactions$/, type: 'api', auth: 'optional', tokenRequired: false },
+  { pattern: /^\/api\/crowdfunding\/initiatives\/[^/]+$/, type: 'api', auth: 'optional', tokenRequired: false },
+
   // Protected API routes - require authentication and token
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 

@@ -92,8 +92,9 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const { setupIntent, error } = await stripe.confirmCardSetup('', {
-        payment_method: { card: this.cardNumberEl },
+      const { paymentMethod, error } = await stripe.createPaymentMethod({
+        type: 'card',
+        card: this.cardNumberEl,
       });
 
       if (error) {
@@ -101,7 +102,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const paymentMethodId = typeof setupIntent.payment_method === 'string' ? setupIntent.payment_method : setupIntent.payment_method?.id;
+      const paymentMethodId = paymentMethod?.id;
 
       if (!paymentMethodId) {
         this.stripeError.set('Failed to process card. Please try again.');
