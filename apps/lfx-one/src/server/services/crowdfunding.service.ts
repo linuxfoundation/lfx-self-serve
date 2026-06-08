@@ -101,33 +101,6 @@ async function cfFetchNullable<T>(
   return response.json() as Promise<T>;
 }
 
-// cfFetchPublic fetches a public CF endpoint (no authentication required).
-// The request's crowdfunding token is forwarded when available, but its absence
-// must not block the call. Returns null on 404; throws MicroserviceError otherwise.
-async function cfFetchPublic<T>(
-  req: Request,
-  operation: string,
-  path: string,
-): Promise<T | null> {
-  const baseUrl = cfBaseUrl();
-  if (!baseUrl) {
-    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
-  }
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (req.crowdfundingToken) {
-    headers['Authorization'] = `Bearer ${req.crowdfundingToken}`;
-  }
-  const response = await fetch(`${baseUrl}${path}`, { headers });
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
-  }
-  return response.json() as Promise<T>;
-}
-
 export class CrowdfundingService {
   public async getMyInitiatives(req: Request): Promise<InitiativesResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_initiatives');
@@ -152,8 +125,10 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // GET /v1/initiatives/{slug} — public CF endpoint (no auth required); token forwarded if present.
-    const raw = await cfFetchPublic<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/initiatives/${encodeURIComponent(slug)}`);
+    // GET /v1/me/initiatives/{slug} — identity-scoped: returns the caller's own initiative
+    // in any status. SS only ever renders this page for the signed-in owner (the route is
+    // auth-guarded), so the public published-only endpoint would 404 their unpublished ones.
+    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/me/initiatives/${encodeURIComponent(slug)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
@@ -271,11 +246,13 @@ export class CrowdfundingService {
     if (from != null) params.set('offset', String(from));
     const qs = params.toString();
 
-    // GET /v1/initiatives/{slug}/transactions — public CF endpoint (no auth required); token forwarded if present.
-    const raw = await cfFetchPublic<BackendTransactionList>(
+    // GET /v1/me/initiatives/{slug}/transactions — identity-scoped: returns transactions for
+    // the caller's own initiative in any status. Same rationale as getInitiativeBySlug — this
+    // page is owner-only in SS, so the public published-only endpoint would 404 unpublished ones.
+    const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
-      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
+      `/v1/me/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
     );
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
