@@ -1,0 +1,189 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="rows()"
+  [loading]="loading()"
+  [lazy]="true"
+  [paginator]="eventsResponse().total > 0"
+  [rows]="eventsResponse().pageSize"
+  [first]="eventsResponse().offset"
+  [totalRecords]="eventsResponse().total"
+  [rowsPerPageOptions]="rppOptions()"
+  [showCurrentPageReport]="true"
+  [showFirstLastIcon]="false"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  paginatorPosition="bottom"
+  (onPage)="onPageChange($event)"
+  data-testid="org-upcoming-events-data-table">
+  <ng-template #header>
+    <tr>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['EVENT_NAME']" data-testid="sort-event-name">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_NAME')">
+          Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
+        </button>
+      </th>
+      <th scope="col" class="text-xs text-gray-500 font-medium">Foundation</th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['EVENT_START_DATE']" data-testid="sort-date">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_START_DATE')">
+          Date <i [class]="sortIcons()['EVENT_START_DATE']"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['EVENT_CITY']" data-testid="sort-location">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_CITY')">
+          Location <i [class]="sortIcons()['EVENT_CITY']"></i>
+        </button>
+      </th>
+      <th scope="col" class="text-xs font-medium">
+        <span class="text-gray-500">Event Attendees</span>
+        <span class="block text-gray-400 font-normal">My Org / Goal</span>
+      </th>
+      <th scope="col" class="text-xs font-medium">
+        <span class="text-gray-500">Event Speakers</span>
+        <span class="block text-gray-400 font-normal">Accepted / Submitted</span>
+      </th>
+      <th scope="col" class="text-xs text-gray-500 font-medium">Event Sponsor</th>
+      <th scope="col" class="text-xs text-gray-500 font-medium">Action</th>
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-event let-rowIndex="rowIndex">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-upcoming-event-row-' + event.eventId">
+      <!-- Event Name -->
+      <td>
+        @if (event.eventUrl) {
+          <a
+            [href]="event.eventUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="lfx-table-name-link text-sm"
+            [attr.data-testid]="'org-upcoming-event-name-' + event.eventId">
+            {{ event.eventName }}
+          </a>
+        } @else {
+          <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-upcoming-event-name-' + event.eventId">
+            {{ event.eventName }}
+          </span>
+        }
+      </td>
+
+      <!-- Foundation -->
+      <td>
+        @if (event.foundation) {
+          <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-upcoming-event-foundation-' + event.eventId" />
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- Date -->
+      <td>
+        @if (event.eventStartDate) {
+          <span class="text-sm text-gray-700 whitespace-nowrap">{{ event.dateRange }}</span>
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- Location -->
+      <td>
+        @if (event.eventCity && event.eventCountry) {
+          <span class="text-sm text-gray-700 whitespace-nowrap">{{ event.eventCity }}, {{ event.eventCountry }}</span>
+        } @else if (event.eventLocation) {
+          <span class="text-sm text-gray-700 whitespace-nowrap">{{ event.eventLocation }}</span>
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- Event Attendees: My Org / Goal -->
+      <td [attr.data-testid]="'org-upcoming-event-attendees-' + event.eventId">
+        @if (event.orgAttendeeCount > 0) {
+          <button
+            type="button"
+            class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+            (click)="attendeesClick.emit(event)">
+            {{ event.orgAttendeeCount | number }}
+            @if (event.eventRegistrationsGoal !== null) {
+              <span class="text-gray-400"> / {{ event.eventRegistrationsGoal | number }}</span>
+            }
+          </button>
+        } @else {
+          <span class="text-sm text-gray-900 whitespace-nowrap">
+            {{ event.orgAttendeeCount | number }}
+            @if (event.eventRegistrationsGoal !== null) {
+              <span class="text-gray-400"> / {{ event.eventRegistrationsGoal | number }}</span>
+            }
+          </span>
+        }
+      </td>
+
+      <!-- Event Speakers: Accepted / Submitted -->
+      <td [attr.data-testid]="'org-upcoming-event-speakers-' + event.eventId">
+        @if (event.orgSpeakerAcceptedCount > 0 || event.orgSpeakerSubmittedCount > 0) {
+          <button
+            type="button"
+            class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+            (click)="speakersClick.emit(event)">
+            {{ event.orgSpeakerAcceptedCount }} / {{ event.orgSpeakerSubmittedCount }}
+          </button>
+        } @else {
+          <span class="text-sm text-gray-400 whitespace-nowrap">0 / 0</span>
+        }
+      </td>
+
+      <!-- Event Sponsor -->
+      <td [attr.data-testid]="'org-upcoming-event-sponsor-' + event.eventId">
+        <span class="text-sm text-gray-700">{{ event.isOrgSponsor ? 'Yes' : 'No' }}</span>
+      </td>
+
+      <!-- Action -->
+      <td [attr.data-testid]="'org-upcoming-event-action-' + event.eventId">
+        @if (event.eventRegistrationUrl) {
+          <a
+            [href]="event.eventRegistrationUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
+            Register
+          </a>
+        } @else if (event.eventUrl) {
+          <a
+            [href]="event.eventUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none">
+            View
+          </a>
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td colspan="8" class="text-center py-10">
+        <div class="flex items-center justify-center p-16">
+          <div class="text-center max-w-md">
+            <div class="text-gray-400 mb-4">
+              <i class="fa-light fa-calendar-plus text-3xl mb-4"></i>
+              <h3 class="text-gray-600 mt-2">No upcoming events</h3>
+              <p class="text-sm text-gray-400 mt-1">No upcoming events were found for your organization.</p>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>

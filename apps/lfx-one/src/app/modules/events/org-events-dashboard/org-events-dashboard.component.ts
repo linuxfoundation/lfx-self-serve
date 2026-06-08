@@ -1,27 +1,58 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { SelectModule } from 'primeng/select';
+import { MessageService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
-import { catchError, filter, of, switchMap } from 'rxjs';
+import { SelectModule } from 'primeng/select';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { DEFAULT_ORG_EVENTS_TAB_ID, ORG_EVENTS_STATUS_OPTIONS, ORG_EVENTS_TABS, VALID_ORG_EVENTS_TAB_IDS } from '@lfx-one/shared/constants';
-import type { OrgEventStatFilterId, OrgEventsSummary, OrgEventsTabId } from '@lfx-one/shared/interfaces';
+import {
+  DEFAULT_EVENTS_PAGE_SIZE,
+  DEFAULT_ORG_EVENTS_TAB_ID,
+  EMPTY_ORG_EVENTS_RESPONSE,
+  ORG_EVENTS_STATUS_OPTIONS,
+  ORG_EVENTS_TABS,
+  VALID_ORG_EVENTS_TAB_IDS,
+} from '@lfx-one/shared/constants';
+import type {
+  FilterPillOption,
+  OrgEvent,
+  OrgEventStatFilterId,
+  OrgEventsResponse,
+  OrgEventsSummary,
+  OrgEventsTabId,
+  PageChangeEvent,
+  SortChangeEvent,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
 
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
+import { EventAttendeesDrawerComponent } from './components/event-attendees-drawer/event-attendees-drawer.component';
+import { EventSpeakersDrawerComponent } from './components/event-speakers-drawer/event-speakers-drawer.component';
+import { OrgUpcomingEventsTableComponent } from './components/org-upcoming-events-table/org-upcoming-events-table.component';
 
 @Component({
   selector: 'lfx-org-events-dashboard',
-  imports: [FormsModule, CardComponent, EmptyStateComponent, SelectModule, InputTextModule, DiscoverEventsButtonComponent],
+  imports: [
+    FormsModule,
+    CardComponent,
+    CardTabsBarComponent,
+    EmptyStateComponent,
+    SelectModule,
+    InputTextModule,
+    DiscoverEventsButtonComponent,
+    EventAttendeesDrawerComponent,
+    EventSpeakersDrawerComponent,
+    OrgUpcomingEventsTableComponent,
+  ],
   templateUrl: './org-events-dashboard.component.html',
 })
 export class OrgEventsDashboardComponent {
@@ -30,29 +61,58 @@ export class OrgEventsDashboardComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly eventsService = inject(EventsService);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly messageService = inject(MessageService);
 
   // === Template constants ===
-  public readonly tabs = ORG_EVENTS_TABS;
   public readonly statusOptions = ORG_EVENTS_STATUS_OPTIONS;
 
   // === WritableSignals ===
-  // activeStatFilter drives card highlight + aria-pressed; filter wiring to the events table arrives in LFXV2-1899
-  public readonly activeStatFilter = signal<OrgEventStatFilterId | null>(null);
+  public readonly attendeesDrawerVisible = signal(false);
+  public readonly speakersDrawerVisible = signal(false);
+  public readonly activeDrawerEvent = signal<OrgEvent | null>(null);
   public readonly searchTerm = signal('');
   public readonly selectedStatus = signal<string | null>(null);
+  public readonly upcomingEventsLoading = signal(true);
+  public readonly upcomingEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
+  public readonly upcomingSortField = signal('EVENT_START_DATE');
+  public readonly upcomingSortOrder = signal<'ASC' | 'DESC'>('ASC');
 
   // === Computed / toSignal ===
+  // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
+  private readonly debouncedSearchTerm = toSignal(toObservable(this.searchTerm).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
   public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
   public readonly activeTab: Signal<OrgEventsTabId> = this.initActiveTab();
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
+  public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initUpcomingEvents();
+  public readonly tabPillOptions = computed<FilterPillOption[]>(() => {
+    const summary = this.eventsSummary();
+    return ORG_EVENTS_TABS.map((tab) => {
+      let count: number | null = null;
+      if (summary !== null) {
+        count = tab.id === 'upcoming' ? summary.upcomingEvents : summary.pastEvents;
+      }
+      return { id: tab.id, label: count !== null ? `${tab.label} (${count})` : tab.label };
+    });
+  });
 
-  // === Public methods ===
-  public applyEventsStatFilter(id: OrgEventStatFilterId): void {
-    this.activeStatFilter.set(this.activeStatFilter() === id ? null : id);
+  public constructor() {
+    combineLatest([toObservable(this.debouncedSearchTerm), toObservable(this.selectedStatus)])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.upcomingEventsPage.set({ offset: 0, pageSize: this.upcomingEventsPage().pageSize });
+      });
   }
 
-  public switchTab(tabId: OrgEventsTabId): void {
+  // === Public methods ===
+  // Stat cards are tab shortcuts: Upcoming/Total jump to the upcoming tab, Past to the past tab.
+  public onStatCardClick(id: OrgEventStatFilterId): void {
+    this.switchTab(id === 'past' ? 'past' : 'upcoming');
+  }
+
+  public switchTab(tabId: string): void {
+    if (!VALID_ORG_EVENTS_TAB_IDS.has(tabId as OrgEventsTabId)) {
+      return;
+    }
     if (tabId === this.activeTab()) {
       return;
     }
@@ -64,21 +124,31 @@ export class OrgEventsDashboardComponent {
     });
   }
 
-  public onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
-    const idx = ids.indexOf(this.activeTab());
-    let next: number | null = null;
-    if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
-    else if (event.key === 'ArrowLeft') next = (idx - 1 + ids.length) % ids.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = ids.length - 1;
-    if (next !== null) {
-      event.preventDefault();
-      this.switchTab(ids[next]);
-      if (isPlatformBrowser(this.platformId)) {
-        (document.getElementById(`org-events-tab-${ids[next]}`) as HTMLElement | null)?.focus();
-      }
+  public onAttendeesClick(event: OrgEvent): void {
+    this.activeDrawerEvent.set(event);
+    this.speakersDrawerVisible.set(false);
+    this.attendeesDrawerVisible.set(true);
+  }
+
+  public onSpeakersClick(event: OrgEvent): void {
+    this.activeDrawerEvent.set(event);
+    this.attendeesDrawerVisible.set(false);
+    this.speakersDrawerVisible.set(true);
+  }
+
+  public onUpcomingPageChange(event: PageChangeEvent): void {
+    this.upcomingEventsLoading.set(true);
+    this.upcomingEventsPage.set(event);
+  }
+
+  public onUpcomingSortChange(event: SortChangeEvent): void {
+    if (this.upcomingSortField() === event.field) {
+      this.upcomingSortOrder.set(this.upcomingSortOrder() === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      this.upcomingSortField.set(event.field);
+      this.upcomingSortOrder.set('ASC');
     }
+    this.upcomingEventsPage.set({ offset: 0, pageSize: this.upcomingEventsPage().pageSize });
   }
 
   // === Private initializers ===
@@ -100,6 +170,44 @@ export class OrgEventsDashboardComponent {
         switchMap((id) => this.eventsService.getOrgEventsSummary(id).pipe(catchError(() => of(null))))
       ),
       { initialValue: null }
+    );
+  }
+
+  private initUpcomingEvents(): Signal<OrgEventsResponse> {
+    return toSignal(
+      toObservable(
+        computed(() => {
+          const accountId = this.accountContext.selectedAccount().accountId;
+          if (!accountId) return null;
+          return {
+            accountId,
+            ...this.upcomingEventsPage(),
+            searchQuery: this.debouncedSearchTerm() || undefined,
+            status: this.selectedStatus() ?? null,
+            sortField: this.upcomingSortField(),
+            sortOrder: this.upcomingSortOrder(),
+          };
+        })
+      ).pipe(
+        debounceTime(0),
+        filter((params): params is NonNullable<typeof params> => params !== null),
+        tap(() => this.upcomingEventsLoading.set(true)),
+        switchMap(({ accountId, ...params }) =>
+          this.eventsService.getOrgEvents(accountId, { ...params, isPast: false }).pipe(
+            catchError(() => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load upcoming events. Please try again.',
+              });
+              const { pageSize, offset } = this.upcomingEventsPage();
+              return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
+            }),
+            finalize(() => this.upcomingEventsLoading.set(false))
+          )
+        )
+      ),
+      { initialValue: EMPTY_ORG_EVENTS_RESPONSE }
     );
   }
 }
