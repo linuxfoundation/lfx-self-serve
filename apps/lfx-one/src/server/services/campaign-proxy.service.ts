@@ -11,7 +11,6 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
-  CampaignResult,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignSSEEventType,
@@ -925,10 +924,7 @@ export class CampaignProxyService {
       errors.push('No campaign creation tasks were dispatched.');
     }
 
-    const allCampaigns = [
-      ...results.map((r) => ({ ...r, platform: 'google-ads' as const })),
-      ...linkedInResults,
-    ];
+    const allCampaigns = [...results.map((r) => ({ ...r, platform: 'google-ads' as const })), ...linkedInResults];
 
     const response: CampaignCreateResponse = { success: errors.length === 0, campaigns: allCampaigns, errors };
     completeJob(jobId, response);
