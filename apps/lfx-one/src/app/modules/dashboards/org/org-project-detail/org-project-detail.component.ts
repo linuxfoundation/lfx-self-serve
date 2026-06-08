@@ -336,7 +336,7 @@ export class OrgProjectDetailComponent {
     const hero = this.hero();
     const projectName = hero?.projectName ?? 'this project';
     const foundationLabel = hero?.foundationLabel ?? 'the foundation';
-    const scopeLabel = ECOSYSTEM_SCOPE[card.key] === 'project' ? `${projectName} Project` : foundationLabel;
+    const scopeLabel = ECOSYSTEM_SCOPE[card.key] === 'project' ? projectName : foundationLabel;
     return {
       key: card.key,
       title: card.label,
