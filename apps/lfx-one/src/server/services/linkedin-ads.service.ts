@@ -137,7 +137,7 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
       start += pageSize;
     }
   } catch (error: unknown) {
-    logger.warning(undefined, 'linkedin_find_by_name', `Search failed for ${nestedPath}`, { name, err: error });
+    logger.warning(undefined, 'linkedin_find_by_name', `Search failed for "${name}"`, { name, err: error });
   }
   return null;
 }
