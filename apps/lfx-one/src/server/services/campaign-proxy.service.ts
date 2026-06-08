@@ -754,7 +754,7 @@ export class CampaignProxyService {
         const structured = JSON.parse(text) as Record<string, unknown>;
         truncateAdCopy(structured);
 
-        if (platforms.includes('linkedin-ads')) {
+        if (supportedPlatforms.includes('linkedin-ads')) {
           const liData =
             (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
             ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
