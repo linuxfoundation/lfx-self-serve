@@ -10,7 +10,6 @@ import { CrowdfundingController } from '../controllers/crowdfunding.controller';
 const router = Router();
 const crowdfundingController = new CrowdfundingController();
 
-router.post('/setup-intent', (req, res, next) => crowdfundingController.createSetupIntent(req, res, next));
 router.post('/payment-method', (req, res, next) => crowdfundingController.saveMyPaymentMethod(req, res, next));
 router.get('/payment-method', (req, res, next) => crowdfundingController.getMyPaymentMethod(req, res, next));
 router.delete('/payment-method', (req, res, next) => crowdfundingController.deleteMyPaymentMethod(req, res, next));

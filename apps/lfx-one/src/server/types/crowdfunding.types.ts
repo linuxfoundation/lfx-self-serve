@@ -125,8 +125,3 @@ export interface BackendSubscriptionListResponse {
   data: BackendSubscription[];
   meta: { total: number; limit: number; offset: number };
 }
-
-/** Raw snake_case response from POST /v1/me/setup-intent on the upstream crowdfunding service. */
-export interface BackendSetupIntent {
-  client_secret: string;
-}

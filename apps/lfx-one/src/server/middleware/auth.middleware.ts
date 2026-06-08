@@ -246,6 +246,33 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
 }
 
 /**
+ * Silently fetches an access token scoped to the Crowdfunding API audience.
+ * Uses the existing refresh token from the OIDC session — no user interaction required.
+ * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.crowdfundingToken.
+ * Failures are non-blocking; the request continues without the token.
+ */
+async function extractCrowdfundingToken(req: Request): Promise<void> {
+  const crowdfundingAudience = process.env['CROWDFUNDING_API_AUDIENCE'];
+  if (!crowdfundingAudience) {
+    logger.warning(req, 'crowdfunding_token', 'CROWDFUNDING_API_AUDIENCE env var is not set, skipping secondary token fetch');
+    return;
+  }
+
+  const token = await exchangeRefreshTokenForAudience(req, {
+    issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+    clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+    clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+    audience: crowdfundingAudience,
+    sessionKey: 'crowdfundingToken',
+  });
+
+  if (token) {
+    req.crowdfundingToken = token;
+    logger.debug(req, 'crowdfunding_token', 'Crowdfunding token ready');
+  }
+}
+
+/**
  * Makes authentication decision based on route config and auth status
  */
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
@@ -457,9 +484,10 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
         needsLogout = tokenResult.needsLogout;
       }
 
-      // 4. Silently fetch secondary API Gateway token when the user is authenticated
+      // 4. Silently fetch secondary tokens when the user is authenticated
       if (hasToken) {
         await extractApiGatewayToken(req);
+        await extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making

@@ -236,35 +236,6 @@ export class CrowdfundingController {
     }
   }
 
-  // POST /api/crowdfunding/setup-intent
-  public async createSetupIntent(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'create_setup_intent');
-
-    try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'create_setup_intent',
-        });
-      }
-
-      const username = stripAuthPrefix(rawUsername);
-      const setupIntent = await this.crowdfundingService.createSetupIntent(req, username);
-
-      if (!setupIntent) {
-        res.status(502).json({ message: 'Failed to create setup intent' });
-        return;
-      }
-
-      logger.success(req, 'create_setup_intent', startTime);
-
-      res.json(setupIntent);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug. */
   public async getInitiativeBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
