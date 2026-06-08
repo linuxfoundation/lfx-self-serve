@@ -294,8 +294,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   // Silently acquire a CF-audience token on top-level navigation to a /crowdfunding
   // page, before Angular's /api/crowdfunding/* XHRs run. Those XHRs can't follow an
   // auth-code redirect, so the token must be in the session first. The user already
-  // has an Auth0 session, so this redirect is silent (no re-prompt).
-  if (auth.authenticated && req.path.startsWith('/crowdfunding') && crowdfundingAuthService.isConfigured() && !crowdfundingAuthService.hasValidToken(req)) {
+  // has an Auth0 session, so this redirect is silent (no re-prompt). Uses originalUrl
+  // because the Angular SSR engine normalizes req.path to "/".
+  if (auth.authenticated && req.originalUrl.startsWith('/crowdfunding') && crowdfundingAuthService.isConfigured() && !crowdfundingAuthService.hasValidToken(req)) {
     res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
     return;
   }
