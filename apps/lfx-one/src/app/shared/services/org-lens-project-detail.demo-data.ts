@@ -41,12 +41,12 @@ interface ProjectDetailSeed {
 const SEEDS: Record<string, ProjectDetailSeed> = {
   kubernetes: {
     name: 'Kubernetes',
-    description: 'Production-grade container orchestration.',
+    description: 'Kubernetes (K8s) is an open-source system for automating deployment, scaling, and management of containerized applications.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'excellent',
     sourceUrl: 'https://github.com/kubernetes/kubernetes',
-    firstCommit: '2014-06-06',
-    softwareValueUsd: 1284000000,
+    firstCommit: '2013-07-01',
+    softwareValueUsd: 6000000000,
     org: { maintainers: 5, contributors: 6, commits: 1840, prs: 624 },
     totals: { maintainers: 78, contributors: 612, commits: 32940, prs: 11280 },
     ecosystem: { collaboration: 1472, meetingAttendance: 7, boardMembers: 1, committeeMembers: 4 },

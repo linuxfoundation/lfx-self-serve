@@ -60,36 +60,26 @@
             }
             <div class="flex flex-col gap-2">
               <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
-              <p class="max-w-xl text-sm text-gray-600" data-testid="project-detail-description">{{ h.description }}</p>
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                @if (h.sourceUrl) {
-                  <a
-                    [href]="h.sourceUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
-                    data-testid="project-detail-source-link">
-                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-                    <span>{{ h.sourceLabel || 'Source' }}</span>
-                  </a>
-                }
+              <p class="max-w-xl text-sm leading-relaxed text-gray-600" data-testid="project-detail-description">
+                {{ h.description }}
                 @if (h.lfxInsightsUrl) {
+                  <span class="text-gray-500"> Source: </span>
                   <a
                     [href]="h.lfxInsightsUrl"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
-                    data-testid="project-detail-insights-link">
-                    <i class="fa-light fa-chart-line" aria-hidden="true"></i>
-                    <span>View on LFX Insights</span>
+                    data-testid="project-detail-source-link">
+                    LFX Insights
+                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
                   </a>
                 }
-              </div>
+              </p>
             </div>
           </div>
 
           <!-- Right: stat tiles -->
-          <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 md:text-right" data-testid="project-detail-hero-stats">
+          <div class="grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4 md:text-right" data-testid="project-detail-hero-stats">
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">First commit</span>
               <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-first-commit">{{ firstCommitLabel() }}</span>
@@ -105,7 +95,7 @@
               <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-software-value">{{ softwareValueLabel() }}</span>
             </div>
             <div class="flex flex-col gap-1">
-              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health</span>
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health score</span>
               @if (healthMeta(); as hm) {
                 <span class="md:ml-auto" data-testid="project-detail-health-badge">
                   <lfx-tag [value]="hm.label" [severity]="hm.severity" />
@@ -114,11 +104,7 @@
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Foundation</span>
-              <span
-                class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 md:ml-auto"
-                data-testid="project-detail-foundation-pill"
-                >{{ h.foundationLabel }}</span
-              >
+              <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-foundation-pill">{{ h.foundationLabel }}</span>
             </div>
           </div>
         </section>

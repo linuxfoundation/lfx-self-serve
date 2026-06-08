@@ -285,14 +285,14 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    if (!hero) return [{ label: 'Projects', routerLink: ['/org/projects'] }];
-    return [{ label: 'Projects', routerLink: ['/org/projects'] }, { label: hero.foundationLabel }, { label: hero.projectName }];
+    const root: MenuItem = { label: 'Projects', routerLink: ['/org/projects'] };
+    return hero ? [root, { label: hero.projectName }] : [root];
   }
 
   private formatMonthYear(dateString: string | null): string {
     if (!dateString) return '—';
     try {
-      return parseLocalDateString(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      return parseLocalDateString(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
     } catch {
       return dateString;
     }
