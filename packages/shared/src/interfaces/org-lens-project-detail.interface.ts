@@ -59,18 +59,21 @@ export interface OrgLensProjectTechnicalCard {
   pct: number;
   /** 12 monthly bins, oldest → newest. */
   sparkline: number[];
-  dataUpdatedHoursAgo: number;
 }
 
 /**
  * Ecosystem-group card (Collaboration Activity / Meeting Attendance / Board Members /
- * Committee Members). A single count; board/committee are point-in-time seats held.
+ * Committee Members). Board/committee are foundation-level point-in-time seats; collaboration
+ * and meetings are project-level. An empty `sparkline` renders a "No data" state.
  */
 export interface OrgLensProjectEcosystemCard {
   key: 'collaboration' | 'meeting-attendance' | 'board-members' | 'committee-members';
   label: string;
   count: number;
-  dataUpdatedHoursAgo: number;
+  /** 0..1 "% of all" share, where applicable (collaboration, committee members); 0 otherwise. */
+  pct: number;
+  /** 12 monthly bins, oldest → newest. Empty array → no trendline data available. */
+  sparkline: number[];
 }
 
 /** One monthly point on the Influence Trend chart. */

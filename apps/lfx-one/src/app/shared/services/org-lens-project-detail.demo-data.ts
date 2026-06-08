@@ -257,7 +257,6 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] 
       projectTotal: seed.totals.maintainers,
       pct: pctOf(seed.org.maintainers, seed.totals.maintainers),
       sparkline: ramp(seed.org.maintainers, 0.6),
-      dataUpdatedHoursAgo: 9,
     },
     {
       key: 'contributors',
@@ -266,7 +265,6 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] 
       projectTotal: seed.totals.contributors,
       pct: pctOf(seed.org.contributors, seed.totals.contributors),
       sparkline: ramp(seed.org.contributors, 0.55),
-      dataUpdatedHoursAgo: 1,
     },
     {
       key: 'commits',
@@ -275,7 +273,6 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] 
       projectTotal: seed.totals.commits,
       pct: pctOf(seed.org.commits, seed.totals.commits),
       sparkline: ramp(seed.org.commits, 0.65),
-      dataUpdatedHoursAgo: 1,
     },
     {
       key: 'pull-requests',
@@ -284,17 +281,45 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] 
       projectTotal: seed.totals.prs,
       pct: pctOf(seed.org.prs, seed.totals.prs),
       sparkline: ramp(seed.org.prs, 0.65),
-      dataUpdatedHoursAgo: 1,
     },
   ];
 }
 
 function ecosystemCards(seed: ProjectDetailSeed): OrgLensProjectEcosystemCard[] {
+  const collab = seed.ecosystem.collaboration;
+  const committee = seed.ecosystem.committeeMembers;
   return [
-    { key: 'collaboration', label: 'Collaboration Activity', count: seed.ecosystem.collaboration, dataUpdatedHoursAgo: 9 },
-    { key: 'meeting-attendance', label: 'Meeting Attendance', count: seed.ecosystem.meetingAttendance, dataUpdatedHoursAgo: 2 },
-    { key: 'board-members', label: 'Board Members', count: seed.ecosystem.boardMembers, dataUpdatedHoursAgo: 3 },
-    { key: 'committee-members', label: 'Committee Members', count: seed.ecosystem.committeeMembers, dataUpdatedHoursAgo: 3 },
+    // Collaboration shows a "% of all" (denominator picked so Kubernetes lands at the prototype's 9.6%).
+    {
+      key: 'collaboration',
+      label: 'Collaboration Activity',
+      count: collab,
+      pct: collab === 0 ? 0 : Math.round((collab / 15333) * 1000) / 1000,
+      sparkline: ramp(collab, 0.6),
+    },
+    // Meeting attendance is a raw count; 0 → no trendline ("No data").
+    {
+      key: 'meeting-attendance',
+      label: 'Meeting Attendance',
+      count: seed.ecosystem.meetingAttendance,
+      pct: 0,
+      sparkline: seed.ecosystem.meetingAttendance === 0 ? [] : ramp(seed.ecosystem.meetingAttendance, 0.6),
+    },
+    {
+      key: 'board-members',
+      label: 'Board Members',
+      count: seed.ecosystem.boardMembers,
+      pct: 0,
+      sparkline: seed.ecosystem.boardMembers === 0 ? [] : ramp(seed.ecosystem.boardMembers, 0.6),
+    },
+    // Committee members shows a "% of all" (denominator picked so Kubernetes lands at the prototype's 1.1%).
+    {
+      key: 'committee-members',
+      label: 'Committee Members',
+      count: committee,
+      pct: committee === 0 ? 0 : Math.round((committee / 364) * 1000) / 1000,
+      sparkline: committee === 0 ? [] : ramp(committee, 0.6),
+    },
   ];
 }
 

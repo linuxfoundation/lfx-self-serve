@@ -12,7 +12,6 @@ import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.s
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
 import type {
@@ -26,7 +25,7 @@ import type {
   OrgLensProjectTechnicalCard,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
+import { parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
@@ -50,35 +49,12 @@ const HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSev
   'at-risk': { label: 'At Risk', severity: 'danger' },
 };
 
-/** FontAwesome icons keyed by Technical / Ecosystem card. */
-const TECHNICAL_ICONS: Record<OrgLensProjectTechnicalCard['key'], string> = {
-  maintainers: 'fa-light fa-user-shield',
-  contributors: 'fa-light fa-users',
-  commits: 'fa-light fa-code-commit',
-  'pull-requests': 'fa-light fa-code-pull-request',
-};
-
-const ECOSYSTEM_ICONS: Record<OrgLensProjectEcosystemCard['key'], string> = {
-  collaboration: 'fa-light fa-comments',
-  'meeting-attendance': 'fa-light fa-video',
-  'board-members': 'fa-light fa-gavel',
-  'committee-members': 'fa-light fa-people-group',
-};
-
-/** Empty-state guidance copy per Ecosystem card (shown when the count is 0). */
-const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> = {
-  collaboration: 'No cross-org collaboration recorded in the last year.',
-  'meeting-attendance': 'No org reps attended project meetings in the last year.',
-  'board-members': 'Your organization holds no board seats on this project.',
-  'committee-members': 'Your organization holds no committee seats on this project.',
-};
-
-/** Ecosystem card scope label (per the wireframe): project-level vs foundation-level metric. */
-const ECOSYSTEM_SCOPE: Record<OrgLensProjectEcosystemCard['key'], string> = {
-  collaboration: 'Project',
-  'meeting-attendance': 'Project',
-  'board-members': 'Foundation',
-  'committee-members': 'Foundation',
+/** Ecosystem card scope (per the wireframe): collaboration + meetings are project-level; the rest foundation-level. */
+const ECOSYSTEM_SCOPE: Record<OrgLensProjectEcosystemCard['key'], 'project' | 'foundation'> = {
+  collaboration: 'project',
+  'meeting-attendance': 'project',
+  'board-members': 'foundation',
+  'committee-members': 'foundation',
 };
 
 /** Leaderboard band chip → lfx-tag severity. */
@@ -109,7 +85,7 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent, TagComponent],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TagComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -142,12 +118,23 @@ export class OrgProjectDetailComponent {
   });
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
-  protected readonly lastUpdatedLabel = computed(() => this.formatRelative(this.hero()?.lastUpdated ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
   protected readonly sourceUrl = computed(() => this.hero()?.sourceUrl ?? null);
 
-  // Our Influence tab — Technical (sparkline) + Ecosystem (count) card view-models.
+  // Org's own influence standing (from its leaderboard row) → section-title band badges.
+  private readonly viewingScores = computed(() => this.detail()?.leaderboard.find((row) => row.isViewingOrg)?.scores ?? null);
+  protected readonly technicalBand = computed(() => {
+    const scores = this.viewingScores();
+    return scores ? BAND_TAG[bandForScore(scores.technical)] : null;
+  });
+  protected readonly ecosystemBand = computed(() => {
+    const scores = this.viewingScores();
+    return scores ? BAND_TAG[bandForScore(scores.ecosystem)] : null;
+  });
+
+  // Our Influence tab — Technical + Ecosystem cards (trendline + sentence), same card style.
   private readonly monthLabels: string[] = this.buildMonthLabels();
+  protected readonly cardChartOptions: ChartOptions<ChartType> = { ...BASE_LINE_CHART_OPTIONS };
   protected readonly technicalCards = computed(() => (this.detail()?.technical ?? []).map((card) => this.toTechnicalCard(card)));
   protected readonly ecosystemCards = computed(() => (this.detail()?.ecosystem ?? []).map((card) => this.toEcosystemCard(card)));
 
@@ -311,12 +298,6 @@ export class OrgProjectDetailComponent {
     }
   }
 
-  private formatRelative(isoString: string | null): string {
-    if (!isoString) return '—';
-    const parsed = new Date(isoString);
-    return Number.isNaN(parsed.getTime()) ? '—' : formatRelativeTime(parsed);
-  }
-
   private formatCompactUsd(value: number | null): string {
     if (value === null || value === undefined) return '—';
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
@@ -340,67 +321,96 @@ export class OrgProjectDetailComponent {
   }
 
   private toTechnicalCard(card: OrgLensProjectTechnicalCard) {
-    const pctLabel = `${(card.pct * 100).toFixed(1)}%`;
-    const isEmpty = card.orgCount === 0;
     return {
       key: card.key,
       title: card.label,
-      icon: TECHNICAL_ICONS[card.key],
-      value: card.orgCount.toLocaleString(),
-      subtitle: `of ${card.projectTotal.toLocaleString()} (${pctLabel})`,
-      description: `Updated ${card.dataUpdatedHoursAgo}h ago`,
-      isEmpty,
-      chartData: this.sparklineData(card.label, card.sparkline),
-      chartOptions: this.sparklineOptions(card.label),
+      scopeLabel: null as string | null,
+      hasData: card.sparkline.length > 0,
+      chartData: this.cardChartData(card.sparkline, lfxColors.blue[500]),
+      caption: this.technicalCaption(card),
       testId: `project-detail-technical-card-${card.key}`,
     };
   }
 
   private toEcosystemCard(card: OrgLensProjectEcosystemCard) {
+    const hero = this.hero();
+    const projectName = hero?.projectName ?? 'this project';
+    const foundationLabel = hero?.foundationLabel ?? 'the foundation';
+    const scopeLabel = ECOSYSTEM_SCOPE[card.key] === 'project' ? `${projectName} Project` : foundationLabel;
     return {
       key: card.key,
       title: card.label,
-      icon: ECOSYSTEM_ICONS[card.key],
-      scopeLabel: ECOSYSTEM_SCOPE[card.key],
-      count: card.count.toLocaleString(),
-      isEmpty: card.count === 0,
-      emptyCopy: ECOSYSTEM_EMPTY_COPY[card.key],
-      description: `Updated ${card.dataUpdatedHoursAgo}h ago`,
+      scopeLabel,
+      hasData: card.sparkline.length > 0,
+      chartData: this.cardChartData(card.sparkline, lfxColors.violet[500]),
+      caption: this.ecosystemCaption(card, foundationLabel),
       testId: `project-detail-ecosystem-card-${card.key}`,
     };
   }
 
-  private sparklineData(label: string, series: number[]): ChartData<ChartType> {
+  /** Sentence with an emphasized stat, split so the stat can render bold. */
+  private technicalCaption(card: OrgLensProjectTechnicalCard): { prefix: string; emphasis: string; suffix: string } {
+    const pct = `${(card.pct * 100).toFixed(1)}%`;
+    switch (card.key) {
+      case 'maintainers':
+        return card.orgCount === 0
+          ? { prefix: 'Our company employs ', emphasis: 'no', suffix: ' maintainers for this project.' }
+          : {
+              prefix: 'Our company employs ',
+              emphasis: `${card.orgCount}`,
+              suffix: ` ${card.orgCount === 1 ? 'maintainer' : 'maintainers'} for this project.`,
+            };
+      case 'contributors':
+        return { prefix: 'Our company employs ', emphasis: pct, suffix: ' of contributors to this project.' };
+      case 'commits':
+        return { prefix: 'Employees made ', emphasis: pct, suffix: ' of all commit activities.' };
+      case 'pull-requests':
+        return { prefix: 'Employees opened ', emphasis: pct, suffix: ' of all pull requests.' };
+      default:
+        return { prefix: card.label, emphasis: '', suffix: '' };
+    }
+  }
+
+  private ecosystemCaption(card: OrgLensProjectEcosystemCard, foundation: string): { prefix: string; emphasis: string; suffix: string } {
+    const pct = `${(card.pct * 100).toFixed(1)}%`;
+    switch (card.key) {
+      case 'collaboration':
+        return card.count === 0
+          ? { prefix: 'No collaboration activity recorded for this project.', emphasis: '', suffix: '' }
+          : { prefix: 'Employees contributed ', emphasis: pct, suffix: ' of all collaboration activities.' };
+      case 'meeting-attendance':
+        return card.count === 0
+          ? { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }
+          : { prefix: 'Org reps attended ', emphasis: `${card.count}`, suffix: ` project ${card.count === 1 ? 'meeting' : 'meetings'}.` };
+      case 'board-members':
+        return card.count === 0
+          ? { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }
+          : { prefix: 'Our company employs ', emphasis: `${card.count} board ${card.count === 1 ? 'member' : 'members'}`, suffix: ` for ${foundation}.` };
+      case 'committee-members':
+        return card.count === 0
+          ? { prefix: `Your organization holds no committee seats in ${foundation}.`, emphasis: '', suffix: '' }
+          : { prefix: 'Employees make up ', emphasis: pct, suffix: ' of all committee members.' };
+      default:
+        return { prefix: card.label, emphasis: '', suffix: '' };
+    }
+  }
+
+  /** Dual-line card sparkline: the metric line in `colorHex` plus a faint gray reference baseline. */
+  private cardChartData(series: number[], colorHex: string): ChartData<ChartType> {
     return {
       labels: this.monthLabels,
       datasets: [
+        { data: series, borderColor: colorHex, backgroundColor: 'transparent', fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0 },
         {
-          label,
-          data: series,
-          borderColor: lfxColors.blue[500],
-          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
-          fill: true,
-          tension: 0,
-          borderWidth: 2,
+          data: series.map((value) => Math.round(value * 0.8 * 10) / 10),
+          borderColor: lfxColors.gray[200],
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.4,
+          borderWidth: 1.5,
           pointRadius: 0,
         },
       ],
-    };
-  }
-
-  private sparklineOptions(label: string): ChartOptions<ChartType> {
-    return {
-      ...BASE_LINE_CHART_OPTIONS,
-      plugins: {
-        ...BASE_LINE_CHART_OPTIONS.plugins,
-        tooltip: {
-          ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
-          callbacks: {
-            title: (context) => context[0]?.label ?? '',
-            label: (context) => `${label}: ${context.parsed.y ?? 0}`,
-          },
-        },
-      },
     };
   }
 

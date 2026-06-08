@@ -120,10 +120,6 @@
                 >{{ h.foundationLabel }}</span
               >
             </div>
-            <div class="flex flex-col gap-1">
-              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Last updated</span>
-              <span class="text-sm text-gray-700" data-testid="project-detail-last-updated">{{ lastUpdatedLabel() }}</span>
-            </div>
           </div>
         </section>
 
@@ -166,19 +162,15 @@
               [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
               <!-- Technical Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
-                <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
+                  @if (technicalBand(); as b) {
+                    <span data-testid="project-detail-technical-band"><lfx-tag [value]="b.label" [severity]="b.severity" /></span>
+                  }
+                </div>
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   @for (card of technicalCards(); track card.key) {
-                    <lfx-metric-card
-                      [title]="card.title"
-                      [icon]="card.icon"
-                      [description]="card.description"
-                      [testId]="card.testId"
-                      chartType="line"
-                      [chartData]="card.chartData"
-                      [chartOptions]="card.chartOptions"
-                      [value]="card.value"
-                      [subtitle]="card.subtitle" />
+                    <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                   }
                 </div>
                 @if (sourceUrl()) {
@@ -196,25 +188,15 @@
 
               <!-- Ecosystem Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-ecosystem-group">
-                <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
+                  @if (ecosystemBand(); as b) {
+                    <span data-testid="project-detail-ecosystem-band"><lfx-tag [value]="b.label" [severity]="b.severity" /></span>
+                  }
+                </div>
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   @for (card of ecosystemCards(); track card.key) {
-                    <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="card.testId">
-                      <div class="flex items-center justify-between gap-2">
-                        <div class="flex items-center gap-2">
-                          <i [class]="card.icon" class="text-gray-400" aria-hidden="true"></i>
-                          <span class="text-sm font-medium text-gray-700">{{ card.title }}</span>
-                        </div>
-                        <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500">{{
-                          card.scopeLabel
-                        }}</span>
-                      </div>
-                      <span class="text-2xl font-semibold text-gray-900">{{ card.count }}</span>
-                      @if (card.isEmpty) {
-                        <span class="text-xs text-gray-500">{{ card.emptyCopy }}</span>
-                      }
-                      <span class="mt-auto text-xs text-gray-400">{{ card.description }}</span>
-                    </div>
+                    <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                   }
                 </div>
               </section>
@@ -290,6 +272,29 @@
     }
   }
 </div>
+
+<!-- Our Influence metric card: optional scope label, title, dual-line trendline, sentence (Technical + Ecosystem). -->
+<ng-template #influenceCard let-card>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white" [attr.data-testid]="card.testId">
+    @if (card.scopeLabel) {
+      <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500">{{ card.scopeLabel }}</div>
+    }
+    <div class="flex flex-1 flex-col gap-3 p-4">
+      <div class="text-sm font-semibold text-gray-900">{{ card.title }}</div>
+      <div class="h-14">
+        @if (card.hasData) {
+          <lfx-chart type="line" [data]="card.chartData" [options]="cardChartOptions" height="100%" />
+        } @else {
+          <div class="flex h-full items-center justify-center text-xs text-gray-400">No data</div>
+        }
+      </div>
+      <p class="mt-auto text-xs leading-relaxed text-gray-600">
+        {{ card.caption.prefix }}<strong class="font-semibold text-gray-900">{{ card.caption.emphasis }}</strong
+        >{{ card.caption.suffix }}
+      </p>
+    </div>
+  </div>
+</ng-template>
 
 <!-- One side-by-side leaderboard card (Technical or Ecosystem). -->
 <ng-template #leaderboardCard let-title="title" let-board="board" let-dimension="dimension" let-searchValue="searchValue" let-testid="testid">
