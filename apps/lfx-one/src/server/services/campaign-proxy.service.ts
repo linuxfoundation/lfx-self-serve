@@ -673,6 +673,12 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
+    const unsupported = (body.platforms ?? []).filter((p) => p !== 'google-ads');
+    if (unsupported.length > 0) {
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Only google-ads is currently supported.` };
+      return;
+    }
+
     yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
     const userPrompt = buildRefinePrompt(body);
@@ -1228,7 +1234,7 @@ Respect all character limits from the system prompt. Return the same JSON format
 }
 
 function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {
-  const currentKws = body.currentKeywords.map((kw) => kw.term).join(', ');
+  const currentKws = (body.currentKeywords ?? []).map((kw) => kw.term).join(', ');
   const eventName = body.eventDetails?.name || '';
 
   return `Regenerate keywords for this event based on user feedback.

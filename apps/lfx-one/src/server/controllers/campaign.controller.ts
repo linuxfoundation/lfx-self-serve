@@ -131,7 +131,7 @@ export class CampaignController {
       return;
     }
 
-    if (!body.currentCopy || typeof body.currentCopy !== 'object') {
+    if (!body.currentCopy || typeof body.currentCopy !== 'object' || Array.isArray(body.currentCopy)) {
       const validationError = ServiceValidationError.forField('currentCopy', 'currentCopy is required', {
         operation: 'campaign_refine_brief',
         service: 'campaign_controller',
@@ -153,8 +153,8 @@ export class CampaignController {
       return;
     }
 
-    if (body.currentKeywords && !Array.isArray(body.currentKeywords)) {
-      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be an array', {
+    if (!body.currentKeywords || !Array.isArray(body.currentKeywords)) {
+      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be a non-empty array', {
         operation: 'campaign_refine_brief',
         service: 'campaign_controller',
         path: req.path,
