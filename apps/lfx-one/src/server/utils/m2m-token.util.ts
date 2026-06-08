@@ -181,4 +181,3 @@ function createAutheliaTokenRequest(audience: string | undefined) {
     },
   };
 }
-

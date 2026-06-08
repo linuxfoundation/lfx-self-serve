@@ -19,7 +19,15 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
 
-import { BackendDonation, BackendGoal, BackendInitiative, BackendSponsor, BackendSubscription, BackendTransaction, PaymentMethodWire } from '../types/crowdfunding.types';
+import {
+  BackendDonation,
+  BackendGoal,
+  BackendInitiative,
+  BackendSponsor,
+  BackendSubscription,
+  BackendTransaction,
+  PaymentMethodWire,
+} from '../types/crowdfunding.types';
 
 const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
 

@@ -34,15 +34,9 @@ import {
 } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
 
-const cfBaseUrl = (): string =>
-  (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
+const cfBaseUrl = (): string => (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
 
-async function cfFetch<T>(
-  req: Request,
-  operation: string,
-  path: string,
-  options: { method?: string; body?: unknown } = {},
-): Promise<T> {
+async function cfFetch<T>(req: Request, operation: string, path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = req.crowdfundingToken;
   if (!token) {
     throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
@@ -50,7 +44,10 @@ async function cfFetch<T>(
 
   const baseUrl = cfBaseUrl();
   if (!baseUrl) {
-    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', {
+      operation,
+      service: 'crowdfunding',
+    });
   }
 
   const url = `${baseUrl}${path}`;
@@ -68,7 +65,11 @@ async function cfFetch<T>(
   const response = await fetch(url, init);
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+      operation,
+      service: 'crowdfunding',
+      path,
+    });
   }
   return response.json() as Promise<T>;
 }
@@ -76,11 +77,7 @@ async function cfFetch<T>(
 // cfFetchNullable calls the authenticated CF API but returns null on 404 instead of throwing.
 // All other errors (401, 403, 5xx, network) are rethrown so the error handler
 // can return an appropriate status rather than silently reporting "not found".
-async function cfFetchNullable<T>(
-  req: Request,
-  operation: string,
-  path: string,
-): Promise<T | null> {
+async function cfFetchNullable<T>(req: Request, operation: string, path: string): Promise<T | null> {
   const token = req.crowdfundingToken;
   if (!token) {
     throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
@@ -88,7 +85,10 @@ async function cfFetchNullable<T>(
 
   const baseUrl = cfBaseUrl();
   if (!baseUrl) {
-    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', {
+      operation,
+      service: 'crowdfunding',
+    });
   }
 
   const response = await fetch(`${baseUrl}${path}`, {
@@ -103,7 +103,11 @@ async function cfFetchNullable<T>(
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+      operation,
+      service: 'crowdfunding',
+      path,
+    });
   }
   return response.json() as Promise<T>;
 }
@@ -111,14 +115,13 @@ async function cfFetchNullable<T>(
 // cfFetchPublic fetches a public CF endpoint (no authentication required).
 // The request's crowdfunding token is forwarded when available, but its absence
 // must not block the call. Returns null on 404; throws MicroserviceError otherwise.
-async function cfFetchPublic<T>(
-  req: Request,
-  operation: string,
-  path: string,
-): Promise<T | null> {
+async function cfFetchPublic<T>(req: Request, operation: string, path: string): Promise<T | null> {
   const baseUrl = cfBaseUrl();
   if (!baseUrl) {
-    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', { operation, service: 'crowdfunding' });
+    throw new MicroserviceError(`CROWDFUNDING_API_BASE_URL is not configured — cannot call ${operation}`, 503, 'CF_MISCONFIGURED', {
+      operation,
+      service: 'crowdfunding',
+    });
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (req.crowdfundingToken) {
@@ -130,7 +133,11 @@ async function cfFetchPublic<T>(
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation, service: 'crowdfunding', path });
+    throw new MicroserviceError(`CF API ${operation} returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+      operation,
+      service: 'crowdfunding',
+      path,
+    });
   }
   return response.json() as Promise<T>;
 }
@@ -185,12 +192,18 @@ export class CrowdfundingService {
 
     const token = req.crowdfundingToken;
     if (!token) {
-      throw new MicroserviceError('No crowdfunding token available for deleteMyPaymentMethod', 401, 'CF_UNAUTHENTICATED', { operation: 'deleteMyPaymentMethod', service: 'crowdfunding' });
+      throw new MicroserviceError('No crowdfunding token available for deleteMyPaymentMethod', 401, 'CF_UNAUTHENTICATED', {
+        operation: 'deleteMyPaymentMethod',
+        service: 'crowdfunding',
+      });
     }
 
     const baseUrl = cfBaseUrl();
     if (!baseUrl) {
-      throw new MicroserviceError('CROWDFUNDING_API_BASE_URL is not configured — cannot call deleteMyPaymentMethod', 503, 'CF_MISCONFIGURED', { operation: 'deleteMyPaymentMethod', service: 'crowdfunding' });
+      throw new MicroserviceError('CROWDFUNDING_API_BASE_URL is not configured — cannot call deleteMyPaymentMethod', 503, 'CF_MISCONFIGURED', {
+        operation: 'deleteMyPaymentMethod',
+        service: 'crowdfunding',
+      });
     }
 
     const response = await fetch(`${baseUrl}/v1/me/payment-method`, {
@@ -200,7 +213,10 @@ export class CrowdfundingService {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new MicroserviceError(`CF API deleteMyPaymentMethod returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), { operation: 'deleteMyPaymentMethod', service: 'crowdfunding' });
+      throw new MicroserviceError(`CF API deleteMyPaymentMethod returned ${response.status}: ${text}`, response.status, getHttpErrorCode(response.status), {
+        operation: 'deleteMyPaymentMethod',
+        service: 'crowdfunding',
+      });
     }
 
     logger.success(req, 'cf_delete_my_payment_method', startTime);
@@ -226,20 +242,18 @@ export class CrowdfundingService {
       cfFetch<{ data: { amount_cents: number; initiative_id?: string }[]; meta: { total: number } }>(
         req,
         'getMyDonationStats_donations',
-        '/v1/me/donations?limit=500',
+        '/v1/me/donations?limit=500'
       ),
       cfFetch<{ data: { status: string; amount_cents: number }[]; meta: { total: number } }>(
         req,
         'getMyDonationStats_subscriptions',
-        '/v1/me/subscriptions?limit=500',
+        '/v1/me/subscriptions?limit=500'
       ),
     ]);
 
     const totalDonated = donationsRaw.data.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
     // Filter to valid string IDs before counting — donations without initiative_id are excluded.
-    const initiativesSupported = new Set(
-      donationsRaw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string'),
-    ).size;
+    const initiativesSupported = new Set(donationsRaw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
     // Recurring counts and amounts come from active subscriptions, not one-time donations.
     const activeSubscriptions = subscriptionsRaw.data.filter((s) => s.status === 'active');
     const activeRecurringCount = activeSubscriptions.length;
@@ -255,7 +269,7 @@ export class CrowdfundingService {
     const raw = await cfFetch<{ data: BackendSubscription[]; meta: { total: number; limit: number; offset: number } }>(
       req,
       'getMyRecurringDonations',
-      '/v1/me/subscriptions',
+      '/v1/me/subscriptions'
     );
 
     logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
@@ -270,7 +284,7 @@ export class CrowdfundingService {
     const raw = await cfFetch<{ data: BackendDonation[]; meta: { total: number; limit: number; offset: number } }>(
       req,
       'getMyDonations',
-      `/v1/me/donations?limit=${limit}&offset=${off}`,
+      `/v1/me/donations?limit=${limit}&offset=${off}`
     );
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
@@ -282,7 +296,7 @@ export class CrowdfundingService {
     slug: string,
     type?: 'donations' | 'expenses',
     size?: number,
-    from?: number,
+    from?: number
   ): Promise<CrowdfundingTransactionList | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from });
 
@@ -296,7 +310,7 @@ export class CrowdfundingService {
     const raw = await cfFetchPublic<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
-      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`,
+      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
     );
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });

@@ -18,7 +18,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_initiatives' });
       }
 
@@ -37,7 +37,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'save_my_payment_method');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'save_my_payment_method' });
       }
 
@@ -64,7 +64,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_payment_method');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_payment_method' });
       }
 
@@ -88,7 +88,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donation_stats');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_donation_stats' });
       }
 
@@ -107,7 +107,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_recurring_donations');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_recurring_donations' });
       }
 
@@ -126,7 +126,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donations');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_donations' });
       }
 
@@ -152,7 +152,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
@@ -171,7 +171,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'delete_my_payment_method');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'delete_my_payment_method' });
       }
 
@@ -190,7 +190,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiative_by_slug' });
       }
 
@@ -215,7 +215,7 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 
     try {
-      if (!await getUsernameFromAuth(req)) {
+      if (!(await getUsernameFromAuth(req))) {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiative_transactions' });
       }
 
@@ -242,7 +242,7 @@ export class CrowdfundingController {
         slug,
         resolvedType as AllowedType | undefined,
         parseNonNegativeInt(size),
-        parseNonNegativeInt(from),
+        parseNonNegativeInt(from)
       );
 
       if (!transactions) {

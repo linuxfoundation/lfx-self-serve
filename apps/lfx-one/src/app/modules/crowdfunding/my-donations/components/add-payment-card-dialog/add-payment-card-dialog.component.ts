@@ -60,9 +60,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
   protected readonly stripeError = signal('');
   protected readonly submitting = signal(false);
   protected readonly elementsReady = signal(false);
-  protected readonly formReady = computed(
-    () => this.elementsReady() && this.cardNumberComplete() && this.cardExpiryComplete() && this.cardCvcComplete()
-  );
+  protected readonly formReady = computed(() => this.elementsReady() && this.cardNumberComplete() && this.cardExpiryComplete() && this.cardCvcComplete());
 
   public constructor() {
     // afterNextRender runs only in the browser, after the view is available — SSR safe.
