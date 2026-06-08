@@ -51,6 +51,9 @@ export class CommitteeOverviewComponent {
   public myRole = input<string | null>(null);
   public myMemberUid = input<string | null>(null);
   public myRoleLoading = input<boolean>(true);
+  // True when the viewer has a pending invitation to this group — suppresses the visitor join CTA
+  // (the Accept/Decline banner on the group page is the action; a "Request Access" CTA would be redundant).
+  public hasPendingInvite = input<boolean>(false);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
@@ -115,7 +118,7 @@ export class CommitteeOverviewComponent {
     return 'member';
   });
 
-  public canJoin: Signal<boolean> = computed(() => this.isVisitor() && this.committee().join_mode !== 'closed');
+  public canJoin: Signal<boolean> = computed(() => this.isVisitor() && this.committee().join_mode !== 'closed' && !this.hasPendingInvite());
 
   public joinButtonLabel: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;

@@ -37,8 +37,11 @@ function buildOrgsRouter(): Router {
   // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
   router.get('/:orgUid/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));
   // Spec (LFXV2-1898) — Events page keys off the Salesforce accountId (not the b2b_org uuid), so these routes
-  // intentionally use `:accountId`. /events/summary MUST be registered before /events so Express matches the more-specific path first.
+  // intentionally use `:accountId`. /events is an exact path and won't capture /events/summary or the per-event
+  // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
+  router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
+  router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));

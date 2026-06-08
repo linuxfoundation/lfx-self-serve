@@ -51,6 +51,15 @@
                   <span class="truncate group-hover:underline">{{ item.text }}</span>
                   <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                 </a>
+              } @else if (item.isInvitation) {
+                <div class="flex flex-col gap-0.5 min-w-0">
+                  <span class="text-sm font-medium text-gray-900 truncate block" [attr.title]="item.text" data-testid="pending-actions-drawer-title">
+                    {{ item.text }}
+                  </span>
+                  @if (item.date) {
+                    <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-invitation-expiry"> Expires {{ item.date }} </span>
+                  }
+                </div>
               } @else {
                 <span class="text-sm font-medium text-gray-900 truncate block" [attr.title]="item.text" data-testid="pending-actions-drawer-title">
                   {{ item.text }}
@@ -87,6 +96,24 @@
                   [label]="item.buttonText"
                   [icon]="buttonIcons[item.type]"
                   data-testid="pending-actions-drawer-vote-button" />
+              } @else if (item.isInvitation) {
+                <div class="flex items-center gap-2">
+                  <lfx-button
+                    size="small"
+                    severity="primary"
+                    [label]="item.buttonText"
+                    [ariaLabel]="item.acceptAriaLabel"
+                    (onClick)="onAcceptInvitation(item)"
+                    data-testid="pending-actions-drawer-invitation-accept" />
+                  <lfx-button
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    label="Decline"
+                    [ariaLabel]="item.declineAriaLabel"
+                    (onClick)="onDeclineInvitation(item)"
+                    data-testid="pending-actions-drawer-invitation-decline" />
+                </div>
               } @else if (item.buttonLink) {
                 <lfx-button
                   size="small"
@@ -109,18 +136,21 @@
                   [icon]="buttonIcons[item.type]" />
               }
             </div>
-            <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready -->
-            @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
-              <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
-            } @else {
-              <button
-                type="button"
-                class="shrink-0 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
-                (click)="handleDismiss(item)"
-                [attr.aria-label]="'Dismiss: ' + item.text"
-                [attr.data-testid]="'pending-actions-drawer-dismiss-' + item.type">
-                Dismiss
-              </button>
+            <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
+                 server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. -->
+            @if (!item.isInvitation) {
+              @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
+                <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
+              } @else {
+                <button
+                  type="button"
+                  class="shrink-0 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                  (click)="handleDismiss(item)"
+                  [attr.aria-label]="'Dismiss: ' + item.text"
+                  [attr.data-testid]="'pending-actions-drawer-dismiss-' + item.type">
+                  Dismiss
+                </button>
+              }
             }
           </div>
         </div>

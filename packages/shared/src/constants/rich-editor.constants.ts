@@ -7,6 +7,34 @@ export const STRIPPED_ATTRS = ['style', 'class', 'id', 'dir', 'lang', 'align', '
 export const UNWRAP_TAGS = new Set(['SPAN', 'FONT', 'O:P']);
 export const DROP_TAGS = new Set(['META', 'STYLE', 'SCRIPT', 'LINK', 'TITLE']);
 
+// Block-level structural tags the editor renders with margin; treated as removable
+// when empty so Google Docs blank-line spacers don't survive a paste cleanup.
+export const EMPTY_BLOCK_TAGS = new Set(['P', 'H2', 'H3', 'LI', 'UL', 'OL']);
+
+// Replaced/void/embedded leaf elements that carry visual content even when textContent
+// is empty — keep paragraphs/list-items that hold these even if no text is present.
+export const CONTENT_LEAF_TAGS = new Set([
+  'IMG',
+  'IFRAME',
+  'VIDEO',
+  'AUDIO',
+  'SOURCE',
+  'PICTURE',
+  'SVG',
+  'MATH',
+  'CANVAS',
+  'EMBED',
+  'OBJECT',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+  'HR',
+]);
+
+// Paragraph-like containers where a <br> child is a legitimate hard break (not a
+// block-flow spacer). Used to decide whether a pasted <br> should be preserved.
+export const PARAGRAPH_LIKE_TAGS = new Set(['P', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'FIGCAPTION', 'CAPTION', 'PRE']);
+
 export const RICH_EDITOR_TOOLBAR_BUTTONS: readonly RichEditorToolbarButton[] = [
   { id: 'h2', icon: 'fa-light fa-h2', label: 'Heading 2', command: 'h2', activeKey: 'heading', activeAttrs: { level: 2 } },
   { id: 'h3', icon: 'fa-light fa-h3', label: 'Heading 3', command: 'h3', activeKey: 'heading', activeAttrs: { level: 3 } },

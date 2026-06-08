@@ -16,6 +16,8 @@ import {
   GetUpcomingCountriesResponse,
   MyEventOrganizationsResponse,
   MyEventsResponse,
+  OrgEventAttendeesDrawerResponse,
+  OrgEventSpeakersResponse,
   OrgEventsResponse,
   OrgEventsSummary,
   OrgSearchResponse,
@@ -135,6 +137,22 @@ export class EventsService {
     return this.http.get<OrgEventsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/summary`);
   }
 
+  public getEventAttendees(accountId: string, eventId: string, searchQuery?: string): Observable<OrgEventAttendeesDrawerResponse> {
+    let httpParams = new HttpParams();
+    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
+    return this.http.get<OrgEventAttendeesDrawerResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/${encodeURIComponent(eventId)}/attendees`, {
+      params: httpParams,
+    });
+  }
+
+  public getEventSpeakers(accountId: string, eventId: string, searchQuery?: string): Observable<OrgEventSpeakersResponse> {
+    let httpParams = new HttpParams();
+    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
+    return this.http.get<OrgEventSpeakersResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/${encodeURIComponent(eventId)}/speakers`, {
+      params: httpParams,
+    });
+  }
+
   // Called by the upcoming/past events table — wired in LFXV2-1899.
   public getOrgEvents(accountId: string, params: GetOrgEventsParams = {}): Observable<OrgEventsResponse> {
     let httpParams = new HttpParams();
@@ -144,6 +162,7 @@ export class EventsService {
     if (params.status) httpParams = httpParams.set('status', params.status);
     if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    if (params.sortField) httpParams = httpParams.set('sortField', params.sortField);
     if (params.sortOrder) httpParams = httpParams.set('sortOrder', params.sortOrder);
 
     return this.http.get<OrgEventsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events`, { params: httpParams });

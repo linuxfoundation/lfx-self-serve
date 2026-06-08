@@ -476,7 +476,7 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation';
 
 /**
  * Pending action item for task list
@@ -505,6 +505,14 @@ export interface PendingActionItem {
   occurrenceId?: string;
   /** Vote UID (set on Vote action types so the dashboard can lazy-open the cast drawer inline without leaving the page). Populated by user.service.ts transformVotesToActions. */
   voteUid?: string;
+  /** committee_invite UID (set on Invitation action types). Used by the dashboard to call accept/decline on the invitation. */
+  inviteUid?: string;
+  /** committee_uid the invitation is for (set on Invitation action types). Paired with `inviteUid` to call accept/decline. */
+  committeeUid?: string;
+  /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
+  inviteGroupName?: string;
+  /** Invitation title text up to (and excluding) the group name (set on Invitation action types), e.g. "You've been invited to " — built alongside `text` so the UI can link just the group name without runtime string-splitting. */
+  inviteTitlePrefix?: string;
 }
 
 /**
@@ -536,6 +544,12 @@ export interface DecoratedPendingAction extends PendingActionItem {
   isVoteInlineExpanded: boolean;
   /** True when this Vote row should use the drawer instead of inline (multi-question or ranked poll). */
   voteUsesDrawer: boolean;
+  /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
+  isInvitation: boolean;
+  /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
+  acceptAriaLabel: string;
+  /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
+  declineAriaLabel: string;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */
@@ -552,6 +566,12 @@ export interface DrawerActionRow extends PendingActionItem {
   isMeetingLoading: boolean;
   /** True when the Meeting fetch failed; the row falls back to the regular buttonLink CTA so the user has a working action */
   meetingLoadFailed: boolean;
+  /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
+  isInvitation: boolean;
+  /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
+  acceptAriaLabel: string;
+  /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
+  declineAriaLabel: string;
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */
