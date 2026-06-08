@@ -1,0 +1,97 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="project-detail-page">
+  @switch (pageState()) {
+    @case ('loading') {
+      <div class="flex flex-col gap-4" data-testid="project-detail-loading">
+        <div class="h-6 w-64 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-10 w-3/4 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-5 w-2/3 animate-pulse rounded bg-gray-200"></div>
+        <div class="mt-4 h-64 w-full animate-pulse rounded bg-gray-100"></div>
+      </div>
+    }
+
+    @case ('error') {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Failed to load project detail"
+        subtitle="Please try again."
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        data-testid="project-detail-error-state"
+        (ctaClick)="retry()">
+      </lfx-empty-state>
+    }
+
+    @case ('notFound') {
+      <lfx-empty-state
+        icon="fa-light fa-folder-open"
+        title="Project not found"
+        subtitle="We couldn't find that project for your organization."
+        ctaLabel="Back to Projects"
+        ctaIcon="fa-light fa-arrow-left"
+        [ctaRoute]="['/org/projects']"
+        data-testid="project-detail-not-found">
+      </lfx-empty-state>
+    }
+
+    @default {
+      @if (detail(); as data) {
+        <!-- Back link (breadcrumb + hero land in the next commit) -->
+        <a
+          [routerLink]="['/org/projects']"
+          class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+          data-testid="project-detail-back-link">
+          <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+          <span>Back to Projects</span>
+        </a>
+
+        <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ data.hero.projectName }}</h1>
+
+        <!-- Tab strip -->
+        <div
+          role="tablist"
+          aria-label="Project detail sections"
+          class="flex items-center gap-1 border-b border-gray-200"
+          data-testid="project-detail-tab-bar"
+          (keydown)="onTabKeydown($event)">
+          @for (tab of tabs; track tab.id) {
+            <button
+              type="button"
+              role="tab"
+              [id]="'project-detail-tab-trigger-' + tab.id"
+              [attr.aria-selected]="activeTab() === tab.id"
+              [attr.aria-controls]="'project-detail-tab-panel-' + tab.id"
+              [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+              class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+              [class.border-blue-600]="activeTab() === tab.id"
+              [class.text-blue-600]="activeTab() === tab.id"
+              [class.border-transparent]="activeTab() !== tab.id"
+              [class.text-gray-500]="activeTab() !== tab.id"
+              [class.hover:text-gray-700]="activeTab() !== tab.id"
+              [attr.data-testid]="'project-detail-tab-' + tab.id"
+              (click)="switchTab(tab.id)">
+              <i [class]="tab.icon" aria-hidden="true"></i>
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+
+        <!-- Tab content -->
+        @switch (activeTab()) {
+          @case ('pd-influence') {
+            <div role="tabpanel" id="project-detail-tab-panel-pd-influence" [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
+              <p class="text-sm text-gray-500" data-testid="project-detail-influence-placeholder">Our Influence metrics will appear here.</p>
+            </div>
+          }
+          @case ('pd-leaderboards') {
+            <div role="tabpanel" id="project-detail-tab-panel-pd-leaderboards" [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
+              <p class="text-sm text-gray-500" data-testid="project-detail-leaderboards-placeholder">The project leaderboard will appear here.</p>
+            </div>
+          }
+        }
+      }
+    }
+  }
+</div>

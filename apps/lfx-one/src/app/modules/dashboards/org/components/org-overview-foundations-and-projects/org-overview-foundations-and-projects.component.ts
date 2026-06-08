@@ -115,9 +115,27 @@ export class OrgOverviewFoundationsAndProjectsComponent {
     });
   }
 
-  // INFO: Future Epic implementation — project-row click/keydown handlers and their
-  // `mfp_project_row_click` telemetry were removed with the hidden /org/projects drilldown.
-  // Restore them alongside the row's interactive affordances when the drilldown is built.
+  protected onProjectClick(payload: { projectId: string; projectName: string }): void {
+    const orgId = this.accountContextService.selectedAccount().accountId;
+    this.plausibleService.trackEvent('mfp_project_row_click', {
+      orgId,
+      projectId: payload.projectId,
+      projectName: payload.projectName,
+    });
+  }
+
+  protected onProjectRowClick(project: OrgLensFoundationRow['projects'][number]): void {
+    if (!project.isLfProject) return;
+    this.onProjectClick({ projectId: project.projectId, projectName: project.projectName });
+    void this.router.navigate(['/org/projects', project.projectSlug]);
+  }
+
+  protected onProjectRowKeydown(event: KeyboardEvent, project: OrgLensFoundationRow['projects'][number]): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!project.isLfProject) return;
+    event.preventDefault();
+    this.onProjectRowClick(project);
+  }
 
   private emitOverviewViewOnce(orgUid: string): void {
     if (this.viewedOrgs.has(orgUid)) return;
