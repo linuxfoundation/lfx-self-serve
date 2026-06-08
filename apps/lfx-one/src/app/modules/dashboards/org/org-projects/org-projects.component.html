@@ -1,0 +1,242 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-projects-page">
+  <!-- Page Header -->
+  <header class="flex flex-col gap-2" data-testid="org-projects-header">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-projects-title">
+        @if (companyName()) {
+          Projects &mdash; {{ companyName() }}
+        } @else {
+          Projects
+        }
+      </h1>
+      @if (freshnessLabel()) {
+        <span class="text-xs text-gray-400" data-testid="org-projects-freshness">{{ freshnessLabel() }}</span>
+      }
+    </div>
+    <p class="text-sm text-gray-500" data-testid="org-projects-subtitle">
+      The open source projects your organization influences, contributes to, and depends on.
+    </p>
+  </header>
+
+  <!-- Influence Summary (LFXV2-1884) -->
+  <lfx-influence-summary [projects]="filteredProjects()" [loading]="loading()" [error]="error()" (retryRequested)="retry()" data-testid="org-projects-influence-summary" />
+
+  <!-- Filters + toolbar + projects table -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">
+    <!-- Filter + toolbar bar -->
+    <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center" data-testid="org-projects-toolbar">
+      <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="w-full sm:w-56">
+          <lfx-select
+            [form]="filterForm"
+            control="workspace"
+            size="small"
+            optionLabel="label"
+            optionValue="value"
+            [options]="workspaceOptions"
+            styleClass="w-full"
+            data-testid="org-projects-workspace-select" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            optionLabel="label"
+            optionValue="value"
+            [options]="foundationOptions()"
+            [filter]="true"
+            filterPlaceholder="Search foundations…"
+            styleClass="w-full"
+            data-testid="org-projects-foundation-filter" />
+        </div>
+        <div class="w-full sm:w-56">
+          <lfx-multi-select
+            [form]="filterForm"
+            control="employees"
+            optionLabel="label"
+            optionValue="value"
+            [options]="employeeOptions()"
+            placeholder="All Employees"
+            data-testid="org-projects-employee-filter" />
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <lfx-button
+          label="Export to CSV"
+          icon="fa-light fa-file-arrow-down"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [disabled]="loading() || totalRecords() === 0"
+          [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
+          (onClick)="exportCsv()"
+          data-testid="org-projects-export-csv" />
+        <lfx-button
+          label="Find project"
+          icon="fa-light fa-plus"
+          severity="primary"
+          size="small"
+          (onClick)="openFindProject()"
+          data-testid="org-projects-find-project" />
+      </div>
+    </div>
+
+    <!-- Table area -->
+    <div class="p-5">
+      @if (error()) {
+        <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
+          <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
+          <p class="text-sm text-gray-600">Something went wrong loading your projects.</p>
+          <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" />
+        </div>
+      } @else if (!loading() && totalRecords() === 0) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-folder-magnifying-glass"
+          title="No projects match your current workspace + filters"
+          subtitle="Try a different workspace or clear your filters."
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-rotate-left"
+          (ctaClick)="resetFilters()"
+          data-testid="org-projects-empty-state" />
+      } @else {
+        <lfx-table
+          [value]="sortedProjects()"
+          [loading]="loading()"
+          [paginator]="totalRecords() > pageSize()"
+          [rows]="pageSize()"
+          [first]="pageFirst()"
+          [totalRecords]="totalRecords()"
+          [rowsPerPageOptions]="pageSizeOptions"
+          [alwaysShowPaginator]="false"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="{first} - {last} of {totalRecords}"
+          (onPage)="onPage($event)"
+          data-testid="org-projects-table">
+          <ng-template #header>
+            <tr>
+              <th class="w-[20%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('name')" data-testid="org-projects-sort-name">
+                  Project
+                  <i class="text-xs text-gray-400" [class]="sortIcon('name')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[12%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('foundation')">
+                  Foundation
+                  <i class="text-xs text-gray-400" [class]="sortIcon('foundation')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[10%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('health')">
+                  Health
+                  <i class="text-xs text-gray-400" [class]="sortIcon('health')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[11%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('technicalInfluence')">
+                  Technical
+                  <i class="text-xs text-gray-400" [class]="sortIcon('technicalInfluence')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[11%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('ecosystemInfluence')">
+                  Ecosystem
+                  <i class="text-xs text-gray-400" [class]="sortIcon('ecosystemInfluence')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[11%]">
+                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('influenceTrend')" data-testid="org-projects-sort-trend">
+                  Trend (1y)
+                  <i class="text-xs text-gray-400" [class]="sortIcon('influenceTrend')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[8%]">Maintainers</th>
+              <th class="w-[8%]">Contributors</th>
+              <th class="w-[8%]">Participants</th>
+              <th class="w-[40px]"><span class="sr-only">Actions</span></th>
+            </tr>
+          </ng-template>
+          <ng-template #body let-project let-rowIndex="rowIndex">
+            <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
+              <!-- Project -->
+              <td>
+                <button type="button" class="flex items-center gap-2 text-left" (click)="openDetail(project)">
+                  <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                  <span class="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline">
+                    {{ project.name }}
+                    @if (isPinned(project.slug)) {
+                      <i class="fa-solid fa-thumbtack text-[10px] text-gray-400" aria-hidden="true" title="Pinned"></i>
+                    }
+                  </span>
+                </button>
+              </td>
+              <!-- Foundation -->
+              <td><lfx-tag [value]="project.foundation.name" severity="secondary" [rounded]="true" /></td>
+              <!-- Health -->
+              <td><lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" [dot]="true" /></td>
+              <!-- Technical Influence -->
+              <td><lfx-tag [value]="bandLabel(project.technicalInfluence)" [severity]="bandSeverity(project.technicalInfluence)" /></td>
+              <!-- Ecosystem Influence -->
+              <td><lfx-tag [value]="bandLabel(project.ecosystemInfluence)" [severity]="bandSeverity(project.ecosystemInfluence)" /></td>
+              <!-- Influence Trend -->
+              <td>
+                <div class="flex items-center gap-2">
+                  <span class="block h-8 w-20"><lfx-chart type="line" [data]="sparklineData(project)" [options]="sparklineOptions" height="32px" width="80px" /></span>
+                  <span class="text-xs font-medium" [class]="trendClass(project.trend.direction)">
+                    {{ project.trend.deltaPct > 0 ? '+' : '' }}{{ project.trend.deltaPct }}%
+                  </span>
+                </div>
+              </td>
+              <!-- Maintainers / Contributors / Participants -->
+              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.maintainers }" /></td>
+              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.contributors }" /></td>
+              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.participants }" /></td>
+              <!-- Row kebab -->
+              <td>
+                <lfx-button
+                  icon="fa-light fa-ellipsis-vertical"
+                  severity="secondary"
+                  [text]="true"
+                  size="small"
+                  ariaLabel="Row actions"
+                  (onClick)="openRowMenu(rowActionMenu, project, $event)"
+                  [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      }
+    </div>
+  </lfx-card>
+</main>
+
+<!-- Shared popup action menu — items rebuilt per row on open -->
+<lfx-menu #rowActionMenu [model]="rowMenuItems" [popup]="true" appendTo="body" data-testid="org-projects-row-action-menu" />
+
+<!-- Avatar-stack template: up to N avatars + overflow chip + total count -->
+<ng-template #stack let-people="people">
+  @if (people.length) {
+    <div class="flex items-center gap-2">
+      <div class="flex -space-x-2">
+        @for (person of stackVisible(people); track person.id) {
+          <span [title]="person.name" class="inline-flex">
+            <lfx-avatar [image]="person.avatarUrl" [label]="person.name" shape="circle" [ariaLabel]="person.name" styleClass="w-6 h-6 text-[10px] ring-2 ring-white" />
+          </span>
+        }
+        @if (stackOverflow(people) > 0) {
+          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-medium text-gray-600 ring-2 ring-white">
+            +{{ stackOverflow(people) }}
+          </span>
+        }
+      </div>
+      <span class="text-xs text-gray-500">{{ people.length }}</span>
+    </div>
+  } @else {
+    <span class="text-xs text-gray-400">&mdash;</span>
+  }
+</ng-template>

@@ -111,7 +111,7 @@ export const routes: Routes = [
           {
             path: 'projects',
             data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
           },
           {
             path: 'roi',

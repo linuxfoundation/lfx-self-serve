@@ -1,0 +1,106 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-4" data-testid="influence-summary-section">
+  <!-- Section header -->
+  <div class="flex flex-col gap-1">
+    <h2 class="text-lg font-semibold text-gray-900" data-testid="influence-summary-title">Influence Summary</h2>
+    <p class="text-sm text-gray-500">Top 3 projects by influence, gains, and decreases over the past 12 months. Methodology: markup-mu (Boysel et al.).</p>
+  </div>
+
+  <!-- Reserved slot for the AI-generated narrative summary (delivered in LFXV2-1910). -->
+
+  <!-- Pill-tab selector -->
+  <lfx-card-tabs-bar [options]="tabs" [selectedFilter]="activeMode()" (filterChange)="switchMode($event)" data-testid="influence-summary-tabs" />
+
+  <!-- Card grid -->
+  @if (error()) {
+    <div class="flex flex-col items-center gap-3 rounded-lg border border-gray-200 py-10 text-center" data-testid="influence-summary-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
+      <p class="text-sm text-gray-600">Couldn't load the influence summary.</p>
+      <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retryRequested.emit()" />
+    </div>
+  } @else if (loading()) {
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="influence-summary-loading">
+      @for (slot of skeletonCards; track $index) {
+        <div class="flex h-48 animate-pulse flex-col gap-3 rounded-lg border border-gray-200 p-4">
+          <div class="h-6 w-3/4 rounded bg-gray-100"></div>
+          <div class="h-4 w-1/2 rounded bg-gray-100"></div>
+          <div class="mt-auto h-4 w-full rounded bg-gray-100"></div>
+        </div>
+      }
+    </div>
+  } @else if (hasNoQualifying()) {
+    <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 py-10 text-center" data-testid="influence-summary-empty">
+      <i class="fa-light fa-chart-line text-2xl text-gray-400" aria-hidden="true"></i>
+      @if (activeMode() === 'influential') {
+        <p class="text-sm text-gray-600">Add more projects to your workspace to see your most influential projects here.</p>
+      } @else {
+        <p class="text-sm text-gray-600">Not enough 12-month history to compute gains/decreases yet. Check back next month.</p>
+      }
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="influence-summary-grid">
+      @for (card of cards(); track card.project.slug) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" [attr.data-testid]="'influence-summary-card-' + card.project.slug">
+          <!-- Header: logo + name + foundation -->
+          <div class="flex items-start justify-between gap-2">
+            <button type="button" class="flex items-center gap-2 text-left" (click)="openDetail(card.project)">
+              <lfx-avatar [image]="card.project.logoUrl" [label]="card.project.name" shape="square" styleClass="w-8 h-8 text-xs" />
+              <span class="text-sm font-semibold text-blue-600 hover:underline">{{ card.project.name }}</span>
+            </button>
+            <lfx-tag [value]="card.project.foundation.name" severity="secondary" [rounded]="true" />
+          </div>
+
+          <!-- Health -->
+          <div><lfx-tag [value]="healthLabel(card.project.health)" [severity]="healthSeverity(card.project.health)" [dot]="true" /></div>
+
+          <!-- Primary metric (mode-specific) -->
+          <div class="flex flex-col gap-2">
+            <p class="text-base font-semibold text-gray-900">{{ card.primaryMetric }}</p>
+            @if (activeMode() === 'influential') {
+              <div class="flex flex-wrap gap-1">
+                <lfx-tag [value]="bandLabel(card.project.technicalInfluence)" [severity]="bandSeverity(card.project.technicalInfluence)" />
+                <lfx-tag [value]="bandLabel(card.project.ecosystemInfluence)" [severity]="bandSeverity(card.project.ecosystemInfluence)" />
+              </div>
+            } @else {
+              <div class="flex items-center gap-2">
+                <span class="block h-7 w-20"><lfx-chart type="line" [data]="sparklineData(card.project)" [options]="sparklineOptions" height="28px" width="80px" /></span>
+                <lfx-tag [value]="card.project.changeDriver.label" [severity]="driverSeverity()" [rounded]="true" />
+              </div>
+            }
+          </div>
+
+          <!-- Snapshot stats -->
+          <div class="mt-auto grid grid-cols-3 gap-2 border-t border-gray-100 pt-3 text-center">
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold text-gray-900">{{ card.project.maintainers.length }}</span>
+              <span class="text-[11px] text-gray-500">Maintainers</span>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold text-gray-900">{{ card.project.contributors.length }}</span>
+              <span class="text-[11px] text-gray-500">Contributors</span>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold text-gray-900">{{ card.project.commits1y | number }}</span>
+              <span class="text-[11px] text-gray-500">1y Commits</span>
+            </div>
+          </div>
+
+          <!-- CTA -->
+          <lfx-button label="Open project" icon="fa-light fa-arrow-up-right-from-square" iconPos="right" size="small" severity="secondary" [text]="true" (onClick)="openDetail(card.project)" />
+        </div>
+      }
+
+      <!-- Backfill: prompt to add more projects when fewer than 3 qualify (Most Influential). -->
+      @if (activeMode() === 'influential') {
+        @for (slot of fillerSlots(); track $index) {
+          <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 p-4 text-center" data-testid="influence-summary-filler">
+            <i class="fa-light fa-circle-plus text-xl text-gray-400" aria-hidden="true"></i>
+            <p class="text-xs text-gray-500">Add more projects to your workspace to see more here.</p>
+          </div>
+        }
+      }
+    </div>
+  }
+</section>

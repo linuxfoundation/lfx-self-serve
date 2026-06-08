@@ -282,3 +282,46 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
 
   return sanitized;
 }
+
+/**
+ * Escape a single CSV cell per RFC 4180: wrap in quotes when the value contains a
+ * comma, quote, or newline, and double any embedded quotes.
+ * @param value - Raw cell value
+ * @returns CSV-safe cell string
+ */
+function escapeCsvCell(value: string | number): string {
+  const str = String(value ?? '');
+  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+/**
+ * Build an RFC 4180 CSV string from a matrix of rows (first row is typically the header).
+ * @param rows - Array of rows, each an array of cell values
+ * @returns CSV text with CRLF line endings
+ */
+export function rowsToCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): string {
+  return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
+}
+
+/**
+ * Trigger a client-side CSV file download in the browser. No-op during SSR (no `document`).
+ * Prepends a UTF-8 BOM so Excel detects the encoding.
+ * @param filename - Download filename (e.g. "report.csv")
+ * @param rows - Array of rows, each an array of cell values
+ */
+export function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<string | number>>): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const blob = new Blob(['\ufeff' + rowsToCsv(rows)], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
