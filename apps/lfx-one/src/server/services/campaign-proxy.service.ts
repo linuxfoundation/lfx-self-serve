@@ -644,7 +644,7 @@ export class CampaignProxyService {
       }
     }
 
-    const selectedPlatforms = body.platforms || ['google-ads'];
+    const selectedPlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
     const platformList = selectedPlatforms.join(', ');
     yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
@@ -725,7 +725,9 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = (body.platforms ?? ['google-ads']).filter((p) => p === 'google-ads' || p === 'linkedin-ads');
+    const supportedPlatforms = (body.platforms?.length ? body.platforms : ['google-ads']).filter(
+      (p): p is 'google-ads' | 'linkedin-ads' => p === 'google-ads' || p === 'linkedin-ads'
+    );
     if (supportedPlatforms.length === 0) {
       yield { type: 'error', data: 'No supported platforms specified. Supported: google-ads, linkedin-ads.' };
       return;
@@ -758,7 +760,7 @@ export class CampaignProxyService {
       return;
     }
 
-    const platforms = body.platforms || ['google-ads'];
+    const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
     if (platforms.includes('google-ads')) {
       yield { type: 'status', data: 'Regenerating keywords...' };
 
@@ -1272,7 +1274,7 @@ function extractEventNameFromUrl(url: string): string {
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
-  const platforms = body.platforms || ['google-ads'];
+  const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
 
