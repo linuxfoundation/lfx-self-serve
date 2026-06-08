@@ -134,14 +134,19 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
       if (elements.length < pageSize) break;
       start += pageSize;
     }
-  } catch {
-    // Swallow search errors — caller handles null
+  } catch (err) {
+    logger.warning(undefined, 'linkedin_find_by_name', `Search failed for "${name}"`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
   return null;
 }
 
 function toMs(dateStr: string, eod = false): number {
   const [y, m, d] = dateStr.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    throw new Error(`Invalid date string: "${dateStr}" — expected YYYY-MM-DD`);
+  }
   if (eod) return Date.UTC(y, m - 1, d, 23, 59, 59, 999);
   const utcStart = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
   if (utcStart <= Date.now()) return Date.now() + 5 * 60 * 1000;
@@ -181,7 +186,7 @@ export async function resolveGeoTargets(locationNames: string[]): Promise<Linked
       const elements = resp.elements || [];
       if (elements.length > 0) {
         const first = elements[0];
-        const resolvedUrn = first.urn || first.id || '';
+        const resolvedUrn = first.urn || first.$URN || first.id || '';
         if (resolvedUrn) {
           resolved.push({
             label: first.name || name,
@@ -315,9 +320,7 @@ export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrn
   let groups: readonly string[] = [];
 
   if (profile === 'custom') {
-    const cloudNative = LINKEDIN_TARGETING_PROFILES.find((p) => p.id === 'cloud-native');
-    skills = cloudNative?.skills || [];
-    groups = cloudNative?.groups || [];
+    throw new Error('Custom targeting profile is not yet supported — use a named profile (cloud-native, mcp)');
   } else {
     const profileConfig = LINKEDIN_TARGETING_PROFILES.find((p) => p.id === profile);
     skills = profileConfig?.skills || [];
