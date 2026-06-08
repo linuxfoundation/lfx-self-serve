@@ -10,7 +10,7 @@ import { CampaignService } from '@services/campaign.service';
 import { map, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
-import type { CampaignBriefOutput, CampaignCreateResponse, CampaignCreateResult, CampaignKeyword, CampaignType } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignCreateResponse, CampaignResult, CampaignKeyword, CampaignType } from '@lfx-one/shared/interfaces';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -53,7 +53,7 @@ export class ImplementationTabComponent {
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
-  protected readonly results = signal<CampaignCreateResult[]>([]);
+  protected readonly results = signal<CampaignResult[]>([]);
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);
