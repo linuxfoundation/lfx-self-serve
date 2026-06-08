@@ -10,9 +10,19 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import type { OrgLensProjectDetailPageState, OrgLensProjectDetailResponse, OrgLensProjectDetailTab, OrgLensProjectHealth } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, parseLocalDateString } from '@lfx-one/shared/utils';
+import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
+import type {
+  OrgLensProjectDetailPageState,
+  OrgLensProjectDetailResponse,
+  OrgLensProjectDetailTab,
+  OrgLensProjectEcosystemCard,
+  OrgLensProjectHealth,
+  OrgLensProjectTechnicalCard,
+} from '@lfx-one/shared/interfaces';
+import { formatRelativeTime, hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
+import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
 
 const DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
@@ -25,6 +35,29 @@ const HEALTH_META: Record<OrgLensProjectHealth, { label: string; classes: string
   'at-risk': { label: 'At Risk', classes: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20' },
 };
 
+/** FontAwesome icons keyed by Technical / Ecosystem card. */
+const TECHNICAL_ICONS: Record<OrgLensProjectTechnicalCard['key'], string> = {
+  maintainers: 'fa-light fa-user-shield',
+  contributors: 'fa-light fa-users',
+  commits: 'fa-light fa-code-commit',
+  'pull-requests': 'fa-light fa-code-pull-request',
+};
+
+const ECOSYSTEM_ICONS: Record<OrgLensProjectEcosystemCard['key'], string> = {
+  collaboration: 'fa-light fa-comments',
+  'meeting-attendance': 'fa-light fa-video',
+  'board-members': 'fa-light fa-gavel',
+  'committee-members': 'fa-light fa-people-group',
+};
+
+/** Empty-state guidance copy per Ecosystem card (shown when the count is 0). */
+const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> = {
+  collaboration: 'No cross-org collaboration recorded in the last year.',
+  'meeting-attendance': 'No org reps attended project meetings in the last year.',
+  'board-members': 'Your organization holds no board seats on this project.',
+  'committee-members': 'Your organization holds no committee seats on this project.',
+};
+
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885). Opened from the Projects table /
  * Influence Summary cards via `/org/projects/:projectSlug`. Owns the fetch keyed on the
@@ -32,7 +65,7 @@ const HEALTH_META: Record<OrgLensProjectHealth, { label: string; classes: string
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [BreadcrumbComponent, EmptyStateComponent],
+  imports: [BreadcrumbComponent, EmptyStateComponent, MetricCardComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -67,6 +100,12 @@ export class OrgProjectDetailComponent {
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
   protected readonly lastUpdatedLabel = computed(() => this.formatRelative(this.hero()?.lastUpdated ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
+  protected readonly sourceUrl = computed(() => this.hero()?.sourceUrl ?? null);
+
+  // Our Influence tab — Technical (sparkline) + Ecosystem (count) card view-models.
+  private readonly monthLabels: string[] = this.buildMonthLabels();
+  protected readonly technicalCards = computed(() => (this.detail()?.technical ?? []).map((card) => this.toTechnicalCard(card)));
+  protected readonly ecosystemCards = computed(() => (this.detail()?.ecosystem ?? []).map((card) => this.toEcosystemCard(card)));
 
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
@@ -176,5 +215,79 @@ export class OrgProjectDetailComponent {
     if (parts.length === 0) return '?';
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  /** Twelve trailing short-month labels (oldest → newest) for sparkline + trend tooltips. */
+  private buildMonthLabels(): string[] {
+    const out: string[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      out.push(new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleDateString('en-US', { month: 'short' }));
+    }
+    return out;
+  }
+
+  private toTechnicalCard(card: OrgLensProjectTechnicalCard) {
+    const pctLabel = `${(card.pct * 100).toFixed(1)}%`;
+    const isEmpty = card.orgCount === 0;
+    return {
+      key: card.key,
+      title: card.label,
+      icon: TECHNICAL_ICONS[card.key],
+      value: card.orgCount.toLocaleString(),
+      subtitle: `of ${card.projectTotal.toLocaleString()} (${pctLabel})`,
+      description: `Updated ${card.dataUpdatedHoursAgo}h ago`,
+      isEmpty,
+      chartData: this.sparklineData(card.label, card.sparkline),
+      chartOptions: this.sparklineOptions(card.label),
+      testId: `project-detail-technical-card-${card.key}`,
+    };
+  }
+
+  private toEcosystemCard(card: OrgLensProjectEcosystemCard) {
+    return {
+      key: card.key,
+      title: card.label,
+      icon: ECOSYSTEM_ICONS[card.key],
+      count: card.count.toLocaleString(),
+      isEmpty: card.count === 0,
+      emptyCopy: ECOSYSTEM_EMPTY_COPY[card.key],
+      description: `Updated ${card.dataUpdatedHoursAgo}h ago`,
+      testId: `project-detail-ecosystem-card-${card.key}`,
+    };
+  }
+
+  private sparklineData(label: string, series: number[]): ChartData<ChartType> {
+    return {
+      labels: this.monthLabels,
+      datasets: [
+        {
+          label,
+          data: series,
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+          fill: true,
+          tension: 0,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    };
+  }
+
+  private sparklineOptions(label: string): ChartOptions<ChartType> {
+    return {
+      ...BASE_LINE_CHART_OPTIONS,
+      plugins: {
+        ...BASE_LINE_CHART_OPTIONS.plugins,
+        tooltip: {
+          ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+          callbacks: {
+            title: (context) => context[0]?.label ?? '',
+            label: (context) => `${label}: ${context.parsed.y ?? 0}`,
+          },
+        },
+      },
+    };
   }
 }
