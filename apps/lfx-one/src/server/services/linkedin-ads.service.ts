@@ -196,7 +196,7 @@ export async function resolveGeoTargets(locationNames: string[], req?: Request):
         }
       }
     } catch (error: unknown) {
-      logger.warning(req ?? undefined, 'linkedin_resolve_geo', `Failed to resolve geo: ${name}`, { name, err: error });
+      logger.warning(req, 'linkedin_resolve_geo', `Failed to resolve geo: ${name}`, { name, err: error });
     }
   }
 
@@ -374,6 +374,12 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
   const steps: string[] = [];
   const startTime = logger.startOperation(req, 'linkedin_campaign_create', { event: params.eventName });
 
+  if (params.endDate <= params.startDate) {
+    const err = new Error(`Invalid date range: endDate (${params.endDate}) must be after startDate (${params.startDate})`);
+    logger.error(req, 'linkedin_campaign_create', startTime, err, { startDate: params.startDate, endDate: params.endDate });
+    throw err;
+  }
+
   try {
     const account = await verifyAccount();
     steps.push(`Verified account: ${account.name} (${account.status})`);
@@ -422,7 +428,7 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
 
     logger.success(req, 'linkedin_campaign_create', startTime, { campaignId, creativeCount });
     return result;
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(req, 'linkedin_campaign_create', startTime, error, { event: params.eventName });
     throw error;
   }

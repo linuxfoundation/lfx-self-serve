@@ -934,7 +934,7 @@ export class CampaignProxyService {
         adGroupCount: 1,
         keywordCount: 0,
         adCount: li.creativeCount,
-        googleAdsUrl: li.linkedInUrl,
+        campaignUrl: li.linkedInUrl,
         steps: li.steps,
       })),
     ];
@@ -1119,7 +1119,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      googleAdsUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
       steps,
     };
   }
@@ -1198,7 +1198,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      googleAdsUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
       steps,
     };
   }

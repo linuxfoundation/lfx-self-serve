@@ -209,7 +209,7 @@ export interface CampaignCreateResult {
   adGroupCount: number;
   keywordCount: number;
   adCount: number;
-  googleAdsUrl: string;
+  campaignUrl: string;
   steps: string[];
 }
 
@@ -256,7 +256,7 @@ export interface CampaignMetrics {
   pacingPct: number;
   pacingLabel: PacingLabel;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
 }
 
 export interface CampaignActionItem {
@@ -307,7 +307,7 @@ export interface KeywordMetrics {
   criterionId: string;
   campaign: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -362,7 +362,7 @@ export interface ImpressionShareMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressionShare: number | null;
   budgetLostShare: number | null;
   rankLostShare: number | null;
@@ -408,7 +408,7 @@ export interface SearchTermMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -427,7 +427,7 @@ export interface QualityScoreInsight {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   spend: number;
