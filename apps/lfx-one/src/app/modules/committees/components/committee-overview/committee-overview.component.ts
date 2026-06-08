@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
+import { PENDING_ACTION_EMPTY_GRACE_MS, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -77,10 +77,14 @@ export class CommitteeOverviewComponent {
 
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
   // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
-  public isSectionFading = signal(false);
-  public isSectionHidden = signal(false);
+  // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a
+  // context switch that briefly empties the list doesn't trigger a spurious fade before the new data arrives.
+  // Template-only state — protected, matching pending-actions.component.ts.
+  protected readonly isSectionFading = signal(false);
+  protected readonly isSectionHidden = signal(false);
+  protected readonly isSectionGracePending = signal(false);
   private sectionEverShown = false;
-  // setTimeout handle for the in-flight section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
+  // setTimeout handle for the in-flight grace/section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
   private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
 
   // Computed: chairs derived from members
@@ -201,18 +205,27 @@ export class CommitteeOverviewComponent {
       .subscribe((items) => {
         if (items.length > 0) {
           this.sectionEverShown = true;
-          // Cancel any in-flight section-hide so a repopulated section stays visible.
+          // Cancel any in-flight grace/fade so a repopulated section stays visible.
           this.clearSectionFadeTimer();
+          this.isSectionGracePending.set(false);
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
         } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
-          // Guard on sectionFadeTimerId so repeated empty emissions can't schedule overlapping timers
-          // (an orphaned earlier timer would survive clearSectionFadeTimer and wrongly hide a repopulated section).
-          this.isSectionFading.set(true);
+          // Wait a grace period before fading: a context switch (changing group) can briefly empty the list
+          // before new data arrives — if it repopulates within the grace, the items>0 branch cancels this timer
+          // and nothing fades. The sectionFadeTimerId guard also prevents overlapping timers on repeated empty
+          // emissions. isSectionGracePending keeps the section mounted (stable, not collapsing) during the grace.
+          this.isSectionGracePending.set(true);
           this.sectionFadeTimerId = setTimeout(() => {
+            // Still empty after the grace — commit to the fade.
             this.sectionFadeTimerId = null;
-            this.isSectionHidden.set(true);
-          }, PENDING_ACTION_FADE_OUT_MS + 50);
+            this.isSectionGracePending.set(false);
+            this.isSectionFading.set(true);
+            this.sectionFadeTimerId = setTimeout(() => {
+              this.sectionFadeTimerId = null;
+              this.isSectionHidden.set(true);
+            }, PENDING_ACTION_FADE_OUT_MS + 50);
+          }, PENDING_ACTION_EMPTY_GRACE_MS);
         }
       });
 

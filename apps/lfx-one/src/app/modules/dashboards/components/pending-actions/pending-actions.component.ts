@@ -9,7 +9,13 @@ import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SKELETON_HOLD_MS } from '@lfx-one/shared/constants';
+import {
+  PENDING_ACTION_BUTTON_ICON,
+  PENDING_ACTION_EMPTY_GRACE_MS,
+  PENDING_ACTION_FADE_OUT_MS,
+  PENDING_ACTION_LABEL,
+  PENDING_ACTION_SKELETON_HOLD_MS,
+} from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
@@ -83,8 +89,11 @@ export class PendingActionsComponent {
   // setTimeout handle for the in-flight deferred decline; cleared on undo or when the timer fires.
   private declineTimerId: ReturnType<typeof setTimeout> | null = null;
   // Section-level fade-out: true while the CSS collapse animation is in flight; isSectionHidden removes the section from the DOM.
+  // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a context
+  // switch that briefly empties the list doesn't trigger a spurious fade before the new data arrives.
   protected readonly isSectionFading = signal(false);
   protected readonly isSectionHidden = signal(false);
+  protected readonly isSectionGracePending = signal(false);
   private sectionEverShown = false;
   // setTimeout handle for the in-flight section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
   private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -107,20 +116,30 @@ export class PendingActionsComponent {
       .subscribe((count) => {
         if (count > 0) {
           this.sectionEverShown = true;
-          // Cancel any in-flight section-hide so a repopulated section stays visible.
+          // Cancel any in-flight grace/fade so a repopulated section stays visible.
           this.clearSectionFadeTimer();
+          this.isSectionGracePending.set(false);
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
         } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
-          // Guard on sectionFadeTimerId so repeated empty emissions can't schedule overlapping timers
-          // (an orphaned earlier timer would survive clearSectionFadeTimer and wrongly hide a repopulated section).
-          // Close the drawer too, so a repopulated section doesn't reopen it with stale state.
-          this.drawerVisible.set(false);
-          this.isSectionFading.set(true);
+          // Wait a grace period before fading: a context switch (org/project change) can briefly empty the
+          // list before new data arrives — if it repopulates within the grace, the count>0 branch cancels
+          // this timer and nothing fades. The sectionFadeTimerId guard also prevents overlapping timers on
+          // repeated empty emissions (an orphan would survive clearSectionFadeTimer and hide a repopulated section).
+          // isSectionGracePending keeps the section mounted (stable, not collapsing) during the grace.
+          this.isSectionGracePending.set(true);
           this.sectionFadeTimerId = setTimeout(() => {
+            // Still empty after the grace — commit to the fade.
             this.sectionFadeTimerId = null;
-            this.isSectionHidden.set(true);
-          }, PENDING_ACTION_FADE_OUT_MS + 50);
+            this.isSectionGracePending.set(false);
+            // Close the drawer so a later repopulation can't reopen it with stale state.
+            this.drawerVisible.set(false);
+            this.isSectionFading.set(true);
+            this.sectionFadeTimerId = setTimeout(() => {
+              this.sectionFadeTimerId = null;
+              this.isSectionHidden.set(true);
+            }, PENDING_ACTION_FADE_OUT_MS + 50);
+          }, PENDING_ACTION_EMPTY_GRACE_MS);
         }
       });
 
