@@ -82,6 +82,10 @@ export class PendingActionsComponent {
   protected readonly pendingDecline = signal<PendingDecline | null>(null);
   // setTimeout handle for the in-flight deferred decline; cleared on undo or when the timer fires.
   private declineTimerId: ReturnType<typeof setTimeout> | null = null;
+  // Section-level fade-out: true while the CSS collapse animation is in flight; isSectionHidden removes the section from the DOM.
+  protected readonly isSectionFading = signal(false);
+  protected readonly isSectionHidden = signal(false);
+  private sectionEverShown = false;
   // Dedicated toast key for the decline Undo, exposed to the template's keyed <p-toast>.
   protected readonly undoToastKey = INVITE_UNDO_TOAST_KEY;
 
@@ -94,6 +98,21 @@ export class PendingActionsComponent {
   protected readonly decoratedActions: Signal<DecoratedPendingAction[]> = this.initDecoratedActions();
 
   public constructor() {
+    // When the last action is resolved, fade the section out then remove it from the DOM.
+    // sectionEverShown prevents the fade from triggering on initial load with zero actions.
+    toObservable(this.totalVisible)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((count) => {
+        if (count > 0) {
+          this.sectionEverShown = true;
+          this.isSectionHidden.set(false);
+          this.isSectionFading.set(false);
+        } else if (this.sectionEverShown && !this.isSectionHidden()) {
+          this.isSectionFading.set(true);
+          setTimeout(() => this.isSectionHidden.set(true), PENDING_ACTION_FADE_OUT_MS + 50);
+        }
+      });
+
     // Eagerly load Meeting payloads for every inline RSVP row so its buttons render immediately.
     toObservable(this.decoratedActions)
       .pipe(takeUntilDestroyed(this.destroyRef))
