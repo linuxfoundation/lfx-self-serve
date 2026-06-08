@@ -37,17 +37,74 @@
     }
 
     @default {
-      @if (detail(); as data) {
-        <!-- Back link (breadcrumb + hero land in the next commit) -->
-        <a
-          [routerLink]="['/org/projects']"
-          class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
-          data-testid="project-detail-back-link">
-          <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
-          <span>Back to Projects</span>
-        </a>
+      @if (hero(); as h) {
+        <!-- Breadcrumb: Projects / <Foundation> / <Project> -->
+        <lfx-breadcrumb
+          [model]="breadcrumbItems()"
+          [home]="{ icon: 'fa-light fa-folder', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
+          data-testid="project-detail-breadcrumb">
+        </lfx-breadcrumb>
 
-        <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ data.hero.projectName }}</h1>
+        <!-- Hero -->
+        <section class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between" data-testid="project-detail-hero">
+          <!-- Left: identity -->
+          <div class="flex items-start gap-4">
+            @if (h.logoUrl) {
+              <img [src]="h.logoUrl" [alt]="h.projectName + ' logo'" class="h-16 w-16 shrink-0 rounded-lg object-contain" />
+            } @else {
+              <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-lg font-semibold text-blue-700" aria-hidden="true">
+                {{ logoInitials() }}
+              </div>
+            }
+            <div class="flex flex-col gap-2">
+              <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
+              <p class="max-w-xl text-sm text-gray-600" data-testid="project-detail-description">{{ h.description }}</p>
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                @if (h.sourceUrl) {
+                  <a [href]="h.sourceUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700" data-testid="project-detail-source-link">
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                    <span>{{ h.sourceLabel || 'Source' }}</span>
+                  </a>
+                }
+                @if (h.lfxInsightsUrl) {
+                  <a [href]="h.lfxInsightsUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700" data-testid="project-detail-insights-link">
+                    <i class="fa-light fa-chart-line" aria-hidden="true"></i>
+                    <span>View on LFX Insights</span>
+                  </a>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: stat tiles -->
+          <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 md:text-right" data-testid="project-detail-hero-stats">
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">First commit</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-first-commit">{{ firstCommitLabel() }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Software value
+                <i class="fa-light fa-circle-info text-gray-400" title="Project-level CHAOSS / LFX Insights estimate for the whole project — not your organization's individual return." aria-hidden="true"></i>
+              </span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-software-value">{{ softwareValueLabel() }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health</span>
+              @if (healthMeta(); as hm) {
+                <span class="inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium md:ml-auto" [class]="hm.classes" data-testid="project-detail-health-badge">{{ hm.label }}</span>
+              }
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Foundation</span>
+              <span class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 md:ml-auto" data-testid="project-detail-foundation-pill">{{ h.foundationLabel }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Last updated</span>
+              <span class="text-sm text-gray-700" data-testid="project-detail-last-updated">{{ lastUpdatedLabel() }}</span>
+            </div>
+          </div>
+        </section>
 
         <!-- Tab strip -->
         <div

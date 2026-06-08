@@ -5,15 +5,25 @@
 
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import type { OrgLensProjectDetailPageState, OrgLensProjectDetailResponse, OrgLensProjectDetailTab } from '@lfx-one/shared/interfaces';
+import type { OrgLensProjectDetailPageState, OrgLensProjectDetailResponse, OrgLensProjectDetailTab, OrgLensProjectHealth } from '@lfx-one/shared/interfaces';
+import { formatRelativeTime, parseLocalDateString } from '@lfx-one/shared/utils';
+import type { MenuItem } from 'primeng/api';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
 
 const DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
+
+/** Hero health badge label + Tailwind token classes (green Excellent / amber Healthy / red At Risk). */
+const HEALTH_META: Record<OrgLensProjectHealth, { label: string; classes: string }> = {
+  excellent: { label: 'Excellent', classes: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' },
+  healthy: { label: 'Healthy', classes: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20' },
+  'at-risk': { label: 'At Risk', classes: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20' },
+};
 
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885). Opened from the Projects table /
@@ -22,7 +32,7 @@ const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-in
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [RouterLink, EmptyStateComponent],
+  imports: [BreadcrumbComponent, EmptyStateComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -45,6 +55,18 @@ export class OrgProjectDetailComponent {
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly pageState: Signal<OrgLensProjectDetailPageState> = computed(() => this.initPageState());
+
+  // Hero presentation — derived from the loaded payload.
+  protected readonly hero = computed(() => this.detail()?.hero ?? null);
+  protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
+  protected readonly healthMeta = computed(() => {
+    const health = this.hero()?.health;
+    return health ? HEALTH_META[health] : null;
+  });
+  protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
+  protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
+  protected readonly lastUpdatedLabel = computed(() => this.formatRelative(this.hero()?.lastUpdated ?? null));
+  protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
 
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
@@ -121,5 +143,38 @@ export class OrgProjectDetailComponent {
     if (this.fetchError()) return 'error';
     if (!this.detail()) return 'notFound';
     return 'ready';
+  }
+
+  private initBreadcrumb(): MenuItem[] {
+    const hero = this.hero();
+    if (!hero) return [{ label: 'Projects', routerLink: ['/org/projects'] }];
+    return [{ label: 'Projects', routerLink: ['/org/projects'] }, { label: hero.foundationLabel }, { label: hero.projectName }];
+  }
+
+  private formatMonthYear(dateString: string | null): string {
+    if (!dateString) return '—';
+    try {
+      return parseLocalDateString(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+    } catch {
+      return dateString;
+    }
+  }
+
+  private formatRelative(isoString: string | null): string {
+    if (!isoString) return '—';
+    const parsed = new Date(isoString);
+    return Number.isNaN(parsed.getTime()) ? '—' : formatRelativeTime(parsed);
+  }
+
+  private formatCompactUsd(value: number | null): string {
+    if (value === null || value === undefined) return '—';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  }
+
+  private initialsFor(name: string): string {
+    const parts = name.split(/[\s/]+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 }
