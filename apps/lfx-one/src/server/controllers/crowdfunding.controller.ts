@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
-import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
@@ -18,20 +18,13 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_initiatives',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_initiatives' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req, username);
+      const initiatives = await this.crowdfundingService.getMyInitiatives(req);
 
-      logger.success(req, 'get_my_initiatives', startTime, {
-        result_count: initiatives.data.length,
-      });
+      logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
       res.json(initiatives);
     } catch (error) {
@@ -44,12 +37,8 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'save_my_payment_method');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'save_my_payment_method',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'save_my_payment_method' });
       }
 
       const rawId = (req.body as Record<string, unknown>)['paymentMethodId'];
@@ -60,13 +49,7 @@ export class CrowdfundingController {
       }
       const paymentMethodId = rawId.trim();
 
-      const username = stripAuthPrefix(rawUsername);
-      const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, username, paymentMethodId);
-
-      if (!paymentMethod) {
-        res.status(502).json({ message: 'Failed to save payment method' });
-        return;
-      }
+      const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, paymentMethodId);
 
       logger.success(req, 'save_my_payment_method', startTime, { paymentMethodId });
 
@@ -81,16 +64,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_payment_method');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_payment_method',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_payment_method' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const paymentMethod = await this.crowdfundingService.getMyPaymentMethod(req, username);
+      const paymentMethod = await this.crowdfundingService.getMyPaymentMethod(req);
 
       if (!paymentMethod) {
         res.status(404).json({ message: 'No payment method found' });
@@ -110,16 +88,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donation_stats');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_donation_stats',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_donation_stats' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const stats = await this.crowdfundingService.getMyDonationStats(req, username);
+      const stats = await this.crowdfundingService.getMyDonationStats(req);
 
       logger.success(req, 'get_my_donation_stats', startTime);
 
@@ -134,20 +107,13 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_recurring_donations');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_recurring_donations',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_recurring_donations' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const recurringDonations = await this.crowdfundingService.getMyRecurringDonations(req, username);
+      const recurringDonations = await this.crowdfundingService.getMyRecurringDonations(req);
 
-      logger.success(req, 'get_my_recurring_donations', startTime, {
-        result_count: recurringDonations.data.length,
-      });
+      logger.success(req, 'get_my_recurring_donations', startTime, { result_count: recurringDonations.data.length });
 
       res.json(recurringDonations);
     } catch (error) {
@@ -160,27 +126,20 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donations');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_donations',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_donations' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
       const { pageSize, offset } = req.query;
       const parseNonNegativeInt = (val: unknown): number | undefined => {
         if (val == null || val === '') return undefined;
         const n = Number(val);
         return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
       };
-      const donations = await this.crowdfundingService.getMyDonations(req, username, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
-      logger.success(req, 'get_my_donations', startTime, {
-        result_count: donations.data.length,
-        total: donations.total,
-      });
+      const donations = await this.crowdfundingService.getMyDonations(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+
+      logger.success(req, 'get_my_donations', startTime, { result_count: donations.data.length, total: donations.total });
 
       res.json(donations);
     } catch (error) {
@@ -193,16 +152,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiatives_stats',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const stats = await this.crowdfundingService.getInitiativesStats(req, username);
+      const stats = await this.crowdfundingService.getInitiativesStats(req);
 
       logger.success(req, 'get_initiatives_stats', startTime);
 
@@ -217,16 +171,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'delete_my_payment_method');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'delete_my_payment_method',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'delete_my_payment_method' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      await this.crowdfundingService.deleteMyPaymentMethod(req, username);
+      await this.crowdfundingService.deleteMyPaymentMethod(req);
 
       logger.success(req, 'delete_my_payment_method', startTime);
 
@@ -241,17 +190,12 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiative_by_slug',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_by_slug' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
       const { slug } = req.params;
-      const initiative = await this.crowdfundingService.getInitiativeBySlug(req, username, slug);
+      const initiative = await this.crowdfundingService.getInitiativeBySlug(req, slug);
 
       if (!initiative) {
         res.status(404).json({ message: `Initiative '${slug}' not found` });
@@ -271,15 +215,10 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiative_transactions',
-        });
+      if (!await getUsernameFromAuth(req)) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_transactions' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
       const { slug } = req.params;
       const { type, size, from } = req.query;
 
@@ -300,11 +239,10 @@ export class CrowdfundingController {
 
       const transactions = await this.crowdfundingService.getInitiativeTransactions(
         req,
-        username,
         slug,
         resolvedType as AllowedType | undefined,
         parseNonNegativeInt(size),
-        parseNonNegativeInt(from)
+        parseNonNegativeInt(from),
       );
 
       if (!transactions) {
