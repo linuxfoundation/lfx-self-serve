@@ -26,18 +26,18 @@
  * - Dev server running on localhost:4200
  * - User authenticated with org-lens-enabled flag
  * - Organization context has at least one membership
- *   is seeded (see spec 018 quickstart §7 — the seed includes AGL/Toyota data).
+ *   is seeded (see spec 018 quickstart §7 — the seed includes sample foundation data).
  */
 
 import { expect, test } from '@playwright/test';
 
-const DETAIL_URL_AGL = '/org/memberships/agl-001';
-const DOCS_URL_AGL = '/org/memberships/agl-001#docs';
+const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
+const DOCS_URL_FOUNDATION = '/org/memberships/sample-foundation#docs';
 // SC-014 needs a foundation with zero agreements to exercise the disabled
 // download-all branch. Until a guaranteed-empty foundation is seeded in dev,
-// this aliases AGL — the test will `skip()` when the list is non-empty.
+// this aliases the sample foundation — the test will `skip()` when the list is non-empty.
 // TODO(LFXV2-1866): retarget this to a known-empty foundation slug once one is seeded.
-const DOCS_URL_EMPTY_FOUNDATION = DOCS_URL_AGL;
+const DOCS_URL_EMPTY_FOUNDATION = DOCS_URL_FOUNDATION;
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);
@@ -70,7 +70,7 @@ function countRfc4180Columns(line: string): number {
 
 test.describe('Documentation Tab — testid resolution (SC-008, FR-028)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
@@ -197,7 +197,7 @@ test.describe('Documentation Tab — testid resolution (SC-008, FR-028)', () => 
 //     if explicit coverage is desired, add a single test below.
 test.describe('Documentation Tab — View link live behavior (SC-011, SC-012, FR-028)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('membership-detail-docs-agreements-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
@@ -250,7 +250,7 @@ test.describe('Documentation Tab — View link live behavior (SC-011, SC-012, FR
 
 test.describe('Documentation Tab — CSV download (SC-013, SC-014, FR-032)', () => {
   test('SC-013: download-all icon downloads a 9-column CSV with the correct filename pattern', async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('membership-detail-docs-agreements-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -308,7 +308,7 @@ test.describe('Documentation Tab — CSV download (SC-013, SC-014, FR-032)', () 
 // is non-null and a disabled <button> otherwise; the card itself is conditional.
 test.describe('Documentation Tab — Certificate Download live behavior (Spec 019 FR-018)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
@@ -331,7 +331,7 @@ test.describe('Documentation Tab — Certificate Download live behavior (Spec 01
 
 test.describe('Documentation Tab — tab navigation (SC-001, SC-010)', () => {
   test('clicking Documentation tab from Key Contacts renders content within budget (SC-001)', async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const start = Date.now();
@@ -345,7 +345,7 @@ test.describe('Documentation Tab — tab navigation (SC-001, SC-010)', () => {
   });
 
   test('navigating away and back does not trigger redundant fetch (SC-010)', async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-docs-agreements-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     let fetchCount = 0;
@@ -367,7 +367,7 @@ test.describe('Documentation Tab — tab navigation (SC-001, SC-010)', () => {
   });
 
   test('direct navigation to #docs URL shows Documentation tab active', async ({ page }) => {
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -384,7 +384,7 @@ test.describe('Documentation Tab — loading and error states (SC-009)', () => {
       await route.continue();
     });
 
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // The loading skeleton should be visible while the response is delayed
@@ -399,7 +399,7 @@ test.describe('Documentation Tab — loading and error states (SC-009)', () => {
     // Intercept and abort the documents request
     await page.route('**/lens/memberships/*/documents', (route) => route.abort());
 
-    await page.goto(DOCS_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DOCS_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('membership-detail-docs-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
