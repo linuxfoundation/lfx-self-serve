@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
+import { DUE_DATE_LABELS } from '@lfx-one/shared';
 
 @Pipe({
   name: 'dueDateLabel',
@@ -19,8 +20,8 @@ export class DueDateLabelPipe implements PipeTransform {
     // Past due: the row already shows the absolute date, so emit no countdown (mirrors the drawer once daysLeft < 0).
     if (diffDays < 0) return '';
 
-    if (diffDays === 0) return 'Closes today';
-    if (diffDays === 1) return 'Closes tomorrow';
+    if (diffDays === 0) return DUE_DATE_LABELS.CLOSES_TODAY;
+    if (diffDays === 1) return DUE_DATE_LABELS.CLOSES_TOMORROW;
 
     if (diffDays < 14) {
       return `Closes in ${diffDays} days`;
