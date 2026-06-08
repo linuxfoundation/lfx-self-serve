@@ -1000,7 +1000,7 @@ export class CampaignProxyService {
       });
       results.push(result);
     } catch (error: unknown) {
-      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: config.eventName });
+      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: config.eventName ?? body.eventName ?? 'unknown' });
       errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
     }
   }
