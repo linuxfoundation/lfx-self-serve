@@ -29,11 +29,20 @@ export interface OrgEvent {
   readonly eventUrl: string | null;
   readonly eventRegistrationUrl: string | null;
   readonly orgAttendeeCount: number;
-  readonly isRegistered: boolean;
+  /** Event-wide registration goal/target (EVENT_REGISTRATIONS_GOAL); null when no goal is set. */
+  readonly eventRegistrationsGoal: number | null;
+  readonly orgSpeakerAcceptedCount: number;
+  readonly orgSpeakerSubmittedCount: number;
+  readonly isOrgSponsor: boolean;
 }
 
 /** Paginated response for org events. */
 export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
+
+/** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
+export interface OrgEventRowVm extends OrgEvent {
+  readonly dateRange: string;
+}
 
 /** Frontend query params for GET /api/orgs/:accountId/lens/events. */
 export interface GetOrgEventsParams {
@@ -42,6 +51,7 @@ export interface GetOrgEventsParams {
   readonly status?: string | null;
   readonly pageSize?: number;
   readonly offset?: number;
+  readonly sortField?: string;
   readonly sortOrder?: 'ASC' | 'DESC';
 }
 
@@ -59,29 +69,50 @@ export interface GetOrgEventsOptions {
   readonly status?: string | null;
   readonly pageSize: number;
   readonly offset: number;
+  readonly sortField: string;
   readonly sortOrder: 'ASC' | 'DESC';
 }
 
-/** Raw row returned by the org upcoming/past events Snowflake query (backend query layer). */
-export interface OrgEventRow {
-  EVENT_ID: string;
-  EVENT_NAME: string;
-  FOUNDATION: string | null;
-  EVENT_START_DATE: Date | string | null;
-  EVENT_END_DATE: Date | string | null;
-  EVENT_LOCATION: string | null;
-  EVENT_CITY: string | null;
-  EVENT_COUNTRY: string | null;
-  EVENT_URL: string | null;
-  EVENT_REGISTRATION_URL: string | null;
-  ORG_ATTENDEE_COUNT: number;
-  IS_REGISTERED: boolean;
-  TOTAL_RECORDS: number;
+/** A single org employee in the per-event attendees drawer. */
+export interface OrgEventAttendee {
+  readonly contactId: string;
+  readonly name: string;
+  readonly jobTitle: string | null;
 }
 
-/** Raw row returned by the org events summary Snowflake query (backend query layer). */
-export interface OrgEventsSummaryRow {
-  TOTAL_EVENTS: number;
-  PAST_EVENTS: number;
-  UPCOMING_EVENTS: number;
+/** Attendee row with presentation fields pre-baked for template rendering (avoids method calls in template). */
+export interface OrgEventAttendeeVm extends OrgEventAttendee {
+  readonly initials: string;
+  readonly avatarColorClass: string;
+}
+
+/** Response for GET /api/orgs/:accountId/lens/events/:eventId/attendees */
+export interface OrgEventAttendeesDrawerResponse {
+  readonly eventId: string;
+  readonly eventName: string;
+  readonly total: number;
+  readonly data: readonly OrgEventAttendee[];
+}
+
+/** A single org employee in the per-event speakers drawer. */
+export interface OrgEventSpeaker {
+  readonly contactId: string;
+  readonly name: string;
+  readonly jobTitle: string | null;
+  readonly status: 'ACCEPTED' | 'SUBMITTED';
+}
+
+/** Speaker row with presentation fields pre-baked for template rendering (avoids method calls in template). */
+export interface OrgEventSpeakerVm extends OrgEventSpeaker {
+  readonly initials: string;
+  readonly avatarColorClass: string;
+}
+
+/** Response for GET /api/orgs/:accountId/lens/events/:eventId/speakers */
+export interface OrgEventSpeakersResponse {
+  readonly eventId: string;
+  readonly eventName: string;
+  readonly acceptedCount: number;
+  readonly submittedCount: number;
+  readonly data: readonly OrgEventSpeaker[];
 }
