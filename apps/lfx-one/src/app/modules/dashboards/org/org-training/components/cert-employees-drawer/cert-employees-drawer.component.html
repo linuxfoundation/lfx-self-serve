@@ -54,7 +54,9 @@
       </div>
     } @else {
       @if (isRosterCapped()) {
-        <p class="text-xs text-gray-500" data-testid="cert-employees-cap-note">Showing first {{ rosterCap | number }} of {{ count() | number }} {{ statusLabel() }}.</p>
+        <p class="text-xs text-gray-500" data-testid="cert-employees-cap-note">
+          Showing first {{ rosterCap | number }} of {{ count() | number }} {{ statusLabel() }}.
+        </p>
       }
       <ul class="flex flex-col divide-y divide-gray-100" data-testid="cert-employees-list">
         @for (employee of filteredEmployees(); track employee.contactId) {
