@@ -249,8 +249,10 @@ export class PlanningTabComponent implements OnInit {
             introText: (v['intro_text'] as string) ?? (v['introText'] as string) ?? '',
             headline: (v['headline'] as string) ?? '',
           })),
-          recommendedGeoTargets: (liData['resolved_geo_targets'] as LinkedInGeoTarget[]) ?? [],
-          recommendedTargetingProfile: (liData['recommended_targeting_profile'] as LinkedInTargetingProfile) ?? 'cloud-native',
+          recommendedGeoTargets: Array.isArray(liData['resolved_geo_targets']) ? (liData['resolved_geo_targets'] as LinkedInGeoTarget[]) : [],
+          recommendedTargetingProfile: ['cloud-native', 'mcp', 'custom'].includes(liData['recommended_targeting_profile'] as string)
+            ? (liData['recommended_targeting_profile'] as LinkedInTargetingProfile)
+            : 'cloud-native',
         }
       : undefined;
     this.proceedToImplementation.emit({

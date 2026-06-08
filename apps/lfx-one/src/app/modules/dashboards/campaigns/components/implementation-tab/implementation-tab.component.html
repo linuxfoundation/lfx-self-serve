@@ -212,6 +212,7 @@
               <button
                 type="button"
                 (click)="setLinkedInTargetingProfile('cloud-native')"
+                [attr.aria-pressed]="linkedInTargetingProfile() === 'cloud-native'"
                 [class]="
                   linkedInTargetingProfile() === 'cloud-native'
                     ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
@@ -223,6 +224,7 @@
               <button
                 type="button"
                 (click)="setLinkedInTargetingProfile('mcp')"
+                [attr.aria-pressed]="linkedInTargetingProfile() === 'mcp'"
                 [class]="
                   linkedInTargetingProfile() === 'mcp'
                     ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
