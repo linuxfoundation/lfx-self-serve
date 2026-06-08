@@ -115,11 +115,6 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; orgId: string }[] = [
-  { accountId: '538170226', label: 'The Linux Foundation', orgId: '208777' },
-  { accountId: '509430019', label: 'LF Events', orgId: '208777' },
-] as const;
-
 export const LINKEDIN_EMPLOYER_EXCLUSIONS: readonly string[] = ['urn:li:company:33275771', 'urn:li:company:12893459'] as const;
 
 export const LINKEDIN_TARGETING_PROFILES: readonly LinkedInTargetingProfileConfig[] = [

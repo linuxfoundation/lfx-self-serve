@@ -982,6 +982,7 @@ export class CampaignProxyService {
 
   private async executeLinkedInDispatch(body: CampaignCreateRequest, results: LinkedInCampaignCreateResult[], errors: string[]): Promise<void> {
     const config = body.linkedInConfig!;
+    const startTime = Date.now();
     try {
       const result = await executeLinkedInCampaignCreation(undefined, {
         eventName: config.eventName || body.eventName,
@@ -999,7 +1000,7 @@ export class CampaignProxyService {
       });
       results.push(result);
     } catch (error: unknown) {
-      logger.error(undefined, 'linkedin_dispatch', 0, error as Error, { eventName: config.eventName });
+      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: config.eventName });
       errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
     }
   }
