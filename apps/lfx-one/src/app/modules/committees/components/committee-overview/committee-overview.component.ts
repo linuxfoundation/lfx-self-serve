@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
+import { PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -42,6 +42,7 @@ export class CommitteeOverviewComponent {
   private readonly surveyService = inject(SurveyService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -73,6 +74,14 @@ export class CommitteeOverviewComponent {
   // Loading states for meeting sections
   public upcomingMeetingsLoading = signal(true);
   public pastMeetingsLoading = signal(true);
+
+  // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
+  // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
+  public isSectionFading = signal(false);
+  public isSectionHidden = signal(false);
+  private sectionEverShown = false;
+  // setTimeout handle for the in-flight section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
+  private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
 
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();
@@ -184,6 +193,31 @@ export class CommitteeOverviewComponent {
     return past[0] ?? null;
   });
 
+  public constructor() {
+    // When the last pending vote/survey is resolved, fade the section out then remove it from the DOM.
+    // sectionEverShown prevents the fade from triggering on initial load with zero actions.
+    toObservable(this.pendingActionItems)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((items) => {
+        if (items.length > 0) {
+          this.sectionEverShown = true;
+          // Cancel any in-flight section-hide so a repopulated section stays visible.
+          this.clearSectionFadeTimer();
+          this.isSectionHidden.set(false);
+          this.isSectionFading.set(false);
+        } else if (this.sectionEverShown && !this.isSectionHidden()) {
+          this.isSectionFading.set(true);
+          this.sectionFadeTimerId = setTimeout(() => {
+            this.sectionFadeTimerId = null;
+            this.isSectionHidden.set(true);
+          }, PENDING_ACTION_FADE_OUT_MS + 50);
+        }
+      });
+
+    // Cancel pending section-hide so it can't fire on a destroyed component.
+    this.destroyRef.onDestroy(() => this.clearSectionFadeTimer());
+  }
+
   // Action methods
   public onJoinClick(): void {
     this.joinRequested.emit();
@@ -280,6 +314,13 @@ export class CommitteeOverviewComponent {
         });
       },
     });
+  }
+
+  private clearSectionFadeTimer(): void {
+    if (this.sectionFadeTimerId !== null) {
+      clearTimeout(this.sectionFadeTimerId);
+      this.sectionFadeTimerId = null;
+    }
   }
 
   // Private initializer functions

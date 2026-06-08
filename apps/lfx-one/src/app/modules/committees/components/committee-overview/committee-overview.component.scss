@@ -1,2 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+
+// Section-level fade-out for "My Pending Actions" when all actions are resolved. max-height is slightly
+// longer than opacity so the collapse completes smoothly after the content has already faded.
+// overflow: hidden is scoped to .is-fading only so normal content is never clipped.
+.pending-actions-section {
+  transition:
+    opacity 300ms ease-out,
+    max-height 400ms ease-out;
+  // Generous ceiling; only constrains during animation, never clips at rest (overflow is visible by default).
+  max-height: 2000px;
+
+  &.is-fading {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+  }
+}
