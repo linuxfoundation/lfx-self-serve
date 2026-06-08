@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-01T22:06:58.946Z",
+  "generatedAt": "2026-05-30T04:01:59.530Z",
   "miniSearch": {
     "documentCount": 45,
     "nextId": 45,
@@ -4765,7 +4765,7 @@
             "35": 1,
             "37": 1,
             "41": 1,
-            "44": 3
+            "44": 4
           }
         }
       ],
@@ -10826,7 +10826,7 @@
             "34": 2,
             "41": 3,
             "42": 2,
-            "44": 3
+            "44": 2
           }
         }
       ],
@@ -13423,7 +13423,7 @@
       "id": "votes/manage-votes",
       "title": "Manage Votes",
       "headings": "View polls Cast your vote View results Edit a poll Close a poll Switch project context Related",
-      "body": "This article applies to users with maintainer, board-member, or executive-director personas. Use this guide to view, update, and manage polls in your project.\n\nView polls\n\nSign in to app.lfx.dev.\n\nSelect Votes from the left navigation sidebar.\n\nThe votes dashboard lists all polls for your active project context.\n\nSelect a poll to open its detail view.\n\nCast your vote\n\nOpen an active poll from the votes dashboard.\n\nSelect your preferred option or options from the poll.\n\nSubmit your vote.\n\nView results\nSelect a poll to view its current results and status.\n\nEdit a poll\n\nOpen the poll you want to update.\n\nSelect the edit option on the poll detail page.\n\nUpdate the poll details and save your changes.\n\nClose a poll\nUse the poll settings to edit details or close the poll before its end date.\n\nSwitch project context\nPolls are scoped to a project or foundation. Use the lens switcher to change your active context.\n\nRelated\n\nCreate a Vote — steps to create a new poll\n\nVotes overview — an overview of the Votes section",
+      "body": "This article applies to users with maintainer, board-member, or executive-director personas. Use this guide to view, update, and manage polls in your project.\n\nView polls\n\nSign in to app.lfx.dev.\n\nSelect Votes from the left navigation sidebar.\n\nThe votes dashboard lists all polls for your active project context.\n\nSelect a poll to open its detail view.\n\nCast your vote\n\nOpen an open poll from the votes dashboard.\n\nSelect your preferred option or options from the poll.\n\nSubmit your vote.\n\nView results\nSelect a poll to view its current results and status.\n\nEdit a poll\n\nOpen the poll you want to update.\n\nSelect the edit option on the poll detail page.\n\nUpdate the poll details and save your changes.\n\nClose a poll\nUse the poll settings to edit details or close the poll before its end date.\n\nSwitch project context\nPolls are scoped to a project or foundation. Use the lens switcher to change your active context.\n\nRelated\n\nCreate a Vote — steps to create a new poll\n\nVotes overview — an overview of the Votes section",
       "tags": "votes manage polls results",
       "url": "/docs/votes/manage-votes",
       "topic": "votes"

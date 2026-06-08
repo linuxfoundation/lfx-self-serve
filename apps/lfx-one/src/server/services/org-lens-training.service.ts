@@ -35,6 +35,9 @@ interface OrgCertificationRow {
   LOGO_URL: string | null;
   CERTIFIED_COUNT: number;
   IN_PROGRESS_COUNT: number;
+}
+
+interface OrgCertificationCountRow {
   TOTAL_RECORDS: number;
 }
 
@@ -109,7 +112,7 @@ export class OrgLensTrainingService {
 
     // sortField and sortOrder are validated against allow-lists in the controller before reaching
     // here, so they are safe to interpolate; user-supplied values are always passed as binds.
-    const sql = `
+    const filteredCte = `
       WITH base AS (
         SELECT
           COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)        AS COURSE_ID,
@@ -134,22 +137,37 @@ export class OrgLensTrainingService {
           WHERE COURSE_ID IS NOT NULL
         )
         GROUP BY COURSE_ID
+      ),
+      filtered AS (
+        SELECT
+          b.COURSE_ID,
+          b.COURSE_NAME,
+          b.FOUNDATION_NAME,
+          d.LEVEL     AS LEVEL,
+          d.LOGO_URL  AS LOGO_URL,
+          b.CERTIFIED_COUNT,
+          b.IN_PROGRESS_COUNT
+        FROM base b
+        LEFT JOIN course_dim d ON b.COURSE_ID = d.COURSE_ID
+        WHERE 1=1
+          ${searchFilter}
+          ${levelFilter}
       )
+    `;
+
+    const countSql = `${filteredCte} SELECT COUNT(*) AS TOTAL_RECORDS FROM filtered`;
+    const pageSql = `
+      ${filteredCte}
       SELECT
-        b.COURSE_ID,
-        b.COURSE_NAME,
-        b.FOUNDATION_NAME,
-        d.LEVEL                AS LEVEL,
-        d.LOGO_URL             AS LOGO_URL,
-        b.CERTIFIED_COUNT,
-        b.IN_PROGRESS_COUNT,
-        COUNT(*) OVER()        AS TOTAL_RECORDS
-      FROM base b
-      LEFT JOIN course_dim d ON b.COURSE_ID = d.COURSE_ID
-      WHERE 1=1
-        ${searchFilter}
-        ${levelFilter}
-      ORDER BY ${sortField} ${sortOrder}, b.COURSE_NAME ASC
+        COURSE_ID,
+        COURSE_NAME,
+        FOUNDATION_NAME,
+        LEVEL,
+        LOGO_URL,
+        CERTIFIED_COUNT,
+        IN_PROGRESS_COUNT
+      FROM filtered
+      ORDER BY ${sortField} ${sortOrder}, COURSE_NAME ASC
       LIMIT ${Number(pageSize)} OFFSET ${Number(offset)}
     `;
 
@@ -157,12 +175,15 @@ export class OrgLensTrainingService {
     if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     if (level) binds.push(level.toUpperCase());
 
-    // Let Snowflake failures propagate (consistent with getTrainingStats) so the controller returns
-    // an error response and the UI can distinguish an outage from a genuinely empty result.
-    const result = await this.snowflakeService.execute<OrgCertificationRow>(sql, binds);
+    // Count runs separately so total stays correct when offset is past the last page
+    // (COUNT(*) OVER() on a LIMIT/OFFSET page returns 0 rows → total would read as 0).
+    const [countResult, pageResult] = await Promise.all([
+      this.snowflakeService.execute<OrgCertificationCountRow>(countSql, binds),
+      this.snowflakeService.execute<OrgCertificationRow>(pageSql, binds),
+    ]);
 
-    const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
-    const data = result.rows.map((row) => this.mapRowToOrgCertification(row));
+    const total = countResult.rows[0]?.TOTAL_RECORDS ?? 0;
+    const data = pageResult.rows.map((row) => this.mapRowToOrgCertification(row));
 
     logger.debug(req, 'get_org_certifications', 'Fetched org certifications', { count: data.length, total });
 
