@@ -82,21 +82,22 @@ export interface OrgLensProjectTrendPoint {
   ecosystem: number;
 }
 
-/** One ranked organization row on the project leaderboard. */
+/**
+ * One organization row on the project leaderboard. Rank and band are derived client-side
+ * from the active score-type / metric, so they are not carried on the wire.
+ */
 export interface OrgLensProjectLeaderboardRow {
-  rank: number;
   orgName: string;
   /** Org logo URL; empty string falls back to initials. */
   orgLogoUrl: string;
-  /** Calculated Influence score (markup-mu, 1 decimal). */
-  score: number;
+  /** Calculated Influence scores (markup-mu, 1 decimal) per score-type. */
+  scores: { combined: number; technical: number; ecosystem: number };
   /** Raw activity count for Activity Count mode (whole number). */
   activityCount: number;
   /** 12-month trend sparkline, oldest → newest. */
   trendSparkline: number[];
   /** 1-year delta as a signed fraction (e.g. 0.12 = +12%). */
   trendDeltaPct: number;
-  band: OrgLensProjectBand;
   /** The viewing org's own row — always rendered and visually pinned. */
   isViewingOrg: boolean;
 }
@@ -109,7 +110,7 @@ export interface OrgLensProjectDetailResponse {
   technical: OrgLensProjectTechnicalCard[];
   ecosystem: OrgLensProjectEcosystemCard[];
   trend: OrgLensProjectTrendPoint[];
-  /** Sorted score-desc (tie-break: 1y delta desc → org name asc). Viewing-org row always included. */
+  /** All organizations contributing to the project; the viewing-org row is always included. */
   leaderboard: OrgLensProjectLeaderboardRow[];
 }
 

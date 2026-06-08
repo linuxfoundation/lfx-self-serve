@@ -4,7 +4,6 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import type {
-  OrgLensProjectBand,
   OrgLensProjectDetailResponse,
   OrgLensProjectEcosystemCard,
   OrgLensProjectHealth,
@@ -245,13 +244,6 @@ function ramp(end: number, startFactor: number, round = 0): number[] {
   return Array.from({ length: 12 }, (_, i) => Math.round((start + step * i) * factor) / factor);
 }
 
-function bandForScore(score: number): OrgLensProjectBand {
-  if (score >= 80) return 'leading';
-  if (score >= 55) return 'contributing';
-  if (score >= 35) return 'participating';
-  return 'non-lf';
-}
-
 function pctOf(n: number, total: number): number {
   return total === 0 ? 0 : Math.round((n / total) * 1000) / 1000;
 }
@@ -282,49 +274,60 @@ function trendSeries(seed: ProjectDetailSeed): OrgLensProjectTrendPoint[] {
   return months.map((month, i) => ({ month, combined: combined[i], technical: technical[i], ecosystem: ecosystem[i] }));
 }
 
-/** Competitor pool with relative strength (0..1); scaled per-project and merged with the viewing org. */
-const COMPETITORS: { name: string; strength: number }[] = [
-  { name: 'Google', strength: 1.0 },
-  { name: 'Red Hat', strength: 0.92 },
-  { name: 'Microsoft', strength: 0.86 },
-  { name: 'Amazon', strength: 0.79 },
-  { name: 'VMware', strength: 0.72 },
-  { name: 'IBM', strength: 0.65 },
-  { name: 'Intel', strength: 0.58 },
-  { name: 'SUSE', strength: 0.5 },
-  { name: 'Huawei', strength: 0.43 },
-  { name: 'Independent contributors', strength: 0.32 },
+/**
+ * Competitor pool with relative strength (0..1) plus per-org technical / ecosystem biases so the
+ * score-type toggle genuinely re-ranks (an org strong technically but weak on ecosystem moves).
+ */
+const COMPETITORS: { name: string; strength: number; techBias: number; ecoBias: number }[] = [
+  { name: 'Google', strength: 1.0, techBias: 1.05, ecoBias: 0.92 },
+  { name: 'Red Hat', strength: 0.92, techBias: 0.96, ecoBias: 1.12 },
+  { name: 'Microsoft', strength: 0.86, techBias: 1.08, ecoBias: 0.9 },
+  { name: 'Amazon', strength: 0.79, techBias: 1.02, ecoBias: 0.95 },
+  { name: 'VMware', strength: 0.72, techBias: 0.93, ecoBias: 1.1 },
+  { name: 'IBM', strength: 0.65, techBias: 0.9, ecoBias: 1.15 },
+  { name: 'Intel', strength: 0.58, techBias: 1.07, ecoBias: 0.88 },
+  { name: 'SUSE', strength: 0.5, techBias: 0.98, ecoBias: 1.04 },
+  { name: 'Huawei', strength: 0.43, techBias: 1.04, ecoBias: 0.86 },
+  { name: 'Independent contributors', strength: 0.32, techBias: 1.0, ecoBias: 0.8 },
 ];
 
-function leaderboard(seed: ProjectDetailSeed, orgName: string): OrgLensProjectLeaderboardRow[] {
-  // Top score scales with the project's prominence; the viewing org sits at its own combined score.
-  const topScore = Math.min(95, Math.max(58, seed.influence.combined * 1.32));
-  const competitors = COMPETITORS.map((c) => ({
-    orgName: c.name,
-    orgLogoUrl: '',
-    score: Math.round(c.strength * topScore * 10) / 10,
-    isViewingOrg: false,
-  }));
-  const viewing = { orgName: orgName || 'Your organization', orgLogoUrl: '', score: seed.influence.combined, isViewingOrg: true };
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
 
-  // Sort score desc, then assign rank + derive sparkline/delta/band/activity from the score.
-  const sorted = [...competitors, viewing].sort((a, b) => b.score - a.score);
-  return sorted.map((r, i) => {
-    const sparkline = ramp(r.score, 0.86, 1);
-    const start = sparkline[0];
-    const delta = start === 0 ? 0 : Math.round(((r.score - start) / start) * 100) / 100;
+function leaderboard(seed: ProjectDetailSeed, orgName: string): OrgLensProjectLeaderboardRow[] {
+  // Top score scales with the project's prominence; the viewing org sits at its own influence scores.
+  const topScore = Math.min(95, Math.max(58, seed.influence.combined * 1.32));
+  const rows: OrgLensProjectLeaderboardRow[] = COMPETITORS.map((c) => {
+    const combined = round1(c.strength * topScore);
     return {
-      rank: i + 1,
-      orgName: r.orgName,
-      orgLogoUrl: r.orgLogoUrl,
-      score: Math.round(r.score * 10) / 10,
-      activityCount: Math.round(r.score * 46),
-      trendSparkline: sparkline,
-      trendDeltaPct: delta,
-      band: bandForScore(r.score),
-      isViewingOrg: r.isViewingOrg,
+      orgName: c.name,
+      orgLogoUrl: '',
+      scores: { combined, technical: round1(Math.min(99, combined * c.techBias)), ecosystem: round1(Math.min(99, combined * c.ecoBias)) },
+      activityCount: Math.round(combined * 46),
+      trendSparkline: ramp(combined, 0.86, 1),
+      trendDeltaPct: deltaFromSparkline(ramp(combined, 0.86, 1)),
+      isViewingOrg: false,
     };
   });
+
+  const viewingSpark = ramp(seed.influence.combined, 0.82, 1);
+  rows.push({
+    orgName: orgName || 'Your organization',
+    orgLogoUrl: '',
+    scores: { combined: round1(seed.influence.combined), technical: round1(seed.influence.technical), ecosystem: round1(seed.influence.ecosystem) },
+    activityCount: Math.round(seed.influence.combined * 46),
+    trendSparkline: viewingSpark,
+    trendDeltaPct: deltaFromSparkline(viewingSpark),
+    isViewingOrg: true,
+  });
+
+  return rows;
+}
+
+function deltaFromSparkline(series: number[]): number {
+  const start = series[0];
+  return start === 0 ? 0 : Math.round(((series[series.length - 1] - start) / start) * 100) / 100;
 }
 
 /**

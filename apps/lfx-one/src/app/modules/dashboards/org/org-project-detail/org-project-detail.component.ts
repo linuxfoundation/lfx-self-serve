@@ -3,6 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -14,12 +15,15 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
 import type {
+  OrgLensLeaderboardMetric,
+  OrgLensProjectBand,
   OrgLensProjectDetailPageState,
   OrgLensProjectDetailResponse,
   OrgLensProjectDetailTab,
   OrgLensProjectEcosystemCard,
   OrgLensProjectHealth,
   OrgLensProjectTechnicalCard,
+  OrgLensScoreType,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
@@ -28,6 +32,15 @@ import { catchError, combineLatest, filter, map, type Observable, of, switchMap,
 
 const DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
+
+const DEFAULT_SCORE: OrgLensScoreType = 'combined';
+const VALID_SCORES: ReadonlySet<string> = new Set<OrgLensScoreType>(['combined', 'technical', 'ecosystem']);
+const DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
+const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
+
+/** Leaderboard pagination: default top-N, increment, and hard cap (LFXV2-1885 §7). */
+const LEADERBOARD_PAGE_SIZE = 10;
+const LEADERBOARD_MAX_ROWS = 100;
 
 /** Hero health badge label + Tailwind token classes (green Excellent / amber Healthy / red At Risk). */
 const HEALTH_META: Record<OrgLensProjectHealth, { label: string; classes: string }> = {
@@ -59,6 +72,33 @@ const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> =
   'committee-members': 'Your organization holds no committee seats on this project.',
 };
 
+/** Leaderboard band chip label + Tailwind token classes. */
+const BAND_META: Record<OrgLensProjectBand, { label: string; classes: string }> = {
+  leading: { label: 'Leading', classes: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' },
+  contributing: { label: 'Contributing', classes: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20' },
+  participating: { label: 'Participating', classes: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20' },
+  'non-lf': { label: 'Non-LF', classes: 'bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-500/20' },
+};
+
+const SCORE_OPTIONS: { id: OrgLensScoreType; label: string }[] = [
+  { id: 'combined', label: 'Combined' },
+  { id: 'technical', label: 'Technical' },
+  { id: 'ecosystem', label: 'Ecosystem' },
+];
+
+const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string }[] = [
+  { id: 'influence', label: 'Calculated Influence' },
+  { id: 'activity', label: 'Activity Count' },
+];
+
+/** Band thresholds per Boysel et al. markup-mu (Leading / Contributing / Participating / Non-LF). */
+function bandForScore(score: number): OrgLensProjectBand {
+  if (score >= 80) return 'leading';
+  if (score >= 55) return 'contributing';
+  if (score >= 35) return 'participating';
+  return 'non-lf';
+}
+
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885). Opened from the Projects table /
  * Influence Summary cards via `/org/projects/:projectSlug`. Owns the fetch keyed on the
@@ -66,7 +106,7 @@ const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> =
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -113,6 +153,18 @@ export class OrgProjectDetailComponent {
   protected readonly trendChartData = computed<ChartData<ChartType>>(() => this.buildTrendData());
   protected readonly trendChartOptions: ChartOptions<ChartType> = this.buildTrendOptions();
 
+  // Leaderboards tab — URL-persisted score-type + metric toggles, ranking, and pagination.
+  protected readonly scoreOptions = SCORE_OPTIONS;
+  protected readonly metricOptions = METRIC_OPTIONS;
+  protected readonly shownCount = signal(LEADERBOARD_PAGE_SIZE);
+  protected readonly scoreType = computed<OrgLensScoreType>(() => this.initScoreType());
+  protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
+  protected readonly isActivityMode = computed(() => this.metric() === 'activity');
+  protected readonly rankedRows = computed(() => this.buildRankedRows());
+  protected readonly visibleRows = computed(() => this.rankedRows().slice(0, this.shownCount()));
+  protected readonly pinnedViewingRow = computed(() => this.rankedRows().find((r) => r.isViewingOrg && r.rank > this.shownCount()) ?? null);
+  protected readonly canShowMore = computed(() => this.shownCount() < Math.min(this.rankedRows().length, LEADERBOARD_MAX_ROWS));
+
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
 
@@ -147,6 +199,95 @@ export class OrgProjectDetailComponent {
     this.retryTrigger.update((v) => v + 1);
   }
 
+  protected setScore(score: OrgLensScoreType): void {
+    if (this.scoreType() === score) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { score: score === DEFAULT_SCORE ? null : score },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected setMetric(metric: OrgLensLeaderboardMetric): void {
+    if (this.metric() === metric) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { metric: metric === DEFAULT_METRIC ? null : metric },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected showMore(): void {
+    this.shownCount.update((n) => Math.min(n + LEADERBOARD_PAGE_SIZE, LEADERBOARD_MAX_ROWS, this.rankedRows().length));
+  }
+
+  private initScoreType(): OrgLensScoreType {
+    const raw = this.queryParamMap().get('score');
+    return raw && VALID_SCORES.has(raw) ? (raw as OrgLensScoreType) : DEFAULT_SCORE;
+  }
+
+  private initMetric(): OrgLensLeaderboardMetric {
+    const raw = this.queryParamMap().get('metric');
+    return raw && VALID_METRICS.has(raw) ? (raw as OrgLensLeaderboardMetric) : DEFAULT_METRIC;
+  }
+
+  private buildRankedRows() {
+    const rows = this.detail()?.leaderboard ?? [];
+    const activity = this.isActivityMode();
+    const type = this.scoreType();
+    const valued = rows.map((row) => ({ row, value: activity ? row.activityCount : row.scores[type] }));
+    // Score desc; tie-break by 1y delta desc, then org name asc (LFXV2-1885 §5).
+    valued.sort((a, b) => b.value - a.value || b.row.trendDeltaPct - a.row.trendDeltaPct || a.row.orgName.localeCompare(b.row.orgName));
+    return valued.map((entry, i) => {
+      const bandMeta = BAND_META[bandForScore(entry.row.scores[type])];
+      return {
+        rank: i + 1,
+        orgName: entry.row.orgName,
+        orgLogoUrl: entry.row.orgLogoUrl,
+        initials: this.initialsFor(entry.row.orgName),
+        valueLabel: activity ? entry.value.toLocaleString() : entry.value.toFixed(1),
+        bandLabel: bandMeta.label,
+        bandClasses: bandMeta.classes,
+        deltaLabel: this.formatDelta(entry.row.trendDeltaPct),
+        deltaClasses: this.deltaClasses(entry.row.trendDeltaPct),
+        sparklinePoints: this.sparklinePoints(entry.row.trendSparkline),
+        isViewingOrg: entry.row.isViewingOrg,
+      };
+    });
+  }
+
+  private formatDelta(delta: number): string {
+    const pct = Math.round(delta * 100);
+    return `${pct > 0 ? '+' : ''}${pct}%`;
+  }
+
+  private deltaClasses(delta: number): string {
+    if (delta > 0.01) return 'text-emerald-600';
+    if (delta < -0.01) return 'text-red-600';
+    return 'text-gray-500';
+  }
+
+  /** Inline-SVG polyline points for a 64×20 sparkline (avoids 100 chart.js canvases). */
+  private sparklinePoints(series: number[]): string {
+    if (series.length === 0) return '';
+    const width = 64;
+    const height = 20;
+    const pad = 2;
+    const min = Math.min(...series);
+    const max = Math.max(...series);
+    const range = max - min || 1;
+    const span = series.length > 1 ? series.length - 1 : 1;
+    return series
+      .map((value, i) => {
+        const x = pad + (i * (width - 2 * pad)) / span;
+        const y = height - pad - ((value - min) / range) * (height - 2 * pad);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
+
   private initActiveTab(): OrgLensProjectDetailTab {
     const raw = this.queryParamMap().get('tab');
     return raw && VALID_TABS.has(raw) ? (raw as OrgLensProjectDetailTab) : DEFAULT_TAB;
@@ -178,6 +319,7 @@ export class OrgProjectDetailComponent {
       }),
       tap((response) => {
         this.detail.set(response);
+        this.shownCount.set(LEADERBOARD_PAGE_SIZE);
         if (!this.fetchError()) this.fetchLoading.set(false);
       })
     );
