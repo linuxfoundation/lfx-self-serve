@@ -228,7 +228,7 @@ test.describe('Documentation Tab — View link live behavior (SC-011, SC-012, FR
     const count = await disabledViewSpans.count();
 
     if (count === 0) {
-      // Skip: dev data has 100% coverage of download URLs at this foundation (e.g., Toyota).
+      // Skip: dev data has 100% coverage of download URLs at this foundation.
       test.skip();
       return;
     }
