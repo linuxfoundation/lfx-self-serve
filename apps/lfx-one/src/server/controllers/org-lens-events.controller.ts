@@ -27,7 +27,8 @@ export class OrgLensEventsController {
     try {
       this.assertAccountId(accountId, 'get_org_lens_events_summary');
 
-      if (!getEffectiveEmail(req)) {
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
         throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_events_summary' });
       }
 
@@ -55,17 +56,19 @@ export class OrgLensEventsController {
         throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_events' });
       }
 
-      const rawPageSize = Number(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE);
-      const rawOffset = Number(req.query['offset'] ?? 0);
+      const rawPageSize = Math.trunc(Number(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE));
+      const rawOffset = Math.trunc(Number(req.query['offset'] ?? 0));
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase();
       const rawIsPast = req.query['isPast'];
       const rawStatus = getStringQueryParam(req, 'status');
+      const rawSortField = getStringQueryParam(req, 'sortField') ?? 'EVENT_START_DATE';
 
       const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder = rawSortOrder === 'DESC' ? 'DESC' : 'ASC';
       const isPast = rawIsPast === 'true';
       const status = rawStatus && VALID_ORG_EVENT_STATUS_VALUES.has(rawStatus) ? rawStatus : null;
+      const sortField = rawSortField;
 
       const options: GetOrgEventsOptions = {
         isPast,
@@ -73,15 +76,81 @@ export class OrgLensEventsController {
         status,
         pageSize,
         offset,
+        sortField,
         sortOrder,
       };
 
-      const response = await this.service.getOrgEvents(req, accountId, userEmail, options);
+      const response = await this.service.getOrgEvents(req, accountId, options);
 
       logger.success(req, 'get_org_lens_events', startTime, {
         account_id: accountId,
         result_count: response.data.length,
         total: response.total,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:accountId/lens/events/:eventId/attendees */
+  public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const accountId = req.params['accountId'];
+    const eventId = req.params['eventId'];
+    const startTime = logger.startOperation(req, 'get_event_attendees', { account_id: accountId, event_id: eventId });
+
+    try {
+      this.assertAccountId(accountId, 'get_event_attendees');
+
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_event_attendees' });
+      }
+
+      if (!eventId || typeof eventId !== 'string') {
+        throw ServiceValidationError.forField('eventId', 'eventId path parameter is required', { operation: 'get_event_attendees' });
+      }
+
+      const searchQuery = getStringQueryParam(req, 'searchQuery');
+      const response = await this.service.getEventAttendees(req, accountId, eventId, searchQuery ?? undefined);
+
+      logger.success(req, 'get_event_attendees', startTime, { account_id: accountId, event_id: eventId, count: response.total });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:accountId/lens/events/:eventId/speakers */
+  public async getEventSpeakers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const accountId = req.params['accountId'];
+    const eventId = req.params['eventId'];
+    const startTime = logger.startOperation(req, 'get_event_speakers', { account_id: accountId, event_id: eventId });
+
+    try {
+      this.assertAccountId(accountId, 'get_event_speakers');
+
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_event_speakers' });
+      }
+
+      if (!eventId || typeof eventId !== 'string') {
+        throw ServiceValidationError.forField('eventId', 'eventId path parameter is required', { operation: 'get_event_speakers' });
+      }
+
+      const searchQuery = getStringQueryParam(req, 'searchQuery');
+      const response = await this.service.getEventSpeakers(req, accountId, eventId, searchQuery ?? undefined);
+
+      logger.success(req, 'get_event_speakers', startTime, {
+        account_id: accountId,
+        event_id: eventId,
+        accepted: response.acceptedCount,
+        submitted: response.submittedCount,
       });
 
       res.setHeader('Cache-Control', 'no-store');
