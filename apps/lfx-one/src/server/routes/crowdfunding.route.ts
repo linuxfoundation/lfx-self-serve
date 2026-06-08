@@ -10,6 +10,10 @@ import { CrowdfundingController } from '../controllers/crowdfunding.controller';
 const router = Router();
 const crowdfundingController = new CrowdfundingController();
 
+// Initiates the CF-audience auth-code flow (redirects to Auth0). The matching
+// callback (/crowdfunding/callback) is registered at the top level in server.ts.
+router.get('/auth/start', (req, res) => crowdfundingController.startCrowdfundingAuth(req, res));
+
 router.post('/payment-method', (req, res, next) => crowdfundingController.saveMyPaymentMethod(req, res, next));
 router.get('/payment-method', (req, res, next) => crowdfundingController.getMyPaymentMethod(req, res, next));
 router.get('/donation-stats', (req, res, next) => crowdfundingController.getMyDonationStats(req, res, next));

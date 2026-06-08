@@ -33,6 +33,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Social identity verification callback — needs session auth but no bearer token
   { pattern: '/social/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 
+  // Crowdfunding auth-code callback — needs session auth but no bearer token (Auth0 redirects here)
+  { pattern: '/crowdfunding/callback', type: 'ssr', auth: 'required', tokenRequired: false },
+
+  // Crowdfunding auth start — needs session auth but no bearer token (initiates redirect)
+  { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
+
   // Social identity connect initiation — needs session auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/identities/social/connect', type: 'api', auth: 'required', tokenRequired: false },
 
@@ -319,109 +325,20 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
 }
 
 /**
- * Silently fetches an access token scoped to the LFX Crowdfunding API audience.
- * Uses the existing refresh token from the OIDC session — no user interaction required.
- * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.crowdfundingToken.
- * Failures are non-blocking; the request continues without the token.
+ * Loads the LFX Crowdfunding API token from the session onto req.crowdfundingToken.
  *
- * The resulting token is a user-issued access token (not M2M) carrying the
- * https://sso.linuxfoundation.org/claims/username claim and access:me scope.
+ * The token is minted by the CF-audience auth-code flow (CrowdfundingController /
+ * CrowdfundingAuthService) on top-level navigation to a /crowdfunding page, and cached
+ * in the session. A cross-audience refresh-token exchange is NOT used: Auth0 ignores the
+ * requested audience on a refresh grant and returns the primary (cluster) token, which CF
+ * rejects with 401. Missing/expired token is non-blocking — the SSR handler triggers the
+ * auth-code flow on the next /crowdfunding navigation.
  */
-async function extractCrowdfundingToken(req: Request): Promise<void> {
-  try {
-    const now = Math.floor(Date.now() / 1000);
-    if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
-      req.crowdfundingToken = req.appSession.crowdfundingToken;
-      logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
-      return;
-    }
-
-    const crowdfundingAudience = process.env['CROWDFUNDING_API_AUDIENCE'];
-    if (!crowdfundingAudience) {
-      logger.warning(req, 'crowdfunding_token', 'CROWDFUNDING_API_AUDIENCE env var is not set, skipping token fetch');
-      return;
-    }
-
-    const refreshToken = req.appSession?.['refresh_token'] as string | undefined;
-    if (!refreshToken) {
-      logger.warning(req, 'crowdfunding_token', 'No refresh_token in OIDC session — ensure offline_access scope is requested');
-      return;
-    }
-
-    const issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    const clientId = process.env['PCC_AUTH0_CLIENT_ID'] || '';
-    const clientSecret = process.env['PCC_AUTH0_CLIENT_SECRET'] || '';
-    const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
-
-    let response: Awaited<ReturnType<typeof fetch>>;
-
-    if (isAuthelia) {
-      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      response = await fetch(`${issuerBaseUrl}/api/oidc/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${credentials}`,
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          audience: crowdfundingAudience,
-          scope: 'access:me',
-        }),
-      });
-    } else {
-      response = await fetch(`${issuerBaseUrl}/oauth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          client_id: clientId,
-          client_secret: clientSecret,
-          audience: crowdfundingAudience,
-          scope: 'access:me',
-        }),
-      });
-    }
-
-    if (!response.ok) {
-      logger.warning(req, 'crowdfunding_token', 'Crowdfunding token fetch returned non-OK status', { status: response.status });
-      return;
-    }
-
-    const data = (await response.json()) as { access_token: string; expires_in: number };
-    const rawExpiresAt = now + data.expires_in - TOKEN_EXPIRY_BUFFER_SECONDS;
-    const expiresAt = rawExpiresAt <= now ? now + Math.floor(data.expires_in / 2) : rawExpiresAt;
-
-    if (rawExpiresAt <= now) {
-      logger.warning(req, 'crowdfunding_token', 'Token expires_in too short for buffer, using half of raw expiry as fallback', {
-        expires_in: data.expires_in,
-        buffer: TOKEN_EXPIRY_BUFFER_SECONDS,
-      });
-    }
-
-    req.crowdfundingToken = data.access_token;
-
-    // Warn early if the token is missing access:me — all /v1/me/* CF endpoints will
-    // return 403 until auth0-terraform PR #325 (adds access:me to CF-audience tokens) is deployed.
-    const cfClaims = decodeJwtPayload(data.access_token);
-    const cfScope = typeof cfClaims?.['scope'] === 'string' ? cfClaims['scope'] : '';
-    if (!cfScope.includes('access:me')) {
-      logger.warning(req, 'crowdfunding_token', 'CF token does not contain access:me scope — /v1/me/* calls will return 403 until auth0-terraform PR #325 is deployed', {
-        scope: cfScope || 'none',
-      });
-    }
-
-    if (!req.appSession) req.appSession = {};
-    req.appSession.crowdfundingToken = data.access_token;
-    req.appSession.crowdfundingTokenExpiresAt = expiresAt;
-
-    logger.debug(req, 'crowdfunding_token', 'Crowdfunding token fetched and cached');
-  } catch (error) {
-    logger.warning(req, 'crowdfunding_token', 'Crowdfunding token fetch failed, continuing without it', {
-      err: error instanceof Error ? error : new Error(String(error)),
-    });
+function extractCrowdfundingToken(req: Request): void {
+  const now = Math.floor(Date.now() / 1000);
+  if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
+    req.crowdfundingToken = req.appSession.crowdfundingToken;
+    logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
   }
 }
 
@@ -640,7 +557,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       // 4. Silently fetch secondary API Gateway token when the user is authenticated
       if (hasToken) {
         await extractApiGatewayToken(req);
-        await extractCrowdfundingToken(req);
+        extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making

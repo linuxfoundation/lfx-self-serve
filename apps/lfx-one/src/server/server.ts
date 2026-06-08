@@ -13,7 +13,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
+import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
+import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -253,6 +255,14 @@ app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallback
 // GitHub/LinkedIn OAuth redirect target.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
+// Crowdfunding-audience auth-code flow redirect target.
+const crowdfundingCallbackController = new CrowdfundingController();
+app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
+
+// Used by the SSR handler to silently acquire a CF token before the Angular app's
+// /api/crowdfunding/* XHRs run (those XHRs can't follow an auth-code redirect).
+const crowdfundingAuthService = new CrowdfundingAuthService();
+
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
   const auth: AuthContext = {
@@ -279,6 +289,15 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
+  }
+
+  // Silently acquire a CF-audience token on top-level navigation to a /crowdfunding
+  // page, before Angular's /api/crowdfunding/* XHRs run. Those XHRs can't follow an
+  // auth-code redirect, so the token must be in the session first. The user already
+  // has an Auth0 session, so this redirect is silent (no re-prompt).
+  if (auth.authenticated && req.path.startsWith('/crowdfunding') && crowdfundingAuthService.isConfigured() && !crowdfundingAuthService.hasValidToken(req)) {
+    res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
+    return;
   }
 
   if (auth.authenticated) {

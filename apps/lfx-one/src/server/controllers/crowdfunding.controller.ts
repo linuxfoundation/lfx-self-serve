@@ -6,11 +6,13 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
+  private readonly crowdfundingAuthService = new CrowdfundingAuthService();
 
   // GET /api/crowdfunding/initiatives
   public async getMyInitiatives(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -205,6 +207,110 @@ export class CrowdfundingController {
       res.json(transactions);
     } catch (error) {
       next(error);
+    }
+  }
+
+  // GET /api/crowdfunding/auth/start — initiates the CF-audience auth-code flow.
+  // Redirects the browser to Auth0 /authorize; Auth0 returns to /crowdfunding/callback.
+  public startCrowdfundingAuth(req: Request, res: Response): void {
+    const startTime = logger.startOperation(req, 'crowdfunding_auth_start');
+    const returnTo = this.normalizeCrowdfundingReturnTo(req.query['returnTo']);
+
+    if (!this.crowdfundingAuthService.isConfigured()) {
+      logger.warning(req, 'crowdfunding_auth_start', 'Crowdfunding auth not configured', {});
+      res.redirect(`${returnTo}?error=crowdfunding_auth_not_configured`);
+      return;
+    }
+
+    const authorizeUrl = this.crowdfundingAuthService.getAuthorizationUrl(req, returnTo);
+    logger.success(req, 'crowdfunding_auth_start', startTime, { return_to: returnTo });
+    res.redirect(authorizeUrl);
+  }
+
+  // GET /crowdfunding/callback — Auth0 redirect target for the CF auth-code flow.
+  // Validates state, exchanges the code, verifies the token sub matches the logged-in
+  // user, stores the token in the session, then redirects back to the originating page.
+  public async handleCrowdfundingAuthCallback(req: Request, res: Response): Promise<void> {
+    const startTime = logger.startOperation(req, 'crowdfunding_auth_callback');
+
+    const code = req.query['code'] as string;
+    const state = req.query['state'] as string;
+    const error = req.query['error'] as string;
+    const returnTo = this.normalizeCrowdfundingReturnTo(req.appSession?.crowdfundingAuthReturnTo);
+
+    if (error) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
+        error_description: req.query['error_description'],
+      });
+      res.redirect(`${returnTo}?error=crowdfunding_auth_failed`);
+      return;
+    }
+
+    // Validate state parameter (CSRF protection)
+    if (!state || state !== req.appSession?.crowdfundingAuthState) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Invalid state parameter'), {
+        has_state: !!state,
+        has_session_state: !!req.appSession?.crowdfundingAuthState,
+      });
+      res.redirect(`${returnTo}?error=invalid_state`);
+      return;
+    }
+
+    if (!code) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('No authorization code received'), {});
+      res.redirect(`${returnTo}?error=no_code`);
+      return;
+    }
+
+    try {
+      const tokenResponse = await this.crowdfundingAuthService.exchangeCodeForToken(req, code);
+
+      const currentUserSub = req.oidc?.user?.['sub'] as string;
+      if (!currentUserSub) {
+        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Current user sub not found in login session'), {});
+        res.redirect(`${returnTo}?error=login_session_invalid`);
+        return;
+      }
+
+      if (!this.crowdfundingAuthService.decodeAndValidateSub(tokenResponse.access_token, currentUserSub)) {
+        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Crowdfunding token sub mismatch'), {
+          current_user_sub: currentUserSub,
+        });
+        res.redirect(`${returnTo}?error=user_mismatch`);
+        return;
+      }
+
+      this.crowdfundingAuthService.storeToken(req, tokenResponse);
+
+      // Clean up CSRF/returnTo state
+      delete req.appSession?.crowdfundingAuthState;
+      delete req.appSession?.crowdfundingAuthReturnTo;
+
+      logger.success(req, 'crowdfunding_auth_callback', startTime, {
+        user_sub: currentUserSub,
+        token_type: tokenResponse.token_type,
+        scope: tokenResponse.scope,
+        expires_in: tokenResponse.expires_in,
+      });
+
+      res.redirect(returnTo);
+    } catch (err) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, err, {});
+      res.redirect(`${returnTo}?error=token_exchange_failed`);
+    }
+  }
+
+  // Validates a returnTo value, allowing only in-app /crowdfunding paths to bound the
+  // open-redirect surface (mirrors ProfileController.normalizeProfileReturnTo).
+  private normalizeCrowdfundingReturnTo(raw: unknown): string {
+    const DEFAULT = '/crowdfunding/initiatives';
+    if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
+    try {
+      // Accepts relative paths and full URLs (e.g. a referer); only the pathname is used.
+      const { pathname } = new URL(raw, 'http://internal');
+      return pathname.startsWith('/crowdfunding') ? pathname : DEFAULT;
+    } catch {
+      return DEFAULT;
     }
   }
 }
