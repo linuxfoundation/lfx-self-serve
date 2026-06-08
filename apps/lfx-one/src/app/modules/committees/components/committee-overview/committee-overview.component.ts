@@ -205,7 +205,9 @@ export class CommitteeOverviewComponent {
           this.clearSectionFadeTimer();
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
-        } else if (this.sectionEverShown && !this.isSectionHidden()) {
+        } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
+          // Guard on sectionFadeTimerId so repeated empty emissions can't schedule overlapping timers
+          // (an orphaned earlier timer would survive clearSectionFadeTimer and wrongly hide a repopulated section).
           this.isSectionFading.set(true);
           this.sectionFadeTimerId = setTimeout(() => {
             this.sectionFadeTimerId = null;

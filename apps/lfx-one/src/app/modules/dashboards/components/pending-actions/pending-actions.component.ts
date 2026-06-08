@@ -111,7 +111,11 @@ export class PendingActionsComponent {
           this.clearSectionFadeTimer();
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
-        } else if (this.sectionEverShown && !this.isSectionHidden()) {
+        } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
+          // Guard on sectionFadeTimerId so repeated empty emissions can't schedule overlapping timers
+          // (an orphaned earlier timer would survive clearSectionFadeTimer and wrongly hide a repopulated section).
+          // Close the drawer too, so a repopulated section doesn't reopen it with stale state.
+          this.drawerVisible.set(false);
           this.isSectionFading.set(true);
           this.sectionFadeTimerId = setTimeout(() => {
             this.sectionFadeTimerId = null;
