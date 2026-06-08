@@ -753,6 +753,25 @@ export class CampaignProxyService {
         const text = stripJsonFences(fullCopy);
         const structured = JSON.parse(text) as Record<string, unknown>;
         truncateAdCopy(structured);
+
+        if (platforms.includes('linkedin-ads')) {
+          const liData =
+            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
+            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
+          if (liData) {
+            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
+            const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
+            if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
+              try {
+                const resolved = await resolveGeoTargets(recommendedGeos);
+                liData['resolved_geo_targets'] = resolved;
+              } catch (geoError) {
+                logger.warning(req, 'campaign_refine_geo_resolve', 'Failed to resolve LinkedIn geo targets during refinement', { err: geoError });
+              }
+            }
+          }
+        }
+
         yield { type: 'copy_structured', data: structured };
       } catch {
         yield { type: 'copy_structured', data: { raw: fullCopy } };

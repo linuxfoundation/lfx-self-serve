@@ -21,6 +21,8 @@ const SENIORITY_EXCLUSIONS = ['urn:li:seniority:1', 'urn:li:seniority:3'];
 
 const SKIP_STATUSES = new Set(['ARCHIVED', 'CANCELED', 'COMPLETED', 'DRAFT', 'REMOVED', 'DELETED']);
 
+const LINKEDIN_REQUEST_TIMEOUT_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Environment
 // ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ async function linkedInRequest(
   const response = await fetch(url.toString(), {
     method,
     headers,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
