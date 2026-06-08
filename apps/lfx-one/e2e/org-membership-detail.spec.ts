@@ -17,7 +17,7 @@
  * - Organization context has at least one membership (the existing /org/memberships list has rows)
  *
  * Mock semantics (v1): every foundationId returns the same `sharedKeyContacts` payload, so
- * the sample foundation data (Alex Rivera as Representative, two-person Billing row, etc.)
+ * the sample foundation data (Sam Chen as Representative, two-person Billing row, etc.)
  * is what every detail-page test below asserts against.
  */
 
@@ -276,8 +276,8 @@ test.describe('Org Membership Detail — SSR rendered HTML (SC-006, post-analyze
     // so the test runs against the SSR-rendered detail page only when the request fixture inherits
     // the storage state. If the test runs pre-auth (unusual), the response body will be a redirect
     // or login shell — in that case we skip the content assertion and only verify the route exists.
-    if (status === 200 && /Alex Rivera|Key Contacts/.test(body)) {
-      expect(body).toContain('Alex Rivera');
+    if (status === 200 && /Sam Chen|Key Contacts/.test(body)) {
+      expect(body).toContain('Sam Chen');
       expect(body).toContain('membership-detail-key-contacts-table');
     } else {
       test.skip(
