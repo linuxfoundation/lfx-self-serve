@@ -9,7 +9,13 @@ import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SKELETON_HOLD_MS } from '@lfx-one/shared/constants';
+import {
+  PENDING_ACTION_BUTTON_ICON,
+  PENDING_ACTION_EMPTY_GRACE_MS,
+  PENDING_ACTION_FADE_OUT_MS,
+  PENDING_ACTION_LABEL,
+  PENDING_ACTION_SKELETON_HOLD_MS,
+} from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
@@ -82,6 +88,15 @@ export class PendingActionsComponent {
   protected readonly pendingDecline = signal<PendingDecline | null>(null);
   // setTimeout handle for the in-flight deferred decline; cleared on undo or when the timer fires.
   private declineTimerId: ReturnType<typeof setTimeout> | null = null;
+  // Section-level fade-out: true while the CSS collapse animation is in flight; isSectionHidden removes the section from the DOM.
+  // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a context
+  // switch that briefly empties the list doesn't trigger a spurious fade before the new data arrives.
+  protected readonly isSectionFading = signal(false);
+  protected readonly isSectionHidden = signal(false);
+  protected readonly isSectionGracePending = signal(false);
+  private sectionEverShown = false;
+  // setTimeout handle for the in-flight section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
+  private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
   // Dedicated toast key for the decline Undo, exposed to the template's keyed <p-toast>.
   protected readonly undoToastKey = INVITE_UNDO_TOAST_KEY;
 
@@ -94,6 +109,40 @@ export class PendingActionsComponent {
   protected readonly decoratedActions: Signal<DecoratedPendingAction[]> = this.initDecoratedActions();
 
   public constructor() {
+    // When the last action is resolved, fade the section out then remove it from the DOM.
+    // sectionEverShown prevents the fade from triggering on initial load with zero actions.
+    toObservable(this.totalVisible)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((count) => {
+        if (count > 0) {
+          this.sectionEverShown = true;
+          // Cancel any in-flight grace/fade so a repopulated section stays visible.
+          this.clearSectionFadeTimer();
+          this.isSectionGracePending.set(false);
+          this.isSectionHidden.set(false);
+          this.isSectionFading.set(false);
+        } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
+          // Wait a grace period before fading: a context switch (org/project change) can briefly empty the
+          // list before new data arrives — if it repopulates within the grace, the count>0 branch cancels
+          // this timer and nothing fades. The sectionFadeTimerId guard also prevents overlapping timers on
+          // repeated empty emissions (an orphan would survive clearSectionFadeTimer and hide a repopulated section).
+          // isSectionGracePending keeps the section mounted (stable, not collapsing) during the grace.
+          this.isSectionGracePending.set(true);
+          this.sectionFadeTimerId = setTimeout(() => {
+            // Still empty after the grace — commit to the fade.
+            this.sectionFadeTimerId = null;
+            this.isSectionGracePending.set(false);
+            // Close the drawer so a later repopulation can't reopen it with stale state.
+            this.drawerVisible.set(false);
+            this.isSectionFading.set(true);
+            this.sectionFadeTimerId = setTimeout(() => {
+              this.sectionFadeTimerId = null;
+              this.isSectionHidden.set(true);
+            }, PENDING_ACTION_FADE_OUT_MS + 50);
+          }, PENDING_ACTION_EMPTY_GRACE_MS);
+        }
+      });
+
     // Eagerly load Meeting payloads for every inline RSVP row so its buttons render immediately.
     toObservable(this.decoratedActions)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -108,6 +157,9 @@ export class PendingActionsComponent {
     // If the user navigates away while a decline is still in its undo window, commit it immediately so
     // leaving the page doesn't silently drop the decline (clear the timer first so it can't double-fire).
     this.destroyRef.onDestroy(() => {
+      // Cancel pending section-hide so it can't fire on a destroyed component.
+      this.clearSectionFadeTimer();
+
       const pending = this.pendingDecline();
       if (!pending) return;
       this.clearDeclineTimer();
@@ -421,6 +473,13 @@ export class PendingActionsComponent {
     if (this.declineTimerId !== null) {
       clearTimeout(this.declineTimerId);
       this.declineTimerId = null;
+    }
+  }
+
+  private clearSectionFadeTimer(): void {
+    if (this.sectionFadeTimerId !== null) {
+      clearTimeout(this.sectionFadeTimerId);
+      this.sectionFadeTimerId = null;
     }
   }
 

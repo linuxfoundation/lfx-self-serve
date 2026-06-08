@@ -17,14 +17,14 @@
  * - Organization context has at least one membership (the existing /org/memberships list has rows)
  *
  * Mock semantics (v1): every foundationId returns the same `sharedKeyContacts` payload, so
- * the AGL fixture data (Masaki Isetani as Representative, two-person Billing row, etc.)
+ * the sample foundation data (Sam Chen as Representative, two-person Billing row, etc.)
  * is what every detail-page test below asserts against.
  */
 
 import { expect, test } from '@playwright/test';
 
 const MEMBERSHIPS_URL = '/org/memberships';
-const DETAIL_URL_AGL = '/org/memberships/agl-001';
+const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
 const DETAIL_URL_BOGUS = '/org/memberships/totally-bogus-foundation';
 const DATA_LOAD_TIMEOUT = 30_000;
 
@@ -32,7 +32,7 @@ test.setTimeout(90_000);
 
 test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
@@ -57,10 +57,10 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
     }
   });
 
-  test('renders the AGL Billing row with TWO people stacked under one pencil', async ({ page }) => {
+  test('renders the Billing row with TWO people stacked under one pencil', async ({ page }) => {
     const billingRow = page.getByTestId('membership-detail-key-contacts-row-billing');
-    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-1')).toBeVisible();
-    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-2')).toBeVisible();
+    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-sample-kc-bill-1')).toBeVisible();
+    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-sample-kc-bill-2')).toBeVisible();
     // Only one pencil per row (FR-010)
     await expect(billingRow.getByTestId('membership-detail-key-contacts-edit-billing')).toHaveCount(1);
   });
@@ -81,12 +81,12 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
 
   test('URL fragment ↔ tab sync — direct goto activates correct tab (spec 016 round 7)', async ({ page }) => {
     // Direct goto with #docs activates the Documentation tab without a click
-    await page.goto('/org/memberships/agl-001#docs', { waitUntil: 'domcontentloaded' });
+    await page.goto('/org/memberships/sample-foundation#docs', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // Direct goto with #governance activates Governance
-    await page.goto('/org/memberships/agl-001#governance', { waitUntil: 'domcontentloaded' });
+    await page.goto('/org/memberships/sample-foundation#governance', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('membership-detail-governance-empty-state')).toBeVisible();
   });
@@ -121,7 +121,7 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
 
 test.describe('Org Membership Detail — modal save flows + toasts', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
@@ -150,7 +150,7 @@ test.describe('Org Membership Detail — modal save flows + toasts', () => {
   test('Remove flow shows the removed toast and drops the row (no undo)', async ({ page }) => {
     await page.getByTestId('membership-detail-key-contacts-edit-billing').click();
     await page.getByTestId('edit-key-contact-chooser-remove').click();
-    await page.getByTestId('edit-key-contact-remove-candidate-agl-kc-bill-1').click();
+    await page.getByTestId('edit-key-contact-remove-candidate-sample-kc-bill-1').click();
     await page.getByTestId('edit-key-contact-primary-button').click();
     await expect(page.getByTestId('edit-key-contact-modal')).not.toBeVisible({ timeout: 5_000 });
 
@@ -159,15 +159,15 @@ test.describe('Org Membership Detail — modal save flows + toasts', () => {
     await expect(page.getByTestId('key-contact-toast-undo')).toHaveCount(0);
     // Row should now have only 1 person, and the removal is not reversible from the toast.
     const billingRow = page.getByTestId('membership-detail-key-contacts-row-billing');
-    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-1')).not.toBeVisible();
-    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-agl-kc-bill-2')).toBeVisible();
+    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-sample-kc-bill-1')).not.toBeVisible();
+    await expect(billingRow.getByTestId('membership-detail-key-contacts-person-sample-kc-bill-2')).toBeVisible();
   });
 
   test('in-row duplicate Email blocks Save with inline error (FR-016f)', async ({ page }) => {
     await page.getByTestId('membership-detail-key-contacts-edit-billing').click();
     await page.getByTestId('edit-key-contact-chooser-add').click();
-    // Type an email that already exists in Billing (Tomoya Suzuki — fixture uses @example.com)
-    await page.getByTestId('edit-key-contact-email-input').fill('tomoya_suzuki@example.com');
+    // Type an email that already exists in Billing (Jordan Kim — fixture uses @example.com)
+    await page.getByTestId('edit-key-contact-email-input').fill('jordan.kim@example.com');
     await page.getByTestId('edit-key-contact-first-name-input').fill('Dup');
     await page.getByTestId('edit-key-contact-last-name-input').fill('Person');
     await page.getByTestId('edit-key-contact-primary-button').click();
@@ -179,7 +179,7 @@ test.describe('Org Membership Detail — modal save flows + toasts', () => {
 
 test.describe('Org Membership Detail — keyboard-only journey (SC-015, FR-035)', () => {
   test('opens modal, fills form, submits — zero page.click() calls', async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // Programmatically focus the Representative pencil, then drive everything with the keyboard
@@ -203,7 +203,7 @@ test.describe('Org Membership Detail — keyboard-only journey (SC-015, FR-035)'
   });
 
   test('Esc dismisses the modal and restores focus to the pencil', async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const pencil = page.getByTestId('membership-detail-key-contacts-edit-marketing');
@@ -229,7 +229,7 @@ test.describe('Org Membership Detail — performance timing (SC-001/002/003, pos
 
   test('page load → table visible (SC-001 — production budget 2 s)', async ({ page }) => {
     const start = Date.now();
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-key-contacts-row-representative')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const elapsed = Date.now() - start;
     console.log(`[SC-001] page load → first row visible: ${elapsed} ms (prod budget 2000 ms; dev allowance ${2000 * PERF_DEV_MULTIPLIER} ms)`);
@@ -237,7 +237,7 @@ test.describe('Org Membership Detail — performance timing (SC-001/002/003, pos
   });
 
   test('pencil click → modal visible (SC-002 — production budget 200 ms)', async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const start = Date.now();
@@ -250,7 +250,7 @@ test.describe('Org Membership Detail — performance timing (SC-001/002/003, pos
   });
 
   test('Save click → toast visible (SC-003 — production budget 500 ms inc. 400 ms mock latency)', async ({ page }) => {
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('membership-detail-key-contacts-edit-representative').click();
     await page.getByTestId('edit-key-contact-email-input').fill('perf.test@example.com');
@@ -268,16 +268,16 @@ test.describe('Org Membership Detail — performance timing (SC-001/002/003, pos
 
 test.describe('Org Membership Detail — SSR rendered HTML (SC-006, post-analyze C2)', () => {
   test('initial HTML contains the populated Key Contacts table before client hydration', async ({ request }) => {
-    const response = await request.get(DETAIL_URL_AGL);
+    const response = await request.get(DETAIL_URL_FOUNDATION);
     const status = response.status();
     const body = await response.text();
-    // These strings come from the AGL fixture — must be in the initial HTML if SSR is active.
+    // These strings come from the seeded key-contacts data — must be in the initial HTML if SSR is active.
     // `ng serve` runs SSR per angular.json, but pre-auth requests get bounced to the Auth0 login,
     // so the test runs against the SSR-rendered detail page only when the request fixture inherits
     // the storage state. If the test runs pre-auth (unusual), the response body will be a redirect
     // or login shell — in that case we skip the content assertion and only verify the route exists.
-    if (status === 200 && /Masaki Isetani|Key Contacts/.test(body)) {
-      expect(body).toContain('Masaki Isetani');
+    if (status === 200 && /Sam Chen|Key Contacts/.test(body)) {
+      expect(body).toContain('Sam Chen');
       expect(body).toContain('membership-detail-key-contacts-table');
     } else {
       test.skip(
@@ -291,7 +291,7 @@ test.describe('Org Membership Detail — SSR rendered HTML (SC-006, post-analyze
 test.describe('Org Membership Detail — viewport resilience (SC-008, post-analyze C3)', () => {
   test('modal usable at 320×600 viewport — header + footer visible, no internal modal overflow', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 600 });
-    await page.goto(DETAIL_URL_AGL, { waitUntil: 'domcontentloaded' });
+    await page.goto(DETAIL_URL_FOUNDATION, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('membership-detail-key-contacts-edit-billing').click();
