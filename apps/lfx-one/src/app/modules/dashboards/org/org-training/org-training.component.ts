@@ -95,6 +95,7 @@ export class OrgTrainingComponent {
   protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
   protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
+  protected readonly certHasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
 
   // ─── Constructor ─────────────────────────────────────────────────────────--
   public constructor() {
@@ -126,11 +127,13 @@ export class OrgTrainingComponent {
   }
 
   protected onCertifiedClick(cert: OrgCertification): void {
+    this.inProgressDrawerVisible.set(false);
     this.activeCertification.set(cert);
     this.certifiedDrawerVisible.set(true);
   }
 
   protected onInProgressClick(cert: OrgCertification): void {
+    this.certifiedDrawerVisible.set(false);
     this.activeCertification.set(cert);
     this.inProgressDrawerVisible.set(true);
   }

@@ -142,6 +142,10 @@
                 [loading]="certificationsLoading()"
                 [sortField]="certSortField()"
                 [sortOrder]="certSortOrder()"
+                [emptyStateTitle]="certHasActiveFilters() ? 'No certifications match these filters' : 'No certifications yet'"
+                [emptyStateSubtitle]="
+                  certHasActiveFilters() ? 'Try adjusting your search or level filter.' : 'No certifications were found for your organization.'
+                "
                 (pageChange)="onCertPageChange($event)"
                 (sortChange)="onCertSortChange($event)"
                 (certifiedClick)="onCertifiedClick($event)"
