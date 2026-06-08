@@ -298,11 +298,7 @@ export class OrgProjectDetailComponent {
     const projectSlug$ = this.route.paramMap.pipe(map((params) => params.get('projectSlug')));
     const retryTrigger$ = toObservable(this.retryTrigger);
 
-    return combineLatest([
-      orgUid$.pipe(filter((id): id is string => !!id)),
-      projectSlug$.pipe(filter((slug): slug is string => !!slug)),
-      retryTrigger$,
-    ]).pipe(
+    return combineLatest([orgUid$.pipe(filter((id): id is string => !!id)), projectSlug$.pipe(filter((slug): slug is string => !!slug)), retryTrigger$]).pipe(
       tap(() => {
         this.fetchLoading.set(true);
         this.fetchError.set(false);

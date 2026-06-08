@@ -121,8 +121,7 @@ export const routes: Routes = [
               description: "Your organization's involvement and competitive standing on a project.",
               icon: 'fa-light fa-folder',
             },
-            loadComponent: () =>
-              import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+            loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
           },
           {
             // INFO: Future Epic implementation — the ROI page is hidden; deep links fall

@@ -46,7 +46,9 @@
         </lfx-breadcrumb>
 
         <!-- Hero -->
-        <section class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between" data-testid="project-detail-hero">
+        <section
+          class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between"
+          data-testid="project-detail-hero">
           <!-- Left: identity -->
           <div class="flex items-start gap-4">
             @if (h.logoUrl) {
@@ -61,13 +63,23 @@
               <p class="max-w-xl text-sm text-gray-600" data-testid="project-detail-description">{{ h.description }}</p>
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 @if (h.sourceUrl) {
-                  <a [href]="h.sourceUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700" data-testid="project-detail-source-link">
+                  <a
+                    [href]="h.sourceUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
+                    data-testid="project-detail-source-link">
                     <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
                     <span>{{ h.sourceLabel || 'Source' }}</span>
                   </a>
                 }
                 @if (h.lfxInsightsUrl) {
-                  <a [href]="h.lfxInsightsUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700" data-testid="project-detail-insights-link">
+                  <a
+                    [href]="h.lfxInsightsUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
+                    data-testid="project-detail-insights-link">
                     <i class="fa-light fa-chart-line" aria-hidden="true"></i>
                     <span>View on LFX Insights</span>
                   </a>
@@ -85,19 +97,31 @@
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Software value
-                <i class="fa-light fa-circle-info text-gray-400" title="Project-level CHAOSS / LFX Insights estimate for the whole project — not your organization's individual return." aria-hidden="true"></i>
+                <i
+                  class="fa-light fa-circle-info text-gray-400"
+                  title="Project-level CHAOSS / LFX Insights estimate for the whole project — not your organization's individual return."
+                  aria-hidden="true"></i>
               </span>
               <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-software-value">{{ softwareValueLabel() }}</span>
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health</span>
               @if (healthMeta(); as hm) {
-                <span class="inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium md:ml-auto" [class]="hm.classes" data-testid="project-detail-health-badge">{{ hm.label }}</span>
+                <span
+                  class="inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium md:ml-auto"
+                  [class]="hm.classes"
+                  data-testid="project-detail-health-badge"
+                  >{{ hm.label }}</span
+                >
               }
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Foundation</span>
-              <span class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 md:ml-auto" data-testid="project-detail-foundation-pill">{{ h.foundationLabel }}</span>
+              <span
+                class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 md:ml-auto"
+                data-testid="project-detail-foundation-pill"
+                >{{ h.foundationLabel }}</span
+              >
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Last updated</span>
@@ -138,7 +162,11 @@
         <!-- Tab content -->
         @switch (activeTab()) {
           @case ('pd-influence') {
-            <div role="tabpanel" id="project-detail-tab-panel-pd-influence" class="flex flex-col gap-8" [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
+            <div
+              role="tabpanel"
+              id="project-detail-tab-panel-pd-influence"
+              class="flex flex-col gap-8"
+              [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
               <!-- Technical Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
                 <h2 class="text-lg font-semibold text-gray-900">Technical Influence</h2>
@@ -157,7 +185,12 @@
                   }
                 </div>
                 @if (sourceUrl()) {
-                  <a [href]="sourceUrl()" target="_blank" rel="noopener noreferrer" class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="project-detail-get-involved">
+                  <a
+                    [href]="sourceUrl()"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+                    data-testid="project-detail-get-involved">
                     <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
                     <span>Get involved with this project</span>
                   </a>
@@ -200,7 +233,11 @@
             </div>
           }
           @case ('pd-leaderboards') {
-            <div role="tabpanel" id="project-detail-tab-panel-pd-leaderboards" class="flex flex-col gap-4" [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
+            <div
+              role="tabpanel"
+              id="project-detail-tab-panel-pd-leaderboards"
+              class="flex flex-col gap-4"
+              [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
               <!-- Score-type + metric toggles -->
               <div class="flex flex-wrap items-center gap-3">
                 <div class="inline-flex rounded-md border border-gray-200 p-0.5" role="group" aria-label="Score type" data-testid="project-detail-score-toggle">
@@ -260,14 +297,10 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                       @for (row of visibleRows(); track row.orgName) {
-                        <ng-container
-                          [ngTemplateOutlet]="leaderboardRow"
-                          [ngTemplateOutletContext]="{ $implicit: row, pinned: false }"></ng-container>
+                        <ng-container [ngTemplateOutlet]="leaderboardRow" [ngTemplateOutletContext]="{ $implicit: row, pinned: false }"></ng-container>
                       }
                       @if (pinnedViewingRow(); as pinned) {
-                        <ng-container
-                          [ngTemplateOutlet]="leaderboardRow"
-                          [ngTemplateOutletContext]="{ $implicit: pinned, pinned: true }"></ng-container>
+                        <ng-container [ngTemplateOutlet]="leaderboardRow" [ngTemplateOutletContext]="{ $implicit: pinned, pinned: true }"></ng-container>
                       }
                     </tbody>
                   </table>
@@ -302,7 +335,9 @@
     <td class="px-4 py-2 text-gray-500">{{ row.rank }}</td>
     <td class="px-4 py-2">
       <div class="flex items-center gap-2">
-        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600" aria-hidden="true">{{ row.initials }}</span>
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600" aria-hidden="true">{{
+          row.initials
+        }}</span>
         <span class="font-medium text-gray-900">{{ row.orgName }}</span>
         @if (row.isViewingOrg) {
           <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>

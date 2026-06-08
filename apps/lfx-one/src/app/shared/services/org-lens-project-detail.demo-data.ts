@@ -250,10 +250,42 @@ function pctOf(n: number, total: number): number {
 
 function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] {
   return [
-    { key: 'maintainers', label: 'Maintainers', orgCount: seed.org.maintainers, projectTotal: seed.totals.maintainers, pct: pctOf(seed.org.maintainers, seed.totals.maintainers), sparkline: ramp(seed.org.maintainers, 0.6), dataUpdatedHoursAgo: 9 },
-    { key: 'contributors', label: 'Contributors', orgCount: seed.org.contributors, projectTotal: seed.totals.contributors, pct: pctOf(seed.org.contributors, seed.totals.contributors), sparkline: ramp(seed.org.contributors, 0.55), dataUpdatedHoursAgo: 1 },
-    { key: 'commits', label: 'Commit Activities', orgCount: seed.org.commits, projectTotal: seed.totals.commits, pct: pctOf(seed.org.commits, seed.totals.commits), sparkline: ramp(seed.org.commits, 0.65), dataUpdatedHoursAgo: 1 },
-    { key: 'pull-requests', label: 'Pull Requests', orgCount: seed.org.prs, projectTotal: seed.totals.prs, pct: pctOf(seed.org.prs, seed.totals.prs), sparkline: ramp(seed.org.prs, 0.65), dataUpdatedHoursAgo: 1 },
+    {
+      key: 'maintainers',
+      label: 'Maintainers',
+      orgCount: seed.org.maintainers,
+      projectTotal: seed.totals.maintainers,
+      pct: pctOf(seed.org.maintainers, seed.totals.maintainers),
+      sparkline: ramp(seed.org.maintainers, 0.6),
+      dataUpdatedHoursAgo: 9,
+    },
+    {
+      key: 'contributors',
+      label: 'Contributors',
+      orgCount: seed.org.contributors,
+      projectTotal: seed.totals.contributors,
+      pct: pctOf(seed.org.contributors, seed.totals.contributors),
+      sparkline: ramp(seed.org.contributors, 0.55),
+      dataUpdatedHoursAgo: 1,
+    },
+    {
+      key: 'commits',
+      label: 'Commit Activities',
+      orgCount: seed.org.commits,
+      projectTotal: seed.totals.commits,
+      pct: pctOf(seed.org.commits, seed.totals.commits),
+      sparkline: ramp(seed.org.commits, 0.65),
+      dataUpdatedHoursAgo: 1,
+    },
+    {
+      key: 'pull-requests',
+      label: 'Pull Requests',
+      orgCount: seed.org.prs,
+      projectTotal: seed.totals.prs,
+      pct: pctOf(seed.org.prs, seed.totals.prs),
+      sparkline: ramp(seed.org.prs, 0.65),
+      dataUpdatedHoursAgo: 1,
+    },
   ];
 }
 
