@@ -198,7 +198,7 @@ export interface CampaignCreateRequest extends CampaignCreateBase {
   displayCallToAction?: string;
   geoTargets: string[];
   platforms?: CampaignPlatform[];
-  linkedInConfig?: LinkedInCampaignCreateRequest;
+  linkedInConfig?: Omit<LinkedInCampaignCreateRequest, keyof CampaignCreateBase>;
 }
 
 export interface CampaignCreateResult {

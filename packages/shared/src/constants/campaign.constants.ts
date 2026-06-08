@@ -7,7 +7,6 @@ import type {
   CampaignStatus,
   CampaignTabOption,
   LinkedInGeoTarget,
-  LinkedInTargetingProfile,
   LinkedInTargetingProfileConfig,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
