@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LinkedInCampaignCreateResult, LinkedInCreativeVariant, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
+import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_API_VERSION, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_GEO_RESOLVE_MAP, LINKEDIN_TARGETING_PROFILES } from '@lfx-one/shared/constants';
 
@@ -26,7 +26,11 @@ const SKIP_STATUSES = new Set(['ARCHIVED', 'CANCELED', 'COMPLETED', 'DRAFT', 'RE
 // ---------------------------------------------------------------------------
 
 function getLinkedInEnv(key: string): string {
-  return process.env[key] || '';
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
 }
 
 function getAccountId(): string {
@@ -127,13 +131,15 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
 }
 
 function toMs(dateStr: string, eod = false): number {
-  const dt = new Date(dateStr);
+  const [y, m, d] = dateStr.split('-').map(Number);
   if (eod) {
-    dt.setHours(23, 59, 59, 0);
-  } else if (dt.getTime() <= Date.now()) {
+    return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+  }
+  const localStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+  if (localStart <= Date.now()) {
     return Date.now() + 5 * 60 * 1000;
   }
-  return dt.getTime();
+  return localStart;
 }
 
 function accountUrn(): string {
@@ -169,10 +175,13 @@ export async function resolveGeoTargets(locationNames: string[]): Promise<Linked
       const elements = resp.elements || [];
       if (elements.length > 0) {
         const first = elements[0];
-        resolved.push({
-          label: first.name || name,
-          urn: first.urn || first.id || '',
-        });
+        const resolvedUrn = first.urn || first.id || '';
+        if (resolvedUrn) {
+          resolved.push({
+            label: first.name || name,
+            urn: resolvedUrn,
+          });
+        }
       }
     } catch {
       logger.warning(undefined, 'linkedin_resolve_geo', `Failed to resolve geo: ${name}`, { name });
@@ -259,7 +268,7 @@ export async function createDarkPost(introText: string, headline: string, destUr
     ...(imageUrn ? { thumbnail: imageUrn } : {}),
   };
 
-  const body = {
+  const body: Record<string, unknown> = {
     author: orgUrn(),
     commentary: intro,
     visibility: 'PUBLIC',
@@ -273,24 +282,8 @@ export async function createDarkPost(introText: string, headline: string, destUr
     adContext: { dscAdAccount: accountUrn() },
   };
 
-  const response = await fetch(`${LINKEDIN_BASE_URL}/posts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getAccessToken()}`,
-      'LinkedIn-Version': LINKEDIN_API_VERSION,
-      'X-RestLi-Protocol-Version': '2.0.0',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`LinkedIn API POST /posts → ${response.status}: ${text.slice(0, 400)}`);
-  }
-
-  const shareUrn = response.headers.get('x-restli-id') || '';
-  return shareUrn;
+  const data = await linkedInRequest('POST', 'posts', body);
+  return data.id || '';
 }
 
 export async function createCreative(campaignId: string, shareUrn: string, adName: string): Promise<string> {
@@ -344,39 +337,26 @@ export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrn
 }
 
 export function buildLinkedInUtmUrl(baseUrl: string, hsToken: string | undefined, campaignName: string, variantIndex: number): string {
-  const sep = baseUrl.includes('?') ? '&' : '?';
   const term = campaignName.replace(/ \| /g, '_').replace(/\s+/g, '-').toLowerCase();
 
-  let params = `utm_source=linkedin&utm_medium=paid-social`;
+  const utmParams = new URLSearchParams();
+  utmParams.set('utm_source', 'linkedin');
+  utmParams.set('utm_medium', 'paid-social');
   if (hsToken) {
-    params += `&utm_campaign=${hsToken}`;
+    utmParams.set('utm_campaign', hsToken);
   }
-  params += `&utm_term=${term}`;
-  params += `&utm_content=variant-${variantIndex}`;
+  utmParams.set('utm_term', term);
+  utmParams.set('utm_content', `variant-${variantIndex}`);
 
-  return `${baseUrl.replace(/\/$/, '')}${sep}${params}`;
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  return `${baseUrl.replace(/\/$/, '')}${sep}${utmParams.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
 // Orchestrator — full campaign creation flow
 // ---------------------------------------------------------------------------
 
-export interface LinkedInCampaignCreateParams {
-  eventName: string;
-  eventSlug: string;
-  registrationUrl: string;
-  hsToken?: string;
-  budgetUsd: number;
-  lifetimeBudget: boolean;
-  startDate: string;
-  endDate: string;
-  geoTargets: LinkedInGeoTarget[];
-  targetingProfile: LinkedInTargetingProfile;
-  variants: LinkedInCreativeVariant[];
-  project?: string;
-}
-
-export async function executeLinkedInCampaignCreation(req: Request | undefined, params: LinkedInCampaignCreateParams): Promise<LinkedInCampaignCreateResult> {
+export async function executeLinkedInCampaignCreation(req: Request | undefined, params: LinkedInCampaignCreateRequest): Promise<LinkedInCampaignCreateResult> {
   const steps: string[] = [];
   const startTime = logger.startOperation(req, 'linkedin_campaign_create', { event: params.eventName });
 
@@ -406,7 +386,7 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
     for (let i = 0; i < params.variants.length; i++) {
       const variant = params.variants[i];
       const destUrl = buildLinkedInUtmUrl(params.registrationUrl, params.hsToken, campaignName, i + 1);
-      const shareUrn = await createDarkPost(variant.introText, variant.headline, destUrl, variant.imageUrl);
+      const shareUrn = await createDarkPost(variant.introText, variant.headline, destUrl, variant.imageUrn);
       steps.push(`Dark post variant-${i + 1}: ${shareUrn}`);
 
       const adName = `${params.eventName} | variant-${i + 1}`;

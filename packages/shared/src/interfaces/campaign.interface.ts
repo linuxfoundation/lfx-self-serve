@@ -125,7 +125,7 @@ export interface LinkedInGeoTarget {
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
-  imageUrl?: string;
+  imageUrn?: string;
 }
 
 export interface LinkedInBriefCopy {
