@@ -276,9 +276,9 @@
           label="Create Campaign"
           icon="fa-light fa-rocket"
           severity="primary"
-          [disabled]="campaignForm.invalid"
+          [disabled]="!canSubmit()"
           (onClick)="submit()"
-          ariaLabel="Create campaign in Google Ads"
+          ariaLabel="Create campaign"
           data-testid="implementation-submit-btn" />
         @if (errors().length > 0) {
           <p class="text-sm text-red-600">{{ errors()[0] }}</p>

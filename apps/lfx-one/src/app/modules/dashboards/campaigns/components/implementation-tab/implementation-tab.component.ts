@@ -80,6 +80,15 @@ export class ImplementationTabComponent {
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
+  protected readonly canSubmit = computed(() => {
+    const platforms = this.selectedPlatforms();
+    const googleSelected = platforms.includes('google-ads');
+    const linkedInSelected = platforms.includes('linkedin-ads');
+    if (!googleSelected && !linkedInSelected) return false;
+    if (googleSelected && this.campaignForm.invalid) return false;
+    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
+    return true;
+  });
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();

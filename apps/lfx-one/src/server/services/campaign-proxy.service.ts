@@ -666,8 +666,11 @@ export class CampaignProxyService {
         truncateAdCopy(structured);
 
         if (selectedPlatforms.includes('linkedin-ads')) {
-          const liData = structured['linkedin_sponsored'] as Record<string, unknown> | undefined;
+          const liData =
+            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
+            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
           if (liData) {
+            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
             const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
             if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
               try {
