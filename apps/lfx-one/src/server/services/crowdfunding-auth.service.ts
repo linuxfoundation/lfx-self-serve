@@ -35,13 +35,15 @@ export class CrowdfundingAuthService {
   private _baseUrl: string | undefined;
   private _redirectUri: string | undefined;
 
-  // Reuses the lfx_one_profile client (the established second-audience client).
+  // Uses the regular LFX One app client (same client as primary login). The
+  // profile/social client is purpose-built for Auth0-API self-updates and is not
+  // appropriate for general API audiences like Crowdfunding.
   private get clientId(): string {
-    return (this._clientId ??= process.env['PROFILE_CLIENT_ID'] || '');
+    return (this._clientId ??= process.env['PCC_AUTH0_CLIENT_ID'] || '');
   }
 
   private get clientSecret(): string {
-    return (this._clientSecret ??= process.env['PROFILE_CLIENT_SECRET'] || '');
+    return (this._clientSecret ??= process.env['PCC_AUTH0_CLIENT_SECRET'] || '');
   }
 
   private get audience(): string {
