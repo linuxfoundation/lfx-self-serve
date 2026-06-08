@@ -167,8 +167,12 @@ export class CrowdfundingAuthService {
       return false;
     }
 
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    return payload.sub === expectedSub;
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+      return payload.sub === expectedSub;
+    } catch {
+      return false;
+    }
   }
 
   /**

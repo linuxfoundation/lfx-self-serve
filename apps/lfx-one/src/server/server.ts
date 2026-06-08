@@ -295,8 +295,15 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   // page, before Angular's /api/crowdfunding/* XHRs run. Those XHRs can't follow an
   // auth-code redirect, so the token must be in the session first. The user already
   // has an Auth0 session, so this redirect is silent (no re-prompt). Uses originalUrl
-  // because the Angular SSR engine normalizes req.path to "/".
-  if (auth.authenticated && req.originalUrl.startsWith('/crowdfunding') && crowdfundingAuthService.isConfigured() && !crowdfundingAuthService.hasValidToken(req)) {
+  // because the Angular SSR engine normalizes req.path to "/". The `error` guard avoids
+  // a redirect loop when the callback bounces back with ?error=... after a failed exchange.
+  if (
+    auth.authenticated &&
+    req.originalUrl.startsWith('/crowdfunding') &&
+    !req.query['error'] &&
+    crowdfundingAuthService.isConfigured() &&
+    !crowdfundingAuthService.hasValidToken(req)
+  ) {
     res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
     return;
   }
