@@ -13,6 +13,7 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
 import type {
   OrgLensLeaderboardMetric,
@@ -24,6 +25,7 @@ import type {
   OrgLensProjectHealth,
   OrgLensProjectTechnicalCard,
   OrgLensScoreType,
+  TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
@@ -42,11 +44,11 @@ const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['i
 const LEADERBOARD_PAGE_SIZE = 10;
 const LEADERBOARD_MAX_ROWS = 100;
 
-/** Hero health badge label + Tailwind token classes (green Excellent / amber Healthy / red At Risk). */
-const HEALTH_META: Record<OrgLensProjectHealth, { label: string; classes: string }> = {
-  excellent: { label: 'Excellent', classes: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' },
-  healthy: { label: 'Healthy', classes: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20' },
-  'at-risk': { label: 'At Risk', classes: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20' },
+/** Hero health badge → lfx-tag severity (green Excellent / amber Healthy / red At Risk). */
+const HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
+  excellent: { label: 'Excellent', severity: 'success' },
+  healthy: { label: 'Healthy', severity: 'warn' },
+  'at-risk': { label: 'At Risk', severity: 'danger' },
 };
 
 /** FontAwesome icons keyed by Technical / Ecosystem card. */
@@ -72,12 +74,20 @@ const ECOSYSTEM_EMPTY_COPY: Record<OrgLensProjectEcosystemCard['key'], string> =
   'committee-members': 'Your organization holds no committee seats on this project.',
 };
 
-/** Leaderboard band chip label + Tailwind token classes. */
-const BAND_META: Record<OrgLensProjectBand, { label: string; classes: string }> = {
-  leading: { label: 'Leading', classes: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' },
-  contributing: { label: 'Contributing', classes: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20' },
-  participating: { label: 'Participating', classes: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20' },
-  'non-lf': { label: 'Non-LF', classes: 'bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-500/20' },
+/** Ecosystem card scope label (per the wireframe): project-level vs foundation-level metric. */
+const ECOSYSTEM_SCOPE: Record<OrgLensProjectEcosystemCard['key'], string> = {
+  collaboration: 'Project',
+  'meeting-attendance': 'Project',
+  'board-members': 'Foundation',
+  'committee-members': 'Foundation',
+};
+
+/** Leaderboard band chip → lfx-tag severity. */
+const BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: TagSeverity }> = {
+  leading: { label: 'Leading', severity: 'success' },
+  contributing: { label: 'Contributing', severity: 'info' },
+  participating: { label: 'Participating', severity: 'warn' },
+  'non-lf': { label: 'Non-LF', severity: 'secondary' },
 };
 
 const SCORE_OPTIONS: { id: OrgLensScoreType; label: string }[] = [
@@ -106,7 +116,7 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, MetricCardComponent, TagComponent],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -135,7 +145,7 @@ export class OrgProjectDetailComponent {
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
   protected readonly healthMeta = computed(() => {
     const health = this.hero()?.health;
-    return health ? HEALTH_META[health] : null;
+    return health ? HEALTH_TAG[health] : null;
   });
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
@@ -241,7 +251,7 @@ export class OrgProjectDetailComponent {
     // Score desc; tie-break by 1y delta desc, then org name asc (LFXV2-1885 §5).
     valued.sort((a, b) => b.value - a.value || b.row.trendDeltaPct - a.row.trendDeltaPct || a.row.orgName.localeCompare(b.row.orgName));
     return valued.map((entry, i) => {
-      const bandMeta = BAND_META[bandForScore(entry.row.scores[type])];
+      const bandMeta = BAND_TAG[bandForScore(entry.row.scores[type])];
       return {
         rank: i + 1,
         orgName: entry.row.orgName,
@@ -249,7 +259,7 @@ export class OrgProjectDetailComponent {
         initials: this.initialsFor(entry.row.orgName),
         valueLabel: activity ? entry.value.toLocaleString() : entry.value.toFixed(1),
         bandLabel: bandMeta.label,
-        bandClasses: bandMeta.classes,
+        bandSeverity: bandMeta.severity,
         deltaLabel: this.formatDelta(entry.row.trendDeltaPct),
         deltaClasses: this.deltaClasses(entry.row.trendDeltaPct),
         sparklinePoints: this.sparklinePoints(entry.row.trendSparkline),
@@ -393,6 +403,7 @@ export class OrgProjectDetailComponent {
       key: card.key,
       title: card.label,
       icon: ECOSYSTEM_ICONS[card.key],
+      scopeLabel: ECOSYSTEM_SCOPE[card.key],
       count: card.count.toLocaleString(),
       isEmpty: card.count === 0,
       emptyCopy: ECOSYSTEM_EMPTY_COPY[card.key],
