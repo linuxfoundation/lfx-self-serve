@@ -146,7 +146,12 @@ export class ImplementationTabComponent {
   }
 
   protected submit(): void {
-    if (this.campaignForm.invalid) return;
+    const platforms = this.selectedPlatforms();
+    const googleSelected = platforms.includes('google-ads');
+    const linkedInSelected = platforms.includes('linkedin-ads');
+    if (googleSelected && this.campaignForm.invalid) return;
+    if (!googleSelected && !linkedInSelected) return;
+    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
 
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
@@ -158,7 +163,6 @@ export class ImplementationTabComponent {
     if (form.includeSearch) campaignTypes.push('search');
     if (form.includeDemandGen) campaignTypes.push('demand-gen');
 
-    const platforms = this.selectedPlatforms();
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {

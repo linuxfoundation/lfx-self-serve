@@ -13,7 +13,7 @@ export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen';
+export type CampaignType = 'search' | 'demand-gen' | 'sponsored';
 
 export type DateRangeOption = 7 | 14 | 30;
 
