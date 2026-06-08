@@ -3,21 +3,10 @@
 
 import { Request } from 'express';
 
+import { RefreshTokenExchangeOptions, TokenRequestParams } from '@lfx-one/shared/interfaces';
 import { logger } from '../services/logger.service';
 
 const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
-
-export interface RefreshTokenExchangeOptions {
-  issuerBaseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  audience: string;
-  /**
-   * When provided, the token is cached in req.appSession under
-   * `<sessionKey>` (token) and `<sessionKey>ExpiresAt` (unix seconds).
-   */
-  sessionKey?: string;
-}
 
 /**
  * Exchanges the user's OIDC refresh token for an access token scoped to a
@@ -29,7 +18,7 @@ export interface RefreshTokenExchangeOptions {
  */
 export async function exchangeRefreshTokenForAudience(req: Request, options: RefreshTokenExchangeOptions): Promise<string | null> {
   const issuerBaseUrl = options.issuerBaseUrl.replace(/\/+$/, '');
-  const { clientId, clientSecret, audience, sessionKey } = options;
+  const { clientId, clientSecret, audience, scope, sessionKey } = options;
   const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
 
   // Serve from session cache if still valid
@@ -51,7 +40,8 @@ export async function exchangeRefreshTokenForAudience(req: Request, options: Ref
   }
 
   try {
-    const config = isAuthelia ? createAutheliaTokenRequest(issuerBaseUrl, clientId, clientSecret, refreshToken, audience) : createAuth0TokenRequest(issuerBaseUrl, clientId, clientSecret, refreshToken, audience);
+    const params: TokenRequestParams = { issuerBaseUrl, clientId, clientSecret, refreshToken, audience, scope };
+    const config = isAuthelia ? createAutheliaTokenRequest(params) : createAuth0TokenRequest(params);
 
     const response = await fetch(config.endpoint, {
       method: config.method,
@@ -98,25 +88,28 @@ export async function exchangeRefreshTokenForAudience(req: Request, options: Ref
   }
 }
 
-function createAuth0TokenRequest(issuerBaseUrl: string, clientId: string, clientSecret: string, refreshToken: string, audience: string) {
+function createAuth0TokenRequest({ issuerBaseUrl, clientId, clientSecret, refreshToken, audience, scope }: TokenRequestParams) {
   return {
     endpoint: `${issuerBaseUrl}/oauth/token`,
     method: 'POST',
     createHeaders: () => ({
       ['Content-Type']: 'application/x-www-form-urlencoded',
     }),
-    createBody: () =>
-      new URLSearchParams({
+    createBody: () => {
+      const params: Record<string, string> = {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: clientId,
         client_secret: clientSecret,
         audience,
-      }).toString(),
+      };
+      if (scope) params['scope'] = scope;
+      return new URLSearchParams(params).toString();
+    },
   };
 }
 
-function createAutheliaTokenRequest(issuerBaseUrl: string, clientId: string, clientSecret: string, refreshToken: string, audience: string) {
+function createAutheliaTokenRequest({ issuerBaseUrl, clientId, clientSecret, refreshToken, audience, scope }: TokenRequestParams) {
   return {
     endpoint: `${issuerBaseUrl}/api/oidc/token`,
     method: 'POST',
@@ -127,11 +120,14 @@ function createAutheliaTokenRequest(issuerBaseUrl: string, clientId: string, cli
         ['Content-Type']: 'application/x-www-form-urlencoded',
       };
     },
-    createBody: () =>
-      new URLSearchParams({
+    createBody: () => {
+      const params: Record<string, string> = {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         audience,
-      }).toString(),
+      };
+      if (scope) params['scope'] = scope;
+      return new URLSearchParams(params).toString();
+    },
   };
 }

@@ -263,6 +263,7 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
     clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
     clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
     audience: crowdfundingAudience,
+    scope: 'access:me',
     sessionKey: 'crowdfundingToken',
   });
 
