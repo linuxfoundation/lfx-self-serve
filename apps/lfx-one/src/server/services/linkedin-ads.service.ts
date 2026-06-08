@@ -89,6 +89,7 @@ async function linkedInRequest(
   const response = await fetch(url.toString(), {
     method,
     headers,
+    signal: AbortSignal.timeout(30_000),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -112,17 +113,26 @@ async function linkedInRequest(
 }
 
 async function findByName(nestedPath: string, name: string): Promise<string | null> {
+  const pageSize = 50;
+  let start = 0;
   try {
-    const resp = await linkedInRequest('GET', nestedPath, undefined, { q: 'search', count: '50' });
-    for (const el of resp.elements || []) {
-      if (el.name === name) {
-        const status = el.status || '';
-        if (SKIP_STATUSES.has(status)) continue;
-        const rawId = el.id || el.$URN || '';
-        if (rawId) {
-          return rawId.includes(':') ? rawId.split(':').pop()! : rawId;
+    while (true) {
+      const resp = await linkedInRequest('GET', nestedPath, undefined, {
+        q: 'search',
+        count: String(pageSize),
+        start: String(start),
+      });
+      const elements = resp.elements || [];
+      for (const el of elements) {
+        if (el.name === name) {
+          const status = el.status || '';
+          if (SKIP_STATUSES.has(status)) continue;
+          const rawId = el.id || el.$URN || '';
+          if (rawId) return rawId.includes(':') ? rawId.split(':').pop()! : rawId;
         }
       }
+      if (elements.length < pageSize) break;
+      start += pageSize;
     }
   } catch {
     // Swallow search errors — caller handles null
@@ -132,14 +142,10 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
 
 function toMs(dateStr: string, eod = false): number {
   const [y, m, d] = dateStr.split('-').map(Number);
-  if (eod) {
-    return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-  }
-  const localStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
-  if (localStart <= Date.now()) {
-    return Date.now() + 5 * 60 * 1000;
-  }
-  return localStart;
+  if (eod) return Date.UTC(y, m - 1, d, 23, 59, 59, 999);
+  const utcStart = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  if (utcStart <= Date.now()) return Date.now() + 5 * 60 * 1000;
+  return utcStart;
 }
 
 function accountUrn(): string {
