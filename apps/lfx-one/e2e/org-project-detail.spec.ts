@@ -68,7 +68,7 @@ test.describe('Org Project Detail — tab strip', () => {
     await expect(page.getByTestId('project-detail-technical-group')).toBeVisible();
     await page.getByTestId('project-detail-tab-pd-leaderboards').click();
     await expect(page).toHaveURL(/tab=pd-leaderboards/);
-    await expect(page.getByTestId('project-detail-leaderboard-table')).toBeVisible();
+    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible();
   });
 
   test('deep-links to the Leaderboards tab via ?tab=', async ({ page }) => {
@@ -83,35 +83,32 @@ test.describe('Org Project Detail — tab strip', () => {
   });
 });
 
-test.describe('Org Project Detail — leaderboard', () => {
+test.describe('Org Project Detail — leaderboards', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('project-detail-leaderboard-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
-  test('pins the viewing-org row and paginates with Show more', async ({ page }) => {
-    await expect(page.getByTestId('project-detail-leaderboard-viewing-row')).toBeVisible();
-    const showMore = page.getByTestId('project-detail-leaderboard-show-more');
-    if (await showMore.isVisible()) {
-      const before = await page.locator('[data-testid="project-detail-leaderboard-table"] tbody tr').count();
-      await showMore.click();
-      const after = await page.locator('[data-testid="project-detail-leaderboard-table"] tbody tr').count();
-      expect(after).toBeGreaterThan(before);
-    }
+  test('renders both side-by-side boards with the viewing-org row pinned', async ({ page }) => {
+    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible();
+    await expect(page.getByTestId('project-detail-leaderboard-ecosystem')).toBeVisible();
+    await expect(page.getByTestId('project-detail-leaderboard-technical-viewing-row')).toBeVisible();
+    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-viewing-row')).toBeVisible();
   });
 
-  test('score + metric toggles persist in the URL', async ({ page }) => {
-    await page.getByTestId('project-detail-score-technical').click();
-    await expect(page).toHaveURL(/score=technical/);
+  test('metric toggle persists in the URL and switches the score column', async ({ page }) => {
+    await expect(page.getByRole('columnheader', { name: 'Influence Score' }).first()).toBeVisible();
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
+    await expect(page.getByRole('columnheader', { name: 'Activity (12mo)' }).first()).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Influence Score' })).toHaveCount(0);
   });
 
-  test('Activity Count mode hides the Trend + Band columns', async ({ page }) => {
-    await expect(page.getByRole('columnheader', { name: 'Trend (1y)' })).toBeVisible();
-    await page.getByTestId('project-detail-metric-activity').click();
-    await expect(page.getByRole('columnheader', { name: 'Trend (1y)' })).toHaveCount(0);
-    await expect(page.getByRole('columnheader', { name: 'Band' })).toHaveCount(0);
+  test('search filters a board to matching organizations', async ({ page }) => {
+    await page.getByTestId('project-detail-search-technical').fill('Google');
+    const rows = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Google');
   });
 });
 
