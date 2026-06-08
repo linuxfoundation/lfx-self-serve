@@ -81,9 +81,10 @@
     </div>
 
     <!--
-    Use totalVisible() (unwindowed count) to choose between the populated branch and the empty state so the drawer stays
-    reachable even when displayLimit clamps decoratedActions() to zero. Inside the populated branch, the inline list only
-    renders when decoratedActions() actually has rows.
+    Gate the list/drawer on totalVisible() (the unwindowed count) so the drawer's "View all (N)" stays reachable
+    even when displayLimit clamps decoratedActions() to zero. When it's 0 the section is either mid-fade (the outer
+    @if keeps it mounted to play the collapse) or already removed; nothing renders inside in that window. Within the
+    populated branch the inline list only renders when decoratedActions() actually has rows.
   -->
     @if (totalVisible() > 0) {
       @if (decoratedActions().length > 0) {
