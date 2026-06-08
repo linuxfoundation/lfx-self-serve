@@ -18,7 +18,7 @@
   data-testid="org-certifications-data-table">
   <ng-template #header>
     <tr>
-      <th scope="col" [attr.aria-sort]="getSortAriaValue('COURSE_NAME')" data-testid="sort-course-name">
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['COURSE_NAME']" data-testid="sort-course-name">
         <button
           type="button"
           class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -26,7 +26,7 @@
           Name <i [class]="sortIcons()['COURSE_NAME']" aria-hidden="true"></i>
         </button>
       </th>
-      <th scope="col" [attr.aria-sort]="getSortAriaValue('FOUNDATION_NAME')" data-testid="sort-foundation">
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['FOUNDATION_NAME']" data-testid="sort-foundation">
         <button
           type="button"
           class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -34,12 +34,12 @@
           Foundation <i [class]="sortIcons()['FOUNDATION_NAME']" aria-hidden="true"></i>
         </button>
       </th>
-      <th scope="col" [attr.aria-sort]="getSortAriaValue('LEVEL')" data-testid="sort-level">
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['LEVEL']" data-testid="sort-level">
         <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('LEVEL')">
           Level <i [class]="sortIcons()['LEVEL']" aria-hidden="true"></i>
         </button>
       </th>
-      <th scope="col" [attr.aria-sort]="getSortAriaValue('CERTIFIED_COUNT')" data-testid="sort-certified">
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['CERTIFIED_COUNT']" data-testid="sort-certified">
         <button
           type="button"
           class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -47,7 +47,7 @@
           Certified <i [class]="sortIcons()['CERTIFIED_COUNT']" aria-hidden="true"></i>
         </button>
       </th>
-      <th scope="col" [attr.aria-sort]="getSortAriaValue('IN_PROGRESS_COUNT')" data-testid="sort-in-progress">
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['IN_PROGRESS_COUNT']" data-testid="sort-in-progress">
         <button
           type="button"
           class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"

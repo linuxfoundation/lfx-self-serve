@@ -30,6 +30,22 @@ export class OrgCertificationsTableComponent {
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.certificationsResponse().total > 10 ? [10, 25, 50] : undefined));
 
+  protected readonly sortAriaMap = computed<Record<string, string>>(() => {
+    const field = this.sortField();
+    const order = this.sortOrder();
+    const forField = (f: string): string => {
+      if (field !== f) return 'none';
+      return order === 'ASC' ? 'ascending' : 'descending';
+    };
+    return {
+      COURSE_NAME: forField('COURSE_NAME'),
+      FOUNDATION_NAME: forField('FOUNDATION_NAME'),
+      LEVEL: forField('LEVEL'),
+      CERTIFIED_COUNT: forField('CERTIFIED_COUNT'),
+      IN_PROGRESS_COUNT: forField('IN_PROGRESS_COUNT'),
+    };
+  });
+
   protected readonly sortIcons = computed(() => {
     const field = this.sortField();
     const order = this.sortOrder();
@@ -52,10 +68,5 @@ export class OrgCertificationsTableComponent {
 
   protected onHeaderClick(field: string): void {
     this.sortChange.emit({ field });
-  }
-
-  protected getSortAriaValue(field: string): string {
-    if (this.sortField() !== field) return 'none';
-    return this.sortOrder() === 'ASC' ? 'ascending' : 'descending';
   }
 }
