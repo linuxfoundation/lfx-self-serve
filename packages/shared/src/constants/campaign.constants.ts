@@ -8,6 +8,7 @@ import type {
   CampaignTabOption,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  LinkedInTargetingProfileConfig,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
 
@@ -22,7 +23,7 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
-  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
+  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin', disabled: true },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
@@ -121,13 +122,6 @@ export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; org
 ] as const;
 
 export const LINKEDIN_EMPLOYER_EXCLUSIONS: readonly string[] = ['urn:li:company:33275771', 'urn:li:company:12893459'] as const;
-
-export interface LinkedInTargetingProfileConfig {
-  id: LinkedInTargetingProfile;
-  label: string;
-  skills: readonly string[];
-  groups: readonly string[];
-}
 
 export const LINKEDIN_TARGETING_PROFILES: readonly LinkedInTargetingProfileConfig[] = [
   {

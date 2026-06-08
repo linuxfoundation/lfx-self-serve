@@ -11,6 +11,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignResult,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignSSEEventType,
@@ -833,7 +834,7 @@ export class CampaignProxyService {
       }
     }
 
-    const results: CampaignCreateResult[] = [];
+    const results: CampaignResult[] = [];
     const errors: string[] = [];
 
     for (const campaignType of effectiveBody.campaignTypes) {
@@ -982,6 +983,7 @@ export class CampaignProxyService {
     steps.push(`Created RSA ad with ${headlines.length} headlines, ${descriptions.length} descriptions`);
 
     return {
+      platform: 'google-ads' as const,
       type: 'search',
       campaignName,
       campaignId,
@@ -1060,6 +1062,7 @@ export class CampaignProxyService {
     steps.push('Demand Gen campaign created — upload images and publish in Google Ads UI');
 
     return {
+      platform: 'google-ads' as const,
       type: 'demand-gen',
       campaignName,
       campaignId,

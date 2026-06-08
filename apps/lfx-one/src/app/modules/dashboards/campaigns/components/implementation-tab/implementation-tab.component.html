@@ -226,18 +226,31 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-medium text-gray-900">{{ campaign.campaignName }}</p>
-                  <p class="text-xs text-gray-500">
-                    {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
-                  </p>
+                  @if (campaign.platform === 'google-ads') {
+                    <p class="text-xs text-gray-500">
+                      {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
+                    </p>
+                  }
                 </div>
-                <a
-                  [href]="campaign.googleAdsUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-                  Open in Google Ads
-                  <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-                </a>
+                @if (campaign.platform === 'google-ads') {
+                  <a
+                    [href]="campaign.googleAdsUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                    Open in Google Ads
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  </a>
+                } @else {
+                  <a
+                    [href]="campaign.linkedInUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                    Open in LinkedIn
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  </a>
+                }
               </div>
             </div>
           }

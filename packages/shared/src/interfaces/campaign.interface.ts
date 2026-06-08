@@ -134,21 +134,36 @@ export interface LinkedInBriefCopy {
   recommendedTargetingProfile: LinkedInTargetingProfile;
 }
 
-export interface LinkedInCampaignCreateRequest {
+export interface LinkedInTargetingProfileConfig {
+  id: LinkedInTargetingProfile;
+  label: string;
+  skills: readonly string[];
+  groups: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Creation (Implementation Phase)
+// ---------------------------------------------------------------------------
+
+/** Fields shared between CampaignCreateRequest and LinkedInCampaignCreateRequest. */
+export interface CampaignCreateBase {
   eventName: string;
   eventSlug: string;
-  dates: string;
   registrationUrl: string;
   hsToken?: string;
   budgetUsd: number;
-  lifetimeBudget: boolean;
   startDate: string;
   endDate: string;
+  project?: string;
+  driveFolderUrl?: string;
+}
+
+export interface LinkedInCampaignCreateRequest extends CampaignCreateBase {
+  dates: string;
+  lifetimeBudget: boolean;
   geoTargets: LinkedInGeoTarget[];
   targetingProfile: LinkedInTargetingProfile;
   variants: LinkedInCreativeVariant[];
-  project?: string;
-  driveFolderUrl?: string;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -170,21 +185,10 @@ export interface CampaignBriefRefineRequest {
   platforms?: CampaignPlatform[];
 }
 
-// ---------------------------------------------------------------------------
-// Campaign Creation (Implementation Phase)
-// ---------------------------------------------------------------------------
-
-export interface CampaignCreateRequest {
-  eventName: string;
-  eventSlug: string;
+export interface CampaignCreateRequest extends CampaignCreateBase {
   countryCode: string;
-  registrationUrl: string;
-  hsToken?: string;
   campaignTypes: CampaignType[];
-  budgetUsd: number;
   searchBudgetPct: number;
-  startDate: string;
-  endDate: string;
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
@@ -193,14 +197,12 @@ export interface CampaignCreateRequest {
   displayBusinessName?: string;
   displayCallToAction?: string;
   geoTargets: string[];
-  project?: string;
-  driveFolderUrl?: string;
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {
-  platform?: CampaignPlatform;
+  platform: 'google-ads';
   type: CampaignType;
   campaignName: string;
   campaignId: string;
@@ -211,9 +213,12 @@ export interface CampaignCreateResult {
   steps: string[];
 }
 
+/** Discriminated union of per-platform create results. */
+export type CampaignResult = CampaignCreateResult | LinkedInCampaignCreateResult;
+
 export interface CampaignCreateResponse {
   success: boolean;
-  campaigns: CampaignCreateResult[];
+  campaigns: CampaignResult[];
   errors: string[];
 }
 
