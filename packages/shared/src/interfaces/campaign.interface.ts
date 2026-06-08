@@ -173,7 +173,7 @@ export interface LinkedInCampaignCreateResult {
   campaignName: string;
   campaignId: string;
   creativeCount: number;
-  linkedInUrl: string;
+  campaignUrl: string;
   steps: string[];
 }
 

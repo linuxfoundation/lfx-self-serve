@@ -726,19 +726,20 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const unsupported = (body.platforms ?? []).filter((p) => p !== 'google-ads');
-    if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Only google-ads is currently supported.` };
+    const supportedPlatforms = (body.platforms ?? ['google-ads']).filter((p) => p === 'google-ads' || p === 'linkedin-ads');
+    if (supportedPlatforms.length === 0) {
+      yield { type: 'error', data: 'No supported platforms specified. Supported: google-ads, linkedin-ads.' };
       return;
     }
 
     yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
+    const copySystemPrompt = buildCopySystemPrompt(supportedPlatforms);
     const userPrompt = buildRefinePrompt(body);
     let fullCopy = '';
 
     try {
-      for await (const token of aiChatStream(COPY_SYSTEM_PROMPT, userPrompt, signal)) {
+      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
         yield { type: 'copy_token', data: token };
         fullCopy += token;
       }
@@ -926,17 +927,7 @@ export class CampaignProxyService {
 
     const allCampaigns = [
       ...results.map((r) => ({ ...r, platform: 'google-ads' as const })),
-      ...linkedInResults.map((li) => ({
-        platform: 'linkedin-ads' as const,
-        type: 'search' as const,
-        campaignName: li.campaignName,
-        campaignId: li.campaignId,
-        adGroupCount: 1,
-        keywordCount: 0,
-        adCount: li.creativeCount,
-        campaignUrl: li.linkedInUrl,
-        steps: li.steps,
-      })),
+      ...linkedInResults,
     ];
 
     const response: CampaignCreateResponse = { success: errors.length === 0, campaigns: allCampaigns, errors };
@@ -985,22 +976,23 @@ export class CampaignProxyService {
     const startTime = Date.now();
     try {
       const result = await executeLinkedInCampaignCreation(undefined, {
-        eventName: config.eventName || body.eventName,
-        eventSlug: config.eventSlug || body.eventSlug,
-        registrationUrl: config.registrationUrl || body.registrationUrl,
-        hsToken: config.hsToken || body.hsToken,
-        budgetUsd: config.budgetUsd,
+        eventName: body.eventName,
+        eventSlug: body.eventSlug,
+        registrationUrl: body.registrationUrl,
+        hsToken: body.hsToken,
+        budgetUsd: body.budgetUsd,
+        startDate: body.startDate,
+        endDate: body.endDate,
+        project: body.project,
+        dates: `${body.startDate} – ${body.endDate}`,
         lifetimeBudget: config.lifetimeBudget,
-        startDate: config.startDate || body.startDate,
-        endDate: config.endDate || body.endDate,
         geoTargets: config.geoTargets,
         targetingProfile: config.targetingProfile,
         variants: config.variants,
-        project: config.project || body.project,
       });
       results.push(result);
     } catch (error: unknown) {
-      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: config.eventName ?? body.eventName ?? 'unknown' });
+      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: body.eventName ?? 'unknown' });
       errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
     }
   }

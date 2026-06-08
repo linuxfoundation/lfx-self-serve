@@ -422,7 +422,7 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
       campaignName,
       campaignId,
       creativeCount,
-      linkedInUrl: `https://www.linkedin.com/campaignmanager/accounts/${getAccountId()}/campaigns/${campaignId}`,
+      campaignUrl: `https://www.linkedin.com/campaignmanager/accounts/${getAccountId()}/campaigns/${campaignId}`,
       steps,
     };
 
