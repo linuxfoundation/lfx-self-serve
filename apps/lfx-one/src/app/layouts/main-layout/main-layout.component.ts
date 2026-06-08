@@ -155,6 +155,11 @@ export class MainLayoutComponent {
             routerLink: '/events',
           },
           {
+            label: 'My Meetups',
+            icon: 'fa-light fa-people-group',
+            routerLink: '/meetups',
+          },
+          {
             label: 'My ' + COMMITTEE_LABEL.plural,
             icon: 'fa-light fa-users-rectangle',
             routerLink: '/groups',

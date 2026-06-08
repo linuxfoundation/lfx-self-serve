@@ -1,0 +1,116 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="meetupsResponse().data"
+  [loading]="loading()"
+  [lazy]="true"
+  [paginator]="meetupsResponse().total > 0"
+  [rows]="meetupsResponse().pageSize"
+  [first]="meetupsResponse().offset"
+  [totalRecords]="meetupsResponse().total"
+  [rowsPerPageOptions]="rppOptions()"
+  [showCurrentPageReport]="true"
+  [showFirstLastIcon]="false"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  paginatorPosition="bottom"
+  selectionMode="single"
+  (onPage)="onPageChange($event)"
+  (onRowSelect)="onTableRowSelect($event)"
+  data-testid="meetups-data-table">
+  <ng-template #header>
+    @let ariaSort = ariaSortMap();
+    <tr>
+      <th scope="col" [attr.aria-sort]="ariaSort.EVENT_NAME" data-testid="sort-meetup-name">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_NAME')">
+          Meetup Name <i [class]="sortIcons()['EVENT_NAME']"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="ariaSort.COMMUNITY" data-testid="sort-community">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('COMMUNITY')">
+          Community <i [class]="sortIcons()['COMMUNITY']"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="ariaSort.STARTS_AT" data-testid="sort-date">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('STARTS_AT')">
+          Date <i [class]="sortIcons()['STARTS_AT']"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="ariaSort.LOCATION" data-testid="sort-location">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('LOCATION')">
+          Location <i [class]="sortIcons()['LOCATION']"></i>
+        </button>
+      </th>
+      <th>Role</th>
+      @if (!isPastMeetups()) {
+        <th>Status</th>
+      }
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-meetup let-rowIndex="rowIndex">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'meetup-row-' + meetup.id">
+      <!-- Meetup Name -->
+      <td>
+        <a
+          [href]="meetup.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="lfx-table-name-link text-sm"
+          (click)="$event.stopPropagation()"
+          [attr.data-testid]="'meetup-name-' + meetup.id">
+          {{ meetup.name }}
+        </a>
+      </td>
+
+      <!-- Community -->
+      <td>
+        <lfx-tag [value]="meetup.community" styleClass="tag-neutral" [attr.data-testid]="'meetup-community-' + meetup.id" />
+      </td>
+
+      <!-- Date -->
+      <td>
+        <span class="text-sm text-gray-700">{{ meetup.date }}</span>
+      </td>
+
+      <!-- Location -->
+      <td>
+        <span class="text-sm text-gray-700">{{ meetup.location }}</span>
+      </td>
+
+      <!-- Role -->
+      <td>
+        @if (meetup.role) {
+          <lfx-tag [value]="meetup.role" styleClass="tag-neutral" [attr.data-testid]="'meetup-role-' + meetup.id" />
+        } @else {
+          <span class="text-xs text-gray-400">—</span>
+        }
+      </td>
+
+      <!-- Status -->
+      @if (!isPastMeetups()) {
+        <td>
+          <lfx-tag [value]="meetup.status" [severity]="statusSeverityMap[meetup.status] ?? 'info'" [attr.data-testid]="'meetup-status-' + meetup.id" />
+        </td>
+      }
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td [attr.colspan]="isPastMeetups() ? 5 : 6" class="text-center py-10">
+        <div class="flex items-center justify-center p-16">
+          <div class="text-center max-w-md">
+            <div class="text-gray-400 mb-4">
+              <i class="fa-light fa-eyes text-3xl mb-4"></i>
+              <h3 class="text-gray-600 mt-2">No meetups found</h3>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>
