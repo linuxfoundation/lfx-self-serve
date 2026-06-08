@@ -672,7 +672,7 @@ export class CampaignProxyService {
             const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
             if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
               try {
-                const resolved = await resolveGeoTargets(recommendedGeos);
+                const resolved = await resolveGeoTargets(recommendedGeos, req);
                 liData['resolved_geo_targets'] = resolved;
               } catch (geoError) {
                 logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
@@ -886,9 +886,19 @@ export class CampaignProxyService {
       }
     }
 
-    const platforms = effectiveBody.platforms || ['google-ads'];
+    const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
+
+    if (!includeGoogle && !includeLinkedIn) {
+      const response: CampaignCreateResponse = {
+        success: false,
+        campaigns: [],
+        errors: ['No supported platforms selected. Supported: google-ads, linkedin-ads.'],
+      };
+      completeJob(jobId, response);
+      return;
+    }
 
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
@@ -900,14 +910,22 @@ export class CampaignProxyService {
       promises.push(this.executeGoogleCampaignCreation(effectiveBody, results, errors));
     }
 
-    if (includeLinkedIn && effectiveBody.linkedInConfig) {
-      promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
+    if (includeLinkedIn) {
+      if (effectiveBody.linkedInConfig) {
+        promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
+      } else {
+        errors.push('linkedin-ads: No LinkedIn configuration was provided.');
+      }
     }
 
     await Promise.allSettled(promises);
 
+    if (promises.length === 0 && errors.length === 0) {
+      errors.push('No campaign creation tasks were dispatched.');
+    }
+
     const allCampaigns = [
-      ...results,
+      ...results.map((r) => ({ ...r, platform: 'google-ads' as const })),
       ...linkedInResults.map((li) => ({
         platform: 'linkedin-ads' as const,
         type: 'search' as const,
@@ -981,8 +999,8 @@ export class CampaignProxyService {
       });
       results.push(result);
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Unknown LinkedIn error';
-      errors.push(`linkedin-ads: ${msg}`);
+      logger.error(undefined, 'linkedin_dispatch', 0, error as Error, { eventName: config.eventName });
+      errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
     }
   }
 

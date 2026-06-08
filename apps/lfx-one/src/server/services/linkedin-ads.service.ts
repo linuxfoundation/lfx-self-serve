@@ -143,6 +143,9 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
 }
 
 function toMs(dateStr: string, eod = false): number {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    throw new Error(`Invalid date format: expected YYYY-MM-DD, got "${dateStr}"`);
+  }
   const [y, m, d] = dateStr.split('-').map(Number);
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
     throw new Error(`Invalid date string: "${dateStr}" — expected YYYY-MM-DD`);
@@ -170,7 +173,7 @@ export async function verifyAccount(): Promise<{ name: string; status: string }>
   return { name: data.name || getAccountId(), status: data.status || 'UNKNOWN' };
 }
 
-export async function resolveGeoTargets(locationNames: string[]): Promise<LinkedInGeoTarget[]> {
+export async function resolveGeoTargets(locationNames: string[], req?: Request): Promise<LinkedInGeoTarget[]> {
   const resolved: LinkedInGeoTarget[] = [];
 
   for (const name of locationNames) {
@@ -194,8 +197,8 @@ export async function resolveGeoTargets(locationNames: string[]): Promise<Linked
           });
         }
       }
-    } catch {
-      logger.warning(undefined, 'linkedin_resolve_geo', `Failed to resolve geo: ${name}`, { name });
+    } catch (error: unknown) {
+      logger.warning(req ?? undefined, 'linkedin_resolve_geo', `Failed to resolve geo: ${name}`, { name, err: error });
     }
   }
 
@@ -296,9 +299,8 @@ export async function createDarkPost(introText: string, headline: string, destUr
   };
 
   const data = await linkedInRequest('POST', 'posts', body);
-  const id = data.id || '';
-  if (!id) throw new Error('LinkedIn API returned no ID for dark post');
-  return id;
+  if (!data.id) throw new Error('LinkedIn dark post creation succeeded but returned no ID');
+  return data.id;
 }
 
 export async function createCreative(campaignId: string, shareUrn: string, adName: string): Promise<string> {
@@ -310,9 +312,8 @@ export async function createCreative(campaignId: string, shareUrn: string, adNam
   };
 
   const data = await linkedInRequest('POST', `adAccounts/${getAccountId()}/creatives`, body);
-  const id = data.id || '';
-  if (!id) throw new Error('LinkedIn API returned no ID for creative');
-  return id;
+  if (!data.id) throw new Error('LinkedIn creative creation succeeded but returned no ID');
+  return data.id;
 }
 
 export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrns: string[]): Record<string, unknown> {
