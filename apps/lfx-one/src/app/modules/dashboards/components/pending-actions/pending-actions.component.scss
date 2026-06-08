@@ -6,16 +6,18 @@
 
 // Section-level fade-out when all actions are resolved. max-height is slightly longer than opacity
 // so the collapse completes smoothly after the content has already faded.
+// overflow: hidden is scoped to .is-fading only so normal content is never clipped.
 .pending-actions-section {
   transition:
     opacity 300ms ease-out,
     max-height 400ms ease-out;
-  max-height: 800px;
-  overflow: hidden;
+  // Generous ceiling; only constrains during animation, never clips at rest (overflow is visible by default).
+  max-height: 2000px;
 
   &.is-fading {
     opacity: 0;
     max-height: 0;
+    overflow: hidden;
   }
 }
 

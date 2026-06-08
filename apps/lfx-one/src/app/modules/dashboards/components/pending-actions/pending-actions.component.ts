@@ -86,6 +86,8 @@ export class PendingActionsComponent {
   protected readonly isSectionFading = signal(false);
   protected readonly isSectionHidden = signal(false);
   private sectionEverShown = false;
+  // setTimeout handle for the in-flight section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
+  private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
   // Dedicated toast key for the decline Undo, exposed to the template's keyed <p-toast>.
   protected readonly undoToastKey = INVITE_UNDO_TOAST_KEY;
 
@@ -105,11 +107,16 @@ export class PendingActionsComponent {
       .subscribe((count) => {
         if (count > 0) {
           this.sectionEverShown = true;
+          // Cancel any in-flight section-hide so a repopulated section stays visible.
+          this.clearSectionFadeTimer();
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
         } else if (this.sectionEverShown && !this.isSectionHidden()) {
           this.isSectionFading.set(true);
-          setTimeout(() => this.isSectionHidden.set(true), PENDING_ACTION_FADE_OUT_MS + 50);
+          this.sectionFadeTimerId = setTimeout(() => {
+            this.sectionFadeTimerId = null;
+            this.isSectionHidden.set(true);
+          }, PENDING_ACTION_FADE_OUT_MS + 50);
         }
       });
 
@@ -127,6 +134,9 @@ export class PendingActionsComponent {
     // If the user navigates away while a decline is still in its undo window, commit it immediately so
     // leaving the page doesn't silently drop the decline (clear the timer first so it can't double-fire).
     this.destroyRef.onDestroy(() => {
+      // Cancel pending section-hide so it can't fire on a destroyed component.
+      this.clearSectionFadeTimer();
+
       const pending = this.pendingDecline();
       if (!pending) return;
       this.clearDeclineTimer();
@@ -440,6 +450,13 @@ export class PendingActionsComponent {
     if (this.declineTimerId !== null) {
       clearTimeout(this.declineTimerId);
       this.declineTimerId = null;
+    }
+  }
+
+  private clearSectionFadeTimer(): void {
+    if (this.sectionFadeTimerId !== null) {
+      clearTimeout(this.sectionFadeTimerId);
+      this.sectionFadeTimerId = null;
     }
   }
 
