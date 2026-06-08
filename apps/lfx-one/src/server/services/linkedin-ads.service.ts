@@ -440,7 +440,7 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
 
 function stripEmDashes(text: string): string {
   return text
-    .replace(/ — /g, ', ')
-    .replace(/—/g, ', ')
+    .replace(/ [—–] /g, ', ')
+    .replace(/[—–]/g, ', ')
     .replace(/^, |, $/g, '');
 }

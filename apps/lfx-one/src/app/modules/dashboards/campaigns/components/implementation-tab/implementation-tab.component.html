@@ -231,7 +231,7 @@
           <!-- LinkedIn Budget -->
           <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-gray-700">LinkedIn Budget (USD)</label>
+              <label class="text-xs font-medium text-gray-700">{{ linkedInLifetimeBudget() ? 'Lifetime Budget (USD)' : 'Daily Budget (USD)' }}</label>
               <input
                 #linkedInBudgetInput
                 type="number"

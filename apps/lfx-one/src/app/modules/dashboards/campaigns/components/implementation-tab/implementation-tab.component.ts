@@ -87,6 +87,8 @@ export class ImplementationTabComponent {
     if (!googleSelected && !linkedInSelected) return false;
     if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
+    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
+    if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     return true;
   });
 
@@ -161,6 +163,8 @@ export class ImplementationTabComponent {
     if (googleSelected && this.campaignForm.invalid) return;
     if (!googleSelected && !linkedInSelected) return;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
+    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return;
+    if (linkedInSelected && this.linkedInVariants().length === 0) return;
 
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);

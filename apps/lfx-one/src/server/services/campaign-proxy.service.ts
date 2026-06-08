@@ -739,7 +739,7 @@ export class CampaignProxyService {
     yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
     const copySystemPrompt = buildCopySystemPrompt(supportedPlatforms);
-    const userPrompt = buildRefinePrompt(body);
+    const userPrompt = buildRefinePrompt(body, supportedPlatforms);
     let fullCopy = '';
 
     try {
@@ -763,8 +763,7 @@ export class CampaignProxyService {
       return;
     }
 
-    const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
-    if (platforms.includes('google-ads')) {
+    if (supportedPlatforms.includes('google-ads')) {
       yield { type: 'status', data: 'Regenerating keywords...' };
 
       try {
@@ -1361,10 +1360,21 @@ CRITICAL RULES:
 - Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
 }
 
-function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
+function buildRefinePrompt(body: CampaignBriefRefineRequest, platforms: string[]): string {
   const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
 
-  return `I have existing Google Ads copy that needs refinement based on user feedback.
+  const keys: string[] = [];
+  const labels: string[] = [];
+  if (platforms.includes('google-ads')) {
+    keys.push('"google_search"', '"google_display"');
+    labels.push('Google Ads');
+  }
+  if (platforms.includes('linkedin-ads')) {
+    keys.push('"linkedin_sponsored"');
+    labels.push('LinkedIn Sponsored Content');
+  }
+
+  return `I have existing ${labels.join(' and ')} copy that needs refinement based on user feedback.
 
 CURRENT AD COPY:
 ${JSON.stringify(body.currentCopy, null, 2)}
@@ -1373,7 +1383,7 @@ USER FEEDBACK:
 ${body.feedback}
 
 Please regenerate the ad copy incorporating the user's feedback while maintaining the same JSON structure.
-Respect all character limits from the system prompt. Return the same JSON format with keys "google_search" and "google_display".`;
+Respect all character limits from the system prompt. Return the same JSON format with keys ${keys.join(' and ')}.`;
 }
 
 function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {

@@ -22,7 +22,6 @@ import type {
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   LinkedInBriefCopy,
-  LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   SSEEvent,
@@ -246,7 +245,10 @@ export class PlanningTabComponent implements OnInit {
     const liData = (this.structuredCopy()?.['linkedin_sponsored'] ?? null) as Record<string, unknown> | null;
     const linkedInCopy: LinkedInBriefCopy | undefined = liData
       ? {
-          variants: (liData['variants'] as LinkedInCreativeVariant[]) ?? [],
+          variants: ((liData['variants'] as Record<string, unknown>[]) ?? []).map((v) => ({
+            introText: (v['intro_text'] as string) ?? (v['introText'] as string) ?? '',
+            headline: (v['headline'] as string) ?? '',
+          })),
           recommendedGeoTargets: (liData['resolved_geo_targets'] as LinkedInGeoTarget[]) ?? [],
           recommendedTargetingProfile: (liData['recommended_targeting_profile'] as LinkedInTargetingProfile) ?? 'cloud-native',
         }
