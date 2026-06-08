@@ -825,6 +825,7 @@
             class="w-full rounded-md border border-blue-300 bg-white p-3 text-sm text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             rows="3"
             placeholder="e.g. Make headlines more action-oriented, focus on cloud-native developers, add urgency for early-bird pricing..."
+            maxlength="2000"
             [value]="refineFeedback()"
             (input)="refineFeedback.set($any($event.target).value)"
             [disabled]="isRefineStreaming()"

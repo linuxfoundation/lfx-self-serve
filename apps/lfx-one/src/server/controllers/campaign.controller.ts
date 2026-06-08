@@ -119,6 +119,18 @@ export class CampaignController {
       return;
     }
 
+    const MAX_FEEDBACK_LENGTH = 2000;
+    if (body.feedback.trim().length > MAX_FEEDBACK_LENGTH) {
+      _next(
+        ServiceValidationError.forField('feedback', `feedback must be ${MAX_FEEDBACK_LENGTH} characters or fewer`, {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
     if (!body.currentCopy || typeof body.currentCopy !== 'object') {
       const validationError = ServiceValidationError.forField('currentCopy', 'currentCopy is required', {
         operation: 'campaign_refine_brief',
@@ -126,6 +138,18 @@ export class CampaignController {
         path: req.path,
       });
       _next(validationError);
+      return;
+    }
+
+    const MAX_COPY_JSON_LENGTH = 50_000;
+    if (JSON.stringify(body.currentCopy).length > MAX_COPY_JSON_LENGTH) {
+      _next(
+        ServiceValidationError.forField('currentCopy', 'currentCopy payload too large', {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
       return;
     }
 

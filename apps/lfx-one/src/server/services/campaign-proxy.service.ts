@@ -624,14 +624,7 @@ export class CampaignProxyService {
       yield { type: 'copy_done', data: null };
 
       try {
-        let text = fullCopy.trim();
-        if (text.startsWith('```')) {
-          const firstNewline = text.indexOf('\n');
-          if (firstNewline !== -1) text = text.slice(firstNewline + 1);
-          const lastFence = text.lastIndexOf('```');
-          if (lastFence !== -1) text = text.slice(0, lastFence);
-          text = text.trim();
-        }
+        const text = stripJsonFences(fullCopy);
         const structured = JSON.parse(text) as Record<string, unknown>;
 
         truncateAdCopy(structured);
@@ -650,14 +643,7 @@ export class CampaignProxyService {
 
       try {
         const kwPrompt = buildKeywordPrompt(body, eventDetails);
-        let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt)).trim();
-        if (kwText.startsWith('```')) {
-          const firstNl = kwText.indexOf('\n');
-          if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
-          const lastFence = kwText.lastIndexOf('```');
-          if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
-          kwText = kwText.trim();
-        }
+        const kwText = stripJsonFences(await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt));
         let kwList = JSON.parse(kwText);
         if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
           kwList = kwList.keywords;
@@ -700,14 +686,7 @@ export class CampaignProxyService {
       yield { type: 'copy_done', data: null };
 
       try {
-        let text = fullCopy.trim();
-        if (text.startsWith('```')) {
-          const firstNewline = text.indexOf('\n');
-          if (firstNewline !== -1) text = text.slice(firstNewline + 1);
-          const lastFence = text.lastIndexOf('```');
-          if (lastFence !== -1) text = text.slice(0, lastFence);
-          text = text.trim();
-        }
+        const text = stripJsonFences(fullCopy);
         const structured = JSON.parse(text) as Record<string, unknown>;
         truncateAdCopy(structured);
         yield { type: 'copy_structured', data: structured };
@@ -726,14 +705,7 @@ export class CampaignProxyService {
 
       try {
         const kwPrompt = buildRefineKeywordPrompt(body);
-        let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt, signal)).trim();
-        if (kwText.startsWith('```')) {
-          const firstNl = kwText.indexOf('\n');
-          if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
-          const lastFence = kwText.lastIndexOf('```');
-          if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
-          kwText = kwText.trim();
-        }
+        const kwText = stripJsonFences(await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt, signal));
         let kwList = JSON.parse(kwText);
         if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
           kwList = kwList.keywords;
@@ -1097,6 +1069,15 @@ export class CampaignProxyService {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function stripJsonFences(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('```')) return trimmed;
+  const firstNewline = trimmed.indexOf('\n');
+  const inner = firstNewline !== -1 ? trimmed.slice(firstNewline + 1) : trimmed;
+  const lastFence = inner.lastIndexOf('```');
+  return (lastFence !== -1 ? inner.slice(0, lastFence) : inner).trim();
+}
 
 function resolveMatchType(matchType: string): number {
   const normalized = matchType.toLowerCase();
