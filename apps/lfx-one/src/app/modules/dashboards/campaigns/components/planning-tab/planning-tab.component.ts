@@ -245,7 +245,7 @@ export class PlanningTabComponent implements OnInit {
     const liData = (this.structuredCopy()?.['linkedin_sponsored'] ?? null) as Record<string, unknown> | null;
     const linkedInCopy: LinkedInBriefCopy | undefined = liData
       ? {
-          variants: ((liData['variants'] as Record<string, unknown>[]) ?? []).map((v) => ({
+          variants: (Array.isArray(liData['variants']) ? (liData['variants'] as Record<string, unknown>[]) : []).map((v) => ({
             introText: (v['intro_text'] as string) ?? (v['introText'] as string) ?? '',
             headline: (v['headline'] as string) ?? '',
           })),

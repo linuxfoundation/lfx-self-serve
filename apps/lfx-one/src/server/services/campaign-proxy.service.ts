@@ -763,7 +763,7 @@ export class CampaignProxyService {
             const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
             if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
               try {
-                const resolved = await resolveGeoTargets(recommendedGeos);
+                const resolved = await resolveGeoTargets(recommendedGeos, req);
                 liData['resolved_geo_targets'] = resolved;
               } catch (geoError) {
                 logger.warning(req, 'campaign_refine_geo_resolve', 'Failed to resolve LinkedIn geo targets during refinement', { err: geoError });
