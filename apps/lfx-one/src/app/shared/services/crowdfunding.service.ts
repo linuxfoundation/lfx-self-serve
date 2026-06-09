@@ -100,6 +100,10 @@ export class CrowdfundingService {
     );
   }
 
+  public deletePaymentMethod(): Observable<void> {
+    return this.http.delete<void>('/api/crowdfunding/payment-method');
+  }
+
   public cancelSubscription(id: string): Observable<void> {
     return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
   }

@@ -11,6 +11,8 @@ import { DonationsStatsBarComponent } from './components/donations-stats-bar/don
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { RecurringDonationsListComponent } from './components/recurring-donations-list/recurring-donations-list.component';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
 import { map, scan, switchMap } from 'rxjs/operators';
 
@@ -18,13 +20,15 @@ const EMPTY_RECURRING: RecurringDonation[] = [];
 
 @Component({
   selector: 'lfx-my-donations',
-  imports: [DonationsStatsBarComponent, RecurringDonationsListComponent, DonationHistoryTableComponent, PaymentMethodsComponent],
+  imports: [DonationsStatsBarComponent, RecurringDonationsListComponent, DonationHistoryTableComponent, PaymentMethodsComponent, ConfirmDialogModule],
+  providers: [ConfirmationService],
   templateUrl: './my-donations.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MyDonationsComponent {
   // ─── Private Injections ───────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   // ─── Public Fields ────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = environment.urls.crowdfunding;
@@ -35,6 +39,7 @@ export class MyDonationsComponent {
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
   private readonly recurringRefresh$ = new BehaviorSubject<void>(undefined);
+  private readonly paymentMethodRefresh$ = new BehaviorSubject<void>(undefined);
   private readonly donationHistoryOffset = signal(0);
 
   // ─── Complex Signals ──────────────────────────────────────────────────────
@@ -56,20 +61,45 @@ export class MyDonationsComponent {
   }
 
   protected onCancelDonation(donation: RecurringDonation): void {
-    this.crowdfundingService.cancelSubscription(donation.id).subscribe({
-      next: () => this.recurringRefresh$.next(),
-      error: (err) => console.error('[MyDonationsComponent] cancelSubscription failed', err),
+    this.confirmationService.confirm({
+      header: 'Cancel Recurring Donation',
+      message: `Are you sure you want to cancel your recurring donation to ${donation.name}? This cannot be undone.`,
+      acceptLabel: 'Cancel Donation',
+      rejectLabel: 'Keep',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        this.crowdfundingService.cancelSubscription(donation.id).subscribe({
+          next: () => this.recurringRefresh$.next(),
+          error: (err) => console.error('[MyDonationsComponent] cancelSubscription failed', err),
+        });
+      },
     });
   }
 
   protected onRemoveCard(card: PaymentMethod): void {
-    // TODO: call remove card API
-    void card;
+    this.confirmationService.confirm({
+      header: 'Remove Payment Method',
+      message: `Are you sure you want to remove your ${card.brand} card ending in ${card.lastFour}? This cannot be undone.`,
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        this.crowdfundingService.deletePaymentMethod().subscribe({
+          next: () => this.paymentMethodRefresh$.next(),
+          error: (err) => console.error('[MyDonationsComponent] deletePaymentMethod failed', err),
+        });
+      },
+    });
   }
 
   // ─── Private Initializers ─────────────────────────────────────────────────
   private initPaymentMethod(): Signal<PaymentMethod | null> {
-    return toSignal(this.crowdfundingService.getMyPaymentMethod(), { initialValue: null });
+    return toSignal(
+      this.paymentMethodRefresh$.pipe(switchMap(() => this.crowdfundingService.getMyPaymentMethod())),
+      { initialValue: null }
+    );
   }
 
   private initStats(): Signal<DonationStats> {

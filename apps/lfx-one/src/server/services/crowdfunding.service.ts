@@ -315,7 +315,7 @@ export class CrowdfundingService {
       });
     }
 
-    const response = await fetch(`${baseUrl}/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    const response = await fetch(`${baseUrl}/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -325,7 +325,7 @@ export class CrowdfundingService {
       throw new MicroserviceError(`CF API cancelSubscription returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
         operation: 'cancelSubscription',
         service: 'crowdfunding',
-        path: `/v1/subscriptions/${subscriptionId}`,
+        path: `/v1/me/subscriptions/${subscriptionId}`,
         errorBody: text,
       });
     }
