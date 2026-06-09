@@ -178,6 +178,18 @@ export class OrgLensBoardCommitteeService {
       pages += 1;
     } while (pageToken && pages < maxPages);
 
+    // Fail closed if the safety cap is hit while the cursor is still advancing: returning here would
+    // silently ship a TRUNCATED roster (wrong grouping + incomplete CSV export). Surface it as an error
+    // so the card/modal shows a failure instead of partial data.
+    if (pageToken) {
+      logger.warning(req, 'get_org_committee_seats_proxy', 'org committee seats pagination exceeded the page cap; refusing to return a truncated roster', {
+        org_uid: orgUid,
+        max_pages: maxPages,
+        seat_count: seats.length,
+      });
+      throw new Error(`org committee seats pagination exceeded the ${maxPages}-page safety cap for org ${orgUid}`);
+    }
+
     logger.debug(req, 'get_org_committee_seats_proxy', 'committee-service returned org committee seats', {
       org_uid: orgUid,
       seat_count: seats.length,

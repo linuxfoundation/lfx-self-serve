@@ -3,6 +3,7 @@
 
 import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
 import type { OrgLensEmployeesResponse, ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -146,6 +147,7 @@ export class OrgLensBoardCommitteeController {
     try {
       assertOrgUid(orgUid, 'reassign_committee_seat');
       this.assertFoundationId(foundationId, 'reassign_committee_seat');
+      this.assertSeatId(seatId, 'reassign_committee_seat');
       const body = this.assertReassignBody(req.body, 'reassign_committee_seat');
 
       const response = await this.service.reassignSeat(req, orgUid, foundationId, seatId, body);
@@ -163,12 +165,29 @@ export class OrgLensBoardCommitteeController {
     }
   }
 
+  /** Validate the seat id from the URL against the filter-safe allowlist before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). */
+  private assertSeatId(seatId: string | undefined, operation: string): asserts seatId is string {
+    if (!seatId || !isFilterSafeIdentifier(seatId)) {
+      throw ServiceValidationError.forField('seatId', 'seatId path parameter is required and must be a valid identifier', { operation });
+    }
+  }
+
   private assertReassignBody(body: unknown, operation: string): ReassignCommitteeSeatRequest {
     const b = (body ?? {}) as Partial<ReassignCommitteeSeatRequest>;
-    if (!b.committeeUid || !b.email || !b.firstName || !b.lastName) {
+    // Normalize before validating: trim everything and lowercase the email so a manual-entry casing
+    // mismatch doesn't reach committee-service, and validate committeeUid against the identifier allowlist.
+    const committeeUid = typeof b.committeeUid === 'string' ? b.committeeUid.trim() : '';
+    const firstName = typeof b.firstName === 'string' ? b.firstName.trim() : '';
+    const lastName = typeof b.lastName === 'string' ? b.lastName.trim() : '';
+    const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
+
+    if (!committeeUid || !email || !firstName || !lastName) {
       throw ServiceValidationError.forField('body', 'committeeUid, firstName, lastName and email are required', { operation });
     }
-    return { committeeUid: b.committeeUid, firstName: b.firstName, lastName: b.lastName, email: b.email };
+    if (!isFilterSafeIdentifier(committeeUid)) {
+      throw ServiceValidationError.forField('committeeUid', 'committeeUid must be a valid identifier', { operation });
+    }
+    return { committeeUid, firstName, lastName, email };
   }
 
   private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
