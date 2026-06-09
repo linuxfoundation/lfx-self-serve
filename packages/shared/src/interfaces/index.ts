@@ -215,3 +215,6 @@ export * from './docs.interface';
 
 // Linux.com email alias interfaces
 export * from './linux-email.interface';
+
+// Weekly Brief interfaces
+export * from './weekly-brief.interface';
