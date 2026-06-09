@@ -377,6 +377,8 @@ export class OrgLensTrainingService {
     const { accountId, searchQuery, level, pageSize, offset, sortField, sortOrder, selectColumns, mapRow } = options;
 
     const countSql = `${filteredCte} SELECT COUNT(*) AS TOTAL_RECORDS FROM filtered`;
+    // sortField/sortOrder are validated against allow-lists in the controller before reaching
+    // here, so they are safe to interpolate; user-supplied values are always passed as binds.
     const pageSql = `
       ${filteredCte}
       SELECT ${selectColumns}

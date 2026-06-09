@@ -115,8 +115,7 @@ export class OrgTrainingComponent {
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
   protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
   protected readonly trainings: Signal<OrgTrainingsResponse> = this.initTrainings();
-  protected readonly certHasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
-  protected readonly trainingHasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
+  protected readonly hasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
 
   // ─── Constructor ─────────────────────────────────────────────────────────--
   public constructor() {
