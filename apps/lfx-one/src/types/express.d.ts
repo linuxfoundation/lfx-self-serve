@@ -21,6 +21,8 @@ declare global {
         apiGatewayTokenExpiresAt?: number;
         crowdfundingToken?: string;
         crowdfundingTokenExpiresAt?: number;
+        crowdfundingAuthState?: string;
+        crowdfundingAuthReturnTo?: string;
         [key: string]: any;
       };
     }

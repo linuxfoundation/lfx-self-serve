@@ -50,7 +50,13 @@ export async function exchangeRefreshTokenForAudience(req: Request, options: Ref
     });
 
     if (!response.ok) {
-      logger.warning(req, 'exchange_refresh_token', 'Token exchange returned non-OK status', { status: response.status, audience });
+      const errorBody = await response.json().catch(() => null);
+      logger.warning(req, 'exchange_refresh_token', 'Token exchange returned non-OK status', {
+        status: response.status,
+        audience,
+        error: (errorBody as Record<string, unknown>)?.['error'],
+        error_description: (errorBody as Record<string, unknown>)?.['error_description'],
+      });
       return null;
     }
 
