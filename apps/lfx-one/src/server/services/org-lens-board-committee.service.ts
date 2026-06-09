@@ -79,7 +79,7 @@ export class OrgLensBoardCommitteeService {
     } else {
       logger.info(req, 'get_org_employees', 'key-contact source failed; serving committee members only', {
         org_uid: orgUid,
-        error: keyContacts.reason instanceof Error ? keyContacts.reason.message : String(keyContacts.reason),
+        err: keyContacts.reason,
       });
     }
 
@@ -93,7 +93,7 @@ export class OrgLensBoardCommitteeService {
     } else {
       logger.info(req, 'get_org_employees', 'committee-member source failed; serving key contacts only', {
         org_uid: orgUid,
-        error: seats.reason instanceof Error ? seats.reason.message : String(seats.reason),
+        err: seats.reason,
       });
     }
 
@@ -160,7 +160,7 @@ export class OrgLensBoardCommitteeService {
       logger.warning(req, 'get_org_committee_seats_proxy', 'project-family resolution failed; returning empty seat list', {
         org_uid: orgUid,
         foundation_id: foundationId,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
       return undefined;
     }
@@ -288,13 +288,23 @@ export class OrgLensBoardCommitteeService {
   private seatToEmployee(s: CommitteeServiceOrgSeat): KeyContactEmployee {
     const firstName = (s.first_name ?? '').trim();
     const lastName = (s.last_name ?? '').trim();
+    const email = (s.email ?? '').trim().toLowerCase();
+    const name = `${firstName} ${lastName}`.trim();
+    const nameInitials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    // Email-only members (no name upstream yet) would otherwise render as blank suggestion rows in the
+    // picker — fall back to the email as the display name and derive initials from it (mirrors toPerson).
     return {
-      email: (s.email ?? '').trim().toLowerCase(),
+      email,
       firstName,
       lastName,
-      fullName: `${firstName} ${lastName}`.trim(),
+      fullName: name || email,
       jobTitle: s.job_title?.trim() ? s.job_title.trim() : null,
-      initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
+      initials:
+        nameInitials ||
+        email
+          .replace(/[^A-Za-z0-9]/g, '')
+          .slice(0, 2)
+          .toUpperCase(),
     };
   }
 }

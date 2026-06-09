@@ -231,6 +231,23 @@ test.describe('US2 — CSV export', () => {
   test('Export CSV downloads a file with the board + committee rows', async ({ page }) => {
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-committee-export-csv').click()]);
     expect(download.suggestedFilename()).toMatch(/board-committee-.*\.csv/);
+
+    // Validate the file CONTENTS (FR-012), not just that a download fired — so a regression in column
+    // order/escaping is caught: header + at least one board row and one committee row.
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const lines = Buffer.concat(chunks).toString('utf-8').trim().split('\r\n');
+
+    expect(lines[0]).toBe('Committee,Category,Name,Job Title,Role,Appointed By,Voting Status,Email');
+    // Board row (BOARD_SEATS[0]) — board rows have an empty Role column.
+    expect(lines).toContainEqual('Governing Board,Board,Alex Rivera,Principal Engineer,,Membership Entitlement,Voting Rep,alex.rivera@example.com');
+    // Committee row (COMMITTEE_SEATS[1]) — committee rows carry a Role.
+    expect(lines).toContainEqual(
+      'Marketing Committee,Marketing Committee/Sub Committee,Jordan Kim,Engineer,Member,Membership Entitlement,Voting Rep,jordan.kim@example.com'
+    );
   });
 });
 

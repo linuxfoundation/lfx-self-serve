@@ -291,9 +291,15 @@ export class BoardCommitteeCardComponent {
     return [header, ...rows].map((row) => row.map((cell) => this.csvCell(cell)).join(',')).join('\r\n');
   }
 
-  /** RFC 4180 cell escaping: quote and double embedded quotes when the value has a comma/quote/newline. */
+  /**
+   * RFC 4180 cell escaping + OWASP CSV/formula-injection neutralization.
+   * Cells starting with =, +, -, or @ are executed as formulas by Excel/Sheets even when quoted, so we
+   * prefix a TAB to neutralize them without changing the displayed value (mirrors documentation-tab.utils.ts),
+   * then quote/double embedded quotes when the value has a comma/quote/newline.
+   */
   private csvCell(value: string): string {
-    const v = value ?? '';
+    const raw = value ?? '';
+    const v = /^[=+\-@]/.test(raw) ? `\t${raw}` : raw;
     return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
   }
 
