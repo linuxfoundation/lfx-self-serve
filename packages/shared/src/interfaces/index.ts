@@ -285,3 +285,6 @@ export * from './activity-feed.interface';
 // Committee member engagement/attendance rollup (LFXV2-1705)
 export * from './committee-engagement.interface';
 export * from './committee-engagement.internal.interface';
+
+// Weekly Brief interfaces
+export * from './weekly-brief.interface';
