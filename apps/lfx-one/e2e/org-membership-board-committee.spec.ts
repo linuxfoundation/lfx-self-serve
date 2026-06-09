@@ -294,6 +294,29 @@ test.describe('US3 — Reassign', () => {
     await expect(page.getByText('Board roles reassigned')).toBeVisible({ timeout: 3_000 });
   });
 
+  test('employee picker: keyboard nav (ArrowDown + Enter) selects a suggestion without a mouse (a11y)', async ({ page }) => {
+    await stubBoardCommittee(page);
+    await openBoardCommitteeTab(page);
+
+    await page.getByTestId('board-committee-board-edit-board-1').click();
+    await expect(page.getByTestId('reassign-board-modal')).toBeVisible({ timeout: 5_000 });
+
+    const emailInput = page.getByTestId('reassign-board-email-input');
+    await emailInput.fill('grace');
+    await expect(page.getByTestId('reassign-board-employee-suggestions')).toBeVisible();
+
+    // ArrowDown highlights the first option (aria-activedescendant + aria-selected); Enter selects it.
+    await emailInput.press('ArrowDown');
+    await expect(emailInput).toHaveAttribute('aria-activedescendant', 'reassign-board-employee-option-id-0');
+    await expect(page.getByTestId('reassign-board-employee-option-grace.hopper@example.com')).toHaveAttribute('aria-selected', 'true');
+
+    await emailInput.press('Enter');
+    await expect(page.getByTestId('reassign-board-employee-suggestions')).toHaveCount(0);
+    await expect(emailInput).toHaveValue('grace.hopper@example.com');
+    await expect(page.getByTestId('reassign-board-first-name-input')).toHaveValue('Grace');
+    await expect(page.getByTestId('reassign-board-last-name-input')).toHaveValue('Hopper');
+  });
+
   test('employee picker: endpoint failure shows the manual-entry fallback (search unavailable)', async ({ page }) => {
     await stubBoardCommittee(page, { employeesStatus: 500 });
     await openBoardCommitteeTab(page);

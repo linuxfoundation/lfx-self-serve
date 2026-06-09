@@ -100,10 +100,12 @@
             aria-haspopup="listbox"
             aria-controls="reassign-board-employee-suggestions-id"
             [attr.aria-expanded]="suggestionsOpen() && filteredEmployees().length > 0"
+            [attr.aria-activedescendant]="activeDescendantId()"
             [ngModel]="emailField()"
             (ngModelChange)="onEmailChange($event)"
             (focus)="onEmailFocus()"
             (blur)="onEmailBlur()"
+            (keydown)="onEmailKeydown($event)"
             [disabled]="isSaving()"
             data-testid="reassign-board-email-input"
             [attr.aria-describedby]="(emailFormatError() ? 'reassign-board-email-error' : null) || (duplicateError() ? 'reassign-board-duplicate-error' : null)"
@@ -116,13 +118,16 @@
               aria-label="Employee suggestions"
               class="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
               data-testid="reassign-board-employee-suggestions">
-              @for (emp of filteredEmployees(); track emp.email) {
+              @for (emp of filteredEmployees(); track emp.email; let i = $index) {
                 <li role="presentation">
                   <button
                     type="button"
                     role="option"
+                    [id]="'reassign-board-employee-option-id-' + i"
+                    [attr.aria-selected]="i === activeIndex()"
                     [attr.aria-label]="emp.fullName + ' (' + emp.email + ')'"
                     class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+                    [class.bg-gray-50]="i === activeIndex()"
                     [attr.data-testid]="'reassign-board-employee-option-' + emp.email"
                     (mousedown)="$event.preventDefault()"
                     (click)="onSelectEmployee(emp)">

@@ -34,6 +34,8 @@ export class ReassignBoardRolesModalComponent {
   protected readonly employees = signal<KeyContactEmployee[]>([]);
   protected readonly employeeSearchUnavailable = signal(false);
   protected readonly suggestionsOpen = signal(false);
+  /** Index of the keyboard-highlighted suggestion (ARIA active descendant); -1 = none highlighted. */
+  protected readonly activeIndex = signal<number>(-1);
 
   // === Internal state ===
   protected readonly isSaving = signal(false);
@@ -62,6 +64,12 @@ export class ReassignBoardRolesModalComponent {
       .filter((e) => e.email.trim().toLowerCase() !== currentEmail)
       .filter((e) => e.email.trim().toLowerCase().includes(query) || e.fullName.toLowerCase().includes(query))
       .slice(0, 8);
+  });
+
+  /** id of the keyboard-highlighted option for the combobox `aria-activedescendant` (a11y), or null. */
+  protected readonly activeDescendantId = computed<string | null>(() => {
+    const idx = this.activeIndex();
+    return idx >= 0 && idx < this.filteredEmployees().length ? `reassign-board-employee-option-id-${idx}` : null;
   });
 
   protected readonly seatLabel: Signal<string> = computed(() => this.initSeatLabel());
@@ -102,6 +110,7 @@ export class ReassignBoardRolesModalComponent {
   protected onEmailChange(value: string): void {
     this.emailField.set(value);
     this.suggestionsOpen.set(true);
+    this.activeIndex.set(-1);
     this.duplicateError.set(null);
     if (this.emailFormatError() && EMAIL_REGEX.test(value.trim())) {
       this.emailFormatError.set(null);
@@ -115,6 +124,53 @@ export class ReassignBoardRolesModalComponent {
     this.emailFormatError.set(null);
     this.duplicateError.set(null);
     this.suggestionsOpen.set(false);
+    this.activeIndex.set(-1);
+  }
+
+  /**
+   * Keyboard support for the employee combobox (a11y): Arrow keys move the highlighted option
+   * (wrapping), Enter selects it, Escape closes the list. Without this the list is mouse-only —
+   * Tab blurs the input and closes the suggestions before a keyboard user can reach an option.
+   */
+  protected onEmailKeydown(event: KeyboardEvent): void {
+    const options = this.filteredEmployees();
+    switch (event.key) {
+      case 'ArrowDown':
+        if (options.length === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.suggestionsOpen.set(true);
+        this.activeIndex.set(this.activeIndex() < options.length - 1 ? this.activeIndex() + 1 : 0);
+        break;
+      case 'ArrowUp':
+        if (options.length === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.suggestionsOpen.set(true);
+        this.activeIndex.set(this.activeIndex() > 0 ? this.activeIndex() - 1 : options.length - 1);
+        break;
+      case 'Enter': {
+        const idx = this.activeIndex();
+        // Only intercept Enter when an option is highlighted; otherwise let it bubble to onFormKeydown (Save).
+        if (this.suggestionsOpen() && idx >= 0 && idx < options.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.onSelectEmployee(options[idx]);
+        }
+        break;
+      }
+      case 'Escape':
+        // Close the suggestion list first (don't let Escape bubble up and close the whole dialog).
+        if (this.suggestionsOpen()) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.suggestionsOpen.set(false);
+          this.activeIndex.set(-1);
+        }
+        break;
+      default:
+        break;
+    }
   }
 
   // === Event handlers ===
@@ -122,6 +178,7 @@ export class ReassignBoardRolesModalComponent {
     // Close the suggestion list on blur. Option clicks use (mousedown)="$event.preventDefault()" so
     // selection still fires before blur — this only closes the list when focus genuinely leaves the field.
     this.suggestionsOpen.set(false);
+    this.activeIndex.set(-1);
     this.emailTouched.set(true);
     const email = this.emailField().trim();
     if (email && !EMAIL_REGEX.test(email)) {
