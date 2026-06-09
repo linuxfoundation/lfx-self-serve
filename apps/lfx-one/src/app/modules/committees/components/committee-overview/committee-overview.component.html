@@ -179,6 +179,10 @@
           }
         </div>
 
+        @if (weeklyBriefEnabled() && canEdit()) {
+          <lfx-weekly-brief-card [committee]="committee()" [canEdit]="canEdit()" data-testid="committee-overview-weekly-brief-card" />
+        }
+
         <!-- My Pending Actions -->
         <!--
           Hide the whole section when there are no pending actions (and nothing loading) so it doesn't steal page space.

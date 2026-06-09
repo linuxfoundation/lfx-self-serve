@@ -12,6 +12,7 @@ import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/e
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
@@ -24,10 +25,11 @@ import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxj
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
+import { WeeklyBriefCardComponent } from '../weekly-brief-card/weekly-brief-card.component';
 
 @Component({
   selector: 'lfx-committee-overview',
-  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
+  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, SkeletonModule, TagComponent, VoteResultsDrawerComponent, WeeklyBriefCardComponent],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
   styleUrl: './committee-overview.component.scss',
@@ -43,6 +45,7 @@ export class CommitteeOverviewComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -113,6 +116,9 @@ export class CommitteeOverviewComponent {
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
 
   public openSurveysCount: Signal<number> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN).length);
+
+  // Feature flag: WG Weekly Brief AI Assistant card
+  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
