@@ -5,7 +5,7 @@ import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, Linke
 
 import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 
-import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants/linkedin.constants';
+import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
