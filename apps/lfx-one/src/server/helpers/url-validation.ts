@@ -191,3 +191,100 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
     return normalizedExtractedDomain === normalizedAllowedDomain;
   });
 };
+
+// ---------------------------------------------------------------------------
+// SSRF-safe URL validation and fetch for scraping user-provided URLs.
+// Validates protocol, port, hostname patterns, and DNS-resolved IPs.
+// ---------------------------------------------------------------------------
+
+const PRIVATE_IP_PATTERNS = [
+  /^localhost$/i,
+  /^127\.\d+\.\d+\.\d+$/,
+  /^0\.\d+\.\d+\.\d+$/,
+  /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+  /^192\.168\.\d+\.\d+$/,
+  /^169\.254\.\d+\.\d+$/,
+  /^::1$/,
+  /^::ffff:\d+\.\d+\.\d+\.\d+$/i,
+  /^f[cd][0-9a-f]{2}:/i,
+  /^fe80:/i,
+];
+
+export async function validateScrapeUrl(url: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Only HTTPS URLs are allowed');
+  }
+
+  const port = parsed.port ? Number(parsed.port) : 443;
+  if (port !== 80 && port !== 443) {
+    throw new Error('Only ports 80 and 443 are allowed');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
+    throw new Error('URLs targeting private/internal hosts are not allowed');
+  }
+
+  const { promises: dns } = await import('node:dns');
+  let addresses4: string[];
+  let addresses6: string[];
+  try {
+    [addresses4, addresses6] = await Promise.all([
+      dns.resolve4(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+      dns.resolve6(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+    ]);
+  } catch {
+    throw new Error('DNS resolution failed — cannot verify host safety');
+  }
+  for (const addr of [...addresses4, ...addresses6]) {
+    const checkAddr = addr.replace(/^::ffff:/i, '');
+    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
+      throw new Error('Blocked host: resolves to private IP');
+    }
+  }
+
+  return `https://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
+export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
+  const safeUrl = await validateScrapeUrl(url);
+  let response = await fetch(safeUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    redirect: 'manual',
+  });
+
+  let redirectCount = 0;
+  let currentUrl = safeUrl;
+  while (response.status >= 300 && response.status < 400 && redirectCount < 5) {
+    const location = response.headers.get('location');
+    if (!location) break;
+    currentUrl = await validateScrapeUrl(new URL(location, currentUrl).href);
+    response = await fetch(currentUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+      redirect: 'manual',
+    });
+    redirectCount++;
+  }
+
+  if (!response.ok) {
+    return { html: '', ok: false, status: response.status };
+  }
+
+  return { html: await response.text(), ok: true, status: response.status };
+}

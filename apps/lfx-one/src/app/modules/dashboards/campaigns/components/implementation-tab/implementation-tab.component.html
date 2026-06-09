@@ -181,6 +181,23 @@
             <h3 class="text-sm font-semibold text-gray-900">LinkedIn Sponsored Content</h3>
           </div>
 
+          <!-- Ad Account Selector -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
+            <select
+              [value]="linkedInAccountId()"
+              (change)="setLinkedInAccount($any($event.target).value)"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-linkedin-account">
+              @for (account of linkedInAccounts; track account.accountId) {
+                <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+              }
+            </select>
+            @if (selectedLinkedInAccount()) {
+              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().organizationId }} · Status: {{ selectedLinkedInAccount().status }}</p>
+            }
+          </div>
+
           <!-- Geo Targets -->
           <div class="mb-4">
             <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
@@ -188,19 +205,24 @@
               @for (geo of linkedInGeoTargets(); track geo.urn; let i = $index) {
                 <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                   {{ geo.label }}
-                  @if (linkedInGeoTargets().length > 1) {
-                    <button
-                      type="button"
-                      (click)="removeGeoTarget(i)"
-                      class="ml-0.5 text-blue-400 hover:text-blue-600"
-                      [attr.aria-label]="'Remove ' + geo.label">
-                      <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
-                    </button>
-                  }
+                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-400 hover:text-blue-600" [attr.aria-label]="'Remove ' + geo.label">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
                 </span>
               }
+              @if (availableGeoTargets().length > 0) {
+                <select
+                  class="rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs text-blue-600"
+                  (change)="addGeoTarget($any($event.target).value); $any($event.target).value = ''"
+                  aria-label="Add geo target">
+                  <option value="">+ Add geo</option>
+                  @for (geo of availableGeoTargets(); track geo.urn) {
+                    <option [value]="geo.urn">{{ geo.label }}</option>
+                  }
+                </select>
+              }
               @if (linkedInGeoTargets().length === 0) {
-                <span class="text-xs text-gray-400">No geo targets selected</span>
+                <span class="text-xs text-gray-400">No geo targets selected — add from the dropdown above</span>
               }
             </div>
           </div>
@@ -212,7 +234,6 @@
               <button
                 type="button"
                 (click)="setLinkedInTargetingProfile('cloud-native')"
-                [attr.aria-pressed]="linkedInTargetingProfile() === 'cloud-native'"
                 [class]="
                   linkedInTargetingProfile() === 'cloud-native'
                     ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
@@ -224,7 +245,6 @@
               <button
                 type="button"
                 (click)="setLinkedInTargetingProfile('mcp')"
-                [attr.aria-pressed]="linkedInTargetingProfile() === 'mcp'"
                 [class]="
                   linkedInTargetingProfile() === 'mcp'
                     ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
@@ -239,12 +259,11 @@
           <!-- LinkedIn Budget -->
           <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-gray-700">{{ linkedInLifetimeBudget() ? 'Lifetime Budget (USD)' : 'Daily Budget (USD)' }}</label>
+              <label class="text-xs font-medium text-gray-700">LinkedIn Budget (USD)</label>
               <input
-                #linkedInBudgetInput
                 type="number"
                 [value]="linkedInBudgetUsd()"
-                (input)="setLinkedInBudget(linkedInBudgetInput.valueAsNumber || 0)"
+                (input)="setLinkedInBudget($any($event.target).valueAsNumber || 0)"
                 min="1"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-linkedin-budget" />
@@ -252,10 +271,9 @@
             <div class="flex items-end gap-2 pb-1">
               <label class="flex items-center gap-2 text-sm text-gray-700">
                 <input
-                  #lifetimeCheckbox
                   type="checkbox"
                   [checked]="linkedInLifetimeBudget()"
-                  (change)="setLinkedInLifetimeBudget(lifetimeCheckbox.checked)"
+                  (change)="setLinkedInLifetimeBudget($any($event.target).checked)"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Lifetime budget
               </label>
@@ -337,18 +355,24 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-medium text-gray-900">{{ campaign.campaignName }}</p>
-                  @if (campaign.platform === 'google-ads') {
-                    <p class="text-xs text-gray-500">
+                  <p class="text-xs text-gray-500">
+                    @if (campaign.platform === 'linkedin-ads') {
+                      linkedin · {{ campaign.adCount }} creatives
+                    } @else {
                       {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
-                    </p>
-                  }
+                    }
+                  </p>
                 </div>
                 <a
                   [href]="campaign.campaignUrl"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-                  {{ campaign.platform === 'linkedin-ads' ? 'Open in LinkedIn' : 'Open in Google Ads' }}
+                  @if (campaign.platform === 'linkedin-ads') {
+                    Open in LinkedIn
+                  } @else {
+                    Open in Google Ads
+                  }
                   <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
                 </a>
               </div>

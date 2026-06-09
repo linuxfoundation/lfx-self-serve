@@ -19,6 +19,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 
@@ -50,73 +51,6 @@ function checkRequiredEnv(req?: Request): void {
 
 function getEnv(key: string): string {
   return process.env[key] || '';
-}
-
-// ---------------------------------------------------------------------------
-// SSRF validation for user-provided URLs
-// ---------------------------------------------------------------------------
-
-const PRIVATE_IP_PATTERNS = [
-  /^localhost$/i,
-  /^127\.\d+\.\d+\.\d+$/,
-  /^0\.\d+\.\d+\.\d+$/,
-  /^10\.\d+\.\d+\.\d+$/,
-  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
-  /^192\.168\.\d+\.\d+$/,
-  /^169\.254\.\d+\.\d+$/, // link-local / AWS IMDS
-  /^::1$/,
-  /^::ffff:\d+\.\d+\.\d+\.\d+$/i, // IPv4-mapped IPv6
-  /^f[cd][0-9a-f]{2}:/i, // IPv6 ULA (fc00::/7 covers both fc and fd)
-  /^fe80:/i, // IPv6 link-local
-];
-
-export async function validateScrapeUrl(url: string): Promise<string> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error('Invalid URL format');
-  }
-
-  if (parsed.protocol !== 'https:') {
-    throw new Error('Only HTTPS URLs are allowed');
-  }
-
-  const port = parsed.port ? Number(parsed.port) : 443;
-  if (port !== 80 && port !== 443) {
-    throw new Error('Only ports 80 and 443 are allowed');
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
-    throw new Error('URLs targeting private/internal hosts are not allowed');
-  }
-
-  const { promises: dns } = await import('node:dns');
-  let addresses4: string[];
-  let addresses6: string[];
-  try {
-    [addresses4, addresses6] = await Promise.all([
-      dns.resolve4(hostname).catch((err: NodeJS.ErrnoException) => {
-        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
-        throw err;
-      }),
-      dns.resolve6(hostname).catch((err: NodeJS.ErrnoException) => {
-        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
-        throw err;
-      }),
-    ]);
-  } catch {
-    throw new Error('DNS resolution failed — cannot verify host safety');
-  }
-  for (const addr of [...addresses4, ...addresses6]) {
-    const checkAddr = addr.replace(/^::ffff:/i, '');
-    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
-      throw new Error('Blocked host: resolves to private IP');
-    }
-  }
-
-  return `https://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 let gadsClient: GoogleAdsApi | null = null;
@@ -447,6 +381,10 @@ function buildCopySystemPrompt(platforms: string[]): string {
 
 const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
 
+const LINKEDIN_STRATEGY_SYSTEM_PROMPT = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
+Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
+Return only valid JSON. No markdown fences, no explanation.`;
+
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
   "name": "event name",
@@ -573,74 +511,61 @@ export class CampaignProxyService {
       return;
     }
 
-    yield { type: 'status', data: `Scraping ${body.url}...` };
-
-    let safeUrl: string;
-    try {
-      safeUrl = await validateScrapeUrl(body.url);
-    } catch (error) {
-      yield { type: 'error', data: `Invalid URL: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
-    }
-
+    const isRefinement = !!body.refineFeedback;
     let html = '';
-    try {
-      let scrapeResponse = await fetch(safeUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
-        signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-        redirect: 'manual',
-      });
 
-      // Follow redirects manually to validate each target against SSRF
-      let redirectCount = 0;
-      let currentUrl = safeUrl;
-      while (scrapeResponse.status >= 300 && scrapeResponse.status < 400 && redirectCount < 5) {
-        const location = scrapeResponse.headers.get('location');
-        if (!location) break;
-        currentUrl = await validateScrapeUrl(new URL(location, currentUrl).href);
-        scrapeResponse = await fetch(currentUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
-          signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-          redirect: 'manual',
-        });
-        redirectCount++;
-      }
+    if (!isRefinement) {
+      yield { type: 'status', data: `Scraping ${body.url}...` };
 
-      if (!scrapeResponse.ok) {
-        yield { type: 'error', data: `Event page returned HTTP ${scrapeResponse.status}` };
+      let safeUrl: string;
+      try {
+        safeUrl = await validateScrapeUrl(body.url);
+      } catch (error) {
+        yield { type: 'error', data: `Invalid URL: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
       }
-      html = await scrapeResponse.text();
-    } catch (error) {
-      yield { type: 'error', data: `Failed to fetch event page: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
+
+      try {
+        const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
+        if (!ok) {
+          yield { type: 'error', data: `Event page returned HTTP ${status}` };
+          return;
+        }
+        html = scrapedHtml;
+      } catch (error) {
+        yield { type: 'error', data: `Failed to fetch event page: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        return;
+      }
     }
 
-    yield { type: 'status', data: 'Extracting event details...' };
+    yield { type: 'status', data: isRefinement ? 'Refining brief...' : 'Extracting event details...' };
 
     let eventDetails: Record<string, unknown> | null = null;
-    try {
-      const extraction = await aiChat(EVENT_EXTRACTION_PROMPT, `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
-      eventDetails = JSON.parse(extraction) as Record<string, unknown>;
-      yield { type: 'event', data: eventDetails };
-    } catch (error) {
-      logger.warning(req, 'campaign_brief_extract', 'Event extraction failed, continuing with URL only', { err: error });
-      yield { type: 'status', data: 'Could not extract structured event details, generating copy from URL...' };
-    }
 
-    const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
-    if (eventName) {
-      yield { type: 'status', data: 'Looking up HubSpot campaign...' };
+    if (!isRefinement) {
       try {
-        const hsUtm = await resolveHubSpotUtm(eventName);
-        if (hsUtm) {
-          yield { type: 'hubspot_utm', data: { hsUtm, eventName } };
-        } else {
-          yield { type: 'status', data: 'HubSpot not configured, skipping UTM lookup...' };
-        }
+        const extraction = await aiChat(EVENT_EXTRACTION_PROMPT, `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
+        eventDetails = JSON.parse(extraction) as Record<string, unknown>;
+        yield { type: 'event', data: eventDetails };
       } catch (error) {
-        logger.warning(req, 'campaign_brief_hubspot', 'HubSpot UTM lookup failed, continuing without', { err: error });
-        yield { type: 'status', data: 'HubSpot UTM lookup failed, continuing...' };
+        logger.warning(req, 'campaign_brief_extract', 'Event extraction failed, continuing with URL only', { err: error });
+        yield { type: 'status', data: 'Could not extract structured event details, generating copy from URL...' };
+      }
+
+      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
+      if (eventName) {
+        yield { type: 'status', data: 'Looking up HubSpot campaign...' };
+        try {
+          const hsUtm = await resolveHubSpotUtm(eventName);
+          if (hsUtm) {
+            yield { type: 'hubspot_utm', data: { hsUtm, eventName } };
+          } else {
+            yield { type: 'status', data: 'HubSpot not configured, skipping UTM lookup...' };
+          }
+        } catch (error) {
+          logger.warning(req, 'campaign_brief_hubspot', 'HubSpot UTM lookup failed, continuing without', { err: error });
+          yield { type: 'status', data: 'HubSpot UTM lookup failed, continuing...' };
+        }
       }
     }
 
@@ -666,15 +591,23 @@ export class CampaignProxyService {
         truncateAdCopy(structured);
 
         if (selectedPlatforms.includes('linkedin-ads')) {
-          const liData =
-            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
-            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
+          const liData = structured['linkedin_sponsored'] as Record<string, unknown> | undefined;
           if (liData) {
-            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
-            const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
-            if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
+            const rawGeos = liData['recommended_geos'];
+            const MAX_GEO_LENGTH = 100;
+            const MAX_GEO_COUNT = 20;
+            const sanitizedGeos = (Array.isArray(rawGeos) ? rawGeos : [])
+              .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+              .slice(0, MAX_GEO_COUNT)
+              .map((g) =>
+                g
+                  .trim()
+                  .slice(0, MAX_GEO_LENGTH)
+                  .replace(/[^a-zA-Z0-9 ,.-]/g, '')
+              );
+            if (sanitizedGeos.length > 0) {
               try {
-                const resolved = await resolveGeoTargets(recommendedGeos, req);
+                const resolved = await resolveGeoTargets(sanitizedGeos);
                 liData['resolved_geo_targets'] = resolved;
               } catch (geoError) {
                 logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
@@ -716,6 +649,26 @@ export class CampaignProxyService {
       }
     }
 
+    if (selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+      yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
+      try {
+        const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
+        let strategyText = (await aiChat(LINKEDIN_STRATEGY_SYSTEM_PROMPT, strategyPrompt)).trim();
+        if (strategyText.startsWith('```')) {
+          const firstNl = strategyText.indexOf('\n');
+          if (firstNl !== -1) strategyText = strategyText.slice(firstNl + 1);
+          const lastFence = strategyText.lastIndexOf('```');
+          if (lastFence !== -1) strategyText = strategyText.slice(0, lastFence);
+          strategyText = strategyText.trim();
+        }
+        const strategy = JSON.parse(strategyText) as Record<string, unknown>;
+        yield { type: 'linkedin_strategy', data: strategy };
+      } catch (error) {
+        logger.warning(req, 'campaign_brief_linkedin_strategy', 'LinkedIn strategy generation failed', { err: error });
+        yield { type: 'status', data: 'LinkedIn strategy generation failed, skipping...' };
+      }
+    }
+
     yield { type: 'done', data: null };
   }
 
@@ -728,22 +681,20 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = (body.platforms?.length ? body.platforms : ['google-ads']).filter(
-      (p): p is 'google-ads' | 'linkedin-ads' => p === 'google-ads' || p === 'linkedin-ads'
-    );
-    if (supportedPlatforms.length === 0) {
-      yield { type: 'error', data: 'No supported platforms specified. Supported: google-ads, linkedin-ads.' };
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
+    if (unsupported.length > 0) {
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
       return;
     }
 
     yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
-    const copySystemPrompt = buildCopySystemPrompt(supportedPlatforms);
-    const userPrompt = buildRefinePrompt(body, supportedPlatforms);
+    const userPrompt = buildRefinePrompt(body);
     let fullCopy = '';
 
     try {
-      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
+      for await (const token of aiChatStream(buildCopySystemPrompt(body.platforms || ['google-ads']), userPrompt, signal)) {
         yield { type: 'copy_token', data: token };
         fullCopy += token;
       }
@@ -753,25 +704,6 @@ export class CampaignProxyService {
         const text = stripJsonFences(fullCopy);
         const structured = JSON.parse(text) as Record<string, unknown>;
         truncateAdCopy(structured);
-
-        if (supportedPlatforms.includes('linkedin-ads')) {
-          const liData =
-            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
-            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
-          if (liData) {
-            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
-            const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
-            if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
-              try {
-                const resolved = await resolveGeoTargets(recommendedGeos, req);
-                liData['resolved_geo_targets'] = resolved;
-              } catch (geoError) {
-                logger.warning(req, 'campaign_refine_geo_resolve', 'Failed to resolve LinkedIn geo targets during refinement', { err: geoError });
-              }
-            }
-          }
-        }
-
         yield { type: 'copy_structured', data: structured };
       } catch {
         yield { type: 'copy_structured', data: { raw: fullCopy } };
@@ -782,7 +714,8 @@ export class CampaignProxyService {
       return;
     }
 
-    if (supportedPlatforms.includes('google-ads')) {
+    const platforms = body.platforms || ['google-ads'];
+    if (platforms.includes('google-ads')) {
       yield { type: 'status', data: 'Regenerating keywords...' };
 
       try {
@@ -913,16 +846,6 @@ export class CampaignProxyService {
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
 
-    if (!includeGoogle && !includeLinkedIn) {
-      const response: CampaignCreateResponse = {
-        success: false,
-        campaigns: [],
-        errors: ['No supported platforms selected. Supported: google-ads, linkedin-ads.'],
-      };
-      completeJob(jobId, response);
-      return;
-    }
-
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
     const errors: string[] = [];
@@ -937,17 +860,32 @@ export class CampaignProxyService {
       if (effectiveBody.linkedInConfig) {
         promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
       } else {
-        errors.push('linkedin-ads: No LinkedIn configuration was provided.');
+        errors.push('LinkedIn Ads was selected but no LinkedIn configuration was provided.');
       }
     }
 
-    await Promise.allSettled(promises);
-
-    if (promises.length === 0 && errors.length === 0) {
-      errors.push('No campaign creation tasks were dispatched.');
+    const settled = await Promise.allSettled(promises);
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        const msg = outcome.reason instanceof Error ? outcome.reason.message : 'Unknown platform error';
+        errors.push(msg);
+      }
     }
 
-    const allCampaigns = [...results.map((r) => ({ ...r, platform: 'google-ads' as const })), ...linkedInResults];
+    const allCampaigns = [
+      ...results,
+      ...linkedInResults.map((li) => ({
+        platform: 'linkedin-ads' as const,
+        type: 'sponsored' as const,
+        campaignName: li.campaignName,
+        campaignId: li.campaignId,
+        adGroupCount: 1,
+        keywordCount: 0,
+        adCount: li.creativeCount,
+        campaignUrl: li.linkedInUrl,
+        steps: li.steps,
+      })),
+    ];
 
     const response: CampaignCreateResponse = { success: errors.length === 0, campaigns: allCampaigns, errors };
     completeJob(jobId, response);
@@ -992,27 +930,21 @@ export class CampaignProxyService {
 
   private async executeLinkedInDispatch(body: CampaignCreateRequest, results: LinkedInCampaignCreateResult[], errors: string[]): Promise<void> {
     const config = body.linkedInConfig!;
-    const startTime = Date.now();
     try {
       const result = await executeLinkedInCampaignCreation(undefined, {
-        eventName: body.eventName,
-        eventSlug: body.eventSlug,
-        registrationUrl: body.registrationUrl,
-        hsToken: body.hsToken,
-        budgetUsd: body.budgetUsd,
-        startDate: body.startDate,
-        endDate: body.endDate,
-        project: body.project,
-        dates: `${body.startDate} – ${body.endDate}`,
-        lifetimeBudget: config.lifetimeBudget,
-        geoTargets: config.geoTargets,
-        targetingProfile: config.targetingProfile,
-        variants: config.variants,
+        ...config,
+        eventName: config.eventName || body.eventName,
+        eventSlug: config.eventSlug || body.eventSlug,
+        registrationUrl: config.registrationUrl || body.registrationUrl,
+        hsToken: config.hsToken || body.hsToken,
+        startDate: config.startDate || body.startDate,
+        endDate: config.endDate || body.endDate,
+        project: config.project || body.project,
       });
       results.push(result);
     } catch (error: unknown) {
-      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: body.eventName ?? 'unknown' });
-      errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
+      const msg = error instanceof Error ? error.message : 'Unknown LinkedIn error';
+      errors.push(`linkedin-ads: ${msg}`);
     }
   }
 
@@ -1264,11 +1196,13 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
 
   const li = obj['linkedin_sponsored'] as Record<string, unknown> | undefined;
   if (li) {
-    const variants = li['variants'] as Record<string, unknown>[] | undefined;
+    const variants = li['variants'] as unknown[] | undefined;
     if (Array.isArray(variants)) {
       for (const v of variants) {
-        if (typeof v['intro_text'] === 'string') v['intro_text'] = (v['intro_text'] as string).slice(0, 600);
-        if (typeof v['headline'] === 'string') v['headline'] = (v['headline'] as string).slice(0, 200);
+        if (v == null || typeof v !== 'object') continue;
+        const rec = v as Record<string, unknown>;
+        if (typeof rec['intro_text'] === 'string') rec['intro_text'] = (rec['intro_text'] as string).slice(0, 600);
+        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 200);
       }
     }
   }
@@ -1312,6 +1246,12 @@ function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string
 
   const platformInstruction = `REQUESTED PLATFORMS: ${requestedKeys.join(', ')}\n\nReturn a JSON object with keys ${requestedKeys.map((k) => `"${k}"`).join(' and ')} following the schema in the system prompt.`;
 
+  const serializedPreviousCopy = body.previousCopy ? JSON.stringify(body.previousCopy, null, 2).slice(0, 10_000) : '';
+  const refinementBlock =
+    body.refineFeedback && body.previousCopy
+      ? `\n\nREFINEMENT REQUEST — do not generate from scratch. Revise the previous copy below based on the user's feedback.\n\nUSER FEEDBACK:\n${body.refineFeedback}\n\nPREVIOUS COPY:\n${serializedPreviousCopy}`
+      : '';
+
   if (eventDetails) {
     const e = eventDetails;
     const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
@@ -1327,12 +1267,12 @@ Audience: ${e['audience'] || ''}
 Themes: ${themes}
 Registration URL: ${e['registration_url'] || body.url}
 Speakers: ${speakers}
-Format: ${e['format_notes'] || ''}${extraBlock}
+Format: ${e['format_notes'] || ''}${extraBlock}${refinementBlock}
 
 ${platformInstruction}`;
   }
 
-  return `Generate ad copy for: ${body.url}${extraBlock}
+  return `Generate ad copy for: ${body.url}${extraBlock}${refinementBlock}
 
 ${platformInstruction}`;
 }
@@ -1379,21 +1319,10 @@ CRITICAL RULES:
 - Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
 }
 
-function buildRefinePrompt(body: CampaignBriefRefineRequest, platforms: string[]): string {
+function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
 
-  const keys: string[] = [];
-  const labels: string[] = [];
-  if (platforms.includes('google-ads')) {
-    keys.push('"google_search"', '"google_display"');
-    labels.push('Google Ads');
-  }
-  if (platforms.includes('linkedin-ads')) {
-    keys.push('"linkedin_sponsored"');
-    labels.push('LinkedIn Sponsored Content');
-  }
-
-  return `I have existing ${labels.join(' and ')} copy that needs refinement based on user feedback.
+  return `I have existing Google Ads copy that needs refinement based on user feedback.
 
 CURRENT AD COPY:
 ${JSON.stringify(body.currentCopy, null, 2)}
@@ -1402,7 +1331,7 @@ USER FEEDBACK:
 ${body.feedback}
 
 Please regenerate the ad copy incorporating the user's feedback while maintaining the same JSON structure.
-Respect all character limits from the system prompt. Return the same JSON format with keys ${keys.join(' and ')}.`;
+Respect all character limits from the system prompt. Return the same JSON format with keys "google_search" and "google_display".`;
 }
 
 function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {
@@ -1425,6 +1354,49 @@ Return a JSON array where each object has EXACTLY these keys:
 - "notes": any flag (e.g. "added per user feedback")
 
 Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
+}
+
+function buildLinkedInStrategyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const name = (e['name'] as string) || '';
+  const dates = (e['dates'] as string) || '';
+  const city = (e['city'] as string) || '';
+  const audience = (e['audience'] as string) || '';
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+
+  return `Generate a LinkedIn Ads targeting strategy for this event.
+
+EVENT:
+Name: ${name || body.url}
+Dates: ${dates}
+Location: ${city}
+Audience: ${audience}
+Themes: ${themes}
+${body.campaignGoal ? `Campaign Goal: ${body.campaignGoal}` : ''}
+${body.totalBudget ? `Total Budget: $${body.totalBudget}` : ''}
+
+Return a JSON object with these keys:
+{
+  "targeting_profile": "cloud-native" or "mcp" (select based on event topics),
+  "targeting_rationale": "why this profile fits the event",
+  "recommended_skills": ["skill names relevant to the audience"],
+  "recommended_groups": ["LinkedIn group names relevant to the audience"],
+  "recommended_job_functions": ["job functions to target, e.g. Engineering, IT, Product"],
+  "geo_targets": [{"name": "Country/Region", "rationale": "why this geo"}],
+  "budget_recommendation": {
+    "daily_budget_usd": number,
+    "lifetime_budget_usd": number,
+    "rationale": "budget reasoning"
+  },
+  "audience_estimate": "estimated audience size description",
+  "campaign_structure_notes": "notes on campaign structure and optimization"
+}
+
+RULES:
+- Select 3-8 geo targets based on event location, audience, and topic relevance
+- Budget should be realistic for LinkedIn CPMs ($8-15 range)
+- Skills and groups should be specific to the event's technology focus
+- Job functions should target decision-makers and practitioners`;
 }
 
 const REGION_MAP: Record<string, string> = {
