@@ -132,7 +132,7 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
       contentType: 'application/json',
       body: JSON.stringify({
         courseId: 'cert-cka',
-        courseName: 'CKA — Certified Kubernetes Administrator',
+        certificationName: 'CKA — Certified Kubernetes Administrator',
         status: 'certified',
         total: 1,
         data: [{ contactId: 'certified@example.org', name: 'Certified Engineer', jobTitle: 'SRE' }],
@@ -146,7 +146,7 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
       contentType: 'application/json',
       body: JSON.stringify({
         courseId: 'training-lfs258',
-        courseName: 'LFS258 — Kubernetes Fundamentals',
+        trainingName: 'LFS258 — Kubernetes Fundamentals',
         status: 'completed',
         total: 1,
         data: [{ contactId: 'trainee@example.org', name: 'Training Graduate', jobTitle: 'Developer' }],

@@ -126,9 +126,9 @@ export interface OrgTrainingStats {
   certifiedEmployees: number;
   /** Total count of certification records (STATUS = 'Certified'), regardless of how many employees earned them */
   certificationsEarned: number;
-  /** Count of distinct employees enrolled in at least one training (any STATUS other than 'Certified', including NULL) */
+  /** Distinct employees with at least one in-progress training enrollment (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
   employeesInTraining: number;
-  /** Total count of training enrollment records (any STATUS other than 'Certified', including NULL), regardless of how many employees enrolled */
+  /** Total in-progress training enrollment rows (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
   trainingCoursesEnrolled: number;
 }
 
