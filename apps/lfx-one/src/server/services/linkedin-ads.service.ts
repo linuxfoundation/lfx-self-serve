@@ -142,8 +142,6 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
           }
         }
       }
-      if (elements.length < pageSize) break;
-      start += pageSize;
     }
   } catch (err) {
     logger.warning(undefined, 'linkedin_find_by_name', `Search failed for "${name}" at ${nestedPath}`, {
@@ -211,7 +209,7 @@ export async function resolveGeoTargets(locationNames: string[]): Promise<Linked
       const elements = resp.elements || [];
       if (elements.length > 0) {
         const first = elements[0];
-        const resolvedUrn = first.urn || first.$URN || first.id || '';
+        const resolvedUrn = first.urn || first.id || '';
         if (resolvedUrn) {
           resolved.push({
             label: first.name || name,
