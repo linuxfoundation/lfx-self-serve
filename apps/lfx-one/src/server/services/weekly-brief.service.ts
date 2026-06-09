@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DEFAULT_QUERY_PARAMS, WEEKLY_BRIEF_DEFAULT_THROTTLE } from '@lfx-one/shared/constants';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -13,6 +14,7 @@ import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -45,10 +47,7 @@ function currentWeekWindow(): { window_start: string; window_end: string } {
 
 function defaultThrottle(): WeeklyBriefThrottle {
   return {
-    generates_used: 0,
-    generates_limit: 2,
-    regenerations_used: 0,
-    regenerations_limit: 3,
+    ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
     window_resets_at: nextSundayIso(),
   };
 }
@@ -86,6 +85,11 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
  * Switches between mock data (default) and live committee-service proxy based on
  * `WEEKLY_BRIEF_BACKEND`. Mock mode lets the UI iterate without standing up the
  * upstream brief endpoints; flipping to 'live' proxies straight through.
+ *
+ * When `COMMITTEE_SERVICE_URL` is set on the live path, calls the committee-
+ * service directly at that base URL instead of going through the
+ * `LFX_V2_SERVICE` gateway — useful for testing against a locally-running
+ * committee-service without retargeting `LFX_V2_SERVICE` globally.
  */
 export class WeeklyBriefService {
   private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
@@ -102,22 +106,15 @@ export class WeeklyBriefService {
       return {
         brief: buildMockBrief(committeeId),
         throttle: {
+          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
           generates_used: 1,
-          generates_limit: 2,
-          regenerations_used: 0,
-          regenerations_limit: 3,
           window_resets_at: nextSundayIso(),
         },
       };
     }
 
     try {
-      return await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/committees/${committeeId}/weekly-briefs/current`,
-        'GET'
-      );
+      return await this.proxyToCommitteeService<WeeklyBriefCurrentResponse>(req, `/committees/${committeeId}/weekly-briefs/current`, 'GET');
     } catch (error) {
       // Narrow the 404 to the proxy error type — checking a loose `.status`
       // property could mask other errors that happen to have that field.
@@ -153,14 +150,7 @@ export class WeeklyBriefService {
       };
     }
 
-    return this.microserviceProxy.proxyRequest<GenerateWeeklyBriefResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeId}/weekly-briefs/generate`,
-      'POST',
-      undefined,
-      body
-    );
+    return this.proxyToCommitteeService<GenerateWeeklyBriefResponse>(req, `/committees/${committeeId}/weekly-briefs/generate`, 'POST', body);
   }
 
   /**
@@ -178,10 +168,103 @@ export class WeeklyBriefService {
       });
     }
 
-    return this.microserviceProxy.proxyRequest<WeeklyBrief>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/weekly-briefs/current`, 'PUT', undefined, body);
+    return this.proxyToCommitteeService<WeeklyBrief>(req, `/committees/${committeeId}/weekly-briefs/current`, 'PUT', body);
   }
 
   private isLive(): boolean {
     return process.env['WEEKLY_BRIEF_BACKEND'] === 'live';
+  }
+
+  /**
+   * Routes a committee-service call. By default goes through `LFX_V2_SERVICE`
+   * via `MicroserviceProxyService`. When `COMMITTEE_SERVICE_URL` is set, calls
+   * that base URL directly with the incoming Authorization header forwarded —
+   * lets us point at a local committee-service without retargeting
+   * `LFX_V2_SERVICE` globally.
+   */
+  private async proxyToCommitteeService<T>(req: Request, path: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+    const overrideUrl = process.env['COMMITTEE_SERVICE_URL'];
+    logger.debug(req, 'proxy_to_committee_service', overrideUrl ? 'Using COMMITTEE_SERVICE_URL override' : 'Using LFX_V2_SERVICE gateway', { path, method });
+    // Direct fetch (not via MicroserviceProxyService) is deliberate for the local-
+    // dev override path: keeps the COMMITTEE_SERVICE_URL switch scoped to weekly
+    // brief without retargeting the shared LFX_V2_SERVICE URL globally.
+    if (overrideUrl) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (req.bearerToken) {
+        headers['Authorization'] = `Bearer ${req.bearerToken}`;
+      }
+      // Use `new URL` so a trailing slash on COMMITTEE_SERVICE_URL doesn't
+      // produce `//path` and so the absence of one doesn't drop the path.
+      const target = new URL(path, overrideUrl.endsWith('/') ? overrideUrl : overrideUrl + '/');
+      // Match MicroserviceProxyService.proxyRequest which always appends
+      // DEFAULT_QUERY_PARAMS (`v=1`) — keeping behaviour consistent across
+      // the gateway and override paths so the override is a drop-in for
+      // local dev.
+      for (const [k, v] of Object.entries(DEFAULT_QUERY_PARAMS)) {
+        if (!target.searchParams.has(k)) {
+          target.searchParams.set(k, v);
+        }
+      }
+      // 15s timeout + abort signal so a hanging committee-service doesn't
+      // wedge the BFF request indefinitely.
+      const response = await fetch(target.toString(), {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(15_000),
+      });
+      const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        let errorBody: unknown;
+        try {
+          errorBody = errorText ? JSON.parse(errorText) : undefined;
+        } catch {
+          errorBody = errorText ? { message: errorText } : undefined;
+        }
+        throw MicroserviceError.fromMicroserviceResponse(response.status, response.statusText, errorBody, 'COMMITTEE_SERVICE_URL', path, operation);
+      }
+      // 204 / empty body on a path that expects a JSON envelope is an
+      // upstream contract violation — wrap as 502 (bad gateway) rather than
+      // leaking the raw 204 status through MicroserviceError, since the
+      // weekly-brief endpoints always return a payload on success.
+      if (response.status === 204 || response.headers.get('content-length') === '0') {
+        throw MicroserviceError.fromMicroserviceResponse(
+          502,
+          'Bad Gateway',
+          { message: `committee-service returned ${response.status} where a JSON payload was expected` },
+          'COMMITTEE_SERVICE_URL',
+          path,
+          operation
+        );
+      }
+      // Defensively text-read + parse: an empty/non-JSON 200 body would make
+      // response.json() throw a SyntaxError that bypasses MicroserviceError
+      // wrapping and surfaces as an unhelpful 500 to the UI.
+      const text = await response.text();
+      if (!text) {
+        throw MicroserviceError.fromMicroserviceResponse(
+          502,
+          'Bad Gateway',
+          { message: 'committee-service returned an empty 2xx body' },
+          'COMMITTEE_SERVICE_URL',
+          path,
+          operation
+        );
+      }
+      try {
+        return JSON.parse(text) as T;
+      } catch (err) {
+        throw MicroserviceError.fromMicroserviceResponse(
+          502,
+          'Bad Gateway',
+          { message: 'committee-service returned a non-JSON 2xx body', detail: err instanceof Error ? err.message : String(err) },
+          'COMMITTEE_SERVICE_URL',
+          path,
+          operation
+        );
+      }
+    }
+    return this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, undefined, body);
   }
 }

@@ -3,6 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { WEEKLY_BRIEF_DEFAULT_THROTTLE } from '@lfx-one/shared/constants';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -20,19 +21,11 @@ export class WeeklyBriefService {
 
   public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
     return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${committeeId}/weekly-briefs/current`).pipe(
-      catchError((error: unknown) => {
-        // Log before falling back so failures are visible in DataDog RUM and dev console,
-        // rather than silently degrading to the empty state.
-        console.error('weekly-brief: getWeeklyBrief failed, returning empty state', { committeeId, error });
+      catchError((err) => {
+        console.warn('[WeeklyBriefService] getWeeklyBrief failed; falling back to empty envelope', err);
         return of({
           brief: null,
-          throttle: {
-            generates_used: 0,
-            generates_limit: 2,
-            regenerations_used: 0,
-            regenerations_limit: 3,
-            window_resets_at: '',
-          },
+          throttle: { ...WEEKLY_BRIEF_DEFAULT_THROTTLE, window_resets_at: '' },
         } as WeeklyBriefCurrentResponse);
       })
     );
