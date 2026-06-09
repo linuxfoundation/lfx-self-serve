@@ -51,6 +51,7 @@ import enrollmentRouter from './routes/enrollment.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
+import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -215,6 +216,7 @@ app.use('/public/api/projects', publicProjectsRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
+app.use('/api/committees', weeklyBriefRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/organizations', organizationsRouter);
