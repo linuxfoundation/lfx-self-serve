@@ -3,7 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { EnrichedIdentity } from './profile.interface';
 import type { EmailManagementData } from './user-profile.interface';
 
 /**

@@ -91,7 +91,12 @@
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                   </div>
                   <div class="flex items-center gap-3">
-                    <lfx-button severity="primary" [outlined]="true" size="small" (onClick)="onVerify(identity)" [attr.data-testid]="'verify-btn-' + identity.id">
+                    <lfx-button
+                      severity="primary"
+                      [outlined]="true"
+                      size="small"
+                      (onClick)="onVerify(identity)"
+                      [attr.data-testid]="'verify-btn-' + identity.id">
                       Verify
                     </lfx-button>
                     <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onRemove(identity)" data-testid="reject-identity-btn">
