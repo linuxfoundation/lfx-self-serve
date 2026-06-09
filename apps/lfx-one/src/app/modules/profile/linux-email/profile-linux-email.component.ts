@@ -4,7 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -18,7 +18,7 @@ import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-linux-email',
@@ -29,6 +29,10 @@ export class ProfileLinuxEmailComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+
+  // Identities passed in from the parent (ProfileIdentitiesComponent) to avoid
+  // a duplicate getIdentities() fetch when both panels render on the same page.
+  public readonly identities = input<EnrichedIdentity[]>([]);
 
   // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
   private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
@@ -51,6 +55,9 @@ export class ProfileLinuxEmailComponent {
   public claiming = signal(false);
   public savingForward = signal(false);
 
+  // Tracks the last loaded/saved forward-to value so we can detect unsaved changes.
+  private readonly savedForwardTo = signal<string>('');
+
   // Data signals
   public data: Signal<LinuxEmailData> = this.initData();
 
@@ -59,13 +66,17 @@ export class ProfileLinuxEmailComponent {
   public domain = computed(() => this.data().alias?.domain ?? '');
   public email = computed(() => this.data().alias?.email ?? null);
 
+  // True only when the user has changed the forward-to selection from its saved value.
+  public forwardDirty: Signal<boolean> = this.initForwardDirty();
+
   // Verified emails the user can forward to (primary first, default selection).
   // Sourced from the same verified identities shown in the Identities tab —
   // every email-type identity plus the primary. Username identities (e.g.
   // GitHub) are excluded since you can't forward email to them, and the claimed
   // alias is excluded since you can't forward an address to itself.
   public forwardOptions = computed((): LinuxForwardOption[] => {
-    const { alias, emails, identities } = this.data();
+    const { alias, emails } = this.data();
+    const identities = this.identities();
 
     const aliasEmail = alias?.email?.toLowerCase().trim();
     const seen = new Set<string>();
@@ -170,6 +181,17 @@ export class ProfileLinuxEmailComponent {
     this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || fallback });
   }
 
+  private initForwardDirty(): Signal<boolean> {
+    // Reset coupling: after a successful save, updateForward() → refresh.next() →
+    // applyFormDefaults() → patchValue({ forwardTo }, { emitEvent: true }) fires a
+    // fresh valueChanges emission that re-runs this map against the now-updated
+    // savedForwardTo, hiding the Save button. If patchValue is ever called with
+    // { emitEvent: false }, the Save button will stay visible after a successful save.
+    return toSignal(this.editForm.controls.forwardTo.valueChanges.pipe(map((value) => (value ?? '').toLowerCase().trim() !== this.savedForwardTo())), {
+      initialValue: false,
+    });
+  }
+
   private initData(): Signal<LinuxEmailData> {
     return toSignal(
       this.refresh.pipe(
@@ -180,7 +202,6 @@ export class ProfileLinuxEmailComponent {
               .getLinuxAlias()
               .pipe(catchError(() => of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null }))),
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-            identities: this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))),
           }).pipe(
             tap(({ alias, emails }) => {
               this.applyFormDefaults(alias, emails);
@@ -190,7 +211,7 @@ export class ProfileLinuxEmailComponent {
           );
         })
       ),
-      { initialValue: { alias: null, emails: null, identities: [] } }
+      { initialValue: { alias: null, emails: null } }
     );
   }
 
@@ -226,6 +247,8 @@ export class ProfileLinuxEmailComponent {
       // primary email — a guessed value could overwrite the real forward on Save. Normalize so
       // the default matches a (normalized) forwardOptions value.
       const forwardTo = (alias.forwardTo ?? '').toLowerCase().trim();
+      // Set savedForwardTo BEFORE patching so the valueChanges emission sees the correct baseline.
+      this.savedForwardTo.set(forwardTo);
       this.editForm.patchValue({ forwardTo });
     } else if (alias?.state === 'purchased_unclaimed' && primary) {
       this.claimForm.patchValue({ forwardTo: primary });

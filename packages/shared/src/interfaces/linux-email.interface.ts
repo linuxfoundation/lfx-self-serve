@@ -3,7 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { EnrichedIdentity } from './profile.interface';
 import type { EmailManagementData } from './user-profile.interface';
 
 /**
@@ -27,7 +26,6 @@ export type LinuxAliasState = 'not_purchased' | 'purchased_unclaimed' | 'claimed
 export interface LinuxEmailData {
   alias: LinuxAliasData | null;
   emails: EmailManagementData | null;
-  identities: EnrichedIdentity[];
 }
 
 /** Aggregate state returned by `GET /api/profile/linux-email`. */
