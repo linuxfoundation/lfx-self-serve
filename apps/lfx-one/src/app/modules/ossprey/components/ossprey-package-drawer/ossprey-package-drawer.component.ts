@@ -3,7 +3,7 @@
 
 import { Component, inject, input, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { skip, switchMap } from 'rxjs';
+import { catchError, of, skip, switchMap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 
 import { OsspreyPackage } from '@lfx-one/shared/interfaces';
@@ -41,8 +41,8 @@ export class OsspreyPackageDrawerComponent {
         skip(1),
         switchMap(() => {
           const id = this.packageId();
-          if (!id) return [];
-          return this.osspreyService.getPackage(id);
+          if (!id) return of(null);
+          return this.osspreyService.getPackage(id).pipe(catchError(() => of(null)));
         }),
         takeUntilDestroyed()
       )
