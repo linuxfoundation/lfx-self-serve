@@ -9,9 +9,11 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
 
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 
+export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen';
+export type CampaignType = 'search' | 'demand-gen' | 'sponsored';
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -107,23 +109,86 @@ export interface CampaignBriefOutput {
   totalBudget: number | null;
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
+  selectedPlatforms?: CampaignPlatform[];
+  linkedInCopy?: LinkedInBriefCopy;
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn Ads
+// ---------------------------------------------------------------------------
+
+export interface LinkedInGeoTarget {
+  label: string;
+  urn: string;
+}
+
+export interface LinkedInCreativeVariant {
+  introText: string;
+  headline: string;
+  imageUrn?: string;
+}
+
+export interface LinkedInBriefCopy {
+  variants: LinkedInCreativeVariant[];
+  recommendedGeoTargets: LinkedInGeoTarget[];
+  recommendedTargetingProfile: LinkedInTargetingProfile;
+}
+
+export interface LinkedInTargetingProfileConfig {
+  id: LinkedInTargetingProfile;
+  label: string;
+  skills: readonly string[];
+  groups: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
-export interface CampaignCreateRequest {
+/** Fields shared between CampaignCreateRequest and LinkedInCampaignCreateRequest. */
+export interface CampaignCreateBase {
   eventName: string;
   eventSlug: string;
-  countryCode: string;
   registrationUrl: string;
   hsToken?: string;
-  campaignTypes: CampaignType[];
   budgetUsd: number;
-  searchBudgetPct: number;
   startDate: string;
   endDate: string;
+  project?: string;
+  driveFolderUrl?: string;
+}
+
+export interface LinkedInCampaignCreateRequest extends CampaignCreateBase {
+  dates: string;
+  lifetimeBudget: boolean;
+  geoTargets: LinkedInGeoTarget[];
+  targetingProfile: LinkedInTargetingProfile;
+  variants: LinkedInCreativeVariant[];
+}
+
+export interface LinkedInCampaignCreateResult {
+  platform: 'linkedin-ads';
+  campaignGroupName: string;
+  campaignGroupId: string;
+  campaignName: string;
+  campaignId: string;
+  creativeCount: number;
+  campaignUrl: string;
+  steps: string[];
+}
+
+export interface CampaignBriefRefineRequest {
+  currentCopy: Record<string, unknown>;
+  currentKeywords: CampaignKeyword[];
+  feedback: string;
+  eventDetails?: CampaignEventDetails | null;
+  platforms?: CampaignPlatform[];
+}
+
+export interface CampaignCreateRequest extends CampaignCreateBase {
+  countryCode: string;
+  campaignTypes: CampaignType[];
+  searchBudgetPct: number;
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
@@ -132,24 +197,28 @@ export interface CampaignCreateRequest {
   displayBusinessName?: string;
   displayCallToAction?: string;
   geoTargets: string[];
-  project?: string;
-  driveFolderUrl?: string;
+  platforms?: CampaignPlatform[];
+  linkedInConfig?: Omit<LinkedInCampaignCreateRequest, keyof CampaignCreateBase>;
 }
 
 export interface CampaignCreateResult {
+  platform: 'google-ads';
   type: CampaignType;
   campaignName: string;
   campaignId: string;
   adGroupCount: number;
   keywordCount: number;
   adCount: number;
-  googleAdsUrl: string;
+  campaignUrl: string;
   steps: string[];
 }
 
+/** Discriminated union of per-platform create results. */
+export type CampaignResult = CampaignCreateResult | LinkedInCampaignCreateResult;
+
 export interface CampaignCreateResponse {
   success: boolean;
-  campaigns: CampaignCreateResult[];
+  campaigns: CampaignResult[];
   errors: string[];
 }
 
@@ -187,7 +256,7 @@ export interface CampaignMetrics {
   pacingPct: number;
   pacingLabel: PacingLabel;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
 }
 
 export interface CampaignActionItem {
@@ -238,7 +307,7 @@ export interface KeywordMetrics {
   criterionId: string;
   campaign: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -293,7 +362,7 @@ export interface ImpressionShareMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressionShare: number | null;
   budgetLostShare: number | null;
   rankLostShare: number | null;
@@ -339,7 +408,7 @@ export interface SearchTermMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -358,7 +427,7 @@ export interface QualityScoreInsight {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  googleAdsUrl: string;
+  campaignUrl: string;
   impressions: number;
   clicks: number;
   spend: number;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
@@ -12,6 +12,7 @@ import { debounceTime, Subject, Subscription } from 'rxjs';
 
 import type {
   CampaignBriefOutput,
+  CampaignBriefRefineRequest,
   CampaignEventDetails,
   CampaignGoal,
   CampaignGoalOption,
@@ -20,6 +21,9 @@ import type {
   CampaignPlatformOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
+  LinkedInBriefCopy,
+  LinkedInGeoTarget,
+  LinkedInTargetingProfile,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -27,7 +31,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -82,6 +86,14 @@ export class PlanningTabComponent implements OnInit {
   protected readonly editDisplayCta = signal('');
   protected readonly editKeywords = signal<CampaignKeyword[]>([]);
   protected readonly isEditing = signal(false);
+
+  // === Refine Mode Signals ===
+  protected readonly isRefining = signal(false);
+  protected readonly refineFeedback = signal('');
+  protected readonly refineStatusMessages = signal<string[]>([]);
+  protected readonly isRefineStreaming = signal(false);
+  protected readonly lastAppliedFeedback = signal<string | null>(null);
+  protected readonly refineCount = signal(0);
 
   // === Computed Signals ===
   private readonly formValid = toSignal(this.briefForm.statusChanges, { initialValue: this.briefForm.status });
@@ -201,6 +213,12 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.errorMessage.set(null);
     this.isEditing.set(false);
+    this.isRefining.set(false);
+    this.isRefineStreaming.set(false);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
+    this.lastAppliedFeedback.set(null);
+    this.refineCount.set(0);
   }
 
   protected onProceedToImplementation(): void {
@@ -224,6 +242,19 @@ export class PlanningTabComponent implements OnInit {
     };
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
+    const liData = (this.structuredCopy()?.['linkedin_sponsored'] ?? null) as Record<string, unknown> | null;
+    const linkedInCopy: LinkedInBriefCopy | undefined = liData
+      ? {
+          variants: (Array.isArray(liData['variants']) ? (liData['variants'] as Record<string, unknown>[]) : []).map((v) => ({
+            introText: (v['intro_text'] as string) ?? (v['introText'] as string) ?? '',
+            headline: (v['headline'] as string) ?? '',
+          })),
+          recommendedGeoTargets: Array.isArray(liData['resolved_geo_targets']) ? (liData['resolved_geo_targets'] as LinkedInGeoTarget[]) : [],
+          recommendedTargetingProfile: ['cloud-native', 'mcp', 'custom'].includes(liData['recommended_targeting_profile'] as string)
+            ? (liData['recommended_targeting_profile'] as LinkedInTargetingProfile)
+            : 'cloud-native',
+        }
+      : undefined;
     this.proceedToImplementation.emit({
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
@@ -232,6 +263,8 @@ export class PlanningTabComponent implements OnInit {
       totalBudget: budgetStr ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
+      selectedPlatforms: [...this.selectedPlatforms()] as CampaignPlatform[],
+      linkedInCopy,
     });
   }
 
@@ -344,6 +377,94 @@ export class PlanningTabComponent implements OnInit {
 
   protected removeKeyword(index: number): void {
     this.editKeywords.update((kws) => kws.filter((_, i) => i !== index));
+  }
+
+  protected enterRefineMode(): void {
+    this.isRefining.set(true);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
+  }
+
+  protected cancelRefine(): void {
+    this.isRefining.set(false);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
+  }
+
+  protected submitRefine(): void {
+    const feedback = this.refineFeedback().trim();
+    if (!feedback) return;
+
+    const currentCopy = this.structuredCopy();
+    if (!currentCopy) return;
+
+    this.isRefineStreaming.set(true);
+    this.refineStatusMessages.set([]);
+    this.copyBuffer.set('');
+
+    const capturedFeedback = feedback;
+
+    const request: CampaignBriefRefineRequest = {
+      currentCopy,
+      currentKeywords: this.keywords(),
+      feedback: capturedFeedback,
+      eventDetails: this.eventDetails(),
+      platforms: [...this.selectedPlatforms()],
+    };
+
+    this.briefSubscription?.unsubscribe();
+    this.briefSubscription = this.campaignService
+      .refineBrief(request)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),
+        error: () => {
+          this.refineStatusMessages.update((msgs) => [...msgs, 'Connection lost. Please try again.']);
+          this.isRefineStreaming.set(false);
+        },
+        complete: () => {
+          this.isRefineStreaming.set(false);
+        },
+      });
+  }
+
+  private handleRefineSSEEvent(event: SSEEvent<CampaignSSEEventType>, feedback: string): void {
+    switch (event.type) {
+      case 'status':
+        this.refineStatusMessages.update((msgs) => [...msgs, event.data as string]);
+        break;
+      case 'copy_token':
+        this.copyBuffer.update((buf) => buf + (event.data as string));
+        break;
+      case 'copy_structured': {
+        const raw = event.data as Record<string, unknown>;
+        const nested = raw['platforms'] as Record<string, unknown> | undefined;
+        if (nested) {
+          for (const [key, value] of Object.entries(nested)) {
+            if (!(key in raw)) raw[key] = value;
+          }
+          delete raw['platforms'];
+        }
+        this.structuredCopy.set(raw);
+        break;
+      }
+      case 'copy_done':
+        break;
+      case 'keywords':
+        this.keywords.set(event.data as CampaignKeyword[]);
+        break;
+      case 'error':
+        this.refineStatusMessages.update((msgs) => [...msgs, event.data as string]);
+        this.isRefineStreaming.set(false);
+        break;
+      case 'done':
+        this.lastAppliedFeedback.set(feedback);
+        this.refineCount.update((n) => n + 1);
+        this.isRefineStreaming.set(false);
+        this.isRefining.set(false);
+        this.refineFeedback.set('');
+        break;
+    }
   }
 
   // === Private Methods ===

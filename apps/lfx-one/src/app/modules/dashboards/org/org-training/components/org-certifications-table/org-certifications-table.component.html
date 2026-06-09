@@ -1,0 +1,136 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="certificationsResponse().data"
+  [loading]="loading()"
+  [lazy]="true"
+  [paginator]="certificationsResponse().total > 0"
+  [rows]="certificationsResponse().pageSize"
+  [first]="certificationsResponse().offset"
+  [totalRecords]="certificationsResponse().total"
+  [rowsPerPageOptions]="rppOptions()"
+  [showCurrentPageReport]="true"
+  [showFirstLastIcon]="false"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  paginatorPosition="bottom"
+  (onPage)="onPageChange($event)"
+  data-testid="org-certifications-data-table">
+  <ng-template #header>
+    <tr>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['COURSE_NAME']" data-testid="sort-course-name">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('COURSE_NAME')">
+          Name <i [class]="sortIcons()['COURSE_NAME']" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['FOUNDATION_NAME']" data-testid="sort-foundation">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('FOUNDATION_NAME')">
+          Foundation <i [class]="sortIcons()['FOUNDATION_NAME']" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['LEVEL']" data-testid="sort-level">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('LEVEL')">
+          Level <i [class]="sortIcons()['LEVEL']" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['CERTIFIED_COUNT']" data-testid="sort-certified">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('CERTIFIED_COUNT')">
+          Certified <i [class]="sortIcons()['CERTIFIED_COUNT']" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col" [attr.aria-sort]="sortAriaMap()['IN_PROGRESS_COUNT']" data-testid="sort-in-progress">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('IN_PROGRESS_COUNT')">
+          In Progress <i [class]="sortIcons()['IN_PROGRESS_COUNT']" aria-hidden="true"></i>
+        </button>
+      </th>
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-cert let-rowIndex="rowIndex">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-certification-row-' + cert.courseId">
+      <!-- Name -->
+      <td>
+        <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-certification-name-' + cert.courseId">
+          {{ cert.name }}
+        </span>
+      </td>
+
+      <!-- Foundation -->
+      <td>
+        @if (cert.foundation) {
+          <lfx-tag [value]="cert.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-certification-foundation-' + cert.courseId" />
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- Level -->
+      <td>
+        @if (cert.level) {
+          <lfx-tag [value]="cert.level" styleClass="tag-neutral" [attr.data-testid]="'org-certification-level-' + cert.courseId" />
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- Certified count -->
+      <td [attr.data-testid]="'org-certification-certified-' + cert.courseId">
+        @if (cert.certifiedCount > 0) {
+          <button
+            type="button"
+            class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+            (click)="certifiedClick.emit(cert)">
+            {{ cert.certifiedCount | number }}
+          </button>
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+
+      <!-- In Progress count -->
+      <td [attr.data-testid]="'org-certification-in-progress-' + cert.courseId">
+        @if (cert.inProgressCount > 0) {
+          <button
+            type="button"
+            class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+            (click)="inProgressClick.emit(cert)">
+            {{ cert.inProgressCount | number }}
+          </button>
+        } @else {
+          <span class="text-xs text-gray-400">&mdash;</span>
+        }
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td colspan="5" class="text-center py-10">
+        <div class="flex items-center justify-center p-16">
+          <div class="text-center max-w-md">
+            <div class="text-gray-400 mb-4">
+              <i class="fa-light fa-award text-3xl mb-4" aria-hidden="true"></i>
+              <h3 class="text-gray-600 mt-2">{{ emptyStateTitle() }}</h3>
+              <p class="text-sm text-gray-400 mt-1">{{ emptyStateSubtitle() }}</p>
+            </div>
+            <a [href]="browseUrl" target="_blank" rel="noopener noreferrer" class="lfx-table-name-link text-sm" data-testid="org-certifications-browse-link">
+              Browse certifications
+            </a>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>

@@ -3,6 +3,25 @@
 
 // Both transitions run for 300ms so the longest CSS animation matches PENDING_ACTION_FADE_OUT_MS in
 // @lfx-one/shared/constants and the JS doesn't drop the row before the fade has finished playing.
+
+// Section-level fade-out when all actions are resolved. Both opacity and max-height run for 300ms to
+// match PENDING_ACTION_FADE_OUT_MS, so the JS hide timer (fade + 50ms buffer) fires only after the
+// collapse animation completes. overflow: hidden is scoped to .is-fading so resting content is never clipped.
+.pending-actions-section {
+  transition:
+    opacity 300ms ease-out,
+    max-height 300ms ease-out;
+
+  // Generous ceiling; only constrains during animation, never clips at rest (overflow is visible by default).
+  max-height: 2000px;
+
+  &.is-fading {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+  }
+}
+
 .pending-action-row {
   transition:
     opacity 300ms ease-out,

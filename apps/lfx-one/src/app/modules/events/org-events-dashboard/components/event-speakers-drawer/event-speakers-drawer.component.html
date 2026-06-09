@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  data-testid="event-speakers-drawer">
+  <ng-template #header>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+        <i class="fa-light fa-microphone text-lg" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="event-speakers-drawer-title">{{ companyName() }} Speakers</h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="event-speakers-drawer-subtitle">
+          {{ eventName() }} &middot; {{ acceptedCount() }} accepted of {{ submittedCount() }} submitted
+        </p>
+      </div>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4 h-full">
+    <!-- Search -->
+    <div class="relative">
+      <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden="true"></i>
+      <input
+        pInputText
+        type="text"
+        placeholder="Search people..."
+        aria-label="Search speakers"
+        class="w-full pl-9"
+        data-testid="event-speakers-search"
+        [ngModel]="searchTerm()"
+        (ngModelChange)="searchTerm.set($event)" />
+    </div>
+
+    <!-- List -->
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (filteredSpeakers().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-center">
+        <i class="fa-light fa-microphone text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">
+          @if (searchTerm()) {
+            No speakers match your search.
+          } @else {
+            No speakers found for this event.
+          }
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="event-speakers-list">
+        @for (speaker of filteredSpeakers(); track speaker.contactId; let index = $index) {
+          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'event-speaker-' + index">
+            <!-- Avatar -->
+            <div
+              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0"
+              [class]="speaker.avatarColorClass"
+              aria-hidden="true">
+              {{ speaker.initials }}
+            </div>
+            <!-- Name + title -->
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span class="text-sm font-medium text-gray-900 truncate">{{ speaker.name }}</span>
+              @if (speaker.jobTitle) {
+                <span class="text-xs text-gray-500 truncate">{{ speaker.jobTitle }}</span>
+              }
+            </div>
+            <!-- Status badge -->
+            @if (speaker.status === 'ACCEPTED') {
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700 flex-shrink-0"> Accepted </span>
+            } @else {
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 flex-shrink-0"> Submitted </span>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</p-drawer>

@@ -6,6 +6,7 @@ import { AI_MODEL } from '@lfx-one/shared/constants';
 import type {
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -14,9 +15,11 @@ import type {
   CampaignKeyword,
   CampaignSSEEventType,
   KeywordActionResponse,
+  LinkedInCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -288,10 +291,12 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 // AI service helpers (LiteLLM proxy — same pattern as ai.service.ts)
 // ---------------------------------------------------------------------------
 
-async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096): Promise<string> {
+async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?: AbortSignal, maxTokens = 4096): Promise<string> {
   const aiProxyUrl = getEnv('AI_PROXY_URL');
   const aiApiKey = getEnv('AI_API_KEY');
   if (!aiProxyUrl || !aiApiKey) throw new Error('AI_PROXY_URL and AI_API_KEY required');
+
+  const signal = externalSignal ? AbortSignal.any([externalSignal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
 
   const response = await fetch(aiProxyUrl, {
     method: 'POST',
@@ -308,7 +313,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, maxTokens = 4096
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal,
   });
 
   if (!response.ok) {
@@ -384,11 +389,10 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
 // AI prompts
 // ---------------------------------------------------------------------------
 
-const COPY_SYSTEM_PROMPT = `You are an expert digital marketer specialising in developer events and open-source conferences.
-Generate high-quality, conversion-focused ad copy for the Linux Foundation's LFX events.
+const COPY_SYSTEM_PROMPT_BASE = `You are an expert digital marketer specialising in developer events and open-source conferences.
+Generate high-quality, conversion-focused ad copy for the Linux Foundation's LFX events.`;
 
-PLATFORM SPECIFICATIONS (hard limits — never exceed):
-
+const COPY_GOOGLE_SECTION = `
 GOOGLE SEARCH (RSA):
 - Headlines: 15 total, each ≤ 30 characters (STRICT — Google rejects longer)
 - Descriptions: 4 total, each ≤ 90 characters (STRICT)
@@ -398,16 +402,48 @@ GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, D
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
 - descriptions: 5 variations, each ≤ 90 characters (STRICT)
 - business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"
+- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"`;
 
+const COPY_LINKEDIN_SECTION = `
+LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):
+- variants: array of 2-4 ad variations, each containing:
+  - intro_text: ≤ 600 characters (the post body — compelling, professional, conversational)
+  - headline: ≤ 200 characters (appears below the link card — clear CTA)
+- recommended_geos: array of 3-8 location names (e.g. "United States", "India", "Germany") — select based on event location, audience, and topic relevance. Use full country/region names.
+- recommended_targeting_profile: one of "cloud-native" or "mcp" — select "cloud-native" for Kubernetes, CNCF, DevOps, infrastructure, containers, or cloud events; select "mcp" for AI, GenAI, LLM, agents, or machine learning events.
+
+LINKEDIN COPY RULES:
+- Intro text tone: professional but engaging, speak to the developer community, highlight learning opportunities and networking
+- Use line breaks in intro text for readability (\\n between paragraphs)
+- NEVER use em-dashes (—) or en-dashes (–) — use commas or periods
+- Include event dates and location naturally in at least one variant
+- Headline should drive action: "Register Now", "Secure Your Spot", "Join Us in [City]"`;
+
+const COPY_RULES_SECTION = `
 IMPORTANT RULES:
 1. Dates must come ONLY from the event data provided — never use training-data memory
-2. CHARACTER LIMITS ARE HARD — Google Ads REJECTS copy that exceeds them. Verify EVERY line.
+2. CHARACTER LIMITS ARE HARD — platforms REJECT copy that exceeds them. Verify EVERY line.
 3. NEVER abbreviate month names, city names, or event names unless required to fit character limits
 4. NEVER use em-dashes (—) or en-dashes (–) in ad copy. Use commas, periods, or colons instead.
-5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.
+5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.`;
 
-Respond with a JSON object (no markdown fences). Keys: "google_search" and "google_display".`;
+function buildCopySystemPrompt(platforms: string[]): string {
+  const includeGoogle = platforms.includes('google-ads');
+  const includeLinkedIn = platforms.includes('linkedin-ads');
+
+  let prompt = COPY_SYSTEM_PROMPT_BASE + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
+
+  if (includeGoogle) prompt += COPY_GOOGLE_SECTION;
+  if (includeLinkedIn) prompt += COPY_LINKEDIN_SECTION;
+  prompt += COPY_RULES_SECTION;
+
+  const keys: string[] = [];
+  if (includeGoogle) keys.push('"google_search"', '"google_display"');
+  if (includeLinkedIn) keys.push('"linkedin_sponsored"');
+  prompt += `\n\nRespond with a JSON object (no markdown fences). Keys: ${keys.join(' and ')}.`;
+
+  return prompt;
+}
 
 const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
 
@@ -530,9 +566,10 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const unsupported = (body.platforms ?? []).filter((p) => p !== 'google-ads');
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Only google-ads is currently supported.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
       return;
     }
 
@@ -607,31 +644,45 @@ export class CampaignProxyService {
       }
     }
 
-    const platformList = (body.platforms || ['google-ads']).join(', ');
+    const selectedPlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
+    const platformList = selectedPlatforms.join(', ');
     yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
+    const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms);
     const userPrompt = buildCopyPrompt(body, eventDetails);
     let fullCopy = '';
 
     try {
-      for await (const token of aiChatStream(COPY_SYSTEM_PROMPT, userPrompt, signal)) {
+      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
         yield { type: 'copy_token', data: token };
         fullCopy += token;
       }
       yield { type: 'copy_done', data: null };
 
       try {
-        let text = fullCopy.trim();
-        if (text.startsWith('```')) {
-          const firstNewline = text.indexOf('\n');
-          if (firstNewline !== -1) text = text.slice(firstNewline + 1);
-          const lastFence = text.lastIndexOf('```');
-          if (lastFence !== -1) text = text.slice(0, lastFence);
-          text = text.trim();
-        }
+        const text = stripJsonFences(fullCopy);
         const structured = JSON.parse(text) as Record<string, unknown>;
 
         truncateAdCopy(structured);
+
+        if (selectedPlatforms.includes('linkedin-ads')) {
+          const liData =
+            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
+            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
+          if (liData) {
+            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
+            const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
+            if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
+              try {
+                const resolved = await resolveGeoTargets(recommendedGeos, req);
+                liData['resolved_geo_targets'] = resolved;
+              } catch (geoError) {
+                logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
+              }
+            }
+          }
+        }
+
         yield { type: 'copy_structured', data: structured };
       } catch {
         yield { type: 'copy_structured', data: { raw: fullCopy } };
@@ -647,14 +698,7 @@ export class CampaignProxyService {
 
       try {
         const kwPrompt = buildKeywordPrompt(body, eventDetails);
-        let kwText = (await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt)).trim();
-        if (kwText.startsWith('```')) {
-          const firstNl = kwText.indexOf('\n');
-          if (firstNl !== -1) kwText = kwText.slice(firstNl + 1);
-          const lastFence = kwText.lastIndexOf('```');
-          if (lastFence !== -1) kwText = kwText.slice(0, lastFence);
-          kwText = kwText.trim();
-        }
+        const kwText = stripJsonFences(await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt));
         let kwList = JSON.parse(kwText);
         if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
           kwList = kwList.keywords;
@@ -669,6 +713,96 @@ export class CampaignProxyService {
       } catch (error) {
         logger.warning(req, 'campaign_brief_keywords', 'Keyword generation failed', { err: error });
         yield { type: 'status', data: 'Keyword generation failed, skipping...' };
+      }
+    }
+
+    yield { type: 'done', data: null };
+  }
+
+  // === Brief refinement (SSE stream) ===
+
+  public async *streamRefinedBrief(
+    req: Request,
+    body: CampaignBriefRefineRequest,
+    signal: AbortSignal
+  ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
+    checkRequiredEnv(req);
+
+    const supportedPlatforms = (body.platforms?.length ? body.platforms : ['google-ads']).filter(
+      (p): p is 'google-ads' | 'linkedin-ads' => p === 'google-ads' || p === 'linkedin-ads'
+    );
+    if (supportedPlatforms.length === 0) {
+      yield { type: 'error', data: 'No supported platforms specified. Supported: google-ads, linkedin-ads.' };
+      return;
+    }
+
+    yield { type: 'status', data: 'Refining brief based on your feedback...' };
+
+    const copySystemPrompt = buildCopySystemPrompt(supportedPlatforms);
+    const userPrompt = buildRefinePrompt(body, supportedPlatforms);
+    let fullCopy = '';
+
+    try {
+      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
+        yield { type: 'copy_token', data: token };
+        fullCopy += token;
+      }
+      yield { type: 'copy_done', data: null };
+
+      try {
+        const text = stripJsonFences(fullCopy);
+        const structured = JSON.parse(text) as Record<string, unknown>;
+        truncateAdCopy(structured);
+
+        if (supportedPlatforms.includes('linkedin-ads')) {
+          const liData =
+            (structured['linkedin_sponsored'] as Record<string, unknown> | undefined) ??
+            ((structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored'] as Record<string, unknown> | undefined);
+          if (liData) {
+            if (!structured['linkedin_sponsored']) structured['linkedin_sponsored'] = liData;
+            const recommendedGeos = liData['recommended_geos'] as string[] | undefined;
+            if (Array.isArray(recommendedGeos) && recommendedGeos.length > 0) {
+              try {
+                const resolved = await resolveGeoTargets(recommendedGeos, req);
+                liData['resolved_geo_targets'] = resolved;
+              } catch (geoError) {
+                logger.warning(req, 'campaign_refine_geo_resolve', 'Failed to resolve LinkedIn geo targets during refinement', { err: geoError });
+              }
+            }
+          }
+        }
+
+        yield { type: 'copy_structured', data: structured };
+      } catch {
+        yield { type: 'copy_structured', data: { raw: fullCopy } };
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+      return;
+    }
+
+    if (supportedPlatforms.includes('google-ads')) {
+      yield { type: 'status', data: 'Regenerating keywords...' };
+
+      try {
+        const kwPrompt = buildRefineKeywordPrompt(body);
+        const kwText = stripJsonFences(await aiChat(KEYWORD_SYSTEM_PROMPT, kwPrompt, signal));
+        let kwList = JSON.parse(kwText);
+        if (kwList && typeof kwList === 'object' && !Array.isArray(kwList) && Array.isArray(kwList.keywords)) {
+          kwList = kwList.keywords;
+        }
+        const keywords = (kwList as Record<string, string>[]).map((k) => ({
+          term: k['term'] || k['keyword'] || '',
+          matchType: k['match_type'] || k['matchType'] || 'Broad',
+          intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
+          notes: k['notes'] || '',
+        }));
+        yield { type: 'keywords', data: keywords };
+      } catch (error) {
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
+        yield { type: 'status', data: 'Keyword regeneration failed, keeping existing keywords...' };
       }
     }
 
@@ -764,7 +898,7 @@ export class CampaignProxyService {
   // === Private: campaign creation orchestration ===
 
   private async executeCampaignCreation(jobId: string, body: CampaignCreateRequest): Promise<void> {
-    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes });
+    const startTime = logger.startOperation(undefined, 'campaign_create', { jobId, types: body.campaignTypes, platforms: body.platforms });
     const effectiveBody = { ...body };
     if (!effectiveBody.hsToken) {
       try {
@@ -775,9 +909,61 @@ export class CampaignProxyService {
       }
     }
 
+    const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
+    const includeGoogle = platforms.includes('google-ads');
+    const includeLinkedIn = platforms.includes('linkedin-ads');
+
+    if (!includeGoogle && !includeLinkedIn) {
+      const response: CampaignCreateResponse = {
+        success: false,
+        campaigns: [],
+        errors: ['No supported platforms selected. Supported: google-ads, linkedin-ads.'],
+      };
+      completeJob(jobId, response);
+      return;
+    }
+
     const results: CampaignCreateResult[] = [];
+    const linkedInResults: LinkedInCampaignCreateResult[] = [];
     const errors: string[] = [];
 
+    const promises: Promise<void>[] = [];
+
+    if (includeGoogle) {
+      promises.push(this.executeGoogleCampaignCreation(effectiveBody, results, errors));
+    }
+
+    if (includeLinkedIn) {
+      if (effectiveBody.linkedInConfig) {
+        promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
+      } else {
+        errors.push('linkedin-ads: No LinkedIn configuration was provided.');
+      }
+    }
+
+    await Promise.allSettled(promises);
+
+    if (promises.length === 0 && errors.length === 0) {
+      errors.push('No campaign creation tasks were dispatched.');
+    }
+
+    const allCampaigns = [...results.map((r) => ({ ...r, platform: 'google-ads' as const })), ...linkedInResults];
+
+    const response: CampaignCreateResponse = { success: errors.length === 0, campaigns: allCampaigns, errors };
+    completeJob(jobId, response);
+    if (errors.length > 0) {
+      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
+        jobId,
+        campaignCount: allCampaigns.length,
+        errorCount: errors.length,
+        duration_ms: Date.now() - startTime,
+      });
+    } else {
+      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: allCampaigns.length });
+    }
+  }
+
+  private async executeGoogleCampaignCreation(effectiveBody: CampaignCreateRequest, results: CampaignCreateResult[], errors: string[]): Promise<void> {
     for (const campaignType of effectiveBody.campaignTypes) {
       const typeStartTime = Date.now();
       try {
@@ -793,27 +979,40 @@ export class CampaignProxyService {
           } catch (retryError: unknown) {
             const detail = extractGadsErrorMessage(retryError);
             logger.error(undefined, 'campaign_create_type', typeStartTime, retryError as Error, { campaignType, detail });
-            errors.push(`${campaignType}: ${detail}`);
+            errors.push(`google-ads/${campaignType}: ${detail}`);
             continue;
           }
         }
         const detail = extractGadsErrorMessage(error);
         logger.error(undefined, 'campaign_create_type', typeStartTime, error as Error, { campaignType, detail });
-        errors.push(`${campaignType}: ${detail}`);
+        errors.push(`google-ads/${campaignType}: ${detail}`);
       }
     }
+  }
 
-    const response = { success: errors.length === 0, campaigns: results, errors };
-    completeJob(jobId, response);
-    if (errors.length > 0) {
-      logger.warning(undefined, 'campaign_create', `Campaign creation completed with ${errors.length} error(s)`, {
-        jobId,
-        campaignCount: results.length,
-        errorCount: errors.length,
-        duration_ms: Date.now() - startTime,
+  private async executeLinkedInDispatch(body: CampaignCreateRequest, results: LinkedInCampaignCreateResult[], errors: string[]): Promise<void> {
+    const config = body.linkedInConfig!;
+    const startTime = Date.now();
+    try {
+      const result = await executeLinkedInCampaignCreation(undefined, {
+        eventName: body.eventName,
+        eventSlug: body.eventSlug,
+        registrationUrl: body.registrationUrl,
+        hsToken: body.hsToken,
+        budgetUsd: body.budgetUsd,
+        startDate: body.startDate,
+        endDate: body.endDate,
+        project: body.project,
+        dates: `${body.startDate} – ${body.endDate}`,
+        lifetimeBudget: config.lifetimeBudget,
+        geoTargets: config.geoTargets,
+        targetingProfile: config.targetingProfile,
+        variants: config.variants,
       });
-    } else {
-      logger.success(undefined, 'campaign_create', startTime, { jobId, campaignCount: results.length });
+      results.push(result);
+    } catch (error: unknown) {
+      logger.error(undefined, 'linkedin_dispatch', startTime, error as Error, { eventName: body.eventName ?? 'unknown' });
+      errors.push('linkedin-ads: Campaign creation failed. Check server logs for details.');
     }
   }
 
@@ -924,13 +1123,14 @@ export class CampaignProxyService {
     steps.push(`Created RSA ad with ${headlines.length} headlines, ${descriptions.length} descriptions`);
 
     return {
+      platform: 'google-ads' as const,
       type: 'search',
       campaignName,
       campaignId,
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      googleAdsUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
       steps,
     };
   }
@@ -1002,13 +1202,14 @@ export class CampaignProxyService {
     steps.push('Demand Gen campaign created — upload images and publish in Google Ads UI');
 
     return {
+      platform: 'google-ads' as const,
       type: 'demand-gen',
       campaignName,
       campaignId,
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      googleAdsUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
       steps,
     };
   }
@@ -1017,6 +1218,15 @@ export class CampaignProxyService {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function stripJsonFences(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('```')) return trimmed;
+  const firstNewline = trimmed.indexOf('\n');
+  const inner = firstNewline !== -1 ? trimmed.slice(firstNewline + 1) : trimmed;
+  const lastFence = inner.lastIndexOf('```');
+  return (lastFence !== -1 ? inner.slice(0, lastFence) : inner).trim();
+}
 
 function resolveMatchType(matchType: string): number {
   const normalized = matchType.toLowerCase();
@@ -1052,6 +1262,17 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
     if (typeof gd['business_name'] === 'string') gd['business_name'] = (gd['business_name'] as string).slice(0, 25);
   }
 
+  const li = obj['linkedin_sponsored'] as Record<string, unknown> | undefined;
+  if (li) {
+    const variants = li['variants'] as Record<string, unknown>[] | undefined;
+    if (Array.isArray(variants)) {
+      for (const v of variants) {
+        if (typeof v['intro_text'] === 'string') v['intro_text'] = (v['intro_text'] as string).slice(0, 600);
+        if (typeof v['headline'] === 'string') v['headline'] = (v['headline'] as string).slice(0, 200);
+      }
+    }
+  }
+
   const platforms = obj['platforms'] as Record<string, unknown> | undefined;
   if (platforms) {
     if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
@@ -1059,6 +1280,7 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
       const key = platforms['google_display'] ? 'google_display' : 'demand_gen';
       truncateAdCopy({ google_display: platforms[key] } as Record<string, unknown>);
     }
+    if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
   }
 }
 
@@ -1073,12 +1295,22 @@ function extractEventNameFromUrl(url: string): string {
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
+  const includeGoogle = platforms.includes('google-ads');
+  const includeLinkedIn = platforms.includes('linkedin-ads');
+
+  const requestedKeys: string[] = [];
+  if (includeGoogle) requestedKeys.push('google_search', 'google_display');
+  if (includeLinkedIn) requestedKeys.push('linkedin_sponsored');
+
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
   if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
   if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
   if (body.totalBudget) extraParts.push(`Total Campaign Budget: $${body.totalBudget}`);
   const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+
+  const platformInstruction = `REQUESTED PLATFORMS: ${requestedKeys.join(', ')}\n\nReturn a JSON object with keys ${requestedKeys.map((k) => `"${k}"`).join(' and ')} following the schema in the system prompt.`;
 
   if (eventDetails) {
     const e = eventDetails;
@@ -1097,16 +1329,12 @@ Registration URL: ${e['registration_url'] || body.url}
 Speakers: ${speakers}
 Format: ${e['format_notes'] || ''}${extraBlock}
 
-REQUESTED PLATFORMS: google_search, google_display
-
-Return a JSON object with keys "google_search" and "google_display" following the schema in the system prompt.`;
+${platformInstruction}`;
   }
 
   return `Generate ad copy for: ${body.url}${extraBlock}
 
-REQUESTED PLATFORMS: google_search, google_display
-
-Return a JSON object with keys "google_search" and "google_display" following the schema in the system prompt.`;
+${platformInstruction}`;
 }
 
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
@@ -1149,6 +1377,54 @@ CRITICAL RULES:
 - The event year is ${eventYear}. NEVER use any other year in keywords.
 - Prefer HIGH INTENT — keywords that indicate someone actively searching for this event.
 - Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
+}
+
+function buildRefinePrompt(body: CampaignBriefRefineRequest, platforms: string[]): string {
+  const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
+
+  const keys: string[] = [];
+  const labels: string[] = [];
+  if (platforms.includes('google-ads')) {
+    keys.push('"google_search"', '"google_display"');
+    labels.push('Google Ads');
+  }
+  if (platforms.includes('linkedin-ads')) {
+    keys.push('"linkedin_sponsored"');
+    labels.push('LinkedIn Sponsored Content');
+  }
+
+  return `I have existing ${labels.join(' and ')} copy that needs refinement based on user feedback.
+
+CURRENT AD COPY:
+${JSON.stringify(body.currentCopy, null, 2)}
+${eventBlock}
+USER FEEDBACK:
+${body.feedback}
+
+Please regenerate the ad copy incorporating the user's feedback while maintaining the same JSON structure.
+Respect all character limits from the system prompt. Return the same JSON format with keys ${keys.join(' and ')}.`;
+}
+
+function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {
+  const currentKws = (body.currentKeywords ?? []).map((kw) => kw.term).join(', ');
+  const eventName = body.eventDetails?.name || '';
+
+  return `Regenerate keywords for this event based on user feedback.
+
+EVENT: ${eventName}
+CURRENT KEYWORDS: ${currentKws}
+
+USER FEEDBACK: ${body.feedback}
+
+Based on the feedback, generate 25-40 refined Google Search keywords.
+
+Return a JSON array where each object has EXACTLY these keys:
+- "term": the keyword string
+- "match_type": "Exact", "Phrase", or "Broad"
+- "intent_level": "High" (direct event search), "Medium" (related topic), "Low" (broad)
+- "notes": any flag (e.g. "added per user feedback")
+
+Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
 }
 
 const REGION_MAP: Record<string, string> = {

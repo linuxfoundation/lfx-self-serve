@@ -129,13 +129,81 @@
     @for (tab of tabs; track tab.id) {
       @if (activeTab() === tab.id) {
         <section [id]="'org-training-panel-' + tab.id" [attr.data-testid]="'org-training-panel-' + tab.id" class="p-5">
-          <lfx-empty-state
-            [icon]="tab.icon"
-            title="Coming soon"
-            subtitle="This section is being built. Check back later."
-            [attr.data-testid]="'org-training-empty-state-' + tab.id" />
+          @if (tab.id === 'certifications') {
+            @if (certificationsError()) {
+              <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-certifications-error">
+                <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
+                <h3 class="text-gray-700 font-medium">Couldn't load certifications</h3>
+                <p class="text-sm text-gray-500">Something went wrong fetching this organization's certifications. Please try again.</p>
+              </div>
+            } @else {
+              <lfx-org-certifications-table
+                [certificationsResponse]="certifications()"
+                [loading]="certificationsLoading()"
+                [sortField]="certSortField()"
+                [sortOrder]="certSortOrder()"
+                [emptyStateTitle]="hasActiveFilters() ? 'No certifications match these filters' : 'No certifications yet'"
+                [emptyStateSubtitle]="hasActiveFilters() ? 'Try adjusting your search or level filter.' : 'No certifications were found for your organization.'"
+                (pageChange)="onCertPageChange($event)"
+                (sortChange)="onCertSortChange($event)"
+                (certifiedClick)="onCertifiedClick($event)"
+                (inProgressClick)="onInProgressClick($event)" />
+            }
+          } @else if (tab.id === 'trainings') {
+            @if (trainingsError()) {
+              <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-trainings-error">
+                <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
+                <h3 class="text-gray-700 font-medium">Couldn't load trainings</h3>
+                <p class="text-sm text-gray-500">Something went wrong fetching this organization's trainings. Please try again.</p>
+              </div>
+            } @else {
+              <lfx-org-trainings-table
+                [trainingsResponse]="trainings()"
+                [loading]="trainingsLoading()"
+                [sortField]="trainingSortField()"
+                [sortOrder]="trainingSortOrder()"
+                [emptyStateTitle]="hasActiveFilters() ? 'No trainings match these filters' : 'No trainings yet'"
+                [emptyStateSubtitle]="hasActiveFilters() ? 'Try adjusting your search or level filter.' : 'No trainings were found for your organization.'"
+                (pageChange)="onTrainingPageChange($event)"
+                (sortChange)="onTrainingSortChange($event)"
+                (completedClick)="onTrainingCompletedClick($event)"
+                (inProgressClick)="onTrainingInProgressClick($event)" />
+            }
+          }
         </section>
       }
     }
   </lfx-card>
+
+  <!-- Certification roster drawers -->
+  <lfx-cert-employees-drawer
+    [(visible)]="certifiedDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeCertification()?.courseId ?? ''"
+    [certificationName]="activeCertification()?.name ?? ''"
+    [count]="activeCertification()?.certifiedCount ?? 0"
+    status="certified" />
+  <lfx-cert-employees-drawer
+    [(visible)]="inProgressDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeCertification()?.courseId ?? ''"
+    [certificationName]="activeCertification()?.name ?? ''"
+    [count]="activeCertification()?.inProgressCount ?? 0"
+    status="in-progress" />
+
+  <!-- Training roster drawers -->
+  <lfx-training-employees-drawer
+    [(visible)]="trainingCompletedDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeTraining()?.courseId ?? ''"
+    [trainingName]="activeTraining()?.name ?? ''"
+    [count]="activeTraining()?.completedCount ?? 0"
+    status="completed" />
+  <lfx-training-employees-drawer
+    [(visible)]="trainingInProgressDrawerVisible"
+    [orgUid]="orgUid()"
+    [courseId]="activeTraining()?.courseId ?? ''"
+    [trainingName]="activeTraining()?.name ?? ''"
+    [count]="activeTraining()?.inProgressCount ?? 0"
+    status="in-progress" />
 </main>
