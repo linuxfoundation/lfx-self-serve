@@ -170,7 +170,7 @@ export class CrowdfundingService {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
     // GET /v1/initiatives/{slug} — public CF endpoint (no auth required); token forwarded if present.
-    const raw = await cfFetchPublic<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/initiatives/${encodeURIComponent(slug)}`);
+    const raw = await cfFetchPublic<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/me/initiatives/${encodeURIComponent(slug)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
@@ -315,7 +315,7 @@ export class CrowdfundingService {
     const raw = await cfFetchPublic<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
-      `/v1/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
+      `/v1/me/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
     );
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
