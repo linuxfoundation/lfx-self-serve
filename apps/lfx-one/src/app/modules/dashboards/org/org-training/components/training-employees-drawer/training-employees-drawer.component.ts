@@ -35,7 +35,7 @@ export class TrainingEmployeesDrawerComponent {
 
   private readonly employeesData = this.initEmployeesData();
 
-  protected readonly heading = computed<string>(() => (this.status() === 'completed' ? 'Completed Employees' : 'In Progress'));
+  protected readonly heading = computed<string>(() => (this.status() === 'completed' ? 'Completed Employees' : 'In Progress Employees'));
   protected readonly statusLabel = computed<string>(() => (this.status() === 'completed' ? 'Completed' : 'In Progress'));
   protected readonly statusBadgeClass = computed<string>(() =>
     this.status() === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'

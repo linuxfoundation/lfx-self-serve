@@ -67,8 +67,11 @@ interface OrgRosterEmployeesResult {
   data: readonly OrgCertEmployee[];
 }
 
-/** TI catalog dimension shared by certification queries (product_type split per standup 2026-06-08). */
-const COURSE_CATALOG_DIM_CTE = `
+/** TI catalog dimension scoped to an org's engaged course IDs (avoids full TI catalog scan). */
+const scopedCourseCatalogDimCte = (orgCourseIdsSql: string): string => `
+  org_course_ids AS (
+    ${orgCourseIdsSql}
+  ),
   course_dim AS (
     SELECT
       COURSE_ID,
@@ -79,10 +82,12 @@ const COURSE_CATALOG_DIM_CTE = `
       SELECT COURSE_ID, LEVEL, LOGO_URL, PRODUCT_TYPE
       FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CERTIFICATES
       WHERE COURSE_ID IS NOT NULL
+        AND COURSE_ID IN (SELECT COURSE_ID FROM org_course_ids)
       UNION ALL
       SELECT COURSE_ID, LEVEL, LOGO_URL, PRODUCT_TYPE
       FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS
       WHERE COURSE_ID IS NOT NULL
+        AND COURSE_ID IN (SELECT COURSE_ID FROM org_course_ids)
     )
     GROUP BY COURSE_ID
   )
@@ -94,7 +99,12 @@ export class OrgLensTrainingService {
 
   public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
     const certSql = `
-      WITH ${COURSE_CATALOG_DIM_CTE},
+      WITH ${scopedCourseCatalogDimCte(`
+        SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
+        WHERE t.ACCOUNT_ID = ?
+          AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
+      `)},
       scoped AS (
         SELECT
           t.PERSON_KEY,
@@ -125,7 +135,7 @@ export class OrgLensTrainingService {
     `;
 
     const [certResult, trainingResult] = await Promise.all([
-      this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId]),
+      this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId, accountId]),
       this.snowflakeService.execute<OrgTrainingStatsRow>(trainingSql, [accountId]),
     ]);
 
@@ -171,7 +181,7 @@ export class OrgLensTrainingService {
           AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
         GROUP BY COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
       ),
-      ${COURSE_CATALOG_DIM_CTE},
+      ${scopedCourseCatalogDimCte('SELECT DISTINCT b.COURSE_ID FROM base b')},
       filtered AS (
         SELECT
           b.COURSE_ID,
@@ -277,7 +287,7 @@ export class OrgLensTrainingService {
     const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
 
     const sql = `
-      WITH ${COURSE_CATALOG_DIM_CTE}
+      WITH ${scopedCourseCatalogDimCte('SELECT ? AS COURSE_ID')}
       SELECT
         p.PERSON_KEY        AS CONTACT_ID,
         p.NAME              AS NAME,
@@ -298,7 +308,7 @@ export class OrgLensTrainingService {
       LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
-    const roster = await this.fetchRosterEmployees(req, 'get_certification_employees', sql, [accountId, courseId], searchQuery, {
+    const roster = await this.fetchRosterEmployees(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, {
       courseId,
     });
 
