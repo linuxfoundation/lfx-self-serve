@@ -154,7 +154,7 @@ export class CampaignController {
       return;
     }
 
-    if (!body.currentKeywords || !Array.isArray(body.currentKeywords)) {
+    if (!body.currentKeywords || !Array.isArray(body.currentKeywords) || body.currentKeywords.length === 0) {
       const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be a non-empty array', {
         operation: 'campaign_refine_brief',
         service: 'campaign_controller',

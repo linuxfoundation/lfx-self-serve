@@ -235,7 +235,7 @@ export interface CampaignCreateRequest {
 }
 
 export interface CampaignCreateResult {
-  platform?: CampaignPlatform;
+  platform: CampaignPlatform;
   type: CampaignType;
   campaignName: string;
   campaignId: string;

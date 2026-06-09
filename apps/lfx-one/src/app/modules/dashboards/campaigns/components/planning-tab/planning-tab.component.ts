@@ -487,9 +487,13 @@ export class PlanningTabComponent implements OnInit {
       }
     }
     const recommendedGeos: LinkedInGeoTarget[] = [];
-    const rawGeos = liCopy?.['resolved_geo_targets'] as LinkedInGeoTarget[] | undefined;
+    const rawGeos = liCopy?.['resolved_geo_targets'];
     if (Array.isArray(rawGeos)) {
-      recommendedGeos.push(...rawGeos);
+      for (const g of rawGeos) {
+        if (g && typeof g === 'object' && typeof g['label'] === 'string' && typeof g['urn'] === 'string') {
+          recommendedGeos.push({ label: g['label'], urn: g['urn'] });
+        }
+      }
     }
     const profile: LinkedInTargetingProfile =
       (liCopy?.['recommended_targeting_profile'] as LinkedInTargetingProfile) ?? strategy?.targetingProfile ?? 'cloud-native';

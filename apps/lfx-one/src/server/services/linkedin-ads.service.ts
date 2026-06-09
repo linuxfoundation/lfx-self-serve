@@ -202,7 +202,7 @@ export async function resolveGeoTargets(locationNames: string[]): Promise<Linked
       const elements = resp.elements || [];
       if (elements.length > 0) {
         const first = elements[0];
-        const resolvedUrn = first.urn || first.id || '';
+        const resolvedUrn = first.urn || first.$URN || first.id || '';
         if (resolvedUrn) {
           resolved.push({
             label: first.name || name,

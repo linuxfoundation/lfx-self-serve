@@ -591,7 +591,9 @@ export class CampaignProxyService {
         truncateAdCopy(structured);
 
         if (selectedPlatforms.includes('linkedin-ads')) {
-          const liData = structured['linkedin_sponsored'] as Record<string, unknown> | undefined;
+          const liData = (structured['linkedin_sponsored'] || (structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored']) as
+            | Record<string, unknown>
+            | undefined;
           if (liData) {
             const rawGeos = liData['recommended_geos'];
             const MAX_GEO_LENGTH = 100;
@@ -692,9 +694,10 @@ export class CampaignProxyService {
 
     const userPrompt = buildRefinePrompt(body);
     let fullCopy = '';
+    const refinePlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
 
     try {
-      for await (const token of aiChatStream(buildCopySystemPrompt(body.platforms || ['google-ads']), userPrompt, signal)) {
+      for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms), userPrompt, signal)) {
         yield { type: 'copy_token', data: token };
         fullCopy += token;
       }
@@ -714,8 +717,7 @@ export class CampaignProxyService {
       return;
     }
 
-    const platforms = body.platforms || ['google-ads'];
-    if (platforms.includes('google-ads')) {
+    if (refinePlatforms.includes('google-ads')) {
       yield { type: 'status', data: 'Regenerating keywords...' };
 
       try {
