@@ -8,6 +8,7 @@ import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -30,6 +31,13 @@ export class CampaignService {
 
   public generateBrief(request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
     return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/generate', {
+      method: 'POST',
+      body: request,
+    });
+  }
+
+  public refineBrief(request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
+    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/refine', {
       method: 'POST',
       body: request,
     });

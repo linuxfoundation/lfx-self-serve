@@ -89,6 +89,15 @@ function buildOrgsRouter(): Router {
 
   // LFXV2-1895 — Org Lens Training & Certifications stat strip.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
+  // LFXV2-1896 — Certifications tab table + drill-down rosters. The more-specific
+  // :courseId/employees route MUST be registered before the list route so Express matches it first.
+  router.get('/:orgUid/lens/training/certifications/:courseId/employees', (req, res, next) =>
+    orgLensTrainingController.getCertificationEmployees(req, res, next)
+  );
+  router.get('/:orgUid/lens/training/certifications', (req, res, next) => orgLensTrainingController.getOrgCertifications(req, res, next));
+  // LFXV2-1897 — Trainings tab table + drill-down rosters.
+  router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));

@@ -48,3 +48,12 @@ export const PENDING_ACTION_FADE_OUT_MS = 300;
  * action takes over, in milliseconds.
  */
 export const PENDING_ACTION_SKELETON_HOLD_MS = 500;
+
+/**
+ * Grace period (ms) the "My Pending Actions" section waits after the action count drops to zero
+ * before starting its fade-out. A context switch (e.g. changing org/project) can briefly empty the
+ * list before the new context's data arrives; waiting this long lets the data repopulate without a
+ * spurious fade-then-reappear. A genuine dismissal of the last action stays empty past the grace,
+ * so it still collapses — just ~this many ms later.
+ */
+export const PENDING_ACTION_EMPTY_GRACE_MS = 250;

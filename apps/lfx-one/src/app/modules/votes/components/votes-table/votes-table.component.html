@@ -140,7 +140,7 @@
                   <div class="flex flex-col gap-0.5">
                     <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
                     @if (dueDateLabelValue) {
-                      <span class="text-xs text-gray-500">{{ dueDateLabelValue }}</span>
+                      <span class="text-xs {{ dueDateLabelValue | dueDateLabelColor }}">{{ dueDateLabelValue }}</span>
                     }
                   </div>
                 } @else {
