@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { OsspreyEcosystem, OsspreyFilterState, OsspreyHealthBand, OsspreyLifecycle, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import { OsspreyEcosystem, OsspreyFilterChip, OsspreyFilterState, OsspreyHealthBand, OsspreyLifecycle, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
@@ -70,6 +70,19 @@ export class OsspreyPackagesTabComponent {
   protected readonly draftBusFactor1Only = signal(false);
   protected readonly draftStaleOnly = signal(false);
   protected readonly draftUnstewardedOnly = signal(false);
+
+  protected readonly activeFilterChips = computed<OsspreyFilterChip[]>(() => {
+    const f = this.filters();
+    const chips: OsspreyFilterChip[] = [];
+    if (f.ecosystem) chips.push({ label: `Ecosystem: ${f.ecosystem}`, clear: { ecosystem: '' } });
+    if (f.lifecycle) chips.push({ label: `Lifecycle: ${f.lifecycle}`, clear: { lifecycle: '' } });
+    if (f.healthBand) chips.push({ label: `Health: ${f.healthBand}`, clear: { healthBand: '' } });
+    if (f.vulnFilter) chips.push({ label: `Vulns: ${f.vulnFilter}`, clear: { vulnFilter: '' } });
+    if (f.busFactor1Only) chips.push({ label: 'Bus factor = 1', clear: { busFactor1Only: false } });
+    if (f.staleOnly) chips.push({ label: 'No activity ≥18mo', clear: { staleOnly: false } });
+    if (f.unstewardedOnly) chips.push({ label: 'Unstewarded only', clear: { unstewardedOnly: false } });
+    return chips;
+  });
 
   protected readonly allSelected = computed(() => {
     const filtered = this.filteredPackages();

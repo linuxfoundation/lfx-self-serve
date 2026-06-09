@@ -39,6 +39,15 @@ export class OsspreyDashboardComponent {
   protected readonly packages = this.initPackages();
   protected readonly loading = computed(() => this.packages() === undefined);
 
+  protected readonly coveredCount = computed(() => {
+    return (this.packages() ?? []).filter((p) => p.status === 'active' || p.status === 'assessing').length;
+  });
+
+  protected readonly coveragePercent = computed(() => {
+    const total = (this.packages() ?? []).length;
+    return total === 0 ? 0 : Math.round((this.coveredCount() / total) * 100);
+  });
+
   protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
     const pkgs = this.packages() ?? [];
     return {

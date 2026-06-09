@@ -212,6 +212,24 @@
     </div>
   </div>
 
+  <!-- Active filter chips -->
+  @if (activeFilterChips().length > 0) {
+    <div class="osp-chips" data-testid="ossprey-filter-chips">
+      @for (chip of activeFilterChips(); track chip.label) {
+        <span class="osp-fchip">
+          {{ chip.label }}
+          <button (click)="filterChange.emit(chip.clear)" [attr.aria-label]="'Remove ' + chip.label + ' filter'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </span>
+      }
+      <button class="osp-clearf" (click)="clearFilters.emit()" data-testid="ossprey-clear-filters">Clear filters</button>
+    </div>
+  }
+
   <!-- Package table -->
   <lfx-table [value]="filteredPackages()" [rowHover]="true" size="small" styleClass="ossprey-pkg-table" data-testid="ossprey-packages-table">
     <ng-template #header>
@@ -243,8 +261,8 @@
           <span class="eco-row"><span class="logo-npm">npm</span> {{ pkg.ecosystem }}</span>
         </td>
         <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" /></td>
-        <td><lfx-tag [value]="pkg.healthScore.toString()" [severity]="getHealthTagSeverity(pkg.healthScore)" /></td>
-        <td><lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" /></td>
+        <td><lfx-tag [value]="pkg.healthScore != null ? pkg.healthScore.toString() : '—'" [severity]="getHealthTagSeverity(pkg.healthScore)" /></td>
+        <td><lfx-tag [value]="pkg.impactScore != null ? pkg.impactScore.toString() : '—'" severity="secondary" /></td>
         <td><lfx-tag [value]="pkg.vulnCount + (pkg.vulnSeverity ? ' ' + pkg.vulnSeverity : '')" [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)" /></td>
         <td class="text-xs text-gray-600">{{ getStewardNames(pkg.stewardIds) }}</td>
         <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" /></td>

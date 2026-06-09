@@ -264,3 +264,8 @@ export interface OsspreyStatusCounts {
   blocked: number;
   inactive: number;
 }
+
+export interface OsspreyFilterChip {
+  label: string;
+  clear: Partial<OsspreyFilterState>;
+}

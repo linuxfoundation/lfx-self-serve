@@ -143,7 +143,7 @@
             <span class="text-sm text-gray-600">Months Stale</span>
             <lfx-tag
               [value]="(packageData()!.monthsStale ?? '—').toString()"
-              [severity]="packageData()!.monthsStale !== null && packageData()!.monthsStale >= 18 ? 'warn' : 'secondary'" />
+              [severity]="getMonthsStaleTagSeverity(packageData()!.monthsStale)" />
           </div>
           <div class="flex justify-between items-center py-2">
             <span class="text-sm text-gray-600">Open Vulnerabilities</span>
@@ -264,11 +264,11 @@
           <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-700">Supply Chain Integrity</h3>
           <div class="flex justify-between items-center py-2 border-b border-gray-200">
             <span class="text-sm text-gray-600">Supply Chain Mapping</span>
-            <lfx-tag [value]="packageData()!.supplyChainMapping" [severity]="packageData()!.supplyChainMapping === 'High' ? 'success' : 'secondary'" />
+            <lfx-tag [value]="packageData()!.supplyChainMapping ?? '—'" [severity]="packageData()!.supplyChainMapping === 'High' ? 'success' : 'secondary'" />
           </div>
           <div class="flex justify-between items-center py-2 border-b border-gray-200">
             <span class="text-sm text-gray-600">Provenance</span>
-            <lfx-tag [value]="packageData()!.provenance" [severity]="getProvenanceTagSeverity(packageData()!.provenance)" />
+            <lfx-tag [value]="packageData()!.provenance ?? '—'" [severity]="getProvenanceTagSeverity(packageData()!.provenance)" />
           </div>
           <div class="flex justify-between items-center py-2">
             <span class="text-sm text-gray-600">ScoreCard Score</span>
