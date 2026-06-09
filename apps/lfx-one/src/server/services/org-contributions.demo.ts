@@ -197,7 +197,8 @@ function feedRow(
     source,
     committedTs: `${date}T12:00:00.000Z`,
     message,
-    commitUrl: `${UPSTREAM_HOSTS[source]}/commit/${commitSha}`,
+    // No repo-scoped path in the feed, so a real commit URL can't be built — omit rather than ship a 404 link.
+    commitUrl: null,
   };
 }
 

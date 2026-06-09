@@ -23,8 +23,8 @@ export interface OrgContributionsKpis {
   projectsWithActivity: number;
   /** Distinct repos active in scope. */
   repositories: number;
-  /** Total commits by affiliated org members in scope. */
-  commits1yr: number;
+  /** Total commits by affiliated org members across the active date-range scope. */
+  commits: number;
 }
 
 /** One row in the Repositories table — commit counts scoped to the active filters. */
@@ -52,13 +52,13 @@ export interface OrgContributionProjectOption {
   slug: string;
   projectId: string;
   name: string;
-  /** Per-project commit count in scope, shown as rich subtext in the select. */
+  /** Per-project commit count shown as rich subtext in the select. Scaffold returns lifetime demo counts; the data pass scopes this to the active filters. */
   commits: number;
   /** Parent foundation slug, or null for a top-level foundation. */
   parentSlug: string | null;
 }
 
-/** Employee filter option — only employees with >= 1 commit in the current Project + Date-Range scope. */
+/** Employee filter option. Per spec the real list is scoped to employees with >= 1 commit in the current Project + Date-Range scope; the demo scaffold returns the full employee catalog (scoping lands in the data pass). */
 export interface OrgContributionEmployeeOption {
   id: string;
   displayName: string;
@@ -101,7 +101,7 @@ export interface OrgContributionsResponse {
 /** Composed filter/pagination state — serialized to URL query params and to the BFF request. */
 export interface OrgContributionsQuery {
   dateRange: ContributionsDateRange;
-  /** Free-text search; scopes the Repository column only. */
+  /** Free-text search. On the Repositories tab it scopes the Repository path; on the Commits feed it scopes message/project/committer/username. */
   search: string;
   /** Selected project slugs. */
   projects: string[];

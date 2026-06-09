@@ -45,7 +45,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
 export const EMPTY_ORG_CONTRIBUTIONS_KPIS: OrgContributionsKpis = {
   projectsWithActivity: 0,
   repositories: 0,
-  commits1yr: 0,
+  commits: 0,
 };
 
 /** Zero-valued Contributions response — `toSignal` initialValue + empty-account fallback. */

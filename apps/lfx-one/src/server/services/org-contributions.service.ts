@@ -161,9 +161,10 @@ function filterCommitFeed(query: OrgContributionsQuery): OrgContributionCommitRo
 
 function buildKpis(repos: OrgContributionRepoRow[]): OrgContributionsKpis {
   return {
-    projectsWithActivity: new Set(repos.map((r) => r.projectSlug)).size,
+    // Count distinct projects by projectId — projectSlug is nullable and would collapse null-slug repos together.
+    projectsWithActivity: new Set(repos.map((r) => r.projectId)).size,
     repositories: repos.length,
-    commits1yr: repos.reduce((acc, r) => acc + r.commits, 0),
+    commits: repos.reduce((acc, r) => acc + r.commits, 0),
   };
 }
 

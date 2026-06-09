@@ -285,7 +285,7 @@ export class OrgContributionsComponent {
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       { value: k.repositories.toLocaleString(), label: 'Repositories', icon: 'fa-light fa-folder', iconContainerClass: 'bg-violet-100 text-violet-600' },
-      { value: k.commits1yr.toLocaleString(), label: 'Commits (1yr)', icon: 'fa-light fa-code-commit', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
+      { value: k.commits.toLocaleString(), label: 'Commits', icon: 'fa-light fa-code-commit', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
     ];
   }
 
