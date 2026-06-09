@@ -195,7 +195,7 @@ export class PlanningTabComponent implements OnInit {
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
-      totalBudget: budgetStr ? Number(budgetStr) : undefined,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
     };
 
     this.briefSubscription = this.campaignService
@@ -262,7 +262,7 @@ export class PlanningTabComponent implements OnInit {
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
       hsUtm: this.hsUtm(),
-      totalBudget: budgetStr ? Number(budgetStr) : null,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
       selectedPlatforms: [...this.selectedPlatforms()],
@@ -478,6 +478,7 @@ export class PlanningTabComponent implements OnInit {
     if (liCopy) {
       const rawVariants = liCopy['variants'];
       for (const v of (Array.isArray(rawVariants) ? rawVariants : []) as Record<string, unknown>[]) {
+        if (!v || typeof v !== 'object') continue;
         variants.push({
           introText: typeof v['intro_text'] === 'string' ? v['intro_text'] : String(v['intro_text'] ?? ''),
           headline: typeof v['headline'] === 'string' ? v['headline'] : String(v['headline'] ?? ''),

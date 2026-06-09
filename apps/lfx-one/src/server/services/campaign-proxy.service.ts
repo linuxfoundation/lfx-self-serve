@@ -1321,8 +1321,16 @@ CRITICAL RULES:
 
 function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
+  const platforms = body.platforms ?? ['google-ads'];
+  const hasGoogle = platforms.includes('google-ads');
+  const hasLinkedIn = platforms.includes('linkedin-ads');
 
-  return `I have existing Google Ads copy that needs refinement based on user feedback.
+  const keyInstructions: string[] = [];
+  if (hasGoogle) keyInstructions.push('"google_search" and "google_display"');
+  if (hasLinkedIn) keyInstructions.push('"linkedin_sponsored"');
+  const keyList = keyInstructions.join(', ');
+
+  return `I have existing ad copy that needs refinement based on user feedback.
 
 CURRENT AD COPY:
 ${JSON.stringify(body.currentCopy, null, 2)}
@@ -1331,7 +1339,7 @@ USER FEEDBACK:
 ${body.feedback}
 
 Please regenerate the ad copy incorporating the user's feedback while maintaining the same JSON structure.
-Respect all character limits from the system prompt. Return the same JSON format with keys "google_search" and "google_display".`;
+Respect all character limits from the system prompt. Return the same JSON format with keys ${keyList}.`;
 }
 
 function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {

@@ -3,7 +3,8 @@
 
 import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_API_VERSION, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_GEO_RESOLVE_MAP, LINKEDIN_TARGETING_PROFILES } from '@lfx-one/shared/constants';
+import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
@@ -122,16 +123,24 @@ async function linkedInRequest(
 
 async function findByName(nestedPath: string, name: string): Promise<string | null> {
   try {
-    const resp = await linkedInRequest('GET', nestedPath, undefined, { q: 'search', count: '50' });
-    for (const el of resp.elements || []) {
-      if (el.name === name) {
-        const status = el.status || '';
-        if (SKIP_STATUSES.has(status)) continue;
-        const rawId = el.id || el.$URN || '';
-        if (rawId) {
-          return rawId.includes(':') ? rawId.split(':').pop()! : rawId;
+    let start = 0;
+    const pageSize = 50;
+    const maxPages = 5;
+    for (let page = 0; page < maxPages; page++) {
+      const resp = await linkedInRequest('GET', nestedPath, undefined, { q: 'search', count: String(pageSize), start: String(start) });
+      const elements = resp.elements || [];
+      for (const el of elements) {
+        if (el.name === name) {
+          const status = el.status || '';
+          if (SKIP_STATUSES.has(status)) continue;
+          const rawId = el.id || el.$URN || '';
+          if (rawId) {
+            return rawId.includes(':') ? rawId.split(':').pop()! : rawId;
+          }
         }
       }
+      if (elements.length < pageSize) break;
+      start += pageSize;
     }
   } catch {
     // Swallow search errors — caller handles null
@@ -233,6 +242,7 @@ export async function findOrCreateCampaignGroup(accountId: string, name: string,
 
   const data = await linkedInRequest('POST', groupsPath, body);
   const id = (data.id as string) || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for campaign group creation');
   return id.includes(':') ? id.split(':').pop()! : id;
 }
 
@@ -285,6 +295,7 @@ export async function createCampaign(
 
   const data = await linkedInRequest('POST', campaignsPath, body);
   const id = (data.id as string) || '';
+  if (!id) throw new Error('LinkedIn API returned no ID for campaign creation');
   return id.includes(':') ? id.split(':').pop()! : id;
 }
 
@@ -314,7 +325,8 @@ export async function createDarkPost(accountId: string, introText: string, headl
   };
 
   const data = await linkedInRequest('POST', 'posts', body);
-  return data.id || '';
+  if (!data.id) throw new Error('LinkedIn API returned no ID for dark post creation');
+  return data.id;
 }
 
 export async function createCreative(accountId: string, campaignId: string, shareUrn: string, adName: string): Promise<string> {
@@ -326,7 +338,8 @@ export async function createCreative(accountId: string, campaignId: string, shar
   };
 
   const data = await linkedInRequest('POST', `adAccounts/${accountId}/creatives`, body);
-  return data.id || '';
+  if (!data.id) throw new Error('LinkedIn API returned no ID for creative creation');
+  return data.id;
 }
 
 export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrns: string[]): Record<string, unknown> {
