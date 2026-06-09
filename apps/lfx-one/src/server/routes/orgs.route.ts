@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
+import { OrgLensContributionsController } from '../controllers/org-lens-contributions.controller';
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
 import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
@@ -25,6 +26,7 @@ function buildOrgsRouter(): Router {
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
   const orgLensAccessController = new OrgLensAccessController();
   const orgLensTrainingController = new OrgLensTrainingController();
+  const orgLensContributionsController = new OrgLensContributionsController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -95,6 +97,9 @@ function buildOrgsRouter(): Router {
     orgLensTrainingController.getCertificationEmployees(req, res, next)
   );
   router.get('/:orgUid/lens/training/certifications', (req, res, next) => orgLensTrainingController.getOrgCertifications(req, res, next));
+
+  // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
+  router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
