@@ -11,10 +11,14 @@
     @switch (state()) {
       <!-- Service unavailable -->
       @case ('service_unavailable') {
-        <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" styleClass="mb-6" title="Service temporarily unavailable">
+        <lfx-message severity="warn" styleClass="mb-6 !p-3">
           <ng-template #content>
             <div class="flex flex-col gap-3 items-start">
-              <p class="text-sm">We couldn't reach the Linux.com email service right now. Please try again in a moment.</p>
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-triangle-exclamation shrink-0"></i>
+                <span class="text-sm font-semibold">Service temporarily unavailable</span>
+              </div>
+              <p class="text-sm font-normal text-gray-900">We couldn't reach the Linux.com email service right now. Please try again in a moment.</p>
               <lfx-button
                 size="small"
                 label="Retry"
@@ -55,73 +59,78 @@
 
       <!-- Purchased but not yet claimed -->
       @case ('purchased_unclaimed') {
-        <lfx-message severity="info" icon="fa-light fa-info-circle" styleClass="mb-6" title="Claim your Linux.com email address">
-          <ng-template #content>
-            <p class="text-sm">
-              Choose an alias and the address you'd like your &#64;{{ domain() }} email forwarded to. Your alias can't be changed after claiming.
-            </p>
-          </ng-template>
-        </lfx-message>
-
-        <lfx-card>
-          <form [formGroup]="claimForm" (ngSubmit)="claim()" class="flex flex-col gap-4" data-testid="linux-email-claim-form">
-            <div class="flex flex-col gap-1">
-              <label class="block text-sm font-medium text-gray-700">Alias</label>
-              <div class="flex items-center gap-2">
-                <div class="flex-1">
-                  <lfx-input-text
-                    control="alias"
-                    [form]="claimForm"
-                    placeholder="your-alias"
-                    type="text"
-                    size="small"
-                    styleClass="w-full"
-                    data-testid="linux-email-alias-input"></lfx-input-text>
-                </div>
-                <span class="text-sm text-gray-600 shrink-0">&#64;{{ domain() }}</span>
+        <lfx-card styleClass="[&_.p-card-body]:p-0 overflow-hidden">
+          <div class="flex flex-col" data-testid="linux-email-claim-panel">
+            <!-- Info banner: full-width, clipped by card's overflow-hidden -->
+            <div class="flex items-start gap-3 border-b border-blue-200 bg-blue-50 p-5">
+              <i class="fa-light fa-info-circle mt-0.5 shrink-0 text-blue-500"></i>
+              <div class="flex flex-col gap-1">
+                <span class="text-sm font-semibold text-blue-600">Claim your Linux.com email address</span>
+                <p class="text-sm font-normal text-gray-900">
+                  Choose an alias and the address you'd like your &#64;{{ domain() }} email forwarded to. Your alias can't be changed after claiming.
+                </p>
               </div>
-              @if (claimForm.controls.alias.touched && claimForm.controls.alias.invalid) {
-                <div class="text-red-600 text-xs" data-testid="linux-email-alias-error">
-                  @if (claimForm.controls.alias.errors?.['required']) {
-                    An alias is required.
-                  } @else if (claimForm.controls.alias.errors?.['aliasReserved']) {
-                    That alias is reserved. Please choose another.
-                  } @else if (claimForm.controls.alias.errors?.['aliasMaxLength']) {
-                    Aliases can be at most 64 characters.
-                  } @else {
-                    Use letters, numbers, dots, and hyphens only.
-                  }
+            </div>
+
+            <form [formGroup]="claimForm" (ngSubmit)="claim()" class="flex flex-col gap-4 p-6" data-testid="linux-email-claim-form">
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-medium text-gray-700">Your alias</label>
+                <div class="flex items-center gap-2">
+                  <div class="flex-1">
+                    <lfx-input-text
+                      control="alias"
+                      [form]="claimForm"
+                      placeholder="your-alias"
+                      type="text"
+                      size="small"
+                      styleClass="w-full"
+                      data-testid="linux-email-alias-input"></lfx-input-text>
+                  </div>
+                  <span class="text-sm text-gray-600 shrink-0">&#64;{{ domain() }}</span>
                 </div>
-              }
-            </div>
+                @if (claimForm.controls.alias.touched && claimForm.controls.alias.invalid) {
+                  <div class="text-red-600 text-xs" data-testid="linux-email-alias-error">
+                    @if (claimForm.controls.alias.errors?.['required']) {
+                      An alias is required.
+                    } @else if (claimForm.controls.alias.errors?.['aliasReserved']) {
+                      That alias is reserved. Please choose another.
+                    } @else if (claimForm.controls.alias.errors?.['aliasMaxLength']) {
+                      Aliases can be at most 64 characters.
+                    } @else {
+                      Use letters, numbers, dots, and hyphens only.
+                    }
+                  </div>
+                }
+              </div>
 
-            <div class="flex flex-col gap-1">
-              <label class="block text-sm font-medium text-gray-700">Forward to</label>
-              <lfx-select
-                [form]="claimForm"
-                control="forwardTo"
-                [options]="forwardOptions()"
-                placeholder="Select a verified email"
+              <div class="flex flex-col gap-1">
+                <label class="block text-sm font-medium text-gray-700">Forward to</label>
+                <lfx-select
+                  [form]="claimForm"
+                  control="forwardTo"
+                  [options]="forwardOptions()"
+                  placeholder="Select a verified email"
+                  size="small"
+                  styleClass="w-full"
+                  appendTo="body"
+                  data-testid="linux-email-claim-forward-select"></lfx-select>
+                <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
+                @if (claimForm.controls.forwardTo.touched && claimForm.controls.forwardTo.invalid) {
+                  <div class="text-red-600 text-xs" data-testid="linux-email-claim-forward-error">Please choose a forwarding address.</div>
+                }
+              </div>
+
+              <lfx-button
+                type="submit"
+                label="Claim alias"
+                icon="fa-light fa-check"
+                severity="info"
                 size="small"
-                styleClass="w-full"
-                appendTo="body"
-                data-testid="linux-email-claim-forward-select"></lfx-select>
-              <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
-              @if (claimForm.controls.forwardTo.touched && claimForm.controls.forwardTo.invalid) {
-                <div class="text-red-600 text-xs" data-testid="linux-email-claim-forward-error">Please choose a forwarding address.</div>
-              }
-            </div>
-
-            <lfx-button
-              type="submit"
-              label="Claim alias"
-              icon="fa-light fa-check"
-              severity="info"
-              class="self-start"
-              [disabled]="claimForm.invalid || claiming()"
-              [loading]="claiming()"
-              data-testid="linux-email-claim-button"></lfx-button>
-          </form>
+                [disabled]="claimForm.invalid || claiming()"
+                [loading]="claiming()"
+                data-testid="linux-email-claim-button"></lfx-button>
+            </form>
+          </div>
         </lfx-card>
       }
 
