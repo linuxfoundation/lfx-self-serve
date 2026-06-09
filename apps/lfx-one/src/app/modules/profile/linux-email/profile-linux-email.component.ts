@@ -18,7 +18,7 @@ import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-linux-email',
@@ -51,6 +51,9 @@ export class ProfileLinuxEmailComponent {
   public claiming = signal(false);
   public savingForward = signal(false);
 
+  // Tracks the last loaded/saved forward-to value so we can detect unsaved changes.
+  private readonly savedForwardTo = signal<string>('');
+
   // Data signals
   public data: Signal<LinuxEmailData> = this.initData();
 
@@ -58,6 +61,9 @@ export class ProfileLinuxEmailComponent {
   public state = computed(() => this.data().alias?.state ?? null);
   public domain = computed(() => this.data().alias?.domain ?? '');
   public email = computed(() => this.data().alias?.email ?? null);
+
+  // True only when the user has changed the forward-to selection from its saved value.
+  public forwardDirty: Signal<boolean> = this.initForwardDirty();
 
   // Verified emails the user can forward to (primary first, default selection).
   // Sourced from the same verified identities shown in the Identities tab —
@@ -170,6 +176,15 @@ export class ProfileLinuxEmailComponent {
     this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || fallback });
   }
 
+  private initForwardDirty(): Signal<boolean> {
+    return toSignal(
+      this.editForm.controls.forwardTo.valueChanges.pipe(
+        map((value) => (value ?? '').toLowerCase().trim() !== this.savedForwardTo())
+      ),
+      { initialValue: false }
+    );
+  }
+
   private initData(): Signal<LinuxEmailData> {
     return toSignal(
       this.refresh.pipe(
@@ -226,6 +241,8 @@ export class ProfileLinuxEmailComponent {
       // primary email — a guessed value could overwrite the real forward on Save. Normalize so
       // the default matches a (normalized) forwardOptions value.
       const forwardTo = (alias.forwardTo ?? '').toLowerCase().trim();
+      // Set savedForwardTo BEFORE patching so the valueChanges emission sees the correct baseline.
+      this.savedForwardTo.set(forwardTo);
       this.editForm.patchValue({ forwardTo });
     } else if (alias?.state === 'purchased_unclaimed' && primary) {
       this.claimForm.patchValue({ forwardTo: primary });

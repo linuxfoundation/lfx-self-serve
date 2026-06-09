@@ -30,25 +30,23 @@
 
       <!-- Not purchased -->
       @case ('not_purchased') {
-        <lfx-message severity="info" icon="fa-light fa-info-circle" styleClass="mb-6" title="Get a Linux.com email address">
-          <ng-template #content>
-            <p class="text-sm">
-              A personal <strong>&#64;{{ domain() }}</strong> address forwards email to any inbox you choose. The Lifetime Linux.com Email Alias is a one-time
-              add-on for Individual Supporters.
-            </p>
-          </ng-template>
-        </lfx-message>
-
-        <lfx-card>
-          <div class="flex flex-col gap-4 items-start" data-testid="linux-email-purchase-panel">
-            <div>
-              <h3 class="text-base font-medium text-gray-900">You haven't purchased a Linux.com email alias add-on</h3>
-              <p class="text-sm text-gray-500 mt-1">Purchase the add-on to claim your personal &#64;{{ domain() }} address.</p>
+        <lfx-card styleClass="[&_.p-card-body]:p-6">
+          <div class="flex flex-col gap-4" data-testid="linux-email-purchase-panel">
+            <div class="flex items-center gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                <i class="fa-light fa-at text-lg text-blue-500"></i>
+              </div>
+              <h3 class="text-sm font-semibold text-gray-900">Get your personal &#64;{{ domain() }} email address</h3>
             </div>
+            <p class="text-sm text-gray-500">
+              A personal &#64;{{ domain() }} address forwards email to any inbox you choose. The Lifetime Linux.com Email Alias is a one-time add-on for
+              Individual Supporters.
+            </p>
             <lfx-button
               label="Purchase Email"
               icon="fa-light fa-cart-shopping"
               severity="info"
+              size="small"
               (onClick)="purchase()"
               data-testid="linux-email-purchase-button"></lfx-button>
           </div>
@@ -129,49 +127,57 @@
 
       <!-- Claimed -->
       @case ('claimed') {
-        <lfx-message severity="success" icon="fa-light fa-circle-check" styleClass="mb-6" title="Your Linux.com email is active">
-          <ng-template #content>
-            <p class="text-sm">Email sent to your alias is forwarded to the address below.</p>
-          </ng-template>
-        </lfx-message>
-
-        <lfx-card>
-          <div class="flex flex-col gap-6">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium text-gray-700">Your alias</span>
-              <span class="text-base font-medium text-gray-900" data-testid="linux-email-claimed-address">{{ email() }}</span>
+        <lfx-card styleClass="[&_.p-card-body]:p-6">
+          <div class="flex flex-col gap-0" data-testid="linux-email-claimed-panel">
+            <!-- Alias row -->
+            <div class="flex items-center justify-between pb-5">
+              <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                  <i class="fa-light fa-envelope text-lg text-blue-500"></i>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-xs text-gray-500">Your alias</span>
+                  <span class="text-sm font-semibold text-gray-900" data-testid="linux-email-claimed-address">{{ email() }}</span>
+                </div>
+              </div>
+              <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Active</span>
             </div>
 
+            <!-- Divider -->
+            <div class="border-t border-gray-100"></div>
+
+            <!-- Forward to form -->
             <form
               [formGroup]="editForm"
               (ngSubmit)="updateForward()"
-              class="flex flex-col gap-1 border-t border-gray-200 pt-4"
+              class="flex flex-col gap-3 pt-5"
               data-testid="linux-email-forward-form">
-              <label class="block text-sm font-medium text-gray-700">Forward to</label>
-              <div class="flex gap-3">
-                <div class="flex-1">
-                  <lfx-select
-                    [form]="editForm"
-                    control="forwardTo"
-                    [options]="forwardOptions()"
-                    placeholder="Select a verified email"
-                    size="small"
-                    styleClass="w-full"
-                    appendTo="body"
-                    data-testid="linux-email-forward-select"></lfx-select>
-                </div>
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm font-medium text-gray-700">Forward to</span>
+                <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
+              </div>
+              <lfx-select
+                [form]="editForm"
+                control="forwardTo"
+                [options]="forwardOptions()"
+                placeholder="Select a verified email"
+                size="small"
+                styleClass="w-full"
+                appendTo="body"
+                data-testid="linux-email-forward-select"></lfx-select>
+              @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
+                <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
+              }
+              @if (forwardDirty()) {
                 <lfx-button
                   type="submit"
                   label="Save"
                   icon="fa-light fa-check"
                   severity="info"
+                  size="small"
                   [disabled]="editForm.invalid || savingForward()"
                   [loading]="savingForward()"
                   data-testid="linux-email-forward-save-button"></lfx-button>
-              </div>
-              <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
-              @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
-                <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
               }
             </form>
           </div>
