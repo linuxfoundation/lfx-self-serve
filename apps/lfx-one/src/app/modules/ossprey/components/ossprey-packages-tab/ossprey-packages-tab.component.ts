@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { OsspreyEcosystem, OsspreyFilterChip, OsspreyFilterState, OsspreyHealthBand, OsspreyLifecycle, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import {
+  OsspreyEcosystem,
+  OsspreyFilterChip,
+  OsspreyFilterState,
+  OsspreyHealthBand,
+  OsspreyLifecycle,
+  OsspreyPackage,
+  OsspreyStatusCounts,
+} from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';

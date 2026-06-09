@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OsspreyFilterState, OsspreyListParams, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map } from 'rxjs';
+import { switchMap, catchError, of, map, timer } from 'rxjs';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
 import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/ossprey-packages-tab.component';
@@ -17,6 +17,7 @@ import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/
 })
 export class OsspreyDashboardComponent {
   private readonly osspreyService = inject(OsspreyService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
@@ -70,7 +71,9 @@ export class OsspreyDashboardComponent {
 
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
-    setTimeout(() => this.selectedPackageId.set(null), 300);
+    timer(300)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.selectedPackageId.set(null));
   }
 
   protected onFilterChange(partial: Partial<OsspreyFilterState>): void {

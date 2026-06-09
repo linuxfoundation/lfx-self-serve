@@ -32,16 +32,15 @@
           <div class="osp-v1c-bar blue">
             <i [style.width.%]="coveragePercent()"></i>
           </div>
-          <div class="osp-v1c-meta"><b>{{ coveragePercent() }}% covered</b> · {{ coveredCount() }} active / assessing</div>
+          <div class="osp-v1c-meta">
+            <b>{{ coveragePercent() }}% covered</b> · {{ coveredCount() }} active / assessing
+          </div>
         </div>
       </div>
       <div class="osp-v1d"></div>
       <!-- Status breakdown list -->
       <div class="osp-v1slist">
-        <button
-          class="osp-v1r"
-          (click)="onFilterChange({ tab: 'unassigned' })"
-          data-testid="ossprey-kpi-unassigned">
+        <button class="osp-v1r" (click)="onFilterChange({ tab: 'unassigned' })" data-testid="ossprey-kpi-unassigned">
           <span class="osp-v1r-ic" style="background: #e2e8f0; color: var(--g600)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -58,10 +57,7 @@
             </svg>
           </span>
         </button>
-        <button
-          class="osp-v1r warn"
-          (click)="onFilterChange({ tab: 'needs_attention' })"
-          data-testid="ossprey-kpi-needs-attention">
+        <button class="osp-v1r warn" (click)="onFilterChange({ tab: 'needs_attention' })" data-testid="ossprey-kpi-needs-attention">
           <span class="osp-v1r-ic" style="background: #f59e0b; color: #fff">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M10 10h4" />
@@ -80,10 +76,7 @@
             </svg>
           </span>
         </button>
-        <button
-          class="osp-v1r danger"
-          (click)="onFilterChange({ tab: 'escalated' })"
-          data-testid="ossprey-kpi-escalated">
+        <button class="osp-v1r danger" (click)="onFilterChange({ tab: 'escalated' })" data-testid="ossprey-kpi-escalated">
           <span class="osp-v1r-ic" style="background: var(--red); color: #fff">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />

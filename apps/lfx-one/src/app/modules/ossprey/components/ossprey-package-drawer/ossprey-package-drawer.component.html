@@ -141,9 +141,7 @@
           </div>
           <div class="flex justify-between items-center py-2 border-b border-gray-200">
             <span class="text-sm text-gray-600">Months Stale</span>
-            <lfx-tag
-              [value]="(packageData()!.monthsStale ?? '—').toString()"
-              [severity]="getMonthsStaleTagSeverity(packageData()!.monthsStale)" />
+            <lfx-tag [value]="(packageData()!.monthsStale ?? '—').toString()" [severity]="getMonthsStaleTagSeverity(packageData()!.monthsStale)" />
           </div>
           <div class="flex justify-between items-center py-2">
             <span class="text-sm text-gray-600">Open Vulnerabilities</span>
