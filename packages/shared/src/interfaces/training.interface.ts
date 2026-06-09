@@ -73,6 +73,53 @@ export interface GetOrgCertificationsOptions {
   sortOrder: 'ASC' | 'DESC';
 }
 
+// ─── Org Trainings tab (LFXV2-1897) ────────────────────────────────────────────
+
+/** One row in the org Trainings table — a distinct training course the org's people engaged with. */
+export interface OrgTraining {
+  readonly courseId: string;
+  readonly name: string;
+  readonly foundation: string | null;
+  readonly level: string | null;
+  readonly imageUrl: string | null;
+  readonly inProgressCount: number;
+  readonly completedCount: number;
+}
+
+export type OrgTrainingsResponse = OffsetPaginatedResponse<OrgTraining>;
+
+/** Which roster a training drill-down drawer shows. */
+export type OrgTrainingEmployeeStatus = 'in-progress' | 'completed';
+
+/** Drill-down roster of org employees for a single training course + status. */
+export interface OrgTrainingEmployeesResponse {
+  readonly courseId: string;
+  readonly trainingName: string;
+  readonly status: OrgTrainingEmployeeStatus;
+  readonly total: number;
+  readonly data: readonly OrgCertEmployee[];
+}
+
+/** Frontend query params for the org trainings list (all optional). */
+export interface GetOrgTrainingsParams {
+  searchQuery?: string;
+  level?: string | null;
+  pageSize?: number;
+  offset?: number;
+  sortField?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+/** Backend-resolved options for the org trainings query. */
+export interface GetOrgTrainingsOptions {
+  searchQuery?: string;
+  level: string | null;
+  pageSize: number;
+  offset: number;
+  sortField: string;
+  sortOrder: 'ASC' | 'DESC';
+}
+
 /** Summary statistics for the org training & certifications stat strip */
 export interface OrgTrainingStats {
   /** Count of distinct employees who completed at least one certification (STATUS = 'Certified') */

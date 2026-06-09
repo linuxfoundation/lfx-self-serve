@@ -10,9 +10,13 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD,
   DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER,
+  DEFAULT_ORG_TRAININGS_SORT_FIELD,
+  DEFAULT_ORG_TRAININGS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
   DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS,
+  DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS,
   EMPTY_ORG_CERTIFICATIONS_RESPONSE,
+  EMPTY_ORG_TRAININGS_RESPONSE,
   ORG_TRAINING_LEVEL_OPTIONS,
   ORG_TRAINING_TABS,
   VALID_ORG_TRAINING_TAB_IDS,
@@ -20,6 +24,8 @@ import {
 import type {
   OrgCertification,
   OrgCertificationsResponse,
+  OrgTraining,
+  OrgTrainingsResponse,
   OrgTrainingStats,
   OrgTrainingTabId,
   PageChangeEvent,
@@ -29,7 +35,6 @@ import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
-import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@shared/services/account-context.service';
@@ -37,17 +42,20 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 
 import { CertEmployeesDrawerComponent } from './components/cert-employees-drawer/cert-employees-drawer.component';
 import { OrgCertificationsTableComponent } from './components/org-certifications-table/org-certifications-table.component';
+import { OrgTrainingsTableComponent } from './components/org-trainings-table/org-trainings-table.component';
+import { TrainingEmployeesDrawerComponent } from './components/training-employees-drawer/training-employees-drawer.component';
 
 @Component({
   selector: 'lfx-org-training',
   imports: [
     CardComponent,
     CardTabsBarComponent,
-    EmptyStateComponent,
     InputTextComponent,
     SelectComponent,
     OrgCertificationsTableComponent,
+    OrgTrainingsTableComponent,
     CertEmployeesDrawerComponent,
+    TrainingEmployeesDrawerComponent,
   ],
   templateUrl: './org-training.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -81,10 +89,21 @@ export class OrgTrainingComponent {
   protected readonly certOffset = signal(0);
   protected readonly certPageSize = signal(EMPTY_ORG_CERTIFICATIONS_RESPONSE.pageSize);
 
+  protected readonly trainingsLoading = signal(false);
+  protected readonly trainingsError = signal(false);
+  protected readonly trainingSortField = signal<string>(DEFAULT_ORG_TRAININGS_SORT_FIELD);
+  protected readonly trainingSortOrder = signal<'ASC' | 'DESC'>(DEFAULT_ORG_TRAININGS_SORT_ORDER);
+  protected readonly trainingOffset = signal(0);
+  protected readonly trainingPageSize = signal(EMPTY_ORG_TRAININGS_RESPONSE.pageSize);
+
   // Drawer state — separate visibility flags so the certified and in-progress rosters don't collide.
   protected readonly certifiedDrawerVisible = signal(false);
   protected readonly inProgressDrawerVisible = signal(false);
   protected readonly activeCertification = signal<OrgCertification | null>(null);
+
+  protected readonly trainingCompletedDrawerVisible = signal(false);
+  protected readonly trainingInProgressDrawerVisible = signal(false);
+  protected readonly activeTraining = signal<OrgTraining | null>(null);
 
   private readonly searchValue = signal('');
   private readonly levelValue = signal<string | null>(null);
@@ -95,7 +114,9 @@ export class OrgTrainingComponent {
   protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
   protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
+  protected readonly trainings: Signal<OrgTrainingsResponse> = this.initTrainings();
   protected readonly certHasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
+  protected readonly trainingHasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
 
   // ─── Constructor ─────────────────────────────────────────────────────────--
   public constructor() {
@@ -103,10 +124,12 @@ export class OrgTrainingComponent {
     this.filterForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => {
       this.searchValue.set(value ?? '');
       this.certOffset.set(0);
+      this.trainingOffset.set(0);
     });
     this.filterForm.controls.level.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.levelValue.set(value ?? null);
       this.certOffset.set(0);
+      this.trainingOffset.set(0);
     });
   }
 
@@ -136,6 +159,33 @@ export class OrgTrainingComponent {
     this.certifiedDrawerVisible.set(false);
     this.activeCertification.set(cert);
     this.inProgressDrawerVisible.set(true);
+  }
+
+  protected onTrainingPageChange(event: PageChangeEvent): void {
+    this.trainingOffset.set(event.offset);
+    this.trainingPageSize.set(event.pageSize);
+  }
+
+  protected onTrainingSortChange(event: SortChangeEvent): void {
+    if (event.field === this.trainingSortField()) {
+      this.trainingSortOrder.update((order) => (order === 'ASC' ? 'DESC' : 'ASC'));
+    } else {
+      this.trainingSortField.set(event.field);
+      this.trainingSortOrder.set(DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS.has(event.field) ? 'DESC' : 'ASC');
+    }
+    this.trainingOffset.set(0);
+  }
+
+  protected onTrainingCompletedClick(training: OrgTraining): void {
+    this.trainingInProgressDrawerVisible.set(false);
+    this.activeTraining.set(training);
+    this.trainingCompletedDrawerVisible.set(true);
+  }
+
+  protected onTrainingInProgressClick(training: OrgTraining): void {
+    this.trainingCompletedDrawerVisible.set(false);
+    this.activeTraining.set(training);
+    this.trainingInProgressDrawerVisible.set(true);
   }
 
   protected switchTab(tabId: OrgTrainingTabId): void {
@@ -251,6 +301,54 @@ export class OrgTrainingComponent {
         })
       ),
       { initialValue: EMPTY_ORG_CERTIFICATIONS_RESPONSE }
+    );
+  }
+
+  private initTrainings(): Signal<OrgTrainingsResponse> {
+    const query$ = toObservable(
+      computed(() => ({
+        activeTab: this.activeTab(),
+        orgUid: this.accountContext.selectedAccount()?.uid ?? null,
+        searchQuery: this.searchValue(),
+        level: this.levelValue(),
+        sortField: this.trainingSortField(),
+        sortOrder: this.trainingSortOrder(),
+        offset: this.trainingOffset(),
+        pageSize: this.trainingPageSize(),
+      }))
+    );
+
+    return toSignal(
+      query$.pipe(
+        switchMap((query) => {
+          if (query.activeTab !== 'trainings' || !query.orgUid) {
+            this.trainingsLoading.set(false);
+            this.trainingsError.set(false);
+            return of(EMPTY_ORG_TRAININGS_RESPONSE);
+          }
+
+          this.trainingsLoading.set(true);
+          this.trainingsError.set(false);
+
+          return this.trainingService
+            .getOrgTrainings(query.orgUid, {
+              searchQuery: query.searchQuery || undefined,
+              level: query.level,
+              sortField: query.sortField,
+              sortOrder: query.sortOrder,
+              offset: query.offset,
+              pageSize: query.pageSize,
+            })
+            .pipe(
+              catchError(() => {
+                this.trainingsError.set(true);
+                return of(EMPTY_ORG_TRAININGS_RESPONSE);
+              }),
+              finalize(() => this.trainingsLoading.set(false))
+            );
+        })
+      ),
+      { initialValue: EMPTY_ORG_TRAININGS_RESPONSE }
     );
   }
 }

@@ -7,11 +7,16 @@ import {
   DEFAULT_ORG_CERTIFICATIONS_PAGE_SIZE,
   DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD,
   DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER,
+  DEFAULT_ORG_TRAININGS_PAGE_SIZE,
+  DEFAULT_ORG_TRAININGS_SORT_FIELD,
+  DEFAULT_ORG_TRAININGS_SORT_ORDER,
   MAX_ORG_CERTIFICATIONS_PAGE_SIZE,
+  MAX_ORG_TRAININGS_PAGE_SIZE,
   VALID_ORG_CERTIFICATION_SORT_FIELDS,
   VALID_ORG_TRAINING_LEVEL_VALUES,
+  VALID_ORG_TRAINING_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
-import type { GetOrgCertificationsOptions, OrgCertEmployeeStatus } from '@lfx-one/shared/interfaces';
+import type { GetOrgCertificationsOptions, GetOrgTrainingsOptions, OrgCertEmployeeStatus, OrgTrainingEmployeeStatus } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -129,6 +134,89 @@ export class OrgLensTrainingController {
       const response = await this.service.getCertificationEmployees(req, orgUid, courseId, status, searchQuery ?? undefined);
 
       logger.success(req, 'get_certification_employees', startTime, {
+        org_uid: orgUid,
+        course_id: courseId,
+        status,
+        count: response.total,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/training/trainings */
+  public async getOrgTrainings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_trainings', { org_uid: orgUid });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_trainings');
+
+      const rawPageSize = Number(req.query['pageSize'] ?? DEFAULT_ORG_TRAININGS_PAGE_SIZE);
+      const rawOffset = Number(req.query['offset'] ?? 0);
+      const rawSortField = getStringQueryParam(req, 'sortField');
+      const rawSortOrder = String(req.query['sortOrder'] ?? DEFAULT_ORG_TRAININGS_SORT_ORDER).toUpperCase();
+      const rawLevel = getStringQueryParam(req, 'level');
+
+      const pageSize =
+        Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_ORG_TRAININGS_PAGE_SIZE ? rawPageSize : DEFAULT_ORG_TRAININGS_PAGE_SIZE;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+      const sortField = rawSortField && VALID_ORG_TRAINING_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_ORG_TRAININGS_SORT_FIELD;
+      const sortOrder = rawSortOrder === 'ASC' ? 'ASC' : 'DESC';
+      const level = rawLevel && VALID_ORG_TRAINING_LEVEL_VALUES.has(rawLevel.toUpperCase()) ? rawLevel.toUpperCase() : null;
+
+      const options: GetOrgTrainingsOptions = {
+        searchQuery: getStringQueryParam(req, 'searchQuery'),
+        level,
+        pageSize,
+        offset,
+        sortField,
+        sortOrder,
+      };
+
+      const response = await this.service.getOrgTrainings(req, orgUid, options);
+
+      logger.success(req, 'get_org_trainings', startTime, {
+        org_uid: orgUid,
+        result_count: response.data.length,
+        total: response.total,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/training/trainings/:courseId/employees */
+  public async getTrainingEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const courseId = req.params['courseId'];
+    const startTime = logger.startOperation(req, 'get_training_employees', { org_uid: orgUid, course_id: courseId });
+
+    try {
+      assertOrgUid(orgUid, 'get_training_employees');
+
+      if (!courseId || typeof courseId !== 'string') {
+        throw ServiceValidationError.forField('courseId', 'courseId path parameter is required', { operation: 'get_training_employees' });
+      }
+
+      const rawStatus = getStringQueryParam(req, 'status');
+      if (rawStatus !== 'in-progress' && rawStatus !== 'completed') {
+        throw ServiceValidationError.forField('status', 'status query parameter must be "in-progress" or "completed"', {
+          operation: 'get_training_employees',
+        });
+      }
+      const status: OrgTrainingEmployeeStatus = rawStatus;
+
+      const searchQuery = getStringQueryParam(req, 'searchQuery');
+      const response = await this.service.getTrainingEmployees(req, orgUid, courseId, status, searchQuery ?? undefined);
+
+      logger.success(req, 'get_training_employees', startTime, {
         org_uid: orgUid,
         course_id: courseId,
         status,
