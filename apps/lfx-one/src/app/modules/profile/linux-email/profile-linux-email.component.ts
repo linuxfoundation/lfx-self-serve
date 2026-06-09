@@ -182,6 +182,11 @@ export class ProfileLinuxEmailComponent {
   }
 
   private initForwardDirty(): Signal<boolean> {
+    // Reset coupling: after a successful save, updateForward() → refresh.next() →
+    // applyFormDefaults() → patchValue({ forwardTo }, { emitEvent: true }) fires a
+    // fresh valueChanges emission that re-runs this map against the now-updated
+    // savedForwardTo, hiding the Save button. If patchValue is ever called with
+    // { emitEvent: false }, the Save button will stay visible after a successful save.
     return toSignal(this.editForm.controls.forwardTo.valueChanges.pipe(map((value) => (value ?? '').toLowerCase().trim() !== this.savedForwardTo())), {
       initialValue: false,
     });
