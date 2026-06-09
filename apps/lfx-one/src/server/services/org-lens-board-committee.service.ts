@@ -22,6 +22,17 @@ import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
 
+/** committee-service `committee_category` value that routes a seat to the Board section (FR-003). */
+const COMMITTEE_CATEGORY_BOARD = 'Board';
+
+/**
+ * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
+ * doesn't pull the full cross-foundation roster (up to the 200-page × 500 = 100k safety cap) just to
+ * feed a client-filtered typeahead. Key contacts are always included in full; committee members beyond
+ * this bound are omitted from the suggestions (manual entry still works).
+ */
+const PICKER_MAX_SEAT_PAGES = 4;
+
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -42,9 +53,9 @@ export class OrgLensBoardCommitteeService {
     if (!projectUids?.length) {
       return { accountId, foundationId, boardSeats: [], committeeSeats: [] };
     }
-    const seats = await this.fetchOrgSeats(req, accountId, projectUids);
-    const boardSeats = seats.filter((s) => s.committee_category === 'Board').map((s) => this.toBoardSeat(s));
-    const committeeSeats = seats.filter((s) => s.committee_category !== 'Board').map((s) => this.toCommitteeSeat(s));
+    const seats = await this.fetchOrgSeats(req, accountId, { projectUids });
+    const boardSeats = seats.filter((s) => s.committee_category === COMMITTEE_CATEGORY_BOARD).map((s) => this.toBoardSeat(s));
+    const committeeSeats = seats.filter((s) => s.committee_category !== COMMITTEE_CATEGORY_BOARD).map((s) => this.toCommitteeSeat(s));
     return { accountId, foundationId, boardSeats, committeeSeats };
   }
 
@@ -59,7 +70,12 @@ export class OrgLensBoardCommitteeService {
       return [];
     }
 
-    const [keyContacts, seats] = await Promise.allSettled([this.keyContactsService.getEmployees(req, orgUid), this.fetchOrgSeats(req, orgUid)]);
+    // Picker path: bound the org-wide seat drain (typeahead degrades to a best-effort list rather than
+    // pulling the full cross-foundation roster on every modal open). Key contacts are still fetched in full.
+    const [keyContacts, seats] = await Promise.allSettled([
+      this.keyContactsService.getEmployees(req, orgUid),
+      this.fetchOrgSeats(req, orgUid, { maxPages: PICKER_MAX_SEAT_PAGES, allowTruncation: true }),
+    ]);
 
     // Both sources down: re-throw so the controller maps the failure and the modal shows "search
     // unavailable" — don't collapse a full outage into a misleading empty 200.
@@ -131,7 +147,7 @@ export class OrgLensBoardCommitteeService {
         email: body.email,
       }
     );
-    const seat = upstream.committee_category === 'Board' ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
+    const seat = upstream.committee_category === COMMITTEE_CATEGORY_BOARD ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
       seat_id: seat.seatId,
@@ -166,19 +182,31 @@ export class OrgLensBoardCommitteeService {
     }
   }
 
-  /** Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`). The board/committee tabs always pass a resolved `projectUids` family (root + descendants, spec 026 T014); the org-wide call (no `projectUids`) is used ONLY by the Reassign people picker (`getOrgEmployees`), never by the seat tabs. */
-  private async fetchOrgSeats(req: Request, orgUid: string, projectUids?: string[]): Promise<CommitteeServiceOrgSeat[]> {
+  /**
+   * Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`).
+   * The board/committee tabs always pass a resolved `projectUids` family (root + descendants, spec 026 T014) and
+   * drain every page (fail-closed on the safety cap so a truncated roster never ships). The org-wide call (no
+   * `projectUids`) is used ONLY by the Reassign people picker (`getOrgEmployees`), which passes a small `maxPages`
+   * bound + `allowTruncation` so the typeahead never drains the full cross-foundation roster.
+   */
+  private async fetchOrgSeats(
+    req: Request,
+    orgUid: string,
+    options: { projectUids?: string[]; maxPages?: number; allowTruncation?: boolean } = {}
+  ): Promise<CommitteeServiceOrgSeat[]> {
+    const { projectUids, maxPages = 200, allowTruncation = false } = options;
     const upstreamPath = `/committees/b2b-org/${orgUid}/seats`;
     logger.debug(req, 'get_org_committee_seats_proxy', 'Proxying org committee seats read to committee-service', {
       org_uid: orgUid,
       upstream_path: upstreamPath,
       project_uids_count: projectUids?.length ?? 0,
+      max_pages: maxPages,
     });
 
-    // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and
-    // CSV export need the org's FULL roster, so drain every page by following the opaque cursor. The cap
-    // is a safety stop against a pathological cursor loop (max 200 pages × 500 = 100k seats).
-    const maxPages = 200;
+    // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and CSV
+    // export need the org's FULL (foundation-scoped) roster, so they drain every page by following the opaque
+    // cursor up to `maxPages` (default 200 × 500 = 100k safety stop against a pathological cursor loop). The
+    // picker passes a much smaller bound and tolerates truncation (see below).
     const seats: CommitteeServiceOrgSeat[] = [];
     let pageToken: string | undefined;
     let pages = 0;
@@ -200,16 +228,24 @@ export class OrgLensBoardCommitteeService {
       pages += 1;
     } while (pageToken && pages < maxPages);
 
-    // Fail closed if the safety cap is hit while the cursor is still advancing: returning here would
-    // silently ship a TRUNCATED roster (wrong grouping + incomplete CSV export). Surface it as an error
-    // so the card/modal shows a failure instead of partial data.
+    // Cursor still advancing at the page bound. The picker (`allowTruncation`) accepts a bounded best-effort
+    // list — it's a typeahead and key contacts are loaded in full — so we stop and return what we have. Every
+    // other caller fails closed: returning a TRUNCATED roster would silently corrupt grouping + the CSV export.
     if (pageToken) {
-      logger.warning(req, 'get_org_committee_seats_proxy', 'org committee seats pagination exceeded the page cap; refusing to return a truncated roster', {
-        org_uid: orgUid,
-        max_pages: maxPages,
-        seat_count: seats.length,
-      });
-      throw new Error(`org committee seats pagination exceeded the ${maxPages}-page safety cap for org ${orgUid}`);
+      if (allowTruncation) {
+        logger.debug(req, 'get_org_committee_seats_proxy', 'org seat fetch hit its page bound; returning a bounded best-effort roster (picker typeahead)', {
+          org_uid: orgUid,
+          max_pages: maxPages,
+          seat_count: seats.length,
+        });
+      } else {
+        logger.warning(req, 'get_org_committee_seats_proxy', 'org committee seats pagination exceeded the page cap; refusing to return a truncated roster', {
+          org_uid: orgUid,
+          max_pages: maxPages,
+          seat_count: seats.length,
+        });
+        throw new Error(`org committee seats pagination exceeded the ${maxPages}-page safety cap for org ${orgUid}`);
+      }
     }
 
     logger.debug(req, 'get_org_committee_seats_proxy', 'committee-service returned org committee seats', {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import { EMAIL_REGEX, FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
 import type { OrgLensEmployeesResponse, ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -159,6 +159,11 @@ export class OrgLensBoardCommitteeController {
     }
     if (!isFilterSafeIdentifier(committeeUid)) {
       throw ServiceValidationError.forField('committeeUid', 'committeeUid must be a valid identifier', { operation });
+    }
+    // The BFF is the trust boundary — the client-side EMAIL_REGEX check is bypassable, so format-check
+    // here too before forwarding to committee-service (mirrors the committeeUid allowlist guard above).
+    if (!EMAIL_REGEX.test(email)) {
+      throw ServiceValidationError.forField('email', 'email must be a valid email address', { operation });
     }
     return { committeeUid, firstName, lastName, email };
   }

@@ -292,14 +292,14 @@ export class BoardCommitteeCardComponent {
   }
 
   /**
-   * RFC 4180 cell escaping + OWASP CSV/formula-injection neutralization.
-   * Cells starting with =, +, -, or @ are executed as formulas by Excel/Sheets even when quoted, so we
-   * prefix a TAB to neutralize them without changing the displayed value (mirrors documentation-tab.utils.ts),
-   * then quote/double embedded quotes when the value has a comma/quote/newline.
+   * RFC 4180 cell escaping + OWASP CSV/formula-injection neutralization (CWE-1236).
+   * A leading =, +, -, @, TAB, or CR makes Excel/Sheets evaluate the cell as a formula even when quoted
+   * (fields like name/job title/email are upstream-controlled), so we prefix such values with a single
+   * quote, then quote/double embedded quotes when the value has a comma/quote/newline.
    */
   private csvCell(value: string): string {
     const raw = value ?? '';
-    const v = /^[=+\-@]/.test(raw) ? `\t${raw}` : raw;
+    const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
     return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
   }
 
