@@ -21,6 +21,9 @@ import type {
   CampaignPlatformOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
+  LinkedInBriefCopy,
+  LinkedInGeoTarget,
+  LinkedInTargetingProfile,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -239,6 +242,19 @@ export class PlanningTabComponent implements OnInit {
     };
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
+    const liData = (this.structuredCopy()?.['linkedin_sponsored'] ?? null) as Record<string, unknown> | null;
+    const linkedInCopy: LinkedInBriefCopy | undefined = liData
+      ? {
+          variants: (Array.isArray(liData['variants']) ? (liData['variants'] as Record<string, unknown>[]) : []).map((v) => ({
+            introText: (v['intro_text'] as string) ?? (v['introText'] as string) ?? '',
+            headline: (v['headline'] as string) ?? '',
+          })),
+          recommendedGeoTargets: Array.isArray(liData['resolved_geo_targets']) ? (liData['resolved_geo_targets'] as LinkedInGeoTarget[]) : [],
+          recommendedTargetingProfile: ['cloud-native', 'mcp', 'custom'].includes(liData['recommended_targeting_profile'] as string)
+            ? (liData['recommended_targeting_profile'] as LinkedInTargetingProfile)
+            : 'cloud-native',
+        }
+      : undefined;
     this.proceedToImplementation.emit({
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
@@ -247,6 +263,8 @@ export class PlanningTabComponent implements OnInit {
       totalBudget: budgetStr ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
+      selectedPlatforms: [...this.selectedPlatforms()] as CampaignPlatform[],
+      linkedInCopy,
     });
   }
 

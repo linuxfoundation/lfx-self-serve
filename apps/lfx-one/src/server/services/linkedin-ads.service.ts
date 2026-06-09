@@ -21,6 +21,8 @@ const SENIORITY_EXCLUSIONS = ['urn:li:seniority:1', 'urn:li:seniority:3'];
 
 const SKIP_STATUSES = new Set(['ARCHIVED', 'CANCELED', 'COMPLETED', 'DRAFT', 'REMOVED', 'DELETED']);
 
+const LINKEDIN_REQUEST_TIMEOUT_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Environment
 // ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ async function linkedInRequest(
   const response = await fetch(url.toString(), {
     method,
     headers,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -135,7 +137,7 @@ async function findByName(nestedPath: string, name: string): Promise<string | nu
       start += pageSize;
     }
   } catch (error: unknown) {
-    logger.warning(undefined, 'linkedin_find_by_name', `Search failed for ${nestedPath}`, { name, err: error });
+    logger.warning(undefined, 'linkedin_find_by_name', `Search failed for "${name}" on ${nestedPath}`, { name, nestedPath, err: error });
   }
   return null;
 }
@@ -440,7 +442,7 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
 
 function stripEmDashes(text: string): string {
   return text
-    .replace(/ — /g, ', ')
-    .replace(/—/g, ', ')
+    .replace(/ [—–] /g, ', ')
+    .replace(/[—–]/g, ', ')
     .replace(/^, |, $/g, '');
 }

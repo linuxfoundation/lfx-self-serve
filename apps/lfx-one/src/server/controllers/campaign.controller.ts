@@ -154,7 +154,7 @@ export class CampaignController {
     }
 
     if (!body.currentKeywords || !Array.isArray(body.currentKeywords)) {
-      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be a non-empty array', {
+      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords is required and must be an array', {
         operation: 'campaign_refine_brief',
         service: 'campaign_controller',
         path: req.path,
