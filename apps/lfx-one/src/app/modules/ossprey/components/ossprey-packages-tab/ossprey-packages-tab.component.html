@@ -261,8 +261,8 @@
           <span class="eco-row"><span class="logo-npm">npm</span> {{ pkg.ecosystem }}</span>
         </td>
         <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" /></td>
-        <td><lfx-tag [value]="pkg.healthScore != null ? pkg.healthScore.toString() : '—'" [severity]="getHealthTagSeverity(pkg.healthScore)" /></td>
-        <td><lfx-tag [value]="pkg.impactScore != null ? pkg.impactScore.toString() : '—'" severity="secondary" /></td>
+        <td><lfx-tag [value]="pkg.healthScore !== null ? pkg.healthScore.toString() : '—'" [severity]="getHealthTagSeverity(pkg.healthScore)" /></td>
+        <td><lfx-tag [value]="pkg.impactScore !== null ? pkg.impactScore.toString() : '—'" severity="secondary" /></td>
         <td><lfx-tag [value]="pkg.vulnCount + (pkg.vulnSeverity ? ' ' + pkg.vulnSeverity : '')" [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)" /></td>
         <td class="text-xs text-gray-600">{{ getStewardNames(pkg.stewardIds) }}</td>
         <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" /></td>
