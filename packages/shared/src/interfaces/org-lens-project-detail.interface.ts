@@ -47,33 +47,20 @@ export interface OrgLensProjectHero {
 }
 
 /**
- * Technical-group card (Maintainers / Contributors / Commit Activities / Pull Requests).
- * `% of all` = orgCount / projectTotal over a rolling 365-day window.
+ * A single Our-Influence metric card, used for both the Technical and Ecosystem groups
+ * (Maintainers, Contributors, …, Event Speakers, Certified Individuals, …). Each renders a
+ * title, a 12-month trendline, and a descriptive sentence; the sentence is pre-split so the
+ * stat renders bold. An empty `sparkline` shows a "No data" state.
  */
-export interface OrgLensProjectTechnicalCard {
-  key: 'maintainers' | 'contributors' | 'commits' | 'pull-requests';
+export interface OrgLensProjectInfluenceCard {
+  key: string;
   label: string;
-  orgCount: number;
-  projectTotal: number;
-  /** 0..1 share of the project total attributable to org-affiliated authors. */
-  pct: number;
-  /** 12 monthly bins, oldest → newest. */
+  /** Source shown above the card for ecosystem metrics (project name or foundation name); null for technical. */
+  scopeLabel: string | null;
+  /** 12 monthly bins, oldest → newest. Empty array → "No data". */
   sparkline: number[];
-}
-
-/**
- * Ecosystem-group card (Collaboration Activity / Meeting Attendance / Board Members /
- * Committee Members). Board/committee are foundation-level point-in-time seats; collaboration
- * and meetings are project-level. An empty `sparkline` renders a "No data" state.
- */
-export interface OrgLensProjectEcosystemCard {
-  key: 'collaboration' | 'meeting-attendance' | 'board-members' | 'committee-members';
-  label: string;
-  count: number;
-  /** 0..1 "% of all" share, where applicable (collaboration, committee members); 0 otherwise. */
-  pct: number;
-  /** 12 monthly bins, oldest → newest. Empty array → no trendline data available. */
-  sparkline: number[];
+  /** Descriptive sentence split so the middle stat can render bold. */
+  caption: { prefix: string; emphasis: string; suffix: string };
 }
 
 /** One monthly point on the Influence Trend chart. */
@@ -110,8 +97,8 @@ export interface OrgLensProjectDetailResponse {
   accountId: string;
   projectSlug: string;
   hero: OrgLensProjectHero;
-  technical: OrgLensProjectTechnicalCard[];
-  ecosystem: OrgLensProjectEcosystemCard[];
+  technical: OrgLensProjectInfluenceCard[];
+  ecosystem: OrgLensProjectInfluenceCard[];
   trend: OrgLensProjectTrendPoint[];
   /** All organizations contributing to the project; the viewing-org row is always included. */
   leaderboard: OrgLensProjectLeaderboardRow[];

@@ -20,9 +20,8 @@ import type {
   OrgLensProjectDetailPageState,
   OrgLensProjectDetailResponse,
   OrgLensProjectDetailTab,
-  OrgLensProjectEcosystemCard,
   OrgLensProjectHealth,
-  OrgLensProjectTechnicalCard,
+  OrgLensProjectInfluenceCard,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
@@ -47,14 +46,6 @@ const HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSev
   excellent: { label: 'Excellent', severity: 'success' },
   healthy: { label: 'Healthy', severity: 'warn' },
   'at-risk': { label: 'At Risk', severity: 'danger' },
-};
-
-/** Ecosystem card scope (per the wireframe): collaboration + meetings are project-level; the rest foundation-level. */
-const ECOSYSTEM_SCOPE: Record<OrgLensProjectEcosystemCard['key'], 'project' | 'foundation'> = {
-  collaboration: 'project',
-  'meeting-attendance': 'project',
-  'board-members': 'foundation',
-  'committee-members': 'foundation',
 };
 
 /** Leaderboard band chip → lfx-tag severity. */
@@ -135,8 +126,12 @@ export class OrgProjectDetailComponent {
   // Our Influence tab — Technical + Ecosystem cards (trendline + sentence), same card style.
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly cardChartOptions: ChartOptions<ChartType> = { ...BASE_LINE_CHART_OPTIONS };
-  protected readonly technicalCards = computed(() => (this.detail()?.technical ?? []).map((card) => this.toTechnicalCard(card)));
-  protected readonly ecosystemCards = computed(() => (this.detail()?.ecosystem ?? []).map((card) => this.toEcosystemCard(card)));
+  protected readonly technicalCards = computed(() =>
+    (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical'))
+  );
+  protected readonly ecosystemCards = computed(() =>
+    (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem'))
+  );
 
   // Influence Trend chart — Combined / Technical / Ecosystem overlays (legend toggles each line).
   protected readonly hasTrendHistory = computed(() => (this.detail()?.trend.length ?? 0) >= 3);
@@ -320,79 +315,16 @@ export class OrgProjectDetailComponent {
     return out;
   }
 
-  private toTechnicalCard(card: OrgLensProjectTechnicalCard) {
+  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem') {
     return {
       key: card.key,
       title: card.label,
-      scopeLabel: null as string | null,
+      scopeLabel: card.scopeLabel,
       hasData: card.sparkline.length > 0,
-      chartData: this.cardChartData(card.sparkline, lfxColors.blue[500]),
-      caption: this.technicalCaption(card),
-      testId: `project-detail-technical-card-${card.key}`,
+      chartData: this.cardChartData(card.sparkline, colorHex),
+      caption: card.caption,
+      testId: `project-detail-${group}-card-${card.key}`,
     };
-  }
-
-  private toEcosystemCard(card: OrgLensProjectEcosystemCard) {
-    const hero = this.hero();
-    const projectName = hero?.projectName ?? 'this project';
-    const foundationLabel = hero?.foundationLabel ?? 'the foundation';
-    const scopeLabel = ECOSYSTEM_SCOPE[card.key] === 'project' ? projectName : foundationLabel;
-    return {
-      key: card.key,
-      title: card.label,
-      scopeLabel,
-      hasData: card.sparkline.length > 0,
-      chartData: this.cardChartData(card.sparkline, lfxColors.violet[500]),
-      caption: this.ecosystemCaption(card, foundationLabel),
-      testId: `project-detail-ecosystem-card-${card.key}`,
-    };
-  }
-
-  /** Sentence with an emphasized stat, split so the stat can render bold. */
-  private technicalCaption(card: OrgLensProjectTechnicalCard): { prefix: string; emphasis: string; suffix: string } {
-    const pct = `${(card.pct * 100).toFixed(1)}%`;
-    switch (card.key) {
-      case 'maintainers':
-        return card.orgCount === 0
-          ? { prefix: 'Our company employs ', emphasis: 'no', suffix: ' maintainers for this project.' }
-          : {
-              prefix: 'Our company employs ',
-              emphasis: `${card.orgCount}`,
-              suffix: ` ${card.orgCount === 1 ? 'maintainer' : 'maintainers'} for this project.`,
-            };
-      case 'contributors':
-        return { prefix: 'Our company employs ', emphasis: pct, suffix: ' of contributors to this project.' };
-      case 'commits':
-        return { prefix: 'Employees made ', emphasis: pct, suffix: ' of all commit activities.' };
-      case 'pull-requests':
-        return { prefix: 'Employees opened ', emphasis: pct, suffix: ' of all pull requests.' };
-      default:
-        return { prefix: card.label, emphasis: '', suffix: '' };
-    }
-  }
-
-  private ecosystemCaption(card: OrgLensProjectEcosystemCard, foundation: string): { prefix: string; emphasis: string; suffix: string } {
-    const pct = `${(card.pct * 100).toFixed(1)}%`;
-    switch (card.key) {
-      case 'collaboration':
-        return card.count === 0
-          ? { prefix: 'No collaboration activity recorded for this project.', emphasis: '', suffix: '' }
-          : { prefix: 'Employees contributed ', emphasis: pct, suffix: ' of all collaboration activities.' };
-      case 'meeting-attendance':
-        return card.count === 0
-          ? { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }
-          : { prefix: 'Org reps attended ', emphasis: `${card.count}`, suffix: ` project ${card.count === 1 ? 'meeting' : 'meetings'}.` };
-      case 'board-members':
-        return card.count === 0
-          ? { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }
-          : { prefix: 'Our company employs ', emphasis: `${card.count} board ${card.count === 1 ? 'member' : 'members'}`, suffix: ` for ${foundation}.` };
-      case 'committee-members':
-        return card.count === 0
-          ? { prefix: `Your organization holds no committee seats in ${foundation}.`, emphasis: '', suffix: '' }
-          : { prefix: 'Employees make up ', emphasis: pct, suffix: ' of all committee members.' };
-      default:
-        return { prefix: card.label, emphasis: '', suffix: '' };
-    }
   }
 
   /** Dual-line card sparkline: the metric line in `colorHex` plus a faint gray reference baseline. */

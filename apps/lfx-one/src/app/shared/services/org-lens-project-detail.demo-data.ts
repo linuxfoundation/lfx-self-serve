@@ -5,10 +5,9 @@
 
 import type {
   OrgLensProjectDetailResponse,
-  OrgLensProjectEcosystemCard,
   OrgLensProjectHealth,
+  OrgLensProjectInfluenceCard,
   OrgLensProjectLeaderboardRow,
-  OrgLensProjectTechnicalCard,
   OrgLensProjectTrendPoint,
 } from '@lfx-one/shared/interfaces';
 
@@ -244,82 +243,142 @@ function ramp(end: number, startFactor: number, round = 0): number[] {
   return Array.from({ length: 12 }, (_, i) => Math.round((start + step * i) * factor) / factor);
 }
 
-function pctOf(n: number, total: number): number {
-  return total === 0 ? 0 : Math.round((n / total) * 1000) / 1000;
+function pctStr(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
 }
 
-function technicalCards(seed: ProjectDetailSeed): OrgLensProjectTechnicalCard[] {
+function shareOf(n: number, total: number): number {
+  return total === 0 ? 0 : n / total;
+}
+
+interface Caption { prefix: string; emphasis: string; suffix: string }
+
+function card(key: string, label: string, scopeLabel: string | null, sparkline: number[], caption: Caption): OrgLensProjectInfluenceCard {
+  return { key, label, scopeLabel, sparkline, caption };
+}
+
+/** Five technical cards (project-level): contribution metrics + PR merge speed. */
+function technicalCards(seed: ProjectDetailSeed): OrgLensProjectInfluenceCard[] {
+  const { org, totals } = seed;
+  // "% slower than average" derived from the technical influence score (lower score → slower merges).
+  const mergeSlower = Math.round((100 - seed.influence.technical) * 0.4 * 100) / 100;
   return [
-    {
-      key: 'maintainers',
-      label: 'Maintainers',
-      orgCount: seed.org.maintainers,
-      projectTotal: seed.totals.maintainers,
-      pct: pctOf(seed.org.maintainers, seed.totals.maintainers),
-      sparkline: ramp(seed.org.maintainers, 0.6),
-    },
-    {
-      key: 'contributors',
-      label: 'Contributors',
-      orgCount: seed.org.contributors,
-      projectTotal: seed.totals.contributors,
-      pct: pctOf(seed.org.contributors, seed.totals.contributors),
-      sparkline: ramp(seed.org.contributors, 0.55),
-    },
-    {
-      key: 'commits',
-      label: 'Commit Activities',
-      orgCount: seed.org.commits,
-      projectTotal: seed.totals.commits,
-      pct: pctOf(seed.org.commits, seed.totals.commits),
-      sparkline: ramp(seed.org.commits, 0.65),
-    },
-    {
-      key: 'pull-requests',
-      label: 'Pull Requests',
-      orgCount: seed.org.prs,
-      projectTotal: seed.totals.prs,
-      pct: pctOf(seed.org.prs, seed.totals.prs),
-      sparkline: ramp(seed.org.prs, 0.65),
-    },
+    card(
+      'maintainers',
+      'Maintainers',
+      null,
+      ramp(org.maintainers, 0.6),
+      org.maintainers === 0
+        ? { prefix: 'Our company employs ', emphasis: 'no', suffix: ' maintainers for this project.' }
+        : {
+            prefix: 'Our company employs ',
+            emphasis: `${org.maintainers}`,
+            suffix: ` ${org.maintainers === 1 ? 'maintainer' : 'maintainers'} for this project.`,
+          }
+    ),
+    card('contributors', 'Contributors', null, ramp(org.contributors, 0.55), {
+      prefix: 'Our company employs ',
+      emphasis: pctStr(shareOf(org.contributors, totals.contributors)),
+      suffix: ' of contributors to this project.',
+    }),
+    card('commits', 'Commit Activities', null, ramp(org.commits, 0.65), {
+      prefix: 'Employees made ',
+      emphasis: pctStr(shareOf(org.commits, totals.commits)),
+      suffix: ' of all commit activities.',
+    }),
+    card('pull-requests', 'Pull Requests Opened', null, ramp(org.prs, 0.65), {
+      prefix: 'Employees opened ',
+      emphasis: pctStr(shareOf(org.prs, totals.prs)),
+      suffix: ' of all pull requests.',
+    }),
+    card('avg-merge-time', 'Avg Time to Merge PRs', null, ramp(100 - seed.influence.technical, 0.85, 1), {
+      prefix: 'PRs merged ',
+      emphasis: `${mergeSlower}% slower`,
+      suffix: ' than average.',
+    }),
   ];
 }
 
-function ecosystemCards(seed: ProjectDetailSeed): OrgLensProjectEcosystemCard[] {
-  const collab = seed.ecosystem.collaboration;
-  const committee = seed.ecosystem.committeeMembers;
+/** Nine ecosystem cards: collaboration + meetings are project-level; the rest are foundation-level. */
+function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation: string): OrgLensProjectInfluenceCard[] {
+  const eco = seed.ecosystem;
+  const e = seed.influence.ecosystem;
+  // Denominators picked so Kubernetes lands on the prototype's 9.6% / 1.1%.
+  const collabPct = eco.collaboration === 0 ? 0 : Math.round((eco.collaboration / 15333) * 1000) / 1000;
+  const committeePct = eco.committeeMembers === 0 ? 0 : Math.round((eco.committeeMembers / 364) * 1000) / 1000;
+  // Foundation-level event/training shares scale off the ecosystem influence score.
+  const eventAttPct = Math.round((e / 100) * 0.95 * 1000) / 1000;
+  const speakerPct = Math.round((e / 100) * 0.038 * 1000) / 1000;
+  const sponsorPct = Math.round((e / 100) * 0.04 * 1000) / 1000;
+  const meetupPct = Math.round((e / 100) * 0.013 * 1000) / 1000;
+  const certifiedPct = Math.round((e / 100) * 0.005 * 1000) / 1000;
+
   return [
-    // Collaboration shows a "% of all" (denominator picked so Kubernetes lands at the prototype's 9.6%).
-    {
-      key: 'collaboration',
-      label: 'Collaboration Activity',
-      count: collab,
-      pct: collab === 0 ? 0 : Math.round((collab / 15333) * 1000) / 1000,
-      sparkline: ramp(collab, 0.6),
-    },
-    // Meeting attendance is a raw count; 0 → no trendline ("No data").
-    {
-      key: 'meeting-attendance',
-      label: 'Meeting Attendance',
-      count: seed.ecosystem.meetingAttendance,
-      pct: 0,
-      sparkline: seed.ecosystem.meetingAttendance === 0 ? [] : ramp(seed.ecosystem.meetingAttendance, 0.6),
-    },
-    {
-      key: 'board-members',
-      label: 'Board Members',
-      count: seed.ecosystem.boardMembers,
-      pct: 0,
-      sparkline: seed.ecosystem.boardMembers === 0 ? [] : ramp(seed.ecosystem.boardMembers, 0.6),
-    },
-    // Committee members shows a "% of all" (denominator picked so Kubernetes lands at the prototype's 1.1%).
-    {
-      key: 'committee-members',
-      label: 'Committee Members',
-      count: committee,
-      pct: committee === 0 ? 0 : Math.round((committee / 364) * 1000) / 1000,
-      sparkline: committee === 0 ? [] : ramp(committee, 0.6),
-    },
+    card(
+      'collaboration',
+      'Collaboration Activity',
+      projectName,
+      ramp(eco.collaboration, 0.6),
+      eco.collaboration === 0
+        ? { prefix: 'No collaboration activity recorded for this project.', emphasis: '', suffix: '' }
+        : { prefix: 'Employees contributed ', emphasis: pctStr(collabPct), suffix: ' of all collaboration activities.' }
+    ),
+    card(
+      'meeting-attendance',
+      'Meeting Attendance',
+      projectName,
+      eco.meetingAttendance === 0 ? [] : ramp(eco.meetingAttendance, 0.6),
+      eco.meetingAttendance === 0
+        ? { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }
+        : { prefix: 'Org reps attended ', emphasis: `${eco.meetingAttendance}`, suffix: ` project ${eco.meetingAttendance === 1 ? 'meeting' : 'meetings'}.` }
+    ),
+    card(
+      'board-members',
+      'Board Members',
+      foundation,
+      eco.boardMembers === 0 ? [] : ramp(eco.boardMembers, 0.6),
+      eco.boardMembers === 0
+        ? { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }
+        : {
+            prefix: 'Our company employs ',
+            emphasis: `${eco.boardMembers} board ${eco.boardMembers === 1 ? 'member' : 'members'}`,
+            suffix: ` for ${foundation}.`,
+          }
+    ),
+    card(
+      'committee-members',
+      'Committee Members',
+      foundation,
+      eco.committeeMembers === 0 ? [] : ramp(eco.committeeMembers, 0.6),
+      eco.committeeMembers === 0
+        ? { prefix: `Your organization holds no committee seats in ${foundation}.`, emphasis: '', suffix: '' }
+        : { prefix: 'Employees make up ', emphasis: pctStr(committeePct), suffix: ' of all committee members.' }
+    ),
+    card('event-attendance', 'Event Attendance', foundation, ramp(eventAttPct * 100, 0.78, 1), {
+      prefix: 'Employees attended ',
+      emphasis: pctStr(eventAttPct),
+      suffix: ` of all ${foundation} events.`,
+    }),
+    card('event-speakers', 'Event Speakers', foundation, ramp(speakerPct * 100, 0.78, 2), {
+      prefix: 'Employees represented ',
+      emphasis: pctStr(speakerPct),
+      suffix: ` of all speakers at ${foundation} events.`,
+    }),
+    card('event-sponsorships', 'Event Sponsorships', foundation, ramp(sponsorPct * 100, 0.78, 2), {
+      prefix: 'Our company reached ',
+      emphasis: pctStr(sponsorPct),
+      suffix: ' of attendees through sponsorship.',
+    }),
+    card('meetup-attendance', 'Meetup Attendance', foundation, ramp(meetupPct * 100, 0.78, 2), {
+      prefix: 'Employees attended ',
+      emphasis: pctStr(meetupPct),
+      suffix: ` of all ${foundation} meetups.`,
+    }),
+    card('certified-individuals', 'Certified Individuals', foundation, ramp(certifiedPct * 100, 0.78, 2), {
+      prefix: 'Employees make up ',
+      emphasis: pctStr(certifiedPct),
+      suffix: ' of all certified individuals.',
+    }),
   ];
 }
 
@@ -414,7 +473,7 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
       lastUpdated: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     },
     technical: technicalCards(seed),
-    ecosystem: ecosystemCards(seed),
+    ecosystem: ecosystemCards(seed, seed.name, seed.foundationLabel),
     trend: trendSeries(seed),
     leaderboard: leaderboard(seed, orgName),
   };
