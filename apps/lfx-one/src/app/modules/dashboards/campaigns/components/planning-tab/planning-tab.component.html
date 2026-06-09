@@ -524,6 +524,64 @@
         </div>
       }
 
+      <!-- EDIT MODE: LinkedIn Sponsored Content -->
+      @if (editLinkedInVariants().length > 0 || isPlatformSelected('linkedin-ads')) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-copy-edit">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">
+              <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
+              LinkedIn Sponsored Content
+              <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-normal text-blue-700">Editing</span>
+            </h3>
+            <button type="button" (click)="addLinkedInVariant()" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+              <i class="fa-light fa-plus" aria-hidden="true"></i> Add Variant
+            </button>
+          </div>
+          <div class="flex flex-col gap-4">
+            @for (variant of editLinkedInVariants(); track $index; let i = $index) {
+              <div class="relative rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div class="mb-1 flex items-center justify-between">
+                  <h4 class="text-xs font-medium text-gray-500">Variant {{ i + 1 }}</h4>
+                  @if (editLinkedInVariants().length > 1) {
+                    <button
+                      type="button"
+                      (click)="removeLinkedInVariant(i)"
+                      class="text-gray-400 hover:text-red-500"
+                      [attr.aria-label]="'Remove variant ' + (i + 1)">
+                      <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
+                    </button>
+                  }
+                </div>
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-500">Intro Text (max 600 chars)</label>
+                    <textarea
+                      #introTextInput
+                      [value]="variant.introText"
+                      (input)="updateLinkedInVariant(i, 'introText', introTextInput.value)"
+                      maxlength="600"
+                      rows="3"
+                      class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                    <span class="text-right text-xs text-gray-400">{{ variant.introText.length }}/600</span>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-500">Headline (max 200 chars)</label>
+                    <input
+                      #headlineInput
+                      type="text"
+                      [value]="variant.headline"
+                      (input)="updateLinkedInVariant(i, 'headline', headlineInput.value)"
+                      maxlength="200"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                    <span class="text-right text-xs text-gray-400">{{ variant.headline.length }}/200</span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
       <!-- EDIT MODE: Keywords -->
       @if (editKeywords().length > 0) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-keywords-edit">
@@ -718,8 +776,44 @@
         </div>
       }
 
+      <!-- READ-ONLY MODE: LinkedIn Sponsored Content -->
+      @if (linkedInCopy(); as linkedin) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-copy">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
+            LinkedIn Sponsored Content
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            @for (variant of linkedin.variants; track $index; let i = $index) {
+              <div class="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <h4 class="mb-1.5 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</h4>
+                <p class="mb-2 whitespace-pre-line text-sm text-gray-800">{{ variant.introText }}</p>
+                <p class="text-xs font-medium text-gray-600">{{ variant.headline }}</p>
+              </div>
+            }
+
+            @if (linkedin.recommendedGeoTargets.length > 0) {
+              <div>
+                <h4 class="mb-2 text-xs font-medium text-gray-500">Recommended Geo Targets</h4>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (geo of linkedin.recommendedGeoTargets; track geo.urn) {
+                    <span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{{ geo.label }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            <div>
+              <h4 class="mb-1 text-xs font-medium text-gray-500">Targeting Profile</h4>
+              <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">{{ linkedin.recommendedTargetingProfile }}</span>
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- Raw Copy (fallback if structured sections not available) -->
-      @if (!getSearchCopy() && !getDisplayCopy() && copyBuffer()) {
+      @if (!getSearchCopy() && !getDisplayCopy() && !linkedInCopy() && copyBuffer()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-ad-copy">
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Generated Ad Copy</h3>
