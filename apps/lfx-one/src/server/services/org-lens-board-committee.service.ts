@@ -21,12 +21,7 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 
-/**
- * Board & Committee tab service (spec 026, live data). Board/committee reads proxy to committee-service
- * `GET /committees/b2b-org/{orgUid}/seats` (user token → Heimdall `b2b_org#auditor`), splitting Board
- * vs other by `committee_category` (FR-003). Voting history is deferred (D12) with no live source, so
- * it returns an empty list. No mock fixture — committee-service owns the data.
- */
+/** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly keyContactsService: OrgLensKeyContactsService;

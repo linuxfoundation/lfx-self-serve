@@ -333,10 +333,7 @@ export class BoardCommitteeCardComponent {
     return rows.filter((r) => this.seatSearchText(r).includes(term));
   }
 
-  /**
-   * FR-011: search matches name, job title, role, appointed-by, voting status, committee name, and email
-   * (case-insensitive substring). Board rows expose `seatName`; committee rows expose `role`/`committeeName`.
-   */
+  /** FR-011: case-insensitive search text over name, job title, role, appointed-by, voting status, committee/seat name, and email. */
   private seatSearchText(seat: BoardSeat | CommitteeSeat): string {
     const parts: (string | null | undefined)[] = [
       seat.person.fullName,
