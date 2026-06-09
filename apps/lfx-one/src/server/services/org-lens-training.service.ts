@@ -60,6 +60,13 @@ interface OrgRosterEmployeeRow {
   COURSE_NAME: string | null;
 }
 
+interface OrgRosterEmployeesResult {
+  courseId: string;
+  courseName: string;
+  total: number;
+  data: readonly OrgCertEmployee[];
+}
+
 /** TI catalog dimension shared by certification queries (product_type split per standup 2026-06-08). */
 const COURSE_CATALOG_DIM_CTE = `
   course_dim AS (
@@ -222,6 +229,7 @@ export class OrgLensTrainingService {
           COUNT(DISTINCT CASE WHEN t.TRAINING_STATUS = 'Completed' THEN t.PERSON_KEY END)  AS COMPLETED_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES t
         WHERE t.ACCOUNT_ID = ?
+          AND t.COURSE_ID IS NOT NULL
         GROUP BY t.COURSE_ID
       ),
       filtered AS (
@@ -290,10 +298,17 @@ export class OrgLensTrainingService {
       LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
-    return this.fetchRosterEmployees(req, 'get_certification_employees', sql, [accountId, courseId], searchQuery, {
+    const roster = await this.fetchRosterEmployees(req, 'get_certification_employees', sql, [accountId, courseId], searchQuery, {
       courseId,
-      status,
     });
+
+    return {
+      courseId: roster.courseId,
+      certificationName: roster.courseName,
+      status,
+      total: roster.total,
+      data: roster.data,
+    };
   }
 
   public async getTrainingEmployees(
@@ -332,12 +347,11 @@ export class OrgLensTrainingService {
 
     const roster = await this.fetchRosterEmployees(req, 'get_training_employees', sql, [accountId, courseId, trainingStatus], searchQuery, {
       courseId,
-      status,
     });
 
     return {
       courseId: roster.courseId,
-      trainingName: roster.certificationName,
+      trainingName: roster.courseName,
       status,
       total: roster.total,
       data: roster.data,
@@ -394,8 +408,8 @@ export class OrgLensTrainingService {
     sql: string,
     binds: string[],
     searchQuery: string | undefined,
-    meta: { courseId: string; status: OrgCertEmployeeStatus | OrgTrainingEmployeeStatus }
-  ): Promise<OrgCertEmployeesResponse> {
+    meta: { courseId: string }
+  ): Promise<OrgRosterEmployeesResult> {
     const queryBinds = [...binds];
     if (searchQuery) queryBinds.push(`%${searchQuery}%`);
 
@@ -411,8 +425,7 @@ export class OrgLensTrainingService {
 
     return {
       courseId: meta.courseId,
-      certificationName: courseName,
-      status: meta.status as OrgCertEmployeeStatus,
+      courseName,
       total: data.length,
       data,
     };
