@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Page, test } from '@playwright/test';
+import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
 const EMPTY_COUNTRIES_RESPONSE = { data: [] };
@@ -55,6 +56,8 @@ async function openDialogWithEmptyEvents(
   routeOptions: { probeTotal?: number; mainStatus?: number } = {}
 ) {
   await mockEventRoutes(page, routeOptions);
+  // Ensure "me" lens is active so lensRedirectGuard doesn't redirect to /foundation/events
+  await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: DEFAULT_LENS, domain: 'localhost', path: '/' }]);
   await page.goto('/me/events', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.getByTestId(`filter-pill-${tab}`).click();
