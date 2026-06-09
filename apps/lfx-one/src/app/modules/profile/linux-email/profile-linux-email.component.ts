@@ -4,7 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -29,6 +29,10 @@ export class ProfileLinuxEmailComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+
+  // Identities passed in from the parent (ProfileIdentitiesComponent) to avoid
+  // a duplicate getIdentities() fetch when both panels render on the same page.
+  public readonly identities = input<EnrichedIdentity[]>([]);
 
   // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
   private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
@@ -71,7 +75,8 @@ export class ProfileLinuxEmailComponent {
   // GitHub) are excluded since you can't forward email to them, and the claimed
   // alias is excluded since you can't forward an address to itself.
   public forwardOptions = computed((): LinuxForwardOption[] => {
-    const { alias, emails, identities } = this.data();
+    const { alias, emails } = this.data();
+    const identities = this.identities();
 
     const aliasEmail = alias?.email?.toLowerCase().trim();
     const seen = new Set<string>();
@@ -192,7 +197,6 @@ export class ProfileLinuxEmailComponent {
               .getLinuxAlias()
               .pipe(catchError(() => of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null }))),
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-            identities: this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))),
           }).pipe(
             tap(({ alias, emails }) => {
               this.applyFormDefaults(alias, emails);
@@ -202,7 +206,7 @@ export class ProfileLinuxEmailComponent {
           );
         })
       ),
-      { initialValue: { alias: null, emails: null, identities: [] } }
+      { initialValue: { alias: null, emails: null } }
     );
   }
 

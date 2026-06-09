@@ -68,6 +68,10 @@ export class ProfileIdentitiesComponent implements OnInit {
     () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
   );
 
+  // Raw EnrichedIdentity[] passed to ProfileLinuxEmailComponent to avoid a duplicate
+  // getIdentities() fetch when both panels render on the Identities tab.
+  public readonly enrichedIdentities: Signal<EnrichedIdentity[]> = computed(() => this.identitiesState().identities);
+
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);

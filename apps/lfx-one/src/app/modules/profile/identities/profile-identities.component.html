@@ -80,7 +80,7 @@
             You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.
           </p>
           <!-- Unverified card -->
-          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="unverified-identities-list">
+          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="unverified-identities-section">
             <div class="flex flex-col gap-0 divide-y divide-slate-100">
               @for (identity of unverifiedIdentities(); track identity.id) {
                 <div class="flex items-center justify-between px-4 py-3" [attr.data-testid]="'identity-row-' + identity.id">
@@ -91,7 +91,7 @@
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                   </div>
                   <div class="flex items-center gap-3">
-                    <lfx-button severity="primary" [outlined]="true" size="small" (onClick)="onVerify(identity)" data-testid="verify-identity-btn">
+                    <lfx-button severity="primary" [outlined]="true" size="small" (onClick)="onVerify(identity)" [attr.data-testid]="'verify-btn-' + identity.id">
                       Verify
                     </lfx-button>
                     <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onRemove(identity)" data-testid="reject-identity-btn">
@@ -115,7 +115,7 @@
             <div class="h-px flex-1 bg-slate-200"></div>
           </div>
           <!-- Verified card -->
-          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="verified-identities-list">
+          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="verified-identities-section">
             <div class="flex flex-col gap-0 divide-y divide-slate-100">
               @for (identity of verifiedIdentities(); track identity.id) {
                 <div class="flex items-center justify-between px-4 py-3" [attr.data-testid]="'identity-row-' + identity.id">
@@ -152,7 +152,7 @@
     <!-- Linux.com Email -->
     <div class="flex flex-col gap-5">
       <h2>Linux.com email</h2>
-      <lfx-profile-linux-email />
+      <lfx-profile-linux-email [identities]="enrichedIdentities()" />
     </div>
   </div>
 </div>

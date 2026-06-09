@@ -27,7 +27,6 @@ export type LinuxAliasState = 'not_purchased' | 'purchased_unclaimed' | 'claimed
 export interface LinuxEmailData {
   alias: LinuxAliasData | null;
   emails: EmailManagementData | null;
-  identities: EnrichedIdentity[];
 }
 
 /** Aggregate state returned by `GET /api/profile/linux-email`. */
