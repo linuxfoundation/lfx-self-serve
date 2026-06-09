@@ -95,6 +95,9 @@ function buildOrgsRouter(): Router {
     orgLensTrainingController.getCertificationEmployees(req, res, next)
   );
   router.get('/:orgUid/lens/training/certifications', (req, res, next) => orgLensTrainingController.getOrgCertifications(req, res, next));
+  // LFXV2-1897 — Trainings tab table + drill-down rosters.
+  router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));

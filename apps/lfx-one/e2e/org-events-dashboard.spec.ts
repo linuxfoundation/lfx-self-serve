@@ -6,7 +6,6 @@ import { expect, Page, test } from '@playwright/test';
 const ORG_EVENTS_URL = '/org/events';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
 
 test.setTimeout(120_000);
 
@@ -19,6 +18,17 @@ function skipWhenAuthMissing(page: Page): void {
   } catch {
     // Let malformed URLs fail naturally.
   }
+}
+
+async function seedSelectedOrgCookie(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: 'lfx-selected-account',
+      value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }),
+      domain: 'localhost',
+      path: '/',
+    },
+  ]);
 }
 
 async function stubOrgEventsRoutes(page: Page): Promise<void> {
@@ -36,11 +46,26 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
             accountName: 'Red Hat LLC',
             accountSlug: 'red-hat-llc',
             membershipTier: '',
-            uid: MOCK_UID,
+            uid: MOCK_ACCOUNT_ID,
           },
         ],
         isRootWriter: false,
       }),
+    })
+  );
+
+  await page.route('**/api/analytics/org-lens-account-context*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          accountId: MOCK_ACCOUNT_ID,
+          accountName: 'Red Hat LLC',
+          accountSlug: 'red-hat-llc',
+          membershipTier: 'Gold',
+        },
+      ]),
     })
   );
 
@@ -137,6 +162,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
 }
 
 async function gotoOrgEventsPage(page: Page): Promise<void> {
+  await seedSelectedOrgCookie(page);
   await stubOrgEventsRoutes(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -220,14 +246,14 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
-    await expect(page.getByTestId('event-attendees-drawer')).toBeVisible();
+    await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();
     await expect(page.getByTestId('event-attendee-0')).toBeVisible();
 
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('event-attendees-drawer')).not.toBeVisible();
+    await expect(page.getByTestId('event-attendees-drawer-title')).not.toBeVisible();
 
     await page.getByTestId('org-event-speakers-event-1').getByRole('button').click();
-    await expect(page.getByTestId('event-speakers-drawer')).toBeVisible();
+    await expect(page.getByTestId('event-speakers-drawer-title')).toBeVisible();
     await expect(page.getByTestId('event-speaker-0')).toBeVisible();
   });
 });
