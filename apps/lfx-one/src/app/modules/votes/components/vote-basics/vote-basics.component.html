@@ -128,7 +128,7 @@
             @if (form().get('close_date')?.touched && !form().get('close_date')?.value) {
               <p class="text-red-500 text-xs">Close date is required.</p>
             }
-            <p class="text-xs text-gray-400">The date when this {{ voteLabel.singular | lowercase }} will close and no longer accept responses.</p>
+            <p class="text-xs text-gray-400">Select a date after today when this {{ voteLabel.singular | lowercase }} will close and no longer accept responses.</p>
           </div>
         </div>
       </div>
