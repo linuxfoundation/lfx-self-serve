@@ -3,7 +3,9 @@
 
 import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_API_VERSION, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_GEO_RESOLVE_MAP, LINKEDIN_TARGETING_PROFILES } from '@lfx-one/shared/constants';
+import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+
+import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
