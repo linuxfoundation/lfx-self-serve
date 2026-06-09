@@ -5,9 +5,8 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
   OrgLensEmployeesResponse,
-  OrgMembershipBoardSeatsResponse,
-  OrgMembershipCommitteeSeatsResponse,
   OrgMembershipReassignSeatResponse,
+  OrgMembershipSeatsResponse,
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
 } from '@lfx-one/shared/interfaces';
@@ -25,16 +24,9 @@ import { Observable } from 'rxjs';
 export class OrgLensBoardCommitteeService {
   private readonly http = inject(HttpClient);
 
-  public getBoardSeats(orgUid: string, foundationId: string): Observable<OrgMembershipBoardSeatsResponse> {
-    return this.http.get<OrgMembershipBoardSeatsResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/board-seats`
-    );
-  }
-
-  public getCommitteeSeats(orgUid: string, foundationId: string): Observable<OrgMembershipCommitteeSeatsResponse> {
-    return this.http.get<OrgMembershipCommitteeSeatsResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/committee-seats`
-    );
+  /** Combined board + committee seats for one membership (single committee-service read, spec 026 TODO #1). */
+  public getSeats(orgUid: string, foundationId: string): Observable<OrgMembershipSeatsResponse> {
+    return this.http.get<OrgMembershipSeatsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/seats`);
   }
 
   public getVotingHistory(orgUid: string, foundationId: string): Observable<OrgMembershipVotingHistoryResponse> {

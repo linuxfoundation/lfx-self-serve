@@ -7,10 +7,9 @@ import type {
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
   KeyContactEmployee,
-  OrgMembershipBoardSeatsResponse,
-  OrgMembershipCommitteeSeatsResponse,
   OrgMembershipKeyContactPerson,
   OrgMembershipReassignSeatResponse,
+  OrgMembershipSeatsResponse,
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
 } from '@lfx-one/shared/interfaces';
@@ -20,29 +19,33 @@ import { Request } from 'express';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
+import { OrgLensMembershipsService } from './org-lens-memberships.service';
+import { ProjectService } from './project.service';
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly keyContactsService: OrgLensKeyContactsService;
+  private readonly projectService: ProjectService;
+  private readonly membershipsService: OrgLensMembershipsService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.keyContactsService = new OrgLensKeyContactsService();
+    this.projectService = new ProjectService();
+    this.membershipsService = new OrgLensMembershipsService();
   }
 
-  /** Board seats: live committee-service seats with `committee_category === "Board"`. */
-  public async getBoardSeats(req: Request, accountId: string, foundationId: string): Promise<OrgMembershipBoardSeatsResponse> {
-    const seats = await this.fetchOrgSeats(req, accountId);
+  /** Combined board + committee seats (spec 026, single-read perf follow-up): resolves the foundation family + drains committee-service once, splits Board vs committee by `committee_category` (FR-003); empty lists when the family can't resolve (never the org-wide roster). */
+  public async getSeats(req: Request, accountId: string, foundationId: string): Promise<OrgMembershipSeatsResponse> {
+    const projectUids = await this.resolveFamilyProjectUids(req, accountId, foundationId);
+    if (!projectUids?.length) {
+      return { accountId, foundationId, boardSeats: [], committeeSeats: [] };
+    }
+    const seats = await this.fetchOrgSeats(req, accountId, projectUids);
     const boardSeats = seats.filter((s) => s.committee_category === 'Board').map((s) => this.toBoardSeat(s));
-    return { accountId, foundationId, boardSeats };
-  }
-
-  /** Committee seats: live committee-service seats with `committee_category !== "Board"`. */
-  public async getCommitteeSeats(req: Request, accountId: string, foundationId: string): Promise<OrgMembershipCommitteeSeatsResponse> {
-    const seats = await this.fetchOrgSeats(req, accountId);
     const committeeSeats = seats.filter((s) => s.committee_category !== 'Board').map((s) => this.toCommitteeSeat(s));
-    return { accountId, foundationId, committeeSeats };
+    return { accountId, foundationId, boardSeats, committeeSeats };
   }
 
   /** Voting history is deferred (D12) with no live source — returns an empty list. */
@@ -137,20 +140,39 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
-  /** Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`). */
-  private async fetchOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
-    // TODO(spec 026 — perf follow-up): getBoardSeats + getCommitteeSeats both call this same upstream
-    // read, and the card fetches both on initial load, so a page load triggers TWO identical
-    // committee-service reads. Optimize via a single combined `GET .../seats` BFF endpoint (fetch once,
-    // split board vs committee in the client) or request-scoped coalescing. Deferred while the tab is
-    // WIP — the three-endpoint contract (FR-009) is kept for now.
-    // TODO(spec 026 T014): resolve the project family (ProjectService.getFoundationProjectUids) and pass
-    // project_uids so committee-service scopes seats to the foundation root + descendants; currently
-    // org-only scope (committee-service filters by organization_id + any project_uids it receives).
+  /** Resolve the membership's project family (foundation root + descendants) for seat scoping (spec 026 T007a): SFID → slug (getFoundationSlug) → uid (getProjectIdBySlug) → family (getFoundationProjectUids); `undefined` when unresolvable so callers return an EMPTY list, never the org-wide roster. */
+  private async resolveFamilyProjectUids(req: Request, orgUid: string, foundationId: string): Promise<string[] | undefined> {
+    try {
+      const slug = await this.membershipsService.getFoundationSlug(orgUid, foundationId);
+      if (!slug) {
+        return undefined;
+      }
+      const { exists, uid } = await this.projectService.getProjectIdBySlug(req, slug);
+      if (!exists || !uid) {
+        return undefined;
+      }
+      const family = await this.projectService.getFoundationProjectUids(req, uid);
+      return family.length ? family : undefined;
+    } catch (error) {
+      // Deliberate fail-soft (spec 026 decision): a resolution error degrades to an empty board (200),
+      // NOT a retryable 5xx — same outcome as "no match", so a project-metadata blip never leaks the
+      // org-wide roster nor 500s the tab. Trade-off: a transient outage shows an empty board.
+      logger.warning(req, 'get_org_committee_seats_proxy', 'project-family resolution failed; returning empty seat list', {
+        org_uid: orgUid,
+        foundation_id: foundationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /** Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`). The board/committee tabs always pass a resolved `projectUids` family (root + descendants, spec 026 T014); the org-wide call (no `projectUids`) is used ONLY by the Reassign people picker (`getOrgEmployees`), never by the seat tabs. */
+  private async fetchOrgSeats(req: Request, orgUid: string, projectUids?: string[]): Promise<CommitteeServiceOrgSeat[]> {
     const upstreamPath = `/committees/b2b-org/${orgUid}/seats`;
     logger.debug(req, 'get_org_committee_seats_proxy', 'Proxying org committee seats read to committee-service', {
       org_uid: orgUid,
       upstream_path: upstreamPath,
+      project_uids_count: projectUids?.length ?? 0,
     });
 
     // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and
@@ -161,7 +183,12 @@ export class OrgLensBoardCommitteeService {
     let pageToken: string | undefined;
     let pages = 0;
     do {
-      const params: Record<string, string> = { v: '1', page_size: '500' };
+      // ApiClientService serializes array params as repeated keys (project_uids=a&project_uids=b), which
+      // the committee-service read contract accepts (filters organization_id + project_uid ∈ {family}).
+      const params: Record<string, string | string[]> = { v: '1', page_size: '500' };
+      if (projectUids?.length) {
+        params['project_uids'] = projectUids;
+      }
       if (pageToken) {
         params['page_token'] = pageToken;
       }
@@ -231,14 +258,26 @@ export class OrgLensBoardCommitteeService {
   }
 
   private toPerson(s: CommitteeServiceOrgSeat): OrgMembershipKeyContactPerson {
-    const fullName = `${s.first_name} ${s.last_name}`.trim();
-    const initials = `${s.first_name.charAt(0)}${s.last_name.charAt(0)}`.toUpperCase();
+    const firstName = s.first_name ?? '';
+    const lastName = s.last_name ?? '';
+    const email = s.email ?? '';
+    const name = `${firstName} ${lastName}`.trim();
+    // Members added by email before their profile resolves have no name upstream — fall back to the email
+    // as the display name (and derive initials from it) so the row is identifiable instead of blank.
+    const fullName = name || email;
+    const nameInitials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    const initials =
+      nameInitials ||
+      email
+        .replace(/[^A-Za-z0-9]/g, '')
+        .slice(0, 2)
+        .toUpperCase();
     return {
       personId: s.uid,
-      firstName: s.first_name,
-      lastName: s.last_name,
+      firstName,
+      lastName,
       fullName,
-      email: s.email,
+      email,
       jobTitle: s.job_title ?? null,
       initials,
     };

@@ -1,27 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import type {
   BoardSeat,
   CommitteeSeat,
-  VotingRecord,
   SectionLoadState,
   ReassignSubmitEvent,
   ReassignBoardRolesDialogData,
   ReassignBoardRolesDialogResult,
   WhyCantEditDialogData,
   WhyCantEditDialogResult,
-  VotingRecordRow,
 } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { parseLocalDateString } from '@lfx-one/shared/utils';
 import { catchError, combineLatest, filter, of, Subject, take } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
@@ -55,18 +52,15 @@ export class BoardCommitteeCardComponent {
   // === Internal: per-section data + load state ===
   protected readonly boardSeats = signal<BoardSeat[]>([]);
   protected readonly committeeSeats = signal<CommitteeSeat[]>([]);
-  protected readonly votingHistory = signal<VotingRecord[]>([]);
 
   protected readonly boardState = signal<SectionLoadState>('idle');
   protected readonly committeeState = signal<SectionLoadState>('idle');
-  protected readonly votingState = signal<SectionLoadState>('idle');
 
   protected readonly initialLoading = computed(() => this.initInitialLoading());
 
   // === Accordion state ===
   protected readonly boardExpanded = signal(true);
   protected readonly committeeExpanded = signal(false);
-  protected readonly votingExpanded = signal(false);
 
   // === Search ===
   protected readonly searchTerm = signal('');
@@ -74,9 +68,6 @@ export class BoardCommitteeCardComponent {
   /** Filtered + ordered seats (FR-011 search, FR-017 ordering: committee A–Z then last name). */
   protected readonly filteredBoardSeats = computed(() => this.sortSeats(this.applyFilter(this.boardSeats())));
   protected readonly filteredCommitteeSeats = computed(() => this.sortSeats(this.applyFilter(this.committeeSeats())));
-
-  // === Pre-computed voting history with formatted date and chip class ===
-  protected readonly votingHistoryWithMeta: Signal<VotingRecordRow[]> = computed(() => this.initVotingHistoryWithMeta());
 
   // === Private subjects ===
   private readonly searchInput$ = new Subject<string>();
@@ -91,65 +82,29 @@ export class BoardCommitteeCardComponent {
 
   // === Fetch methods ===
   protected fetchAll(): void {
-    this.fetchBoard();
-    this.fetchCommittee();
-    this.fetchVoting();
+    this.fetchSeats();
   }
 
-  protected fetchBoard(): void {
+  /** Single combined read (spec 026 TODO #1): one committee-service round trip drives BOTH the board and committee sections. */
+  protected fetchSeats(): void {
     this.boardState.set('loading');
+    this.committeeState.set('loading');
     this.service
-      .getBoardSeats(this.orgUid(), this.foundationId())
+      .getSeats(this.orgUid(), this.foundationId())
       .pipe(
         catchError(() => {
           this.boardState.set('error');
-          return of(null);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((response) => {
-        if (response) {
-          this.boardSeats.set(response.boardSeats);
-          this.boardState.set('success');
-        }
-      });
-  }
-
-  protected fetchCommittee(): void {
-    this.committeeState.set('loading');
-    this.service
-      .getCommitteeSeats(this.orgUid(), this.foundationId())
-      .pipe(
-        catchError(() => {
           this.committeeState.set('error');
           return of(null);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((response) => {
-        if (response) {
-          this.committeeSeats.set(response.committeeSeats);
-          this.committeeState.set('success');
-        }
-      });
-  }
-
-  protected fetchVoting(): void {
-    this.votingState.set('loading');
-    this.service
-      .getVotingHistory(this.orgUid(), this.foundationId())
-      .pipe(
-        catchError(() => {
-          this.votingState.set('error');
-          return of(null);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((response) => {
-        if (response) {
-          this.votingHistory.set(response.votingHistory);
-          this.votingState.set('success');
-        }
+        if (!response) return;
+        this.boardSeats.set(response.boardSeats);
+        this.committeeSeats.set(response.committeeSeats);
+        this.boardState.set('success');
+        this.committeeState.set('success');
       });
   }
 
@@ -170,10 +125,6 @@ export class BoardCommitteeCardComponent {
 
   protected toggleCommittee(): void {
     this.committeeExpanded.update((v) => !v);
-  }
-
-  protected toggleVoting(): void {
-    this.votingExpanded.update((v) => !v);
   }
 
   // === Modal openers ===
@@ -259,7 +210,7 @@ export class BoardCommitteeCardComponent {
           summary: event.seatKind === 'board' ? 'Board roles reassigned' : 'Committee seat reassigned',
           life: 3000,
         });
-        this.refetchSeats(event.seatKind);
+        this.fetchSeats();
       });
   }
 
@@ -285,46 +236,7 @@ export class BoardCommitteeCardComponent {
 
   // === Private helpers ===
   private initInitialLoading(): boolean {
-    return (
-      (this.boardState() !== 'success' && this.boardState() !== 'error') ||
-      (this.committeeState() !== 'success' && this.committeeState() !== 'error') ||
-      (this.votingState() !== 'success' && this.votingState() !== 'error')
-    );
-  }
-
-  private initVotingHistoryWithMeta(): VotingRecordRow[] {
-    return this.votingHistory().map((v) => ({
-      ...v,
-      formattedDate: this.formatDate(v.date),
-      chipClass: this.voteChipClass(v.vote),
-    }));
-  }
-
-  private formatDate(dateString: string): string {
-    if (!dateString) return '—';
-    try {
-      return parseLocalDateString(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  }
-
-  private voteChipClass(vote: 'Yes' | 'No' | 'Abstain' | string): string {
-    switch (vote) {
-      case 'Yes':
-        return 'bg-green-100 text-green-800';
-      case 'No':
-        return 'bg-red-100 text-red-800';
-      case 'Abstain':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        console.warn('[board] unexpected vote value defensively rendered as gray chip:', vote);
-        return 'bg-gray-100 text-gray-600';
-    }
+    return (this.boardState() !== 'success' && this.boardState() !== 'error') || (this.committeeState() !== 'success' && this.committeeState() !== 'error');
   }
 
   private applyFilter<T extends BoardSeat | CommitteeSeat>(rows: T[]): T[] {
@@ -391,15 +303,6 @@ export class BoardCommitteeCardComponent {
       this.boardSeats.update((seats) => seats.map((s) => (s.seatId === seat.seatId ? (seat as BoardSeat) : s)));
     } else {
       this.committeeSeats.update((seats) => seats.map((s) => (s.seatId === seat.seatId ? (seat as CommitteeSeat) : s)));
-    }
-  }
-
-  /** Refetch the affected section after a successful reassignment (FR-009: no manual reload). */
-  private refetchSeats(kind: 'board' | 'committee'): void {
-    if (kind === 'board') {
-      this.fetchBoard();
-    } else {
-      this.fetchCommittee();
     }
   }
 }

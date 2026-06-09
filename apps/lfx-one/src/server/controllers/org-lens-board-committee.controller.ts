@@ -27,53 +27,26 @@ export class OrgLensBoardCommitteeController {
     this.service = new OrgLensBoardCommitteeService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/board-seats */
-  public async getBoardSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
+  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/seats — combined board + committee seats (single committee-service read, spec 026 TODO #1). */
+  public async getSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const foundationId = req.params['foundationId'];
-    const startTime = logger.startOperation(req, 'get_board_seats', {
+    const startTime = logger.startOperation(req, 'get_membership_seats', {
       org_uid: orgUid,
       foundation_id: foundationId,
     });
 
     try {
-      assertOrgUid(orgUid, 'get_board_seats');
-      this.assertFoundationId(foundationId, 'get_board_seats');
+      assertOrgUid(orgUid, 'get_membership_seats');
+      this.assertFoundationId(foundationId, 'get_membership_seats');
 
-      const response = await this.service.getBoardSeats(req, orgUid, foundationId);
+      const response = await this.service.getSeats(req, orgUid, foundationId);
 
-      logger.success(req, 'get_board_seats', startTime, {
+      logger.success(req, 'get_membership_seats', startTime, {
         org_uid: orgUid,
         foundation_id: foundationId,
-        row_count: response.boardSeats.length,
-      });
-
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/committee-seats */
-  public async getCommitteeSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const orgUid = req.params['orgUid'];
-    const foundationId = req.params['foundationId'];
-    const startTime = logger.startOperation(req, 'get_committee_seats', {
-      org_uid: orgUid,
-      foundation_id: foundationId,
-    });
-
-    try {
-      assertOrgUid(orgUid, 'get_committee_seats');
-      this.assertFoundationId(foundationId, 'get_committee_seats');
-
-      const response = await this.service.getCommitteeSeats(req, orgUid, foundationId);
-
-      logger.success(req, 'get_committee_seats', startTime, {
-        org_uid: orgUid,
-        foundation_id: foundationId,
-        row_count: response.committeeSeats.length,
+        board_count: response.boardSeats.length,
+        committee_count: response.committeeSeats.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

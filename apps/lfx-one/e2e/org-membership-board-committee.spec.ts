@@ -96,11 +96,6 @@ const COMMITTEE_SEATS = [
   },
 ];
 
-// Voting history is deferred (D12): the BFF always returns an empty list, so the stub matches that
-// behavior — a non-empty stub would mask empty-state UI issues. Shape (for reference) was:
-// { voteId, date, resolution, vote, outcome }.
-const VOTING_HISTORY: unknown[] = [];
-
 // Org-wide people picker (spec 026): the Reassign modal's email combobox is fed by
 // GET /api/orgs/:orgUid/lens/employees (key contacts + committee members, deduped).
 const EMPLOYEES = [
@@ -111,7 +106,6 @@ const EMPLOYEES = [
 interface StubOptions {
   board?: unknown[];
   committee?: unknown[];
-  voting?: unknown[];
   employees?: unknown[];
   reassignStatus?: number;
   employeesStatus?: number;
@@ -121,27 +115,13 @@ interface StubOptions {
 async function stubBoardCommittee(page: Page, opts: StubOptions = {}): Promise<void> {
   const board = opts.board ?? BOARD_SEATS;
   const committee = opts.committee ?? COMMITTEE_SEATS;
-  const voting = opts.voting ?? VOTING_HISTORY;
 
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/board-seats$/, (route) =>
+  // Combined board + committee seats (spec 026, single-read perf follow-up): one endpoint feeds both sections on load and refetch.
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/seats$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', boardSeats: board }),
-    })
-  );
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/committee-seats$/, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', committeeSeats: committee }),
-    })
-  );
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/memberships\/[^/]+\/voting-history$/, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', votingHistory: voting }),
+      body: JSON.stringify({ accountId: 'org-1', foundationId: 'sample-foundation', boardSeats: board, committeeSeats: committee }),
     })
   );
 

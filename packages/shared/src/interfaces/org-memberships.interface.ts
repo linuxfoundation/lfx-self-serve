@@ -287,17 +287,11 @@ export interface CommitteeServiceOrgSeatPage {
   page_token?: string | null;
 }
 
-/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/board-seats`. */
-export interface OrgMembershipBoardSeatsResponse {
+/** Spec 026: combined board + committee seats for one membership (single committee-service read, split client-side) — envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/seats`. */
+export interface OrgMembershipSeatsResponse {
   accountId: string;
   foundationId: string;
   boardSeats: BoardSeat[];
-}
-
-/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/committee-seats`. */
-export interface OrgMembershipCommitteeSeatsResponse {
-  accountId: string;
-  foundationId: string;
   committeeSeats: CommitteeSeat[];
 }
 
