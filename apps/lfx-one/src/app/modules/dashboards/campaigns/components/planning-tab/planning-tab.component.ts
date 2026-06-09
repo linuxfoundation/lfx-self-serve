@@ -106,8 +106,9 @@ export class PlanningTabComponent implements OnInit {
     const copy = this.structuredCopy();
     if (!copy) return null;
     const nested = copy['platforms'] as Record<string, unknown> | undefined;
-    const liData = (copy['linkedin_sponsored'] as Record<string, unknown>) ?? (nested?.['linkedin_sponsored'] as Record<string, unknown>) ?? null;
-    if (!liData) return null;
+    const raw = copy['linkedin_sponsored'] ?? nested?.['linkedin_sponsored'] ?? null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const liData = raw as Record<string, unknown>;
 
     const rawVariants = Array.isArray(liData['variants']) ? (liData['variants'] as unknown[]) : [];
     const str = (obj: Record<string, unknown>, ...keys: string[]): string => {
@@ -124,11 +125,24 @@ export class PlanningTabComponent implements OnInit {
         imageUrn: str(v, 'image_urn', 'imageUrn') || undefined,
       }));
 
-    const rawGeos = liData['recommended_geos'];
-    const geoNames = Array.isArray(rawGeos) ? rawGeos.filter((g): g is string => typeof g === 'string').map((g) => g.trim().slice(0, 100)) : [];
-    const resolvedGeos: LinkedInGeoTarget[] = geoNames
-      .map((name) => LINKEDIN_GEO_RESOLVE_MAP[name.toLowerCase()])
-      .filter((geo): geo is LinkedInGeoTarget => geo != null);
+    const rawResolved = liData['resolved_geo_targets'];
+    const serverGeos: LinkedInGeoTarget[] = Array.isArray(rawResolved)
+      ? rawResolved.filter(
+          (g): g is LinkedInGeoTarget =>
+            g != null &&
+            typeof g === 'object' &&
+            typeof (g as Record<string, unknown>)['label'] === 'string' &&
+            typeof (g as Record<string, unknown>)['urn'] === 'string'
+        )
+      : [];
+    let resolvedGeos: LinkedInGeoTarget[];
+    if (serverGeos.length > 0) {
+      resolvedGeos = serverGeos;
+    } else {
+      const rawGeos = liData['recommended_geos'];
+      const geoNames = Array.isArray(rawGeos) ? rawGeos.filter((g): g is string => typeof g === 'string').map((g) => g.trim().slice(0, 100)) : [];
+      resolvedGeos = geoNames.map((name) => LINKEDIN_GEO_RESOLVE_MAP[name.toLowerCase()]).filter((geo): geo is LinkedInGeoTarget => geo != null);
+    }
     const VALID_PROFILES: readonly LinkedInTargetingProfile[] = ['cloud-native', 'mcp', 'custom'];
     const rawProfile = liData['recommended_targeting_profile'];
     const profile: LinkedInTargetingProfile =

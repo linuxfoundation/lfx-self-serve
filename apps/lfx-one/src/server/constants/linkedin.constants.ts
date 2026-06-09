@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
+import type { LinkedInTargetingProfileConfig } from '@lfx-one/shared/interfaces';
 
 // ---------------------------------------------------------------------------
 // LinkedIn Ads — Server-Only Constants
@@ -10,13 +10,6 @@ import type { LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 // URNs, and targeting URN lists that must NOT ship to the client bundle.
 // UI-safe constants (geo resolve map, char limits) remain in @lfx-one/shared.
 // ---------------------------------------------------------------------------
-
-export interface LinkedInTargetingProfileConfig {
-  id: LinkedInTargetingProfile;
-  label: string;
-  skills: readonly string[];
-  groups: readonly string[];
-}
 
 export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; orgId: string }[] = [
   { accountId: '538170226', label: 'The Linux Foundation', orgId: '208777' },

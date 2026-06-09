@@ -114,8 +114,8 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-// NOTE: LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES,
-// and LinkedInTargetingProfileConfig live in apps/lfx-one/src/server/constants/linkedin.constants.ts
+// NOTE: LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, and LINKEDIN_TARGETING_PROFILES
+// live in apps/lfx-one/src/server/constants/linkedin.constants.ts
 // to keep ad-account IDs, org IDs, and targeting URNs out of the client bundle.
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
