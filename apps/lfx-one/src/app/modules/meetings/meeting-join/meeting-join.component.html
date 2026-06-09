@@ -312,20 +312,7 @@
 
               <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
               @if (canJoinMeeting() && authenticated()) {
-                @if (isLoadingJoinUrl() && !showGuestForm()) {
-                  <div class="w-full md:w-[296px]">
-                    <lfx-button
-                      styleClass="w-full h-[40px]"
-                      label="Join Meeting"
-                      icon="fa-light fa-video"
-                      severity="success"
-                      size="large"
-                      [loading]="true"
-                      [disabled]="true"
-                      [attr.data-testid]="'join-meeting-button-loading'">
-                    </lfx-button>
-                  </div>
-                } @else if (fetchedJoinUrl() && !showGuestForm()) {
+                @if (fetchedJoinUrl() && !showGuestForm()) {
                   <div class="w-full md:w-[296px]">
                     <lfx-button
                       styleClass="w-full h-[40px]"
@@ -359,6 +346,22 @@
                         >
                       }
                     </div>
+                  </div>
+                } @else if (!showGuestForm()) {
+                  <!-- Disabled+loading is the default while the join URL is resolving.
+                       Placed last so it renders at SSR first paint (no join URL or error yet)
+                       rather than depending on the client-only isLoadingJoinUrl signal. -->
+                  <div class="w-full md:w-[296px]">
+                    <lfx-button
+                      styleClass="w-full h-[40px]"
+                      label="Join Meeting"
+                      icon="fa-light fa-video"
+                      severity="success"
+                      size="large"
+                      [loading]="true"
+                      [disabled]="true"
+                      [attr.data-testid]="'join-meeting-button-loading'">
+                    </lfx-button>
                   </div>
                 }
               } @else if (authenticated() && !isPastMeeting() && meeting().organizer) {

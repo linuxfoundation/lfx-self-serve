@@ -2,4 +2,5 @@
 // SPDX-License-Identifier: MIT
 
 export * from './gateway.constants';
+export * from './linkedin.constants';
 export * from './rewards.constants';
