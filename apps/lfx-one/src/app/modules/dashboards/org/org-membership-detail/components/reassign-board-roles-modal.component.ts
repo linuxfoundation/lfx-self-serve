@@ -60,7 +60,7 @@ export class ReassignBoardRolesModalComponent {
     const currentEmail = this.currentMember()?.email?.trim().toLowerCase() ?? '';
     return this.employees()
       .filter((e) => e.email.trim().toLowerCase() !== currentEmail)
-      .filter((e) => e.email.includes(query) || e.fullName.toLowerCase().includes(query))
+      .filter((e) => e.email.trim().toLowerCase().includes(query) || e.fullName.toLowerCase().includes(query))
       .slice(0, 8);
   });
 
