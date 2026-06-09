@@ -58,6 +58,7 @@ interface OrgRosterEmployeeRow {
   NAME: string | null;
   JOB_TITLE: string | null;
   COURSE_NAME: string | null;
+  TOTAL_MATCHES: number;
 }
 
 interface OrgRosterEmployeesResult {
@@ -292,7 +293,8 @@ export class OrgLensTrainingService {
         p.PERSON_KEY        AS CONTACT_ID,
         p.NAME              AS NAME,
         p.TITLE             AS JOB_TITLE,
-        MAX(t.COURSE_NAME)  AS COURSE_NAME
+        MAX(t.COURSE_NAME)  AS COURSE_NAME,
+        COUNT(*) OVER ()    AS TOTAL_MATCHES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
       INNER JOIN course_dim d
         ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
@@ -342,7 +344,8 @@ export class OrgLensTrainingService {
         p.PERSON_KEY        AS CONTACT_ID,
         p.NAME              AS NAME,
         p.TITLE             AS JOB_TITLE,
-        MAX(t.COURSE_NAME)  AS COURSE_NAME
+        MAX(t.COURSE_NAME)  AS COURSE_NAME,
+        COUNT(*) OVER ()    AS TOTAL_MATCHES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES t
       JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
         ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
@@ -427,18 +430,19 @@ export class OrgLensTrainingService {
 
     const result = await this.snowflakeService.execute<OrgRosterEmployeeRow>(sql, queryBinds);
     const courseName = result.rows[0]?.COURSE_NAME ?? '';
+    const total = result.rows[0]?.TOTAL_MATCHES ?? 0;
     const data: OrgCertEmployee[] = result.rows.map((row) => ({
       contactId: row.CONTACT_ID,
       name: row.NAME ?? row.CONTACT_ID,
       jobTitle: row.JOB_TITLE ?? null,
     }));
 
-    logger.debug(req, operation, 'Fetched roster employees', { count: data.length, course_id: meta.courseId });
+    logger.debug(req, operation, 'Fetched roster employees', { count: data.length, total, course_id: meta.courseId });
 
     return {
       courseId: meta.courseId,
       courseName,
-      total: data.length,
+      total,
       data,
     };
   }
