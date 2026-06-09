@@ -6,4 +6,64 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+
+  /* CSS custom properties cascade to all child components */
+  --rail: #002741;
+  --blue: #009aff;
+  --blue-600: #0086e0;
+  --blue-50: #ecf4ff;
+  --blue-100: #dbe9ff;
+  --green: #22c55e;
+  --green-bg: #e9f9ef;
+  --red: #e5484d;
+  --red-bg: #fdeced;
+  --amber: #c2820a;
+  --amber-bg: #fdf3e3;
+  --ink: #0f172b;
+  --g950: #030712;
+  --g700: #314158;
+  --g600: #45556c;
+  --g500: #62748e;
+  --g400: #90a1b9;
+  --g300: #cad5e2;
+  --g200: #e2e8f0;
+  --g100: #f1f5f9;
+  --g50: #f8fafc;
+  --white: #fff;
+  --border: #e2e8f0;
+}
+
+.osp-tabbar {
+  display: flex;
+  gap: 8px;
+}
+
+.osp-pgtab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 15px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #62748e;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.osp-pgtab:hover {
+  color: #314158;
+}
+
+.osp-pgtab.on {
+  color: #009aff;
+  border-bottom-color: #009aff;
+}
+
+.osp-pgtab svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
 }

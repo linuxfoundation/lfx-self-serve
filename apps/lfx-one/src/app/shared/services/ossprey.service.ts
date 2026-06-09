@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { OsspreyPackage, OsspreyStats } from '@lfx-one/shared/interfaces';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, of, catchError } from 'rxjs';
+import { OsspreyListParams, OsspreyPackage, OsspreyPackagesResponse } from '@lfx-one/shared/interfaces';
 
 @Injectable({
   providedIn: 'root',
@@ -12,245 +12,32 @@ import { OsspreyPackage, OsspreyStats } from '@lfx-one/shared/interfaces';
 export class OsspreyService {
   private readonly http = inject(HttpClient);
 
-  private readonly mockPackages: OsspreyPackage[] = [
-    {
-      id: 'lodash',
-      name: 'lodash',
-      purl: 'pkg:npm/lodash',
-      ecosystem: 'npm',
-      lifecycle: 'declining',
-      healthScore: 52,
-      impactScore: 94,
-      busFactor: 1,
-      monthsStale: 24,
-      vulnCount: 0,
-      vulnSeverity: null,
-      status: 'unassigned',
-      stewardIds: [],
-      lastActivityLabel: 'Synced May 28',
-      lastActivityTime: '',
-      weeklyDownloads: '52,142,891',
-      dependentCount: '142,312',
-      directDependentCount: '39,104',
-      scoreCardScore: '5.2 / 10',
-      lastRelease: '2021-02-20 (5y ago)',
-      lastCommit: '2024-09-14',
-      repoUrl: 'github.com/lodash/lodash',
-      supplyChainMapping: 'High',
-      provenance: 'None',
-      hasSecurityMd: false,
-      ecosystemReach: 'Top 0.01%',
-      contactGroup: null,
-      healthBreakdown: ['15 / 40', '22 / 35', '15 / 25'],
-      assessment: null,
-      advisories: [],
-      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
-    },
-    {
-      id: 'chalk',
-      name: 'chalk',
-      purl: 'pkg:npm/chalk',
-      ecosystem: 'npm',
-      lifecycle: 'stable',
-      healthScore: 72,
-      impactScore: 76,
-      busFactor: 2,
-      monthsStale: 6,
-      vulnCount: 0,
-      vulnSeverity: null,
-      status: 'unassigned',
-      stewardIds: [],
-      lastActivityLabel: 'Synced May 28',
-      lastActivityTime: '',
-      weeklyDownloads: '201,884,002',
-      dependentCount: '88,901',
-      directDependentCount: '61,200',
-      scoreCardScore: '6.8 / 10',
-      lastRelease: '2024-12-01',
-      lastCommit: '2025-03-02',
-      repoUrl: 'github.com/chalk/chalk',
-      supplyChainMapping: 'High',
-      provenance: 'Partial',
-      hasSecurityMd: true,
-      ecosystemReach: 'Top 0.05%',
-      contactGroup: null,
-      healthBreakdown: ['28 / 40', '26 / 35', '18 / 25'],
-      assessment: null,
-      advisories: [],
-      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
-    },
-    {
-      id: 'debug',
-      name: 'debug',
-      purl: 'pkg:npm/debug',
-      ecosystem: 'npm',
-      lifecycle: 'declining',
-      healthScore: 42,
-      impactScore: 96,
-      busFactor: 1,
-      monthsStale: 20,
-      vulnCount: 1,
-      vulnSeverity: 'medium',
-      status: 'unassigned',
-      stewardIds: [],
-      lastActivityLabel: 'Synced May 28',
-      lastActivityTime: '',
-      weeklyDownloads: '330,000,120',
-      dependentCount: '120,400',
-      directDependentCount: '80,110',
-      scoreCardScore: '4.9 / 10',
-      lastRelease: '2023-01-10',
-      lastCommit: '2023-05-18',
-      repoUrl: 'github.com/debug-js/debug',
-      supplyChainMapping: 'High',
-      provenance: 'None',
-      hasSecurityMd: false,
-      ecosystemReach: 'Top 0.01%',
-      contactGroup: null,
-      healthBreakdown: ['12 / 40', '20 / 35', '10 / 25'],
-      assessment: null,
-      advisories: [
-        {
-          id: 'GHSA-xxxx-debug',
-          severity: 'medium',
-          description: 'ReDoS in formatter',
-          state: 'Open',
-        },
-      ],
-      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
-    },
-    {
-      id: 'express',
-      name: 'express',
-      purl: 'pkg:npm/express',
-      ecosystem: 'npm',
-      lifecycle: 'stable',
-      healthScore: 81,
-      impactScore: 99,
-      busFactor: 3,
-      monthsStale: 2,
-      vulnCount: 0,
-      vulnSeverity: null,
-      status: 'active',
-      stewardIds: ['apache'],
-      lastActivityLabel: 'Synced Jun 6',
-      lastActivityTime: '',
-      weeklyDownloads: '26,419,231',
-      dependentCount: '215,401',
-      directDependentCount: '92,314',
-      scoreCardScore: '7.4 / 10',
-      lastRelease: '2024-10-15',
-      lastCommit: '2025-03-05',
-      repoUrl: 'github.com/expressjs/express',
-      supplyChainMapping: 'High',
-      provenance: 'Full',
-      hasSecurityMd: true,
-      ecosystemReach: 'Top 0.001%',
-      contactGroup: null,
-      healthBreakdown: ['34 / 40', '30 / 35', '17 / 25'],
-      assessment: null,
-      advisories: [],
-      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
-    },
-    {
-      id: 'log4j',
-      name: 'log4j',
-      purl: 'pkg:maven/org.apache.logging.log4j/log4j-core',
-      ecosystem: 'maven',
-      lifecycle: 'stable',
-      healthScore: 68,
-      impactScore: 98,
-      busFactor: 2,
-      monthsStale: 1,
-      vulnCount: 2,
-      vulnSeverity: 'critical',
-      status: 'needs_attention',
-      stewardIds: ['apache'],
-      lastActivityLabel: 'Synced Jun 5',
-      lastActivityTime: '',
-      weeklyDownloads: '8,923,401',
-      dependentCount: '45,213',
-      directDependentCount: '12,401',
-      scoreCardScore: '6.9 / 10',
-      lastRelease: '2025-02-28',
-      lastCommit: '2025-03-04',
-      repoUrl: 'github.com/apache/logging-log4j2',
-      supplyChainMapping: 'High',
-      provenance: 'Full',
-      hasSecurityMd: true,
-      ecosystemReach: 'Top 0.001%',
-      contactGroup: null,
-      healthBreakdown: ['26 / 40', '28 / 35', '14 / 25'],
-      assessment: null,
-      advisories: [
-        {
-          id: 'CVE-2024-50379',
-          severity: 'critical',
-          description: 'Remote code execution in PatternLayout',
-          state: 'Open',
-        },
-        {
-          id: 'CVE-2023-44487',
-          severity: 'high',
-          description: 'HTTP/2 Rapid Reset attack',
-          state: 'Patched',
-        },
-      ],
-      history: [{ label: 'Escalated from review queue', timeAgo: 'Jun 4', type: 'danger' as const }],
-    },
-    {
-      id: 'guava',
-      name: 'guava',
-      purl: 'pkg:maven/com.google.guava/guava',
-      ecosystem: 'maven',
-      lifecycle: 'active',
-      healthScore: 85,
-      impactScore: 92,
-      busFactor: 4,
-      monthsStale: 0,
-      vulnCount: 0,
-      vulnSeverity: null,
-      status: 'active',
-      stewardIds: ['ericsson', 'dell'],
-      lastActivityLabel: 'Synced Jun 6',
-      lastActivityTime: '',
-      weeklyDownloads: '5,421,302',
-      dependentCount: '123,412',
-      directDependentCount: '34,521',
-      scoreCardScore: '8.1 / 10',
-      lastRelease: '2025-02-15',
-      lastCommit: '2025-03-06',
-      repoUrl: 'github.com/google/guava',
-      supplyChainMapping: 'High',
-      provenance: 'Full',
-      hasSecurityMd: true,
-      ecosystemReach: 'Top 0.01%',
-      contactGroup: null,
-      healthBreakdown: ['33 / 40', '31 / 35', '21 / 25'],
-      assessment: null,
-      advisories: [],
-      history: [{ label: 'Imported from Insights/CDP critical set', timeAgo: 'May 28' }],
-    },
-  ];
-
-  public getPackages(): Observable<OsspreyPackage[]> {
-    return of(this.mockPackages);
+  public getPackages(params?: OsspreyListParams): Observable<OsspreyPackagesResponse> {
+    let httpParams = new HttpParams();
+    if (params) {
+      if (params.sort) httpParams = httpParams.set('sort', params.sort);
+      if (params.status) httpParams = httpParams.set('status', params.status);
+      if (params.ecosystem) httpParams = httpParams.set('ecosystem', params.ecosystem);
+      if (params.lifecycle) httpParams = httpParams.set('lifecycle', params.lifecycle);
+      if (params.healthBand) httpParams = httpParams.set('healthBand', params.healthBand);
+      if (params.vulnFilter) httpParams = httpParams.set('vulnFilter', params.vulnFilter);
+      if (params.search) httpParams = httpParams.set('search', params.search);
+      if (params.cursor) httpParams = httpParams.set('cursor', params.cursor);
+      if (params.limit) httpParams = httpParams.set('limit', String(params.limit));
+    }
+    return this.http.get<OsspreyPackagesResponse>('/api/ossprey/packages', { params: httpParams });
   }
 
-  public getPackage(id: string): Observable<OsspreyPackage | null> {
-    const pkg = this.mockPackages.find((p) => p.id === id);
-    return of(pkg || null);
+  public getStewardName(id: string): string {
+    return id;
   }
 
-  public getStats(): Observable<OsspreyStats> {
-    const stats: OsspreyStats = {
-      totalPackages: this.mockPackages.length,
-      coveragePct: 67,
-      activeStewards: 3,
-      unassignedCritical: 1,
-      needsAttention: 1,
-      escalated: 0,
-    };
-    return of(stats);
+  public getPackage(purl: string): Observable<OsspreyPackage | null> {
+    return this.http.get<OsspreyPackage>(`/api/ossprey/packages/${encodeURIComponent(purl)}`).pipe(
+      catchError((err) => {
+        if (err.status === 404) return of(null);
+        throw err;
+      })
+    );
   }
 }

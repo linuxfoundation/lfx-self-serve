@@ -136,7 +136,7 @@ export class MainLayoutComponent {
       items: [
         {
           label: 'OSSPREY Program',
-          icon: 'fa-light fa-radar',
+          icon: 'fa-light fa-shield-halved',
           routerLink: '/ossprey',
         },
       ],
