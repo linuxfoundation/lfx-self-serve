@@ -177,12 +177,9 @@ export class ProfileLinuxEmailComponent {
   }
 
   private initForwardDirty(): Signal<boolean> {
-    return toSignal(
-      this.editForm.controls.forwardTo.valueChanges.pipe(
-        map((value) => (value ?? '').toLowerCase().trim() !== this.savedForwardTo())
-      ),
-      { initialValue: false }
-    );
+    return toSignal(this.editForm.controls.forwardTo.valueChanges.pipe(map((value) => (value ?? '').toLowerCase().trim() !== this.savedForwardTo())), {
+      initialValue: false,
+    });
   }
 
   private initData(): Signal<LinuxEmailData> {
