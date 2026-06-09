@@ -18,6 +18,7 @@ router.delete('/payment-method', (req, res, next) => crowdfundingController.dele
 router.get('/donation-stats', (req, res, next) => crowdfundingController.getMyDonationStats(req, res, next));
 router.get('/recurring-donations', (req, res, next) => crowdfundingController.getMyRecurringDonations(req, res, next));
 router.get('/my-donations', (req, res, next) => crowdfundingController.getMyDonations(req, res, next));
+router.delete('/subscriptions/:id', (req, res, next) => crowdfundingController.cancelSubscription(req, res, next));
 router.get('/initiatives-stats', (req, res, next) => crowdfundingController.getInitiativesStats(req, res, next));
 router.get('/initiatives', (req, res, next) => crowdfundingController.getMyInitiatives(req, res, next));
 router.get('/initiatives/:slug/transactions', (req, res, next) => crowdfundingController.getInitiativeTransactions(req, res, next));

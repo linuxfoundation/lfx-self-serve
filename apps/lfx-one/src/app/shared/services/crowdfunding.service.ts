@@ -100,6 +100,10 @@ export class CrowdfundingService {
     );
   }
 
+  public cancelSubscription(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
+  }
+
   public getInitiativeTransactions(
     slug: string,
     params?: { type?: 'donations' | 'expenses'; size?: number; from?: number }

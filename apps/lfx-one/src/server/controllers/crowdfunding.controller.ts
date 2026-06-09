@@ -187,6 +187,30 @@ export class CrowdfundingController {
     }
   }
 
+  // DELETE /api/crowdfunding/subscriptions/:id
+  public async cancelSubscription(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'cancel_subscription');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'cancel_subscription' });
+      }
+
+      const { id } = req.params;
+      if (!id || !id.trim()) {
+        throw ServiceValidationError.forField('id', 'Subscription id is required', { operation: 'cancel_subscription' });
+      }
+
+      await this.crowdfundingService.cancelSubscription(req, id.trim());
+
+      logger.success(req, 'cancel_subscription', startTime, { subscriptionId: id });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug (public endpoint). */
   public async getInitiativeBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');

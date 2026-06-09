@@ -2,20 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
-import { MyDonation, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS } from '@lfx-one/shared/constants';
+import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse } from '@lfx-one/shared/interfaces';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS } from '@lfx-one/shared/constants';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
 import { DonationsStatsBarComponent } from './components/donations-stats-bar/donations-stats-bar.component';
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { RecurringDonationsListComponent } from './components/recurring-donations-list/recurring-donations-list.component';
-import { Subject } from 'rxjs';
-import { concatMap, map, scan, startWith } from 'rxjs/operators';
+import { BehaviorSubject } from 'rxjs';
+import { map, scan, switchMap } from 'rxjs/operators';
 
 const EMPTY_RECURRING: RecurringDonation[] = [];
-const EMPTY_HISTORY_STATE = { items: [] as MyDonation[], hasMore: false };
 
 @Component({
   selector: 'lfx-my-donations',
@@ -34,45 +33,33 @@ export class MyDonationsComponent {
   // TODO: derive from API response once cancelled-recurring concept is implemented
   protected readonly cancelledCount = signal(0);
 
-  // ─── Pagination Driver ────────────────────────────────────────────────────
-  private readonly loadMore$ = new Subject<void>();
+  // ─── Pagination Drivers ───────────────────────────────────────────────────
+  private readonly recurringRefresh$ = new BehaviorSubject<void>(undefined);
+  private readonly donationHistoryOffset = signal(0);
 
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly stats: Signal<DonationStats> = this.initStats();
   protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initRecurringDonations();
   private readonly paymentMethod: Signal<PaymentMethod | null> = this.initPaymentMethod();
   protected readonly paymentMethods = computed(() => (this.paymentMethod() ? [this.paymentMethod()!] : []));
-  private readonly donationHistoryState: Signal<{ items: MyDonation[]; hasMore: boolean }> = this.initDonationHistory();
-  protected readonly donationHistory = computed(() => this.donationHistoryState().items);
-  protected readonly donationHistoryHasMore = computed(() => this.donationHistoryState().hasMore);
+  private readonly donationHistoryState: Signal<MyDonationsResponse> = this.initDonationHistory();
+  protected readonly donationHistory = computed(() => this.donationHistoryState().data);
+  protected readonly donationHistoryHasMore = computed(() => this.donationHistoryState().data.length < this.donationHistoryState().total);
 
   // ─── Protected Methods ────────────────────────────────────────────────────
   protected onLoadMoreDonations(): void {
-    this.loadMore$.next();
+    this.donationHistoryOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
   }
 
   protected onViewCancelled(): void {
     // TODO: navigate to cancelled donations view
   }
 
-  protected onChangeAmount(donation: RecurringDonation): void {
-    // TODO: open change amount dialog for donation
-    void donation;
-  }
-
-  protected onPauseDonation(donation: RecurringDonation): void {
-    // TODO: call pause API for donation
-    void donation;
-  }
-
-  protected onResumeDonation(donation: RecurringDonation): void {
-    // TODO: call resume API for donation
-    void donation;
-  }
-
   protected onCancelDonation(donation: RecurringDonation): void {
-    // TODO: call cancel API for donation
-    void donation;
+    this.crowdfundingService.cancelSubscription(donation.id).subscribe({
+      next: () => this.recurringRefresh$.next(),
+      error: (err) => console.error('[MyDonationsComponent] cancelSubscription failed', err),
+    });
   }
 
   protected onRemoveCard(card: PaymentMethod): void {
@@ -90,28 +77,22 @@ export class MyDonationsComponent {
   }
 
   private initRecurringDonations(): Signal<RecurringDonation[]> {
-    return toSignal(this.crowdfundingService.getMyRecurringDonations().pipe(map((res: RecurringDonationsResponse) => res.data)), {
-      initialValue: EMPTY_RECURRING,
-    });
+    return toSignal(
+      this.recurringRefresh$.pipe(
+        switchMap(() => this.crowdfundingService.getMyRecurringDonations()),
+        map((res: RecurringDonationsResponse) => res.data)
+      ),
+      { initialValue: EMPTY_RECURRING }
+    );
   }
 
-  private initDonationHistory(): Signal<{ items: MyDonation[]; hasMore: boolean }> {
+  private initDonationHistory(): Signal<MyDonationsResponse> {
     return toSignal(
-      this.loadMore$.pipe(
-        startWith(undefined as void),
-        scan((page) => page + 1, -1),
-        concatMap((page) =>
-          this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: page * DEFAULT_CROWDFUNDING_PAGE_SIZE })
-        ),
-        scan(
-          (acc, res) => ({
-            items: [...acc.items, ...res.data],
-            hasMore: acc.items.length + res.data.length < res.total,
-          }),
-          EMPTY_HISTORY_STATE
-        )
+      toObservable(this.donationHistoryOffset).pipe(
+        switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
+        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS)
       ),
-      { initialValue: EMPTY_HISTORY_STATE }
+      { initialValue: EMPTY_MY_DONATIONS }
     );
   }
 }

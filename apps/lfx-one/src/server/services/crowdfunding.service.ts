@@ -296,6 +296,43 @@ export class CrowdfundingService {
     return { data: raw.data.map(mapCfDonationToMyDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
+  public async cancelSubscription(req: Request, subscriptionId: string): Promise<void> {
+    const startTime = logger.startOperation(req, 'cf_cancel_subscription', { subscriptionId });
+
+    const token = req.crowdfundingToken;
+    if (!token) {
+      throw new MicroserviceError('No crowdfunding token available for cancelSubscription', 401, 'CF_UNAUTHENTICATED', {
+        operation: 'cancelSubscription',
+        service: 'crowdfunding',
+      });
+    }
+
+    const baseUrl = cfBaseUrl();
+    if (!baseUrl) {
+      throw new MicroserviceError('CROWDFUNDING_API_BASE_URL is not configured — cannot call cancelSubscription', 503, 'CF_MISCONFIGURED', {
+        operation: 'cancelSubscription',
+        service: 'crowdfunding',
+      });
+    }
+
+    const response = await fetch(`${baseUrl}/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new MicroserviceError(`CF API cancelSubscription returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
+        operation: 'cancelSubscription',
+        service: 'crowdfunding',
+        path: `/v1/subscriptions/${subscriptionId}`,
+        errorBody: text,
+      });
+    }
+
+    logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
+  }
+
   public async getInitiativeTransactions(
     req: Request,
     slug: string,
