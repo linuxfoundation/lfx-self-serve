@@ -59,12 +59,18 @@ export class ValkeyService implements CachePort {
     return this.client !== null;
   }
 
-  public async getJson<T>(key: string): Promise<T | null> {
+  public async getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null> {
     if (!this.client) return null;
     try {
       const raw = await this.withTimeout(this.client.get(key));
       if (raw === null) return null;
-      return JSON.parse(raw) as T;
+      const parsed = JSON.parse(raw);
+      // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
+      if (accept && !accept(parsed)) {
+        logger.warning(undefined, 'valkey_get', 'Cached value failed shape check — treating as miss', { cache_key: key });
+        return null;
+      }
+      return parsed as T;
     } catch (err) {
       logger.warning(undefined, 'valkey_get', 'Cache read failed — falling back to source', { err, cache_key: key });
       return null;
@@ -87,14 +93,14 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>): Promise<T> {
+  public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
       logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', { cache_key: key ?? undefined });
       return fetcher();
     }
 
-    const hit = await this.getJson<T>(key);
+    const hit = await this.getJson<T>(key, accept);
     if (hit !== null) {
       logger.debug(undefined, 'cache_hit', 'Cache hit', { cache_key: key });
       return hit;

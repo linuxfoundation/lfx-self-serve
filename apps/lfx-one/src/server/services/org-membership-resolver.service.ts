@@ -93,7 +93,9 @@ export class OrgMembershipResolverService {
     }
 
     // Shared, cross-instance read-through cache; fail-soft (cache faults fall back to a direct fetch).
-    const promise = valkeyService.withCache(cacheKey, VALKEY_CACHE.ORG_MEMBERSHIP_TTL_SECONDS, () => this.runMembershipFetch(req, b2bOrgUid, slug));
+    // The Array.isArray guard rejects a corrupt/legacy cache entry as a miss so a bad value can never
+    // reach resolveContext()'s .filter() and turn a cache hit into a 500.
+    const promise = valkeyService.withCache(cacheKey, VALKEY_CACHE.ORG_MEMBERSHIP_TTL_SECONDS, () => this.runMembershipFetch(req, b2bOrgUid, slug), Array.isArray);
 
     OrgMembershipResolverService.membershipsInFlight.set(cacheKey, promise);
     try {

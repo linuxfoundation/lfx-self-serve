@@ -28,6 +28,11 @@ import { valkeyService } from './valkey.service';
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
+  // Per-process coalescing of concurrent identical reads, keyed by the username-bound cache key, so a
+  // burst of cache misses for the same caller computes the fan-out once instead of thundering-herding
+  // the upstream. The authoritative cross-instance cache remains the shared Valkey store.
+  private static readonly accessInFlight = new Map<string, Promise<AccessAwareOrgsResult>>();
+
   private readonly microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
@@ -41,19 +46,39 @@ export class OrgRoleGrantsService {
     const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
 
     if (cacheKey) {
-      const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey);
+      // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
+      const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
       if (cached) {
         return OrgRoleGrantsService.deserializeAccessResult(cached);
       }
     }
 
-    const result = await this.computeAccessAwareOrgs(req, username);
-
-    // Cache only successful resolutions; never cache upstream failures (they retry next request).
-    if (cacheKey && !result.upstreamFailed) {
-      await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+    // No cache key (non-filter-safe username) → compute directly, no coalescing.
+    if (!cacheKey) {
+      return this.computeAccessAwareOrgs(req, username);
     }
-    return result;
+
+    // Coalesce concurrent misses for the same username.
+    const inFlight = OrgRoleGrantsService.accessInFlight.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const promise = (async () => {
+      const result = await this.computeAccessAwareOrgs(req, username);
+      // Cache only successful resolutions; never cache upstream failures (they retry next request).
+      if (!result.upstreamFailed) {
+        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+      }
+      return result;
+    })();
+
+    OrgRoleGrantsService.accessInFlight.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      OrgRoleGrantsService.accessInFlight.delete(cacheKey);
+    }
   }
 
   /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
@@ -71,6 +96,12 @@ export class OrgRoleGrantsService {
   /** Shared-constant TTL converted from ms to whole seconds for the cache write. */
   private static cacheTtlSeconds(): number {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
+  }
+
+  /** Rejects a corrupt/legacy cached entry (so deserialize never throws): both Maps must be present as arrays. */
+  private static isValidCacheEntry(value: unknown): boolean {
+    const entry = value as Partial<AccessAwareOrgsCacheEntry> | null;
+    return !!entry && Array.isArray(entry.resolved) && Array.isArray(entry.orgDocByUid) && typeof entry.username === 'string';
   }
 
   /** Maps → ordered entry arrays for JSON storage (insertion order preserved). */

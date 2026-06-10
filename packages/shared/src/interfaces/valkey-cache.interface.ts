@@ -16,12 +16,12 @@ export interface CachePort {
   /** True when a cache backend is configured and the client is usable. */
   isEnabled(): boolean;
 
-  /** Parsed value on hit; `null` on miss, disabled, timeout, or any fault. Never throws. */
-  getJson<T>(key: string): Promise<T | null>;
+  /** Parsed value on hit; `null` on miss, disabled, timeout, fault, or when `accept` rejects the shape. Never throws. */
+  getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null>;
 
   /** Best-effort write with a TTL in seconds. Returns whether it persisted. Never throws. */
   setJson(key: string, value: unknown, ttlSeconds: number): Promise<boolean>;
 
-  /** Read-through helper; `key === null` (or disabled cache) runs `fetcher()` directly with no read/write (fail-closed). */
-  withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>): Promise<T>;
+  /** Read-through helper; `key === null` (or disabled cache) runs `fetcher()` directly (fail-closed); `accept` rejects a malformed cached value as a miss. */
+  withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T>;
 }
