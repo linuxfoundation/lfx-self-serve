@@ -17,6 +17,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
+  PendingInvitation,
   Project,
   ProjectSettings,
   QueryServiceCountResponse,
@@ -616,6 +617,124 @@ export class CommitteeService {
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}`, 'DELETE');
 
     logger.debug(req, 'revoke_committee_invite', 'Committee invite revoked successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
+    });
+  }
+
+  // ── My Pending Invitations (invitee-facing) ───────────────────────────────
+  // The invitee side of invite-by-email: surface the committee_invite resources
+  // addressed to the current user's email, enriched with committee/project display
+  // context for the dashboard and My Groups. Accept/decline are invitee-authenticated
+  // committee-service calls (upstream enforces principal == invitee_email).
+
+  /**
+   * Returns the current user's pending committee invitations, enriched for display.
+   *
+   * Reads `committee_invite` resources tagged with the user's email from the query
+   * index, filters to `status === 'pending'` client-side, then batch-enriches the
+   * distinct committees (name, category) and their projects (project_name) so each
+   * row can render without further round-trips. Enrichment is best-effort: if a
+   * committee/project lookup fails, the row is still returned with `committee_name`
+   * falling back to the committee UID — the list is never dropped wholesale.
+   *
+   * `inviter_name` / `expires_at` are left undefined — the committee-service contract
+   * does not provide them today.
+   */
+  public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return [];
+    }
+
+    // Don't log the invitee email — it's PII and the request is already correlated by req.id and
+    // the authenticated session. The upstream query is still scoped to normalizedEmail.
+    logger.debug(req, 'get_my_pending_invitations', 'Fetching committee invitations for user');
+
+    const invites = await fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_invite',
+        tags: `invitee_email:${normalizedEmail}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    const pendingInvites = invites.filter((invite) => invite.status === 'pending');
+    if (pendingInvites.length === 0) {
+      return [];
+    }
+
+    logger.info(req, 'get_my_pending_invitations', 'Found pending invitations, enriching with committee data', {
+      pending_count: pendingInvites.length,
+    });
+
+    // Enrich committee context (name, category, project) for the distinct committees once.
+    // Best-effort: a failed lookup degrades to a UID fallback rather than dropping the list.
+    const committeeUids = Array.from(new Set(pendingInvites.map((invite) => invite.committee_uid).filter(Boolean)));
+    const committeeContext = new Map<string, { committee_name: string; category?: string | null; project_name?: string | null }>();
+
+    try {
+      const committees = await this.getCommitteesByIds(req, committeeUids);
+      const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
+      const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
+
+      for (const uid of committeeUids) {
+        const committee = committees.get(uid);
+        if (committee) {
+          committeeContext.set(uid, {
+            committee_name: committee.name || uid,
+            category: committee.category ?? null,
+            project_name: projectNameByCommittee.get(uid) || null,
+          });
+        }
+      }
+    } catch (error) {
+      logger.warning(req, 'get_my_pending_invitations', 'Committee enrichment failed, returning invitations with UID fallback', {
+        committee_count: committeeUids.length,
+        err: error,
+      });
+    }
+
+    return pendingInvites.map((invite) => {
+      const context = committeeContext.get(invite.committee_uid);
+      return {
+        uid: invite.uid,
+        committee_uid: invite.committee_uid,
+        committee_name: context?.committee_name || invite.committee_uid,
+        project_name: context?.project_name ?? null,
+        category: context?.category ?? null,
+        role: invite.role ?? null,
+        invitee_email: invite.invitee_email,
+        status: invite.status,
+        created_at: invite.created_at,
+        // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
+        // optional fields not in the committee-service contract yet, so JSON drops them rather than
+        // sending an explicit null that consumers would have to disambiguate from "set".
+      } satisfies PendingInvitation;
+    });
+  }
+
+  /**
+   * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
+   * invitee-authenticated (committee-service enforces principal == invitee_email).
+   */
+  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST');
+
+    logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
+    });
+  }
+
+  /**
+   * Declines a committee invitation on behalf of the invitee. The upstream endpoint is
+   * invitee-authenticated (committee-service enforces principal == invitee_email).
+   */
+  public async declineCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/decline`, 'POST');
+
+    logger.debug(req, 'decline_committee_invite', 'Committee invite declined successfully', {
       committee_uid: committeeId,
       invite_uid: inviteId,
     });

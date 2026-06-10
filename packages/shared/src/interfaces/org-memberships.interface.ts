@@ -130,6 +130,14 @@ export interface KeyContactEmployeesResponse {
   employees: KeyContactEmployee[];
 }
 
+/** Response envelope for `GET /api/orgs/:orgUid/lens/employees` (spec 026) — key contacts + committee members, deduped by email. */
+export interface OrgLensEmployeesResponse {
+  /** The org's canonical account id (SFID, the route identifier) echoed back. */
+  orgUid: string;
+  /** Deduped by lowercased email, merging key contacts + committee members across the org. */
+  employees: KeyContactEmployee[];
+}
+
 /** Spec 024 (FR-014): body for `POST …/key-contacts`. */
 export interface AddKeyContactRequest {
   contactType: OrgMembershipKeyContactType;
@@ -187,16 +195,30 @@ export interface OrgMembershipDetailResponse {
 /**
  * One row in the Board Seats table. Carries an embedded `person` (reuses the
  * spec 015 `OrgMembershipKeyContactPerson`), the seat name, a categorical
- * `tagLabel` (distinct from seat name — e.g., "Voting Rep"), voting
- * percentage, and the `isOrgEditable` boolean that drives whether the
- * Actions cell renders a pencil OR a "Why can't I edit?" link.
+ * `tagLabel` (distinct from seat name — e.g., "Voting Rep"), and the
+ * `isOrgEditable` boolean that drives whether the Actions cell renders a pencil
+ * OR a "Why can't I edit?" link.
+ *
+ * Spec 026 (live data): `votingPercentage` is removed (live `committee_member`
+ * has no percentage) in favour of the upstream `voting.status` string
+ * (`votingStatus`); `appointedBy`/`committeeCategory`/`committeeUid`/`memberUid`
+ * mirror the upstream seat for edit-gating, grouping, and reassignment.
  */
 export interface BoardSeat {
   seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
   person: OrgMembershipKeyContactPerson;
   seatName: string;
   tagLabel: string;
-  votingPercentage: number | null;
+  /** Upstream committee category — "Board" rows render in the Board subsection (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string, e.g. "Voting Rep" / "Non-voting" (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
   isOrgEditable: boolean;
   reason: string | null;
 }
@@ -207,13 +229,26 @@ export interface BoardSeat {
  * person's role within the committee — e.g., "Chair", "Member"), and
  * `tagLabel` is OMITTED (the Role column AND the Reassign modal pill both
  * source from `role` directly per spec 016 Q1 round 3 clarification).
+ *
+ * Spec 026 (live data): same field changes as `BoardSeat` —
+ * `votingPercentage` → `votingStatus`, plus `appointedBy`/`committeeCategory`/
+ * `committeeUid`/`memberUid`.
  */
 export interface CommitteeSeat {
   seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
   person: OrgMembershipKeyContactPerson;
   committeeName: string;
   role: string;
-  votingPercentage: number | null;
+  /** Upstream committee category (Board vs other) (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
   isOrgEditable: boolean;
   reason: string | null;
 }
@@ -228,18 +263,51 @@ export interface VotingRecord {
   outcome: string;
 }
 
-/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/board-seats`. */
-export interface OrgMembershipBoardSeatsResponse {
+/** Spec 026: one seat row as returned by committee-service `GET /committees/b2b-org/{uid}/seats` (flat upstream DTO). */
+export interface CommitteeServiceOrgSeat {
+  uid: string;
+  committee_uid: string;
+  committee_name: string;
+  committee_category: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  job_title?: string | null;
+  role_name: string;
+  voting_status: string;
+  appointed_by: string;
+  organization_id: string;
+  is_org_editable: boolean;
+  reason?: string | null;
+}
+
+/** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */
+export interface CommitteeServiceOrgSeatPage {
+  seats: CommitteeServiceOrgSeat[];
+  page_token?: string | null;
+}
+
+/** Spec 026: combined board + committee seats for one membership (single committee-service read, split client-side) — envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/seats`. */
+export interface OrgMembershipSeatsResponse {
   accountId: string;
   foundationId: string;
   boardSeats: BoardSeat[];
+  committeeSeats: CommitteeSeat[];
 }
 
-/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/committee-seats`. */
-export interface OrgMembershipCommitteeSeatsResponse {
+/** Spec 026: body for the BFF reassign proxy `PATCH …/committee-seats/:seatId/reassign`. */
+export interface ReassignCommitteeSeatRequest {
+  committeeUid: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+/** Spec 026: response envelope for the reassign proxy — the reassigned seat (board or committee). */
+export interface OrgMembershipReassignSeatResponse {
   accountId: string;
   foundationId: string;
-  committeeSeats: CommitteeSeat[];
+  seat: BoardSeat | CommitteeSeat;
 }
 
 /** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/voting-history`. */
@@ -356,6 +424,8 @@ export interface ReassignBoardRolesDialogData {
   seat: BoardSeat | CommitteeSeat;
   seatKind: 'board' | 'committee';
   foundationName: string;
+  /** Org SFID — used to load the employee picker (`GET /api/orgs/:orgUid/lens/employees`). */
+  orgUid: string;
 }
 
 export type ReassignBoardRolesDialogResult = ReassignSubmitEvent | null;

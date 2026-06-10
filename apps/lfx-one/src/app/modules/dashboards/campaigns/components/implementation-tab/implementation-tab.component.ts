@@ -1,22 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { SlicePipe } from '@angular/common';
+import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CAMPAIGN_BUDGET_DEFAULTS, CAMPAIGN_CHAR_LIMITS, CAMPAIGN_JOB_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_BUDGET_DEFAULTS, CAMPAIGN_CHAR_LIMITS, CAMPAIGN_JOB_POLL_INTERVAL_MS, LINKEDIN_CHAR_LIMITS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { map, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
-import type { CampaignBriefOutput, CampaignCreateResponse, CampaignCreateResult, CampaignKeyword, CampaignType } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefOutput,
+  CampaignCreateResponse,
+  CampaignKeyword,
+  CampaignPlatform,
+  CampaignResult,
+  CampaignType,
+  LinkedInCreativeVariant,
+  LinkedInGeoTarget,
+  LinkedInTargetingProfile,
+} from '@lfx-one/shared/interfaces';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -31,6 +42,7 @@ export class ImplementationTabComponent {
 
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
+  protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
@@ -53,11 +65,32 @@ export class ImplementationTabComponent {
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
-  protected readonly results = signal<CampaignCreateResult[]>([]);
+  protected readonly results = signal<CampaignResult[]>([]);
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
+  protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
+  protected readonly linkedInGeoTargets = signal<LinkedInGeoTarget[]>([]);
+  protected readonly linkedInTargetingProfile = signal<LinkedInTargetingProfile>('cloud-native');
+  protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
+  protected readonly linkedInBudgetUsd = signal(500);
+  protected readonly linkedInLifetimeBudget = signal(false);
+
+  // === Computed Signals ===
+  protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
+  protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
+  protected readonly canSubmit = computed(() => {
+    const platforms = this.selectedPlatforms();
+    const googleSelected = platforms.includes('google-ads');
+    const linkedInSelected = platforms.includes('linkedin-ads');
+    if (!googleSelected && !linkedInSelected) return false;
+    if (googleSelected && this.campaignForm.invalid) return false;
+    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
+    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
+    if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    return true;
+  });
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
@@ -107,8 +140,31 @@ export class ImplementationTabComponent {
     if (arr.length > 1) arr.removeAt(index);
   }
 
+  protected removeGeoTarget(index: number): void {
+    this.linkedInGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+  }
+
+  protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
+    this.linkedInTargetingProfile.set(profile);
+  }
+
+  protected setLinkedInLifetimeBudget(value: boolean): void {
+    this.linkedInLifetimeBudget.set(value);
+  }
+
+  protected setLinkedInBudget(value: number): void {
+    this.linkedInBudgetUsd.set(value);
+  }
+
   protected submit(): void {
-    if (this.campaignForm.invalid) return;
+    const platforms = this.selectedPlatforms();
+    const googleSelected = platforms.includes('google-ads');
+    const linkedInSelected = platforms.includes('linkedin-ads');
+    if (googleSelected && this.campaignForm.invalid) return;
+    if (!googleSelected && !linkedInSelected) return;
+    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
+    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return;
+    if (linkedInSelected && this.linkedInVariants().length === 0) return;
 
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
@@ -119,10 +175,11 @@ export class ImplementationTabComponent {
     const campaignTypes: CampaignType[] = [];
     if (form.includeSearch) campaignTypes.push('search');
     if (form.includeDemandGen) campaignTypes.push('demand-gen');
+    const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
       eventName: form.eventName,
-      eventSlug: form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-'),
+      eventSlug: slug,
       countryCode: form.countryCode,
       registrationUrl: form.registrationUrl,
       hsToken: this.briefHsToken() ?? undefined,
@@ -136,6 +193,25 @@ export class ImplementationTabComponent {
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       geoTargets: [form.countryCode],
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
+      platforms,
+      ...(platforms.includes('linkedin-ads')
+        ? {
+            linkedInConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              dates: `${form.startDate} - ${form.endDate}`,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.linkedInBudgetUsd(),
+              lifetimeBudget: this.linkedInLifetimeBudget(),
+              startDate: form.startDate,
+              endDate: form.endDate,
+              geoTargets: this.linkedInGeoTargets(),
+              targetingProfile: this.linkedInTargetingProfile(),
+              variants: this.linkedInVariants(),
+            },
+          }
+        : {}),
     };
 
     this.campaignService.createCampaign(request).subscribe({
@@ -152,7 +228,7 @@ export class ImplementationTabComponent {
           return;
         }
         if (!response.jobId) {
-          this.errors.set(['Failed to start campaign creation.']);
+          this.errors.set(['Campaign creation could not be started. The Google Ads integration may not be configured. Please contact your administrator.']);
           this.step.set('form');
           return;
         }
@@ -160,7 +236,7 @@ export class ImplementationTabComponent {
         this.pollJob(response.jobId);
       },
       error: () => {
-        this.errors.set(['Campaign creation request failed.']);
+        this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
         this.step.set('form');
       },
     });
@@ -188,6 +264,10 @@ export class ImplementationTabComponent {
       endDate: this.defaultEndDate,
     });
 
+    if (brief.selectedPlatforms?.length) {
+      this.selectedPlatforms.set(brief.selectedPlatforms);
+    }
+
     const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
     if (searchCopy) {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
@@ -204,6 +284,12 @@ export class ImplementationTabComponent {
       for (const d of descriptions) {
         descriptionsArr.push(this.fb.control(d, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)]));
       }
+    }
+
+    if (brief.linkedInCopy) {
+      this.linkedInVariants.set(brief.linkedInCopy.variants);
+      this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
+      this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
     }
 
     this.briefKeywords.set(brief.keywords);
@@ -225,13 +311,17 @@ export class ImplementationTabComponent {
             this.step.set('results');
           }
         },
-        error: () => {
-          this.errors.set(['Failed to retrieve campaign results.']);
+        error: (error: unknown) => {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Lost connection to the campaign creation process. Please try again or check Google Ads directly.';
+          this.errors.set([message]);
           this.step.set('results');
         },
         complete: () => {
           if (this.step() === 'creating') {
-            this.errors.set(['Campaign creation timed out. Check Google Ads for status.']);
+            this.errors.set(['Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.']);
             this.step.set('results');
           }
         },

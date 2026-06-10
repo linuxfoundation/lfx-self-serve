@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,19 +12,21 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, getGroupBehavioralClass } from '@lfx-one/shared/constants';
 import { Committee, GroupBehavioralClass, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
+  imports: [ButtonComponent, CardComponent, CommitteeInvitationsComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -35,6 +38,9 @@ export class CommitteeDashboardComponent {
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
+  private readonly invitationService = inject(InvitationService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Use the configurable label constants
   protected readonly committeeLabel = COMMITTEE_LABEL;
@@ -147,6 +153,30 @@ export class CommitteeDashboardComponent {
     ]);
 
     this.behavioralClassCounts = this.initializeBehavioralClassCounts();
+
+    // Load the user's pending invitations the first time the Me lens becomes active in the browser,
+    // so the invitations section above the My Groups table populates. Driven by toObservable +
+    // switchMap (not effect(), per the frontend convention for data loads); take(1) makes it
+    // one-shot and the browser guard keeps it off the server (an interactive, browser-only surface).
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.isMeLens)
+        .pipe(
+          filter((isMe) => isMe),
+          take(1),
+          switchMap(() => this.invitationService.loadPendingInvitations()),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe();
+    }
+  }
+
+  /**
+   * Re-triggers the My Committees fetch so an accepted invitation surfaces in the active list. Reuses
+   * the shared `refresh` trigger that already drives `initializeMyCommittees()`.
+   */
+  public reloadMyCommittees(): void {
+    this.myCommitteesLoading.set(true);
+    this.refresh.update((v) => v + 1);
   }
 
   public openCreateDialog(): void {

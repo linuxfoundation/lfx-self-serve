@@ -30,3 +30,6 @@ export const LINKEDIN_PROFILE_PATTERN = /^(https?:\/\/)?([a-z]{2,3}\.)?linkedin\
 
 /** Matches a non-negative whole number (no decimals, no sign). Used for fields like accommodationNumberOfNights. */
 export const WHOLE_NUMBER_PATTERN = /^\d+$/;
+
+/** Validates YYYY-MM month format with valid month ranges (01-12). Used for server-side month query parameter validation. */
+export const MONTH_FORMAT_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;

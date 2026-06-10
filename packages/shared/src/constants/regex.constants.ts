@@ -24,7 +24,7 @@ export const ORG_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{15}$/;
  * Allowed values intentionally span three legitimate id shapes the SSR layer sees:
  *   1. Salesforce 18-char custom-object IDs (e.g. "a0941000002wBz2AAE") — the
  *      PRODUCTION foundationId shape, mixed case base32+checksum
- *   2. Synthetic v1 mock IDs (e.g. "agl-001", "agl-board-1") — kebab-case lowercase
+ *   2. Synthetic v1 mock IDs (e.g. "sample-foundation") — kebab-case lowercase foundation slug
  *   3. Future UUID v8 shape from `lfx-v2-member-service` (hex + hyphens, 36 chars)
  *
  * Defense-in-depth at the SSR boundary; caps payload size to 64 chars (DoS guard)

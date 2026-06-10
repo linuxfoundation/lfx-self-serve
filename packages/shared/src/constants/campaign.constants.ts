@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignGoalOption, CampaignPlatformOption, CampaignStatus, CampaignTabOption, ParsedCampaignName } from '../interfaces/campaign.interface';
+import type {
+  CampaignGoalOption,
+  CampaignPlatformOption,
+  CampaignStatus,
+  CampaignTabOption,
+  LinkedInGeoTarget,
+  ParsedCampaignName,
+} from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
@@ -14,7 +21,7 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
-  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin', disabled: true },
+  { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
@@ -95,3 +102,32 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
     raw,
   };
 }
+
+// ---------------------------------------------------------------------------
+// LinkedIn Ads Constants
+// ---------------------------------------------------------------------------
+
+export const LINKEDIN_API_VERSION = '202602';
+
+export const LINKEDIN_CHAR_LIMITS = {
+  introText: 600,
+  headline: 200,
+} as const;
+
+// NOTE: LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, and LINKEDIN_TARGETING_PROFILES
+// live in apps/lfx-one/src/server/constants/linkedin.constants.ts
+// to keep ad-account IDs, org IDs, and targeting URNs out of the client bundle.
+
+export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
+  japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
+  india: { label: 'India', urn: 'urn:li:geo:102713980' },
+  singapore: { label: 'Singapore', urn: 'urn:li:geo:102454443' },
+  'south korea': { label: 'South Korea', urn: 'urn:li:geo:105149562' },
+  australia: { label: 'Australia', urn: 'urn:li:geo:101452733' },
+  taiwan: { label: 'Taiwan', urn: 'urn:li:geo:104441761' },
+  'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
+  'united states': { label: 'United States', urn: 'urn:li:geo:103644278' },
+  usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
+  germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
+  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+} as const;

@@ -8,6 +8,7 @@ import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
@@ -35,6 +36,13 @@ export class CampaignService {
     });
   }
 
+  public refineBrief(request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
+    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/refine', {
+      method: 'POST',
+      body: request,
+    });
+  }
+
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
     return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
   }
@@ -48,9 +56,9 @@ export class CampaignService {
       last(),
       map((status) => {
         if (status.status === 'done') return status.result ?? null;
-        if (status.status === 'error') throw new Error(status.error || 'Campaign creation failed');
-        if (status.status === 'not_found') throw new Error('Job not found');
-        throw new Error('Campaign creation timed out');
+        if (status.status === 'error') throw new Error(status.error || 'Campaign creation was unsuccessful. Please try again.');
+        if (status.status === 'not_found') throw new Error('Lost connection to the campaign creation process. Please try again.');
+        throw new Error('Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.');
       })
     );
   }

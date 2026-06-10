@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type { MarketingImpactFocusProgram, PerformanceSummaryKpi, SocialAccountRow, SocialMediaResponse } from '@lfx-one/shared/interfaces';
 
@@ -23,6 +23,7 @@ export class SocialAccountsTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -38,16 +39,17 @@ export class SocialAccountsTabComponent {
   // === Private Initializers ===
   private initSocialData(): Signal<SocialMediaResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, month$]).pipe(
+        switchMap(([slug, month]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getSocialMedia(slug).pipe(
+          return this.analyticsService.getSocialMedia(slug, month || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );

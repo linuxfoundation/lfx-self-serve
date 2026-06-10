@@ -6,7 +6,7 @@ import { Component, computed, inject, input, PLATFORM_ID, signal, Signal } from 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type {
   BrandHealthMention,
@@ -32,6 +32,7 @@ export class SocialListeningTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedMonth = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -57,16 +58,17 @@ export class SocialListeningTabComponent {
   // === Private Initializers ===
   private initBrandData(): Signal<BrandHealthResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const month$ = toObservable(this.selectedMonth);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, month$]).pipe(
+        switchMap(([slug, month]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getBrandHealth(slug, true).pipe(
+          return this.analyticsService.getBrandHealth(slug, true, month || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );
