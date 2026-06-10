@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, type Signal, signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -67,6 +67,7 @@ export class OrgContributionsComponent {
   private readonly dataService = inject(ContributionsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
@@ -138,6 +139,8 @@ export class OrgContributionsComponent {
   protected readonly employeeOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initEmployeeOptions());
 
   protected readonly first = computed(() => (this.page() - 1) * this.size());
+  // Shared search box scopes repos on the Repositories tab and commit message/project/committer/username on the Commits tab.
+  protected readonly searchPlaceholder = computed(() => (this.mainTab() === 'commits' ? 'Search commits' : 'Search repositories'));
   protected readonly mainTabs: Signal<FilterPillOption[]> = computed(() => [
     { id: 'repositories', label: `Repositories (${this.totalRecords().toLocaleString()})` },
     { id: 'commits', label: `Commits (${this.commitRows().length.toLocaleString()})` },
@@ -186,6 +189,34 @@ export class OrgContributionsComponent {
 
   protected setCommitterTab(tab: CommitterPanelTab): void {
     this.committerTab.set(tab);
+  }
+
+  /** Roving-tabindex keyboard nav for the committer panel tablist (Arrow keys / Home / End). */
+  protected onCommitterTabKeydown(event: KeyboardEvent): void {
+    const tabs = this.committerPanelTabs;
+    const current = tabs.findIndex((t) => t.id === this.committerTab());
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % tabs.length;
+        break;
+      case 'ArrowLeft':
+        next = (current - 1 + tabs.length) % tabs.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = tabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    this.setCommitterTab(tabs[next].id);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`org-contributions-committer-tab-${tabs[next].id}`)?.focus();
+    }
   }
 
   protected onCommitterPanelVisible(visible: boolean): void {

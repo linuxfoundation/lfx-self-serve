@@ -23,9 +23,6 @@ const UPSTREAM_HOSTS: Record<ContributionSource, string> = {
   git: 'https://github.com',
 };
 
-/** Monotonic counter for synthetic commit-feed shas — declared before the feed that consumes it. */
-let feedSeq = 0;
-
 /** Project logo per slug (CNCF artwork). Demo only; the data pass derives logos from the project catalog. Slugs without an entry fall back to an initials square. */
 const PROJECT_LOGOS: Record<string, string> = {
   kubernetes: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/kubernetes/icon/color/kubernetes-icon-color.svg',
@@ -57,6 +54,7 @@ export const DEMO_PROJECT_OPTIONS: OrgContributionProjectOption[] = [
   { slug: 'opentelemetry', projectId: 'proj-otel', name: 'OpenTelemetry', commits: 260, parentSlug: 'cncf' },
   { slug: 'lfn', projectId: 'proj-lfn', name: 'LF Networking', commits: 115, parentSlug: null },
   { slug: 'onap', projectId: 'proj-onap', name: 'ONAP', commits: 115, parentSlug: 'lfn' },
+  { slug: 'gitlab', projectId: 'proj-gitlab', name: 'GitLab', commits: 40, parentSlug: null },
 ];
 
 /** Internal demo repo — `OrgContributionRepoRow` plus the contributing employee ids (for the Employees filter). */
@@ -77,7 +75,7 @@ const DEMO_REPOS_INTERNAL = [
     'emp-bjorn',
     'emp-ana',
   ]),
-  repo('repo-gitaly', 'gitlab-org/gitaly', 'proj-prom', 'Prometheus', 'prometheus', 'gitlab', 40, '2020-02-17', 120, ['emp-dmitri']),
+  repo('repo-gitaly', 'gitlab-org/gitaly', 'proj-gitlab', 'GitLab', 'gitlab', 'gitlab', 40, '2020-02-17', 120, ['emp-dmitri']),
   repo('repo-onap-so', 'onap/so', 'proj-onap', 'ONAP', 'onap', 'gerrit', 75, '2018-11-05', 88, ['emp-farid', 'emp-hiro']),
 ] as const;
 
@@ -195,8 +193,8 @@ function feedRow(
   date: string,
   message: string
 ): OrgContributionCommitRow {
-  feedSeq += 1;
-  const commitSha = `demo-${feedSeq.toString().padStart(3, '0')}`;
+  // Deterministic per-row id (stable across requests) so the template's `track commit.commitSha` stays reliable.
+  const commitSha = `demo-${username}-${date.replace(/-/g, '')}`;
   return {
     commitSha,
     projectName,

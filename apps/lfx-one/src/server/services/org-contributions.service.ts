@@ -10,6 +10,7 @@ import type {
   OrgContributionsResponse,
 } from '@lfx-one/shared/interfaces';
 
+import { logger } from './logger.service';
 import { DEMO_COMMIT_FEED, DEMO_EMPLOYEE_OPTIONS, DEMO_EMPLOYEE_USERNAMES, DEMO_PROJECT_OPTIONS, DEMO_REPO_EMPLOYEES, DEMO_REPOS } from './org-contributions.demo';
 
 /**
@@ -25,6 +26,7 @@ export class OrgContributionsService {
   /** Repositories table + KPI strip + filter options, server-paginated over the active filter scope. */
   public async getContributions(accountId: string, query: OrgContributionsQuery): Promise<OrgContributionsResponse> {
     // TODO(LFXV2-1894): replace demo source with Snowflake dbt models (repositories index + commit rollups).
+    assertDemoAllowed();
     const filtered = this.filterRepos(query);
     const sorted = sortRepos(filtered, query);
     const page = paginate(sorted, query);
@@ -157,6 +159,18 @@ function filterCommitFeed(query: OrgContributionsQuery): OrgContributionCommitRo
     }
     return true;
   });
+}
+
+/**
+ * Demo-scaffold guard. Throws in production unless explicitly opted in (CONTRIBUTIONS_DEMO=true)
+ * so synthetic data can't render in prod before the LFX Insights data pass (LFXV2-1894); warns
+ * otherwise so the scaffold state is visible in Datadog on every request.
+ */
+function assertDemoAllowed(): void {
+  if (process.env['NODE_ENV'] === 'production' && process.env['CONTRIBUTIONS_DEMO'] !== 'true') {
+    throw new Error('OrgContributionsService is serving demo data; the real LFX Insights source is not implemented yet (LFXV2-1894). Set CONTRIBUTIONS_DEMO=true to allow demo data in production.');
+  }
+  logger.warning(undefined, 'org_contributions_demo_data', 'Serving demo/scaffold Code Contributions data — real LFX Insights source pending (LFXV2-1894)');
 }
 
 function buildKpis(repos: OrgContributionRepoRow[]): OrgContributionsKpis {

@@ -214,6 +214,8 @@ export interface OrgContributionCommitRowVm {
   committerTitle: string | null;
   username: string | null;
   source: ContributionSource;
+  /** Human-readable source label, e.g. `GitHub` — used for accessible labels. */
+  sourceLabel: string;
   /** Font Awesome icon class for the source, shown next to the username. */
   sourceIconClass: string;
   /** External user-profile URL for the handle (e.g. https://github.com/<user>), or null when the source has no public profile. */

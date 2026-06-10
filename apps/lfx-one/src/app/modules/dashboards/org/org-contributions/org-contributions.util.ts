@@ -69,6 +69,7 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
     committerTitle: row.committerTitle,
     username: row.username,
     source: row.source,
+    sourceLabel: badge.label,
     sourceIconClass: badge.iconClass,
     profileUrl: profileUrlFor(row.source, row.username),
     committedTs: row.committedTs,

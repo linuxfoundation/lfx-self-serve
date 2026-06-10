@@ -28,7 +28,7 @@
           <lfx-input-text
             [form]="filterForm"
             control="search"
-            placeholder="Search repositories"
+            [placeholder]="searchPlaceholder()"
             icon="fa-light fa-search"
             size="small"
             styleClass="w-full"
@@ -282,7 +282,7 @@
                       [href]="commit.profileUrl"
                       target="_blank"
                       rel="noopener noreferrer"
-                      [attr.aria-label]="'Open ' + commit.username + ' on ' + commit.source">
+                      [attr.aria-label]="'Open ' + commit.username + ' on ' + commit.sourceLabel">
                       {{ '@' + commit.username }}
                     </a>
                   } @else {
@@ -324,7 +324,7 @@
 
   <!-- Committer detail side panel -->
   <p-drawer
-    [visible]="selectedCommitter() !== null"
+    [visible]="committerDetail() !== null"
     (visibleChange)="onCommitterPanelVisible($event)"
     position="right"
     [modal]="true"
@@ -364,14 +364,20 @@
         </div>
 
         <!-- Section tabs -->
-        <div class="flex items-center gap-1 overflow-x-auto border-b border-gray-200" role="tablist" aria-label="Contributor detail sections">
+        <div
+          class="flex items-center gap-1 overflow-x-auto border-b border-gray-200"
+          role="tablist"
+          aria-label="Contributor detail sections"
+          (keydown)="onCommitterTabKeydown($event)">
           @for (tab of committerPanelTabs; track tab.id) {
             @let isActive = committerTab() === tab.id;
             <button
               type="button"
               role="tab"
+              [id]="'org-contributions-committer-tab-' + tab.id"
               class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors"
               [attr.aria-selected]="isActive"
+              [attr.tabindex]="isActive ? 0 : -1"
               [attr.data-testid]="'org-contributions-committer-tab-' + tab.id"
               [class.border-blue-600]="isActive"
               [class.text-blue-600]="isActive"
