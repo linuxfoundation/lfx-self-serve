@@ -5,6 +5,8 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { CrowdfundingService } from '../services/crowdfunding.service';
@@ -206,6 +208,48 @@ export class CrowdfundingController {
       logger.success(req, 'cancel_subscription', startTime, { subscriptionId: id });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/initiatives/:slug — update an initiative's editable fields. */
+  public async updateInitiative(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_initiative');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_initiative' });
+      }
+
+      const { id } = req.params;
+      const body = req.body as Record<string, unknown>;
+
+      const input: UpdateInitiativeInput = {};
+
+      if (typeof body['name'] === 'string') input.name = body['name'].trim();
+      if (typeof body['description'] === 'string') input.description = body['description'].trim();
+      if (typeof body['industry'] === 'string') input.industry = body['industry'];
+      if (typeof body['websiteUrl'] === 'string') input.websiteUrl = body['websiteUrl'].trim() || undefined;
+
+      if (Array.isArray(body['goals'])) {
+        input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
+          name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',
+          amountCents: typeof g['amountCents'] === 'number' ? Math.floor(g['amountCents']) : 0,
+        }));
+      }
+
+      if (Array.isArray(body['beneficiaries'])) {
+        input.beneficiaries = (body['beneficiaries'] as Record<string, unknown>[]).map((b) => ({
+          name: typeof b['name'] === 'string' ? b['name'] : undefined,
+          email: typeof b['email'] === 'string' ? b['email'] : undefined,
+        }));
+      }
+
+      const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
+
+      logger.success(req, 'update_initiative', startTime, { id });
+      res.json(initiative);
     } catch (error) {
       next(error);
     }

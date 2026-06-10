@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, effect, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, switchMap } from 'rxjs';
@@ -37,9 +37,17 @@ export class InitiativeDetailComponent {
   protected readonly activeTab = signal<string>('overview');
   protected readonly settingsDrawerVisible = signal(false);
 
+  // Holds a server-returned update so children reflect changes without re-fetching.
+  private readonly initiativeOverride: WritableSignal<InitiativeDetail | null> = signal(null);
+
   // ─── Computed Signals ──────────────────────────────────────────────────────
   protected readonly initiativeSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
-  protected readonly initiative: Signal<InitiativeDetail | null> = this.initInitiative();
+  private readonly initiativeFetched: Signal<InitiativeDetail | null> = this.initInitiative();
+  protected readonly initiative = computed(() => this.initiativeOverride() ?? this.initiativeFetched());
+
+  protected onInitiativeSaved(updated: InitiativeDetail): void {
+    this.initiativeOverride.set(updated);
+  }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initInitiative(): Signal<InitiativeDetail | null> {
@@ -50,11 +58,5 @@ export class InitiativeDetailComponent {
       ),
       { initialValue: null }
     );
-  }
-
-  constructor() {
-    effect(() => {
-      console.log(this.initiative());
-    });
   }
 }

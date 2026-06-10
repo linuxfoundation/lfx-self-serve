@@ -24,6 +24,7 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   RecurringDonationsResponse,
+  UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
 
@@ -85,6 +86,12 @@ export class CrowdfundingService {
 
     return this.http.get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams }).pipe(
       catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations'))
+    );
+  }
+
+  public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
+    return this.http.patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input).pipe(
+      catchError(this.redirectIfCfUnauthenticated())
     );
   }
 

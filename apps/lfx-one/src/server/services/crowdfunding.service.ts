@@ -10,16 +10,20 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   RecurringDonationsResponse,
+  UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
+  BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
   BackendDonation,
+  BackendGoalInput,
   BackendInitiative,
   BackendSubscription,
   BackendTransactionList,
+  BackendUpdateInitiativeInput,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
 import { MicroserviceError } from '../errors';
@@ -300,6 +304,30 @@ export class CrowdfundingService {
     }
 
     logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
+  }
+
+  public async updateInitiative(req: Request, id: string, input: UpdateInitiativeInput): Promise<InitiativeDetail> {
+    const startTime = logger.startOperation(req, 'cf_update_initiative', { id });
+
+    const body: BackendUpdateInitiativeInput = {};
+    if (input.name !== undefined) body.name = input.name;
+    if (input.description !== undefined) body.description = input.description;
+    if (input.industry !== undefined) body.industry = input.industry;
+    if (input.websiteUrl !== undefined) body.website_url = input.websiteUrl;
+    if (input.goals !== undefined) {
+      body.goals = input.goals.map((g): BackendGoalInput => ({ name: g.name, amount_cents: g.amountCents }));
+    }
+    if (input.beneficiaries !== undefined) {
+      body.beneficiaries = input.beneficiaries.map((b): BackendBeneficiaryInput => ({ name: b.name, email: b.email }));
+    }
+
+    const raw = await cfFetch<BackendInitiative>(req, 'updateInitiative', `/v1/me/initiatives/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+
+    logger.success(req, 'cf_update_initiative', startTime, { id });
+    return mapToInitiativeDetail(raw);
   }
 
   public async getInitiativeTransactions(

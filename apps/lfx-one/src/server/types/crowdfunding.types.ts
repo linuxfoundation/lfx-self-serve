@@ -125,3 +125,23 @@ export interface BackendSubscriptionListResponse {
   data: BackendSubscription[];
   meta: { total: number; limit: number; offset: number };
 }
+
+export interface BackendGoalInput {
+  name: string;
+  amount_cents: number;
+}
+
+export interface BackendBeneficiaryInput {
+  name?: string;
+  email?: string;
+}
+
+/** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{slug} on the upstream crowdfunding service. */
+export interface BackendUpdateInitiativeInput {
+  name?: string;
+  description?: string;
+  industry?: string;
+  website_url?: string;
+  goals?: BackendGoalInput[];
+  beneficiaries?: BackendBeneficiaryInput[];
+}

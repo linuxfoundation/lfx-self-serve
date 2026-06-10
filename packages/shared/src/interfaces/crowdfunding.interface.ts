@@ -255,6 +255,25 @@ export interface TopicOption {
   label: string;
 }
 
+export interface UpdateGoalInput {
+  name: string;
+  amountCents: number;
+}
+
+export interface UpdateBeneficiaryInput {
+  name?: string;
+  email?: string;
+}
+
+export interface UpdateInitiativeInput {
+  name?: string;
+  description?: string;
+  industry?: string;
+  websiteUrl?: string;
+  goals?: UpdateGoalInput[];
+  beneficiaries?: UpdateBeneficiaryInput[];
+}
+
 export interface InitiativeMenuItem {
   label?: string;
   icon?: string;
