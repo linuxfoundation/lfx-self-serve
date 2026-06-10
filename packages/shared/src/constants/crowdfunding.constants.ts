@@ -62,14 +62,42 @@ export const STRIPE_ELEMENT_STYLE = {
   },
   invalid: { color: '#EF4444' },
 };
-export const EMPTY_INITIATIVES_RESPONSE: InitiativesResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
-export const EMPTY_CROWDFUNDING_STATS: CrowdfundingInitiativesStats = { activeCount: 0, totalRaised: 0, monthlyGain: 0, totalSponsors: 0 };
+export const EMPTY_INITIATIVES_RESPONSE: InitiativesResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,
+  offset: 0,
+};
+export const EMPTY_CROWDFUNDING_STATS: CrowdfundingInitiativesStats = {
+  activeCount: 0,
+  totalRaised: 0,
+  monthlyGain: 0,
+  totalSponsors: 0,
+};
 
 export const EMPTY_TRANSACTION_LIST: CrowdfundingTransactionList = { data: [], totalCount: 0, from: 0, size: 0 };
-export const EMPTY_TRANSACTION_STATE: { items: CrowdfundingTransaction[]; totalCount: number } = { items: [], totalCount: 0 };
-export const EMPTY_MY_DONATIONS: MyDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
-export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
-export const EMPTY_DONATION_STATS: DonationStats = { totalDonated: 0, initiativesSupported: 0, activeRecurringAmount: 0, activeRecurringCount: 0 };
+export const EMPTY_TRANSACTION_STATE: { items: CrowdfundingTransaction[]; totalCount: number } = {
+  items: [],
+  totalCount: 0,
+};
+export const EMPTY_MY_DONATIONS: MyDonationsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,
+  offset: 0,
+};
+export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,
+  offset: 0,
+};
+export const EMPTY_DONATION_STATS: DonationStats = {
+  totalDonated: 0,
+  initiativesSupported: 0,
+  activeRecurringAmount: 0,
+  activeRecurringCount: 0,
+};
 
 export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
