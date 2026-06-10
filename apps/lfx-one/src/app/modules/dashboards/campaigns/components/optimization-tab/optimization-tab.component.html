@@ -409,7 +409,7 @@
         (change)="setLinkedInAccount($any($event.target).value)"
         class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         data-testid="linkedin-account-select-opt">
-        @for (acct of linkedInAccountOptions; track acct.accountId) {
+        @for (acct of linkedInAccountOptions(); track acct.accountId) {
           <option [value]="acct.accountId">{{ acct.label }}</option>
         }
       </select>

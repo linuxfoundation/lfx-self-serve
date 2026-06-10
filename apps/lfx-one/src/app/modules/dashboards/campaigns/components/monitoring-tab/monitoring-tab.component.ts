@@ -8,7 +8,14 @@ import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
-import type { CampaignMetrics, CampaignMonitorResponse, KeywordMetrics, KeywordMetricsResponse, LinkedInMonitorResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignMetrics,
+  CampaignMonitorResponse,
+  KeywordMetrics,
+  KeywordMetricsResponse,
+  LinkedInAccountOption,
+  LinkedInMonitorResponse,
+} from '@lfx-one/shared/interfaces';
 
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
@@ -16,17 +23,6 @@ type DateRangeOption = 7 | 14 | 30;
 type PlatformType = 'google' | 'linkedin';
 
 const KEYWORD_PAGE_SIZE = 10;
-
-const LINKEDIN_ACCOUNT_OPTIONS = [
-  { accountId: '509430019', label: 'LF Events' },
-  { accountId: '538170226', label: 'The Linux Foundation' },
-  { accountId: '500928401', label: 'CNCF' },
-  { accountId: '508209098', label: 'LF Education' },
-  { accountId: '537341179', label: 'Agentic AI Foundation' },
-  { accountId: '515244770', label: 'OpenJS Foundation' },
-  { accountId: '514596831', label: 'OpenSSF' },
-  { accountId: '514553720', label: 'OpenSearch Project' },
-] as const;
 
 @Component({
   selector: 'lfx-monitoring-tab',
@@ -53,8 +49,8 @@ export class MonitoringTabComponent implements OnInit {
 
   // Platform switcher
   protected readonly selectedPlatform = signal<PlatformType>('google');
-  protected readonly linkedInAccountOptions = LINKEDIN_ACCOUNT_OPTIONS;
-  protected readonly selectedLinkedInAccountId = signal<string>('509430019');
+  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly selectedLinkedInAccountId = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
   protected readonly linkedInError = signal<string | null>(null);
@@ -95,11 +91,28 @@ export class MonitoringTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.fetchData();
+    this.campaignService
+      .getLinkedInAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedLinkedInAccountId()) {
+            this.selectedLinkedInAccountId.set(accounts[0].accountId);
+          }
+        },
+        error: () => undefined,
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
+    if (this.selectedPlatform() === 'linkedin') {
+      this.fetchLinkedInData();
+    } else {
+      this.linkedInData.set(null);
+    }
   }
 
   protected refresh(): void {
@@ -169,7 +182,7 @@ export class MonitoringTabComponent implements OnInit {
 
   protected setPlatform(p: PlatformType): void {
     this.selectedPlatform.set(p);
-    if (p === 'linkedin' && !this.linkedInData()) {
+    if (p === 'linkedin') {
       this.fetchLinkedInData();
     }
   }
@@ -180,10 +193,12 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected fetchLinkedInData(): void {
+    const accountId = this.selectedLinkedInAccountId();
+    if (!accountId) return;
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.campaignService
-      .getLinkedInMonitorData(this.selectedLinkedInAccountId(), this.selectedDays())
+      .getLinkedInMonitorData(accountId, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

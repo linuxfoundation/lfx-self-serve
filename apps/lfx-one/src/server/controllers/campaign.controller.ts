@@ -312,6 +312,11 @@ export class CampaignController {
     }
   }
 
+  public getLinkedInAccounts(_req: Request, res: Response): void {
+    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ accountId: a.accountId, label: a.label }));
+    res.json(accounts);
+  }
+
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
     const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');

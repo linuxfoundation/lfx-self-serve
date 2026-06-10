@@ -508,7 +508,7 @@ export async function getLinkedInAnalytics(
   };
 
   // --- Fetch campaign list for this account ---
-  const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE)))&count=50`;
+  const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE,PAUSED)))&count=100`;
   const campaignsResp = await fetch(campaignsUrl, {
     headers: baseHeaders,
     signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),

@@ -10,6 +10,7 @@ import type {
   KeywordActionType,
   KeywordMetrics,
   KeywordMetricsResponse,
+  LinkedInAccountOption,
   LinkedInActionItem,
   LinkedInMonitorResponse,
 } from '@lfx-one/shared/interfaces';
@@ -71,17 +72,8 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 
   // LinkedIn optimization
-  protected readonly linkedInAccountOptions = [
-    { accountId: '509430019', label: 'LF Events' },
-    { accountId: '538170226', label: 'The Linux Foundation' },
-    { accountId: '500928401', label: 'CNCF' },
-    { accountId: '508209098', label: 'LF Education' },
-    { accountId: '537341179', label: 'Agentic AI Foundation' },
-    { accountId: '515244770', label: 'OpenJS Foundation' },
-    { accountId: '514596831', label: 'OpenSSF' },
-    { accountId: '514553720', label: 'OpenSearch Project' },
-  ] as const;
-  protected readonly selectedLinkedInAccountId = signal<string>('509430019');
+  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly selectedLinkedInAccountId = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
   protected readonly linkedInError = signal<string | null>(null);
@@ -92,12 +84,25 @@ export class OptimizationTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.fetchData();
-    this.fetchLinkedInOptimization();
+    this.campaignService
+      .getLinkedInAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedLinkedInAccountId.set(accounts[0].accountId);
+            this.fetchLinkedInOptimization();
+          }
+        },
+        error: () => undefined,
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
+    this.fetchLinkedInOptimization();
   }
 
   protected refresh(): void {
@@ -149,10 +154,12 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected fetchLinkedInOptimization(): void {
+    const accountId = this.selectedLinkedInAccountId();
+    if (!accountId) return;
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.campaignService
-      .getLinkedInMonitorData(this.selectedLinkedInAccountId(), this.selectedDays())
+      .getLinkedInMonitorData(accountId, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

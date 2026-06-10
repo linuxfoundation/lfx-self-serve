@@ -544,6 +544,11 @@ export interface LinkedInActionItem {
   action: string;
 }
 
+export interface LinkedInAccountOption {
+  accountId: string;
+  label: string;
+}
+
 export interface LinkedInMonitorResponse {
   accountId: string;
   accountLabel: string;
