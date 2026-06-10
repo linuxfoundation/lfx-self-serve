@@ -141,7 +141,15 @@ export interface BackendUpdateInitiativeInput {
   name?: string;
   description?: string;
   industry?: string;
+  logo_url?: string;
   website_url?: string;
   goals?: BackendGoalInput[];
   beneficiaries?: BackendBeneficiaryInput[];
+}
+
+/** Raw snake_case presigned-URL response from POST /v1/me/presigned-url. */
+export interface PresignedURLWire {
+  upload_url: string;
+  destination_url: string;
+  required_headers: Record<string, string>;
 }

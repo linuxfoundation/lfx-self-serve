@@ -70,6 +70,10 @@ export const EMPTY_MY_DONATIONS: MyDonationsResponse = { data: [], total: 0, pag
 export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_DONATION_STATS: DonationStats = { totalDonated: 0, initiativesSupported: 0, activeRecurringAmount: 0, activeRecurringCount: 0 };
 
+export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+
 export const CROWDFUNDING_TOPIC_OPTIONS: TopicOption[] = [
   { value: 'security', label: 'Security' },
   { value: 'cloud_native', label: 'Cloud Native' },

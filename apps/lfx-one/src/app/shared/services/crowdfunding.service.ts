@@ -23,6 +23,7 @@ import {
   InitiativesResponse,
   MyDonationsResponse,
   PaymentMethod,
+  PresignedURLResult,
   RecurringDonationsResponse,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -86,6 +87,12 @@ export class CrowdfundingService {
 
     return this.http.get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams }).pipe(
       catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations'))
+    );
+  }
+
+  public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
+    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType }).pipe(
+      catchError(this.redirectIfCfUnauthenticated())
     );
   }
 

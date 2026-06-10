@@ -9,6 +9,7 @@ import {
   InitiativesResponse,
   MyDonationsResponse,
   PaymentMethod,
+  PresignedURLResult,
   RecurringDonationsResponse,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -25,6 +26,7 @@ import {
   BackendTransactionList,
   BackendUpdateInitiativeInput,
   PaymentMethodWire,
+  PresignedURLWire,
 } from '../types/crowdfunding.types';
 import { MicroserviceError } from '../errors';
 import { getHttpErrorCode } from '../helpers/http-status.helper';
@@ -313,6 +315,7 @@ export class CrowdfundingService {
     if (input.name !== undefined) body.name = input.name;
     if (input.description !== undefined) body.description = input.description;
     if (input.industry !== undefined) body.industry = input.industry;
+    if (input.logoUrl !== undefined) body.logo_url = input.logoUrl;
     if (input.websiteUrl !== undefined) body.website_url = input.websiteUrl;
     if (input.goals !== undefined) {
       body.goals = input.goals.map((g): BackendGoalInput => ({ name: g.name, amount_cents: g.amountCents }));
@@ -328,6 +331,22 @@ export class CrowdfundingService {
 
     logger.success(req, 'cf_update_initiative', startTime, { id });
     return mapToInitiativeDetail(raw);
+  }
+
+  public async getPresignedUrl(req: Request, contentType: string): Promise<PresignedURLResult> {
+    const startTime = logger.startOperation(req, 'cf_get_presigned_url');
+
+    const raw = await cfFetch<PresignedURLWire>(req, 'getPresignedUrl', '/v1/me/presigned-url', {
+      method: 'POST',
+      body: { content_type: contentType },
+    });
+
+    logger.success(req, 'cf_get_presigned_url', startTime);
+    return {
+      uploadUrl: raw.upload_url,
+      destinationUrl: raw.destination_url,
+      requiredHeaders: raw.required_headers,
+    };
   }
 
   public async getInitiativeTransactions(

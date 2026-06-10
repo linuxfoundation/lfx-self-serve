@@ -269,9 +269,16 @@ export interface UpdateInitiativeInput {
   name?: string;
   description?: string;
   industry?: string;
+  logoUrl?: string;
   websiteUrl?: string;
   goals?: UpdateGoalInput[];
   beneficiaries?: UpdateBeneficiaryInput[];
+}
+
+export interface PresignedURLResult {
+  uploadUrl: string;
+  destinationUrl: string;
+  requiredHeaders: Record<string, string>;
 }
 
 export interface InitiativeMenuItem {

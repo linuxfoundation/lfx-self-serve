@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe } from '@angular/common';
-import { Component, inject, model, input, output, signal, computed } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, ElementRef, inject, model, input, output, signal, computed, viewChild, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
@@ -13,13 +13,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { CROWDFUNDING_TOPIC_OPTIONS } from '@lfx-one/shared/constants';
+import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, CROWDFUNDING_TOPIC_OPTIONS, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 @Component({
   selector: 'lfx-initiative-settings-drawer',
-  imports: [DrawerModule, InputTextComponent, TextareaComponent, ButtonComponent, ReactiveFormsModule, MultiSelectComponent, LowerCasePipe],
+  imports: [DrawerModule, InputTextComponent, TextareaComponent, ButtonComponent, ReactiveFormsModule, MultiSelectComponent],
   templateUrl: './initiative-settings-drawer.component.html',
   styleUrl: './initiative-settings-drawer.component.scss',
 })
@@ -27,6 +27,7 @@ export class InitiativeSettingsDrawerComponent {
   // ─── Private injections ──────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly initiative = input.required<InitiativeDetail>();
   public readonly visible = model(false);
@@ -52,7 +53,12 @@ export class InitiativeSettingsDrawerComponent {
   });
 
   protected readonly saving = signal(false);
+  protected readonly logoUrl = signal<string>('');
+  protected readonly uploadingLogo = signal(false);
+  protected readonly logoUploadError = signal<string | null>(null);
   protected readonly beneficiaryGroups = signal<FormGroup[]>([]);
+
+  private readonly logoFileInput = viewChild<ElementRef<HTMLInputElement>>('logoFileInput');
 
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
   protected readonly nameLength = computed(() => this.formValue().name?.length ?? 0);
@@ -64,9 +70,7 @@ export class InitiativeSettingsDrawerComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
-        const existingTopics = init.industry
-          ? init.industry.split(',').filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v))
-          : [];
+        const existingTopics = init.industry ? init.industry.split(',').filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v)) : [];
         this.form.patchValue({
           name: init.name,
           description: init.description,
@@ -74,6 +78,8 @@ export class InitiativeSettingsDrawerComponent {
           websiteUrl: init.websiteUrl ?? '',
           goal: init.fundingStatus?.goalsTotalCents != null ? init.fundingStatus.goalsTotalCents / 100 : null,
         });
+        this.logoUrl.set(init.logoUrl ?? '');
+        this.logoUploadError.set(null);
         this.beneficiaryGroups.set([]);
         this.activeSettingsTab.set('details');
       });
@@ -104,6 +110,7 @@ export class InitiativeSettingsDrawerComponent {
         name,
         description,
         industry: topics.join(','),
+        logoUrl: this.logoUrl(),
         websiteUrl: websiteUrl || undefined,
       };
 
@@ -130,6 +137,60 @@ export class InitiativeSettingsDrawerComponent {
       this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save initiative. Please try again.' });
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  protected triggerLogoUpload(): void {
+    if (isPlatformBrowser(this.platformId)) {
+      this.logoFileInput()?.nativeElement.click();
+    }
+  }
+
+  protected removeLogo(): void {
+    this.logoUrl.set('');
+    this.logoUploadError.set(null);
+    const input = this.logoFileInput()?.nativeElement;
+    if (input) input.value = '';
+  }
+
+  protected async onLogoFileSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = '';
+
+    this.logoUploadError.set(null);
+
+    if (!ALLOWED_LOGO_MIME_TYPES.includes(file.type as AllowedLogoMimeType)) {
+      this.logoUploadError.set('Unsupported file type. Use PNG, JPEG, GIF, or WebP.');
+      return;
+    }
+    if (file.size > MAX_LOGO_SIZE_BYTES) {
+      this.logoUploadError.set(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 2 MB.`);
+      return;
+    }
+
+    this.uploadingLogo.set(true);
+    try {
+      const presigned = await firstValueFrom(this.crowdfundingService.getPresignedUrl(file.type), { defaultValue: null });
+      if (!presigned) return;
+
+      const s3Response = await fetch(presigned.uploadUrl, {
+        method: 'PUT',
+        headers: presigned.requiredHeaders,
+        body: file,
+      });
+
+      if (!s3Response.ok) {
+        this.logoUploadError.set('Upload failed. Please try again.');
+        return;
+      }
+
+      this.logoUrl.set(presigned.destinationUrl);
+    } catch {
+      this.logoUploadError.set('Logo upload failed. Please try again.');
+    } finally {
+      this.uploadingLogo.set(false);
     }
   }
 

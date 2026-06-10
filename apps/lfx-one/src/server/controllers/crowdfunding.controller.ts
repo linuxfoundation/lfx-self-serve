@@ -213,6 +213,31 @@ export class CrowdfundingController {
     }
   }
 
+  /** POST /api/crowdfunding/presigned-url — obtain a presigned S3 URL for a logo upload. */
+  public async getPresignedUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_presigned_url');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_presigned_url' });
+      }
+
+      const rawContentType = (req.body as Record<string, unknown>)['contentType'];
+      if (typeof rawContentType !== 'string' || !rawContentType.trim()) {
+        throw ServiceValidationError.forField('contentType', 'contentType is required', {
+          operation: 'get_presigned_url',
+        });
+      }
+
+      const result = await this.crowdfundingService.getPresignedUrl(req, rawContentType.trim());
+
+      logger.success(req, 'get_presigned_url', startTime);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** PATCH /api/crowdfunding/initiatives/:slug — update an initiative's editable fields. */
   public async updateInitiative(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'update_initiative');
@@ -230,6 +255,7 @@ export class CrowdfundingController {
       if (typeof body['name'] === 'string') input.name = body['name'].trim();
       if (typeof body['description'] === 'string') input.description = body['description'].trim();
       if (typeof body['industry'] === 'string') input.industry = body['industry'];
+      if (typeof body['logoUrl'] === 'string') input.logoUrl = body['logoUrl'];
       if (typeof body['websiteUrl'] === 'string') input.websiteUrl = body['websiteUrl'].trim() || undefined;
 
       if (Array.isArray(body['goals'])) {
