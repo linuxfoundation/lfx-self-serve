@@ -3,7 +3,7 @@
 
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { OsspreyFilterState, OsspreyListParams, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import { OsspreyDashboardSortSpec, OsspreyFilterState, OsspreyListParams, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
 import { switchMap, catchError, of, map, timer } from 'rxjs';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
@@ -110,11 +110,7 @@ export class OsspreyDashboardComponent {
     return toSignal<OsspreyPackage[] | undefined>(
       toObservable(this.filters).pipe(
         switchMap((f) => {
-          interface SortSpec {
-            sortBy: OsspreyListParams['sortBy'];
-            sortDir: OsspreyListParams['sortDir'];
-          }
-          const sortByMap: Record<string, SortSpec> = {
+          const sortByMap: Record<string, OsspreyDashboardSortSpec> = {
             impact: { sortBy: 'impact', sortDir: 'desc' },
             health: { sortBy: 'health', sortDir: 'asc' },
             vulns: { sortBy: 'openVulns', sortDir: 'desc' },

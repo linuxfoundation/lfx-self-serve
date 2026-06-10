@@ -56,6 +56,11 @@ export interface OsspreyListParams {
   sortDir?: 'asc' | 'desc';
 }
 
+export interface OsspreyDashboardSortSpec {
+  sortBy: OsspreyListParams['sortBy'];
+  sortDir: OsspreyListParams['sortDir'];
+}
+
 export interface CdpAdvisory {
   osvId: string;
   severity: OspreySeverity;
