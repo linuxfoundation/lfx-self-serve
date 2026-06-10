@@ -13,6 +13,7 @@ import type {
   CampaignCreateResult,
   CampaignJobStatus,
   CampaignKeyword,
+  CampaignPlatform,
   CampaignSSEEventType,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
@@ -844,13 +845,19 @@ export class CampaignProxyService {
       }
     }
 
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
+    const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
 
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
     const errors: string[] = [];
+
+    if (unsupported.length > 0) {
+      errors.push(`Unsupported platform(s): ${unsupported.join(', ')}. Supported: ${supportedPlatforms.join(', ')}`);
+    }
 
     const promises: Promise<void>[] = [];
 

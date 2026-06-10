@@ -479,10 +479,13 @@ export class PlanningTabComponent implements OnInit {
       const rawVariants = liCopy['variants'];
       for (const v of (Array.isArray(rawVariants) ? rawVariants : []) as Record<string, unknown>[]) {
         if (!v || typeof v !== 'object') continue;
+        const introRaw = v['intro_text'] ?? v['introText'] ?? '';
+        const headlineRaw = v['headline'] ?? '';
+        const imageRaw = v['image_urn'] ?? v['imageUrn'];
         variants.push({
-          introText: typeof v['intro_text'] === 'string' ? v['intro_text'] : String(v['intro_text'] ?? ''),
-          headline: typeof v['headline'] === 'string' ? v['headline'] : String(v['headline'] ?? ''),
-          imageUrn: typeof v['image_urn'] === 'string' ? v['image_urn'] : undefined,
+          introText: typeof introRaw === 'string' ? introRaw : String(introRaw),
+          headline: typeof headlineRaw === 'string' ? headlineRaw : String(headlineRaw),
+          imageUrn: typeof imageRaw === 'string' ? imageRaw : undefined,
         });
       }
     }
