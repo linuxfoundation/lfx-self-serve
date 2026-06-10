@@ -624,7 +624,7 @@ export async function getLinkedInAnalytics(
             creativeName: `Creative ${creativeId}`,
             impressions,
             clicks,
-            ctr: impressions > 0 ? clicks / impressions : 0,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
             spend: parseFloat(el.costInLocalCurrency ?? '0'),
             conversions: el.externalWebsiteConversions ?? 0,
             status: 'ACTIVE',
@@ -646,13 +646,18 @@ export async function getLinkedInAnalytics(
     } else if (dailyBudget > 0) {
       pacingPct = (analytics.spend / (dailyBudget * days)) * 100;
     }
-    let pacingLabel: import('@lfx-one/shared/interfaces').LinkedInPacingLabel = 'overspending';
-    if (pacingPct < 40) {
-      pacingLabel = 'underspending';
-    } else if (pacingPct < 90) {
-      pacingLabel = 'normal';
-    } else if (pacingPct < 105) {
-      pacingLabel = 'constrained';
+    const hasBudget = totalBudget > 0 || dailyBudget > 0;
+    let pacingLabel: import('@lfx-one/shared/interfaces').LinkedInPacingLabel = 'normal';
+    if (hasBudget) {
+      if (pacingPct < 40) {
+        pacingLabel = 'underspending';
+      } else if (pacingPct < 90) {
+        pacingLabel = 'normal';
+      } else if (pacingPct < 105) {
+        pacingLabel = 'constrained';
+      } else {
+        pacingLabel = 'overspending';
+      }
     }
     const startMs = camp.runSchedule?.start ?? 0;
     const endMs = camp.runSchedule?.end ?? 0;
@@ -666,7 +671,7 @@ export async function getLinkedInAnalytics(
       spend: analytics.spend,
       impressions: analytics.impressions,
       clicks: analytics.clicks,
-      ctr: analytics.impressions > 0 ? analytics.clicks / analytics.impressions : 0,
+      ctr: analytics.impressions > 0 ? (analytics.clicks / analytics.impressions) * 100 : 0,
       conversions: analytics.conversions,
       pacingPct,
       pacingLabel,
@@ -702,11 +707,11 @@ export async function getLinkedInAnalytics(
         action: 'Consider increasing budget if event is in peak registration period',
       });
     }
-    if (c.ctr > 0 && c.ctr < 0.003) {
+    if (c.ctr > 0 && c.ctr < 0.3) {
       actionItems.push({
         priority: 'MEDIUM',
         campaignName: c.campaignName,
-        issue: `Low CTR: ${(c.ctr * 100).toFixed(2)}%`,
+        issue: `Low CTR: ${c.ctr.toFixed(2)}%`,
         action: 'Refresh ad copy or images; review audience targeting',
       });
     }

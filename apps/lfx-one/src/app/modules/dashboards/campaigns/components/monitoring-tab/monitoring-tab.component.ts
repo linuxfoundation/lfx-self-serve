@@ -229,7 +229,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected formatLinkedInPct(n: number): string {
-    return `${(n * 100).toFixed(2)}%`;
+    return `${n.toFixed(2)}%`;
   }
 
   protected eventLabel(campaignName: string): string {
