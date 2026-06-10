@@ -1,7 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
+import type {
+  LinkedInActionItem,
+  LinkedInCampaignCreateRequest,
+  LinkedInCampaignCreateResult,
+  LinkedInCampaignMetrics,
+  LinkedInCreativeMetrics,
+  LinkedInGeoTarget,
+  LinkedInMonitorResponse,
+  LinkedInPacingLabel,
+  LinkedInTargetingProfile,
+} from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
@@ -488,11 +498,16 @@ function dateRangeParams(days: number): { start: string; end: string } {
   };
 }
 
-export async function getLinkedInAnalytics(
-  req: Request | undefined,
-  accountId: string,
-  days: number
-): Promise<import('@lfx-one/shared/interfaces').LinkedInMonitorResponse> {
+interface LinkedInCampaignElement {
+  id: number;
+  name: string;
+  status: string;
+  totalBudget?: { amount: string };
+  dailyBudget?: { amount: string };
+  runSchedule?: { start: number; end: number };
+}
+
+export async function getLinkedInAnalytics(req: Request | undefined, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
   const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
   const token = getLinkedInEnv('LINKEDIN_ACCESS_TOKEN');
   const version = LINKEDIN_API_VERSION;
@@ -508,15 +523,7 @@ export async function getLinkedInAnalytics(
   };
 
   // --- Fetch campaign list for this account (paginated) ---
-  interface CampaignElement {
-    id: number;
-    name: string;
-    status: string;
-    totalBudget?: { amount: string };
-    dailyBudget?: { amount: string };
-    runSchedule?: { start: number; end: number };
-  }
-  const campaigns: CampaignElement[] = [];
+  const campaigns: LinkedInCampaignElement[] = [];
   const pageSize = 100;
   let campaignStart = 0;
   while (true) {
@@ -531,7 +538,7 @@ export async function getLinkedInAnalytics(
       logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
       throw err;
     }
-    const campaignsData = (await campaignsResp.json()) as { elements?: CampaignElement[] };
+    const campaignsData = (await campaignsResp.json()) as { elements?: LinkedInCampaignElement[] };
     const page = campaignsData.elements ?? [];
     campaigns.push(...page);
     if (page.length < pageSize) break;
@@ -540,7 +547,7 @@ export async function getLinkedInAnalytics(
 
   if (campaigns.length === 0) {
     const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
-    const result: import('@lfx-one/shared/interfaces').LinkedInMonitorResponse = {
+    const result: LinkedInMonitorResponse = {
       accountId,
       accountLabel: account?.label ?? accountId,
       pulledAt: new Date().toISOString(),
@@ -597,7 +604,7 @@ export async function getLinkedInAnalytics(
   }
 
   // --- Fetch creative metrics per campaign (parallel) ---
-  const creativeAnalyticsMap = new Map<string, import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[]>();
+  const creativeAnalyticsMap = new Map<string, LinkedInCreativeMetrics[]>();
   const creativeFetchFailed = new Set<string>();
   const creativeFetches = campaigns.map(async (camp) => {
     const creativeParams = new URLSearchParams({
@@ -622,7 +629,7 @@ export async function getLinkedInAnalytics(
           externalWebsiteConversions?: number;
         }[];
       };
-      const creatives: import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[] = (creativeData.elements ?? [])
+      const creatives: LinkedInCreativeMetrics[] = (creativeData.elements ?? [])
         .filter((el) => !!el.pivotValue)
         .map((el) => {
           const creativeId = el.pivotValue!.replace('urn:li:sponsoredCreative:', '');
@@ -630,13 +637,13 @@ export async function getLinkedInAnalytics(
           const impressions = el.impressions ?? 0;
           return {
             creativeId,
-            creativeName: `#${creativeId}`,
+            creativeName: `Creative ${creativeId}`,
             impressions,
             clicks,
             ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
             spend: parseFloat(el.costInLocalCurrency ?? '0'),
             conversions: el.externalWebsiteConversions ?? 0,
-            status: 'UNKNOWN',
+            status: camp.status,
           };
         });
       creativeAnalyticsMap.set(String(camp.id), creatives);
@@ -652,7 +659,7 @@ export async function getLinkedInAnalytics(
   await Promise.allSettled(creativeFetches);
 
   // --- Build campaign metrics ---
-  const campaignMetrics: import('@lfx-one/shared/interfaces').LinkedInCampaignMetrics[] = campaigns.map((camp) => {
+  const campaignMetrics: LinkedInCampaignMetrics[] = campaigns.map((camp) => {
     const urn = `urn:li:sponsoredCampaign:${camp.id}`;
     const analytics = analyticsMap.get(urn) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
     const totalBudget = parseFloat(camp.totalBudget?.amount ?? '0');
@@ -678,7 +685,7 @@ export async function getLinkedInAnalytics(
       pacingPct = (analytics.spend / (dailyBudget * flightDays)) * 100;
     }
     const hasBudget = totalBudget > 0 || dailyBudget > 0;
-    let pacingLabel: import('@lfx-one/shared/interfaces').LinkedInPacingLabel = 'normal';
+    let pacingLabel: LinkedInPacingLabel = 'normal';
     if (hasBudget) {
       if (pacingPct < 40) {
         pacingLabel = 'underspending';
@@ -713,7 +720,7 @@ export async function getLinkedInAnalytics(
   });
 
   // --- Action items ---
-  const actionItems: import('@lfx-one/shared/interfaces').LinkedInActionItem[] = [];
+  const actionItems: LinkedInActionItem[] = [];
   for (const c of campaignMetrics) {
     if (c.creatives.length === 0 && c.status === 'ACTIVE' && !creativeFetchFailed.has(c.campaignId)) {
       actionItems.push({
@@ -778,7 +785,7 @@ export async function getLinkedInAnalytics(
   );
 
   const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
-  const result: import('@lfx-one/shared/interfaces').LinkedInMonitorResponse = {
+  const result: LinkedInMonitorResponse = {
     accountId,
     accountLabel: account?.label ?? accountId,
     pulledAt: new Date().toISOString(),

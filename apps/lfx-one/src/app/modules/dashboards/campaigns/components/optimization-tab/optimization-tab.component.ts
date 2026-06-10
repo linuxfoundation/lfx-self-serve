@@ -158,6 +158,10 @@ export class OptimizationTabComponent implements OnInit {
     this.fetchLinkedInOptimization();
   }
 
+  protected onLinkedInAccountChange(event: Event): void {
+    this.setLinkedInAccount((event.target as HTMLSelectElement).value);
+  }
+
   protected fetchLinkedInOptimization(): void {
     const accountId = this.selectedLinkedInAccountId();
     if (!accountId) return;

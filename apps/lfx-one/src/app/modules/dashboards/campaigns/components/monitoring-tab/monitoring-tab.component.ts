@@ -57,7 +57,10 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
-  protected readonly linkedInPulledAt = computed(() => (this.linkedInData()?.pulledAt ? new Date(this.linkedInData()!.pulledAt).toLocaleString() : null));
+  protected readonly linkedInPulledAt = computed(() => {
+    const pulledAt = this.linkedInData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
@@ -121,6 +124,9 @@ export class MonitoringTabComponent implements OnInit {
 
   protected refresh(): void {
     this.fetchData();
+    if (this.selectedPlatform() === 'linkedin') {
+      this.fetchLinkedInData();
+    }
   }
 
   protected fetchData(): void {
@@ -194,6 +200,10 @@ export class MonitoringTabComponent implements OnInit {
   protected setLinkedInAccount(accountId: string): void {
     this.selectedLinkedInAccountId.set(accountId);
     this.fetchLinkedInData();
+  }
+
+  protected onLinkedInAccountChange(event: Event): void {
+    this.setLinkedInAccount((event.target as HTMLSelectElement).value);
   }
 
   protected fetchLinkedInData(): void {
