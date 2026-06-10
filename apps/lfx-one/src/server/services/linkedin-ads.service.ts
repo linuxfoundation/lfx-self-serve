@@ -4,7 +4,13 @@
 import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
-import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
+import {
+  LINKEDIN_ACCOUNTS,
+  LINKEDIN_DEFAULT_ACCOUNT_ID,
+  LINKEDIN_DEFAULT_ORG_ID,
+  LINKEDIN_EMPLOYER_EXCLUSIONS,
+  LINKEDIN_TARGETING_PROFILES,
+} from '../constants';
 
 import type { Request } from 'express';
 
@@ -35,18 +41,18 @@ function getLinkedInEnv(key: string): string {
 }
 
 function resolveAccountId(override?: string): string {
-  const id = override || getLinkedInEnv('LINKEDIN_AD_ACCOUNT_ID');
+  const envValue = process.env['LINKEDIN_AD_ACCOUNT_ID'];
+  const id = override || envValue || LINKEDIN_DEFAULT_ACCOUNT_ID;
   if (!/^\d+$/.test(id)) {
     throw new Error(`Invalid LinkedIn account ID: must be numeric, got "${id}"`);
   }
   if (override && !LINKEDIN_AD_ACCOUNTS.some((a) => a.accountId === id)) {
     throw new Error(`Unsupported LinkedIn ad account ID: "${id}"`);
   }
+  if (!envValue && !override) {
+    logger.debug(undefined, 'linkedin_config', `LINKEDIN_AD_ACCOUNT_ID not set — using default: ${LINKEDIN_DEFAULT_ACCOUNT_ID}`);
+  }
   return id;
-}
-
-function getOrgId(): string {
-  return getLinkedInEnv('LINKEDIN_ORG_ID');
 }
 
 function getAccessToken(): string {
@@ -177,9 +183,13 @@ function accountUrn(accountId: string): string {
 }
 
 function resolveOrgId(accountId: string): string {
-  const account = LINKEDIN_AD_ACCOUNTS.find((a) => a.accountId === accountId);
-  if (account) return account.organizationId;
-  return getOrgId();
+  const envOrgId = process.env['LINKEDIN_ORG_ID'];
+  if (envOrgId) return envOrgId;
+  const sharedAccount = LINKEDIN_AD_ACCOUNTS.find((a) => a.accountId === accountId);
+  if (sharedAccount) return sharedAccount.organizationId;
+  const serverAccount = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+  if (serverAccount) return serverAccount.orgId;
+  return LINKEDIN_DEFAULT_ORG_ID;
 }
 
 function orgUrn(accountId: string): string {

@@ -11,10 +11,23 @@ import type { LinkedInTargetingProfileConfig } from '@lfx-one/shared/interfaces'
 // UI-safe constants (geo resolve map, char limits) remain in @lfx-one/shared.
 // ---------------------------------------------------------------------------
 
+export const LINKEDIN_DEFAULT_ACCOUNT_ID = '509430019';
+
 export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; orgId: string }[] = [
   { accountId: '538170226', label: 'The Linux Foundation', orgId: '208777' },
   { accountId: '509430019', label: 'LF Events', orgId: '208777' },
+  { accountId: '500928401', label: 'Cloud Native Computing Foundation', orgId: '12893459' },
+  { accountId: '508209098', label: 'Linux Foundation - Education', orgId: '7953130' },
+  { accountId: '537341179', label: 'Agentic AI Foundation', orgId: '111268938' },
+  { accountId: '514914665', label: 'OpenSearch Project (2nd Account)', orgId: '78470501' },
+  { accountId: '515250253', label: 'LF OpenJS Ad Account', orgId: '19082105' },
+  { accountId: '531310265', label: 'LF Agentic AI Ad Account', orgId: '111268938' },
+  { accountId: '515244770', label: 'OpenJS Foundation', orgId: '19082105' },
+  { accountId: '514596831', label: 'OpenSSF', orgId: '76521837' },
+  { accountId: '514553720', label: 'OpenSearch Project', orgId: '78470501' },
 ] as const;
+
+export const LINKEDIN_DEFAULT_ORG_ID = LINKEDIN_ACCOUNTS.find((a) => a.accountId === LINKEDIN_DEFAULT_ACCOUNT_ID)!.orgId;
 
 export const LINKEDIN_EMPLOYER_EXCLUSIONS: readonly string[] = ['urn:li:company:33275771', 'urn:li:company:12893459'] as const;
 
