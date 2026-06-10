@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -28,7 +28,9 @@ import type {
   InfluenceBand,
   OrgLensProject,
   OrgLensProjectsResponse,
+  OrgProjectsSignalBar,
   OrgProjectsSortField,
+  OrgProjectsTableRow,
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
   SortDirection,
@@ -88,6 +90,8 @@ export class OrgProjectsComponent {
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
+  // Static explanatory hover for the Technical / Ecosystem influence column headers.
+  protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
   protected readonly sparklineOptions = {
     responsive: true,
@@ -117,7 +121,8 @@ export class OrgProjectsComponent {
   protected readonly workspaces = signal<OrgProjectsWorkspace[]>([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
   /** Workspace being renamed/deleted in the settings dialog; `null` while the dialog adds a new one. */
   protected readonly editingWorkspace = signal<OrgProjectsWorkspace | null>(null);
-  protected readonly workspaceDialogOpen = signal(false);
+  /** Two-way visibility for the workspace add/settings dialog (`[(visible)]`). */
+  protected readonly workspaceDialogOpen = model(false);
   /** Bumped to re-trigger the demo fetch from the inline error-retry CTA. */
   private readonly reload = signal(0);
   /** Action menu items rebuilt per row when the kebab is opened. */
@@ -166,6 +171,8 @@ export class OrgProjectsComponent {
   protected readonly filteredProjects = this.initFilteredProjects();
   /** `filteredProjects` ordered by the active sort (pinned rows float to the top). */
   protected readonly sortedProjects = this.initSortedProjects();
+  /** Table rows: sorted projects enriched with precomputed bar geometry + tooltip HTML (keeps logic out of the template). */
+  protected readonly rows = this.initRows();
   protected readonly totalRecords = computed(() => this.sortedProjects().length);
 
   public constructor() {
@@ -182,6 +189,9 @@ export class OrgProjectsComponent {
         replaceUrl: true,
       });
     });
+
+    // Clear any pending health-popover hide timer on teardown so it can't fire after destroy.
+    inject(DestroyRef).onDestroy(() => this.cancelHealthHide());
   }
 
   // Public methods
@@ -320,7 +330,7 @@ export class OrgProjectsComponent {
   // Signal-strength bars for an influence band: filled count = rank (Leading 4 → Silent 1 → Non-LF 0),
   // colored by band; remaining bars faded. Non-LF (0 filled) gets a diagonal slash from the template.
   // Geometry mirrors the LFX Insights signal-bar icon: 4 evenly spaced, ascending, rounded bars in a 16×16 box.
-  protected bandBars(band: InfluenceBand): { x: number; y: number; w: number; h: number; colorClass: string }[] {
+  protected bandBars(band: InfluenceBand): OrgProjectsSignalBar[] {
     const heights = [5, 8.3, 11.6, 15];
     const barWidth = 2.6;
     const gap = 1.8;
@@ -333,10 +343,6 @@ export class OrgProjectsComponent {
       // Filled bars use the band color; unfilled use a lighter tint of the same color (org dashboard design).
       colorClass: i < filled ? INFLUENCE_BAND_BAR_FILL_CLASS[band] : INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT[band],
     }));
-  }
-  // Explanatory hover for the Technical / Ecosystem influence column headers.
-  protected influenceColumnTooltip(): string {
-    return `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   }
   protected openHealth(event: Event, project: OrgLensProject, popover: Popover): void {
     this.cancelHealthHide();
@@ -377,6 +383,12 @@ export class OrgProjectsComponent {
       return 'text-red-300';
     }
     return 'text-gray-300';
+  }
+  // Plain-text trend summary for screen readers / keyboard focus on the sparkline.
+  protected trendAriaLabel(project: OrgLensProject): string {
+    const t = project.trend;
+    const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}%`;
+    return `Influence trend over the past year — combined ${fmt(t.deltaPct)}, technical ${fmt(t.technicalDeltaPct)}, ecosystem ${fmt(t.ecosystemDeltaPct)}.`;
   }
   protected isPinned(slug: string): boolean {
     return this.pinnedSlugs().has(slug);
@@ -466,6 +478,19 @@ export class OrgProjectsComponent {
       });
       return projects;
     });
+  }
+
+  // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
+  private initRows(): Signal<OrgProjectsTableRow[]> {
+    return computed(() =>
+      this.sortedProjects().map((project) => ({
+        ...project,
+        technicalBars: this.bandBars(project.technicalInfluence),
+        ecosystemBars: this.bandBars(project.ecosystemInfluence),
+        trendTooltipHtml: this.trendTooltip(project),
+        trendAriaLabel: this.trendAriaLabel(project),
+      }))
+    );
   }
 
   private compareProjects(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField, dir: SortDirection): number {

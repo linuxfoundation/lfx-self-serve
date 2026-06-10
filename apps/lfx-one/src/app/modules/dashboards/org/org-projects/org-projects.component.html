@@ -97,7 +97,7 @@
           data-testid="org-projects-empty-state" />
       } @else {
         <lfx-table
-          [value]="sortedProjects()"
+          [value]="rows()"
           [loading]="loading()"
           [paginator]="totalRecords() > pageSize()"
           [rows]="pageSize()"
@@ -142,7 +142,7 @@
                   type="button"
                   class="flex items-center gap-1 whitespace-nowrap font-semibold"
                   (click)="toggleSort('technicalInfluence')"
-                  [pTooltip]="influenceColumnTooltip()"
+                  [pTooltip]="influenceColumnTooltipHtml"
                   [escape]="false"
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
@@ -155,7 +155,7 @@
                   type="button"
                   class="flex items-center gap-1 whitespace-nowrap font-semibold"
                   (click)="toggleSort('ecosystemInfluence')"
-                  [pTooltip]="influenceColumnTooltip()"
+                  [pTooltip]="influenceColumnTooltipHtml"
                   [escape]="false"
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
@@ -235,7 +235,7 @@
               <td>
                 <span class="inline-flex items-center gap-2">
                   <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                    @for (bar of bandBars(project.technicalInfluence); track $index) {
+                    @for (bar of project.technicalBars; track $index) {
                       <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                     }
                     @if (project.technicalInfluence === 'non-lf') {
@@ -251,7 +251,7 @@
               <td>
                 <span class="inline-flex items-center gap-2">
                   <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                    @for (bar of bandBars(project.ecosystemInfluence); track $index) {
+                    @for (bar of project.ecosystemBars; track $index) {
                       <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                     }
                     @if (project.ecosystemInfluence === 'non-lf') {
@@ -263,11 +263,14 @@
                   <span class="text-sm text-gray-900">{{ bandLabel(project.ecosystemInfluence) }}</span>
                 </span>
               </td>
-              <!-- Influence Trend (sparkline only; hover reveals combined/technical/ecosystem 1y deltas) -->
+              <!-- Influence Trend (sparkline; hover/focus reveals combined/technical/ecosystem 1y deltas) -->
               <td>
                 <span
-                  class="block h-8 w-20 cursor-help"
-                  [pTooltip]="trendTooltip(project)"
+                  class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  tabindex="0"
+                  role="img"
+                  [attr.aria-label]="project.trendAriaLabel"
+                  [pTooltip]="project.trendTooltipHtml"
                   [escape]="false"
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-nowrap"
@@ -380,8 +383,7 @@
 <!-- Workspace settings / add dialog -->
 <p-dialog
   [header]="editingWorkspace() ? 'Workspace settings' : 'Add workspace'"
-  [visible]="workspaceDialogOpen()"
-  (visibleChange)="workspaceDialogOpen.set($event)"
+  [(visible)]="workspaceDialogOpen"
   [modal]="true"
   [dismissableMask]="true"
   [draggable]="false"

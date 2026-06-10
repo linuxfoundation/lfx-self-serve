@@ -83,7 +83,7 @@ export const ORG_PROJECTS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
 export const DEFAULT_ORG_PROJECTS_PAGE_SIZE = 25;
 
-/** Default Projects-table sort: Influence Trend, descending. */
+/** Default Projects-table sort: Contributors descending (tie-break participants desc, then name). */
 export const DEFAULT_ORG_PROJECTS_SORT_FIELD: OrgProjectsSortField = 'contributors';
 
 export const DEFAULT_ORG_PROJECTS_SORT_DIR: SortDirection = 'desc';

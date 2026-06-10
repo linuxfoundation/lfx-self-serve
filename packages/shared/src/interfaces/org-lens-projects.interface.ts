@@ -119,8 +119,7 @@ export interface OrgLensProjectsResponse {
   projects: OrgLensProject[];
 }
 
-/** Workspace preset / saved-filter identifier (`?workspace=`). */
-/** Workspace identifier. System presets use stable slugs; user-created workspaces get generated slugs. */
+/** Workspace identifier (`?workspace=`). The default uses a stable slug; user-created workspaces get generated slugs. */
 export type OrgProjectsWorkspaceId = string;
 
 /** A saved Org Lens workspace (filter preset). Each company is seeded with the default; users add/rename/delete their own. */
@@ -134,3 +133,23 @@ export type OrgProjectsSortField = 'name' | 'health' | 'technicalInfluence' | 'e
 
 /** Sort direction (`?dir=`). */
 export type SortDirection = 'asc' | 'desc';
+
+/** A single rounded bar in the influence signal-strength icon (precomputed for the table view-model). */
+export interface OrgProjectsSignalBar {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Tailwind `fill-*` class for the bar. */
+  colorClass: string;
+}
+
+/** Projects-table row: the project plus presentation values precomputed off the template hot path. */
+export interface OrgProjectsTableRow extends OrgLensProject {
+  technicalBars: OrgProjectsSignalBar[];
+  ecosystemBars: OrgProjectsSignalBar[];
+  /** Pre-rendered HTML for the Influence Trend hover tooltip. */
+  trendTooltipHtml: string;
+  /** Plain-text trend summary for screen readers / keyboard focus. */
+  trendAriaLabel: string;
+}
