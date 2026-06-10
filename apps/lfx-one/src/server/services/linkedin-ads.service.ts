@@ -560,14 +560,13 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     return result;
   }
 
-  // --- Fetch analytics for all campaigns in one call ---
-  const campaignUrns = campaigns.map((c) => `urn:li:sponsoredCampaign:${c.id}`).join(',');
+  // --- Fetch analytics for all campaigns via account-level filter ---
   const analyticsParams = new URLSearchParams({
     q: 'analytics',
     pivot: 'CAMPAIGN',
     dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
     timeGranularity: 'ALL',
-    campaigns: `List(${campaignUrns})`,
+    accounts: `List(urn:li:sponsoredAccount:${accountId})`,
     fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
   });
 
@@ -603,10 +602,12 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     }
   }
 
-  // --- Fetch creative metrics per campaign (parallel) ---
+  // --- Fetch creative metrics per campaign (batched, max 5 concurrent) ---
+  const CREATIVE_BATCH_SIZE = 5;
   const creativeAnalyticsMap = new Map<string, LinkedInCreativeMetrics[]>();
   const creativeFetchFailed = new Set<string>();
-  const creativeFetches = campaigns.map(async (camp) => {
+
+  const fetchCreativeForCampaign = async (camp: (typeof campaigns)[number]): Promise<void> => {
     const creativeParams = new URLSearchParams({
       q: 'analytics',
       pivot: 'CREATIVE',
@@ -655,8 +656,12 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       });
       creativeFetchFailed.add(String(camp.id));
     }
-  });
-  await Promise.allSettled(creativeFetches);
+  };
+
+  for (let i = 0; i < campaigns.length; i += CREATIVE_BATCH_SIZE) {
+    const batch = campaigns.slice(i, i + CREATIVE_BATCH_SIZE);
+    await Promise.allSettled(batch.map((camp) => fetchCreativeForCampaign(camp)));
+  }
 
   // --- Build campaign metrics ---
   const campaignMetrics: LinkedInCampaignMetrics[] = campaigns.map((camp) => {

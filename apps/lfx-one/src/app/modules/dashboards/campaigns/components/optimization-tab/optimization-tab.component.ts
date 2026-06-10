@@ -74,7 +74,7 @@ export class OptimizationTabComponent implements OnInit {
 
   // LinkedIn optimization
   protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
-  protected readonly selectedLinkedInAccountId = signal<string>('');
+  protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
   protected readonly linkedInError = signal<string | null>(null);
@@ -92,7 +92,7 @@ export class OptimizationTabComponent implements OnInit {
         next: (accounts) => {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0) {
-            this.selectedLinkedInAccountId.set(accounts[0].accountId);
+            this.selectedLinkedInAccountKey.set(accounts[0].key);
             this.fetchLinkedInOptimization();
           }
         },
@@ -153,8 +153,8 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
-  protected setLinkedInAccount(accountId: string): void {
-    this.selectedLinkedInAccountId.set(accountId);
+  protected setLinkedInAccount(key: string): void {
+    this.selectedLinkedInAccountKey.set(key);
     this.fetchLinkedInOptimization();
   }
 
@@ -163,13 +163,13 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected fetchLinkedInOptimization(): void {
-    const accountId = this.selectedLinkedInAccountId();
-    if (!accountId) return;
+    const accountKey = this.selectedLinkedInAccountKey();
+    if (!accountKey) return;
     this.linkedInSub?.unsubscribe();
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(accountId, this.selectedDays())
+      .getLinkedInMonitorData(accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

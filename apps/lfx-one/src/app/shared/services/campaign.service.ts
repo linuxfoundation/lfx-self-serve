@@ -73,8 +73,8 @@ export class CampaignService {
     return this.http.get<LinkedInAccountOption[]>('/api/campaigns/linkedin/accounts');
   }
 
-  public getLinkedInMonitorData(accountId: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountId } });
+  public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {

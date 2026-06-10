@@ -545,7 +545,7 @@ export interface LinkedInActionItem {
 }
 
 export interface LinkedInAccountOption {
-  accountId: string;
+  key: string;
   label: string;
 }
 

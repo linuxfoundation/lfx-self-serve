@@ -313,17 +313,17 @@ export class CampaignController {
   }
 
   public getLinkedInAccounts(_req: Request, res: Response): void {
-    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ accountId: a.accountId, label: a.label }));
+    const accounts = LINKEDIN_ACCOUNTS.map((a, i) => ({ key: String(i), label: a.label }));
     res.json(accounts);
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
-    const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? LINKEDIN_ACCOUNTS[0]?.accountId ?? '');
-    const validAccount = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawAccountId);
-    if (!validAccount) {
+    const rawKey = String(req.query['accountKey'] ?? '0');
+    const keyIndex = parseInt(rawKey, 10);
+    if (isNaN(keyIndex) || keyIndex < 0 || keyIndex >= LINKEDIN_ACCOUNTS.length) {
       next(
-        ServiceValidationError.forField('accountId', 'Invalid LinkedIn account ID', {
+        ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {
           operation: 'linkedin_monitor',
           service: 'campaign_controller',
           path: req.path,
@@ -331,15 +331,15 @@ export class CampaignController {
       );
       return;
     }
-    const accountId = validAccount.accountId;
-    const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountId });
+    const accountId = LINKEDIN_ACCOUNTS[keyIndex].accountId;
+    const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
     try {
       const data = await this.linkedInMetricsService.getLinkedInMonitorData(req, accountId, days);
       logger.success(req, 'linkedin_monitor', startTime, { campaigns: data.campaigns.length });
       res.json(data);
     } catch (error) {
-      logger.error(req, 'linkedin_monitor', startTime, error, { days, accountId });
+      logger.error(req, 'linkedin_monitor', startTime, error, { days, accountKey: rawKey });
       next(error);
     }
   }
