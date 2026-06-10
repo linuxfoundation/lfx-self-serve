@@ -211,7 +211,7 @@ export class CrowdfundingController {
     }
   }
 
-  /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug (public endpoint). */
+  /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug. */
   public async getInitiativeBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
@@ -232,7 +232,7 @@ export class CrowdfundingController {
     }
   }
 
-  /** GET /api/crowdfunding/initiatives/:slug/transactions — paginated transactions list (public endpoint). */
+  /** GET /api/crowdfunding/initiatives/:slug/transactions — paginated transactions list. */
   public async getInitiativeTransactions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 

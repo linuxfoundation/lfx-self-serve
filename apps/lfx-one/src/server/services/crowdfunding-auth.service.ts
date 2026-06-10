@@ -59,7 +59,7 @@ export class CrowdfundingAuthService {
   }
 
   public isConfigured(): boolean {
-    return !!this.clientId && !!this.clientSecret && !!this.audience;
+    return !!this.clientId && !!this.clientSecret && !!this.audience && !!this.issuerBaseUrl;
   }
 
   public hasValidToken(req: Request): boolean {
