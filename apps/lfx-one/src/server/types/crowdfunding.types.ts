@@ -88,3 +88,69 @@ export interface BackendTransactionList {
   from: number;
   size: number;
 }
+
+/** Raw snake_case donation shape from GET /v1/me/donations on the upstream crowdfunding service. */
+export interface BackendDonation {
+  id: string;
+  initiative_id?: string;
+  initiative_name?: string;
+  category?: string;
+  amount_cents: number;
+  po_number?: string;
+  payment_method?: string;
+  status?: string;
+  created_on: string;
+  updated_on: string;
+}
+
+export interface BackendDonationListResponse {
+  data: BackendDonation[];
+  meta: { total: number; limit: number; offset: number };
+}
+
+/** Raw snake_case subscription shape from GET /v1/me/subscriptions on the upstream crowdfunding service. */
+export interface BackendSubscription {
+  id: string;
+  initiative_id: string;
+  initiative_name: string;
+  initiative_logo_url?: string;
+  status: string;
+  amount_cents: number;
+  interval: string;
+  start_date: string;
+  next_charge_date?: string;
+  paused_at?: string;
+}
+
+export interface BackendSubscriptionListResponse {
+  data: BackendSubscription[];
+  meta: { total: number; limit: number; offset: number };
+}
+
+export interface BackendGoalInput {
+  name: string;
+  amount_cents: number;
+}
+
+export interface BackendBeneficiaryInput {
+  name?: string;
+  email?: string;
+}
+
+/** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{slug} on the upstream crowdfunding service. */
+export interface BackendUpdateInitiativeInput {
+  name?: string;
+  description?: string;
+  industry?: string;
+  logo_url?: string;
+  website_url?: string;
+  goals?: BackendGoalInput[];
+  beneficiaries?: BackendBeneficiaryInput[];
+}
+
+/** Raw snake_case presigned-URL response from POST /v1/me/presigned-url. */
+export interface PresignedURLWire {
+  upload_url: string;
+  destination_url: string;
+  required_headers: Record<string, string>;
+}

@@ -5,33 +5,31 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { ALLOWED_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
+import { UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
-import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
+  private readonly crowdfundingAuthService = new CrowdfundingAuthService();
 
   // GET /api/crowdfunding/initiatives
   public async getMyInitiatives(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_initiatives',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_initiatives' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req, username);
+      const initiatives = await this.crowdfundingService.getMyInitiatives(req);
 
-      logger.success(req, 'get_my_initiatives', startTime, {
-        result_count: initiatives.data.length,
-      });
+      logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
       res.json(initiatives);
     } catch (error) {
@@ -44,12 +42,8 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'save_my_payment_method');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'save_my_payment_method',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'save_my_payment_method' });
       }
 
       const rawId = (req.body as Record<string, unknown>)['paymentMethodId'];
@@ -60,8 +54,7 @@ export class CrowdfundingController {
       }
       const paymentMethodId = rawId.trim();
 
-      const username = stripAuthPrefix(rawUsername);
-      const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, username, paymentMethodId);
+      const paymentMethod = await this.crowdfundingService.saveMyPaymentMethod(req, paymentMethodId);
 
       logger.success(req, 'save_my_payment_method', startTime, { paymentMethodId });
 
@@ -76,16 +69,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_payment_method');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_payment_method',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_payment_method' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const paymentMethod = await this.crowdfundingService.getMyPaymentMethod(req, username);
+      const paymentMethod = await this.crowdfundingService.getMyPaymentMethod(req);
 
       if (!paymentMethod) {
         res.status(404).json({ message: 'No payment method found' });
@@ -105,16 +93,11 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donation_stats');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_donation_stats',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_donation_stats' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const stats = await this.crowdfundingService.getMyDonationStats(req, username);
+      const stats = await this.crowdfundingService.getMyDonationStats(req);
 
       logger.success(req, 'get_my_donation_stats', startTime);
 
@@ -129,20 +112,13 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_recurring_donations');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_recurring_donations',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_recurring_donations' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const recurringDonations = await this.crowdfundingService.getMyRecurringDonations(req, username);
+      const recurringDonations = await this.crowdfundingService.getMyRecurringDonations(req);
 
-      logger.success(req, 'get_my_recurring_donations', startTime, {
-        result_count: recurringDonations.data.length,
-      });
+      logger.success(req, 'get_my_recurring_donations', startTime, { result_count: recurringDonations.data.length });
 
       res.json(recurringDonations);
     } catch (error) {
@@ -155,27 +131,20 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_my_donations');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_my_donations',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_donations' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
       const { pageSize, offset } = req.query;
       const parseNonNegativeInt = (val: unknown): number | undefined => {
         if (val == null || val === '') return undefined;
         const n = Number(val);
         return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
       };
-      const donations = await this.crowdfundingService.getMyDonations(req, username, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
-      logger.success(req, 'get_my_donations', startTime, {
-        result_count: donations.data.length,
-        total: donations.total,
-      });
+      const donations = await this.crowdfundingService.getMyDonations(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+
+      logger.success(req, 'get_my_donations', startTime, { result_count: donations.data.length, total: donations.total });
 
       res.json(donations);
     } catch (error) {
@@ -188,20 +157,136 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiatives_stats',
-        });
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const username = stripAuthPrefix(rawUsername);
-      const stats = await this.crowdfundingService.getInitiativesStats(req, username);
+      const stats = await this.crowdfundingService.getInitiativesStats(req);
 
       logger.success(req, 'get_initiatives_stats', startTime);
 
       res.json(stats);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // DELETE /api/crowdfunding/payment-method
+  public async deleteMyPaymentMethod(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'delete_my_payment_method');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'delete_my_payment_method' });
+      }
+
+      await this.crowdfundingService.deleteMyPaymentMethod(req);
+
+      logger.success(req, 'delete_my_payment_method', startTime);
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // DELETE /api/crowdfunding/subscriptions/:id
+  public async cancelSubscription(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'cancel_subscription');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'cancel_subscription' });
+      }
+
+      const { id } = req.params;
+      if (!id || !id.trim()) {
+        throw ServiceValidationError.forField('id', 'Subscription id is required', { operation: 'cancel_subscription' });
+      }
+
+      await this.crowdfundingService.cancelSubscription(req, id.trim());
+
+      logger.success(req, 'cancel_subscription', startTime, { subscriptionId: id });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /api/crowdfunding/presigned-url — obtain a presigned S3 URL for a logo upload. */
+  public async getPresignedUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_presigned_url');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_presigned_url' });
+      }
+
+      const rawContentType = (req.body as Record<string, unknown>)['contentType'];
+      if (typeof rawContentType !== 'string' || !rawContentType.trim()) {
+        throw ServiceValidationError.forField('contentType', 'contentType is required', {
+          operation: 'get_presigned_url',
+        });
+      }
+
+      const contentType = rawContentType.trim();
+      if (!ALLOWED_LOGO_MIME_TYPES.includes(contentType as (typeof ALLOWED_LOGO_MIME_TYPES)[number])) {
+        throw ServiceValidationError.forField('contentType', `contentType must be one of: ${ALLOWED_LOGO_MIME_TYPES.join(', ')}`, {
+          operation: 'get_presigned_url',
+        });
+      }
+
+      const result = await this.crowdfundingService.getPresignedUrl(req, contentType);
+
+      logger.success(req, 'get_presigned_url', startTime);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/initiatives/:id — update an initiative's editable fields. */
+  public async updateInitiative(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_initiative');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_initiative' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'update_initiative' });
+      }
+      const body = req.body as Record<string, unknown>;
+
+      const input: UpdateInitiativeInput = {};
+
+      if (typeof body['name'] === 'string') input.name = body['name'].trim();
+      if (typeof body['description'] === 'string') input.description = body['description'].trim();
+      if (typeof body['industry'] === 'string') input.industry = body['industry'];
+      if (typeof body['logoUrl'] === 'string') input.logoUrl = body['logoUrl'];
+      if (typeof body['websiteUrl'] === 'string') input.websiteUrl = body['websiteUrl'].trim() || undefined;
+
+      if (Array.isArray(body['goals'])) {
+        input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
+          name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',
+          amountCents: Number.isFinite(Number(g['amountCents'])) ? Math.floor(Number(g['amountCents'])) : 0,
+        }));
+      }
+
+      if (Array.isArray(body['beneficiaries'])) {
+        input.beneficiaries = (body['beneficiaries'] as Record<string, unknown>[]).map((b) => ({
+          name: typeof b['name'] === 'string' ? b['name'] : undefined,
+          email: typeof b['email'] === 'string' ? b['email'] : undefined,
+        }));
+      }
+
+      const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
+
+      logger.success(req, 'update_initiative', startTime, { id });
+      res.json(initiative);
     } catch (error) {
       next(error);
     }
@@ -212,17 +297,8 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiative_by_slug',
-        });
-      }
-
-      const username = stripAuthPrefix(rawUsername);
       const { slug } = req.params;
-      const initiative = await this.crowdfundingService.getInitiativeBySlug(req, username, slug);
+      const initiative = await this.crowdfundingService.getInitiativeBySlug(req, slug);
 
       if (!initiative) {
         res.status(404).json({ message: `Initiative '${slug}' not found` });
@@ -242,15 +318,6 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 
     try {
-      const rawUsername = await getUsernameFromAuth(req);
-
-      if (!rawUsername) {
-        throw new AuthenticationError('User authentication required', {
-          operation: 'get_initiative_transactions',
-        });
-      }
-
-      const username = stripAuthPrefix(rawUsername);
       const { slug } = req.params;
       const { type, size, from } = req.query;
 
@@ -271,7 +338,6 @@ export class CrowdfundingController {
 
       const transactions = await this.crowdfundingService.getInitiativeTransactions(
         req,
-        username,
         slug,
         resolvedType as AllowedType | undefined,
         parseNonNegativeInt(size),
@@ -288,6 +354,119 @@ export class CrowdfundingController {
       res.json(transactions);
     } catch (error) {
       next(error);
+    }
+  }
+
+  // GET /api/crowdfunding/auth/start — initiates the CF auth-code flow.
+  public startCrowdfundingAuth(req: Request, res: Response): void {
+    const startTime = logger.startOperation(req, 'crowdfunding_auth_start');
+    const returnTo = this.normalizeCrowdfundingReturnTo(req.query['returnTo']);
+
+    if (!this.crowdfundingAuthService.isConfigured()) {
+      logger.warning(req, 'crowdfunding_auth_start', 'Crowdfunding auth not configured', {});
+      res.redirect(this.returnToWithError(returnTo, 'crowdfunding_auth_not_configured'));
+      return;
+    }
+
+    const authorizeUrl = this.crowdfundingAuthService.getAuthorizationUrl(req, returnTo);
+    logger.success(req, 'crowdfunding_auth_start', startTime, { return_to: returnTo });
+    res.redirect(authorizeUrl);
+  }
+
+  // GET /crowdfunding/callback — Auth0 redirect target for the CF auth-code flow.
+  public async handleCrowdfundingAuthCallback(req: Request, res: Response): Promise<void> {
+    const startTime = logger.startOperation(req, 'crowdfunding_auth_callback');
+
+    const code = req.query['code'] as string;
+    const state = req.query['state'] as string;
+    const error = req.query['error'] as string;
+    const returnTo = this.normalizeCrowdfundingReturnTo(req.appSession?.crowdfundingAuthReturnTo);
+
+    if (error) {
+      // consent_required / interaction_required: prompt=none can't complete silently because
+      // the user hasn't consented to the CF audience yet. Retry with a full interactive redirect
+      // so they see the one-time consent screen. After consent, subsequent visits are silent.
+      if (error === 'consent_required' || error === 'interaction_required') {
+        logger.info(req, 'crowdfunding_auth_callback', 'Silent auth requires consent, retrying interactively', { error });
+        const authorizeUrl = this.crowdfundingAuthService.getAuthorizationUrl(req, returnTo, false);
+        res.redirect(authorizeUrl);
+        return;
+      }
+
+      // login_required or any other error: redirect with the error param so server.ts
+      // does not immediately re-trigger the silent redirect (which checks !req.query['error']).
+      logger.warning(req, 'crowdfunding_auth_callback', `Auth0 returned error: ${error}`, {
+        error_description: req.query['error_description'],
+      });
+      res.redirect(this.returnToWithError(returnTo, encodeURIComponent(error)));
+      return;
+    }
+
+    if (!state || state !== req.appSession?.crowdfundingAuthState) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Invalid state parameter'), {
+        has_state: !!state,
+        has_session_state: !!req.appSession?.crowdfundingAuthState,
+      });
+      res.redirect(this.returnToWithError(returnTo, 'invalid_state'));
+      return;
+    }
+
+    if (!code) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('No authorization code received'), {});
+      res.redirect(this.returnToWithError(returnTo, 'no_code'));
+      return;
+    }
+
+    try {
+      const tokenResponse = await this.crowdfundingAuthService.exchangeCodeForToken(req, code);
+
+      const currentUserSub = req.oidc?.user?.['sub'] as string;
+      if (!currentUserSub) {
+        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Current user sub not found in login session'), {});
+        res.redirect(this.returnToWithError(returnTo, 'login_session_invalid'));
+        return;
+      }
+
+      if (!this.crowdfundingAuthService.decodeAndValidateSub(tokenResponse.access_token, currentUserSub)) {
+        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Crowdfunding token sub mismatch'), {
+          current_user_sub: currentUserSub,
+        });
+        res.redirect(this.returnToWithError(returnTo, 'user_mismatch'));
+        return;
+      }
+
+      this.crowdfundingAuthService.storeToken(req, tokenResponse);
+
+      delete req.appSession?.crowdfundingAuthState;
+      delete req.appSession?.crowdfundingAuthReturnTo;
+
+      logger.success(req, 'crowdfunding_auth_callback', startTime, {
+        user_sub: currentUserSub,
+        scope: tokenResponse.scope,
+        expires_in: tokenResponse.expires_in,
+      });
+
+      res.redirect(returnTo);
+    } catch (err) {
+      logger.error(req, 'crowdfunding_auth_callback', startTime, err, {});
+      res.redirect(this.returnToWithError(returnTo, 'token_exchange_failed'));
+    }
+  }
+
+  private returnToWithError(returnTo: string, error: string): string {
+    const sep = returnTo.includes('?') ? '&' : '?';
+    return `${returnTo}${sep}error=${error}`;
+  }
+
+  // Accepts only in-app /crowdfunding paths to prevent open-redirect attacks.
+  private normalizeCrowdfundingReturnTo(raw: unknown): string {
+    const DEFAULT = '/crowdfunding/initiatives';
+    if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
+    try {
+      const { pathname, search } = new URL(raw, 'http://internal');
+      return pathname.startsWith('/crowdfunding') ? pathname + search : DEFAULT;
+    } catch {
+      return DEFAULT;
     }
   }
 }

@@ -18,9 +18,6 @@ export class RecurringDonationsListComponent {
   public readonly cancelledCount = input<number>(0);
 
   public readonly viewCancelled = output<void>();
-  public readonly changeAmount = output<RecurringDonation>();
-  public readonly pauseDonation = output<RecurringDonation>();
-  public readonly resumeDonation = output<RecurringDonation>();
   public readonly cancelDonation = output<RecurringDonation>();
 
   private readonly menus = viewChildren<MenuComponent>(MenuComponent);
@@ -41,18 +38,6 @@ export class RecurringDonationsListComponent {
   }
 
   private buildMenuItems(donation: RecurringDonation): MenuItem[] {
-    if (donation.status === 'paused') {
-      return [
-        { label: 'Resume', icon: 'fa-solid fa-play', command: () => this.resumeDonation.emit(donation) },
-        { separator: true },
-        { label: 'Cancel', icon: 'fa-solid fa-xmark', styleClass: 'text-red-600', command: () => this.cancelDonation.emit(donation) },
-      ];
-    }
-    return [
-      { label: 'Change amount', icon: 'fa-solid fa-pen-to-square', command: () => this.changeAmount.emit(donation) },
-      { label: 'Pause', icon: 'fa-solid fa-pause', command: () => this.pauseDonation.emit(donation) },
-      { separator: true },
-      { label: 'Cancel', icon: 'fa-solid fa-xmark', styleClass: 'text-red-600', command: () => this.cancelDonation.emit(donation) },
-    ];
+    return [{ label: 'Cancel', icon: 'fa-solid fa-xmark', styleClass: 'text-red-600', command: () => this.cancelDonation.emit(donation) }];
   }
 }
