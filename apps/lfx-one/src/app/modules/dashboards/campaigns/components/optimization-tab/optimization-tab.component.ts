@@ -29,6 +29,7 @@ export class OptimizationTabComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
+  private linkedInSub: Subscription | null = null;
 
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
 
@@ -107,6 +108,7 @@ export class OptimizationTabComponent implements OnInit {
 
   protected refresh(): void {
     this.fetchData();
+    this.fetchLinkedInOptimization();
   }
 
   protected fetchData(): void {
@@ -156,9 +158,10 @@ export class OptimizationTabComponent implements OnInit {
   protected fetchLinkedInOptimization(): void {
     const accountId = this.selectedLinkedInAccountId();
     if (!accountId) return;
+    this.linkedInSub?.unsubscribe();
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
-    this.campaignService
+    this.linkedInSub = this.campaignService
       .getLinkedInMonitorData(accountId, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

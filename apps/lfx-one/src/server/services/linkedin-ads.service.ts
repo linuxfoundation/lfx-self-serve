@@ -563,6 +563,9 @@ export async function getLinkedInAnalytics(
   });
 
   const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
+  if (!analyticsResp.ok) {
+    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalytics returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
+  }
   if (analyticsResp.ok) {
     const analyticsData = (await analyticsResp.json()) as {
       elements?: {
