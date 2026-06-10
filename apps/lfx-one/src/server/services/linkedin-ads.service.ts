@@ -39,6 +39,9 @@ function resolveAccountId(override?: string): string {
   if (!/^\d+$/.test(id)) {
     throw new Error(`Invalid LinkedIn account ID: must be numeric, got "${id}"`);
   }
+  if (override && !LINKEDIN_AD_ACCOUNTS.some((a) => a.accountId === id)) {
+    throw new Error(`Unsupported LinkedIn ad account ID: "${id}"`);
+  }
   return id;
 }
 
