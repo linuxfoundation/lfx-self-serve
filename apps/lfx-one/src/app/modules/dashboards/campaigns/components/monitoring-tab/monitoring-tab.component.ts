@@ -102,7 +102,10 @@ export class MonitoringTabComponent implements OnInit {
             this.selectedLinkedInAccountId.set(accounts[0].accountId);
           }
         },
-        error: () => undefined,
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+        },
       });
   }
 

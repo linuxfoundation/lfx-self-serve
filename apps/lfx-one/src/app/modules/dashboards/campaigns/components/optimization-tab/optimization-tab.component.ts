@@ -96,7 +96,10 @@ export class OptimizationTabComponent implements OnInit {
             this.fetchLinkedInOptimization();
           }
         },
-        error: () => undefined,
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+        },
       });
   }
 
