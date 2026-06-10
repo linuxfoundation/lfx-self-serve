@@ -15,15 +15,15 @@ export class OsspreyService {
   public getPackages(params?: OsspreyListParams): Observable<OsspreyPackagesResponse> {
     let httpParams = new HttpParams();
     if (params) {
-      if (params.sort) httpParams = httpParams.set('sort', params.sort);
-      if (params.status) httpParams = httpParams.set('status', params.status);
+      if (params.page) httpParams = httpParams.set('page', String(params.page));
+      if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
       if (params.ecosystem) httpParams = httpParams.set('ecosystem', params.ecosystem);
       if (params.lifecycle) httpParams = httpParams.set('lifecycle', params.lifecycle);
-      if (params.healthBand) httpParams = httpParams.set('healthBand', params.healthBand);
-      if (params.vulnFilter) httpParams = httpParams.set('vulnFilter', params.vulnFilter);
-      if (params.search) httpParams = httpParams.set('search', params.search);
-      if (params.cursor) httpParams = httpParams.set('cursor', params.cursor);
-      if (params.limit) httpParams = httpParams.set('limit', String(params.limit));
+      if (params.busFactor1Only) httpParams = httpParams.set('busFactor1Only', 'true');
+      if (params.staleOnly) httpParams = httpParams.set('staleOnly', 'true');
+      if (params.unstewardedOnly) httpParams = httpParams.set('unstewardedOnly', 'true');
+      if (params.sortBy) httpParams = httpParams.set('sortBy', params.sortBy);
+      if (params.sortDir) httpParams = httpParams.set('sortDir', params.sortDir);
     }
     return this.http.get<OsspreyPackagesResponse>('/api/ossprey/packages', { params: httpParams });
   }

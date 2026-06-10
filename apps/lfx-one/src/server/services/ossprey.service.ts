@@ -4,14 +4,10 @@
 import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import {
   CdpAdvisory,
-  CdpHealthBreakdown,
   CdpPackageDetail,
   CdpPackagesListResponse,
-  CdpProvenanceMapping,
-  CdpStewardshipActivity,
   CdpStewardshipSummary,
   OsspreyAdvisory,
-  OsspreyHistoryEntry,
   OsspreyListParams,
   OsspreyPackage,
   OsspreyPackagesResponse,
@@ -40,17 +36,18 @@ export class OsspreyServerService {
       const token = await this.cdpService.generateToken(req);
       const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_LIST}`);
 
-      if (params.sort) url.searchParams.set('sort', params.sort);
-      if (params.status) url.searchParams.set('status', params.status);
+      if (params.page) url.searchParams.set('page', String(params.page));
+      if (params.pageSize) url.searchParams.set('pageSize', String(params.pageSize));
       if (params.ecosystem) url.searchParams.set('ecosystem', params.ecosystem);
       if (params.lifecycle) url.searchParams.set('lifecycle', params.lifecycle);
-      if (params.healthBand) url.searchParams.set('healthBand', params.healthBand);
-      if (params.vulnFilter) url.searchParams.set('vulnFilter', params.vulnFilter);
-      if (params.search) url.searchParams.set('search', params.search);
-      if (params.cursor) url.searchParams.set('cursor', params.cursor);
-      if (params.limit) url.searchParams.set('limit', String(params.limit));
+      if (params.busFactor1Only) url.searchParams.set('busFactor1Only', 'true');
+      if (params.staleOnly) url.searchParams.set('staleOnly', 'true');
+      if (params.unstewardedOnly) url.searchParams.set('unstewardedOnly', 'true');
+      if (params.sortBy) url.searchParams.set('sortBy', params.sortBy);
+      if (params.sortDir) url.searchParams.set('sortDir', params.sortDir);
 
       logger.debug(req, 'get_ossprey_packages', 'Fetching packages from CDP', {
+        url: url.toString(),
         params,
         request_id: requestId,
       });
@@ -76,11 +73,11 @@ export class OsspreyServerService {
 
       logger.debug(req, 'get_ossprey_packages', 'Fetched packages from CDP', {
         count: data.packages?.length ?? 0,
+        total: data.total,
       });
 
       return {
         packages: (data.packages ?? []).map((item) => this.mapListItem(item)),
-        nextCursor: data.nextCursor,
         total: data.total,
       };
     } catch (error) {
@@ -98,14 +95,16 @@ export class OsspreyServerService {
 
     try {
       const token = await this.cdpService.generateToken(req);
-      const detailUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGE_DETAIL(purl)}`;
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGE_DETAIL}`);
+      url.searchParams.set('purl', purl);
 
       logger.debug(req, 'get_ossprey_package', 'Fetching package detail from CDP', {
         purl,
+        url: url.toString(),
         request_id: requestId,
       });
 
-      const response = await fetch(detailUrl, {
+      const response = await fetch(url.toString(), {
         headers: {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
@@ -144,22 +143,26 @@ export class OsspreyServerService {
   }
 
   public mapListItem(item: CdpStewardshipSummary): OsspreyPackage {
+    const vulns = item.openVulns;
+    const vulnCount = vulns ? vulns.low + vulns.medium + vulns.high + vulns.critical : 0;
+    const vulnSeverity = this.worstSeverityFromCounts(vulns);
+
     return {
-      id: item.purl ?? item.name,
+      id: item.purl,
       name: item.name,
-      purl: item.purl ?? item.name,
+      purl: item.purl,
       ecosystem: (item.ecosystem as OsspreyPackage['ecosystem']) || 'npm',
       lifecycle: (item.lifecycle as OsspreyPackage['lifecycle']) || null,
       healthScore: item.health ?? null,
       impactScore: item.impact ?? null,
-      busFactor: null,
+      busFactor: item.maintainerBusFactor ?? null,
       monthsStale: null,
-      vulnCount: item.openVulns?.count ?? 0,
-      vulnSeverity: item.openVulns?.severity ?? null,
-      status: item.status,
-      stewardIds: item.stewards.map((s) => s.userId),
-      lastActivityLabel: item.lastActivityDescription ?? '',
-      lastActivityTime: item.lastActivityAt ?? '',
+      vulnCount,
+      vulnSeverity,
+      status: (item.stewardship as OsspreyPackage['status']) || 'unassigned',
+      stewardIds: [],
+      lastActivityLabel: '—',
+      lastActivityTime: '',
       weeklyDownloads: null,
       dependentCount: null,
       directDependentCount: null,
@@ -180,62 +183,93 @@ export class OsspreyServerService {
   }
 
   private mapPackageDetail(detail: CdpPackageDetail): OsspreyPackage {
+    const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
+    const vulnSeverity = this.getHighestVulnSeverity(advisories);
+
+    const hs = detail.general?.healthScore;
+    const healthBreakdown: string[] = [];
+    if (hs) {
+      if (hs.maintainerHealth != null) healthBreakdown.push(`${Math.round(hs.maintainerHealth)} / 40`);
+      if (hs.securitySupplyChain != null) healthBreakdown.push(`${Math.round(hs.securitySupplyChain)} / 35`);
+      if (hs.developmentActivity != null) healthBreakdown.push(`${Math.round(hs.developmentActivity)} / 25`);
+    }
+
+    const repo = detail.provenance?.repositoryMapping;
+    const impact = detail.general?.impact;
+    const risk = detail.general?.riskSignals;
+
     return {
       id: detail.purl,
       name: detail.name,
       purl: detail.purl,
       ecosystem: (detail.ecosystem as OsspreyPackage['ecosystem']) || 'npm',
-      lifecycle: (detail.lifecycle as OsspreyPackage['lifecycle']) || null,
-      healthScore: detail.healthBreakdown ? this.calculateHealthScore(detail.healthBreakdown) : null,
-      impactScore: null,
-      busFactor: null,
-      monthsStale: this.calculateMonthsStale(detail.repository?.lastCommitAt),
-      vulnCount: detail.advisories?.length ?? 0,
-      vulnSeverity: this.getHighestVulnSeverity(detail.advisories),
-      status: detail.stewardship.status,
-      stewardIds: detail.stewardship.stewards.map((s) => s.userId),
-      lastActivityLabel: detail.stewardship.lastActivityDescription ?? '',
-      lastActivityTime: detail.stewardship.lastActivityAt ?? '',
-      weeklyDownloads: detail.downloads != null ? this.formatNumber(detail.downloads) : null,
-      dependentCount: detail.dependentPackagesCount != null ? this.formatNumber(detail.dependentPackagesCount) : null,
-      directDependentCount: detail.dependentReposCount != null ? this.formatNumber(detail.dependentReposCount) : null,
-      scoreCardScore: detail.repository?.scorecardScore != null ? `${detail.repository.scorecardScore.toFixed(1)} / 10` : null,
-      lastRelease: this.formatDate(detail.latestReleaseAt),
-      lastCommit: this.formatDate(detail.repository?.lastCommitAt),
-      repoUrl: this.stripProtocol(detail.repository?.url),
+      lifecycle: (risk?.lifecycle as OsspreyPackage['lifecycle']) || null,
+      healthScore: hs?.total ?? null,
+      impactScore: impact?.impactScore ?? null,
+      busFactor: risk?.maintainerBusFactor ?? null,
+      monthsStale: this.calculateMonthsStale(repo?.lastCommitAt),
+      vulnCount: advisories.length,
+      vulnSeverity,
+      status: 'unassigned',
+      stewardIds: [],
+      lastActivityLabel: '—',
+      lastActivityTime: '',
+      weeklyDownloads: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      dependentCount: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
+      directDependentCount: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
+      scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,
+      lastRelease: this.formatDate(risk?.lastRelease),
+      lastCommit: this.formatDate(repo?.lastCommitAt),
+      repoUrl: this.stripProtocol(repo?.declaredRepo),
       supplyChainMapping: null,
-      provenance: this.deriveProvenance(detail.provenanceMappings),
-      hasSecurityMd: detail.disclosureReadiness.securityMdPresent,
-      ecosystemReach: detail.transitiveReach ?? null,
+      provenance: null,
+      hasSecurityMd: risk?.hasSecurityFile ?? null,
+      ecosystemReach: impact?.transitiveReach ?? null,
       contactGroup: null,
-      healthBreakdown: this.formatHealthBreakdown(detail.healthBreakdown),
-      advisories: this.mapAdvisories(detail.advisories),
-      history: this.mapHistory(detail.stewardship.activity),
+      healthBreakdown,
+      advisories,
+      history: [],
       assessment: null,
     };
   }
 
-  private calculateHealthScore(breakdown: CdpHealthBreakdown): number {
-    return Math.round((breakdown.maintainerHealth ?? 0) + (breakdown.securityAndSupplyChain ?? 0) + (breakdown.developmentActivity ?? 0));
+  private worstSeverityFromCounts(vulns: { low: number; medium: number; high: number; critical: number } | null): OspreySeverity | null {
+    if (!vulns) return null;
+    if (vulns.critical > 0) return 'critical';
+    if (vulns.high > 0) return 'high';
+    if (vulns.medium > 0) return 'medium';
+    if (vulns.low > 0) return 'low';
+    return null;
+  }
+
+  private getHighestVulnSeverity(advisories: OsspreyAdvisory[]): OspreySeverity | null {
+    if (!advisories.length) return null;
+    const order: OspreySeverity[] = ['critical', 'high', 'medium', 'low'];
+    for (const sev of order) {
+      if (advisories.some((a) => a.severity === sev)) return sev;
+    }
+    return null;
+  }
+
+  private mapAdvisories(advisories: CdpAdvisory[]): OsspreyAdvisory[] {
+    return advisories.map((adv) => ({
+      id: adv.osvId,
+      severity: adv.severity,
+      description: adv.osvId,
+      state: 'Open' as const,
+      cvss: null,
+      publishedAt: null,
+      affectedVersionRange: null,
+    }));
   }
 
   private calculateMonthsStale(lastCommitAt?: string | null): number | null {
     if (!lastCommitAt) return null;
     try {
-      const diffMs = Date.now() - new Date(lastCommitAt).getTime();
-      return Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30));
+      return Math.floor((Date.now() - new Date(lastCommitAt).getTime()) / (1000 * 60 * 60 * 24 * 30));
     } catch {
       return null;
     }
-  }
-
-  private getHighestVulnSeverity(advisories: CdpAdvisory[]): OspreySeverity | null {
-    if (!advisories?.length) return null;
-    const severities: OspreySeverity[] = ['critical', 'high', 'medium', 'low'];
-    for (const sev of severities) {
-      if (advisories.some((a) => a.status === 'open' && a.severity === sev)) return sev;
-    }
-    return null;
   }
 
   private formatNumber(num: number): string {
@@ -253,57 +287,5 @@ export class OsspreyServerService {
 
   private stripProtocol(url?: string | null): string | null {
     return url ? url.replace(/^https?:\/\//, '') : null;
-  }
-
-  private deriveProvenance(mappings: CdpProvenanceMapping[]): 'Full' | 'Partial' | 'None' | null {
-    if (!mappings?.length) return 'None';
-    return mappings.some((m) => m.confidence >= 0.9 && m.verified) ? 'Full' : 'Partial';
-  }
-
-  private formatHealthBreakdown(breakdown?: CdpHealthBreakdown | null): string[] {
-    if (!breakdown) return [];
-    const result: string[] = [];
-    if (breakdown.maintainerHealth != null) result.push(`${Math.round(breakdown.maintainerHealth)} / 40`);
-    if (breakdown.securityAndSupplyChain != null) result.push(`${Math.round(breakdown.securityAndSupplyChain)} / 35`);
-    if (breakdown.developmentActivity != null) result.push(`${Math.round(breakdown.developmentActivity)} / 25`);
-    return result;
-  }
-
-  private mapAdvisories(advisories: CdpAdvisory[]): OsspreyAdvisory[] {
-    return advisories.map((adv) => ({
-      id: adv.id,
-      severity: adv.severity,
-      description: adv.summary ?? '',
-      state: adv.status === 'open' ? 'Open' : 'Patched',
-      cvss: adv.cvss ?? null,
-      publishedAt: adv.publishedAt ?? null,
-      affectedVersionRange: adv.affectedVersionRange ?? null,
-    }));
-  }
-
-  private mapHistory(activities: CdpStewardshipActivity[]): OsspreyHistoryEntry[] {
-    return activities.map((act) => {
-      const label = act.content ?? act.activityType;
-      const timeAgo = this.formatRelativeTime(act.createdAt);
-      let type: 'danger' | 'success' | undefined;
-      if (['escalation', 'blocker_added'].includes(act.activityType)) type = 'danger';
-      else if (['escalation_resolved', 'blocker_resolved', 'assessment_completed', 'remediation_logged'].includes(act.activityType)) type = 'success';
-      return { label, timeAgo, type };
-    });
-  }
-
-  private formatRelativeTime(isoDate: string): string {
-    try {
-      const diffMs = Date.now() - new Date(isoDate).getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 30) return `${diffDays}d ago`;
-      return `${Math.floor(diffDays / 30)}mo ago`;
-    } catch {
-      return '';
-    }
   }
 }

@@ -110,14 +110,20 @@ export class OsspreyDashboardComponent {
     return toSignal<OsspreyPackage[] | undefined>(
       toObservable(this.filters).pipe(
         switchMap((f) => {
+          const sortByMap: Record<string, OsspreyListParams['sortBy']> = {
+            impact: 'impact',
+            health: 'health',
+            vulns: 'openVulns',
+            name: 'name',
+          };
           const params: OsspreyListParams = {
-            sort: f.sort !== 'risk' ? f.sort : undefined,
-            status: f.tab !== 'all' ? f.tab : undefined,
+            sortBy: sortByMap[f.sort] ?? 'name',
+            sortDir: f.sort === 'health' ? 'asc' : 'desc',
             ecosystem: f.ecosystem || undefined,
             lifecycle: f.lifecycle || undefined,
-            healthBand: f.healthBand || undefined,
-            vulnFilter: f.vulnFilter || undefined,
-            search: f.search || undefined,
+            busFactor1Only: f.busFactor1Only || undefined,
+            staleOnly: f.staleOnly || undefined,
+            unstewardedOnly: f.unstewardedOnly || undefined,
           };
           return this.osspreyService.getPackages(params).pipe(
             map((res) => res.packages ?? []),

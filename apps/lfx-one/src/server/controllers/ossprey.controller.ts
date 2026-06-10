@@ -15,15 +15,15 @@ export class OsspreyController {
 
     try {
       const params: OsspreyListParams = {
-        sort: req.query['sort'] as string | undefined,
-        status: req.query['status'] as string | undefined,
+        page: req.query['page'] ? Number(req.query['page']) : undefined,
+        pageSize: req.query['pageSize'] ? Number(req.query['pageSize']) : undefined,
         ecosystem: req.query['ecosystem'] as string | undefined,
         lifecycle: req.query['lifecycle'] as string | undefined,
-        healthBand: req.query['healthBand'] as string | undefined,
-        vulnFilter: req.query['vulnFilter'] as string | undefined,
-        search: req.query['search'] as string | undefined,
-        cursor: req.query['cursor'] as string | undefined,
-        limit: req.query['limit'] ? Number(req.query['limit']) : undefined,
+        busFactor1Only: req.query['busFactor1Only'] === 'true',
+        staleOnly: req.query['staleOnly'] === 'true',
+        unstewardedOnly: req.query['unstewardedOnly'] === 'true',
+        sortBy: req.query['sortBy'] as OsspreyListParams['sortBy'],
+        sortDir: req.query['sortDir'] as OsspreyListParams['sortDir'],
       };
 
       const data: OsspreyPackagesResponse = await this.osspreyService.getPackages(req, params);
