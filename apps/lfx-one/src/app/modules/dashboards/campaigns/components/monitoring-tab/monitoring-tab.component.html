@@ -30,6 +30,19 @@
       <i class="fa-brands fa-linkedin" aria-hidden="true"></i>
       LinkedIn Ads
     </button>
+    <button
+      type="button"
+      (click)="setPlatform('reddit')"
+      [attr.aria-pressed]="selectedPlatform() === 'reddit'"
+      [class]="
+        selectedPlatform() === 'reddit'
+          ? 'flex items-center gap-1.5 rounded-md bg-[#FF4500] px-3 py-1.5 text-xs font-medium text-white'
+          : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
+      "
+      data-testid="platform-reddit">
+      <i class="fa-brands fa-reddit" aria-hidden="true"></i>
+      Reddit Ads
+    </button>
   </div>
 
   @if (selectedPlatform() === 'google') {
@@ -347,7 +360,7 @@
       <!-- Audience Demographics -->
       <lfx-audience-demographics [days]="selectedDays()" data-testid="monitoring-audience" />
     }
-  } @else {
+  } @else if (selectedPlatform() === 'linkedin') {
     <!-- LinkedIn Ads Panel -->
     <div class="flex flex-col gap-4" data-testid="linkedin-monitor-panel">
       <!-- Account selector + controls -->
@@ -487,6 +500,151 @@
                     <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInPct(camp.ctr) }}</td>
                     <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.conversions }}</td>
                     <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.creatives.length }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+  } @else if (selectedPlatform() === 'reddit') {
+    <!-- Reddit Ads Panel -->
+    <div class="flex flex-col gap-4" data-testid="reddit-monitor-panel">
+      <!-- Account selector + controls -->
+      <div class="flex items-center justify-between">
+        <select
+          [value]="selectedRedditAccountKey()"
+          (change)="onRedditAccountChange($event)"
+          aria-label="Reddit ad account"
+          class="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          data-testid="reddit-account-select">
+          @for (acct of redditAccountOptions(); track acct.key) {
+            <option [value]="acct.key">{{ acct.label }}</option>
+          }
+        </select>
+        <div class="flex items-center gap-3">
+          @if (redditPulledAt()) {
+            <span class="text-xs text-gray-400">Last pulled: {{ redditPulledAt() }}</span>
+          }
+          <button
+            type="button"
+            (click)="fetchRedditData()"
+            [disabled]="redditLoading()"
+            class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="reddit-refresh">
+            <i class="fa-light fa-arrows-rotate" [class.fa-spin]="redditLoading()" aria-hidden="true"></i>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      @if (redditLoading() && !redditData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="reddit-loading">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading Reddit campaigns...
+          </div>
+        </div>
+      } @else if (redditError()) {
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="reddit-error">
+          <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
+          <p class="text-xs text-red-500">{{ redditError() }}</p>
+          <button type="button" (click)="fetchRedditData()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      } @else if (redditData() && redditCampaigns().length === 0) {
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="reddit-empty">
+          <i class="fa-brands fa-reddit text-3xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No active Reddit campaigns found for this account.</p>
+        </div>
+      } @else if (redditData()) {
+        <!-- KPI Strip -->
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="reddit-kpi-strip">
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Impressions</p>
+            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(redditTotals()!.impressions) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Clicks</p>
+            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(redditTotals()!.clicks) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">CTR</p>
+            <p class="text-lg font-semibold text-gray-900">
+              @if (redditTotals()!.impressions > 0) {
+                {{ formatPct((redditTotals()!.clicks / redditTotals()!.impressions) * 100) }}
+              } @else {
+                —
+              }
+            </p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Spend</p>
+            <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(redditTotals()!.spend) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Conversions</p>
+            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(redditTotals()!.conversions) }}</p>
+          </div>
+        </div>
+
+        <!-- Campaign Table -->
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="reddit-campaign-table">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Flight</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Budget</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                @for (camp of redditCampaigns(); track camp.campaignId) {
+                  <tr class="hover:bg-gray-50" [attr.data-testid]="'reddit-campaign-row-' + $index">
+                    <td class="px-4 py-3">
+                      <p class="max-w-xs truncate font-medium text-gray-900" [title]="camp.campaignName">{{ camp.campaignName }}</p>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span
+                        [class]="
+                          camp.status === 'ACTIVE'
+                            ? 'inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700'
+                            : 'inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600'
+                        ">
+                        {{ camp.status }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-xs text-gray-500">
+                      @if (camp.startDate) {
+                        {{ camp.startDate }} → {{ camp.endDate }}
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">
+                      {{ formatCurrency(camp.totalBudget || camp.dailyBudget) }}
+                    </td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatCurrency(camp.spend) }}</td>
+                    <td class="px-4 py-3 text-right">
+                      <span [class]="'text-xs font-medium ' + redditPacingClass(camp.pacingLabel)">
+                        {{ camp.pacingPct.toFixed(0) }}% {{ camp.pacingLabel }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.impressions) }}</td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatPct(camp.ctr) }}</td>
+                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.conversions }}</td>
                   </tr>
                 }
               </tbody>

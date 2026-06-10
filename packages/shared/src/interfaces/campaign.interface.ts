@@ -559,6 +559,59 @@ export interface LinkedInMonitorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Reddit Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type RedditPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+export type RedditActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface RedditCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: RedditPacingLabel;
+  startDate: string;
+  endDate: string;
+}
+
+export interface RedditAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface RedditActionItem {
+  priority: RedditActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface RedditAccountOption {
+  key: string;
+  label: string;
+}
+
+export interface RedditMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: RedditCampaignMetrics[];
+  accountTotals: RedditAccountTotals;
+  actionItems: RedditActionItem[];
+}
+
+// ---------------------------------------------------------------------------
 // HubSpot UTM
 // ---------------------------------------------------------------------------
 
