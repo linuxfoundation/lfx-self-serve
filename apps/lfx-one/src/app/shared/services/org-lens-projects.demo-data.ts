@@ -366,13 +366,14 @@ function buildHealthMetrics(project: Omit<OrgLensProject, 'description' | 'healt
 
 /** Demo response for a single org. The org slug/name flow into the CSV export filename + header. */
 export function getDemoProjectsResponse(orgUid: string, orgName: string): OrgLensProjectsResponse {
+  // Sanitize first, then fall back to orgUid — covers names that sanitize to an empty slug (e.g. punctuation-only).
+  const orgSlug =
+    orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || orgUid;
   return {
-    orgSlug: orgName
-      ? orgName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/(^-|-$)/g, '')
-      : orgUid,
+    orgSlug,
     orgName: orgName || 'Your organization',
     // Static demo build timestamp (~2h ago).
     dataUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
