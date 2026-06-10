@@ -7,7 +7,7 @@ import type {
   OrgContributionsKpis,
   OrgContributionsQuery,
   OrgContributionsResponse,
-} from '../interfaces/org-contributions.interface';
+} from '../interfaces';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Date-range vocab 30d/90d/12mo/all
 // mirrors the People → Contributors tab; default = Past 12 Months per the prototype.

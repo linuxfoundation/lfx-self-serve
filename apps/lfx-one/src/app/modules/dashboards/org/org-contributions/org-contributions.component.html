@@ -209,7 +209,8 @@
           <ng-template #header>
             <tr>
               @let cIcons = commitSortIconMap();
-              <th scope="col">
+              @let cAria = commitAriaSortMap();
+              <th scope="col" [attr.aria-sort]="cAria.project">
                 <button
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
@@ -217,7 +218,7 @@
                   Project <i [class]="cIcons.project" aria-hidden="true"></i>
                 </button>
               </th>
-              <th scope="col">
+              <th scope="col" [attr.aria-sort]="cAria.committer">
                 <button
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
@@ -225,7 +226,7 @@
                   Committer <i [class]="cIcons.committer" aria-hidden="true"></i>
                 </button>
               </th>
-              <th scope="col">
+              <th scope="col" [attr.aria-sort]="cAria.username">
                 <button
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
@@ -233,7 +234,7 @@
                   Username <i [class]="cIcons.username" aria-hidden="true"></i>
                 </button>
               </th>
-              <th scope="col">
+              <th scope="col" [attr.aria-sort]="cAria.date">
                 <button
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
@@ -375,6 +376,7 @@
               type="button"
               role="tab"
               [id]="'org-contributions-committer-tab-' + tab.id"
+              aria-controls="org-contributions-committer-tabpanel"
               class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors"
               [attr.aria-selected]="isActive"
               [attr.tabindex]="isActive ? 0 : -1"
@@ -390,105 +392,117 @@
           }
         </div>
 
-        @switch (committerTab()) {
-          @case ('code') {
-            <div class="flex flex-col gap-5">
-              <div class="grid grid-cols-2 gap-4">
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                  <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.totalCommits | number }}</div>
-                  <div class="mt-1 text-xs text-gray-500">Commits in view</div>
+        <div
+          role="tabpanel"
+          id="org-contributions-committer-tabpanel"
+          tabindex="0"
+          [attr.aria-labelledby]="'org-contributions-committer-tab-' + committerTab()">
+          @switch (committerTab()) {
+            @case ('code') {
+              <div class="flex flex-col gap-5">
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="rounded-lg border border-gray-200 bg-white p-4">
+                    <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.totalCommits | number }}</div>
+                    <div class="mt-1 text-xs text-gray-500">Commits in view</div>
+                  </div>
+                  <div class="rounded-lg border border-gray-200 bg-white p-4">
+                    <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.projects.length | number }}</div>
+                    <div class="mt-1 text-xs text-gray-500">Projects</div>
+                  </div>
                 </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                  <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.projects.length | number }}</div>
-                  <div class="mt-1 text-xs text-gray-500">Projects</div>
+
+                <div class="flex flex-col gap-2">
+                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Projects</h3>
+                  <div class="flex flex-wrap gap-2">
+                    @for (project of detail.projects; track project) {
+                      <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
+                        project
+                      }}</span>
+                    }
+                  </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Recent commits</h3>
+                  <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                    @for (commit of detail.commits; track commit.commitSha) {
+                      <li class="flex flex-col gap-1 px-4 py-3">
+                        <div class="flex items-center justify-between gap-3 text-xs text-gray-500">
+                          <span class="font-medium text-gray-700">{{ commit.projectName }}</span>
+                          <span class="whitespace-nowrap">{{ commit.committedLabel }}</span>
+                        </div>
+                        @if (commit.commitUrl) {
+                          <a
+                            class="line-clamp-2 text-sm text-blue-600 hover:text-blue-700"
+                            [href]="commit.commitUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >{{ commit.message }}</a
+                          >
+                        } @else {
+                          <span class="line-clamp-2 text-sm text-gray-800">{{ commit.message }}</span>
+                        }
+                      </li>
+                    }
+                  </ul>
                 </div>
               </div>
-
-              <div class="flex flex-col gap-2">
-                <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Projects</h3>
-                <div class="flex flex-wrap gap-2">
-                  @for (project of detail.projects; track project) {
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
-                      project
-                    }}</span>
-                  }
-                </div>
-              </div>
-
-              <div class="flex flex-col gap-2">
-                <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Recent commits</h3>
+            }
+            @case ('events') {
+              @if (detail.events.length === 0) {
+                <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-events-empty">
+                  No event participation recorded.
+                </p>
+              } @else {
                 <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
-                  @for (commit of detail.commits; track commit.commitSha) {
-                    <li class="flex flex-col gap-1 px-4 py-3">
-                      <div class="flex items-center justify-between gap-3 text-xs text-gray-500">
-                        <span class="font-medium text-gray-700">{{ commit.projectName }}</span>
-                        <span class="whitespace-nowrap">{{ commit.committedLabel }}</span>
+                  @for (event of detail.events; track event.name) {
+                    <li class="flex items-center justify-between gap-3 px-4 py-3">
+                      <div class="flex min-w-0 flex-col">
+                        <span class="truncate text-sm font-medium text-gray-900">{{ event.name }}</span>
+                        <span class="text-xs text-gray-500">{{ event.role }}</span>
                       </div>
-                      @if (commit.commitUrl) {
-                        <a class="line-clamp-2 text-sm text-blue-600 hover:text-blue-700" [href]="commit.commitUrl" target="_blank" rel="noopener noreferrer">{{
-                          commit.message
-                        }}</a>
-                      } @else {
-                        <span class="line-clamp-2 text-sm text-gray-800">{{ commit.message }}</span>
-                      }
+                      <span class="whitespace-nowrap text-xs text-gray-500">{{ event.date }}</span>
                     </li>
                   }
                 </ul>
-              </div>
-            </div>
-          }
-          @case ('events') {
-            @if (detail.events.length === 0) {
-              <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-events-empty">No event participation recorded.</p>
-            } @else {
-              <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
-                @for (event of detail.events; track event.name) {
-                  <li class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="flex min-w-0 flex-col">
-                      <span class="truncate text-sm font-medium text-gray-900">{{ event.name }}</span>
-                      <span class="text-xs text-gray-500">{{ event.role }}</span>
-                    </div>
-                    <span class="whitespace-nowrap text-xs text-gray-500">{{ event.date }}</span>
-                  </li>
-                }
-              </ul>
+              }
+            }
+            @case ('training') {
+              @if (detail.training.length === 0) {
+                <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-training-empty">
+                  No training or certifications recorded.
+                </p>
+              } @else {
+                <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                  @for (course of detail.training; track course.course) {
+                    <li class="flex items-center justify-between gap-3 px-4 py-3">
+                      <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ course.course }}</span>
+                      <span class="whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
+                        course.status
+                      }}</span>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+            @case ('governance') {
+              @if (detail.governance.length === 0) {
+                <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-governance-empty">
+                  No governance roles recorded.
+                </p>
+              } @else {
+                <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                  @for (seat of detail.governance; track seat.role) {
+                    <li class="flex flex-col gap-0.5 px-4 py-3">
+                      <span class="text-sm font-medium text-gray-900">{{ seat.role }}</span>
+                      <span class="text-xs text-gray-500">{{ seat.body }}</span>
+                    </li>
+                  }
+                </ul>
+              }
             }
           }
-          @case ('training') {
-            @if (detail.training.length === 0) {
-              <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-training-empty">
-                No training or certifications recorded.
-              </p>
-            } @else {
-              <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
-                @for (course of detail.training; track course.course) {
-                  <li class="flex items-center justify-between gap-3 px-4 py-3">
-                    <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ course.course }}</span>
-                    <span class="whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
-                      course.status
-                    }}</span>
-                  </li>
-                }
-              </ul>
-            }
-          }
-          @case ('governance') {
-            @if (detail.governance.length === 0) {
-              <p class="px-1 py-6 text-center text-sm text-gray-500" data-testid="org-contributions-committer-governance-empty">
-                No governance roles recorded.
-              </p>
-            } @else {
-              <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
-                @for (seat of detail.governance; track seat.role) {
-                  <li class="flex flex-col gap-0.5 px-4 py-3">
-                    <span class="text-sm font-medium text-gray-900">{{ seat.role }}</span>
-                    <span class="text-xs text-gray-500">{{ seat.body }}</span>
-                  </li>
-                }
-              </ul>
-            }
-          }
-        }
+        </div>
       </div>
     }
   </p-drawer>

@@ -11,7 +11,14 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { logger } from './logger.service';
-import { DEMO_COMMIT_FEED, DEMO_EMPLOYEE_OPTIONS, DEMO_EMPLOYEE_USERNAMES, DEMO_PROJECT_OPTIONS, DEMO_REPO_EMPLOYEES, DEMO_REPOS } from './org-contributions.demo';
+import {
+  DEMO_COMMIT_FEED,
+  DEMO_EMPLOYEE_OPTIONS,
+  DEMO_EMPLOYEE_USERNAMES,
+  DEMO_PROJECT_OPTIONS,
+  DEMO_REPO_EMPLOYEES,
+  DEMO_REPOS,
+} from './org-contributions.demo';
 
 /**
  * Code Contributions page data access (LFXV2-1894).
@@ -168,7 +175,9 @@ function filterCommitFeed(query: OrgContributionsQuery): OrgContributionCommitRo
  */
 function assertDemoAllowed(): void {
   if (process.env['NODE_ENV'] === 'production' && process.env['CONTRIBUTIONS_DEMO'] !== 'true') {
-    throw new Error('OrgContributionsService is serving demo data; the real LFX Insights source is not implemented yet (LFXV2-1894). Set CONTRIBUTIONS_DEMO=true to allow demo data in production.');
+    throw new Error(
+      'OrgContributionsService is serving demo data; the real LFX Insights source is not implemented yet (LFXV2-1894). Set CONTRIBUTIONS_DEMO=true to allow demo data in production.'
+    );
   }
   logger.warning(undefined, 'org_contributions_demo_data', 'Serving demo/scaffold Code Contributions data — real LFX Insights source pending (LFXV2-1894)');
 }

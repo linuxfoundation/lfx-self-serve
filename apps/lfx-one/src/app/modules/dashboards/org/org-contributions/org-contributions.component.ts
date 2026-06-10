@@ -132,6 +132,9 @@ export class OrgContributionsComponent {
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
   protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.initCommitRows());
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());
+  protected readonly commitAriaSortMap: Signal<Record<ContributionsCommitSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() =>
+    this.initCommitAriaSortMap()
+  );
   protected readonly committerDetail: Signal<OrgCommitterDetailVm | null> = computed(() => this.initCommitterDetail());
   protected readonly totalRecords = computed(() => this.response().totalRecords);
 
@@ -359,6 +362,18 @@ export class OrgContributionsComponent {
       committer: iconFor('committer'),
       username: iconFor('username'),
       date: iconFor('date'),
+    };
+  }
+
+  private initCommitAriaSortMap(): Record<ContributionsCommitSortColumn, 'ascending' | 'descending' | 'none'> {
+    const active = this.commitSort();
+    const direction: 'ascending' | 'descending' = this.commitDir() === 1 ? 'ascending' : 'descending';
+    const sortFor = (col: ContributionsCommitSortColumn): 'ascending' | 'descending' | 'none' => (active === col ? direction : 'none');
+    return {
+      project: sortFor('project'),
+      committer: sortFor('committer'),
+      username: sortFor('username'),
+      date: sortFor('date'),
     };
   }
 
