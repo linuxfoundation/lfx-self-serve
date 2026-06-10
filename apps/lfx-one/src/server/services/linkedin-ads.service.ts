@@ -110,12 +110,9 @@ function loadLinkedInConfig(): LinkedInRuntimeConfig {
   } catch (error: unknown) {
     const code = (error as NodeJS.ErrnoException | undefined)?.code;
     if (code === 'ENOENT') {
-      logger.warning(
-        undefined,
-        'linkedin_config_load',
-        `LinkedIn config file not found at ${configPath} — LinkedIn campaign features will be disabled`,
-        { configPath }
-      );
+      logger.warning(undefined, 'linkedin_config_load', `LinkedIn config file not found at ${configPath} — LinkedIn campaign features will be disabled`, {
+        configPath,
+      });
     } else {
       logger.error(undefined, 'linkedin_config_load', startTime, error, {
         configPath,
@@ -203,9 +200,7 @@ function getAccountId(): string {
     logger.debug(undefined, 'linkedin_config', 'Using default LinkedIn account', { source: 'config_default' });
     return config.defaultAccountId;
   }
-  throw new Error(
-    'No LinkedIn ad account configured: set LINKEDIN_AD_ACCOUNT_ID env or provide defaultAccountId in the LinkedIn config file'
-  );
+  throw new Error('No LinkedIn ad account configured: set LINKEDIN_AD_ACCOUNT_ID env or provide defaultAccountId in the LinkedIn config file');
 }
 
 function getOrgId(): string {
@@ -239,9 +234,7 @@ function getOrgId(): string {
     logger.debug(undefined, 'linkedin_config', 'Using default LinkedIn org', { source: 'config_default' });
     return config.defaultOrgId;
   }
-  throw new Error(
-    'No LinkedIn org configured: set LINKEDIN_ORG_ID env or provide defaultOrgId in the LinkedIn config file'
-  );
+  throw new Error('No LinkedIn org configured: set LINKEDIN_ORG_ID env or provide defaultOrgId in the LinkedIn config file');
 }
 
 function getAccessToken(): string {
@@ -527,9 +520,7 @@ export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrn
   } else {
     const profileConfig = config.targetingProfiles.find((p) => p.id === profile);
     if (!profileConfig) {
-      throw new Error(
-        `LinkedIn targeting profile "${profile}" not found in runtime config — check the linkedin-config ConfigMap`
-      );
+      throw new Error(`LinkedIn targeting profile "${profile}" not found in runtime config — check the linkedin-config ConfigMap`);
     }
     skills = profileConfig.skills;
     groups = profileConfig.groups;
