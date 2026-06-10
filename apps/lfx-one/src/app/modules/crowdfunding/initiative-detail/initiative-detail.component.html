@@ -23,10 +23,8 @@
 
     @if (activeTab() === 'overview') {
       <lfx-initiative-overview [initiative]="detail" (viewAllFinancials)="activeTab.set('financials')" />
-    } @else if (activeTab() === 'financials') {
+    } @else {
       <lfx-initiative-financials [initiative]="detail" />
-    } @else if (activeTab() === 'announcements') {
-      <lfx-initiative-announcements />
     }
   }
 </div>

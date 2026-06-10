@@ -93,6 +93,7 @@ export interface BackendTransactionList {
 export interface BackendDonation {
   id: string;
   initiative_id?: string;
+  initiative_name?: string;
   category?: string;
   amount_cents: number;
   po_number?: string;

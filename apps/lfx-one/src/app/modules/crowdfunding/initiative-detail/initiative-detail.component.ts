@@ -11,19 +11,11 @@ import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
 import { InitiativeFinancialsComponent } from './components/initiative-financials/initiative-financials.component';
-import { InitiativeAnnouncementsComponent } from './components/initiative-announcements/initiative-announcements.component';
 import { InitiativeSettingsDrawerComponent } from './components/initiative-settings-drawer/initiative-settings-drawer.component';
 
 @Component({
   selector: 'lfx-initiative-detail',
-  imports: [
-    ButtonComponent,
-    InitiativeDetailHeaderComponent,
-    InitiativeOverviewComponent,
-    InitiativeFinancialsComponent,
-    InitiativeAnnouncementsComponent,
-    InitiativeSettingsDrawerComponent,
-  ],
+  imports: [ButtonComponent, InitiativeDetailHeaderComponent, InitiativeOverviewComponent, InitiativeFinancialsComponent, InitiativeSettingsDrawerComponent],
   templateUrl: './initiative-detail.component.html',
   styleUrl: './initiative-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

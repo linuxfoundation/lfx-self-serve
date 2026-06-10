@@ -33,7 +33,6 @@ export class InitiativeDetailHeaderComponent {
   protected readonly tabOptions: TabOption<string>[] = [
     { value: 'overview', label: 'Overview' },
     { value: 'financials', label: 'Financials' },
-    { value: 'announcements', label: 'Announcements' },
   ];
 
   protected readonly moreMenuItems: InitiativeMenuItem[] = [

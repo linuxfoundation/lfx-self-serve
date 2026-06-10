@@ -156,6 +156,7 @@ export function mapCfDonationToMyDonation(d: BackendDonation): MyDonation {
     amountCents: d.amount_cents,
     date: new Date(d.created_on).getTime(),
     initiativeId: d.initiative_id || undefined,
+    initiativeName: d.initiative_name || undefined,
   };
 }
 
