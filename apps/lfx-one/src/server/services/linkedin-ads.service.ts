@@ -507,29 +507,36 @@ export async function getLinkedInAnalytics(
     'X-RestLi-Protocol-Version': '2.0.0',
   };
 
-  // --- Fetch campaign list for this account ---
-  const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE,PAUSED)))&count=100`;
-  const campaignsResp = await fetch(campaignsUrl, {
-    headers: baseHeaders,
-    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
-  });
-  if (!campaignsResp.ok) {
-    const text = await campaignsResp.text().catch(() => '');
-    const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
-    logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
-    throw err;
+  // --- Fetch campaign list for this account (paginated) ---
+  interface CampaignElement {
+    id: number;
+    name: string;
+    status: string;
+    totalBudget?: { amount: string };
+    dailyBudget?: { amount: string };
+    runSchedule?: { start: number; end: number };
   }
-  const campaignsData = (await campaignsResp.json()) as {
-    elements?: {
-      id: number;
-      name: string;
-      status: string;
-      totalBudget?: { amount: string };
-      dailyBudget?: { amount: string };
-      runSchedule?: { start: number; end: number };
-    }[];
-  };
-  const campaigns = campaignsData.elements ?? [];
+  const campaigns: CampaignElement[] = [];
+  const pageSize = 100;
+  let campaignStart = 0;
+  while (true) {
+    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE,PAUSED)))&count=${pageSize}&start=${campaignStart}`;
+    const campaignsResp = await fetch(campaignsUrl, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+    });
+    if (!campaignsResp.ok) {
+      const text = await campaignsResp.text().catch(() => '');
+      const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
+      logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
+      throw err;
+    }
+    const campaignsData = (await campaignsResp.json()) as { elements?: CampaignElement[] };
+    const page = campaignsData.elements ?? [];
+    campaigns.push(...page);
+    if (page.length < pageSize) break;
+    campaignStart += pageSize;
+  }
 
   if (campaigns.length === 0) {
     const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
