@@ -407,7 +407,7 @@ export class ProjectService {
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
   ): Promise<ProjectSettings> {
     // Step 1: Fetch current settings with ETag first.
-    // Settings must be fetched before resolveEmailToSub so that manually-added users
+    // Settings must be fetched before resolveEmailToUsername so that manually-added users
     // (not present in the NATS directory) can be matched by email fallback and skip
     // the NATS call that would otherwise throw NOT_FOUND before we reach array logic.
     const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
@@ -426,7 +426,7 @@ export class ProjectService {
 
     // Step 3: Determine the backend identifier for array operations.
     // For emails on update/remove: check settings first. If the user is stored without
-    // a username (manually added, not in NATS), skip resolveEmailToSub and use the
+    // a username (manually added, not in NATS), skip resolveEmailToUsername and use the
     // email directly — calling NATS for such users would fail with NOT_FOUND.
     const originalEmail = usernameOrEmail.includes('@') ? usernameOrEmail.trim().toLowerCase() : '';
     const matchesByEmail = (u: { username?: string; email?: string }): boolean => !u.username && !!originalEmail && u.email?.toLowerCase() === originalEmail;
@@ -435,12 +435,12 @@ export class ProjectService {
     let backendIdentifier = usernameOrEmail.trim();
     if (originalEmail) {
       if ((existingByEmail && (operation === 'update' || operation === 'remove')) || manualUserInfo) {
-        // Skip resolveEmailToSub in two cases:
+        // Skip resolveEmailToUsername in two cases:
         // 1. update/remove on a no-username user found by email in settings (not in NATS)
         // 2. manual-add — the user was not found in the directory; NATS would return NOT_FOUND
         backendIdentifier = originalEmail;
       } else {
-        backendIdentifier = await this.resolveEmailToSub(req, usernameOrEmail);
+        backendIdentifier = await this.resolveEmailToUsername(req, usernameOrEmail);
       }
     }
 
@@ -741,9 +741,6 @@ export class ProjectService {
 
     if (usernameOrEmail.includes('@')) {
       originalEmail = usernameOrEmail;
-      // First confirm the user exists with email_to_sub
-      await this.resolveEmailToSub(req, usernameOrEmail);
-      // Then get the username for user metadata lookup
       usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
       logger.debug(req, 'get_user_info', 'Email resolved to username', {
         email: originalEmail,
