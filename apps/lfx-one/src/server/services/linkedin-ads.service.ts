@@ -111,7 +111,7 @@ async function linkedInRequest(
   const response = await fetch(url.toString(), {
     method,
     headers,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -527,7 +527,13 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   const pageSize = 100;
   let campaignStart = 0;
   while (true) {
-    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE,PAUSED)))&count=${pageSize}&start=${campaignStart}`;
+    const campaignParams = new URLSearchParams({
+      q: 'search',
+      search: '(status:(values:List(ACTIVE,PAUSED)))',
+      count: String(pageSize),
+      start: String(campaignStart),
+    });
+    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?${campaignParams.toString()}`;
     const campaignsResp = await fetch(campaignsUrl, {
       headers: baseHeaders,
       signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),

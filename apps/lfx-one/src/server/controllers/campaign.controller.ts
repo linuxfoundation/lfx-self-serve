@@ -313,7 +313,7 @@ export class CampaignController {
   }
 
   public getLinkedInAccounts(_req: Request, res: Response): void {
-    const accounts = LINKEDIN_ACCOUNTS.map((a, i) => ({ key: String(i), label: a.label }));
+    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
     res.json(accounts);
   }
 
@@ -321,9 +321,9 @@ export class CampaignController {
     const rawDays = String(req.query['days'] ?? '30');
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
-    const rawKey = String(req.query['accountKey'] ?? '0');
-    const keyIndex = /^\d+$/.test(rawKey) ? Number(rawKey) : NaN;
-    if (!Number.isFinite(keyIndex) || keyIndex < 0 || keyIndex >= LINKEDIN_ACCOUNTS.length) {
+    const rawKey = String(req.query['accountKey'] ?? '');
+    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawKey) ?? LINKEDIN_ACCOUNTS[0];
+    if (!account) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {
           operation: 'linkedin_monitor',
@@ -333,7 +333,7 @@ export class CampaignController {
       );
       return;
     }
-    const accountId = LINKEDIN_ACCOUNTS[keyIndex].accountId;
+    const accountId = account.accountId;
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
     try {
