@@ -65,8 +65,17 @@ function validateLinkedInConfig(parsed: unknown): LinkedInRuntimeConfig {
   }
   const p = parsed as Record<string, unknown>;
 
-  const defaultAccountId = typeof p['defaultAccountId'] === 'string' ? p['defaultAccountId'] : '';
-  const defaultOrgId = typeof p['defaultOrgId'] === 'string' ? p['defaultOrgId'] : '';
+  const rawDefaultAccountId = p['defaultAccountId'];
+  if (rawDefaultAccountId !== undefined && typeof rawDefaultAccountId !== 'string') {
+    throw new TypeError(`LinkedIn config "defaultAccountId" must be a string when present, got ${typeof rawDefaultAccountId}`);
+  }
+  const defaultAccountId = rawDefaultAccountId ?? '';
+
+  const rawDefaultOrgId = p['defaultOrgId'];
+  if (rawDefaultOrgId !== undefined && typeof rawDefaultOrgId !== 'string') {
+    throw new TypeError(`LinkedIn config "defaultOrgId" must be a string when present, got ${typeof rawDefaultOrgId}`);
+  }
+  const defaultOrgId = rawDefaultOrgId ?? '';
 
   const rawAccounts = p['accounts'] ?? [];
   if (!Array.isArray(rawAccounts)) {
