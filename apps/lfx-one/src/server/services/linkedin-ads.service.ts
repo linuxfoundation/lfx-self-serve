@@ -480,7 +480,7 @@ function toDateParts(iso: string): { year: number; month: number; day: number } 
 
 function dateRangeParams(days: number): { start: string; end: string } {
   const end = new Date();
-  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - days));
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - (days - 1)));
   const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
   return {
     start: start.toISOString().split('T')[0],
@@ -596,10 +596,10 @@ export async function getLinkedInAnalytics(
     }
   }
 
-  // --- Fetch creative metrics per campaign ---
+  // --- Fetch creative metrics per campaign (parallel) ---
   const creativeAnalyticsMap = new Map<string, import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[]>();
   const creativeFetchFailed = new Set<string>();
-  for (const camp of campaigns) {
+  const creativeFetches = campaigns.map(async (camp) => {
     const creativeParams = new URLSearchParams({
       q: 'analytics',
       pivot: 'CREATIVE',
@@ -648,7 +648,8 @@ export async function getLinkedInAnalytics(
       });
       creativeFetchFailed.add(String(camp.id));
     }
-  }
+  });
+  await Promise.allSettled(creativeFetches);
 
   // --- Build campaign metrics ---
   const campaignMetrics: import('@lfx-one/shared/interfaces').LinkedInCampaignMetrics[] = campaigns.map((camp) => {
@@ -656,14 +657,21 @@ export async function getLinkedInAnalytics(
     const analytics = analyticsMap.get(urn) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
     const totalBudget = parseFloat(camp.totalBudget?.amount ?? '0');
     const dailyBudget = parseFloat(camp.dailyBudget?.amount ?? '0');
+    const schedStart = camp.runSchedule?.start ?? 0;
+    const schedEnd = camp.runSchedule?.end ?? 0;
+    const now = Date.now();
+    const rangeStartMs = new Date(start).getTime();
     let pacingPct = 0;
     if (totalBudget > 0) {
-      pacingPct = (analytics.spend / totalBudget) * 100;
+      const flightStart = schedStart || rangeStartMs;
+      const flightEnd = schedEnd || now;
+      const totalFlightDays = Math.max(1, Math.ceil((flightEnd - flightStart) / 86_400_000));
+      const effectiveStart = Math.max(flightStart, rangeStartMs);
+      const effectiveEnd = Math.min(flightEnd, now);
+      const windowDays = Math.max(1, Math.ceil((effectiveEnd - effectiveStart) / 86_400_000));
+      const expectedSpend = (totalBudget / totalFlightDays) * windowDays;
+      pacingPct = expectedSpend > 0 ? (analytics.spend / expectedSpend) * 100 : 0;
     } else if (dailyBudget > 0) {
-      const schedStart = camp.runSchedule?.start ?? 0;
-      const schedEnd = camp.runSchedule?.end ?? 0;
-      const now = Date.now();
-      const rangeStartMs = new Date(start).getTime();
       const effectiveStart = Math.max(schedStart || rangeStartMs, rangeStartMs);
       const effectiveEnd = Math.min(schedEnd || now, now);
       const flightDays = Math.max(1, Math.ceil((effectiveEnd - effectiveStart) / 86_400_000));
