@@ -26,6 +26,15 @@ const UPSTREAM_HOSTS: Record<ContributionSource, string> = {
 /** Monotonic counter for synthetic commit-feed shas — declared before the feed that consumes it. */
 let feedSeq = 0;
 
+/** Project logo per slug (CNCF artwork). Demo only; the data pass derives logos from the project catalog. Slugs without an entry fall back to an initials square. */
+const PROJECT_LOGOS: Record<string, string> = {
+  kubernetes: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/kubernetes/icon/color/kubernetes-icon-color.svg',
+  prometheus: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/prometheus/icon/color/prometheus-icon-color.svg',
+  envoy: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/envoy/icon/color/envoy-icon-color.svg',
+  opentelemetry: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/opentelemetry/icon/color/opentelemetry-icon-color.svg',
+  etcd: 'https://raw.githubusercontent.com/cncf/artwork/master/projects/etcd/icon/color/etcd-icon-color.svg',
+};
+
 /** Internal demo author — `username` drives commit handles; not on the wire. */
 const DEMO_EMPLOYEES = [
   { id: 'emp-ana', displayName: 'Ana Ramirez', username: 'aramirez' },
@@ -161,7 +170,7 @@ function repo(
     projectId,
     projectName,
     projectSlug,
-    projectLogoUrl: null,
+    projectLogoUrl: PROJECT_LOGOS[projectSlug] ?? null,
     source,
     upstreamUrl: `${upstreamHost}/${repositoryPath}`,
     commits,

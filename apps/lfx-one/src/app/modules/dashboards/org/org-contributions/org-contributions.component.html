@@ -133,7 +133,24 @@
           <ng-template #body let-row>
             <tr [attr.data-testid]="'org-contributions-row-' + row.repositoryId">
               <td>
-                <span class="text-sm text-gray-800">{{ row.projectName }}</span>
+                <div class="flex items-center gap-2">
+                  @if (row.projectLogoUrl) {
+                    <img
+                      [src]="row.projectLogoUrl"
+                      [alt]="row.projectName + ' logo'"
+                      loading="lazy"
+                      class="h-6 w-6 shrink-0 rounded object-contain"
+                      [attr.data-testid]="'org-contributions-project-logo-' + row.repositoryId" />
+                  } @else {
+                    <span
+                      class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[10px] font-semibold text-white"
+                      [class]="row.projectLogoColorClass"
+                      aria-hidden="true">
+                      {{ row.projectInitials }}
+                    </span>
+                  }
+                  <span class="text-sm text-gray-800">{{ row.projectName }}</span>
+                </div>
               </td>
               <td>
                 @if (row.upstreamUrl) {

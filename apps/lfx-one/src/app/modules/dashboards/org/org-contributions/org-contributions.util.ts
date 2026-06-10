@@ -45,6 +45,8 @@ export function decorateRepoRow(row: OrgContributionRepoRow): OrgContributionRep
     repositoryPath: row.repositoryPath,
     projectName: row.projectName,
     projectLogoUrl: row.projectLogoUrl,
+    projectInitials: computePersonInitials(row.projectName),
+    projectLogoColorClass: computePersonAvatarColorClass(row.projectName),
     source: row.source,
     sourceLabel: badge.label,
     sourceIconClass: badge.iconClass,

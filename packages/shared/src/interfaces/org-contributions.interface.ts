@@ -128,6 +128,10 @@ export interface OrgContributionRepoRowVm {
   repositoryPath: string;
   projectName: string;
   projectLogoUrl: string | null;
+  /** Project initials for the logo fallback square when `projectLogoUrl` is null. */
+  projectInitials: string;
+  /** Tailwind background class for the logo fallback square. */
+  projectLogoColorClass: string;
   source: ContributionSource;
   /** Display label for the source badge, e.g. `GitHub`. */
   sourceLabel: string;
