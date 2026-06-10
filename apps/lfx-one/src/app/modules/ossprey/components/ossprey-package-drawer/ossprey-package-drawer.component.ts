@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, model, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Component, inject, input, model, Signal, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, of, skip, switchMap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -29,27 +29,11 @@ export class OsspreyPackageDrawerComponent {
   public readonly packageId = input<string | null>(null);
 
   protected readonly activeTab = signal<DrawerTab>('overview');
-  protected readonly packageData = signal<OsspreyPackage | null>(null);
+  protected readonly packageData: Signal<OsspreyPackage | null> = this.initPackageData();
 
   protected readonly getLifecycleLabel = getLifecycleLabel;
   protected readonly getLifecycleTagSeverity = getLifecycleTagSeverity;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
-
-  public constructor() {
-    toObservable(this.visible)
-      .pipe(
-        skip(1),
-        switchMap(() => {
-          const id = this.packageId();
-          if (!id) return of(null);
-          return this.osspreyService.getPackage(id).pipe(catchError(() => of(null)));
-        }),
-        takeUntilDestroyed()
-      )
-      .subscribe((pkg) => {
-        this.packageData.set(pkg);
-      });
-  }
 
   protected onTabChange(tab: DrawerTab): void {
     this.activeTab.set(tab);
@@ -74,5 +58,19 @@ export class OsspreyPackageDrawerComponent {
     if (provenance === 'Full') return 'success';
     if (provenance === 'Partial') return 'warn';
     return 'secondary';
+  }
+
+  private initPackageData(): Signal<OsspreyPackage | null> {
+    return toSignal(
+      toObservable(this.visible).pipe(
+        skip(1),
+        switchMap(() => {
+          const id = this.packageId();
+          if (!id) return of(null);
+          return this.osspreyService.getPackage(id).pipe(catchError(() => of(null)));
+        })
+      ),
+      { initialValue: null }
+    );
   }
 }

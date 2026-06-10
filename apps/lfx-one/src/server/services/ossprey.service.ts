@@ -33,7 +33,13 @@ export class OsspreyServerService {
     const requestId = randomUUID();
 
     try {
-      const token = await this.cdpService.generateToken(req);
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_ossprey_packages',
+          service: 'ossprey_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
       const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_LIST}`);
 
       if (params.page) url.searchParams.set('page', String(params.page));
@@ -61,7 +67,7 @@ export class OsspreyServerService {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => '[unreadable error body]');
         throw new MicroserviceError(`CDP packages list request failed: ${response.statusText}`, response.status, 'CDP_PACKAGES_LIST_ERROR', {
           operation: 'get_ossprey_packages',
           service: 'ossprey_service',
@@ -94,7 +100,13 @@ export class OsspreyServerService {
     const requestId = randomUUID();
 
     try {
-      const token = await this.cdpService.generateToken(req);
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_ossprey_package',
+          service: 'ossprey_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
       const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGE_DETAIL}`);
       url.searchParams.set('purl', purl);
 
@@ -118,7 +130,7 @@ export class OsspreyServerService {
       }
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => '[unreadable error body]');
         throw new MicroserviceError(`CDP package detail request failed: ${response.statusText}`, response.status, 'CDP_PACKAGE_DETAIL_ERROR', {
           operation: 'get_ossprey_package',
           service: 'ossprey_service',

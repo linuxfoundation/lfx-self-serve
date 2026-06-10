@@ -50,6 +50,7 @@ export class OsspreyController {
 
       if (!pkg) {
         logger.debug(req, 'get_ossprey_package', 'Package not found', { purl });
+        // Intentional: 404 is a valid non-error outcome here, not an exception path.
         res.status(404).json({ error: 'NOT_FOUND', message: 'Package not found.' });
         return;
       }

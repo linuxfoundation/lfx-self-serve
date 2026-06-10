@@ -110,13 +110,15 @@ export class OsspreyDashboardComponent {
     return toSignal<OsspreyPackage[] | undefined>(
       toObservable(this.filters).pipe(
         switchMap((f) => {
+          // 'risk' is intentionally absent — no sort params means the server applies its
+          // own composite risk ordering rather than a simple field sort.
           const sortByMap: Record<string, OsspreyDashboardSortSpec> = {
             impact: { sortBy: 'impact', sortDir: 'desc' },
             health: { sortBy: 'health', sortDir: 'asc' },
             vulns: { sortBy: 'openVulns', sortDir: 'desc' },
             name: { sortBy: 'name', sortDir: 'asc' },
           };
-          const sortSpec = sortByMap[f.sort]; // undefined for 'risk' → server default
+          const sortSpec = sortByMap[f.sort];
           const params: OsspreyListParams = {
             ...(sortSpec ? { sortBy: sortSpec.sortBy, sortDir: sortSpec.sortDir } : {}),
             ecosystem: f.ecosystem || undefined,

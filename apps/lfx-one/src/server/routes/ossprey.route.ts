@@ -8,7 +8,7 @@ import { OsspreyController } from '../controllers/ossprey.controller';
 const router = Router();
 const osspreyController = new OsspreyController();
 
-router.get('/packages', (req, res, next) => osspreyController.getPackages(req, res, next));
-router.get('/packages/:purl', (req, res, next) => osspreyController.getPackage(req, res, next));
+router.get('/packages', osspreyController.getPackages.bind(osspreyController));
+router.get('/packages/:purl', osspreyController.getPackage.bind(osspreyController));
 
 export default router;
