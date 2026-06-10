@@ -35,7 +35,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC } from '@lfx-one/shared/utils';
+import { formatDateToUTC, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -1000,7 +1000,8 @@ export class EventsService {
     return {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
-      url: row.EVENT_URL ?? '',
+      // normalizeToUrl prepends https:// to scheme-less DB URLs and drops unsafe/invalid ones; '' keeps the non-null contract.
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
       applicationDate: row.APPLICATION_DATE
         ? new Date(row.APPLICATION_DATE).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -1015,8 +1016,8 @@ export class EventsService {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
       category: row.EVENT_CATEGORY,
-      url: row.EVENT_URL ?? '',
-      registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
+      registrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
       status: row.EVENT_STATUS ?? null,
@@ -1042,8 +1043,8 @@ export class EventsService {
     return {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
-      url: row.EVENT_URL ?? '',
-      registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
+      registrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       foundation: row.PROJECT_NAME,
       startDate: new Date(row.EVENT_START_DATE).toISOString(),
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
