@@ -250,6 +250,11 @@ export interface PaymentMethod {
   expiryYear: number;
 }
 
+export interface TopicOption {
+  value: string;
+  label: string;
+}
+
 export interface InitiativeMenuItem {
   label?: string;
   icon?: string;

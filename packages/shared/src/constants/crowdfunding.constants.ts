@@ -10,6 +10,7 @@ import {
   InitiativesResponse,
   MyDonationsResponse,
   RecurringDonationsResponse,
+  TopicOption,
 } from '../interfaces/crowdfunding.interface';
 
 export const CROWDFUNDING_FUND_TYPE_LABELS: Record<FundType, string> = {
@@ -68,3 +69,18 @@ export const EMPTY_TRANSACTION_STATE: { items: CrowdfundingTransaction[]; totalC
 export const EMPTY_MY_DONATIONS: MyDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_DONATION_STATS: DonationStats = { totalDonated: 0, initiativesSupported: 0, activeRecurringAmount: 0, activeRecurringCount: 0 };
+
+export const CROWDFUNDING_TOPIC_OPTIONS: TopicOption[] = [
+  { value: 'security', label: 'Security' },
+  { value: 'cloud_native', label: 'Cloud Native' },
+  { value: 'developer_tools', label: 'Developer Tools' },
+  { value: 'ai_ml', label: 'AI / ML' },
+  { value: 'infrastructure', label: 'Infrastructure' },
+  { value: 'devops', label: 'DevOps' },
+  { value: 'observability', label: 'Observability' },
+  { value: 'networking', label: 'Networking' },
+  { value: 'storage', label: 'Storage' },
+  { value: 'serverless', label: 'Serverless' },
+  { value: 'web_standards', label: 'Web Standards' },
+  { value: 'runtime', label: 'Runtime' },
+];

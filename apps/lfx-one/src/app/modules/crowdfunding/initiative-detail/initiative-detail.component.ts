@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, signal, Signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, switchMap } from 'rxjs';
@@ -50,5 +50,11 @@ export class InitiativeDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  constructor() {
+    effect(() => {
+      console.log(this.initiative());
+    });
   }
 }
