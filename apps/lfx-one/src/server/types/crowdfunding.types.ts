@@ -49,6 +49,7 @@ export interface BackendInitiative {
   };
   goals?: BackendGoal[];
   sponsors?: BackendSponsor[];
+  beneficiaries?: BackendBeneficiary[];
   balance?: {
     total_raised_cents: number;
     total_disbursed_cents: number;
@@ -130,6 +131,12 @@ export interface BackendSubscriptionListResponse {
 export interface BackendGoalInput {
   name: string;
   amount_cents: number;
+}
+
+export interface BackendBeneficiary {
+  id: string;
+  name?: string;
+  email?: string;
 }
 
 export interface BackendBeneficiaryInput {

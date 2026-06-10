@@ -22,7 +22,7 @@ import {
   DEFAULT_FUND_DISTRIBUTION,
   MAX_LOGO_SIZE_BYTES,
 } from '@lfx-one/shared/constants';
-import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { Beneficiary, FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 function formatCompactAmount(amount: number): string {
@@ -133,7 +133,7 @@ export class InitiativeSettingsDrawerComponent {
             return { ...item };
           })
         );
-        this.beneficiaryGroups.set([]);
+        this.beneficiaryGroups.set((init.beneficiaries ?? []).map((b) => this.makeBeneficiaryGroup(b)));
         this.activeSettingsTab.set('details');
       });
   }
@@ -177,13 +177,10 @@ export class InitiativeSettingsDrawerComponent {
         }
       }
 
-      const groups = this.beneficiaryGroups();
-      if (groups.length > 0) {
-        input.beneficiaries = groups.map((g) => ({
-          name: (g.value.name as string) || undefined,
-          email: (g.value.email as string) || undefined,
-        }));
-      }
+      input.beneficiaries = this.beneficiaryGroups().map((g) => ({
+        name: (g.value.name as string) || undefined,
+        email: (g.value.email as string) || undefined,
+      }));
 
       const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
 
@@ -266,14 +263,17 @@ export class InitiativeSettingsDrawerComponent {
   }
 
   protected addBeneficiary(): void {
-    const group = new FormGroup({
-      name: new FormControl(''),
-      email: new FormControl('', Validators.email),
-    });
-    this.beneficiaryGroups.update((groups) => [...groups, group]);
+    this.beneficiaryGroups.update((groups) => [...groups, this.makeBeneficiaryGroup()]);
   }
 
   protected removeBeneficiary(index: number): void {
     this.beneficiaryGroups.update((groups) => groups.filter((_, i) => i !== index));
+  }
+
+  private makeBeneficiaryGroup(b?: Beneficiary): FormGroup {
+    return new FormGroup({
+      name: new FormControl(b?.name ?? ''),
+      email: new FormControl(b?.email ?? '', Validators.email),
+    });
   }
 }
