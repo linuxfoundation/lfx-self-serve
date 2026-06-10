@@ -1,10 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
+import type {
+  LinkedInActionItem,
+  LinkedInCampaignCreateRequest,
+  LinkedInCampaignCreateResult,
+  LinkedInCampaignMetrics,
+  LinkedInCreativeMetrics,
+  LinkedInGeoTarget,
+  LinkedInMonitorResponse,
+  LinkedInPacingLabel,
+  LinkedInTargetingProfile,
+} from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
-import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
+import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_REQUEST_TIMEOUT_MS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
@@ -101,7 +111,7 @@ async function linkedInRequest(
   const response = await fetch(url.toString(), {
     method,
     headers,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -467,6 +477,335 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
     logger.error(req, 'linkedin_campaign_create', startTime, error, { event: params.eventName });
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Analytics — campaign + creative metrics via adAnalytics
+// ---------------------------------------------------------------------------
+
+function toDateParts(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.split('-').map(Number);
+  return { year: y, month: m, day: d };
+}
+
+function dateRangeParams(days: number): { start: string; end: string } {
+  const end = new Date();
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - (days - 1)));
+  const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+  return {
+    start: start.toISOString().split('T')[0],
+    end: endUtc.toISOString().split('T')[0],
+  };
+}
+
+interface LinkedInCampaignElement {
+  id: number;
+  name: string;
+  status: string;
+  totalBudget?: { amount: string };
+  dailyBudget?: { amount: string };
+  runSchedule?: { start: number; end: number };
+}
+
+export async function getLinkedInAnalytics(req: Request | undefined, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
+  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
+  const token = getAccessToken();
+  const version = LINKEDIN_API_VERSION;
+
+  const { start, end } = dateRangeParams(days);
+  const startParts = toDateParts(start);
+  const endParts = toDateParts(end);
+
+  const baseHeaders = {
+    Authorization: `Bearer ${token}`,
+    'LinkedIn-Version': version,
+    'X-RestLi-Protocol-Version': '2.0.0',
+  };
+
+  // --- Fetch campaign list for this account (paginated) ---
+  const campaigns: LinkedInCampaignElement[] = [];
+  const pageSize = 100;
+  let campaignStart = 0;
+  while (true) {
+    const campaignParams = new URLSearchParams({
+      q: 'search',
+      search: '(status:(values:List(ACTIVE,PAUSED)))',
+      count: String(pageSize),
+      start: String(campaignStart),
+    });
+    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?${campaignParams.toString()}`;
+    const campaignsResp = await fetch(campaignsUrl, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+    });
+    if (!campaignsResp.ok) {
+      const text = await campaignsResp.text().catch(() => '');
+      const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
+      logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
+      throw err;
+    }
+    const campaignsData = (await campaignsResp.json()) as { elements?: LinkedInCampaignElement[] };
+    const page = campaignsData.elements ?? [];
+    campaigns.push(...page);
+    if (page.length < pageSize) break;
+    campaignStart += pageSize;
+  }
+
+  if (campaigns.length === 0) {
+    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+    const result: LinkedInMonitorResponse = {
+      accountLabel: account?.label ?? accountId,
+      pulledAt: new Date().toISOString(),
+      dateRange: { mode: `last_${days}_days` },
+      campaigns: [],
+      accountTotals: { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaignCount: 0 },
+      actionItems: [],
+    };
+    logger.success(req, 'linkedin_analytics', startTime, { campaigns: 0 });
+    return result;
+  }
+
+  // --- Fetch analytics for all campaigns via account-level filter ---
+  const analyticsParams = new URLSearchParams({
+    q: 'analytics',
+    pivot: 'CAMPAIGN',
+    dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
+    timeGranularity: 'ALL',
+    accounts: `List(urn:li:sponsoredAccount:${accountId})`,
+    fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
+  });
+
+  const analyticsUrl = `${LINKEDIN_BASE_URL}/adAnalytics?${analyticsParams.toString()}`;
+  const analyticsResp = await fetch(analyticsUrl, {
+    headers: baseHeaders,
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+  });
+
+  const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
+  if (!analyticsResp.ok) {
+    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalytics returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
+  }
+  if (analyticsResp.ok) {
+    const analyticsData = (await analyticsResp.json()) as {
+      elements?: {
+        pivotValue?: string;
+        impressions?: number;
+        clicks?: number;
+        costInLocalCurrency?: string;
+        externalWebsiteConversions?: number;
+      }[];
+    };
+    for (const el of analyticsData.elements ?? []) {
+      if (el.pivotValue) {
+        analyticsMap.set(el.pivotValue, {
+          impressions: el.impressions ?? 0,
+          clicks: el.clicks ?? 0,
+          spend: parseFloat(el.costInLocalCurrency ?? '0'),
+          conversions: el.externalWebsiteConversions ?? 0,
+        });
+      }
+    }
+  }
+
+  // --- Fetch creative metrics per campaign (batched, max 5 concurrent) ---
+  const CREATIVE_BATCH_SIZE = 5;
+  const creativeAnalyticsMap = new Map<string, LinkedInCreativeMetrics[]>();
+  const creativeFetchFailed = new Set<string>();
+
+  const fetchCreativeForCampaign = async (camp: (typeof campaigns)[number]): Promise<void> => {
+    const creativeParams = new URLSearchParams({
+      q: 'analytics',
+      pivot: 'CREATIVE',
+      dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
+      timeGranularity: 'ALL',
+      campaigns: `List(urn:li:sponsoredCampaign:${camp.id})`,
+      fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
+    });
+    const creativeResp = await fetch(`${LINKEDIN_BASE_URL}/adAnalytics?${creativeParams.toString()}`, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+    });
+    if (creativeResp.ok) {
+      const creativeData = (await creativeResp.json()) as {
+        elements?: {
+          pivotValue?: string;
+          impressions?: number;
+          clicks?: number;
+          costInLocalCurrency?: string;
+          externalWebsiteConversions?: number;
+        }[];
+      };
+      const creatives: LinkedInCreativeMetrics[] = (creativeData.elements ?? [])
+        .filter((el) => !!el.pivotValue)
+        .map((el) => {
+          const creativeId = el.pivotValue!.replace('urn:li:sponsoredCreative:', '');
+          const clicks = el.clicks ?? 0;
+          const impressions = el.impressions ?? 0;
+          return {
+            creativeId,
+            creativeName: `Creative ${creativeId}`,
+            impressions,
+            clicks,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+            spend: parseFloat(el.costInLocalCurrency ?? '0'),
+            conversions: el.externalWebsiteConversions ?? 0,
+            status: camp.status,
+          };
+        });
+      creativeAnalyticsMap.set(String(camp.id), creatives);
+    } else {
+      const text = await creativeResp.text().catch(() => '');
+      logger.warning(req, 'linkedin_creative_analytics', `Creative analytics failed for campaign ${camp.id}: ${creativeResp.status}: ${text.slice(0, 200)}`, {
+        campaignId: camp.id,
+        status: creativeResp.status,
+      });
+      creativeFetchFailed.add(String(camp.id));
+    }
+  };
+
+  for (let i = 0; i < campaigns.length; i += CREATIVE_BATCH_SIZE) {
+    const batch = campaigns.slice(i, i + CREATIVE_BATCH_SIZE);
+    await Promise.allSettled(batch.map((camp) => fetchCreativeForCampaign(camp)));
+  }
+
+  // --- Build campaign metrics ---
+  const campaignMetrics: LinkedInCampaignMetrics[] = campaigns.map((camp) => {
+    const urn = `urn:li:sponsoredCampaign:${camp.id}`;
+    const analytics = analyticsMap.get(urn) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
+    const totalBudget = parseFloat(camp.totalBudget?.amount ?? '0');
+    const dailyBudget = parseFloat(camp.dailyBudget?.amount ?? '0');
+    const schedStart = camp.runSchedule?.start ?? 0;
+    const schedEnd = camp.runSchedule?.end ?? 0;
+    const now = Date.now();
+    const rangeStartMs = new Date(start).getTime();
+    let pacingPct = 0;
+    if (totalBudget > 0) {
+      const flightStart = schedStart || rangeStartMs;
+      const flightEnd = schedEnd || now;
+      const totalFlightDays = Math.max(1, Math.ceil((flightEnd - flightStart) / 86_400_000));
+      const effectiveStart = Math.max(flightStart, rangeStartMs);
+      const effectiveEnd = Math.min(flightEnd, now);
+      const windowDays = Math.max(1, Math.ceil((effectiveEnd - effectiveStart) / 86_400_000));
+      const expectedSpend = (totalBudget / totalFlightDays) * windowDays;
+      pacingPct = expectedSpend > 0 ? (analytics.spend / expectedSpend) * 100 : 0;
+    } else if (dailyBudget > 0) {
+      const effectiveStart = Math.max(schedStart || rangeStartMs, rangeStartMs);
+      const effectiveEnd = Math.min(schedEnd || now, now);
+      const flightDays = Math.max(1, Math.ceil((effectiveEnd - effectiveStart) / 86_400_000));
+      pacingPct = (analytics.spend / (dailyBudget * flightDays)) * 100;
+    }
+    const hasBudget = totalBudget > 0 || dailyBudget > 0;
+    let pacingLabel: LinkedInPacingLabel = 'normal';
+    if (hasBudget) {
+      if (pacingPct < 40) {
+        pacingLabel = 'underspending';
+      } else if (pacingPct < 90) {
+        pacingLabel = 'normal';
+      } else if (pacingPct < 105) {
+        pacingLabel = 'constrained';
+      } else {
+        pacingLabel = 'overspending';
+      }
+    }
+    const startMs = camp.runSchedule?.start ?? 0;
+    const endMs = camp.runSchedule?.end ?? 0;
+    return {
+      campaignId: String(camp.id),
+      campaignName: camp.name,
+      eventName: camp.name.split(' | ')[1] ?? camp.name,
+      status: camp.status,
+      totalBudget,
+      dailyBudget,
+      spend: analytics.spend,
+      impressions: analytics.impressions,
+      clicks: analytics.clicks,
+      ctr: analytics.impressions > 0 ? (analytics.clicks / analytics.impressions) * 100 : 0,
+      conversions: analytics.conversions,
+      pacingPct,
+      pacingLabel,
+      creatives: creativeAnalyticsMap.get(String(camp.id)) ?? [],
+      startDate: startMs ? new Date(startMs).toISOString().split('T')[0] : '',
+      endDate: endMs ? new Date(endMs).toISOString().split('T')[0] : '',
+    };
+  });
+
+  // --- Action items ---
+  const actionItems: LinkedInActionItem[] = [];
+  for (const c of campaignMetrics) {
+    if (c.creatives.length === 0 && c.status === 'ACTIVE' && !creativeFetchFailed.has(c.campaignId)) {
+      actionItems.push({
+        priority: 'HIGH',
+        campaignName: c.campaignName,
+        issue: 'No ad creatives — campaign cannot deliver',
+        action: 'Upload ad images and copy in LinkedIn Campaign Manager to start delivery',
+      });
+    } else if (c.pacingLabel === 'underspending') {
+      actionItems.push({
+        priority: 'HIGH',
+        campaignName: c.campaignName,
+        issue: 'Underspending — pacing below 40%',
+        action: 'Check targeting breadth, bid strategy, or budget floor',
+      });
+    }
+    if (c.pacingLabel === 'constrained' || c.pacingLabel === 'overspending') {
+      actionItems.push({
+        priority: 'MED',
+        campaignName: c.campaignName,
+        issue: 'Budget constrained — pacing above 90%',
+        action: 'Consider increasing budget if event is in peak registration period',
+      });
+    }
+    if (c.ctr > 0 && c.ctr < 0.3) {
+      actionItems.push({
+        priority: 'MED',
+        campaignName: c.campaignName,
+        issue: `Low CTR: ${c.ctr.toFixed(2)}%`,
+        action: 'Refresh ad copy or images; review audience targeting',
+      });
+    }
+    if (c.clicks > 50 && c.conversions === 0) {
+      actionItems.push({
+        priority: 'MED',
+        campaignName: c.campaignName,
+        issue: 'Clicks without conversions',
+        action: 'Audit LinkedIn Insight Tag on registration landing page',
+      });
+    }
+    if (c.status === 'PAUSED' && (c.totalBudget > 10 || c.dailyBudget > 1)) {
+      actionItems.push({
+        priority: 'LOW',
+        campaignName: c.campaignName,
+        issue: 'Campaign is PAUSED with real budget',
+        action: 'Confirm intentional pause or activate',
+      });
+    }
+  }
+  const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  actionItems.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+
+  const totals = campaignMetrics.reduce(
+    (acc, c) => ({
+      spend: acc.spend + c.spend,
+      impressions: acc.impressions + c.impressions,
+      clicks: acc.clicks + c.clicks,
+      conversions: acc.conversions + c.conversions,
+      campaignCount: acc.campaignCount + 1,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaignCount: 0 }
+  );
+
+  const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+  const result: LinkedInMonitorResponse = {
+    accountLabel: account?.label ?? accountId,
+    pulledAt: new Date().toISOString(),
+    dateRange: { mode: `last_${days}_days` },
+    campaigns: campaignMetrics,
+    accountTotals: totals,
+    actionItems,
+  };
+
+  logger.success(req, 'linkedin_analytics', startTime, { campaigns: campaignMetrics.length, actionItems: actionItems.length });
+  return result;
 }
 
 // ---------------------------------------------------------------------------
