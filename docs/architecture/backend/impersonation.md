@@ -158,11 +158,13 @@ This is the single choke point — every controller and service uses `req.bearer
 
 Many controllers and services read the user's email/username from `req.oidc.user` for server-side filtering (e.g., "get my meetings"). During impersonation, `req.oidc.user` is still the real user. Three helpers resolve the correct identity:
 
-| Helper                      | Returns                                       |
-| --------------------------- | --------------------------------------------- |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased) |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname        |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                  |
+| Helper                      | Returns                                         | Notes                                                                |
+| --------------------------- | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)   | Email-keyed lookups                                                 |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username | **Preferred** for identity references (LFID username, e.g. `lguerra`) |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                     | **Deprecated** — Auth0 sub (prefixed, e.g. `auth0\|lguerra`); migrating to username |
+
+For the full `username` vs `sub` distinction and the LFXV2-1962 migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
 These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 
