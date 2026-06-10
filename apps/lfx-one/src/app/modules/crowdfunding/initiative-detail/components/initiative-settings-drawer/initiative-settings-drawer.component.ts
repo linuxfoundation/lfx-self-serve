@@ -5,21 +5,23 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, ElementRef, inject, model, input, output, signal, computed, viewChild, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, CROWDFUNDING_TOPIC_OPTIONS, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
-import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, CROWDFUNDING_TOPIC_OPTIONS, DEFAULT_FUND_DISTRIBUTION, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
+import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 @Component({
   selector: 'lfx-initiative-settings-drawer',
-  imports: [DrawerModule, InputTextComponent, TextareaComponent, ButtonComponent, ReactiveFormsModule, MultiSelectComponent],
+  imports: [DrawerModule, InputTextComponent, TextareaComponent, ButtonComponent, ReactiveFormsModule, FormsModule, MultiSelectComponent, ToggleSwitchModule],
   templateUrl: './initiative-settings-drawer.component.html',
   styleUrl: './initiative-settings-drawer.component.scss',
 })
@@ -56,7 +58,16 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly logoUrl = signal<string>('');
   protected readonly uploadingLogo = signal(false);
   protected readonly logoUploadError = signal<string | null>(null);
+  protected readonly distributionItems = signal<FundDistributionItem[]>(DEFAULT_FUND_DISTRIBUTION.map((i) => ({ ...i })));
   protected readonly beneficiaryGroups = signal<FormGroup[]>([]);
+
+  protected readonly hasEnabledCategories = computed(() => this.distributionItems().some((i) => i.enabled));
+  protected readonly totalAllocated = computed(() =>
+    this.distributionItems()
+      .filter((i) => i.enabled)
+      .reduce((sum, i) => sum + i.percentage, 0),
+  );
+  protected readonly remaining = computed(() => 100 - this.totalAllocated());
 
   private readonly logoFileInput = viewChild<ElementRef<HTMLInputElement>>('logoFileInput');
 
@@ -80,6 +91,17 @@ export class InitiativeSettingsDrawerComponent {
         });
         this.logoUrl.set(init.logoUrl ?? '');
         this.logoUploadError.set(null);
+        const goals = init.fundingGoals ?? [];
+        const totalCents = init.fundingStatus?.goalsTotalCents ?? 0;
+        this.distributionItems.set(
+          DEFAULT_FUND_DISTRIBUTION.map((item) => {
+            const match = goals.find((g) => g.name === item.label);
+            if (match && totalCents > 0) {
+              return { ...item, enabled: true, percentage: Math.round((match.goalCents / totalCents) * 100) };
+            }
+            return { ...item };
+          }),
+        );
         this.beneficiaryGroups.set([]);
         this.activeSettingsTab.set('details');
       });
@@ -115,7 +137,13 @@ export class InitiativeSettingsDrawerComponent {
       };
 
       if (goal != null) {
-        input.goals = [{ name: 'Annual Funding Goal', amountCents: Math.round(goal * 100) }];
+        const goalCents = Math.round(goal * 100);
+        const enabledItems = this.distributionItems().filter((i) => i.enabled);
+        if (enabledItems.length > 0) {
+          input.goals = enabledItems.map((i) => ({ name: i.label, amountCents: Math.round((i.percentage / 100) * goalCents) }));
+        } else {
+          input.goals = [{ name: 'Annual Funding Goal', amountCents: goalCents }];
+        }
       }
 
       const groups = this.beneficiaryGroups();
@@ -192,6 +220,26 @@ export class InitiativeSettingsDrawerComponent {
     } finally {
       this.uploadingLogo.set(false);
     }
+  }
+
+  protected toggleCategory(index: number, enabled: boolean): void {
+    this.distributionItems.update((items) => items.map((item, i) => (i === index ? { ...item, enabled, percentage: 0 } : item)));
+  }
+
+  protected updatePercentage(index: number, event: Event): void {
+    const raw = (event.target as HTMLInputElement).value;
+    const pct = parseInt(raw, 10);
+    this.distributionItems.update((items) =>
+      items.map((item, i) => (i === index ? { ...item, percentage: isNaN(pct) ? 0 : Math.min(Math.max(0, pct), 100) } : item)),
+    );
+  }
+
+  protected computedAmount(percentage: number): string {
+    const goalValue = this.form.get('goal')?.value as number | null;
+    const amount = goalValue != null ? (percentage / 100) * goalValue : 0;
+    if (amount === 0) return '$0';
+    if (amount >= 1000) return `$${Math.round(amount / 1000)}K`;
+    return `$${Math.round(amount)}`;
   }
 
   protected addBeneficiary(): void {

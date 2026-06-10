@@ -281,6 +281,16 @@ export interface PresignedURLResult {
   requiredHeaders: Record<string, string>;
 }
 
+export type FundCategory = 'development' | 'marketing' | 'meetups' | 'bug_bounty' | 'travel' | 'documentation';
+
+export interface FundDistributionItem {
+  category: FundCategory;
+  label: string;
+  description: string;
+  enabled: boolean;
+  percentage: number;
+}
+
 export interface InitiativeMenuItem {
   label?: string;
   icon?: string;

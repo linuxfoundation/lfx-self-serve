@@ -7,6 +7,7 @@ import {
   CrowdfundingTransaction,
   CrowdfundingTransactionList,
   DonationStats,
+  FundDistributionItem,
   InitiativesResponse,
   MyDonationsResponse,
   RecurringDonationsResponse,
@@ -73,6 +74,51 @@ export const EMPTY_DONATION_STATS: DonationStats = { totalDonated: 0, initiative
 export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+
+export const DEFAULT_FUND_DISTRIBUTION: FundDistributionItem[] = [
+  {
+    category: 'development',
+    label: 'Development',
+    description: 'Pay your top developers, and bring in new talent to add features and fix bugs.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'marketing',
+    label: 'Marketing',
+    description: 'Promote and grow your project through collateral, website redesign, or event swag.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'meetups',
+    label: 'Meetups',
+    description: 'Connect with your community through local meetups or industry events.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'bug_bounty',
+    label: 'Bug Bounty',
+    description: 'Have your community help identify bugs and get rewarded.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'travel',
+    label: 'Travel',
+    description: 'Send project members to conferences, meetups, or customer meetings.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'documentation',
+    label: 'Documentation',
+    description: 'Drive specific documentation initiatives within your project.',
+    enabled: false,
+    percentage: 0,
+  },
+];
 
 export const CROWDFUNDING_TOPIC_OPTIONS: TopicOption[] = [
   { value: 'security', label: 'Security' },
