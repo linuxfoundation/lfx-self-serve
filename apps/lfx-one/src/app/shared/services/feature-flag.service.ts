@@ -34,7 +34,7 @@ export class FeatureFlagService {
         kind: 'user',
         name: user.name || '',
         email: user.email || '',
-        targetingKey: user.preferred_username || user.username || user.sub,
+        targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'],
       };
 
       await OpenFeature.setContext(userContext);
