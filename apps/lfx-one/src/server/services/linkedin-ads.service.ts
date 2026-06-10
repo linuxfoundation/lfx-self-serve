@@ -226,7 +226,7 @@ function getOrgId(): string {
       return match.orgId;
     }
     throw new Error(
-      `LINKEDIN_AD_ACCOUNT_ID=${accountId} is not in the configured accounts list and LINKEDIN_ORG_ID is not set — refusing to fall back to default org to avoid cross-tenant pairing`
+      'LINKEDIN_AD_ACCOUNT_ID is set to an account that is not in the configured accounts list and LINKEDIN_ORG_ID is not set — refusing to fall back to default org to avoid cross-tenant pairing. Check the linkedin-config ConfigMap.'
     );
   }
 

@@ -151,6 +151,23 @@ ExternalSecret-specific annotations override global ones on key conflicts
 {{- end }}
 
 {{/*
+Validate the staticConfigMaps root value itself is a map (or empty/nil).
+Catches bad-shape inputs like `staticConfigMaps: "foo"` or
+`staticConfigMaps: [a,b]` before any caller iterates with `range` or
+runs `toJson` for the checksum annotation, so failures surface with a
+clear message instead of an opaque template type error from inside a
+range or sprig function.
+
+Call once at the top of any template that reads .Values.staticConfigMaps:
+  {{- include "lfx-self-serve.staticConfigMaps.rootValidate" . }}
+*/}}
+{{- define "lfx-self-serve.staticConfigMaps.rootValidate" -}}
+{{- if and .Values.staticConfigMaps (not (kindIs "map" .Values.staticConfigMaps)) -}}
+{{- fail (printf "staticConfigMaps must be a map of <name> -> { mountPath, data } (got %s)" (kindOf .Values.staticConfigMaps)) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate one staticConfigMaps entry. Called from both configmap.yaml and
 deployment.yaml so any caller that touches a malformed entry fails with a
 clear error message — regardless of which template Helm renders first.
@@ -186,6 +203,9 @@ Args (dict):
 {{- fail (printf "staticConfigMaps.%s.data must contain at least one file" $name) -}}
 {{- end -}}
 {{- range $key, $value := $cfg.data -}}
+{{- if not (kindIs "string" $key) -}}
+{{- fail (printf "staticConfigMaps.%s.data has a non-string key (got %s) — ConfigMap data keys must be strings; quote numeric or boolean-looking keys in YAML" $name (kindOf $key)) -}}
+{{- end -}}
 {{- if not (regexMatch "^[A-Za-z0-9._-]+$" $key) -}}
 {{- fail (printf "staticConfigMaps.%s.data key %q is invalid; ConfigMap data keys must match [A-Za-z0-9._-]+ (Kubernetes apiserver rejects others at apply time)" $name $key) -}}
 {{- end -}}
