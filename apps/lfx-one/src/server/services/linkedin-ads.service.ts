@@ -630,17 +630,22 @@ export async function getLinkedInAnalytics(
           const impressions = el.impressions ?? 0;
           return {
             creativeId,
-            creativeName: `Creative ${creativeId}`,
+            creativeName: `#${creativeId}`,
             impressions,
             clicks,
             ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
             spend: parseFloat(el.costInLocalCurrency ?? '0'),
             conversions: el.externalWebsiteConversions ?? 0,
-            status: 'ACTIVE',
+            status: 'UNKNOWN',
           };
         });
       creativeAnalyticsMap.set(String(camp.id), creatives);
     } else {
+      const text = await creativeResp.text().catch(() => '');
+      logger.warning(req, 'linkedin_creative_analytics', `Creative analytics failed for campaign ${camp.id}: ${creativeResp.status}: ${text.slice(0, 200)}`, {
+        campaignId: camp.id,
+        status: creativeResp.status,
+      });
       creativeFetchFailed.add(String(camp.id));
     }
   }
@@ -655,7 +660,14 @@ export async function getLinkedInAnalytics(
     if (totalBudget > 0) {
       pacingPct = (analytics.spend / totalBudget) * 100;
     } else if (dailyBudget > 0) {
-      pacingPct = (analytics.spend / (dailyBudget * days)) * 100;
+      const schedStart = camp.runSchedule?.start ?? 0;
+      const schedEnd = camp.runSchedule?.end ?? 0;
+      const now = Date.now();
+      const rangeStartMs = new Date(start).getTime();
+      const effectiveStart = Math.max(schedStart || rangeStartMs, rangeStartMs);
+      const effectiveEnd = Math.min(schedEnd || now, now);
+      const flightDays = Math.max(1, Math.ceil((effectiveEnd - effectiveStart) / 86_400_000));
+      pacingPct = (analytics.spend / (dailyBudget * flightDays)) * 100;
     }
     const hasBudget = totalBudget > 0 || dailyBudget > 0;
     let pacingLabel: import('@lfx-one/shared/interfaces').LinkedInPacingLabel = 'normal';

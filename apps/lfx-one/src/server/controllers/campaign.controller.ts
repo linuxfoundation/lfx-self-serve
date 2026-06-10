@@ -319,7 +319,7 @@ export class CampaignController {
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
-    const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');
+    const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? LINKEDIN_ACCOUNTS[0]?.accountId ?? '');
     const validAccount = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawAccountId);
     if (!validAccount) {
       next(

@@ -451,7 +451,7 @@
               </thead>
               <tbody class="divide-y divide-gray-100">
                 @for (camp of linkedInCampaigns(); track camp.campaignId) {
-                  <tr class="hover:bg-gray-50" data-testid="linkedin-campaign-row">
+                  <tr class="hover:bg-gray-50" [attr.data-testid]="'linkedin-campaign-row-' + $index">
                     <td class="px-4 py-3">
                       <p class="max-w-xs truncate font-medium text-gray-900" [title]="camp.campaignName">{{ camp.eventName }}</p>
                       <p class="max-w-xs truncate text-xs text-gray-400" [title]="camp.campaignName">{{ camp.campaignName }}</p>
