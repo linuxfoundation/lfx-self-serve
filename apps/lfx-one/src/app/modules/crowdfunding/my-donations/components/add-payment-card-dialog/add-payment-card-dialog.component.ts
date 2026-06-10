@@ -102,7 +102,17 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethod.id));
+      const paymentMethodId = paymentMethod?.id;
+
+      if (!paymentMethodId) {
+        this.stripeError.set('Failed to process card. Please try again.');
+        return;
+      }
+
+      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethodId), { defaultValue: null });
+
+      // null means CF_UNAUTHENTICATED redirect is in progress — navigate away, don't close dialog
+      if (!saved) return;
 
       this.dialogRef.close({ added: true, paymentMethod: saved });
     } catch (err) {

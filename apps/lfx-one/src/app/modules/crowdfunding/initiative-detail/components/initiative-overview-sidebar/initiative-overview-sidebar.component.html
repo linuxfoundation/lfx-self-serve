@@ -6,12 +6,6 @@
   <lfx-card data-testid="recent-donations-card">
     <div class="flex items-center justify-between mb-4">
       <div class="text-sm font-bold text-gray-900">Recent donations</div>
-      <button
-        class="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
-        (click)="viewAllFinancials.emit()"
-        data-testid="view-all-financials-btn">
-        View all
-      </button>
     </div>
     <div class="flex flex-col" data-testid="activity-feed">
       @for (donation of recentDonationsWithMeta(); track donation.id) {

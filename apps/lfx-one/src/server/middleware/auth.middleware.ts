@@ -7,10 +7,9 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
+import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
 
 // OIDC middleware already provides req.oidc with authentication context
-
-const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
 
 /**
  * Default route configuration for the application
@@ -41,6 +40,9 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
 
   // Profile auth start — needs auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
+
+  // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
+  { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
   // Protected API routes - require authentication and token
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
@@ -226,95 +228,36 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
  * Failures are non-blocking; the request continues without the token.
  */
 async function extractApiGatewayToken(req: Request): Promise<void> {
-  try {
-    // Serve from session cache if still valid
-    const now = Math.floor(Date.now() / 1000);
-    if (req.appSession?.apiGatewayToken && req.appSession.apiGatewayTokenExpiresAt && now < req.appSession.apiGatewayTokenExpiresAt) {
-      req.apiGatewayToken = req.appSession.apiGatewayToken;
-      logger.debug(req, 'api_gateway_token', 'Using cached API Gateway token');
-      return;
-    }
+  const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
+  if (!apiGatewayAudience) {
+    logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
+    return;
+  }
 
-    const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
-    if (!apiGatewayAudience) {
-      logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
-      return;
-    }
+  const token = await exchangeRefreshTokenForAudience(req, {
+    issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+    clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+    clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+    audience: apiGatewayAudience,
+    sessionKey: 'apiGatewayToken',
+  });
 
-    // express-openid-connect stores the full OIDC session (including refresh_token) in req.appSession
+  if (token) {
+    req.apiGatewayToken = token;
+    logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
+  }
+}
 
-    const refreshToken = req.appSession?.['refresh_token'] as string | undefined;
-    if (!refreshToken) {
-      logger.warning(req, 'api_gateway_token', 'No refresh_token in OIDC session — ensure offline_access scope is requested');
-      return;
-    }
-
-    const issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    const clientId = process.env['PCC_AUTH0_CLIENT_ID'] || '';
-    const clientSecret = process.env['PCC_AUTH0_CLIENT_SECRET'] || '';
-    const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
-
-    let response: Awaited<ReturnType<typeof fetch>>;
-
-    if (isAuthelia) {
-      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      response = await fetch(`${issuerBaseUrl}/api/oidc/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${credentials}`,
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          audience: apiGatewayAudience,
-        }),
-      });
-    } else {
-      response = await fetch(`${issuerBaseUrl}/oauth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          client_id: clientId,
-          client_secret: clientSecret,
-          audience: apiGatewayAudience,
-        }),
-      });
-    }
-
-    if (!response.ok) {
-      logger.warning(req, 'api_gateway_token', 'API Gateway token fetch returned non-OK status', { status: response.status });
-      return;
-    }
-
-    const data = (await response.json()) as { access_token: string; expires_in: number };
-    const rawExpiresAt = now + data.expires_in - TOKEN_EXPIRY_BUFFER_SECONDS;
-
-    // Guard: if expires_in is too short to survive the buffer, fall back to half the raw
-    // expires_in to avoid an immediate-expiry hot loop hammering the IdP on every request.
-    const expiresAt = rawExpiresAt <= now ? now + Math.floor(data.expires_in / 2) : rawExpiresAt;
-
-    if (rawExpiresAt <= now) {
-      logger.warning(req, 'api_gateway_token', 'Token expires_in too short for buffer, using half of raw expiry as fallback', {
-        expires_in: data.expires_in,
-        buffer: TOKEN_EXPIRY_BUFFER_SECONDS,
-      });
-    }
-
-    req.apiGatewayToken = data.access_token;
-
-    if (!req.appSession) req.appSession = {};
-    req.appSession.apiGatewayToken = data.access_token;
-    req.appSession.apiGatewayTokenExpiresAt = expiresAt;
-
-    logger.debug(req, 'api_gateway_token', 'API Gateway token fetched and cached');
-  } catch (error) {
-    // Non-blocking — log and continue without the token
-    logger.warning(req, 'api_gateway_token', 'Silent API Gateway token fetch failed, continuing without it', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+/**
+ * Loads the LFX Crowdfunding API token from the session onto req.crowdfundingToken.
+ * The token is obtained via the authorization_code flow in CrowdfundingAuthService
+ * and stored in the session by the /crowdfunding/callback handler.
+ */
+function extractCrowdfundingToken(req: Request): void {
+  const now = Math.floor(Date.now() / 1000);
+  if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
+    req.crowdfundingToken = req.appSession.crowdfundingToken;
+    logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
   }
 }
 
@@ -530,9 +473,10 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
         needsLogout = tokenResult.needsLogout;
       }
 
-      // 4. Silently fetch secondary API Gateway token when the user is authenticated
+      // 4. Silently fetch secondary tokens when the user is authenticated
       if (hasToken) {
         await extractApiGatewayToken(req);
+        extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making

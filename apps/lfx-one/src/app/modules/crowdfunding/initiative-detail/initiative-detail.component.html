@@ -19,14 +19,12 @@
       (tabChange)="activeTab.set($event)"
       (settingsClick)="settingsDrawerVisible.set(true)" />
 
-    <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" />
+    <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" (initiativeSaved)="onInitiativeSaved($event)" />
 
     @if (activeTab() === 'overview') {
       <lfx-initiative-overview [initiative]="detail" (viewAllFinancials)="activeTab.set('financials')" />
-    } @else if (activeTab() === 'financials') {
+    } @else {
       <lfx-initiative-financials [initiative]="detail" />
-    } @else if (activeTab() === 'announcements') {
-      <lfx-initiative-announcements />
     }
   }
 </div>

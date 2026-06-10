@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, switchMap } from 'rxjs';
@@ -11,19 +11,11 @@ import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
 import { InitiativeFinancialsComponent } from './components/initiative-financials/initiative-financials.component';
-import { InitiativeAnnouncementsComponent } from './components/initiative-announcements/initiative-announcements.component';
 import { InitiativeSettingsDrawerComponent } from './components/initiative-settings-drawer/initiative-settings-drawer.component';
 
 @Component({
   selector: 'lfx-initiative-detail',
-  imports: [
-    ButtonComponent,
-    InitiativeDetailHeaderComponent,
-    InitiativeOverviewComponent,
-    InitiativeFinancialsComponent,
-    InitiativeAnnouncementsComponent,
-    InitiativeSettingsDrawerComponent,
-  ],
+  imports: [ButtonComponent, InitiativeDetailHeaderComponent, InitiativeOverviewComponent, InitiativeFinancialsComponent, InitiativeSettingsDrawerComponent],
   templateUrl: './initiative-detail.component.html',
   styleUrl: './initiative-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -37,9 +29,17 @@ export class InitiativeDetailComponent {
   protected readonly activeTab = signal<string>('overview');
   protected readonly settingsDrawerVisible = signal(false);
 
+  // Holds a server-returned update so children reflect changes without re-fetching.
+  private readonly initiativeOverride: WritableSignal<InitiativeDetail | null> = signal(null);
+
   // ─── Computed Signals ──────────────────────────────────────────────────────
   protected readonly initiativeSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
-  protected readonly initiative: Signal<InitiativeDetail | null> = this.initInitiative();
+  private readonly initiativeFetched: Signal<InitiativeDetail | null> = this.initInitiative();
+  protected readonly initiative = computed(() => this.initiativeOverride() ?? this.initiativeFetched());
+
+  protected onInitiativeSaved(updated: InitiativeDetail): void {
+    this.initiativeOverride.set(updated);
+  }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initInitiative(): Signal<InitiativeDetail | null> {
