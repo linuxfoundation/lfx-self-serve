@@ -118,13 +118,18 @@ export const LINKEDIN_CHAR_LIMITS = {
 export const LINKEDIN_AD_ACCOUNTS: readonly LinkedInAdAccount[] = [
   { accountId: '538170226', label: 'The Linux Foundation', organizationId: '208777', status: 'ACTIVE' },
   { accountId: '509430019', label: 'LF Events', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263296', label: 'CNCF', organizationId: '12893459', status: 'ACTIVE' },
-  { accountId: '510263297', label: 'LF Networking', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263298', label: 'LF AI & Data', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263299', label: 'LF Energy', organizationId: '208777', status: 'ACTIVE' },
+  { accountId: '500928401', label: 'Cloud Native Computing Foundation', organizationId: '12893459', status: 'ACTIVE' },
+  { accountId: '508209098', label: 'Linux Foundation - Education', organizationId: '7953130', status: 'ACTIVE' },
+  { accountId: '537341179', label: 'Agentic AI Foundation', organizationId: '111268938', status: 'ACTIVE' },
+  { accountId: '514914665', label: 'OpenSearch Project (2nd Account)', organizationId: '78470501', status: 'ACTIVE' },
+  { accountId: '515250253', label: 'LF OpenJS Ad Account', organizationId: '19082105', status: 'ACTIVE' },
+  { accountId: '531310265', label: 'LF Agentic AI Ad Account', organizationId: '111268938', status: 'ACTIVE' },
+  { accountId: '515244770', label: 'OpenJS Foundation', organizationId: '19082105', status: 'ACTIVE' },
+  { accountId: '514596831', label: 'OpenSSF', organizationId: '76521837', status: 'ACTIVE' },
+  { accountId: '514553720', label: 'OpenSearch Project', organizationId: '78470501', status: 'ACTIVE' },
 ] as const;
 
-export const LINKEDIN_DEFAULT_ACCOUNT_ID = '538170226';
+export const LINKEDIN_DEFAULT_ACCOUNT_ID = '509430019';
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
