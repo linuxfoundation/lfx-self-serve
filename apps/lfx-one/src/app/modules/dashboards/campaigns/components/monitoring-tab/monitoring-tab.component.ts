@@ -103,6 +103,9 @@ export class MonitoringTabComponent implements OnInit {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedLinkedInAccountId()) {
             this.selectedLinkedInAccountId.set(accounts[0].accountId);
+            if (this.selectedPlatform() === 'linkedin') {
+              this.fetchLinkedInData();
+            }
           }
         },
         error: (err: unknown) => {
