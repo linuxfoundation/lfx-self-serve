@@ -514,7 +514,8 @@ export async function getLinkedInAnalytics(
     signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
   });
   if (!campaignsResp.ok) {
-    const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}`);
+    const text = await campaignsResp.text().catch(() => '');
+    const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
     logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
     throw err;
   }
@@ -590,6 +591,7 @@ export async function getLinkedInAnalytics(
 
   // --- Fetch creative metrics per campaign ---
   const creativeAnalyticsMap = new Map<string, import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[]>();
+  const creativeFetchFailed = new Set<string>();
   for (const camp of campaigns) {
     const creativeParams = new URLSearchParams({
       q: 'analytics',
@@ -631,6 +633,8 @@ export async function getLinkedInAnalytics(
           };
         });
       creativeAnalyticsMap.set(String(camp.id), creatives);
+    } else {
+      creativeFetchFailed.add(String(camp.id));
     }
   }
 
@@ -684,7 +688,7 @@ export async function getLinkedInAnalytics(
   // --- Action items ---
   const actionItems: import('@lfx-one/shared/interfaces').LinkedInActionItem[] = [];
   for (const c of campaignMetrics) {
-    if (c.creatives.length === 0 && c.status === 'ACTIVE') {
+    if (c.creatives.length === 0 && c.status === 'ACTIVE' && !creativeFetchFailed.has(c.campaignId)) {
       actionItems.push({
         priority: 'HIGH',
         campaignName: c.campaignName,
