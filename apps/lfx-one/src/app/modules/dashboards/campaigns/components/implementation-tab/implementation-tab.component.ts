@@ -213,7 +213,6 @@ export class ImplementationTabComponent {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
-
   protected submit(): void {
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');

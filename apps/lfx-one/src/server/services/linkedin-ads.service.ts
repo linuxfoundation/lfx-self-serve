@@ -159,11 +159,11 @@ function toMs(dateStr: string, eod = false): number {
   }
   const [y, m, d] = dateStr.split('-').map(Number);
   if (eod) {
-    const nextDayUtc = Date.UTC(y, m - 1, d + 1, 0, 0, 0, 0);
-    if (nextDayUtc <= Date.now()) {
+    const endMs = Date.UTC(y, m - 1, d, 23, 59, 59, 999);
+    if (endMs <= Date.now()) {
       throw new Error(`End date ${dateStr} is in the past`);
     }
-    return Date.UTC(y, m - 1, d, 23, 59, 59, 999);
+    return endMs;
   }
   const utcStart = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
   if (utcStart <= Date.now()) {
