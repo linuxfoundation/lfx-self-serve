@@ -497,7 +497,7 @@ export interface OptimizationInsightsResponse {
 // ---------------------------------------------------------------------------
 
 export type LinkedInPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
-export type LinkedInActionPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+export type LinkedInActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface LinkedInCreativeMetrics {
   creativeId: string;
@@ -550,7 +550,6 @@ export interface LinkedInAccountOption {
 }
 
 export interface LinkedInMonitorResponse {
-  accountId: string;
   accountLabel: string;
   pulledAt: string;
   dateRange: { mode: string };

@@ -548,7 +548,6 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   if (campaigns.length === 0) {
     const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
     const result: LinkedInMonitorResponse = {
-      accountId,
       accountLabel: account?.label ?? accountId,
       pulledAt: new Date().toISOString(),
       dateRange: { mode: `last_${days}_days` },
@@ -744,7 +743,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     }
     if (c.pacingLabel === 'constrained' || c.pacingLabel === 'overspending') {
       actionItems.push({
-        priority: 'MEDIUM',
+        priority: 'MED',
         campaignName: c.campaignName,
         issue: 'Budget constrained — pacing above 90%',
         action: 'Consider increasing budget if event is in peak registration period',
@@ -752,7 +751,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     }
     if (c.ctr > 0 && c.ctr < 0.3) {
       actionItems.push({
-        priority: 'MEDIUM',
+        priority: 'MED',
         campaignName: c.campaignName,
         issue: `Low CTR: ${c.ctr.toFixed(2)}%`,
         action: 'Refresh ad copy or images; review audience targeting',
@@ -760,7 +759,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     }
     if (c.clicks > 50 && c.conversions === 0) {
       actionItems.push({
-        priority: 'MEDIUM',
+        priority: 'MED',
         campaignName: c.campaignName,
         issue: 'Clicks without conversions',
         action: 'Audit LinkedIn Insight Tag on registration landing page',
@@ -791,7 +790,6 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
 
   const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
   const result: LinkedInMonitorResponse = {
-    accountId,
     accountLabel: account?.label ?? accountId,
     pulledAt: new Date().toISOString(),
     dateRange: { mode: `last_${days}_days` },

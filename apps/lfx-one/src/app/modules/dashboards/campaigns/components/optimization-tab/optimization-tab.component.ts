@@ -186,7 +186,7 @@ export class OptimizationTabComponent implements OnInit {
 
   protected linkedInPriorityClass(p: LinkedInActionItem['priority']): string {
     if (p === 'HIGH') return 'bg-red-100 text-red-700';
-    if (p === 'MEDIUM') return 'bg-amber-100 text-amber-700';
+    if (p === 'MED') return 'bg-amber-100 text-amber-700';
     return 'bg-blue-100 text-blue-700';
   }
 

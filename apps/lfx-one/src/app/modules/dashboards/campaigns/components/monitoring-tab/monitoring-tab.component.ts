@@ -15,6 +15,7 @@ import type {
   KeywordMetricsResponse,
   LinkedInAccountOption,
   LinkedInMonitorResponse,
+  LinkedInPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
@@ -232,7 +233,7 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
-  protected linkedInPacingClass(label: string): string {
+  protected linkedInPacingClass(label: LinkedInPacingLabel): string {
     if (label === 'underspending') return 'text-red-600';
     if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
     return 'text-green-600';
