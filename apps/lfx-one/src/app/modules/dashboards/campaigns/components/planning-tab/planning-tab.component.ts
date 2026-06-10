@@ -455,8 +455,6 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
-      case 'linkedin_strategy':
-        break;
       case 'error':
         this.refineStatusMessages.update((msgs) => [...msgs, event.data as string]);
         this.isRefineStreaming.set(false);

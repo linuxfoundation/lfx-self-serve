@@ -270,7 +270,7 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     }
   }
 
-  return { host: parsed.host, hostname, port, path: `${parsed.pathname}${parsed.search}${parsed.hash}`, resolvedIp: allAddresses[0] };
+  return { host: parsed.host, hostname, port, path: `${parsed.pathname}${parsed.search}`, resolvedIp: allAddresses[0] };
 }
 
 export async function validateScrapeUrl(url: string): Promise<string> {
