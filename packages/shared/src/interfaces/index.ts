@@ -69,6 +69,9 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
 

@@ -351,6 +351,10 @@ environment:
   SNOWFLAKE_LOCK_STRATEGY:
     value: "memory"
 
+  # Shared Valkey cache connection URL (rediss:// = TLS, no auth token). Empty disables caching.
+  VALKEY_URL:
+    value: ""
+
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"
 
