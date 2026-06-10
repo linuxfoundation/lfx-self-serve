@@ -3,7 +3,15 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { InfluenceTrendDirection, OrgLensProject, OrgLensProjectFoundation, OrgLensProjectPerson, OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  InfluenceTrend,
+  InfluenceTrendDirection,
+  OrgLensProject,
+  OrgLensProjectFoundation,
+  OrgLensProjectPerson,
+  OrgLensProjectsResponse,
+  ProjectHealthMetric,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Demo company data for the Org Lens Projects page (LFXV2-1883 / LFXV2-1884).
@@ -33,11 +41,24 @@ function trendDirection(deltaPct: number): InfluenceTrendDirection {
   return deltaPct < -1 ? 'down' : 'flat';
 }
 
-function trend(deltaPct: number, series: number[]): { deltaPct: number; direction: InfluenceTrendDirection; series: number[] } {
-  return { deltaPct, direction: trendDirection(deltaPct), series };
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
-const DEMO_PROJECTS: OrgLensProject[] = [
+// Demo technical/ecosystem deltas are deterministic variations of the combined delta so the
+// hover tooltip shows three distinct-but-plausible numbers. Real data supplies all three directly.
+function trend(deltaPct: number, series: number[]): InfluenceTrend {
+  return {
+    deltaPct,
+    technicalDeltaPct: round1(deltaPct * 1.15),
+    ecosystemDeltaPct: round1(deltaPct * 0.8),
+    direction: trendDirection(deltaPct),
+    series,
+  };
+}
+
+// `description` + `healthMetrics` are injected by getDemoProjectsResponse so the 14 base rows stay terse.
+const DEMO_PROJECTS: Omit<OrgLensProject, 'description' | 'healthMetrics'>[] = [
   {
     slug: 'kubernetes',
     name: 'Kubernetes',
@@ -49,8 +70,21 @@ const DEMO_PROJECTS: OrgLensProject[] = [
     influenceScore: 92.4,
     priorYearScore: 78.2,
     trend: trend(18.2, [78, 80, 83, 85, 88, 90, 92]),
-    maintainers: [person('p1', 'Ada Lovelace'), person('p2', 'Grace Hopper'), person('p3', 'Alan Turing'), person('p4', 'Linus Park'), person('p5', 'Mira Chen')],
-    contributors: [person('p6', 'Tom Reyes'), person('p7', 'Nina Patel'), person('p8', 'Omar Diaz'), person('p9', 'Sara Kim'), person('p10', 'Wei Zhang'), person('p11', 'Eve Stone')],
+    maintainers: [
+      person('p1', 'Ada Lovelace'),
+      person('p2', 'Grace Hopper'),
+      person('p3', 'Alan Turing'),
+      person('p4', 'Linus Park'),
+      person('p5', 'Mira Chen'),
+    ],
+    contributors: [
+      person('p6', 'Tom Reyes'),
+      person('p7', 'Nina Patel'),
+      person('p8', 'Omar Diaz'),
+      person('p9', 'Sara Kim'),
+      person('p10', 'Wei Zhang'),
+      person('p11', 'Eve Stone'),
+    ],
     participants: [person('p12', 'Raj Singh'), person('p13', 'Lena Fox')],
     commits1y: 48210,
     changeDriver: { label: '+3 maintainers', direction: 'up' },
@@ -180,7 +214,7 @@ const DEMO_PROJECTS: OrgLensProject[] = [
     logoUrl: '',
     foundation: LF_NETWORKING,
     health: 'at-risk',
-    technicalInfluence: 'participating',
+    technicalInfluence: 'silent',
     ecosystemInfluence: 'non-lf',
     influenceScore: 33.9,
     priorYearScore: 42.7,
@@ -216,7 +250,7 @@ const DEMO_PROJECTS: OrgLensProject[] = [
     foundation: OPENSSF,
     health: 'healthy',
     technicalInfluence: 'participating',
-    ecosystemInfluence: 'participating',
+    ecosystemInfluence: 'silent',
     influenceScore: 47.3,
     priorYearScore: 44.9,
     trend: trend(5.3, [44, 45, 45, 46, 46, 47, 47]),
@@ -249,7 +283,7 @@ const DEMO_PROJECTS: OrgLensProject[] = [
     logoUrl: '',
     foundation: CD_FOUNDATION,
     health: 'at-risk',
-    technicalInfluence: 'participating',
+    technicalInfluence: 'silent',
     ecosystemInfluence: 'non-lf',
     // Archived in our workspace — excluded from Most Decreases (current score 0).
     influenceScore: 0,
@@ -280,13 +314,73 @@ const DEMO_PROJECTS: OrgLensProject[] = [
   },
 ];
 
+// Demo project logos sourced from each project's public GitHub org avatar (CDN-served, stable).
+const LOGO_BY_SLUG: Record<string, string> = {
+  kubernetes: 'https://github.com/kubernetes.png?size=80',
+  prometheus: 'https://github.com/prometheus.png?size=80',
+  envoy: 'https://github.com/envoyproxy.png?size=80',
+  opentelemetry: 'https://github.com/open-telemetry.png?size=80',
+  argo: 'https://github.com/argoproj.png?size=80',
+  pytorch: 'https://github.com/pytorch.png?size=80',
+  onnx: 'https://github.com/onnx.png?size=80',
+  onap: 'https://github.com/onap.png?size=80',
+  'fd-io': 'https://github.com/FDio.png?size=80',
+  sigstore: 'https://github.com/sigstore.png?size=80',
+  'in-toto': 'https://github.com/in-toto.png?size=80',
+  tekton: 'https://github.com/tektoncd.png?size=80',
+  jenkins: 'https://github.com/jenkinsci.png?size=80',
+  'spiffe-spire': 'https://github.com/spiffe.png?size=80',
+};
+
+// Short descriptions shown in the health-detail popover (generic fallback covers any unmapped slug).
+const DESCRIPTION_BY_SLUG: Record<string, string> = {
+  kubernetes: 'Production-grade container orchestration for automating deployment, scaling, and management of containerized applications.',
+  prometheus: 'An open-source systems monitoring and alerting toolkit with a dimensional data model and a powerful query language.',
+  envoy: 'A high-performance open source edge and service proxy designed for cloud-native applications.',
+  opentelemetry: 'A collection of APIs, SDKs, and tools for instrumenting, generating, and collecting telemetry data.',
+  argo: 'Kubernetes-native workflow engine and GitOps continuous delivery tooling.',
+  pytorch: 'An open source machine learning framework that accelerates the path from research prototyping to production.',
+  onnx: 'An open standard for representing machine learning models, enabling interoperability across frameworks.',
+  onap: 'Open Network Automation Platform for orchestrating physical and virtual network functions.',
+  'fd-io': 'Fast Data I/O: a high-performance IO services framework for dynamic networking workloads.',
+  sigstore: 'Free software signing and transparency to make the software supply chain more secure.',
+  'in-toto': 'A framework to cryptographically secure the integrity of software supply chains.',
+  tekton: 'A flexible Kubernetes-native framework for building CI/CD systems.',
+  jenkins: 'The leading open source automation server for building, testing, and deploying software.',
+  'spiffe-spire': 'A universal identity control plane that issues cryptographic workload identities to distributed systems.',
+};
+
+// Deterministic CHAOSS-style sub-scores so the health popover is stable across reloads. Real data supplies these.
+function buildHealthMetrics(project: Omit<OrgLensProject, 'description' | 'healthMetrics'>): ProjectHealthMetric[] {
+  const baseByHealth: Record<string, number> = { excellent: 84, healthy: 64, 'at-risk': 42 };
+  const base = baseByHealth[project.health] ?? 60;
+  const seed = project.slug.length + Math.round(project.influenceScore);
+  const score = (offset: number): number => Math.max(22, Math.min(98, base + ((seed * (offset + 3)) % 26) - 10));
+  return [
+    { label: 'Contributors', value: score(1) },
+    { label: 'Popularity', value: score(2) },
+    { label: 'Development', value: score(3) },
+    { label: 'Security', value: score(4) },
+  ];
+}
+
 /** Demo response for a single org. The org slug/name flow into the CSV export filename + header. */
 export function getDemoProjectsResponse(orgUid: string, orgName: string): OrgLensProjectsResponse {
   return {
-    orgSlug: orgName ? orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : orgUid,
+    orgSlug: orgName
+      ? orgName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '')
+      : orgUid,
     orgName: orgName || 'Your organization',
-    // Static demo build timestamp (~2h ago) so the freshness label renders a stable relative value.
+    // Static demo build timestamp (~2h ago).
     dataUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    projects: DEMO_PROJECTS.map((project) => ({ ...project })),
+    projects: DEMO_PROJECTS.map((project) => ({
+      ...project,
+      logoUrl: LOGO_BY_SLUG[project.slug] ?? project.logoUrl,
+      description: DESCRIPTION_BY_SLUG[project.slug] ?? `${project.name} is an open source project in the ${project.foundation.name} ecosystem.`,
+      healthMetrics: buildHealthMetrics(project),
+    })),
   };
 }

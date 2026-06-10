@@ -4,41 +4,33 @@
 <main class="flex flex-col gap-6 p-6" data-testid="org-projects-page">
   <!-- Page Header -->
   <header class="flex flex-col gap-2" data-testid="org-projects-header">
-    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-projects-title">
-        @if (companyName()) {
-          Projects &mdash; {{ companyName() }}
-        } @else {
-          Projects
-        }
-      </h1>
-      @if (freshnessLabel()) {
-        <span class="text-xs text-gray-400" data-testid="org-projects-freshness">{{ freshnessLabel() }}</span>
+    <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-projects-title">
+      @if (companyName()) {
+        Projects &mdash; {{ companyName() }}
+      } @else {
+        Projects
       }
-    </div>
+    </h1>
     <p class="text-sm text-gray-500" data-testid="org-projects-subtitle">
       The open source projects your organization influences, contributes to, and depends on.
     </p>
   </header>
-
-  <!-- Influence Summary (LFXV2-1884) -->
-  <lfx-influence-summary [projects]="filteredProjects()" [loading]="loading()" [error]="error()" (retryRequested)="retry()" data-testid="org-projects-influence-summary" />
 
   <!-- Filters + toolbar + projects table -->
   <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">
     <!-- Filter + toolbar bar -->
     <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center" data-testid="org-projects-toolbar">
       <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-        <div class="w-full sm:w-56">
-          <lfx-select
-            [form]="filterForm"
-            control="workspace"
-            size="small"
-            optionLabel="label"
-            optionValue="value"
-            [options]="workspaceOptions"
-            styleClass="w-full"
-            data-testid="org-projects-workspace-select" />
+        <div class="w-full sm:w-64">
+          <button
+            type="button"
+            class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 hover:border-gray-400"
+            (click)="workspacePopover.toggle($event)"
+            [attr.aria-expanded]="workspacePopover.overlayVisible"
+            data-testid="org-projects-workspace-trigger">
+            <span class="truncate">{{ selectedWorkspaceName() }}</span>
+            <i class="fa-light fa-chevron-down text-xs text-gray-400" aria-hidden="true"></i>
+          </button>
         </div>
         <div class="w-full sm:w-52">
           <lfx-select
@@ -76,12 +68,12 @@
           (onClick)="exportCsv()"
           data-testid="org-projects-export-csv" />
         <lfx-button
-          label="Find project"
+          label="Add Project"
           icon="fa-light fa-plus"
           severity="primary"
           size="small"
           (onClick)="openFindProject()"
-          data-testid="org-projects-find-project" />
+          data-testid="org-projects-add-project" />
       </div>
     </div>
 
@@ -115,50 +107,104 @@
           [alwaysShowPaginator]="false"
           [showCurrentPageReport]="true"
           currentPageReportTemplate="{first} - {last} of {totalRecords}"
+          [tableStyle]="{ 'table-layout': 'fixed', width: '100%' }"
           (onPage)="onPage($event)"
           data-testid="org-projects-table">
           <ng-template #header>
             <tr>
-              <th class="w-[20%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('name')" data-testid="org-projects-sort-name">
+              <th class="w-[22%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('name')"
+                  pTooltip="The open source project — click the name to open its detail page."
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide"
+                  data-testid="org-projects-sort-name">
                   Project
-                  <i class="text-xs text-gray-400" [class]="sortIcon('name')" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[12%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('foundation')">
-                  Foundation
-                  <i class="text-xs text-gray-400" [class]="sortIcon('foundation')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIcon('name')" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[10%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('health')">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('health')"
+                  pTooltip="CHAOSS health classification from LFX Insights: Excellent, Healthy, or At Risk."
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide">
                   Health
-                  <i class="text-xs text-gray-400" [class]="sortIcon('health')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIcon('health')" aria-hidden="true"></i>
                 </button>
               </th>
-              <th class="w-[11%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('technicalInfluence')">
-                  Technical
-                  <i class="text-xs text-gray-400" [class]="sortIcon('technicalInfluence')" aria-hidden="true"></i>
+              <th class="w-[15%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('technicalInfluence')"
+                  [pTooltip]="influenceColumnTooltip()"
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide">
+                  Technical influence
+                  <i class="text-xs" [class]="sortIcon('technicalInfluence')" aria-hidden="true"></i>
                 </button>
               </th>
-              <th class="w-[11%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('ecosystemInfluence')">
-                  Ecosystem
-                  <i class="text-xs text-gray-400" [class]="sortIcon('ecosystemInfluence')" aria-hidden="true"></i>
+              <th class="w-[15%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('ecosystemInfluence')"
+                  [pTooltip]="influenceColumnTooltip()"
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide">
+                  Ecosystem influence
+                  <i class="text-xs" [class]="sortIcon('ecosystemInfluence')" aria-hidden="true"></i>
                 </button>
               </th>
-              <th class="w-[11%]">
-                <button type="button" class="flex items-center gap-1 font-semibold" (click)="toggleSort('influenceTrend')" data-testid="org-projects-sort-trend">
-                  Trend (1y)
-                  <i class="text-xs text-gray-400" [class]="sortIcon('influenceTrend')" aria-hidden="true"></i>
+              <th class="w-[14%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('influenceTrend')"
+                  pTooltip="Combined influence change over the rolling 12 months. Hover the sparkline for technical and ecosystem detail."
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide"
+                  data-testid="org-projects-sort-trend">
+                  Influence Trend
+                  <i class="text-xs" [class]="sortIcon('influenceTrend')" aria-hidden="true"></i>
                 </button>
               </th>
-              <th class="w-[8%]">Maintainers</th>
-              <th class="w-[8%]">Contributors</th>
-              <th class="w-[8%]">Participants</th>
-              <th class="w-[40px]"><span class="sr-only">Actions</span></th>
+              <th class="w-[10%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('contributors')"
+                  [pTooltip]="'Our <strong>Contributors</strong> are our employees who have contributed code to this project.'"
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide">
+                  Contributors
+                  <i class="text-xs" [class]="sortIcon('contributors')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[10%]">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                  (click)="toggleSort('participants')"
+                  [pTooltip]="
+                    'Our <strong>Participants</strong> are our employees who have been involved in this project in any way, including code contributions, documentation collaboration, events, training, etc.'
+                  "
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-wide">
+                  Participants
+                  <i class="text-xs" [class]="sortIcon('participants')" aria-hidden="true"></i>
+                </button>
+              </th>
+              <th class="w-[4%] text-right"><span class="sr-only">Actions</span></th>
             </tr>
           </ng-template>
           <ng-template #body let-project let-rowIndex="rowIndex">
@@ -175,34 +221,75 @@
                   </span>
                 </button>
               </td>
-              <!-- Foundation -->
-              <td><lfx-tag [value]="project.foundation.name" severity="secondary" [rounded]="true" /></td>
-              <!-- Health -->
-              <td><lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" [dot]="true" /></td>
-              <!-- Technical Influence -->
-              <td><lfx-tag [value]="bandLabel(project.technicalInfluence)" [severity]="bandSeverity(project.technicalInfluence)" /></td>
-              <!-- Ecosystem Influence -->
-              <td><lfx-tag [value]="bandLabel(project.ecosystemInfluence)" [severity]="bandSeverity(project.ecosystemInfluence)" /></td>
-              <!-- Influence Trend -->
+              <!-- Health (hover reveals LFX Insights detail) -->
               <td>
-                <div class="flex items-center gap-2">
-                  <span class="block h-8 w-20"><lfx-chart type="line" [data]="sparklineData(project)" [options]="sparklineOptions" height="32px" width="80px" /></span>
-                  <span class="text-xs font-medium" [class]="trendClass(project.trend.direction)">
-                    {{ project.trend.deltaPct > 0 ? '+' : '' }}{{ project.trend.deltaPct }}%
-                  </span>
-                </div>
+                <span
+                  class="inline-flex cursor-help"
+                  (mouseenter)="openHealth($event, project, healthPop)"
+                  (mouseleave)="scheduleHealthHide(healthPop)"
+                  [attr.data-testid]="'org-projects-health-' + project.slug">
+                  <lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" />
+                </span>
               </td>
-              <!-- Maintainers / Contributors / Participants -->
-              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.maintainers }" /></td>
-              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.contributors }" /></td>
-              <td><ng-container [ngTemplateOutlet]="stack" [ngTemplateOutletContext]="{ people: project.participants }" /></td>
-              <!-- Row kebab -->
+              <!-- Technical Influence (signal-strength bars + band label) -->
               <td>
+                <span class="inline-flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                    @for (bar of bandBars(project.technicalInfluence); track $index) {
+                      <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
+                    }
+                    @if (project.technicalInfluence === 'non-lf') {
+                      <!-- "No signal" slash: a background-colored casing cuts a gap in the bars, then the grey slash sits in it. -->
+                      <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
+                      <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
+                    }
+                  </svg>
+                  <span class="text-sm text-gray-900">{{ bandLabel(project.technicalInfluence) }}</span>
+                </span>
+              </td>
+              <!-- Ecosystem Influence (signal-strength bars + band label) -->
+              <td>
+                <span class="inline-flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                    @for (bar of bandBars(project.ecosystemInfluence); track $index) {
+                      <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
+                    }
+                    @if (project.ecosystemInfluence === 'non-lf') {
+                      <!-- "No signal" slash: a background-colored casing cuts a gap in the bars, then the grey slash sits in it. -->
+                      <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
+                      <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
+                    }
+                  </svg>
+                  <span class="text-sm text-gray-900">{{ bandLabel(project.ecosystemInfluence) }}</span>
+                </span>
+              </td>
+              <!-- Influence Trend (sparkline only; hover reveals combined/technical/ecosystem 1y deltas) -->
+              <td>
+                <span
+                  class="block h-8 w-20 cursor-help"
+                  [pTooltip]="trendTooltip(project)"
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipStyleClass="lfx-tooltip-nowrap"
+                  [attr.data-testid]="'org-projects-trend-' + project.slug">
+                  <lfx-chart type="line" [data]="sparklineData(project)" [options]="sparklineOptions" height="32px" width="80px" />
+                </span>
+              </td>
+              <!-- Contributors / Participants (counts only) -->
+              <td>
+                <span class="text-sm font-medium text-gray-900">{{ project.contributors.length }}</span>
+              </td>
+              <td>
+                <span class="text-sm font-medium text-gray-900">{{ project.participants.length }}</span>
+              </td>
+              <!-- Row kebab -->
+              <td class="text-right">
                 <lfx-button
                   icon="fa-light fa-ellipsis-vertical"
                   severity="secondary"
                   [text]="true"
                   size="small"
+                  styleClass="!px-2"
                   ariaLabel="Row actions"
                   (onClick)="openRowMenu(rowActionMenu, project, $event)"
                   [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
@@ -218,25 +305,110 @@
 <!-- Shared popup action menu — items rebuilt per row on open -->
 <lfx-menu #rowActionMenu [model]="rowMenuItems" [popup]="true" appendTo="body" data-testid="org-projects-row-action-menu" />
 
-<!-- Avatar-stack template: up to N avatars + overflow chip + total count -->
-<ng-template #stack let-people="people">
-  @if (people.length) {
-    <div class="flex items-center gap-2">
-      <div class="flex -space-x-2">
-        @for (person of stackVisible(people); track person.id) {
-          <span [title]="person.name" class="inline-flex">
-            <lfx-avatar [image]="person.avatarUrl" [label]="person.name" shape="circle" [ariaLabel]="person.name" styleClass="w-6 h-6 text-[10px] ring-2 ring-white" />
-          </span>
-        }
-        @if (stackOverflow(people) > 0) {
-          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-medium text-gray-600 ring-2 ring-white">
-            +{{ stackOverflow(people) }}
-          </span>
+<!-- Shared health-detail popover — content bound to the hovered row (LFX Insights style) -->
+<p-popover #healthPop appendTo="body" data-testid="org-projects-health-popover">
+  @if (activeHealthProject(); as project) {
+    <div class="flex w-80 flex-col gap-3" (mouseenter)="cancelHealthHide()" (mouseleave)="scheduleHealthHide(healthPop)">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm font-semibold text-gray-900">Health score</span>
+        <a
+          href="https://insights.linuxfoundation.org"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+          <i class="fa-light fa-arrow-up-right text-xs" aria-hidden="true"></i>
+          LFX Insights
+        </a>
+      </div>
+      <lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" [dot]="true" />
+      <p class="text-sm leading-relaxed text-gray-500">{{ project.description }}</p>
+      <div class="flex flex-col gap-2.5">
+        @for (metric of project.healthMetrics; track metric.label) {
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-700">{{ metric.label }}</span>
+              <span class="font-medium text-gray-500">{{ metric.value }}</span>
+            </div>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+              <div class="h-full rounded-full bg-emerald-500" [style.width.%]="metric.value"></div>
+            </div>
+          </div>
         }
       </div>
-      <span class="text-xs text-gray-500">{{ people.length }}</span>
     </div>
-  } @else {
-    <span class="text-xs text-gray-400">&mdash;</span>
   }
-</ng-template>
+</p-popover>
+
+<!-- Workspace dropdown — shared workspaces, per-item settings, add-workspace footer -->
+<p-popover #workspacePopover [dismissable]="true" data-testid="org-projects-workspace-popover">
+  <div class="flex w-72 flex-col py-1">
+    <div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Shared Workspaces</div>
+    @for (ws of workspaces(); track ws.id) {
+      <div class="group flex items-center gap-1 px-3 py-2 hover:bg-gray-50">
+        <button
+          type="button"
+          class="flex flex-1 items-center justify-between gap-2 truncate text-left text-sm text-gray-900"
+          (click)="selectWorkspace(ws.id); workspacePopover.hide()"
+          [attr.data-testid]="'org-projects-workspace-option-' + ws.id">
+          <span class="truncate" [class.font-semibold]="ws.id === selectedWorkspaceId()">{{ ws.name }}</span>
+          @if (ws.id === selectedWorkspaceId()) {
+            <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+          }
+        </button>
+        <button
+          type="button"
+          class="flex-shrink-0 px-1 text-gray-300 hover:text-gray-600"
+          aria-label="Workspace settings"
+          (click)="openWorkspaceSettings(ws); workspacePopover.hide()"
+          [attr.data-testid]="'org-projects-workspace-settings-' + ws.id">
+          <i class="fa-light fa-gear" aria-hidden="true"></i>
+        </button>
+      </div>
+    }
+    <hr class="my-1 border-gray-100" />
+    <button
+      type="button"
+      class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-gray-50"
+      (click)="openAddWorkspace(); workspacePopover.hide()"
+      data-testid="org-projects-add-workspace">
+      <i class="fa-light fa-square-plus" aria-hidden="true"></i>
+      Add workspace
+    </button>
+  </div>
+</p-popover>
+
+<!-- Workspace settings / add dialog -->
+<p-dialog
+  [header]="editingWorkspace() ? 'Workspace settings' : 'Add workspace'"
+  [visible]="workspaceDialogOpen()"
+  (visibleChange)="workspaceDialogOpen.set($event)"
+  [modal]="true"
+  [dismissableMask]="true"
+  [draggable]="false"
+  [style]="{ width: '24rem' }"
+  data-testid="org-projects-workspace-dialog">
+  <div class="flex flex-col gap-4 pt-1">
+    <div class="flex flex-col gap-1.5">
+      <label for="workspace-name" class="text-sm font-medium text-gray-700">Workspace name</label>
+      <lfx-input-text [form]="workspaceForm" control="name" inputId="workspace-name" placeholder="e.g. Cloud Native focus" size="small" styleClass="w-full" />
+    </div>
+    <div class="flex items-center justify-between gap-2">
+      @if (editingWorkspace() && workspaces().length > 1) {
+        <lfx-button
+          label="Delete"
+          icon="fa-light fa-trash"
+          severity="danger"
+          [text]="true"
+          size="small"
+          (onClick)="deleteWorkspace()"
+          data-testid="org-projects-workspace-delete" />
+      } @else {
+        <span></span>
+      }
+      <div class="flex items-center gap-2">
+        <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="workspaceDialogOpen.set(false)" />
+        <lfx-button label="Save" severity="primary" size="small" (onClick)="saveWorkspace()" data-testid="org-projects-workspace-save" />
+      </div>
+    </div>
+  </div>
+</p-dialog>

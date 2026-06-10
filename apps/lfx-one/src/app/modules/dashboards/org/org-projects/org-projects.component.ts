@@ -3,7 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -13,32 +12,33 @@ import {
   DEFAULT_ORG_PROJECTS_SORT_DIR,
   DEFAULT_ORG_PROJECTS_SORT_FIELD,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
+  DEFAULT_ORG_PROJECTS_WORKSPACES,
   HEALTH_SCORE_LABELS,
   HEALTH_SCORE_SEVERITY,
+  INFLUENCE_BAND_BAR_FILL_CLASS,
+  INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
   INFLUENCE_BAND_RANK,
-  INFLUENCE_BAND_SEVERITY,
   INFLUENCE_TREND_COLOR,
-  ORG_PROJECTS_AVATAR_STACK_LIMIT,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
-  ORG_PROJECTS_WORKSPACE_OPTIONS,
   VALID_ORG_PROJECTS_SORT_FIELDS,
-  VALID_ORG_PROJECTS_WORKSPACE_IDS,
 } from '@lfx-one/shared/constants';
 import type {
   HealthScore,
   InfluenceBand,
-  InfluenceTrendDirection,
   OrgLensProject,
-  OrgLensProjectPerson,
   OrgLensProjectsResponse,
   OrgProjectsSortField,
+  OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
   SortDirection,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
-import { downloadCsv, formatRelativeTime } from '@lfx-one/shared/utils';
+import { downloadCsv } from '@lfx-one/shared/utils';
 import { MenuItem } from 'primeng/api';
+import { DialogModule } from 'primeng/dialog';
+import { Popover, PopoverModule } from 'primeng/popover';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -46,6 +46,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -53,8 +54,6 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
-
-import { InfluenceSummaryComponent } from './components/influence-summary/influence-summary.component';
 
 const ALL_FOUNDATIONS = 'all';
 
@@ -65,14 +64,16 @@ const ALL_FOUNDATIONS = 'all';
     ButtonComponent,
     CardComponent,
     ChartComponent,
+    DialogModule,
     EmptyStateComponent,
-    InfluenceSummaryComponent,
+    InputTextComponent,
     MenuComponent,
     MultiSelectComponent,
-    NgTemplateOutlet,
+    PopoverModule,
     SelectComponent,
     TableComponent,
     TagComponent,
+    TooltipModule,
   ],
   templateUrl: './org-projects.component.html',
 })
@@ -82,11 +83,11 @@ export class OrgProjectsComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly projectsService = inject(OrgLensProjectsService);
+  /** Pending hide timer for the health popover (lets the cursor cross into the popover). */
+  private healthHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Configuration
-  protected readonly workspaceOptions = [...ORG_PROJECTS_WORKSPACE_OPTIONS];
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
-  protected readonly avatarStackLimit = ORG_PROJECTS_AVATAR_STACK_LIMIT;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
   protected readonly sparklineOptions = {
     responsive: true,
@@ -98,9 +99,12 @@ export class OrgProjectsComponent {
 
   // Forms
   protected readonly filterForm = new FormGroup({
-    workspace: new FormControl<OrgProjectsWorkspaceId>(this.readWorkspaceFromUrl(), { nonNullable: true }),
     foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ALL_FOUNDATIONS, { nonNullable: true }),
     employees: new FormControl<string[]>(this.readEmployeesFromUrl(), { nonNullable: true }),
+  });
+  /** Name field for the add / rename workspace dialog. */
+  protected readonly workspaceForm = new FormGroup({
+    name: new FormControl<string>('', { nonNullable: true }),
   });
 
   // Writable Signals
@@ -109,6 +113,11 @@ export class OrgProjectsComponent {
   /** Per-user workspace pin/hide state (client-only; never mutates the foundation catalog). */
   protected readonly pinnedSlugs = signal<ReadonlySet<string>>(new Set());
   protected readonly hiddenSlugs = signal<ReadonlySet<string>>(new Set());
+  /** Shared workspaces (seeded presets + user-created); editable via the workspace dropdown. */
+  protected readonly workspaces = signal<OrgProjectsWorkspace[]>([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
+  /** Workspace being renamed/deleted in the settings dialog; `null` while the dialog adds a new one. */
+  protected readonly editingWorkspace = signal<OrgProjectsWorkspace | null>(null);
+  protected readonly workspaceDialogOpen = signal(false);
   /** Bumped to re-trigger the demo fetch from the inline error-retry CTA. */
   private readonly reload = signal(0);
   /** Action menu items rebuilt per row when the kebab is opened. */
@@ -120,10 +129,8 @@ export class OrgProjectsComponent {
   private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
-  protected readonly freshnessLabel = computed(() => {
-    const updatedAt = this.response()?.dataUpdatedAt;
-    return updatedAt ? `Data updated ${formatRelativeTime(new Date(updatedAt))}` : '';
-  });
+  /** Project whose health detail is shown in the shared hover popover. */
+  protected readonly activeHealthProject = signal<OrgLensProject | null>(null);
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => {
     const raw = this.queryParamMap().get('sort');
@@ -139,7 +146,19 @@ export class OrgProjectsComponent {
     return (page - 1) * this.pageSize();
   });
 
-  protected readonly workspaceId = computed<OrgProjectsWorkspaceId>(() => this.formValue().workspace ?? DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
+  // Active workspace comes from the URL (`?workspace=`), validated against the current workspace list.
+  protected readonly selectedWorkspaceId = computed<OrgProjectsWorkspaceId>(() => {
+    const list = this.workspaces();
+    const raw = this.queryParamMap().get('workspace');
+    if (raw && list.some((w) => w.id === raw)) {
+      return raw;
+    }
+    if (list.some((w) => w.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID)) {
+      return DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
+    }
+    return list[0]?.id ?? DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
+  });
+  protected readonly selectedWorkspaceName = computed<string>(() => this.workspaces().find((w) => w.id === this.selectedWorkspaceId())?.name ?? '');
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 
@@ -150,12 +169,11 @@ export class OrgProjectsComponent {
   protected readonly totalRecords = computed(() => this.sortedProjects().length);
 
   public constructor() {
-    // Filter changes (workspace / foundation / employees) write through to the URL and reset to page 1.
+    // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: {
-          workspace: value.workspace === DEFAULT_ORG_PROJECTS_WORKSPACE_ID ? null : value.workspace,
           foundation: value.foundation === ALL_FOUNDATIONS ? null : value.foundation,
           employees: value.employees && value.employees.length ? value.employees.join(',') : null,
           page: null,
@@ -176,7 +194,11 @@ export class OrgProjectsComponent {
     const nextDir: SortDirection = this.sortField() === field && this.sortDir() === 'desc' ? 'asc' : 'desc';
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { sort: field === DEFAULT_ORG_PROJECTS_SORT_FIELD ? null : field, dir: nextDir === DEFAULT_ORG_PROJECTS_SORT_DIR ? null : nextDir, page: null },
+      queryParams: {
+        sort: field === DEFAULT_ORG_PROJECTS_SORT_FIELD ? null : field,
+        dir: nextDir === DEFAULT_ORG_PROJECTS_SORT_DIR ? null : nextDir,
+        page: null,
+      },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -194,18 +216,71 @@ export class OrgProjectsComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ workspace: DEFAULT_ORG_PROJECTS_WORKSPACE_ID, foundation: ALL_FOUNDATIONS, employees: [] });
+    this.filterForm.reset({ foundation: ALL_FOUNDATIONS, employees: [] });
+    this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
   }
 
+  // Active sort column shows a solid blue arrow (LFX self-serve pattern); inactive columns a faint grey double-arrow.
   protected sortIcon(field: OrgProjectsSortField): string {
     if (this.sortField() !== field) {
-      return 'fa-light fa-sort';
+      return 'fa-light fa-sort text-gray-300';
     }
-    return this.sortDir() === 'asc' ? 'fa-light fa-sort-up' : 'fa-light fa-sort-down';
+    return this.sortDir() === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
   }
 
   protected openFindProject(): void {
     // +Find project opens an add-project modal whose internals ship in a separate ticket.
+  }
+
+  protected selectWorkspace(id: OrgProjectsWorkspaceId): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { workspace: id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID ? null : id, page: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected openAddWorkspace(): void {
+    this.editingWorkspace.set(null);
+    this.workspaceForm.setValue({ name: '' });
+    this.workspaceDialogOpen.set(true);
+  }
+
+  protected openWorkspaceSettings(workspace: OrgProjectsWorkspace): void {
+    this.editingWorkspace.set(workspace);
+    this.workspaceForm.setValue({ name: workspace.name });
+    this.workspaceDialogOpen.set(true);
+  }
+
+  protected saveWorkspace(): void {
+    const name = this.workspaceForm.getRawValue().name.trim();
+    if (!name) {
+      return;
+    }
+    const editing = this.editingWorkspace();
+    if (editing) {
+      this.workspaces.update((list) => list.map((w) => (w.id === editing.id ? { ...w, name } : w)));
+    } else {
+      const id = this.uniqueWorkspaceId(name);
+      this.workspaces.update((list) => [...list, { id, name }]);
+      this.selectWorkspace(id);
+    }
+    this.workspaceDialogOpen.set(false);
+  }
+
+  protected deleteWorkspace(): void {
+    const editing = this.editingWorkspace();
+    // Always keep at least one workspace so the company never ends up with none.
+    if (!editing || this.workspaces().length <= 1) {
+      return;
+    }
+    const remaining = this.workspaces().filter((w) => w.id !== editing.id);
+    this.workspaces.set(remaining);
+    if (this.selectedWorkspaceId() === editing.id) {
+      this.selectWorkspace(remaining[0].id);
+    }
+    this.workspaceDialogOpen.set(false);
   }
 
   protected openRowMenu(menu: MenuComponent, project: OrgLensProject, event: Event): void {
@@ -223,25 +298,13 @@ export class OrgProjectsComponent {
     if (!rows.length) {
       return;
     }
-    const header = [
-      'Project',
-      'Foundation',
-      'Health Score',
-      'Technical Influence',
-      'Ecosystem Influence',
-      'Influence Trend (1y) %',
-      'Our Maintainers',
-      'Our Contributors',
-      'Our Participants',
-    ];
+    const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
     const body = rows.map((p) => [
       p.name,
-      p.foundation.name,
       HEALTH_SCORE_LABELS[p.health],
       INFLUENCE_BAND_LABELS[p.technicalInfluence],
       INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
       p.trend.deltaPct,
-      p.maintainers.length,
       p.contributors.length,
       p.participants.length,
     ]);
@@ -254,8 +317,42 @@ export class OrgProjectsComponent {
   protected bandLabel(band: InfluenceBand): string {
     return INFLUENCE_BAND_LABELS[band];
   }
-  protected bandSeverity(band: InfluenceBand): TagSeverity {
-    return INFLUENCE_BAND_SEVERITY[band];
+  // Signal-strength bars for an influence band: filled count = rank (Leading 4 → Silent 1 → Non-LF 0),
+  // colored by band; remaining bars faded. Non-LF (0 filled) gets a diagonal slash from the template.
+  // Geometry mirrors the LFX Insights signal-bar icon: 4 evenly spaced, ascending, rounded bars in a 16×16 box.
+  protected bandBars(band: InfluenceBand): { x: number; y: number; w: number; h: number; colorClass: string }[] {
+    const heights = [5, 8.3, 11.6, 15];
+    const barWidth = 2.6;
+    const gap = 1.8;
+    const filled = INFLUENCE_BAND_RANK[band];
+    return heights.map((h, i) => ({
+      x: i * (barWidth + gap),
+      y: 16 - h,
+      w: barWidth,
+      h,
+      // Filled bars use the band color; unfilled use a lighter tint of the same color (org dashboard design).
+      colorClass: i < filled ? INFLUENCE_BAND_BAR_FILL_CLASS[band] : INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT[band],
+    }));
+  }
+  // Explanatory hover for the Technical / Ecosystem influence column headers.
+  protected influenceColumnTooltip(): string {
+    return `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
+  }
+  protected openHealth(event: Event, project: OrgLensProject, popover: Popover): void {
+    this.cancelHealthHide();
+    this.activeHealthProject.set(project);
+    popover.show(event, event.currentTarget as HTMLElement);
+  }
+  // Delay hide so the cursor can travel from the cell into the popover (keeps the LFX Insights link clickable).
+  protected scheduleHealthHide(popover: Popover): void {
+    this.cancelHealthHide();
+    this.healthHideTimer = setTimeout(() => popover.hide(), 200);
+  }
+  protected cancelHealthHide(): void {
+    if (this.healthHideTimer !== null) {
+      clearTimeout(this.healthHideTimer);
+      this.healthHideTimer = null;
+    }
   }
   protected healthLabel(health: HealthScore): string {
     return HEALTH_SCORE_LABELS[health];
@@ -263,20 +360,23 @@ export class OrgProjectsComponent {
   protected healthSeverity(health: HealthScore): TagSeverity {
     return HEALTH_SCORE_SEVERITY[health];
   }
-  protected trendClass(direction: InfluenceTrendDirection): string {
-    if (direction === 'up') {
-      return 'text-emerald-600';
-    }
-    if (direction === 'down') {
-      return 'text-red-600';
-    }
-    return 'text-gray-500';
+  // Hover tooltip for the Influence Trend sparkline: combined / technical / ecosystem 1y deltas.
+  protected trendTooltip(project: OrgLensProject): string {
+    const t = project.trend;
+    return `<div class="flex flex-col gap-1 text-left">${this.trendTooltipRow('Combined influence', t.deltaPct)}${this.trendTooltipRow('Technical influence', t.technicalDeltaPct)}${this.trendTooltipRow('Ecosystem influence', t.ecosystemDeltaPct)}</div>`;
   }
-  protected stackVisible(people: OrgLensProjectPerson[]): OrgLensProjectPerson[] {
-    return people.slice(0, this.avatarStackLimit);
+  protected trendTooltipRow(label: string, value: number): string {
+    const sign = value > 0 ? '+' : '';
+    return `<div class="flex items-center justify-between gap-6 whitespace-nowrap"><span class="text-gray-200">${label}</span><span class="font-semibold ${this.pctColorClass(value)}">${sign}${value}%</span></div>`;
   }
-  protected stackOverflow(people: OrgLensProjectPerson[]): number {
-    return Math.max(0, people.length - this.avatarStackLimit);
+  protected pctColorClass(value: number): string {
+    if (value > 1) {
+      return 'text-emerald-300';
+    }
+    if (value < -1) {
+      return 'text-red-300';
+    }
+    return 'text-gray-300';
   }
   protected isPinned(slug: string): boolean {
     return this.pinnedSlugs().has(slug);
@@ -294,12 +394,9 @@ export class OrgProjectsComponent {
     return toSignal(
       account$.pipe(
         switchMap(({ account }) => {
-          const uid = account?.uid;
-          if (!uid) {
-            this.loading.set(false);
-            this.error.set(false);
-            return of(null);
-          }
+          // Demo data is not tied to a real org, so it renders even before an org is selected
+          // (local dev / no impersonation). The real integration will key off `account.uid`.
+          const uid = account?.uid ?? 'demo-org';
           this.loading.set(true);
           this.error.set(false);
           return this.projectsService.getProjects(uid, account?.accountName ?? '').pipe(
@@ -343,7 +440,7 @@ export class OrgProjectsComponent {
   private initFilteredProjects(): Signal<OrgLensProject[]> {
     return computed(() => {
       const all = this.response()?.projects ?? [];
-      const workspace = this.workspaceId();
+      const workspace = this.selectedWorkspaceId();
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
       const hidden = this.hiddenSlugs();
       return all
@@ -377,17 +474,15 @@ export class OrgProjectsComponent {
     if (directed !== 0) {
       return directed;
     }
-    // Tie-break: Technical Influence band desc, then project name asc.
-    const bandTie = INFLUENCE_BAND_RANK[b.technicalInfluence] - INFLUENCE_BAND_RANK[a.technicalInfluence];
-    return bandTie !== 0 ? bandTie : a.name.localeCompare(b.name);
+    // Tie-break: participant count desc, then project name asc.
+    const participantTie = b.participants.length - a.participants.length;
+    return participantTie !== 0 ? participantTie : a.name.localeCompare(b.name);
   }
 
   private compareByField(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField): number {
     switch (field) {
       case 'name':
         return a.name.localeCompare(b.name);
-      case 'foundation':
-        return a.foundation.name.localeCompare(b.foundation.name);
       case 'health':
         return this.healthRank(a.health) - this.healthRank(b.health);
       case 'technicalInfluence':
@@ -396,6 +491,10 @@ export class OrgProjectsComponent {
         return INFLUENCE_BAND_RANK[a.ecosystemInfluence] - INFLUENCE_BAND_RANK[b.ecosystemInfluence];
       case 'influenceTrend':
         return a.trend.deltaPct - b.trend.deltaPct;
+      case 'contributors':
+        return a.contributors.length - b.contributors.length;
+      case 'participants':
+        return a.participants.length - b.participants.length;
       default:
         return 0;
     }
@@ -410,16 +509,20 @@ export class OrgProjectsComponent {
 
   private matchesWorkspace(project: OrgLensProject, workspace: OrgProjectsWorkspaceId): boolean {
     switch (workspace) {
-      case 'all-projects':
-        return true;
-      case 'most-influential':
-        return project.technicalInfluence === 'leading' || project.technicalInfluence === 'contributing';
-      case 'where-we-lead':
-        return project.technicalInfluence === 'leading';
       case 'most-active':
-      default:
         // Active = not archived (excludes the demo "Jenkins" archived row with score 0).
         return project.influenceScore > 0;
+      case 'key-projects':
+        // "Key" = projects we lead or actively contribute to.
+        return project.technicalInfluence === 'leading' || project.technicalInfluence === 'contributing';
+      case 'finos':
+      case 'cncf':
+        // Foundation-scoped workspaces match by foundation slug.
+        return project.foundation.slug === workspace;
+      case DEFAULT_ORG_PROJECTS_WORKSPACE_ID:
+      default:
+        // "All Projects with Activities" (and any custom workspace) shows every project with activity.
+        return true;
     }
   }
 
@@ -457,9 +560,21 @@ export class OrgProjectsComponent {
     // Add-to-workspace writes to the per-user workspace project list; CRUD flow is a separate ticket.
   }
 
-  private readWorkspaceFromUrl(): OrgProjectsWorkspaceId {
-    const raw = this.route.snapshot.queryParamMap.get('workspace');
-    return raw && VALID_ORG_PROJECTS_WORKSPACE_IDS.has(raw as OrgProjectsWorkspaceId) ? (raw as OrgProjectsWorkspaceId) : DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
+  private uniqueWorkspaceId(name: string): string {
+    const base =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'workspace';
+    const existing = new Set(this.workspaces().map((w) => w.id));
+    if (!existing.has(base)) {
+      return base;
+    }
+    let suffix = 2;
+    while (existing.has(`${base}-${suffix}`)) {
+      suffix += 1;
+    }
+    return `${base}-${suffix}`;
   }
 
   private readEmployeesFromUrl(): string[] {

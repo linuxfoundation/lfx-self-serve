@@ -11,7 +11,7 @@
  */
 
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
-export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'non-lf';
+export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
 /** CHAOSS-derived project health classification (via LFX Insights). */
 export type HealthScore = 'excellent' | 'healthy' | 'at-risk';
@@ -43,6 +43,10 @@ export interface OrgLensProjectFoundation {
 export interface InfluenceTrend {
   /** Percent change of the combined influence score, rolling 365 vs prior 365. */
   deltaPct: number;
+  /** Percent change of the technical influence score, rolling 365 vs prior 365. */
+  technicalDeltaPct: number;
+  /** Percent change of the ecosystem influence score, rolling 365 vs prior 365. */
+  ecosystemDeltaPct: number;
   /** Direction bucket derived from `deltaPct` (drives green/red/neutral styling). */
   direction: InfluenceTrendDirection;
   /** Ordered score samples (oldest → newest) for the sparkline. */
@@ -89,6 +93,18 @@ export interface OrgLensProject {
   commits1y: number;
   /** Largest single driver of the influence delta (used by Influence Summary cards). */
   changeDriver: ChangeDriver;
+  /** Short project description shown in the health-detail popover. */
+  description: string;
+  /** CHAOSS-style health sub-scores (0–100) shown in the health-detail popover. */
+  healthMetrics: ProjectHealthMetric[];
+}
+
+/** A single CHAOSS health sub-score (0–100) shown in the health-detail popover. */
+export interface ProjectHealthMetric {
+  /** Metric name, e.g. `Contributors`, `Popularity`, `Development`, `Security`. */
+  label: string;
+  /** Score on a 0–100 scale, rendered as a progress bar. */
+  value: number;
 }
 
 /** Top-level response for the Org Lens Projects page. */
@@ -104,21 +120,17 @@ export interface OrgLensProjectsResponse {
 }
 
 /** Workspace preset / saved-filter identifier (`?workspace=`). */
-export type OrgProjectsWorkspaceId = 'most-active' | 'all-projects' | 'most-influential' | 'where-we-lead';
+/** Workspace identifier. System presets use stable slugs; user-created workspaces get generated slugs. */
+export type OrgProjectsWorkspaceId = string;
+
+/** A saved Org Lens workspace (filter preset). Each company is seeded with the default; users add/rename/delete their own. */
+export interface OrgProjectsWorkspace {
+  id: OrgProjectsWorkspaceId;
+  name: string;
+}
 
 /** Sortable Projects-table column keys (`?sort=`). */
-export type OrgProjectsSortField = 'name' | 'foundation' | 'health' | 'technicalInfluence' | 'ecosystemInfluence' | 'influenceTrend';
+export type OrgProjectsSortField = 'name' | 'health' | 'technicalInfluence' | 'ecosystemInfluence' | 'influenceTrend' | 'contributors' | 'participants';
 
 /** Sort direction (`?dir=`). */
 export type SortDirection = 'asc' | 'desc';
-
-/** Influence Summary pill-tab mode (`?influenceTab=`). */
-export type InfluenceSummaryMode = 'influential' | 'gains' | 'decreases';
-
-/** A single Influence Summary card, derived from an `OrgLensProject` for the active mode. */
-export interface InfluenceSummaryCard {
-  /** The project this card represents. */
-  project: OrgLensProject;
-  /** Mode-specific primary metric line (e.g. "Influence score: 87.3 (Leading)", "+14.2 points (1y)"). */
-  primaryMetric: string;
-}
