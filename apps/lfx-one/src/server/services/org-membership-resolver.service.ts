@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { ProjectMembershipDoc, QueryServiceResponse, ResolvedMembershipContext } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { decodeJwtPayload } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { valkeyService } from './valkey.service';
 
 // Resolves an org UUID + foundation slug to the active project_membership context.
 
@@ -17,15 +19,9 @@ export class OrgMembershipResolverService {
   private static readonly activeMembershipStatuses = new Set(['active', 'purchased']);
   // Slug-scoped project_membership queries fit in one page.
   private static readonly membershipsPageSize = 500;
-  // Short per-(caller, org, slug) memo TTL to avoid bursty repeat fetches.
-  private static readonly membershipsCacheTtlMs = 30_000;
-  // Hard cap for in-process membership memo entries.
-  private static readonly membershipsCacheMaxEntries = 2_000;
 
-  // Per-caller memo of project_membership docs keyed by `${sub}:${b2bOrgUid}:${slug}`.
-  private static readonly membershipsCache = new Map<string, { docs: ProjectMembershipDoc[]; expiresAt: number }>();
-
-  // In-flight dedup for concurrent prefetch + resolve reads.
+  // Per-process in-flight de-dup, keyed by the principal-bound cache key so it never shares a result
+  // across users. The authoritative cross-instance cache is the shared Valkey store.
   private static readonly membershipsInFlight = new Map<string, Promise<ProjectMembershipDoc[]>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -76,57 +72,71 @@ export class OrgMembershipResolverService {
     };
   }
 
-  // Fetches and memoizes slug-scoped project_membership documents for one org UUID.
+  // Fetches slug-scoped project_membership documents for one org UUID, served through the shared
+  // Valkey cache keyed by the authorization principal (access-token `sub`) so entries are strictly
+  // per-user. When the principal can't be resolved we fail closed: fetch fresh with no cache read/write.
   public async fetchMembershipsBySlug(req: Request, b2bOrgUid: string, foundationSlug: string): Promise<ProjectMembershipDoc[]> {
     const slug = (foundationSlug ?? '').trim();
     if (!b2bOrgUid || !isFilterSafeIdentifier(b2bOrgUid) || !slug || !isFilterSafeIdentifier(slug)) return [];
 
-    const key = `${getEffectiveSub(req) ?? 'anon'}:${b2bOrgUid}:${slug.toLowerCase()}`;
-    const cached = OrgMembershipResolverService.membershipsCache.get(key);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.docs;
+    const cacheKey = OrgMembershipResolverService.buildCacheKey(req, b2bOrgUid, slug);
+
+    // Fail-closed: without a principal-bound key we never touch a shared cache entry.
+    if (!cacheKey) {
+      return this.runMembershipFetch(req, b2bOrgUid, slug);
     }
-    const inFlight = OrgMembershipResolverService.membershipsInFlight.get(key);
+
+    // Per-process coalescing of concurrent identical reads (keyed by the principal-bound key).
+    const inFlight = OrgMembershipResolverService.membershipsInFlight.get(cacheKey);
     if (inFlight) {
       return inFlight;
     }
 
-    const promise = (async () => {
-      const tScanStart = Date.now();
-      const docs = await fetchAllQueryResources<ProjectMembershipDoc>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_membership',
-          tags: `b2b_org_uid:${b2bOrgUid}`,
-          filters_all: `project_slug:${slug}`,
-          per_page: OrgMembershipResolverService.membershipsPageSize,
-          ...(pageToken && { page_token: pageToken }),
-        })
-      );
-      logger.info(req, 'resolve_membership_context_timing', 'project_membership slug-scoped fetch complete', {
-        b2b_org_uid: b2bOrgUid,
-        foundation_slug: slug,
-        membership_count: docs.length,
-        scan_ms: Date.now() - tScanStart,
-      });
-      OrgMembershipResolverService.setCache(key, docs);
-      return docs;
-    })();
+    // Shared, cross-instance read-through cache; fail-soft (cache faults fall back to a direct fetch).
+    // The Array.isArray guard rejects a corrupt/legacy cache entry as a miss so a bad value can never
+    // reach resolveContext()'s .filter() and turn a cache hit into a 500.
+    const promise = valkeyService.withCache(
+      cacheKey,
+      VALKEY_CACHE.ORG_MEMBERSHIP_TTL_SECONDS,
+      () => this.runMembershipFetch(req, b2bOrgUid, slug),
+      Array.isArray
+    );
 
-    OrgMembershipResolverService.membershipsInFlight.set(key, promise);
+    OrgMembershipResolverService.membershipsInFlight.set(cacheKey, promise);
     try {
       return await promise;
     } finally {
-      OrgMembershipResolverService.membershipsInFlight.delete(key);
+      OrgMembershipResolverService.membershipsInFlight.delete(cacheKey);
     }
   }
 
-  // Stores a cached org-membership list and evicts oldest-first when full.
-  private static setCache(key: string, docs: ProjectMembershipDoc[]): void {
-    const cache = OrgMembershipResolverService.membershipsCache;
-    if (!cache.has(key) && cache.size >= OrgMembershipResolverService.membershipsCacheMaxEntries) {
-      const oldest = cache.keys().next();
-      if (!oldest.done) cache.delete(oldest.value);
-    }
-    cache.set(key, { docs, expiresAt: Date.now() + OrgMembershipResolverService.membershipsCacheTtlMs });
+  // Builds the principal-bound, namespaced, versioned cache key, or null when the authorization
+  // principal cannot be derived from the bearer token (fail-closed). The `sub` comes from the same
+  // access/impersonation token that FGA-filters the data downstream, so cache identity == authz identity.
+  private static buildCacheKey(req: Request, b2bOrgUid: string, slug: string): string | null {
+    const sub = decodeJwtPayload(req.bearerToken ?? '')?.sub;
+    if (!sub) return null;
+    return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${sub}:${b2bOrgUid}:${slug.toLowerCase()}`;
+  }
+
+  // Performs the actual paginated, FGA-filtered project_membership fetch (the cache fetcher).
+  private async runMembershipFetch(req: Request, b2bOrgUid: string, slug: string): Promise<ProjectMembershipDoc[]> {
+    const tScanStart = Date.now();
+    const docs = await fetchAllQueryResources<ProjectMembershipDoc>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project_membership',
+        tags: `b2b_org_uid:${b2bOrgUid}`,
+        filters_all: `project_slug:${slug}`,
+        per_page: OrgMembershipResolverService.membershipsPageSize,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    logger.info(req, 'resolve_membership_context_timing', 'project_membership slug-scoped fetch complete', {
+      b2b_org_uid: b2bOrgUid,
+      foundation_slug: slug,
+      membership_count: docs.length,
+      scan_ms: Date.now() - tScanStart,
+    });
+    return docs;
   }
 }
