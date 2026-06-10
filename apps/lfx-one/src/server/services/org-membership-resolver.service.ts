@@ -22,7 +22,7 @@ export class OrgMembershipResolverService {
   // Hard cap for in-process membership memo entries.
   private static readonly membershipsCacheMaxEntries = 2_000;
 
-  // Per-caller memo of project_membership docs keyed by `${sub}:${b2bOrgUid}:${slug}`.
+  // Per-caller memo of project_membership docs keyed by `${username}:${b2bOrgUid}:${slug}`.
   private static readonly membershipsCache = new Map<string, { docs: ProjectMembershipDoc[]; expiresAt: number }>();
 
   // In-flight dedup for concurrent prefetch + resolve reads.

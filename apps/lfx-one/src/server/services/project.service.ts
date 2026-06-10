@@ -580,8 +580,8 @@ export class ProjectService {
           });
         }
 
-        // Extract username from JSON success response or JSON string; prefer username claim, fall back to sub during migration
-        username = typeof parsed === 'string' ? parsed : parsed.username || parsed.sub;
+        // Extract sub from JSON success response or JSON string
+        username = typeof parsed === 'string' ? parsed : parsed.sub || parsed.username;
       } catch (parseError) {
         // Re-throw ResourceNotFoundError as-is
         if (parseError instanceof ResourceNotFoundError) {
@@ -609,7 +609,7 @@ export class ProjectService {
 
       logger.success(req, 'resolve_email_to_sub', startTime, {
         email: normalizedEmail,
-        username,
+        sub: username,
       });
 
       return username;
