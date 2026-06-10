@@ -18,6 +18,10 @@ const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
  */
 export async function exchangeRefreshTokenForAudience(req: Request, options: RefreshTokenExchangeOptions): Promise<string | null> {
   const issuerBaseUrl = options.issuerBaseUrl.replace(/\/+$/, '');
+  if (!issuerBaseUrl) {
+    logger.warning(req, 'exchange_refresh_token', 'issuerBaseUrl is not configured — skipping token exchange', { audience: options.audience });
+    return null;
+  }
   const { clientId, clientSecret, audience, scope, sessionKey } = options;
   const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
 

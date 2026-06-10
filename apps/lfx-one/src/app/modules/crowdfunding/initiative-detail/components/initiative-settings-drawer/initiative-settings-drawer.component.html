@@ -163,8 +163,8 @@
               (click)="triggerLogoUpload()"
               role="button"
               tabindex="0"
-              (keydown.enter)="triggerLogoUpload()"
-              (keydown.space)="triggerLogoUpload()"
+              (keydown.enter)="$event.preventDefault(); triggerLogoUpload()"
+              (keydown.space)="$event.preventDefault(); triggerLogoUpload()"
               data-testid="settings-logo-empty">
               <i class="fa-solid fa-image text-gray-200 text-4xl shrink-0" aria-hidden="true"></i>
               <div class="flex flex-col gap-2">

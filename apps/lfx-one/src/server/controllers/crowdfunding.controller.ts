@@ -5,6 +5,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { ALLOWED_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
 import { UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -229,7 +230,14 @@ export class CrowdfundingController {
         });
       }
 
-      const result = await this.crowdfundingService.getPresignedUrl(req, rawContentType.trim());
+      const contentType = rawContentType.trim();
+      if (!ALLOWED_LOGO_MIME_TYPES.includes(contentType as (typeof ALLOWED_LOGO_MIME_TYPES)[number])) {
+        throw ServiceValidationError.forField('contentType', `contentType must be one of: ${ALLOWED_LOGO_MIME_TYPES.join(', ')}`, {
+          operation: 'get_presigned_url',
+        });
+      }
+
+      const result = await this.crowdfundingService.getPresignedUrl(req, contentType);
 
       logger.success(req, 'get_presigned_url', startTime);
       res.json(result);
@@ -261,7 +269,7 @@ export class CrowdfundingController {
       if (Array.isArray(body['goals'])) {
         input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
           name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',
-          amountCents: typeof g['amountCents'] === 'number' ? Math.floor(g['amountCents']) : 0,
+          amountCents: Number.isFinite(g['amountCents']) ? Math.floor(g['amountCents'] as number) : 0,
         }));
       }
 
@@ -382,11 +390,12 @@ export class CrowdfundingController {
         return;
       }
 
-      // login_required or any other error: fall through to the page without a CF token.
+      // login_required or any other error: redirect with the error param so server.ts
+      // does not immediately re-trigger the silent redirect (which checks !req.query['error']).
       logger.warning(req, 'crowdfunding_auth_callback', `Auth0 returned error: ${error}`, {
         error_description: req.query['error_description'],
       });
-      res.redirect(returnTo);
+      res.redirect(`${returnTo}?error=${encodeURIComponent(error)}`);
       return;
     }
 

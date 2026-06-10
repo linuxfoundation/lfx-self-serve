@@ -42,7 +42,17 @@ import { logger } from './logger.service';
 
 const cfBaseUrl = (): string => (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
 
-async function cfFetch<T>(req: Request, operation: string, path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+const CF_TIMEOUT_MS = 30_000;
+
+function throwCfNetworkError(operation: string, error: unknown): never {
+  if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+    throw new MicroserviceError(`CF API ${operation} timed out after ${CF_TIMEOUT_MS}ms`, 504, 'UPSTREAM_TIMEOUT', { operation, service: 'crowdfunding' });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  throw new MicroserviceError(`CF API ${operation} network error: ${message}`, 502, 'UPSTREAM_UNREACHABLE', { operation, service: 'crowdfunding' });
+}
+
+async function cfFetch<T>(req: Request, operation: string, path: string, options: { method?: string; body?: unknown; noBody?: boolean } = {}): Promise<T> {
   const token = req.crowdfundingToken;
   if (!token) {
     throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
@@ -63,12 +73,19 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(CF_TIMEOUT_MS),
   };
   if (options.body !== undefined) {
     (init as { body?: string }).body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error: unknown) {
+    throwCfNetworkError(operation, error);
+  }
+
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new MicroserviceError(`CF API ${operation} returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
@@ -78,6 +95,7 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
       errorBody: text,
     });
   }
+  if (options.noBody) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -98,12 +116,18 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
     });
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(CF_TIMEOUT_MS),
+    });
+  } catch (error: unknown) {
+    throwCfNetworkError(operation, error);
+  }
 
   if (response.status === 404) {
     return null;
@@ -167,38 +191,7 @@ export class CrowdfundingService {
 
   public async deleteMyPaymentMethod(req: Request): Promise<void> {
     const startTime = logger.startOperation(req, 'cf_delete_my_payment_method');
-
-    const token = req.crowdfundingToken;
-    if (!token) {
-      throw new MicroserviceError('No crowdfunding token available for deleteMyPaymentMethod', 401, 'CF_UNAUTHENTICATED', {
-        operation: 'deleteMyPaymentMethod',
-        service: 'crowdfunding',
-      });
-    }
-
-    const baseUrl = cfBaseUrl();
-    if (!baseUrl) {
-      throw new MicroserviceError('CROWDFUNDING_API_BASE_URL is not configured — cannot call deleteMyPaymentMethod', 503, 'CF_MISCONFIGURED', {
-        operation: 'deleteMyPaymentMethod',
-        service: 'crowdfunding',
-      });
-    }
-
-    const response = await fetch(`${baseUrl}/v1/me/payment-method`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new MicroserviceError(`CF API deleteMyPaymentMethod returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
-        operation: 'deleteMyPaymentMethod',
-        service: 'crowdfunding',
-        path: '/v1/me/payment-method',
-        errorBody: text,
-      });
-    }
-
+    await cfFetch<void>(req, 'deleteMyPaymentMethod', '/v1/me/payment-method', { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_delete_my_payment_method', startTime);
   }
 
@@ -273,38 +266,7 @@ export class CrowdfundingService {
 
   public async cancelSubscription(req: Request, subscriptionId: string): Promise<void> {
     const startTime = logger.startOperation(req, 'cf_cancel_subscription', { subscriptionId });
-
-    const token = req.crowdfundingToken;
-    if (!token) {
-      throw new MicroserviceError('No crowdfunding token available for cancelSubscription', 401, 'CF_UNAUTHENTICATED', {
-        operation: 'cancelSubscription',
-        service: 'crowdfunding',
-      });
-    }
-
-    const baseUrl = cfBaseUrl();
-    if (!baseUrl) {
-      throw new MicroserviceError('CROWDFUNDING_API_BASE_URL is not configured — cannot call cancelSubscription', 503, 'CF_MISCONFIGURED', {
-        operation: 'cancelSubscription',
-        service: 'crowdfunding',
-      });
-    }
-
-    const response = await fetch(`${baseUrl}/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new MicroserviceError(`CF API cancelSubscription returned ${response.status}`, response.status, getHttpErrorCode(response.status), {
-        operation: 'cancelSubscription',
-        service: 'crowdfunding',
-        path: `/v1/me/subscriptions/${subscriptionId}`,
-        errorBody: text,
-      });
-    }
-
+    await cfFetch<void>(req, 'cancelSubscription', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
   }
 
