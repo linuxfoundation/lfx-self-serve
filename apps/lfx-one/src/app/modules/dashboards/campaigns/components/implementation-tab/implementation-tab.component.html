@@ -186,7 +186,7 @@
             <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
             <select
               [value]="linkedInAccountId()"
-              (change)="setLinkedInAccount($any($event.target).value)"
+              (change)="onLinkedInAccountChange($event)"
               class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="implementation-linkedin-account">
               @for (account of linkedInAccounts; track account.accountId) {
@@ -213,7 +213,7 @@
               @if (availableGeoTargets().length > 0) {
                 <select
                   class="rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs text-blue-600"
-                  (change)="addGeoTarget($any($event.target).value); $any($event.target).value = ''"
+                  (change)="onGeoTargetChange($event)"
                   aria-label="Add geo target">
                   <option value="">+ Add geo</option>
                   @for (geo of availableGeoTargets(); track geo.urn) {
@@ -265,7 +265,7 @@
               <input
                 type="number"
                 [value]="linkedInBudgetUsd()"
-                (input)="setLinkedInBudget($any($event.target).valueAsNumber || 0)"
+                (input)="onLinkedInBudgetInput($event)"
                 min="1"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-linkedin-budget" />
@@ -275,7 +275,7 @@
                 <input
                   type="checkbox"
                   [checked]="linkedInLifetimeBudget()"
-                  (change)="setLinkedInLifetimeBudget($any($event.target).checked)"
+                  (change)="onLinkedInLifetimeBudgetChange($event)"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Lifetime budget
               </label>

@@ -3,7 +3,7 @@
 
 import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
@@ -156,27 +156,31 @@ function toMs(dateStr: string, eod = false): number {
   }
   const [y, m, d] = dateStr.split('-').map(Number);
   if (eod) {
-    const endMs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-    // Ensure end-of-day timestamps are never in the past — LinkedIn rejects
-    // runSchedule.end values that have already elapsed.
+    const endMs = Date.UTC(y, m - 1, d, 23, 59, 59, 999);
     if (endMs <= Date.now()) {
       throw new Error(`End date ${dateStr} is in the past`);
     }
     return endMs;
   }
-  const localStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
-  if (localStart <= Date.now()) {
+  const utcStart = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  if (utcStart <= Date.now()) {
     return Date.now() + 5 * 60 * 1000;
   }
-  return localStart;
+  return utcStart;
 }
 
 function accountUrn(accountId: string): string {
   return `urn:li:sponsoredAccount:${accountId}`;
 }
 
-function orgUrn(): string {
-  return `urn:li:organization:${getOrgId()}`;
+function resolveOrgId(accountId: string): string {
+  const account = LINKEDIN_AD_ACCOUNTS.find((a) => a.accountId === accountId);
+  if (account) return account.organizationId;
+  return getOrgId();
+}
+
+function orgUrn(accountId: string): string {
+  return `urn:li:organization:${resolveOrgId(accountId)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +317,7 @@ export async function createDarkPost(accountId: string, introText: string, headl
   };
 
   const body: Record<string, unknown> = {
-    author: orgUrn(),
+    author: orgUrn(accountId),
     commentary: intro,
     visibility: 'PUBLIC',
     distribution: {

@@ -195,6 +195,24 @@ export class ImplementationTabComponent {
     this.linkedInAccountId.set(accountId);
   }
 
+  protected onLinkedInAccountChange(event: Event): void {
+    this.linkedInAccountId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onGeoTargetChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.addGeoTarget(select.value);
+    select.value = '';
+  }
+
+  protected onLinkedInBudgetInput(event: Event): void {
+    this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
+  protected onLinkedInLifetimeBudgetChange(event: Event): void {
+    this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+  }
+
   protected submit(): void {
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
