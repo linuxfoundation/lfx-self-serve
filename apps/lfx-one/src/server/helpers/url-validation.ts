@@ -195,6 +195,7 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
 // ---------------------------------------------------------------------------
 // SSRF-safe URL validation and fetch for scraping user-provided URLs.
 // Validates protocol, port, hostname patterns, and DNS-resolved IPs.
+// Fetches connect directly to DNS-resolved IPs to prevent DNS rebinding.
 // ---------------------------------------------------------------------------
 
 const PRIVATE_IP_PATTERNS = [
@@ -211,7 +212,14 @@ const PRIVATE_IP_PATTERNS = [
   /^fe80:/i,
 ];
 
-export async function validateScrapeUrl(url: string): Promise<string> {
+interface SsrfSafeTarget {
+  host: string;
+  port: number;
+  path: string;
+  resolvedIp: string;
+}
+
+async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -250,41 +258,70 @@ export async function validateScrapeUrl(url: string): Promise<string> {
   } catch {
     throw new Error('DNS resolution failed — cannot verify host safety');
   }
-  for (const addr of [...addresses4, ...addresses6]) {
+  const allAddresses = [...addresses4, ...addresses6];
+  if (allAddresses.length === 0) {
+    throw new Error('DNS resolution returned no addresses');
+  }
+  for (const addr of allAddresses) {
     const checkAddr = addr.replace(/^::ffff:/i, '');
     if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }
 
-  return `https://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return { host: parsed.host, port, path: `${parsed.pathname}${parsed.search}${parsed.hash}`, resolvedIp: allAddresses[0] };
+}
+
+export async function validateScrapeUrl(url: string): Promise<string> {
+  const target = await resolveAndValidate(url);
+  return `https://${target.host}${target.path}`;
 }
 
 export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
-  const safeUrl = await validateScrapeUrl(url);
-  let response = await fetch(safeUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-    redirect: 'manual',
-  });
+  const https = await import('node:https');
+  const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+
+  const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; location?: string }> =>
+    new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: t.resolvedIp,
+          port: t.port,
+          path: t.path,
+          method: 'GET',
+          headers: { Host: t.host, 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
+          servername: t.host,
+          signal: combinedSignal,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const loc = res.headers['location'];
+            resolve({ body: Buffer.concat(chunks).toString('utf-8'), statusCode: res.statusCode ?? 0, location: Array.isArray(loc) ? loc[0] : loc });
+          });
+          res.on('error', reject);
+        }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+
+  let target = await resolveAndValidate(url);
+  let result = await doRequest(target);
 
   let redirectCount = 0;
-  let currentUrl = safeUrl;
-  while (response.status >= 300 && response.status < 400 && redirectCount < 5) {
-    const location = response.headers.get('location');
-    if (!location) break;
-    currentUrl = await validateScrapeUrl(new URL(location, currentUrl).href);
-    response = await fetch(currentUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
-      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-      redirect: 'manual',
-    });
+  while (result.statusCode >= 300 && result.statusCode < 400 && redirectCount < 5) {
+    if (!result.location) break;
+    const nextUrl = new URL(result.location, `https://${target.host}${target.path}`).href;
+    target = await resolveAndValidate(nextUrl);
+    result = await doRequest(target);
     redirectCount++;
   }
 
-  if (!response.ok) {
-    return { html: '', ok: false, status: response.status };
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    return { html: '', ok: false, status: result.statusCode };
   }
 
-  return { html: await response.text(), ok: true, status: response.status };
+  return { html: result.body, ok: true, status: result.statusCode };
 }
