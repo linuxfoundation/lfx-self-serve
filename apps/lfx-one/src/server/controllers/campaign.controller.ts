@@ -12,7 +12,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
-import { CampaignMetricsService } from '../services/campaign-metrics.service';
+import { CampaignMetricsService, LinkedInMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
@@ -21,6 +21,7 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
   private readonly metricsService = new CampaignMetricsService();
+  private readonly linkedInMetricsService = new LinkedInMetricsService();
   private readonly activeStreams = new Set<Response>();
 
   public constructor() {
@@ -306,6 +307,21 @@ export class CampaignController {
       logger.success(req, 'hubspot_utm_create', startTime, { created: result.created });
       res.json(result);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
+    const accountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');
+    const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountId });
+
+    try {
+      const data = await this.linkedInMetricsService.getLinkedInMonitorData(req, accountId, days);
+      logger.success(req, 'linkedin_monitor', startTime, { campaigns: data.campaigns.length });
+      res.json(data);
+    } catch (error) {
+      logger.error(req, 'linkedin_monitor', startTime, error, { days, accountId });
       next(error);
     }
   }

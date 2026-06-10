@@ -4,7 +4,15 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { CampaignMonitorResponse, DateRangeOption, KeywordActionType, KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignMonitorResponse,
+  DateRangeOption,
+  KeywordActionType,
+  KeywordMetrics,
+  KeywordMetricsResponse,
+  LinkedInActionItem,
+  LinkedInMonitorResponse,
+} from '@lfx-one/shared/interfaces';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
@@ -62,11 +70,29 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly hasLowQualityKeywords = computed(() => this.lowQualityKeywords().length > 0);
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 
+  // LinkedIn optimization
+  protected readonly linkedInAccountOptions = [
+    { accountId: '509430019', label: 'LF Events' },
+    { accountId: '538170226', label: 'The Linux Foundation' },
+    { accountId: '500928401', label: 'CNCF' },
+    { accountId: '508209098', label: 'LF Education' },
+    { accountId: '537341179', label: 'Agentic AI Foundation' },
+    { accountId: '515244770', label: 'OpenJS Foundation' },
+    { accountId: '514596831', label: 'OpenSSF' },
+    { accountId: '514553720', label: 'OpenSearch Project' },
+  ] as const;
+  protected readonly selectedLinkedInAccountId = signal<string>('509430019');
+  protected readonly linkedInLoading = signal(false);
+  protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
+  protected readonly linkedInError = signal<string | null>(null);
+  protected readonly linkedInActionItems = computed<LinkedInActionItem[]>(() => this.linkedInData()?.actionItems ?? []);
+
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
 
   public ngOnInit(): void {
     this.fetchData();
+    this.fetchLinkedInOptimization();
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -115,6 +141,36 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
       });
+  }
+
+  protected setLinkedInAccount(accountId: string): void {
+    this.selectedLinkedInAccountId.set(accountId);
+    this.fetchLinkedInOptimization();
+  }
+
+  protected fetchLinkedInOptimization(): void {
+    this.linkedInLoading.set(true);
+    this.linkedInError.set(null);
+    this.campaignService
+      .getLinkedInMonitorData(this.selectedLinkedInAccountId(), this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.linkedInData.set(data);
+          this.linkedInLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn data');
+          this.linkedInLoading.set(false);
+        },
+      });
+  }
+
+  protected linkedInPriorityClass(p: string): string {
+    if (p === 'HIGH') return 'bg-red-100 text-red-700';
+    if (p === 'MEDIUM') return 'bg-amber-100 text-amber-700';
+    return 'bg-blue-100 text-blue-700';
   }
 
   protected executeKeywordAction(kw: KeywordMetrics, action: KeywordActionType): void {

@@ -10,11 +10,13 @@ import type {
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
+  LinkedInMonitorResponse,
   PacingLabel,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
+import { getLinkedInAnalytics } from './linkedin-ads.service';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -397,4 +399,15 @@ function aggregateDemoBuckets(rows: unknown[], labelExtractor: (row: Record<stri
   }
 
   return [...buckets.values()];
+}
+
+// ---------------------------------------------------------------------------
+// CampaignMetricsService — LinkedIn analytics
+// ---------------------------------------------------------------------------
+
+export class LinkedInMetricsService {
+  public async getLinkedInMonitorData(req: Request, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
+    logger.debug(req, 'linkedin_monitor', 'Fetching LinkedIn campaign analytics', { accountId, days });
+    return getLinkedInAnalytics(req, accountId, days);
+  }
 }

@@ -493,6 +493,68 @@ export interface OptimizationInsightsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// LinkedIn Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type LinkedInPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+export type LinkedInActionPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface LinkedInCreativeMetrics {
+  creativeId: string;
+  creativeName: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  conversions: number;
+  status: string;
+}
+
+export interface LinkedInCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  eventName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: LinkedInPacingLabel;
+  creatives: LinkedInCreativeMetrics[];
+  startDate: string;
+  endDate: string;
+}
+
+export interface LinkedInAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface LinkedInActionItem {
+  priority: LinkedInActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface LinkedInMonitorResponse {
+  accountId: string;
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: LinkedInCampaignMetrics[];
+  accountTotals: LinkedInAccountTotals;
+  actionItems: LinkedInActionItem[];
+}
+
+// ---------------------------------------------------------------------------
 // HubSpot UTM
 // ---------------------------------------------------------------------------
 

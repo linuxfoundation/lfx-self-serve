@@ -4,7 +4,7 @@
 import type { LinkedInCampaignCreateRequest, LinkedInCampaignCreateResult, LinkedInGeoTarget, LinkedInTargetingProfile } from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
-import { LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
+import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
@@ -467,6 +467,288 @@ export async function executeLinkedInCampaignCreation(req: Request | undefined, 
     logger.error(req, 'linkedin_campaign_create', startTime, error, { event: params.eventName });
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Analytics — campaign + creative metrics via adAnalytics
+// ---------------------------------------------------------------------------
+
+function toDateParts(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.split('-').map(Number);
+  return { year: y, month: m, day: d };
+}
+
+function dateRangeParams(days: number): { start: string; end: string } {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  return {
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0],
+  };
+}
+
+export async function getLinkedInAnalytics(
+  req: Request | undefined,
+  accountId: string,
+  days: number
+): Promise<import('@lfx-one/shared/interfaces').LinkedInMonitorResponse> {
+  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
+  const token = getLinkedInEnv('LINKEDIN_ACCESS_TOKEN');
+  const version = LINKEDIN_API_VERSION;
+
+  const { start, end } = dateRangeParams(days);
+  const startParts = toDateParts(start);
+  const endParts = toDateParts(end);
+
+  const baseHeaders = {
+    Authorization: `Bearer ${token}`,
+    'LinkedIn-Version': version,
+    'X-RestLi-Protocol-Version': '2.0.0',
+  };
+
+  // --- Fetch campaign list for this account ---
+  const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE)))&count=50`;
+  const campaignsResp = await fetch(campaignsUrl, {
+    headers: baseHeaders,
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+  });
+  if (!campaignsResp.ok) {
+    const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}`);
+    logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
+    throw err;
+  }
+  const campaignsData = (await campaignsResp.json()) as {
+    elements?: {
+      id: number;
+      name: string;
+      status: string;
+      totalBudget?: { amount: string };
+      dailyBudget?: { amount: string };
+      runSchedule?: { start: number; end: number };
+    }[];
+  };
+  const campaigns = campaignsData.elements ?? [];
+
+  if (campaigns.length === 0) {
+    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+    const result: import('@lfx-one/shared/interfaces').LinkedInMonitorResponse = {
+      accountId,
+      accountLabel: account?.label ?? accountId,
+      pulledAt: new Date().toISOString(),
+      dateRange: { mode: `last_${days}_days` },
+      campaigns: [],
+      accountTotals: { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaignCount: 0 },
+      actionItems: [],
+    };
+    logger.success(req, 'linkedin_analytics', startTime, { campaigns: 0 });
+    return result;
+  }
+
+  // --- Fetch analytics for all campaigns in one call ---
+  const campaignUrns = campaigns.map((c) => `urn:li:sponsoredCampaign:${c.id}`).join(',');
+  const analyticsParams = new URLSearchParams({
+    q: 'analytics',
+    pivot: 'CAMPAIGN',
+    dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
+    timeGranularity: 'ALL',
+    campaigns: `List(${campaignUrns})`,
+    fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
+  });
+
+  const analyticsUrl = `${LINKEDIN_BASE_URL}/adAnalytics?${analyticsParams.toString()}`;
+  const analyticsResp = await fetch(analyticsUrl, {
+    headers: baseHeaders,
+    signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+  });
+
+  const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
+  if (analyticsResp.ok) {
+    const analyticsData = (await analyticsResp.json()) as {
+      elements?: {
+        pivotValue?: string;
+        impressions?: number;
+        clicks?: number;
+        costInLocalCurrency?: string;
+        externalWebsiteConversions?: number;
+      }[];
+    };
+    for (const el of analyticsData.elements ?? []) {
+      if (el.pivotValue) {
+        analyticsMap.set(el.pivotValue, {
+          impressions: el.impressions ?? 0,
+          clicks: el.clicks ?? 0,
+          spend: parseFloat(el.costInLocalCurrency ?? '0'),
+          conversions: el.externalWebsiteConversions ?? 0,
+        });
+      }
+    }
+  }
+
+  // --- Fetch creative metrics per campaign ---
+  const creativeAnalyticsMap = new Map<string, import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[]>();
+  for (const camp of campaigns) {
+    const creativeParams = new URLSearchParams({
+      q: 'analytics',
+      pivot: 'CREATIVE',
+      dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
+      timeGranularity: 'ALL',
+      campaigns: `List(urn:li:sponsoredCampaign:${camp.id})`,
+      fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
+    });
+    const creativeResp = await fetch(`${LINKEDIN_BASE_URL}/adAnalytics?${creativeParams.toString()}`, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
+    });
+    if (creativeResp.ok) {
+      const creativeData = (await creativeResp.json()) as {
+        elements?: {
+          pivotValue?: string;
+          impressions?: number;
+          clicks?: number;
+          costInLocalCurrency?: string;
+          externalWebsiteConversions?: number;
+        }[];
+      };
+      const creatives: import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[] = (creativeData.elements ?? []).map((el) => {
+        const creativeId = el.pivotValue?.replace('urn:li:sponsoredCreative:', '') ?? '';
+        const clicks = el.clicks ?? 0;
+        const impressions = el.impressions ?? 0;
+        return {
+          creativeId,
+          creativeName: `Creative ${creativeId}`,
+          impressions,
+          clicks,
+          ctr: impressions > 0 ? clicks / impressions : 0,
+          spend: parseFloat(el.costInLocalCurrency ?? '0'),
+          conversions: el.externalWebsiteConversions ?? 0,
+          status: 'ACTIVE',
+        };
+      });
+      creativeAnalyticsMap.set(String(camp.id), creatives);
+    }
+  }
+
+  // --- Build campaign metrics ---
+  const campaignMetrics: import('@lfx-one/shared/interfaces').LinkedInCampaignMetrics[] = campaigns.map((camp) => {
+    const urn = `urn:li:sponsoredCampaign:${camp.id}`;
+    const analytics = analyticsMap.get(urn) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
+    const totalBudget = parseFloat(camp.totalBudget?.amount ?? '0');
+    const dailyBudget = parseFloat(camp.dailyBudget?.amount ?? '0');
+    let pacingPct = 0;
+    if (totalBudget > 0) {
+      pacingPct = (analytics.spend / totalBudget) * 100;
+    } else if (dailyBudget > 0) {
+      pacingPct = (analytics.spend / (dailyBudget * days)) * 100;
+    }
+    let pacingLabel: import('@lfx-one/shared/interfaces').LinkedInPacingLabel = 'overspending';
+    if (pacingPct < 40) {
+      pacingLabel = 'underspending';
+    } else if (pacingPct < 90) {
+      pacingLabel = 'normal';
+    } else if (pacingPct < 105) {
+      pacingLabel = 'constrained';
+    }
+    const startMs = camp.runSchedule?.start ?? 0;
+    const endMs = camp.runSchedule?.end ?? 0;
+    return {
+      campaignId: String(camp.id),
+      campaignName: camp.name,
+      eventName: camp.name.split(' | ')[1] ?? camp.name,
+      status: camp.status,
+      totalBudget,
+      dailyBudget,
+      spend: analytics.spend,
+      impressions: analytics.impressions,
+      clicks: analytics.clicks,
+      ctr: analytics.impressions > 0 ? analytics.clicks / analytics.impressions : 0,
+      conversions: analytics.conversions,
+      pacingPct,
+      pacingLabel,
+      creatives: creativeAnalyticsMap.get(String(camp.id)) ?? [],
+      startDate: startMs ? new Date(startMs).toISOString().split('T')[0] : '',
+      endDate: endMs ? new Date(endMs).toISOString().split('T')[0] : '',
+    };
+  });
+
+  // --- Action items ---
+  const actionItems: import('@lfx-one/shared/interfaces').LinkedInActionItem[] = [];
+  for (const c of campaignMetrics) {
+    if (c.creatives.length === 0 && c.status === 'ACTIVE') {
+      actionItems.push({
+        priority: 'HIGH',
+        campaignName: c.campaignName,
+        issue: 'No ad creatives — campaign cannot deliver',
+        action: 'Upload ad images and copy in LinkedIn Campaign Manager to start delivery',
+      });
+    } else if (c.pacingLabel === 'underspending') {
+      actionItems.push({
+        priority: 'HIGH',
+        campaignName: c.campaignName,
+        issue: 'Underspending — pacing below 40%',
+        action: 'Check targeting breadth, bid strategy, or budget floor',
+      });
+    }
+    if (c.pacingLabel === 'constrained' || c.pacingLabel === 'overspending') {
+      actionItems.push({
+        priority: 'MEDIUM',
+        campaignName: c.campaignName,
+        issue: 'Budget constrained — pacing above 90%',
+        action: 'Consider increasing budget if event is in peak registration period',
+      });
+    }
+    if (c.ctr > 0 && c.ctr < 0.003) {
+      actionItems.push({
+        priority: 'MEDIUM',
+        campaignName: c.campaignName,
+        issue: `Low CTR: ${(c.ctr * 100).toFixed(2)}%`,
+        action: 'Refresh ad copy or images; review audience targeting',
+      });
+    }
+    if (c.clicks > 50 && c.conversions === 0) {
+      actionItems.push({
+        priority: 'MEDIUM',
+        campaignName: c.campaignName,
+        issue: 'Clicks without conversions',
+        action: 'Audit LinkedIn Insight Tag on registration landing page',
+      });
+    }
+    if (c.status === 'PAUSED' && (c.totalBudget > 10 || c.dailyBudget > 1)) {
+      actionItems.push({
+        priority: 'LOW',
+        campaignName: c.campaignName,
+        issue: 'Campaign is PAUSED with real budget',
+        action: 'Confirm intentional pause or activate',
+      });
+    }
+  }
+  const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  actionItems.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+
+  const totals = campaignMetrics.reduce(
+    (acc, c) => ({
+      spend: acc.spend + c.spend,
+      impressions: acc.impressions + c.impressions,
+      clicks: acc.clicks + c.clicks,
+      conversions: acc.conversions + c.conversions,
+      campaignCount: acc.campaignCount + 1,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaignCount: 0 }
+  );
+
+  const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+  const result: import('@lfx-one/shared/interfaces').LinkedInMonitorResponse = {
+    accountId,
+    accountLabel: account?.label ?? accountId,
+    pulledAt: new Date().toISOString(),
+    dateRange: { mode: `last_${days}_days` },
+    campaigns: campaignMetrics,
+    accountTotals: totals,
+    actionItems,
+  };
+
+  logger.success(req, 'linkedin_analytics', startTime, { campaigns: campaignMetrics.length, actionItems: actionItems.length });
+  return result;
 }
 
 // ---------------------------------------------------------------------------
