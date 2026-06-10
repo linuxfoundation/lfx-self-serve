@@ -1,11 +1,15 @@
 ---
-name: develop
+name: self-serve-dev
 description: >
   Guided development workflow for building, fixing, updating, or refactoring
-  code — components, services, backend endpoints, shared types, or full features.
+  code, components, services, backend endpoints, shared types, or full features.
   Use whenever someone wants to add a feature, fix a bug, modify existing code,
   create something new, refactor, or implement any code change.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
+paths:
+  - 'apps/lfx-one/src/**'
+  - 'apps/lfx-one/e2e/**'
+  - 'packages/shared/src/**'
 ---
 
 # LFX One Development Guide
@@ -58,6 +62,8 @@ Before jumping into code, assess whether the planned work fits in a single PR. P
 
 If the plan looks like it will exceed 1000 lines, **propose a PR sequence to the contributor before writing code**. Each PR should deliver a cohesive, independently reviewable piece.
 
+If you are unsure where new code should live (a new component, a new module, a new type, a new backend service, or whether to use a user token vs M2M), walk the **[Placement Decision Trees](../../../docs/architecture/placement.md)** before continuing.
+
 ### Determine Workflows
 
 Based on the plan, determine which workflow(s) apply:
@@ -87,17 +93,9 @@ If the work is a bug fix, enhancement, or refactoring of existing code:
 
 ### Check the Upstream API Contract
 
-The LFX One backend is a thin proxy layer — it proxies requests to external Go microservices. The feature can only work if those microservices expose the endpoints you need.
+The LFX One backend is a thin proxy layer, it proxies requests to external Go microservices. The feature can only work if those microservices expose the endpoints you need.
 
-| Domain            | External Repo                                                                                 | Key Areas to Check                                |
-| ----------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **Queries**       | [lfx-v2-query-service](https://github.com/linuxfoundation/lfx-v2-query-service)               | Resource types, query params, pagination, filters |
-| **Projects**      | [lfx-v2-project-service](https://github.com/linuxfoundation/lfx-v2-project-service)           | Project CRUD, slugs, membership                   |
-| **Meetings**      | [lfx-v2-meeting-service](https://github.com/linuxfoundation/lfx-v2-meeting-service)           | Meeting CRUD, RSVPs, recordings, calendar         |
-| **Mailing Lists** | [lfx-v2-mailing-list-service](https://github.com/linuxfoundation/lfx-v2-mailing-list-service) | Groups.io integration, subscriptions              |
-| **Committees**    | [lfx-v2-committee-service](https://github.com/linuxfoundation/lfx-v2-committee-service)       | Committee CRUD, membership, roles                 |
-| **Voting**        | [lfx-v2-voting-service](https://github.com/linuxfoundation/lfx-v2-voting-service)             | Poll CRUD, casting votes, results                 |
-| **Surveys**       | [lfx-v2-survey-service](https://github.com/linuxfoundation/lfx-v2-survey-service)             | Survey CRUD, responses, NPS analytics             |
+See the `/lfx` skill's `references/repo-map.md` for the upstream microservice repo list (Queries, Projects, Meetings, Mailing Lists, Committees, Voting, Surveys) with owning repo paths and default peers. For each domain, the key areas to check are: resource types and CRUD operations, query params, pagination, filters, and the external integrations the service owns.
 
 ```bash
 # Read the OpenAPI spec for the full API contract
@@ -116,7 +114,7 @@ gh api repos/linuxfoundation/<repo-name>/contents/design/<file>.go \
 
 **STOP. Do not proceed to frontend work.** Instead:
 
-1. **Switch to the upstream microservice repo** — clone it and check if it has its own Claude Code skills (`/develop`, etc.) that should be used for building there
+1. **Switch to the upstream microservice repo** — clone it and check if it has its own Claude Code skills (`/self-serve-dev`, etc.) that should be used for building there
 2. **Build the required API endpoints** in the upstream repo first, following that repo's conventions and skills
 3. **Get the upstream changes merged and deployed** (or at minimum, confirm the API contract is finalized)
 4. **Then return to this repo** to build the proxy layer and frontend
@@ -148,6 +146,7 @@ Read the relevant architecture docs **before generating code**. These are the so
 - **`docs/architecture/frontend/styling-system.md`** — CSS layers, Tailwind configuration
 - **`docs/architecture/frontend/state-management.md`** — Service-based state, signal architecture
 - **`docs/architecture/frontend/drawer-pattern.md`** — Drawer components with lazy loading and charts (if building a drawer)
+- **`.claude/skills/self-serve-dev/references/frontend-code-generation.md`** — Self Serve frontend generation rules for components, drawers, pagination, and templates
 
 ### For Backend Work
 
@@ -222,7 +221,7 @@ Key rules: `MicroserviceProxyService` for API calls, `logger` service for loggin
 
 Key rules: `providedIn: 'root'`, `inject(HttpClient)`, `catchError` for GETs, `take(1)` for writes, signals can't use rxjs pipes.
 
-**Read `references/frontend-service.md`** for full patterns, examples, and checklist.
+**Read `references/frontend-code-generation.md`** (Section 2 - service generation) for full patterns, examples, and checklist.
 
 ---
 
@@ -230,7 +229,7 @@ Key rules: `providedIn: 'root'`, `inject(HttpClient)`, `catchError` for GETs, `t
 
 Key rules: Standalone with direct imports, correct placement per category, 11-section class structure, `@if`/`@for` templates, `data-testid` attributes, `flex + gap` not `space-y`.
 
-**Read `references/frontend-component.md`** for full placement table, examples, and checklist.
+**Read `references/frontend-code-generation.md`** (Section 1 - component generation) for full placement table, examples, and checklist.
 
 ---
 
@@ -239,8 +238,8 @@ Key rules: Standalone with direct imports, correct placement per category, 11-se
 Run the full validation suite:
 
 ```bash
-yarn lint          # Check for linting errors
 yarn format        # Apply formatting
+yarn lint          # Check for linting errors
 yarn build         # Verify build succeeds
 ```
 

@@ -185,8 +185,9 @@ export const getItems = async (req: Request, res: Response, next: NextFunction) 
     logger.success(req, 'get_items', startTime, { count: result.data.length });
     res.json(result);
   } catch (error) {
-    logger.error(req, 'get_items', startTime, error);
-    next(error); // Never res.status(500).json() — use next(error)
+    // Do NOT call logger.error() here — apiErrorHandler logs centrally.
+    // Use bare `next(error)`. Never `res.status(500).json()`.
+    return next(error);
   }
 };
 ```
@@ -210,7 +211,7 @@ export class ItemService {
 
 ### Logging Rules
 
-- **Controllers**: `logger.startOperation()` → `logger.success()` / `logger.error()` with `startTime`
+- **Controllers**: `logger.startOperation()` → `logger.success()` on success; prefer a bare `return next(error)` in catch blocks so `apiErrorHandler` logs all errors centrally and no duplicate log is emitted. Logging in a catch block is still legitimate where it earns its place: controllers that handle their own response and never delegate to `next(error)` / `apiErrorHandler` (SSE/streaming, redirect-based auth callbacks, or paths where headers are already sent), partial-failure / batch helpers that log and continue, and cases that attach context the middleware cannot see.
 - **Services**: `logger.debug()` for tracing, `logger.info()` for significant operations, `logger.warning()` for graceful errors
 - **Never** import `serverLogger` directly — always use `logger` from `logger.service.ts`
 

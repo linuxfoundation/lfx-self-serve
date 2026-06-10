@@ -255,7 +255,7 @@ This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, al
 
 **When:** Critical failures requiring immediate attention
 
-- **In Controllers**: HTTP operation failures (via `logger.error()` with startTime)
+- **In Controllers**: HTTP operation failures are logged centrally by `apiErrorHandler` middleware. Controllers should NOT call `logger.error()` in catch blocks — use bare `return next(error)`. (Exception: SSE/streaming controllers that handle their own response.)
 - System failures, unhandled exceptions
 - Operations that cannot continue
 - **NOT** for validation errors (handled at WARN by `apiErrorHandler`)
@@ -319,11 +319,9 @@ export class MeetingController {
 
       res.status(201).json(meeting);
     } catch (error) {
-      // Log error — apiErrorHandler will skip if already logged here
-      logger.error(req, 'create_meeting', startTime, error, {
-        project_uid: req.body.project_uid,
-      });
-      next(error);
+      // Do NOT call logger.error() here — apiErrorHandler logs all errors centrally
+      // with full structured context. Use bare next(error).
+      return next(error);
     }
   }
 }
@@ -409,16 +407,24 @@ for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA))
 
 ### Controller-Level Error Logging
 
-Controllers log errors before passing them to middleware:
+**Standard controllers (default, preferred):** Prefer bare `next(error)` in catch blocks rather than calling `logger.error()` first. The `apiErrorHandler` middleware logs all errors centrally with full structured context (error type, status code, request ID, path, method), so a plain delegation keeps logging in one place and avoids duplicate logs. Adding a `logger.error()` call before `next(error)` purely to restate what the middleware already records is the pattern to avoid.
 
 ```typescript
 try {
   // ... operation
 } catch (error) {
-  logger.error(req, 'operation_name', startTime, error, metadata);
-  next(error); // Pass to error middleware
+  // Prefer delegating — apiErrorHandler logs centrally
+  return next(error); // Pass to error middleware
 }
 ```
+
+**Legitimate exceptions:** Some controller paths do log in catch blocks for good reason, and that is fine:
+
+- **Controllers that handle their own response** — any path that never calls `next(error)` / never reaches `apiErrorHandler` (SSE / streaming controllers calling `res.end()`, redirect-based flows such as auth callbacks, or any path where headers are already sent) must log errors itself.
+- **Partial-failure / batch paths** — helpers that log a failure and continue processing remaining items, or that record per-item failures, legitimately log even when they later delegate.
+- **Added context** — logging to attach context the middleware cannot see (e.g. a specific error classification) before delegating is acceptable.
+
+The middleware's `skipIfLogged` option below makes the delegating-after-logging paths safe by preventing a double log; it is not an invitation to restate the middleware's log in every catch block.
 
 ### Error Middleware with Severity-Based Logging
 
@@ -478,11 +484,15 @@ export function apiErrorHandler(error: Error, req: Request, res: Response, next:
 
 ### How Duplicate Prevention Works
 
-1. Controller logs error: `logger.error(req, 'create_meeting', startTime, error, metadata)`
+When standard controllers delegate with a bare `next(error)`, `apiErrorHandler` is the single source of error logs. For the paths where a controller does call `logger.error()` before delegating to the middleware (SSE / self-responding flows, partial-failure helpers, or added-context logging), `skipIfLogged` prevents a double log:
+
+1. (Self-responding / partial-failure / added-context paths) Controller logs error: `logger.error(req, 'create_meeting', startTime, error, metadata)`
 2. LoggerService marks operation as "logged" in WeakMap
 3. Error middleware tries to log: `logger.error(req, operation, Date.now(), error, metadata, { skipIfLogged: true })`
 4. LoggerService checks if already logged → skips if true
 5. Result: Single error log, no duplicates
+
+For the **default** case (bare `next(error)` in catch), step 1 does not happen and step 3 is the only log emitted.
 
 ## ⏱️ Duration Tracking
 

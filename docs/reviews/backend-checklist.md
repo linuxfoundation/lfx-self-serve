@@ -267,17 +267,7 @@ gh api repos/linuxfoundation/<repo>/contents/gen/http/openapi3.yaml --jq '.conte
 
 **Check that:** paths exist, HTTP methods match, request/response shapes match, query params are correct.
 
-**Upstream repo map:**
-
-| Domain        | Repo                        |
-| ------------- | --------------------------- |
-| Queries       | lfx-v2-query-service        |
-| Projects      | lfx-v2-project-service      |
-| Meetings      | lfx-v2-meeting-service      |
-| Mailing Lists | lfx-v2-mailing-list-service |
-| Committees    | lfx-v2-committee-service    |
-| Voting        | lfx-v2-voting-service       |
-| Surveys       | lfx-v2-survey-service       |
+**Upstream repo map:** see the `/lfx` skill's `references/repo-map.md` for the canonical upstream microservice list (Queries, Projects, Meetings, Mailing Lists, Committees, Voting, Surveys) with owning repo paths and default peers. Do not duplicate the table here — `/lfx` owns it.
 
 ---
 
@@ -288,9 +278,8 @@ gh api repos/linuxfoundation/<repo>/contents/gen/http/openapi3.yaml --jq '.conte
 Broad categories the hook protects (non-exhaustive, see the hook for the authoritative list):
 
 - **Server core:** `server.ts`, `server-logger.ts`, `middleware/*`
-- **Singleton services:** `logger.service.ts`, `microservice-proxy.service.ts`, `nats.service.ts`, `snowflake.service.ts`, `supabase.service.ts`, `ai.service.ts`, `project.service.ts`, `etag.service.ts`
+- **Singleton services:** `logger.service.ts`, `microservice-proxy.service.ts`, `nats.service.ts`, `snowflake.service.ts`, `supabase.service.ts`, `ai.service.ts`, `etag.service.ts`
 - **Helpers:** `helpers/error-serializer.ts`
-- **Frontend config:** `app.routes.ts`
 - **Git hooks / lint / format:** `.husky/*`, `eslint.config.*`, `.prettierrc*`, `check-headers.sh`
 - **Build config:** `turbo.json`, `angular.json`
 - **Package files:** `package.json`, `yarn.lock`

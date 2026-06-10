@@ -219,13 +219,15 @@ import { MyService } from '@app/services/my-service';
 
 ## Deployment
 
-The application supports multiple deployment strategies:
+The Self Serve app is packaged as a Docker image and deployed to Kubernetes:
 
-1. **Node.js with PM2**: Production process management
-2. **Docker**: Multi-stage builds for optimized containers
-3. **AWS ECS**: Automated CI/CD pipeline
+1. **Docker**: Multi-stage builds for optimized containers
+2. **Node.js with PM2** inside the container (`ecosystem.config.js`)
+3. **Helm + ArgoCD**: chart in `../../charts/lfx-self-serve/`; environment values
+   and rollouts in the `lfx-v2-argocd` repo
 
-See the root `docs/deployment.md` for detailed deployment instructions.
+See `../../charts/lfx-self-serve/README.md` for chart specifics, and the
+`lfx-v2-argocd` repo for environment values, image tags, and ApplicationSets.
 
 ## Development Guidelines
 
