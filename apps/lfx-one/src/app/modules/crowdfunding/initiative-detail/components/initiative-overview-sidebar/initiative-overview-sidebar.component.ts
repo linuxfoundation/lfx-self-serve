@@ -10,7 +10,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { CardComponent } from '@components/card/card.component';
 import { CROWDFUNDING_DONOR_AVATAR_PALETTE } from '@lfx-one/shared/constants';
 import { CrowdfundingTransaction, InitiativeDetail } from '@lfx-one/shared/interfaces';
-import { formatCurrency } from '@lfx-one/shared/utils';
+import { formatCurrency, getDonorAvatarClass } from '@lfx-one/shared/utils';
 import { switchMap } from 'rxjs';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
 
@@ -40,16 +40,8 @@ export class InitiativeOverviewSidebarComponent {
       transactions().data.map((t) => ({
         ...t,
         formattedAmount: formatCurrency(t.amountCents / 100),
-        avatarClass: this.donorAvatarClass(t.donorName ?? ''),
+        avatarClass: getDonorAvatarClass(t.donorName ?? '', CROWDFUNDING_DONOR_AVATAR_PALETTE),
       }))
     );
-  }
-
-  private donorAvatarClass(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = (hash * 31 + name.charCodeAt(i)) & 0xffffff;
-    }
-    return CROWDFUNDING_DONOR_AVATAR_PALETTE[Math.abs(hash) % CROWDFUNDING_DONOR_AVATAR_PALETTE.length];
   }
 }

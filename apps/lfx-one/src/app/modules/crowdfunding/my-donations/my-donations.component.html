@@ -40,7 +40,7 @@
   </div>
 
   <!-- Payment methods -->
-  <lfx-payment-methods [methods]="paymentMethods()" (removeCard)="onRemoveCard($event)" />
+  <lfx-payment-methods [methods]="paymentMethods()" (removeCard)="onRemoveCard($event)" (cardAdded)="onCardAdded()" />
 </div>
 
 <p-confirmDialog />

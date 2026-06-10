@@ -3,11 +3,11 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { CROWDFUNDING_DONOR_AVATAR_PALETTE, DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_TRANSACTION_STATE } from '@lfx-one/shared/constants';
-import { formatCurrency } from '@lfx-one/shared/utils';
+import { formatCurrency, getDonorAvatarClass } from '@lfx-one/shared/utils';
 import { CrowdfundingTransaction, CrowdfundingTransactionList, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { concat, concatMap, finalize, of, scan, Subject, switchMap } from 'rxjs';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
@@ -17,6 +17,7 @@ import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
   imports: [AvatarComponent],
   templateUrl: './initiative-financials.component.html',
   styleUrl: './initiative-financials.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InitiativeFinancialsComponent {
   // Dependencies
@@ -90,7 +91,7 @@ export class InitiativeFinancialsComponent {
       this.donationsState().items.map((t) => ({
         ...t,
         formattedAmount: formatCurrency(t.amountCents / 100),
-        avatarClass: this.donorAvatarClass(t.donorName ?? ''),
+        avatarClass: getDonorAvatarClass(t.donorName ?? '', CROWDFUNDING_DONOR_AVATAR_PALETTE),
       }))
     );
   }
@@ -132,11 +133,4 @@ export class InitiativeFinancialsComponent {
     );
   }
 
-  private donorAvatarClass(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = (hash * 31 + name.charCodeAt(i)) & 0xffffff;
-    }
-    return CROWDFUNDING_DONOR_AVATAR_PALETTE[Math.abs(hash) % CROWDFUNDING_DONOR_AVATAR_PALETTE.length];
-  }
 }
