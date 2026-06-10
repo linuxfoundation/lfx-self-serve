@@ -16,6 +16,8 @@ export const LINKEDIN_ACCOUNTS: readonly { accountId: string; label: string; org
   { accountId: '509430019', label: 'LF Events', orgId: '208777' },
 ] as const;
 
+export const LINKEDIN_REQUEST_TIMEOUT_MS = 30_000;
+
 export const LINKEDIN_EMPLOYER_EXCLUSIONS: readonly string[] = ['urn:li:company:33275771', 'urn:li:company:12893459'] as const;
 
 export const LINKEDIN_TARGETING_PROFILES: readonly LinkedInTargetingProfileConfig[] = [

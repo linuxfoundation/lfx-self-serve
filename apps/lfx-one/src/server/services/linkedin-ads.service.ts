@@ -14,7 +14,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
-import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_TARGETING_PROFILES } from '../constants';
+import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_REQUEST_TIMEOUT_MS, LINKEDIN_TARGETING_PROFILES } from '../constants';
 
 import type { Request } from 'express';
 
