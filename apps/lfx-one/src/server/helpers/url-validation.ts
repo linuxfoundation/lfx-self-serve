@@ -214,6 +214,7 @@ const PRIVATE_IP_PATTERNS = [
 
 interface SsrfSafeTarget {
   host: string;
+  hostname: string;
   port: number;
   path: string;
   resolvedIp: string;
@@ -269,7 +270,7 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     }
   }
 
-  return { host: parsed.host, port, path: `${parsed.pathname}${parsed.search}${parsed.hash}`, resolvedIp: allAddresses[0] };
+  return { host: parsed.host, hostname, port, path: `${parsed.pathname}${parsed.search}${parsed.hash}`, resolvedIp: allAddresses[0] };
 }
 
 export async function validateScrapeUrl(url: string): Promise<string> {
@@ -290,7 +291,7 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
           path: t.path,
           method: 'GET',
           headers: { Host: t.host, 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
-          servername: t.host,
+          servername: t.hostname,
           signal: combinedSignal,
         },
         (res) => {

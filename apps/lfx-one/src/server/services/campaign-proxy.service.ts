@@ -512,7 +512,7 @@ export class CampaignProxyService {
       return;
     }
 
-    const isRefinement = !!body.refineFeedback;
+    const isRefinement = !!body.refineFeedback && !!body.previousCopy;
     let html = '';
 
     if (!isRefinement) {
@@ -1330,7 +1330,7 @@ CRITICAL RULES:
 
 function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
-  const platforms = body.platforms ?? ['google-ads'];
+  const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');
 
