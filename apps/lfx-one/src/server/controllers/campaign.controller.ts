@@ -11,6 +11,7 @@ import type {
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
 
+import { LINKEDIN_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
@@ -313,7 +314,13 @@ export class CampaignController {
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
-    const accountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');
+    const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');
+    const validAccount = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawAccountId);
+    if (!validAccount) {
+      res.status(400).json({ error: 'Invalid LinkedIn account ID' });
+      return;
+    }
+    const accountId = validAccount.accountId;
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountId });
 
     try {
