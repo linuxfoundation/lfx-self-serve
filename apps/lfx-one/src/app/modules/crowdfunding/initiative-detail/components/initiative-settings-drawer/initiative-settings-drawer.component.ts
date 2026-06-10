@@ -101,7 +101,7 @@ export class InitiativeSettingsDrawerComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
-        const existingTopics = init.industry ? init.industry.split(',').filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v)) : [];
+        const existingTopics = init.industry ? init.industry.split(',').map((v) => v.trim()).filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v)) : [];
         this.form.patchValue({
           name: init.name,
           description: init.description,

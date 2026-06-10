@@ -111,6 +111,7 @@ export class CrowdfundingAuthService {
 
     const response = await fetch(tokenEndpoint, {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
       headers: {
         'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',

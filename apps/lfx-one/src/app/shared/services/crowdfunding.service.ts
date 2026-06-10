@@ -132,7 +132,7 @@ export class CrowdfundingService {
     return (err: HttpErrorResponse): Observable<T> => {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
-          const returnTo = encodeURIComponent(this.document.location.pathname);
+          const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
           this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
         }
         return of(fallback);
@@ -151,7 +151,7 @@ export class CrowdfundingService {
     return (err: HttpErrorResponse): Observable<never> => {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
-          const returnTo = encodeURIComponent(this.document.location.pathname);
+          const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
           this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
         }
         return EMPTY; // navigating away — don't surface a toast

@@ -246,7 +246,7 @@ export class CrowdfundingController {
     }
   }
 
-  /** PATCH /api/crowdfunding/initiatives/:slug — update an initiative's editable fields. */
+  /** PATCH /api/crowdfunding/initiatives/:id — update an initiative's editable fields. */
   public async updateInitiative(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'update_initiative');
 
@@ -364,7 +364,7 @@ export class CrowdfundingController {
 
     if (!this.crowdfundingAuthService.isConfigured()) {
       logger.warning(req, 'crowdfunding_auth_start', 'Crowdfunding auth not configured', {});
-      res.redirect(`${returnTo}?error=crowdfunding_auth_not_configured`);
+      res.redirect(this.returnToWithError(returnTo, 'crowdfunding_auth_not_configured'));
       return;
     }
 
@@ -398,7 +398,7 @@ export class CrowdfundingController {
       logger.warning(req, 'crowdfunding_auth_callback', `Auth0 returned error: ${error}`, {
         error_description: req.query['error_description'],
       });
-      res.redirect(`${returnTo}?error=${encodeURIComponent(error)}`);
+      res.redirect(this.returnToWithError(returnTo, encodeURIComponent(error)));
       return;
     }
 
@@ -407,13 +407,13 @@ export class CrowdfundingController {
         has_state: !!state,
         has_session_state: !!req.appSession?.crowdfundingAuthState,
       });
-      res.redirect(`${returnTo}?error=invalid_state`);
+      res.redirect(this.returnToWithError(returnTo, 'invalid_state'));
       return;
     }
 
     if (!code) {
       logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('No authorization code received'), {});
-      res.redirect(`${returnTo}?error=no_code`);
+      res.redirect(this.returnToWithError(returnTo, 'no_code'));
       return;
     }
 
@@ -423,7 +423,7 @@ export class CrowdfundingController {
       const currentUserSub = req.oidc?.user?.['sub'] as string;
       if (!currentUserSub) {
         logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Current user sub not found in login session'), {});
-        res.redirect(`${returnTo}?error=login_session_invalid`);
+        res.redirect(this.returnToWithError(returnTo, 'login_session_invalid'));
         return;
       }
 
@@ -431,7 +431,7 @@ export class CrowdfundingController {
         logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Crowdfunding token sub mismatch'), {
           current_user_sub: currentUserSub,
         });
-        res.redirect(`${returnTo}?error=user_mismatch`);
+        res.redirect(this.returnToWithError(returnTo, 'user_mismatch'));
         return;
       }
 
@@ -449,8 +449,13 @@ export class CrowdfundingController {
       res.redirect(returnTo);
     } catch (err) {
       logger.error(req, 'crowdfunding_auth_callback', startTime, err, {});
-      res.redirect(`${returnTo}?error=token_exchange_failed`);
+      res.redirect(this.returnToWithError(returnTo, 'token_exchange_failed'));
     }
+  }
+
+  private returnToWithError(returnTo: string, error: string): string {
+    const sep = returnTo.includes('?') ? '&' : '?';
+    return `${returnTo}${sep}error=${error}`;
   }
 
   // Accepts only in-app /crowdfunding paths to prevent open-redirect attacks.
@@ -458,8 +463,8 @@ export class CrowdfundingController {
     const DEFAULT = '/crowdfunding/initiatives';
     if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
     try {
-      const { pathname } = new URL(raw, 'http://internal');
-      return pathname.startsWith('/crowdfunding') ? pathname : DEFAULT;
+      const { pathname, search } = new URL(raw, 'http://internal');
+      return pathname.startsWith('/crowdfunding') ? pathname + search : DEFAULT;
     } catch {
       return DEFAULT;
     }
