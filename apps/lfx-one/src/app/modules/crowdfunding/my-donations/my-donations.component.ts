@@ -11,10 +11,10 @@ import { DonationsStatsBarComponent } from './components/donations-stats-bar/don
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { RecurringDonationsListComponent } from './components/recurring-donations-list/recurring-donations-list.component';
-import { ConfirmationService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
-import { map, scan, switchMap } from 'rxjs/operators';
+import { map, scan, switchMap, tap } from 'rxjs/operators';
 
 const EMPTY_RECURRING: RecurringDonation[] = [];
 
@@ -29,6 +29,7 @@ export class MyDonationsComponent {
   // ─── Private Injections ───────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
 
   // ─── Public Fields ────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = environment.urls.crowdfunding;
@@ -36,6 +37,7 @@ export class MyDonationsComponent {
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   // TODO: derive from API response once cancelled-recurring concept is implemented
   protected readonly cancelledCount = signal(0);
+  protected readonly loadingMore = signal(false);
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
   private readonly recurringRefresh$ = new BehaviorSubject<void>(undefined);
@@ -53,6 +55,8 @@ export class MyDonationsComponent {
 
   // ─── Protected Methods ────────────────────────────────────────────────────
   protected onLoadMoreDonations(): void {
+    if (this.loadingMore()) return;
+    this.loadingMore.set(true);
     this.donationHistoryOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
   }
 
@@ -71,7 +75,12 @@ export class MyDonationsComponent {
       accept: () => {
         this.crowdfundingService.cancelSubscription(donation.id).subscribe({
           next: () => this.recurringRefresh$.next(),
-          error: (err) => console.error('[MyDonationsComponent] cancelSubscription failed', err),
+          error: () =>
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Failed to cancel donation. Please try again.',
+            }),
         });
       },
     });
@@ -88,7 +97,12 @@ export class MyDonationsComponent {
       accept: () => {
         this.crowdfundingService.deletePaymentMethod().subscribe({
           next: () => this.paymentMethodRefresh$.next(),
-          error: (err) => console.error('[MyDonationsComponent] deletePaymentMethod failed', err),
+          error: () =>
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Failed to remove payment method. Please try again.',
+            }),
         });
       },
     });
@@ -120,7 +134,8 @@ export class MyDonationsComponent {
     return toSignal(
       toObservable(this.donationHistoryOffset).pipe(
         switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
-        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS)
+        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS),
+        tap(() => this.loadingMore.set(false))
       ),
       { initialValue: EMPTY_MY_DONATIONS }
     );

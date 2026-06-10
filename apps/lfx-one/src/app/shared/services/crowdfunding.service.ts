@@ -25,7 +25,7 @@ import {
   PaymentMethod,
   RecurringDonationsResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -34,20 +34,6 @@ export class CrowdfundingService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
-
-  private handleCfError<T>(fallback: T, label: string) {
-    return (err: HttpErrorResponse): Observable<T> => {
-      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
-        if (isPlatformBrowser(this.platformId)) {
-          const returnTo = encodeURIComponent(this.document.location.pathname);
-          this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
-        }
-        return of(fallback);
-      }
-      console.error(`[CrowdfundingService] ${label} failed`, err);
-      return of(fallback);
-    };
-  }
 
   public getMyInitiatives(): Observable<InitiativesResponse> {
     return this.http.get<InitiativesResponse>('/api/crowdfunding/initiatives').pipe(
@@ -75,7 +61,9 @@ export class CrowdfundingService {
 
   // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.
   public savePaymentMethod(paymentMethodId: string): Observable<PaymentMethod> {
-    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId });
+    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId }).pipe(
+      catchError(this.redirectIfCfUnauthenticated())
+    );
   }
 
   public getMyDonationStats(): Observable<DonationStats> {
@@ -101,11 +89,15 @@ export class CrowdfundingService {
   }
 
   public deletePaymentMethod(): Observable<void> {
-    return this.http.delete<void>('/api/crowdfunding/payment-method');
+    return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(
+      catchError(this.redirectIfCfUnauthenticated())
+    );
   }
 
   public cancelSubscription(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
+    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`).pipe(
+      catchError(this.redirectIfCfUnauthenticated())
+    );
   }
 
   public getInitiativeTransactions(
@@ -120,5 +112,37 @@ export class CrowdfundingService {
     return this.http.get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${slug}/transactions`, { params: httpParams }).pipe(
       catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getInitiativeTransactions'))
     );
+  }
+
+  private handleCfError<T>(fallback: T, label: string) {
+    return (err: HttpErrorResponse): Observable<T> => {
+      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
+        if (isPlatformBrowser(this.platformId)) {
+          const returnTo = encodeURIComponent(this.document.location.pathname);
+          this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
+        }
+        return of(fallback);
+      }
+      console.error(`[CrowdfundingService] ${label} failed`, err);
+      return of(fallback);
+    };
+  }
+
+  /**
+   * Error handler for mutation endpoints (POST / DELETE).
+   * Redirects to the CF auth flow on CF_UNAUTHENTICATED (expired/missing token),
+   * and rethrows all other errors so the caller's error callback can surface a toast.
+   */
+  private redirectIfCfUnauthenticated() {
+    return (err: HttpErrorResponse): Observable<never> => {
+      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
+        if (isPlatformBrowser(this.platformId)) {
+          const returnTo = encodeURIComponent(this.document.location.pathname);
+          this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
+        }
+        return EMPTY; // navigating away — don't surface a toast
+      }
+      return throwError(() => err);
+    };
   }
 }
