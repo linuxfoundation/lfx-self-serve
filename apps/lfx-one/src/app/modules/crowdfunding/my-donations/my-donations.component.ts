@@ -108,6 +108,10 @@ export class MyDonationsComponent {
     });
   }
 
+  protected onCardAdded(): void {
+    this.paymentMethodRefresh$.next();
+  }
+
   // ─── Private Initializers ─────────────────────────────────────────────────
   private initPaymentMethod(): Signal<PaymentMethod | null> {
     return toSignal(this.paymentMethodRefresh$.pipe(switchMap(() => this.crowdfundingService.getMyPaymentMethod())), { initialValue: null });
