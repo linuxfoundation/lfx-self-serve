@@ -4,6 +4,7 @@
 import { OsspreyListParams, OsspreyPackagesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { OsspreyServerService } from '../services/ossprey.service';
 import { logger } from '../services/logger.service';
 
@@ -14,16 +15,18 @@ export class OsspreyController {
     const startTime = logger.startOperation(req, 'get_ossprey_packages');
 
     try {
+      const pageRaw = getStringQueryParam(req, 'page');
+      const pageSizeRaw = getStringQueryParam(req, 'pageSize');
       const params: OsspreyListParams = {
-        page: req.query['page'] ? Number(req.query['page']) : undefined,
-        pageSize: req.query['pageSize'] ? Number(req.query['pageSize']) : undefined,
-        ecosystem: req.query['ecosystem'] as string | undefined,
-        lifecycle: req.query['lifecycle'] as string | undefined,
-        busFactor1Only: req.query['busFactor1Only'] === 'true',
-        staleOnly: req.query['staleOnly'] === 'true',
-        unstewardedOnly: req.query['unstewardedOnly'] === 'true',
-        sortBy: req.query['sortBy'] as OsspreyListParams['sortBy'],
-        sortDir: req.query['sortDir'] as OsspreyListParams['sortDir'],
+        page: pageRaw ? Number(pageRaw) : undefined,
+        pageSize: pageSizeRaw ? Number(pageSizeRaw) : undefined,
+        ecosystem: getStringQueryParam(req, 'ecosystem'),
+        lifecycle: getStringQueryParam(req, 'lifecycle'),
+        busFactor1Only: getStringQueryParam(req, 'busFactor1Only') === 'true',
+        staleOnly: getStringQueryParam(req, 'staleOnly') === 'true',
+        unstewardedOnly: getStringQueryParam(req, 'unstewardedOnly') === 'true',
+        sortBy: getStringQueryParam(req, 'sortBy') as OsspreyListParams['sortBy'],
+        sortDir: getStringQueryParam(req, 'sortDir') as OsspreyListParams['sortDir'],
       };
 
       const data: OsspreyPackagesResponse = await this.osspreyService.getPackages(req, params);
