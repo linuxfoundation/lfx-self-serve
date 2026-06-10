@@ -134,7 +134,7 @@ export class PlanningTabComponent implements OnInit {
   }
 
   protected asArray(value: unknown): unknown[] | null {
-    return Array.isArray(value) ? value : null;
+    return Array.isArray(value) ? value.filter((v) => v != null) : null;
   }
 
   protected onUrlInput(): void {
