@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import {
+  Beneficiary,
   CrowdfundingTransaction,
   FinancialSummary,
   FundingGoal,
@@ -20,6 +21,7 @@ import {
 import { FundType } from '@lfx-one/shared/enums';
 
 import {
+  BackendBeneficiary,
   BackendDonation,
   BackendGoal,
   BackendInitiative,
@@ -75,12 +77,17 @@ export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
     sponsors: (b.sponsors ?? []).map(mapSponsor),
     fundingGoals: (b.goals ?? []).map(mapFundingGoal),
     financialSummary: b.financials ? mapFinancialSummary(b) : undefined,
+    beneficiaries: (b.beneficiaries ?? []).map(mapBeneficiary),
     // Not yet available from the backend
     githubUrl: undefined,
     impactStats: undefined,
     projectHealthStats: undefined,
     projectHealthRating: undefined,
   };
+}
+
+function mapBeneficiary(b: BackendBeneficiary): Beneficiary {
+  return { id: b.id, name: b.name, email: b.email };
 }
 
 function mapSponsor(s: BackendSponsor): SponsorEntry {
