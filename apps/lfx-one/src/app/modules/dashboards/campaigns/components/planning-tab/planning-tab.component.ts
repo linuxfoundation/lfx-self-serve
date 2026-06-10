@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, OnInit, output, PLATFORM_ID, s
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { debounceTime, Subject, Subscription } from 'rxjs';
 
@@ -25,6 +25,7 @@ import type {
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  LinkedInTargetingStrategy,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -75,6 +76,7 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   protected lastLookedUpEvent = '';
   private readonly urlInput$ = new Subject<string>();
 
@@ -86,7 +88,6 @@ export class PlanningTabComponent implements OnInit {
   protected readonly editDisplayBusinessName = signal('');
   protected readonly editDisplayCta = signal('');
   protected readonly editKeywords = signal<CampaignKeyword[]>([]);
-  protected readonly editLinkedInVariants = signal<LinkedInCreativeVariant[]>([]);
   protected readonly isEditing = signal(false);
 
   // === Refine Mode Signals ===
@@ -102,55 +103,11 @@ export class PlanningTabComponent implements OnInit {
   protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && this.selectedPlatforms().size > 0);
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
-  protected readonly linkedInCopy = computed<LinkedInBriefCopy | null>(() => {
+  protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
     const copy = this.structuredCopy();
     if (!copy) return null;
     const nested = copy['platforms'] as Record<string, unknown> | undefined;
-    const raw = copy['linkedin_sponsored'] ?? nested?.['linkedin_sponsored'] ?? null;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-    const liData = raw as Record<string, unknown>;
-
-    const rawVariants = Array.isArray(liData['variants']) ? (liData['variants'] as unknown[]) : [];
-    const str = (obj: Record<string, unknown>, ...keys: string[]): string => {
-      for (const k of keys) {
-        if (typeof obj[k] === 'string') return obj[k];
-      }
-      return '';
-    };
-    const variants: LinkedInCreativeVariant[] = rawVariants
-      .filter((v): v is Record<string, unknown> => v != null && typeof v === 'object' && !Array.isArray(v))
-      .map((v) => ({
-        introText: str(v, 'intro_text', 'introText'),
-        headline: str(v, 'headline'),
-        imageUrn: str(v, 'image_urn', 'imageUrn') || undefined,
-      }));
-
-    const rawResolved = liData['resolved_geo_targets'];
-    const serverGeos: LinkedInGeoTarget[] = Array.isArray(rawResolved)
-      ? rawResolved.filter(
-          (g): g is LinkedInGeoTarget =>
-            g != null &&
-            typeof g === 'object' &&
-            typeof (g as Record<string, unknown>)['label'] === 'string' &&
-            typeof (g as Record<string, unknown>)['urn'] === 'string'
-        )
-      : [];
-    let resolvedGeos: LinkedInGeoTarget[];
-    if (serverGeos.length > 0) {
-      resolvedGeos = serverGeos;
-    } else {
-      const rawGeos = liData['recommended_geos'];
-      const geoNames = Array.isArray(rawGeos) ? rawGeos.filter((g): g is string => typeof g === 'string').map((g) => g.trim().slice(0, 100)) : [];
-      resolvedGeos = geoNames.map((name) => LINKEDIN_GEO_RESOLVE_MAP[name.toLowerCase()]).filter((geo): geo is LinkedInGeoTarget => geo != null);
-    }
-    const VALID_PROFILES: readonly LinkedInTargetingProfile[] = ['cloud-native', 'mcp', 'custom'];
-    const rawProfile = liData['recommended_targeting_profile'];
-    const profile: LinkedInTargetingProfile =
-      typeof rawProfile === 'string' && VALID_PROFILES.includes(rawProfile as LinkedInTargetingProfile)
-        ? (rawProfile as LinkedInTargetingProfile)
-        : 'cloud-native';
-
-    return { variants, recommendedGeoTargets: resolvedGeos, recommendedTargetingProfile: profile };
+    return (copy['linkedin_sponsored'] as Record<string, unknown>) ?? (nested?.['linkedin_sponsored'] as Record<string, unknown>) ?? null;
   });
 
   // === Private State ===
@@ -174,6 +131,10 @@ export class PlanningTabComponent implements OnInit {
 
   protected isPlatformSelected(platformId: CampaignPlatform): boolean {
     return this.selectedPlatforms().has(platformId);
+  }
+
+  protected asArray(value: unknown): unknown[] | null {
+    return Array.isArray(value) ? value.filter((v) => v != null) : null;
   }
 
   protected onUrlInput(): void {
@@ -223,6 +184,7 @@ export class PlanningTabComponent implements OnInit {
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
+    this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
 
     const budgetRaw = this.briefForm.controls.totalBudget.value;
@@ -233,7 +195,7 @@ export class PlanningTabComponent implements OnInit {
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
-      totalBudget: budgetStr && !isNaN(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
     };
 
     this.briefSubscription = this.campaignService
@@ -263,6 +225,7 @@ export class PlanningTabComponent implements OnInit {
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
     this.keywords.set([]);
+    this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     this.isEditing.set(false);
     this.isRefining.set(false);
@@ -294,17 +257,16 @@ export class PlanningTabComponent implements OnInit {
     };
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
-    const linkedInCopy = this.linkedInCopy();
     this.proceedToImplementation.emit({
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
       hsUtm: this.hsUtm(),
-      totalBudget: budgetStr && !isNaN(Number(budgetStr)) ? Number(budgetStr) : null,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
       selectedPlatforms: [...this.selectedPlatforms()],
-      ...(linkedInCopy ? { linkedInCopy } : {}),
+      linkedInCopy: this.getLinkedInCopy(),
     });
   }
 
@@ -354,7 +316,6 @@ export class PlanningTabComponent implements OnInit {
   protected enterEditMode(): void {
     const search = this.getSearchCopy();
     const display = this.getDisplayCopy();
-    const linkedin = this.linkedInCopy();
     this.editSearchHeadlines.set([...this.asStringArray(search?.['headlines'])]);
     this.editSearchDescriptions.set([...this.asStringArray(search?.['descriptions'])]);
     this.editDisplayHeadlines.set([...this.asStringArray(display?.['headlines'])]);
@@ -362,7 +323,6 @@ export class PlanningTabComponent implements OnInit {
     this.editDisplayBusinessName.set((display?.['business_name'] as string) ?? '');
     this.editDisplayCta.set((display?.['call_to_action'] as string) ?? '');
     this.editKeywords.set(this.keywords().map((kw) => ({ ...kw })));
-    this.editLinkedInVariants.set(linkedin?.variants?.map((v) => ({ ...v })) ?? []);
     this.isEditing.set(true);
   }
 
@@ -381,22 +341,6 @@ export class PlanningTabComponent implements OnInit {
     copy['google_search'] = search;
     const displayKey = copy['demand_gen'] ? 'demand_gen' : 'google_display';
     copy[displayKey] = display;
-
-    const editedVariants = this.editLinkedInVariants();
-    if (editedVariants.length > 0) {
-      const liKey = copy['linkedin_sponsored'] ? 'linkedin_sponsored' : 'platforms';
-      if (liKey === 'platforms') {
-        const platforms = { ...((copy['platforms'] as Record<string, unknown>) ?? {}) };
-        const liData = { ...((platforms['linkedin_sponsored'] as Record<string, unknown>) ?? {}) };
-        liData['variants'] = editedVariants.map((v) => ({ intro_text: v.introText, headline: v.headline, ...(v.imageUrn ? { image_urn: v.imageUrn } : {}) }));
-        platforms['linkedin_sponsored'] = liData;
-        copy['platforms'] = platforms;
-      } else {
-        const liData = { ...((copy['linkedin_sponsored'] as Record<string, unknown>) ?? {}) };
-        liData['variants'] = editedVariants.map((v) => ({ intro_text: v.introText, headline: v.headline, ...(v.imageUrn ? { image_urn: v.imageUrn } : {}) }));
-        copy['linkedin_sponsored'] = liData;
-      }
-    }
 
     this.structuredCopy.set(copy);
     this.keywords.set(this.editKeywords());
@@ -435,22 +379,6 @@ export class PlanningTabComponent implements OnInit {
 
   protected removeKeyword(index: number): void {
     this.editKeywords.update((kws) => kws.filter((_, i) => i !== index));
-  }
-
-  protected addLinkedInVariant(): void {
-    this.editLinkedInVariants.update((variants) => [...variants, { introText: '', headline: '' }]);
-  }
-
-  protected removeLinkedInVariant(index: number): void {
-    this.editLinkedInVariants.update((variants) => variants.filter((_, i) => i !== index));
-  }
-
-  protected updateLinkedInVariant(index: number, field: keyof LinkedInCreativeVariant, value: string): void {
-    this.editLinkedInVariants.update((variants) => {
-      const updated = variants.map((v) => ({ ...v }));
-      (updated[index] as Record<string, string>)[field] = value;
-      return updated;
-    });
   }
 
   protected enterRefineMode(): void {
@@ -542,6 +470,44 @@ export class PlanningTabComponent implements OnInit {
   }
 
   // === Private Methods ===
+  private getLinkedInCopy(): LinkedInBriefCopy | undefined {
+    if (!this.selectedPlatforms().has('linkedin-ads')) return undefined;
+    const liCopy = this.linkedInSponsoredCopy();
+    const strategy = this.linkedInStrategy();
+    const variants: LinkedInCreativeVariant[] = [];
+    if (liCopy) {
+      const rawVariants = liCopy['variants'];
+      for (const v of (Array.isArray(rawVariants) ? rawVariants : []) as Record<string, unknown>[]) {
+        if (!v || typeof v !== 'object') continue;
+        const introRaw = v['intro_text'] ?? v['introText'] ?? '';
+        const headlineRaw = v['headline'] ?? '';
+        const imageRaw = v['image_urn'] ?? v['imageUrn'];
+        variants.push({
+          introText: typeof introRaw === 'string' ? introRaw : String(introRaw),
+          headline: typeof headlineRaw === 'string' ? headlineRaw : String(headlineRaw),
+          imageUrn: typeof imageRaw === 'string' ? imageRaw : undefined,
+        });
+      }
+    }
+    const recommendedGeos: LinkedInGeoTarget[] = [];
+    const rawGeos = liCopy?.['resolved_geo_targets'];
+    if (Array.isArray(rawGeos)) {
+      for (const g of rawGeos) {
+        if (g && typeof g === 'object' && typeof g['label'] === 'string' && typeof g['urn'] === 'string') {
+          recommendedGeos.push({ label: g['label'], urn: g['urn'] });
+        }
+      }
+    }
+    const profile: LinkedInTargetingProfile =
+      (liCopy?.['recommended_targeting_profile'] as LinkedInTargetingProfile) ?? strategy?.targetingProfile ?? 'cloud-native';
+    return {
+      variants,
+      recommendedGeoTargets: recommendedGeos,
+      recommendedTargetingProfile: profile,
+      strategy: strategy ?? undefined,
+    };
+  }
+
   private extractEventName(url: string): string {
     try {
       const pathname = new URL(url).pathname.replace(/\/+$/, '');
@@ -628,6 +594,38 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
+      case 'linkedin_strategy': {
+        const raw = event.data as Record<string, unknown>;
+        const rawBudget = (raw['budget_recommendation'] ?? {}) as Record<string, unknown>;
+        const rawSkills = raw['recommended_skills'];
+        const rawGroups = raw['recommended_groups'];
+        const rawJobFunctions = raw['recommended_job_functions'];
+        const rawGeoTargets = raw['geo_targets'];
+        this.linkedInStrategy.set({
+          targetingProfile: (raw['targeting_profile'] as LinkedInTargetingProfile) ?? 'cloud-native',
+          targetingRationale: (raw['targeting_rationale'] as string) ?? '',
+          recommendedSkills: Array.isArray(rawSkills) ? (rawSkills as string[]) : [],
+          recommendedGroups: Array.isArray(rawGroups) ? (rawGroups as string[]) : [],
+          recommendedJobFunctions: Array.isArray(rawJobFunctions) ? (rawJobFunctions as string[]) : [],
+          geoTargets: Array.isArray(rawGeoTargets)
+            ? (rawGeoTargets as unknown[]).filter(
+                (g): g is { name: string; rationale: string } =>
+                  !!g &&
+                  typeof g === 'object' &&
+                  typeof (g as Record<string, unknown>)['name'] === 'string' &&
+                  typeof (g as Record<string, unknown>)['rationale'] === 'string'
+              )
+            : [],
+          budgetRecommendation: {
+            dailyBudgetUsd: this.safeNumber(rawBudget['daily_budget_usd'] ?? rawBudget['dailyBudgetUsd']),
+            lifetimeBudgetUsd: this.safeNumber(rawBudget['lifetime_budget_usd'] ?? rawBudget['lifetimeBudgetUsd']),
+            rationale: (rawBudget['rationale'] as string) ?? '',
+          },
+          audienceEstimate: (raw['audience_estimate'] as string) ?? '',
+          campaignStructureNotes: (raw['campaign_structure_notes'] as string) ?? '',
+        });
+        break;
+      }
       case 'error':
         this.errorMessage.set(event.data as string);
         this.step.set('input');
@@ -636,5 +634,10 @@ export class PlanningTabComponent implements OnInit {
         this.step.set('review');
         break;
     }
+  }
+
+  private safeNumber(value: unknown): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
   }
 }

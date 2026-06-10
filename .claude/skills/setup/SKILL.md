@@ -133,4 +133,4 @@ Suggest they explore the codebase structure:
 - `apps/lfx-one/src/app/shared/` — Shared components, services, pipes
 - `packages/shared/src/` — Shared types, interfaces, utilities
 
-**Next step:** Use `/develop` to build or modify a feature.
+**Next step:** Use `/self-serve-dev` to build or modify a feature.

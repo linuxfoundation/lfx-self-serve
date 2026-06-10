@@ -6,6 +6,7 @@ import type {
   CampaignPlatformOption,
   CampaignStatus,
   CampaignTabOption,
+  LinkedInAdAccount,
   LinkedInGeoTarget,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
@@ -114,9 +115,16 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-// NOTE: LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, and LINKEDIN_TARGETING_PROFILES
-// live in apps/lfx-one/src/server/constants/linkedin.constants.ts
-// to keep ad-account IDs, org IDs, and targeting URNs out of the client bundle.
+export const LINKEDIN_AD_ACCOUNTS: readonly LinkedInAdAccount[] = [
+  { accountId: '538170226', label: 'The Linux Foundation', organizationId: '208777', status: 'ACTIVE' },
+  { accountId: '509430019', label: 'LF Events', organizationId: '208777', status: 'ACTIVE' },
+  { accountId: '510263296', label: 'CNCF', organizationId: '12893459', status: 'ACTIVE' },
+  { accountId: '510263297', label: 'LF Networking', organizationId: '208777', status: 'ACTIVE' },
+  { accountId: '510263298', label: 'LF AI & Data', organizationId: '208777', status: 'ACTIVE' },
+  { accountId: '510263299', label: 'LF Energy', organizationId: '208777', status: 'ACTIVE' },
+] as const;
+
+export const LINKEDIN_DEFAULT_ACCOUNT_ID = '538170226';
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },

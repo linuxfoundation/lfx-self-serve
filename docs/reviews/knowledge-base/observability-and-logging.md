@@ -2,7 +2,7 @@
 
 Patterns where renaming routes or adding new health endpoints causes drift in OpenTelemetry's ignore-list and the rate limiter's whitelist, and patterns where logged metrics are misleading or log levels are mis-chosen. Low volume but recurring — every time routes change these files need cross-check, and bad metrics drive bad decisions silently.
 
-**Read when:** `apps/lfx-one/otel.mjs`, `apps/lfx-one/src/server/middleware/rate-limit.ts`, any new route registration in `server.ts`, or any file using `logger.info` / `logger.warning` / `logger.debug`. Cross-checked in Steps 3-4 of the learnings-review playbook (KB-match gate in Step 3, false-positive filter in Step 4).
+**Read when:** `apps/lfx-one/otel.mjs`, `apps/lfx-one/src/server/middleware/rate-limit.middleware.ts`, any new route registration in `server.ts`, or any file using `logger.info` / `logger.warning` / `logger.debug`. Cross-checked in Steps 3-4 of the learnings-review playbook (KB-match gate in Step 3, false-positive filter in Step 4).
 
 ---
 

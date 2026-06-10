@@ -15,7 +15,7 @@ import type {
   OrgEventsSummary,
   OrgEventsSummaryRow,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC } from '@lfx-one/shared/utils';
+import { formatDateToUTC, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -261,8 +261,9 @@ export class OrgLensEventsService {
       eventLocation: row.EVENT_LOCATION ?? null,
       eventCity: row.EVENT_CITY ?? null,
       eventCountry: row.EVENT_COUNTRY ?? null,
-      eventUrl: row.EVENT_URL ?? null,
-      eventRegistrationUrl: row.EVENT_REGISTRATION_URL ?? null,
+      // normalizeToUrl prepends https:// to scheme-less DB URLs and drops unsafe ones so the template href stays absolute.
+      eventUrl: normalizeToUrl(row.EVENT_URL ?? ''),
+      eventRegistrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       orgAttendeeCount: row.ORG_REGISTRATION_COUNT || 0,
       eventRegistrationsGoal: row.EVENT_REGISTRATIONS_GOAL ?? null,
       orgSpeakerAcceptedCount: row.ORG_SPEAKER_ACCEPTED_COUNT || 0,

@@ -128,7 +128,7 @@ Patterns where new backend routes are mounted without the right auth middleware,
 
 **Failure message:** Raw query-param cast bypasses input hardening; can yield arrays from repeated keys; loses runtime safety.
 
-**Fix:** use `getStringQueryParam(req, 'name')` from `apps/lfx-one/src/server/helpers/validation.helper.ts`. Project-wide convention. Same applies to `getNumberQueryParam`, `getBooleanQueryParam`, etc.
+**Fix:** use `getStringQueryParam(req, 'name')` from `apps/lfx-one/src/server/helpers/validation.helper.ts`. Project-wide convention. (Only `getStringQueryParam` exists today — for numeric/boolean params, read via `getStringQueryParam` and coerce/validate explicitly rather than casting `req.query[...]`.)
 
 ---
 
@@ -156,7 +156,7 @@ Patterns where new backend routes are mounted without the right auth middleware,
 
 **Failure message:** Required-parameter validator doesn't enforce string type — downstream type-safety gap.
 
-**Fix:** either (a) extend the validator to enforce `typeof value === 'string'`, (b) use `getStringQueryParam` / `getStringRouteParam` which already narrow, or (c) add an explicit type guard at the controller layer before passing to the service.
+**Fix:** either (a) extend the validator to enforce `typeof value === 'string'`, (b) read query params via `getStringQueryParam` which already narrows to `string | undefined`, or (c) add an explicit type guard at the controller layer before passing to the service.
 
 ---
 

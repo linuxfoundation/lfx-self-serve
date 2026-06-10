@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import { EMAIL_REGEX, FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgLensEmployeesResponse, ReassignCommitteeSeatRequest } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -25,53 +27,26 @@ export class OrgLensBoardCommitteeController {
     this.service = new OrgLensBoardCommitteeService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/board-seats */
-  public async getBoardSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
+  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/seats — combined board + committee seats (single committee-service read, spec 026 TODO #1). */
+  public async getSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const foundationId = req.params['foundationId'];
-    const startTime = logger.startOperation(req, 'get_board_seats', {
+    const startTime = logger.startOperation(req, 'get_membership_seats', {
       org_uid: orgUid,
       foundation_id: foundationId,
     });
 
     try {
-      assertOrgUid(orgUid, 'get_board_seats');
-      this.assertFoundationId(foundationId, 'get_board_seats');
+      assertOrgUid(orgUid, 'get_membership_seats');
+      this.assertFoundationId(foundationId, 'get_membership_seats');
 
-      const response = this.service.getBoardSeats(orgUid, foundationId);
+      const response = await this.service.getSeats(req, orgUid, foundationId);
 
-      logger.success(req, 'get_board_seats', startTime, {
+      logger.success(req, 'get_membership_seats', startTime, {
         org_uid: orgUid,
         foundation_id: foundationId,
-        row_count: response.boardSeats.length,
-      });
-
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/committee-seats */
-  public async getCommitteeSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const orgUid = req.params['orgUid'];
-    const foundationId = req.params['foundationId'];
-    const startTime = logger.startOperation(req, 'get_committee_seats', {
-      org_uid: orgUid,
-      foundation_id: foundationId,
-    });
-
-    try {
-      assertOrgUid(orgUid, 'get_committee_seats');
-      this.assertFoundationId(foundationId, 'get_committee_seats');
-
-      const response = this.service.getCommitteeSeats(orgUid, foundationId);
-
-      logger.success(req, 'get_committee_seats', startTime, {
-        org_uid: orgUid,
-        foundation_id: foundationId,
-        row_count: response.committeeSeats.length,
+        board_count: response.boardSeats.length,
+        committee_count: response.committeeSeats.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -107,6 +82,90 @@ export class OrgLensBoardCommitteeController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/employees — org-wide people picker (key contacts + committee members) for the Reassign modal. */
+  public async getEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_employees', { org_uid: orgUid });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_employees');
+
+      const employees = await this.service.getOrgEmployees(req, orgUid);
+
+      logger.success(req, 'get_org_employees', startTime, {
+        org_uid: orgUid,
+        row_count: employees.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ orgUid, employees } satisfies OrgLensEmployeesResponse);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/orgs/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign */
+  public async reassignSeat(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationId = req.params['foundationId'];
+    const seatId = req.params['seatId'];
+    const startTime = logger.startOperation(req, 'reassign_committee_seat', {
+      org_uid: orgUid,
+      foundation_id: foundationId,
+      seat_id: seatId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'reassign_committee_seat');
+      this.assertFoundationId(foundationId, 'reassign_committee_seat');
+      this.assertSeatId(seatId, 'reassign_committee_seat');
+      const body = this.assertReassignBody(req.body, 'reassign_committee_seat');
+
+      const response = await this.service.reassignSeat(req, orgUid, foundationId, seatId, body);
+
+      logger.success(req, 'reassign_committee_seat', startTime, {
+        org_uid: orgUid,
+        foundation_id: foundationId,
+        seat_id: seatId,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Validate the seat id from the URL against the filter-safe allowlist before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). */
+  private assertSeatId(seatId: string | undefined, operation: string): asserts seatId is string {
+    if (!seatId || !isFilterSafeIdentifier(seatId)) {
+      throw ServiceValidationError.forField('seatId', 'seatId path parameter is required and must be a valid identifier', { operation });
+    }
+  }
+
+  private assertReassignBody(body: unknown, operation: string): ReassignCommitteeSeatRequest {
+    const b = (body ?? {}) as Partial<ReassignCommitteeSeatRequest>;
+    // Normalize before validating: trim everything and lowercase the email so a manual-entry casing
+    // mismatch doesn't reach committee-service, and validate committeeUid against the identifier allowlist.
+    const committeeUid = typeof b.committeeUid === 'string' ? b.committeeUid.trim() : '';
+    const firstName = typeof b.firstName === 'string' ? b.firstName.trim() : '';
+    const lastName = typeof b.lastName === 'string' ? b.lastName.trim() : '';
+    const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
+
+    if (!committeeUid || !email || !firstName || !lastName) {
+      throw ServiceValidationError.forField('body', 'committeeUid, firstName, lastName and email are required', { operation });
+    }
+    if (!isFilterSafeIdentifier(committeeUid)) {
+      throw ServiceValidationError.forField('committeeUid', 'committeeUid must be a valid identifier', { operation });
+    }
+    // The BFF is the trust boundary — the client-side EMAIL_REGEX check is bypassable, so format-check
+    // here too before forwarding to committee-service (mirrors the committeeUid allowlist guard above).
+    if (!EMAIL_REGEX.test(email)) {
+      throw ServiceValidationError.forField('email', 'email must be a valid email address', { operation });
+    }
+    return { committeeUid, firstName, lastName, email };
   }
 
   private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {

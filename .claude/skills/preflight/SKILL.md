@@ -1,15 +1,19 @@
 ---
 name: preflight
 description: >
-  Pre-PR validation — license headers, format, lint, build, and protected file
-  check. Use before submitting any PR, to check if code is ready, validate
-  changes, or verify a branch before review.
+  Mechanical pre-PR pipeline, license headers, format, lint, build, protected
+  file check, commit verification, and PR change summary. Run after the
+  post-commit reviewer trio has been drained and `/lfx-self-serve-pr-readiness`
+  has passed. Pattern/convention auditing is owned by the central reviewer
+  trio (see `.claude/rules/skill-guidance.md` for canonical post-commit
+  reviewer-trio launch instructions), not by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running a comprehensive validation before the contributor submits a pull request.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. Convention and pattern audits live in `docs/reviews/frontend-checklist.md` (sections 1-14) and run via the post-commit reviewer trio (see `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions).
+
 Run each check in order, report results clearly, and help fix any issues found.
 
 ## Check 0: Working Tree Status
@@ -91,38 +95,21 @@ The build must succeed. If it fails:
 
 ## Check 5: Protected Files Check
 
-Verify no protected infrastructure files were modified:
+The canonical protected-file list is the `.claude/hooks/guard-protected-files.sh` hook — it owns every protected path and the reason text. Extract the list from the hook rather than maintaining a duplicate:
 
 ```bash
-git diff --name-only origin/main...HEAD
+# changed files vs main
+git diff --name-only origin/main...HEAD > /tmp/preflight-changed.txt
+
+# pipe each changed file through the guard hook (simulates the PreToolUse hook)
+while IFS= read -r f; do
+  printf '{"file_path":"%s"}' "$f" | bash .claude/hooks/guard-protected-files.sh
+done < /tmp/preflight-changed.txt
 ```
 
-**Flag any changes to these files** — they should NOT be modified without code owner approval:
+Any warning the hook prints to stderr identifies a protected file in the diff. Flag every match and ask the contributor to revert those changes or get code owner approval.
 
-- `apps/lfx-one/src/server/server.ts`
-- `apps/lfx-one/src/server/server-logger.ts`
-- `apps/lfx-one/src/server/middleware/*`
-- `apps/lfx-one/src/server/services/logger.service.ts`
-- `apps/lfx-one/src/server/services/microservice-proxy.service.ts`
-- `apps/lfx-one/src/server/services/nats.service.ts`
-- `apps/lfx-one/src/server/services/snowflake.service.ts`
-- `apps/lfx-one/src/server/services/supabase.service.ts`
-- `apps/lfx-one/src/server/services/ai.service.ts`
-- `apps/lfx-one/src/server/services/project.service.ts`
-- `apps/lfx-one/src/server/services/etag.service.ts`
-- `apps/lfx-one/src/server/helpers/error-serializer.ts`
-- `apps/lfx-one/src/app/app.routes.ts`
-- `.husky/*`
-- `eslint.config.*`
-- `.prettierrc*`
-- `turbo.json`
-- `angular.json`
-- `CLAUDE.md`
-- `check-headers.sh`
-- `package.json` / `*/package.json`
-- `yarn.lock`
-
-If protected files appear in the diff, warn the contributor and ask them to revert those changes or get code owner approval.
+(The same `/lfx-self-serve-pr-readiness` skill already parses this hook the same way — keep them in sync by editing the hook, not by adding new inline lists.)
 
 ## Check 6: Commit Verification
 

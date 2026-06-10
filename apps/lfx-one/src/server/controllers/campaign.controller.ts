@@ -13,7 +13,8 @@ import type {
 
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService } from '../services/campaign-metrics.service';
-import { CampaignProxyService, validateScrapeUrl } from '../services/campaign-proxy.service';
+import { validateScrapeUrl } from '../helpers/url-validation';
+import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -153,8 +154,8 @@ export class CampaignController {
       return;
     }
 
-    if (!body.currentKeywords || !Array.isArray(body.currentKeywords)) {
-      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords is required and must be an array', {
+    if (!body.currentKeywords || !Array.isArray(body.currentKeywords) || body.currentKeywords.length === 0) {
+      const validationError = ServiceValidationError.forField('currentKeywords', 'currentKeywords must be a non-empty array', {
         operation: 'campaign_refine_brief',
         service: 'campaign_controller',
         path: req.path,
