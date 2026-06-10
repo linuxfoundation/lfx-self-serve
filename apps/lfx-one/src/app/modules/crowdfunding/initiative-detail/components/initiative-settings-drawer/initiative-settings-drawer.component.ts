@@ -15,7 +15,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, CROWDFUNDING_TOPIC_OPTIONS, DEFAULT_FUND_DISTRIBUTION, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_LOGO_MIME_TYPES,
+  AllowedLogoMimeType,
+  CROWDFUNDING_TOPIC_OPTIONS,
+  DEFAULT_FUND_DISTRIBUTION,
+  MAX_LOGO_SIZE_BYTES,
+} from '@lfx-one/shared/constants';
 import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
@@ -78,7 +84,7 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly totalAllocated = computed(() =>
     this.distributionItems()
       .filter((i) => i.enabled)
-      .reduce((sum, i) => sum + i.percentage, 0),
+      .reduce((sum, i) => sum + i.percentage, 0)
   );
   protected readonly remaining = computed(() => 100 - this.totalAllocated());
   protected readonly distributionAmounts = computed(() => {
@@ -101,7 +107,12 @@ export class InitiativeSettingsDrawerComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
-        const existingTopics = init.industry ? init.industry.split(',').map((v) => v.trim()).filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v)) : [];
+        const existingTopics = init.industry
+          ? init.industry
+              .split(',')
+              .map((v) => v.trim())
+              .filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v))
+          : [];
         this.form.patchValue({
           name: init.name,
           description: init.description,
@@ -120,7 +131,7 @@ export class InitiativeSettingsDrawerComponent {
               return { ...item, enabled: true, percentage: Math.round((match.goalCents / totalCents) * 100) };
             }
             return { ...item };
-          }),
+          })
         );
         this.beneficiaryGroups.set([]);
         this.activeSettingsTab.set('details');
@@ -250,7 +261,7 @@ export class InitiativeSettingsDrawerComponent {
     const raw = (event.target as HTMLInputElement).value;
     const pct = parseInt(raw, 10);
     this.distributionItems.update((items) =>
-      items.map((item, i) => (i === index ? { ...item, percentage: isNaN(pct) ? 0 : Math.min(Math.max(0, pct), 100) } : item)),
+      items.map((item, i) => (i === index ? { ...item, percentage: isNaN(pct) ? 0 : Math.min(Math.max(0, pct), 100) } : item))
     );
   }
 

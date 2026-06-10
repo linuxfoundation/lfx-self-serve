@@ -110,10 +110,7 @@ export class MyDonationsComponent {
 
   // ─── Private Initializers ─────────────────────────────────────────────────
   private initPaymentMethod(): Signal<PaymentMethod | null> {
-    return toSignal(
-      this.paymentMethodRefresh$.pipe(switchMap(() => this.crowdfundingService.getMyPaymentMethod())),
-      { initialValue: null }
-    );
+    return toSignal(this.paymentMethodRefresh$.pipe(switchMap(() => this.crowdfundingService.getMyPaymentMethod())), { initialValue: null });
   }
 
   private initStats(): Signal<DonationStats> {
