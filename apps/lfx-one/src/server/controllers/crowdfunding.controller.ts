@@ -459,12 +459,18 @@ export class CrowdfundingController {
   }
 
   // Accepts only in-app /crowdfunding paths to prevent open-redirect attacks.
+  // Strips any existing `error` query params so they do not accumulate across
+  // redirect rounds (e.g. if the client passes a returnTo that already contains
+  // an error from a prior failed auth attempt).
   private normalizeCrowdfundingReturnTo(raw: unknown): string {
     const DEFAULT = '/crowdfunding/initiatives';
     if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
     try {
-      const { pathname, search } = new URL(raw, 'http://internal');
-      return pathname.startsWith('/crowdfunding') ? pathname + search : DEFAULT;
+      const url = new URL(raw, 'http://internal');
+      if (!url.pathname.startsWith('/crowdfunding')) return DEFAULT;
+      url.searchParams.delete('error');
+      const search = url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : '';
+      return url.pathname + search;
     } catch {
       return DEFAULT;
     }

@@ -118,8 +118,7 @@ export class CrowdfundingService {
     return (err: HttpErrorResponse): Observable<T> => {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
-          const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
-          this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
+          this.redirectToCfAuth();
         }
         return of(fallback);
       }
@@ -137,12 +136,23 @@ export class CrowdfundingService {
     return (err: HttpErrorResponse): Observable<never> => {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
-          const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
-          this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
+          this.redirectToCfAuth();
         }
         return EMPTY; // navigating away — don't surface a toast
       }
       return throwError(() => err);
     };
+  }
+
+  /**
+   * Redirects to the CF auth-start endpoint, but only if the current URL does not
+   * already carry an `error` query param. An existing error param means the auth
+   * flow already failed (e.g. auth not configured) and we should not loop.
+   */
+  private redirectToCfAuth(): void {
+    const params = new URLSearchParams(this.document.location.search);
+    if (params.has('error')) return; // already errored — don't loop
+    const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
+    this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
   }
 }
