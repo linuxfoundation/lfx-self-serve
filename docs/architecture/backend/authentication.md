@@ -84,10 +84,10 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 
 ### What each one is
 
-| Claim                                                | Example                       | Shape                                                   | Source claim(s)                                                                        |
-| ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **`sub`** (Auth0 subject)                            | `auth0\|lguerra`              | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                              |
-| **`username`** (LFID username)                       | `lguerra`                     | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username` |
+| Claim                          | Example          | Shape                                                   | Source claim(s)                                                                             |
+| ------------------------------ | ---------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                  |
+| **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username` |
 
 - **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it).
 - **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and what upstream microservices index on. For example, the member-service `b2b_org_settings` index tags each doc with `member:<username>` (the query-service matches on the `tags` param; the legacy `writers.username:` filter form matches nothing), and the caller's role is read from `data.members[].username` (legacy fallback: `data.writers[]` / `data.auditors[]`). Survey `creator_id` is likewise persisted as the bare username.
@@ -108,11 +108,11 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 
 Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.ts`, never directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise.
 
-| Helper                      | Returns                                       | Status                                                        |
-| --------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username | **Preferred** for all new identity references                 |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                   | **Deprecated** — only for call sites whose upstream still wants the prefixed sub |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased) | For email-keyed lookups                                      |
+| Helper                      | Returns                                         | Status                                                                           |
+| --------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username | **Preferred** for all new identity references                                    |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                    | **Deprecated** — only for call sites whose upstream still wants the prefixed sub |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)   | For email-keyed lookups                                                          |
 
 ### Migration: `sub` → `username` (LFXV2-1962)
 
