@@ -23,7 +23,7 @@ import type {
  * with `influenceScore: 0` (excluded from Most Decreases).
  */
 
-// Empty avatar / logo URLs fall back to initials in the avatar/logo components — no network needed for demo.
+// Person avatar URLs are intentionally empty (initials fallback). Project logos are populated separately from GitHub avatar URLs.
 function person(id: string, name: string): OrgLensProjectPerson {
   return { id, name, avatarUrl: '' };
 }

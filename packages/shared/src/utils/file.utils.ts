@@ -284,14 +284,15 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
 }
 
 /**
- * Escape a single CSV cell per RFC 4180: wrap in quotes when the value contains a
- * comma, quote, or newline, and double any embedded quotes.
+ * Escape a single CSV cell per RFC 4180 and neutralize formula-injection prefixes.
+ * Cells starting with =, +, -, @, TAB, or CR are prefixed with a leading apostrophe.
  * @param value - Raw cell value
  * @returns CSV-safe cell string
  */
 function escapeCsvCell(value: string | number): string {
-  const str = String(value ?? '');
-  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  const raw = String(value ?? '');
+  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 /**

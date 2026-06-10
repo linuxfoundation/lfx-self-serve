@@ -454,11 +454,17 @@ export class OrgProjectsComponent {
       const all = this.response()?.projects ?? [];
       const workspace = this.selectedWorkspaceId();
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
+      const employees = this.formValue().employees?.filter(Boolean) ?? [];
       const hidden = this.hiddenSlugs();
       return all
         .filter((p) => !hidden.has(p.slug))
         .filter((p) => this.matchesWorkspace(p, workspace))
-        .filter((p) => foundation === ALL_FOUNDATIONS || p.foundation.slug === foundation);
+        .filter((p) => foundation === ALL_FOUNDATIONS || p.foundation.slug === foundation)
+        .filter(
+          (p) =>
+            employees.length === 0 ||
+            [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id))
+        );
     });
   }
 
