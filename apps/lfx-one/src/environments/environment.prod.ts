@@ -9,7 +9,7 @@ export const environment = {
     pcc: 'https://projectadmin.lfx.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
-    crowdfunding: 'https://crowdfunding.lfx.linuxfoundation.org/',
+    crowdfunding: 'https://crowdfunding.linuxfoundation.org/',
     enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
   },
   segment: {

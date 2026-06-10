@@ -19,6 +19,19 @@ import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, CROWDFUNDING_TOPIC_OPTION
 import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
+function formatCompactAmount(amount: number): string {
+  if (amount === 0) return '$0';
+  if (amount >= 1_000_000) {
+    const val = amount / 1_000_000;
+    return `$${val % 1 === 0 ? val : val.toFixed(1)}M`;
+  }
+  if (amount >= 1_000) {
+    const val = amount / 1_000;
+    return `$${val % 1 === 0 ? val : val.toFixed(1)}K`;
+  }
+  return `$${Math.round(amount)}`;
+}
+
 @Component({
   selector: 'lfx-initiative-settings-drawer',
   imports: [DrawerModule, InputTextComponent, TextareaComponent, ButtonComponent, ReactiveFormsModule, FormsModule, MultiSelectComponent, ToggleSwitchModule],
@@ -68,6 +81,13 @@ export class InitiativeSettingsDrawerComponent {
       .reduce((sum, i) => sum + i.percentage, 0),
   );
   protected readonly remaining = computed(() => 100 - this.totalAllocated());
+  protected readonly distributionAmounts = computed(() => {
+    const goalValue = this.formValue().goal as number | null;
+    return this.distributionItems().map((item) => {
+      const amount = goalValue != null ? (item.percentage / 100) * goalValue : 0;
+      return formatCompactAmount(amount);
+    });
+  });
 
   private readonly logoFileInput = viewChild<ElementRef<HTMLInputElement>>('logoFileInput');
 
@@ -232,14 +252,6 @@ export class InitiativeSettingsDrawerComponent {
     this.distributionItems.update((items) =>
       items.map((item, i) => (i === index ? { ...item, percentage: isNaN(pct) ? 0 : Math.min(Math.max(0, pct), 100) } : item)),
     );
-  }
-
-  protected computedAmount(percentage: number): string {
-    const goalValue = this.form.get('goal')?.value as number | null;
-    const amount = goalValue != null ? (percentage / 100) * goalValue : 0;
-    if (amount === 0) return '$0';
-    if (amount >= 1000) return `$${Math.round(amount / 1000)}K`;
-    return `$${Math.round(amount)}`;
   }
 
   protected addBeneficiary(): void {

@@ -144,7 +144,6 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
   return response.json() as Promise<T>;
 }
 
-
 export class CrowdfundingService {
   public async getMyInitiatives(req: Request): Promise<InitiativesResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_initiatives');

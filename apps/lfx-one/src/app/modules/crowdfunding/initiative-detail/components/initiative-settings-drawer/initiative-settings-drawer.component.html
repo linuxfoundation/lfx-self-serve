@@ -294,7 +294,7 @@
                     [attr.data-testid]="'settings-category-pct-' + item.category" />
                   <span class="text-xs text-gray-500">%</span>
                   <span class="text-sm text-gray-900 w-10 text-right" [attr.data-testid]="'settings-category-amount-' + item.category">
-                    {{ computedAmount(item.percentage) }}
+                    {{ distributionAmounts()[i] }}
                   </span>
                 </div>
               } @else {
