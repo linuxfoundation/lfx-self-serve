@@ -56,7 +56,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     DynamicDialogModule,
     Skeleton,
   ],
-  providers: [DialogService],
+  providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members.component.html',
   styleUrl: './committee-members.component.scss',
 })

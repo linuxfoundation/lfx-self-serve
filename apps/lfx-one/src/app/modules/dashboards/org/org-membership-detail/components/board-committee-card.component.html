@@ -20,27 +20,39 @@
     <div class="flex flex-col gap-3 px-5 py-4">
       <div class="flex items-center justify-between gap-4">
         <h2 class="text-lg font-semibold text-gray-900" data-testid="board-committee-title">Board &amp; Committee Members</h2>
-        <div class="relative">
-          <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-          <input
-            pInputText
-            type="text"
-            placeholder="Search by name or email..."
-            class="!pl-9 !pr-9"
-            [ngModel]="searchTerm()"
-            (ngModelChange)="onSearchInput($event)"
-            data-testid="board-committee-search-input"
-            autocomplete="off" />
-          @if (searchTerm()) {
-            <button
-              type="button"
-              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              (click)="clearSearch()"
-              aria-label="Clear search"
-              data-testid="board-committee-search-clear">
-              <i class="fa-light fa-xmark"></i>
-            </button>
-          }
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            <input
+              pInputText
+              type="text"
+              placeholder="Search by name, role, committee, voting status, or email..."
+              class="!pl-9 !pr-9"
+              [ngModel]="searchTerm()"
+              (ngModelChange)="onSearchInput($event)"
+              data-testid="board-committee-search-input"
+              autocomplete="off" />
+            @if (searchTerm()) {
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                (click)="clearSearch()"
+                aria-label="Clear search"
+                data-testid="board-committee-search-clear">
+                <i class="fa-light fa-xmark"></i>
+              </button>
+            }
+          </div>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="boardSeats().length === 0 && committeeSeats().length === 0"
+            (click)="exportCsv()"
+            aria-label="Export board and committee seats to CSV"
+            data-testid="board-committee-export-csv">
+            <i class="fa-light fa-download" aria-hidden="true"></i>
+            <span>Export CSV</span>
+          </button>
         </div>
       </div>
 
@@ -67,7 +79,7 @@
                     ctaLabel="Retry"
                     ctaIcon="fa-light fa-arrow-rotate-left"
                     [withCard]="false"
-                    (ctaClick)="fetchBoard()" />
+                    (ctaClick)="fetchSeats()" />
                 </div>
               } @else if (boardSeats().length === 0) {
                 <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-board">No board seats for this membership.</p>
@@ -111,7 +123,7 @@
                           </td>
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.seatName }}</td>
                           <td class="px-4 py-3 align-top text-sm font-medium text-green-700">
-                            {{ seat.votingPercentage !== null ? seat.votingPercentage + '%' : '—' }}
+                            {{ seat.votingStatus || '—' }}
                           </td>
                           <td class="px-4 py-3 align-top text-right">
                             @if (seat.isOrgEditable) {
@@ -167,7 +179,7 @@
                     ctaLabel="Retry"
                     ctaIcon="fa-light fa-arrow-rotate-left"
                     [withCard]="false"
-                    (ctaClick)="fetchCommittee()" />
+                    (ctaClick)="fetchSeats()" />
                 </div>
               } @else if (committeeSeats().length === 0) {
                 <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-committee">No committee seats for this membership.</p>
@@ -216,7 +228,7 @@
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.role }}</td>
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.committeeName }}</td>
                           <td class="px-4 py-3 align-top text-sm font-medium text-green-700">
-                            {{ seat.votingPercentage !== null ? seat.votingPercentage + '%' : '—' }}
+                            {{ seat.votingStatus || '—' }}
                           </td>
                           <td class="px-4 py-3 align-top text-right">
                             @if (seat.isOrgEditable) {
@@ -250,63 +262,7 @@
           }
         </div>
 
-        <!-- ============== Section 3: Voting History ============== -->
-        <div class="rounded-md border border-gray-200">
-          <button
-            type="button"
-            class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
-            [attr.aria-expanded]="votingExpanded()"
-            (click)="toggleVoting()"
-            data-testid="board-committee-section-voting-header">
-            <span class="text-sm font-semibold text-gray-900"> Voting History ({{ votingState() === 'error' ? '?' : votingHistory().length }}) </span>
-            <i class="fa-light" [class.fa-chevron-up]="votingExpanded()" [class.fa-chevron-down]="!votingExpanded()" aria-hidden="true"></i>
-          </button>
-          @if (votingExpanded()) {
-            <div class="border-t border-gray-200" data-testid="board-committee-section-voting-body">
-              @if (votingState() === 'error') {
-                <div class="px-4 py-6" data-testid="board-committee-section-error-voting">
-                  <lfx-empty-state
-                    icon="fa-light fa-triangle-exclamation"
-                    title="Couldn't load Voting History"
-                    subtitle="Please try again."
-                    ctaLabel="Retry"
-                    ctaIcon="fa-light fa-arrow-rotate-left"
-                    [withCard]="false"
-                    (ctaClick)="fetchVoting()" />
-                </div>
-              } @else if (votingHistory().length === 0) {
-                <p class="px-4 py-6 text-sm italic text-gray-400" data-testid="board-committee-empty-voting">No voting history yet.</p>
-              } @else {
-                <div class="overflow-x-auto">
-                  <table class="w-full" data-testid="board-committee-voting-table">
-                    <thead class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      <tr>
-                        <th scope="col" class="px-4 py-2">Date</th>
-                        <th scope="col" class="px-4 py-2">Resolution</th>
-                        <th scope="col" class="px-4 py-2">Vote</th>
-                        <th scope="col" class="px-4 py-2">Outcome</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                      @for (vote of votingHistoryWithMeta(); track vote.voteId) {
-                        <tr [attr.data-testid]="'board-committee-voting-row-' + vote.voteId">
-                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.formattedDate }}</td>
-                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.resolution }}</td>
-                          <td class="px-4 py-3 align-top">
-                            <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" [class]="vote.chipClass">
-                              {{ vote.vote }}
-                            </span>
-                          </td>
-                          <td class="px-4 py-3 align-top text-sm text-gray-700">{{ vote.outcome }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              }
-            </div>
-          }
-        </div>
+        <!-- Voting History section hidden until the live voting source is implemented (spec 026 D12). -->
       </div>
     </div>
   }
