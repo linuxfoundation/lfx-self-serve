@@ -176,6 +176,9 @@ Args (dict):
 {{- if not (kindIs "string" $cfg.mountPath) -}}
 {{- fail (printf "staticConfigMaps.%s.mountPath is required and must be a string" $name) -}}
 {{- end -}}
+{{- if or (eq (trim $cfg.mountPath) "") (not (hasPrefix "/" $cfg.mountPath)) -}}
+{{- fail (printf "staticConfigMaps.%s.mountPath %q must be a non-empty absolute path (must start with '/')" $name $cfg.mountPath) -}}
+{{- end -}}
 {{- if not (kindIs "map" $cfg.data) -}}
 {{- fail (printf "staticConfigMaps.%s.data is required and must be a map of file-name -> string content" $name) -}}
 {{- end -}}
@@ -183,6 +186,9 @@ Args (dict):
 {{- fail (printf "staticConfigMaps.%s.data must contain at least one file" $name) -}}
 {{- end -}}
 {{- range $key, $value := $cfg.data -}}
+{{- if not (regexMatch "^[A-Za-z0-9._-]+$" $key) -}}
+{{- fail (printf "staticConfigMaps.%s.data key %q is invalid; ConfigMap data keys must match [A-Za-z0-9._-]+ (Kubernetes apiserver rejects others at apply time)" $name $key) -}}
+{{- end -}}
 {{- if not (kindIs "string" $value) -}}
 {{- fail (printf "staticConfigMaps.%s.data.%s must be a string (use a YAML literal block scalar like '|' for multi-line content)" $name $key) -}}
 {{- end -}}
