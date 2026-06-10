@@ -149,3 +149,46 @@ ExternalSecret-specific annotations override global ones on key conflicts
 {{- toYaml $notations }}
 {{- end }}
 {{- end }}
+
+{{/*
+Validate one staticConfigMaps entry. Called from both configmap.yaml and
+deployment.yaml so any caller that touches a malformed entry fails with a
+clear error message — regardless of which template Helm renders first.
+
+Args (dict):
+  name  — the staticConfigMaps key (becomes ConfigMap suffix + volume name)
+  cfg   — the staticConfigMaps value (must be a map with mountPath + data)
+  root  — the chart root context, used to derive the rendered ConfigMap name
+*/}}
+{{- define "lfx-self-serve.staticConfigMaps.validate" -}}
+{{- $name := .name -}}
+{{- $cfg := .cfg -}}
+{{- $root := .root -}}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" $name) -}}
+{{- fail (printf "staticConfigMaps key %q must be a valid DNS-1123 label (lowercase alphanumerics and '-', start/end with alphanumeric)" $name) -}}
+{{- end -}}
+{{- if gt (len $name) 63 -}}
+{{- fail (printf "staticConfigMaps key %q exceeds the 63-char DNS-1123 label limit (the key is also used as the pod volume name, which Kubernetes rejects above 63 chars)" $name) -}}
+{{- end -}}
+{{- if not (kindIs "map" $cfg) -}}
+{{- fail (printf "staticConfigMaps.%s must be a map with mountPath and data keys (got %s)" $name (kindOf $cfg)) -}}
+{{- end -}}
+{{- if not (kindIs "string" $cfg.mountPath) -}}
+{{- fail (printf "staticConfigMaps.%s.mountPath is required and must be a string" $name) -}}
+{{- end -}}
+{{- if not (kindIs "map" $cfg.data) -}}
+{{- fail (printf "staticConfigMaps.%s.data is required and must be a map of file-name -> string content" $name) -}}
+{{- end -}}
+{{- if eq (len $cfg.data) 0 -}}
+{{- fail (printf "staticConfigMaps.%s.data must contain at least one file" $name) -}}
+{{- end -}}
+{{- range $key, $value := $cfg.data -}}
+{{- if not (kindIs "string" $value) -}}
+{{- fail (printf "staticConfigMaps.%s.data.%s must be a string (use a YAML literal block scalar like '|' for multi-line content)" $name $key) -}}
+{{- end -}}
+{{- end -}}
+{{- $cmName := printf "%s-%s" (include "lfx-self-serve.fullname" $root) $name -}}
+{{- if gt (len $cmName) 253 -}}
+{{- fail (printf "ConfigMap name %q exceeds the 253-char DNS-1123 subdomain limit (release fullname + staticConfigMaps key %q is too long)" $cmName $name) -}}
+{{- end -}}
+{{- end }}

@@ -84,6 +84,7 @@ spec:
           {{- if .Values.staticConfigMaps }}
           volumeMounts:
             {{- range $name, $cfg := .Values.staticConfigMaps }}
+            {{- include "lfx-self-serve.staticConfigMaps.validate" (dict "name" $name "cfg" $cfg "root" $) }}
             - name: {{ $name }}
               mountPath: {{ $cfg.mountPath }}
               readOnly: true
@@ -92,6 +93,7 @@ spec:
       {{- if .Values.staticConfigMaps }}
       volumes:
         {{- range $name, $cfg := .Values.staticConfigMaps }}
+        {{- include "lfx-self-serve.staticConfigMaps.validate" (dict "name" $name "cfg" $cfg "root" $) }}
         - name: {{ $name }}
           configMap:
             name: {{ include "lfx-self-serve.fullname" $ }}-{{ $name }}
