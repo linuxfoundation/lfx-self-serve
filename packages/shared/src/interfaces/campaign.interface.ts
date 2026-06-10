@@ -141,6 +141,29 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
+/**
+ * One ad account / org pairing in the runtime LinkedIn config.
+ * Loaded server-side from the mounted ConfigMap; not used in the client bundle.
+ */
+export interface LinkedInAccount {
+  accountId: string;
+  label: string;
+  orgId: string;
+}
+
+/**
+ * Shape of /etc/lfx-self-serve/linkedin/linkedin.json (configurable via the
+ * LINKEDIN_CONFIG_PATH env var). Mounted by the chart's `staticConfigMaps`
+ * hook; populated from the private GitOps repo.
+ */
+export interface LinkedInRuntimeConfig {
+  defaultAccountId: string;
+  defaultOrgId: string;
+  accounts: readonly LinkedInAccount[];
+  employerExclusions: readonly string[];
+  targetingProfiles: readonly LinkedInTargetingProfileConfig[];
+}
+
 // ---------------------------------------------------------------------------
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------

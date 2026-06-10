@@ -24,6 +24,11 @@ spec:
     metadata:
       annotations:
         {{- include "lfx-self-serve.podAnnotations" . | nindent 8 }}
+        {{- if .Values.staticConfigMaps }}
+        # Force a rolling restart whenever any staticConfigMaps content changes,
+        # so the chart works correctly even in clusters without Stakater Reloader.
+        checksum/staticConfigMaps: {{ toJson .Values.staticConfigMaps | sha256sum }}
+        {{- end }}
       labels:
         {{- include "lfx-self-serve.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -76,3 +81,19 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.staticConfigMaps }}
+          volumeMounts:
+            {{- range $name, $cfg := .Values.staticConfigMaps }}
+            - name: {{ $name }}
+              mountPath: {{ $cfg.mountPath }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if .Values.staticConfigMaps }}
+      volumes:
+        {{- range $name, $cfg := .Values.staticConfigMaps }}
+        - name: {{ $name }}
+          configMap:
+            name: {{ include "lfx-self-serve.fullname" $ }}-{{ $name }}
+        {{- end }}
+      {{- end }}

@@ -228,6 +228,40 @@ readinessProbe:
   failureThreshold: 3
   successThreshold: 1
 
+# Static ConfigMaps rendered by the chart and mounted as files into the container.
+# Use for non-secret structured data that should not live in source (vendor IDs,
+# allowlists, profile definitions, etc.). Each entry produces one ConfigMap named
+# "<release-fullname>-<key>" and one volume + volumeMount.
+#
+# Constraints:
+#   - Each map key must be a valid DNS-1123 label (lowercase, [a-z0-9-], <=63 chars).
+#     The rendered name "<release-fullname>-<key>" must also stay <=253 chars.
+#   - data values must be strings (use a YAML literal block scalar like '|' for
+#     multi-line content). Nested maps/numbers/booleans will be rejected at
+#     render time by the chart's `kindIs "string"` guard.
+#
+# Example:
+#   staticConfigMaps:
+#     linkedin-config:
+#       mountPath: /etc/lfx-self-serve/linkedin
+#       data:
+#         linkedin.json: |
+#           { "defaultAccountId": "...", "accounts": [...] }
+#
+# Application override: services that read from a static-config mount typically
+# expose an env var to point at a different path during local dev. The
+# lfx-one server reads the LinkedIn config from /etc/lfx-self-serve/linkedin/linkedin.json
+# by default; set LINKEDIN_CONFIG_PATH to override (handy if you change `mountPath`
+# above, or want to swap in a fixture for tests).
+#
+# Reload-on-change is handled in two layers:
+#   1. The existing reloader.stakater.com/auto annotation (when Reloader is
+#      installed in the cluster), and
+#   2. A `checksum/staticConfigMaps` annotation on the Deployment pod template,
+#      which forces a rolling restart whenever the rendered ConfigMap content
+#      changes — even if Reloader isn't installed.
+staticConfigMaps: {}
+
 # Environment variables for the application
 # Uses map/object format for deep merging support
 environment:

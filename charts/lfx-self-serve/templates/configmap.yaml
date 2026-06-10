@@ -1,0 +1,39 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+{{- range $name, $cfg := .Values.staticConfigMaps }}
+{{- if not (kindIs "string" $cfg.mountPath) }}
+{{- fail (printf "staticConfigMaps.%s.mountPath is required and must be a string" $name) }}
+{{- end }}
+{{- if not (kindIs "map" $cfg.data) }}
+{{- fail (printf "staticConfigMaps.%s.data is required and must be a map of file-name -> string content" $name) }}
+{{- end }}
+{{- if eq (len $cfg.data) 0 }}
+{{- fail (printf "staticConfigMaps.%s.data must contain at least one file" $name) }}
+{{- end }}
+{{- range $key, $value := $cfg.data }}
+{{- if not (kindIs "string" $value) }}
+{{- fail (printf "staticConfigMaps.%s.data.%s must be a string (use a YAML literal block scalar like '|' for multi-line content)" $name $key) }}
+{{- end }}
+{{- end }}
+{{- $cmName := printf "%s-%s" (include "lfx-self-serve.fullname" $) $name }}
+{{- if gt (len $cmName) 253 }}
+{{- fail (printf "ConfigMap name %q exceeds the 253-char DNS-1123 subdomain limit (release fullname + staticConfigMaps key %q is too long)" $cmName $name) }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" $name) }}
+{{- fail (printf "staticConfigMaps key %q must be a valid DNS-1123 label (lowercase alphanumerics and '-', start/end with alphanumeric)" $name) }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cmName }}
+  labels:
+    {{- include "lfx-self-serve.labels" $ | nindent 4 }}
+  {{- with (include "lfx-self-serve.annotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- toYaml $cfg.data | nindent 2 }}
+{{- end }}

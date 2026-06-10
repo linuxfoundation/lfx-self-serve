@@ -114,9 +114,11 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-// NOTE: LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, and LINKEDIN_TARGETING_PROFILES
-// live in apps/lfx-one/src/server/constants/linkedin.constants.ts
-// to keep ad-account IDs, org IDs, and targeting URNs out of the client bundle.
+// NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
+// targeting profile URN lists are loaded at runtime from a mounted ConfigMap
+// (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
+// They are kept out of source control entirely so vendor IDs never ship in the
+// client bundle or the public chart repo.
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
