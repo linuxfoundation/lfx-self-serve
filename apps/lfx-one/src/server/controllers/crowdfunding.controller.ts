@@ -255,7 +255,10 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'update_initiative' });
       }
 
-      const { id } = req.params;
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'update_initiative' });
+      }
       const body = req.body as Record<string, unknown>;
 
       const input: UpdateInitiativeInput = {};
@@ -269,7 +272,7 @@ export class CrowdfundingController {
       if (Array.isArray(body['goals'])) {
         input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
           name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',
-          amountCents: Number.isFinite(g['amountCents']) ? Math.floor(g['amountCents'] as number) : 0,
+          amountCents: Number.isFinite(Number(g['amountCents'])) ? Math.floor(Number(g['amountCents'])) : 0,
         }));
       }
 

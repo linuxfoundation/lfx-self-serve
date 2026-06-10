@@ -7,6 +7,7 @@ import { RefreshTokenExchangeOptions, TokenRequestParams } from '@lfx-one/shared
 import { logger } from '../services/logger.service';
 
 const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
+const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000;
 
 /**
  * Exchanges the user's OIDC refresh token for an access token scoped to a
@@ -51,6 +52,7 @@ export async function exchangeRefreshTokenForAudience(req: Request, options: Ref
       method: config.method,
       headers: config.createHeaders(),
       body: config.createBody(),
+      signal: AbortSignal.timeout(TOKEN_EXCHANGE_TIMEOUT_MS),
     });
 
     if (!response.ok) {
