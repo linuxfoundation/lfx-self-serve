@@ -27,7 +27,7 @@ const EXPECTED_SCHEMA_VERSION = 1;
 export class DocsManifestService {
   private readonly manifest: DocsManifest = docsManifest;
 
-  constructor() {
+  public constructor() {
     if (docsManifest.schemaVersion !== EXPECTED_SCHEMA_VERSION) {
       throw new Error(
         `[DocsManifestService] schema version mismatch: expected ${EXPECTED_SCHEMA_VERSION}, got ${docsManifest.schemaVersion}. Run \`yarn docs:build\` and rebuild the app.`
