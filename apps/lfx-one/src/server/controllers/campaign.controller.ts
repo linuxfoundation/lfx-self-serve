@@ -322,7 +322,13 @@ export class CampaignController {
     const rawAccountId = String(req.query['accountId'] ?? process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '509430019');
     const validAccount = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawAccountId);
     if (!validAccount) {
-      res.status(400).json({ error: 'Invalid LinkedIn account ID' });
+      next(
+        ServiceValidationError.forField('accountId', 'Invalid LinkedIn account ID', {
+          operation: 'linkedin_monitor',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
       return;
     }
     const accountId = validAccount.accountId;

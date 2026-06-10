@@ -3,10 +3,11 @@
 
 <div class="flex flex-col gap-6" data-testid="monitoring-tab">
   <!-- Platform switcher -->
-  <div class="flex items-center gap-2" data-testid="platform-switcher">
+  <div class="flex items-center gap-2" role="group" aria-label="Platform" data-testid="platform-switcher">
     <button
       type="button"
       (click)="setPlatform('google')"
+      [attr.aria-pressed]="selectedPlatform() === 'google'"
       [class]="
         selectedPlatform() === 'google'
           ? 'flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
@@ -19,6 +20,7 @@
     <button
       type="button"
       (click)="setPlatform('linkedin')"
+      [attr.aria-pressed]="selectedPlatform() === 'linkedin'"
       [class]="
         selectedPlatform() === 'linkedin'
           ? 'flex items-center gap-1.5 rounded-md bg-[#0077B5] px-3 py-1.5 text-xs font-medium text-white'

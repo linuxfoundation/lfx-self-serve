@@ -480,11 +480,11 @@ function toDateParts(iso: string): { year: number; month: number; day: number } 
 
 function dateRangeParams(days: number): { start: string; end: string } {
   const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - days);
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - days));
+  const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
   return {
     start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
+    end: endUtc.toISOString().split('T')[0],
   };
 }
 
@@ -613,21 +613,23 @@ export async function getLinkedInAnalytics(
           externalWebsiteConversions?: number;
         }[];
       };
-      const creatives: import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[] = (creativeData.elements ?? []).map((el) => {
-        const creativeId = el.pivotValue?.replace('urn:li:sponsoredCreative:', '') ?? '';
-        const clicks = el.clicks ?? 0;
-        const impressions = el.impressions ?? 0;
-        return {
-          creativeId,
-          creativeName: `Creative ${creativeId}`,
-          impressions,
-          clicks,
-          ctr: impressions > 0 ? clicks / impressions : 0,
-          spend: parseFloat(el.costInLocalCurrency ?? '0'),
-          conversions: el.externalWebsiteConversions ?? 0,
-          status: 'ACTIVE',
-        };
-      });
+      const creatives: import('@lfx-one/shared/interfaces').LinkedInCreativeMetrics[] = (creativeData.elements ?? [])
+        .filter((el) => !!el.pivotValue)
+        .map((el) => {
+          const creativeId = el.pivotValue!.replace('urn:li:sponsoredCreative:', '');
+          const clicks = el.clicks ?? 0;
+          const impressions = el.impressions ?? 0;
+          return {
+            creativeId,
+            creativeName: `Creative ${creativeId}`,
+            impressions,
+            clicks,
+            ctr: impressions > 0 ? clicks / impressions : 0,
+            spend: parseFloat(el.costInLocalCurrency ?? '0'),
+            conversions: el.externalWebsiteConversions ?? 0,
+            status: 'ACTIVE',
+          };
+        });
       creativeAnalyticsMap.set(String(camp.id), creatives);
     }
   }
