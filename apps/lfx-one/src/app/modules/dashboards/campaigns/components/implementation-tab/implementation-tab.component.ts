@@ -175,7 +175,6 @@ export class ImplementationTabComponent {
     const campaignTypes: CampaignType[] = [];
     if (form.includeSearch) campaignTypes.push('search');
     if (form.includeDemandGen) campaignTypes.push('demand-gen');
-
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
