@@ -38,46 +38,38 @@ export class CrowdfundingService {
   private readonly document = inject(DOCUMENT);
 
   public getMyInitiatives(): Observable<InitiativesResponse> {
-    return this.http.get<InitiativesResponse>('/api/crowdfunding/initiatives').pipe(
-      catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives'))
-    );
+    return this.http
+      .get<InitiativesResponse>('/api/crowdfunding/initiatives')
+      .pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
   }
 
   public getMyInitiativesStats(): Observable<CrowdfundingInitiativesStats> {
-    return this.http.get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats').pipe(
-      catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats'))
-    );
+    return this.http
+      .get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats')
+      .pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
   }
 
   public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${slug}`).pipe(
-      catchError(this.handleCfError(null, 'getInitiativeBySlug'))
-    );
+    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${slug}`).pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {
-    return this.http.get<PaymentMethod>('/api/crowdfunding/payment-method').pipe(
-      catchError(this.handleCfError(null, 'getMyPaymentMethod'))
-    );
+    return this.http.get<PaymentMethod>('/api/crowdfunding/payment-method').pipe(catchError(this.handleCfError(null, 'getMyPaymentMethod')));
   }
 
   // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.
   public savePaymentMethod(paymentMethodId: string): Observable<PaymentMethod> {
-    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId }).pipe(
-      catchError(this.redirectIfCfUnauthenticated())
-    );
+    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId }).pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
   public getMyDonationStats(): Observable<DonationStats> {
-    return this.http.get<DonationStats>('/api/crowdfunding/donation-stats').pipe(
-      catchError(this.handleCfError(EMPTY_DONATION_STATS, 'getMyDonationStats'))
-    );
+    return this.http.get<DonationStats>('/api/crowdfunding/donation-stats').pipe(catchError(this.handleCfError(EMPTY_DONATION_STATS, 'getMyDonationStats')));
   }
 
   public getMyRecurringDonations(): Observable<RecurringDonationsResponse> {
-    return this.http.get<RecurringDonationsResponse>('/api/crowdfunding/recurring-donations').pipe(
-      catchError(this.handleCfError(EMPTY_RECURRING_DONATIONS, 'getMyRecurringDonations'))
-    );
+    return this.http
+      .get<RecurringDonationsResponse>('/api/crowdfunding/recurring-donations')
+      .pipe(catchError(this.handleCfError(EMPTY_RECURRING_DONATIONS, 'getMyRecurringDonations')));
   }
 
   public getMyDonations(params?: { pageSize?: number; offset?: number }): Observable<MyDonationsResponse> {
@@ -85,33 +77,27 @@ export class CrowdfundingService {
     if (params?.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
 
-    return this.http.get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams }).pipe(
-      catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations'))
-    );
+    return this.http
+      .get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams })
+      .pipe(catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations')));
   }
 
   public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
-    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType }).pipe(
-      catchError(this.redirectIfCfUnauthenticated())
-    );
+    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType }).pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
   public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
-    return this.http.patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input).pipe(
-      catchError(this.redirectIfCfUnauthenticated())
-    );
+    return this.http
+      .patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
   public deletePaymentMethod(): Observable<void> {
-    return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(
-      catchError(this.redirectIfCfUnauthenticated())
-    );
+    return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
   public cancelSubscription(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`).pipe(
-      catchError(this.redirectIfCfUnauthenticated())
-    );
+    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`).pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
   public getInitiativeTransactions(
@@ -123,9 +109,9 @@ export class CrowdfundingService {
     if (params?.size != null) httpParams = httpParams.set('size', String(params.size));
     if (params?.from != null) httpParams = httpParams.set('from', String(params.from));
 
-    return this.http.get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${slug}/transactions`, { params: httpParams }).pipe(
-      catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getInitiativeTransactions'))
-    );
+    return this.http
+      .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${slug}/transactions`, { params: httpParams })
+      .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getInitiativeTransactions')));
   }
 
   private handleCfError<T>(fallback: T, label: string) {

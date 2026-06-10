@@ -5,7 +5,13 @@
   <!-- Header body -->
   <div class="flex items-start gap-4 p-6" data-testid="initiative-header-body">
     <!-- Avatar -->
-    <lfx-avatar [image]="initiative().logoUrl ?? ''" [label]="initiative().name" shape="square" size="xlarge" [styleClass]="avatarStyleClass()" [ariaLabel]="fundTypeLabel() + ' initiative icon'" />
+    <lfx-avatar
+      [image]="initiative().logoUrl ?? ''"
+      [label]="initiative().name"
+      shape="square"
+      size="xlarge"
+      [styleClass]="avatarStyleClass()"
+      [ariaLabel]="fundTypeLabel() + ' initiative icon'" />
 
     <!-- Content: type label, title+status, desc, tags -->
     <div class="flex flex-col gap-1.5 flex-1 min-w-0">
