@@ -509,7 +509,7 @@ interface LinkedInCampaignElement {
 
 export async function getLinkedInAnalytics(req: Request | undefined, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
   const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
-  const token = getLinkedInEnv('LINKEDIN_ACCESS_TOKEN');
+  const token = getAccessToken();
   const version = LINKEDIN_API_VERSION;
 
   const { start, end } = dateRangeParams(days);

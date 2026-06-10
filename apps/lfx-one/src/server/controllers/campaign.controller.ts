@@ -318,10 +318,12 @@ export class CampaignController {
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const days = Math.min(Math.max(parseInt(String(req.query['days'] ?? '30'), 10) || 30, 7), 90);
+    const rawDays = String(req.query['days'] ?? '30');
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '0');
-    const keyIndex = parseInt(rawKey, 10);
-    if (isNaN(keyIndex) || keyIndex < 0 || keyIndex >= LINKEDIN_ACCOUNTS.length) {
+    const keyIndex = /^\d+$/.test(rawKey) ? Number(rawKey) : NaN;
+    if (!Number.isFinite(keyIndex) || keyIndex < 0 || keyIndex >= LINKEDIN_ACCOUNTS.length) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {
           operation: 'linkedin_monitor',

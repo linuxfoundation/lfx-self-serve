@@ -37,6 +37,7 @@ export class MonitoringTabComponent implements OnInit {
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
+  private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
@@ -238,7 +239,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected formatLinkedInCurrency(n: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+    return this.currencyFormatter.format(n);
   }
 
   protected formatLinkedInPct(n: number): string {
