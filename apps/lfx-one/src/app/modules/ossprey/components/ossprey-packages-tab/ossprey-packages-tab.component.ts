@@ -18,6 +18,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
+  getEcosystemIconClass,
   getHealthTagSeverity,
   getLifecycleLabel,
   getLifecycleTagSeverity,
@@ -104,6 +105,7 @@ export class OsspreyPackagesTabComponent {
   protected readonly getLifecycleTagSeverity = getLifecycleTagSeverity;
   protected readonly getHealthTagSeverity = getHealthTagSeverity;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
+  protected readonly getEcosystemIconClass = getEcosystemIconClass;
 
   protected isPackageSelected(id: string): boolean {
     return this.selectedPackages().has(id);
@@ -121,6 +123,34 @@ export class OsspreyPackagesTabComponent {
 
   protected onSearchInput(event: Event): void {
     this.filterChange.emit({ search: (event.target as HTMLInputElement).value });
+  }
+
+  protected onEcosystemChange(event: Event): void {
+    this.draftEcosystem.set((event.target as HTMLSelectElement).value as OsspreyEcosystem | '');
+  }
+
+  protected onLifecycleChange(event: Event): void {
+    this.draftLifecycle.set((event.target as HTMLSelectElement).value as OsspreyLifecycle | '');
+  }
+
+  protected onHealthBandChange(event: Event): void {
+    this.draftHealthBand.set((event.target as HTMLSelectElement).value as OsspreyHealthBand | '');
+  }
+
+  protected onVulnFilterChange(event: Event): void {
+    this.draftVulnFilter.set((event.target as HTMLSelectElement).value as 'critical' | 'high' | 'any' | '');
+  }
+
+  protected onBusFactorToggle(event: Event): void {
+    this.draftBusFactor1Only.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onStaleToggle(event: Event): void {
+    this.draftStaleOnly.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onUnstewardedToggle(event: Event): void {
+    this.draftUnstewardedOnly.set((event.target as HTMLInputElement).checked);
   }
 
   protected toggleSortMenu(): void {

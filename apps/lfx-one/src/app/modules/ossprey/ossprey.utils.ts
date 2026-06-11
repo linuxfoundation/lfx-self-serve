@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
+import { OsspreyEcosystem, OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
 
 export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
   const map: Record<OsspreyStatus, TagSeverity> = {
@@ -65,4 +65,14 @@ export function getHealthLabel(score: number): string {
 export function getLifecycleLabel(lifecycle: OsspreyLifecycle | null): string {
   if (!lifecycle) return 'Unknown';
   return lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1);
+}
+
+export function getEcosystemIconClass(ecosystem: OsspreyEcosystem | string): string {
+  const classes: Record<string, string> = {
+    npm: 'logo-npm',
+    maven: 'logo-maven',
+    pypi: 'logo-pypi',
+    go: 'logo-go',
+  };
+  return classes[ecosystem] ?? 'logo-npm';
 }

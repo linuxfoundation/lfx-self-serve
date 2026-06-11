@@ -319,11 +319,13 @@
   font-weight: 500;
 }
 
-.logo-npm {
+.logo-npm,
+.logo-maven,
+.logo-pypi,
+.logo-go {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #cb3837;
   color: #fff;
   font-weight: 700;
   font-size: 9px;
@@ -331,6 +333,22 @@
   border-radius: 3px;
   padding: 3px 4px;
   letter-spacing: -0.02em;
+}
+
+.logo-npm {
+  background: #cb3837;
+}
+
+.logo-maven {
+  background: #c71a36;
+}
+
+.logo-pypi {
+  background: #3776ab;
+}
+
+.logo-go {
+  background: #00add8;
 }
 
 .t-title {

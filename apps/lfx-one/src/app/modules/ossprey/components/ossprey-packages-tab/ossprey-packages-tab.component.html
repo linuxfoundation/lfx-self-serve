@@ -112,11 +112,7 @@
                 <span class="osp-flabel">Ecosystem</span>
                 <button class="osp-freset" (click)="draftEcosystem.set('')">Reset</button>
               </div>
-              <select
-                class="osp-fselect"
-                [value]="draftEcosystem()"
-                (change)="draftEcosystem.set($any($event.target).value)"
-                data-testid="ossprey-filter-ecosystem">
+              <select class="osp-fselect" [value]="draftEcosystem()" (change)="onEcosystemChange($event)" data-testid="ossprey-filter-ecosystem">
                 <option value="">All ecosystems</option>
                 <option value="npm">npm</option>
                 <option value="maven">Maven</option>
@@ -131,11 +127,7 @@
                 <span class="osp-flabel">Lifecycle</span>
                 <button class="osp-freset" (click)="draftLifecycle.set('')">Reset</button>
               </div>
-              <select
-                class="osp-fselect"
-                [value]="draftLifecycle()"
-                (change)="draftLifecycle.set($any($event.target).value)"
-                data-testid="ossprey-filter-lifecycle">
+              <select class="osp-fselect" [value]="draftLifecycle()" (change)="onLifecycleChange($event)" data-testid="ossprey-filter-lifecycle">
                 <option value="">All lifecycle</option>
                 <option value="active">Active</option>
                 <option value="stable">Stable</option>
@@ -150,11 +142,7 @@
                 <span class="osp-flabel">Health</span>
                 <button class="osp-freset" (click)="draftHealthBand.set('')">Reset</button>
               </div>
-              <select
-                class="osp-fselect"
-                [value]="draftHealthBand()"
-                (change)="draftHealthBand.set($any($event.target).value)"
-                data-testid="ossprey-filter-health">
+              <select class="osp-fselect" [value]="draftHealthBand()" (change)="onHealthBandChange($event)" data-testid="ossprey-filter-health">
                 <option value="">All health</option>
                 <option value="healthy">Healthy (≥75)</option>
                 <option value="fair">Fair (50–74)</option>
@@ -169,11 +157,7 @@
                 <span class="osp-flabel">Open vulnerabilities</span>
                 <button class="osp-freset" (click)="draftVulnFilter.set('')">Reset</button>
               </div>
-              <select
-                class="osp-fselect"
-                [value]="draftVulnFilter()"
-                (change)="draftVulnFilter.set($any($event.target).value)"
-                data-testid="ossprey-filter-vulns">
+              <select class="osp-fselect" [value]="draftVulnFilter()" (change)="onVulnFilterChange($event)" data-testid="ossprey-filter-vulns">
                 <option value="">Any vulns</option>
                 <option value="any">Has any vulnerability</option>
                 <option value="high">High or above</option>
@@ -189,15 +173,15 @@
               </div>
               <div class="flex flex-col gap-2">
                 <label class="osp-fcheck" data-testid="ossprey-filter-busfactor">
-                  <input type="checkbox" [checked]="draftBusFactor1Only()" (change)="draftBusFactor1Only.set($any($event.target).checked)" />
+                  <input type="checkbox" [checked]="draftBusFactor1Only()" (change)="onBusFactorToggle($event)" />
                   <span>Bus factor = 1</span>
                 </label>
                 <label class="osp-fcheck" data-testid="ossprey-filter-stale">
-                  <input type="checkbox" [checked]="draftStaleOnly()" (change)="draftStaleOnly.set($any($event.target).checked)" />
+                  <input type="checkbox" [checked]="draftStaleOnly()" (change)="onStaleToggle($event)" />
                   <span>No activity ≥18mo</span>
                 </label>
                 <label class="osp-fcheck" data-testid="ossprey-filter-unstewarded">
-                  <input type="checkbox" [checked]="draftUnstewardedOnly()" (change)="draftUnstewardedOnly.set($any($event.target).checked)" />
+                  <input type="checkbox" [checked]="draftUnstewardedOnly()" (change)="onUnstewardedToggle($event)" />
                   <span>Unstewarded only</span>
                 </label>
               </div>
@@ -270,7 +254,9 @@
           <div class="t-sub font-mono">{{ pkg.purl }}</div>
         </td>
         <td>
-          <span class="eco-row"><span class="logo-npm">npm</span> {{ pkg.ecosystem }}</span>
+          <span class="eco-row"
+            ><span [class]="getEcosystemIconClass(pkg.ecosystem)">{{ pkg.ecosystem }}</span></span
+          >
         </td>
         <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" /></td>
         <td><lfx-tag [value]="pkg.healthScore !== null ? pkg.healthScore.toString() : '—'" [severity]="getHealthTagSeverity(pkg.healthScore)" /></td>
