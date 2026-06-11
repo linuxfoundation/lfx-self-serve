@@ -83,6 +83,10 @@ function buildOrgsRouter(): Router {
   // matcher below so 'committee-members' isn't consumed as a personKey.
   router.get('/:orgUid/lens/people/committee-members', (req, res, next) => orgLensPeopleController.getCommitteeMembers(req, res, next));
   router.patch('/:orgUid/lens/people/committee-members/:seatId/reassign', (req, res, next) => orgLensPeopleController.reassignCommitteeMember(req, res, next));
+  // People → Board tab (org-wide Board-only members). Registered BEFORE the `/:personKey/detail`
+  // matcher below so 'board-members' isn't consumed as a personKey.
+  router.get('/:orgUid/lens/people/board-members', (req, res, next) => orgLensPeopleController.getBoardMembers(req, res, next));
+  router.patch('/:orgUid/lens/people/board-members/:seatId/reassign', (req, res, next) => orgLensPeopleController.reassignBoardMember(req, res, next));
   // LFXV2-1876 — People → Trainees tab. Keep above the `/:personKey/detail` matcher so 'trainees' isn't consumed as a personKey.
   router.get('/:orgUid/lens/people/trainees', (req, res, next) => orgLensPeopleController.getTrainees(req, res, next));
   // LFXV2-1875 — People → Event Attendees tab. Same guard rationale as above ('event-attendees' must not be consumed as a personKey).

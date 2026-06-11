@@ -61,6 +61,7 @@ export * from './marketing-impact.constants';
 export * from './org-people.constants';
 export * from './org-contributions.constants';
 export * from './org-people-key-contacts.constants';
+export * from './org-people-board-members.constants';
 export * from './org-people-committee-members.constants';
 export * from './org-events.constants';
 export * from './individual-enrollment-catalog';
