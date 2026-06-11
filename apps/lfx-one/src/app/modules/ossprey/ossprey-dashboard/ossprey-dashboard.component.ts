@@ -3,7 +3,14 @@
 
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { OsspreyDashboardSortSpec, OsspreyFilterState, OsspreyListParams, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import {
+  OsspreyDashboardSortSpec,
+  OsspreyFilterState,
+  OsspreyListParams,
+  OsspreyPackage,
+  OspreySortKey,
+  OsspreyStatusCounts,
+} from '@lfx-one/shared/interfaces';
 import { switchMap, catchError, of, map, timer, debounceTime } from 'rxjs';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
@@ -104,6 +111,26 @@ export class OsspreyDashboardComponent {
 
   protected clearSelection(): void {
     this.selectedPackages.set(new Set());
+  }
+
+  protected onSortChange(sort: string): void {
+    this.filters.update((current) => ({ ...current, sort: sort as OspreySortKey }));
+  }
+
+  protected onClearFilters(): void {
+    this.onFilterChange({
+      search: '',
+      tab: 'all',
+      sort: 'risk',
+      ecosystem: '',
+      lifecycle: '',
+      healthBand: '',
+      vulnFilter: '',
+      busFactor1Only: false,
+      staleOnly: false,
+      unstewardedOnly: false,
+    });
+    this.clearSelection();
   }
 
   private initPackages() {

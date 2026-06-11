@@ -103,25 +103,11 @@
     [filters]="filters()"
     [selectedPackages]="selectedPackages()"
     (filterChange)="onFilterChange($event)"
-    (sortChange)="onFilterChange({ sort: $any($event) })"
+    (sortChange)="onSortChange($event)"
     (packageClick)="onPackageClick($event)"
     (togglePackage)="onTogglePackage($event)"
     (toggleAll)="onToggleAll($event)"
-    (clearFilters)="
-      onFilterChange({
-        search: '',
-        tab: 'all',
-        sort: 'risk',
-        ecosystem: '',
-        lifecycle: '',
-        healthBand: '',
-        vulnFilter: '',
-        busFactor1Only: false,
-        staleOnly: false,
-        unstewardedOnly: false,
-      });
-      clearSelection()
-    ">
+    (clearFilters)="onClearFilters()">
   </lfx-ossprey-packages-tab>
 
   <!-- Bulk Actions Bar -->
