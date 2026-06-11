@@ -92,7 +92,7 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
       operation,
       service: 'crowdfunding',
       path,
-      errorBody: text,
+      errorBody: text.length > 500 ? `${text.slice(0, 500)}…(truncated)` : text,
     });
   }
   if (options.noBody) return undefined as T;
@@ -138,7 +138,7 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
       operation,
       service: 'crowdfunding',
       path,
-      errorBody: text,
+      errorBody: text.length > 500 ? `${text.slice(0, 500)}…(truncated)` : text,
     });
   }
   return response.json() as Promise<T>;

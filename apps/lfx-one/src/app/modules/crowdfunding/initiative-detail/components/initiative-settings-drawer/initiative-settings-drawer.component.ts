@@ -70,7 +70,7 @@ export class InitiativeSettingsDrawerComponent {
     description: new FormControl('', [Validators.required, Validators.maxLength(500)]),
     topics: new FormControl<string[]>([], Validators.required),
     websiteUrl: new FormControl(''),
-    goal: new FormControl<number | null>(null),
+    goal: new FormControl<number | null>(null, [Validators.min(0)]),
   });
 
   protected readonly saving = signal(false);
