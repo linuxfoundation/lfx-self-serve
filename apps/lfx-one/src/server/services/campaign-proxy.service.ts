@@ -354,6 +354,22 @@ LINKEDIN COPY RULES:
 - Include event dates and location naturally in at least one variant
 - Headline should drive action: "Register Now", "Secure Your Spot", "Join Us in [City]"`;
 
+const COPY_REDDIT_SECTION = `
+REDDIT PROMOTED POSTS (key: "reddit_promoted"):
+- variants: array of 2-3 ad variations, each containing:
+  - headline: ≤ 300 characters (the post title — must feel native to Reddit, not corporate)
+  - body: ≤ 500 characters (optional body text for text ads — conversational, community-focused)
+- recommended_subreddits: array of 3-6 relevant subreddit names (e.g. "r/kubernetes", "r/devops", "r/opensource") — select based on event topic and target audience.
+- recommended_interests: array of 3-5 Reddit interest categories (e.g. "Technology", "Programming", "Cloud Computing")
+
+REDDIT COPY RULES:
+- Headlines must feel like organic Reddit posts — no marketing jargon, no ALL CAPS
+- Use a conversational, community tone — Reddit users reject overtly corporate messaging
+- Ask questions or share insights rather than making demands
+- Avoid exclamation marks — Reddit culture finds them inauthentic
+- Include event dates and key value props naturally
+- NEVER use em-dashes (—) or en-dashes (–) — use commas or periods`;
+
 const COPY_RULES_SECTION = `
 IMPORTANT RULES:
 1. Dates must come ONLY from the event data provided — never use training-data memory
@@ -365,16 +381,19 @@ IMPORTANT RULES:
 function buildCopySystemPrompt(platforms: string[]): string {
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
+  const includeReddit = platforms.includes('reddit-ads');
 
   let prompt = COPY_SYSTEM_PROMPT_BASE + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
 
   if (includeGoogle) prompt += COPY_GOOGLE_SECTION;
   if (includeLinkedIn) prompt += COPY_LINKEDIN_SECTION;
+  if (includeReddit) prompt += COPY_REDDIT_SECTION;
   prompt += COPY_RULES_SECTION;
 
   const keys: string[] = [];
   if (includeGoogle) keys.push('"google_search"', '"google_display"');
   if (includeLinkedIn) keys.push('"linkedin_sponsored"');
+  if (includeReddit) keys.push('"reddit_promoted"');
   prompt += `\n\nRespond with a JSON object (no markdown fences). Keys: ${keys.join(' and ')}.`;
 
   return prompt;
@@ -505,7 +524,7 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
@@ -684,7 +703,7 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
@@ -845,7 +864,7 @@ export class CampaignProxyService {
       }
     }
 
-    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads'];
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
