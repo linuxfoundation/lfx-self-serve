@@ -12,7 +12,7 @@
       <input
         type="text"
         [value]="filters().search"
-        (input)="filterChange.emit({ search: $any($event.target).value })"
+        (input)="onSearchInput($event)"
         placeholder="Search package, purl, steward, or contact…"
         class="outline-none text-sm bg-transparent flex-1"
         data-testid="ossprey-search" />
@@ -235,7 +235,13 @@
     <ng-template #header>
       <tr>
         <th style="width: 34px">
-          <span class="ck" [class.on]="allSelected()" (click)="onToggleAllClick()"></span>
+          <span
+            class="ck"
+            [class.on]="allSelected()"
+            (click)="onToggleAllClick()"
+            role="checkbox"
+            [attr.aria-checked]="allSelected()"
+            aria-label="Select all packages"></span>
         </th>
         <th>Package</th>
         <th>Ecosystem</th>
@@ -251,7 +257,13 @@
     <ng-template #body let-pkg>
       <tr (click)="packageClick.emit(pkg.id)" class="cursor-pointer">
         <td (click)="$event.stopPropagation()">
-          <span class="ck" [class.on]="isPackageSelected(pkg.id)" (click)="togglePackage.emit({ id: pkg.id, event: $event })"></span>
+          <span
+            class="ck"
+            [class.on]="isPackageSelected(pkg.id)"
+            (click)="togglePackage.emit({ id: pkg.id, event: $event })"
+            role="checkbox"
+            [attr.aria-checked]="isPackageSelected(pkg.id)"
+            [attr.aria-label]="'Select ' + pkg.name"></span>
         </td>
         <td>
           <div class="t-title">{{ pkg.name }}</div>
@@ -275,5 +287,5 @@
       </tr>
     </ng-template>
   </lfx-table>
-  <p class="text-xs text-gray-500">Showing {{ filteredPackages().length }} of {{ packages().length }} packages · demo subset of 1,842 critical packages</p>
+  <p class="text-xs text-gray-500">Showing {{ filteredPackages().length }} of {{ packages().length }} packages</p>
 </div>
