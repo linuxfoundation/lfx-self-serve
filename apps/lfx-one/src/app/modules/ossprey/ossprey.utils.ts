@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyEcosystem, OsspreyHealthBand, OsspreyLifecycle, OsspreyPackage, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
+import { OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
 
 export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
   const map: Record<OsspreyStatus, TagSeverity> = {
@@ -68,35 +68,4 @@ export function getHealthLabel(score: number): string {
 export function getLifecycleLabel(lifecycle: OsspreyLifecycle | null): string {
   if (!lifecycle) return 'Unknown';
   return lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1);
-}
-
-export function getEcosystemIconClass(ecosystem: OsspreyEcosystem | string): string {
-  const classes: Record<string, string> = {
-    npm: 'fa-brands fa-npm',
-    maven: 'fa-brands fa-java',
-    pypi: 'fa-brands fa-python',
-    go: 'fa-brands fa-golang',
-  };
-  return classes[ecosystem] ?? 'fa-light fa-cube';
-}
-
-const SEVERITY_RANK: Record<OspreySeverity, number> = {
-  critical: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-};
-
-/**
- * Composite "risk priority" used for the default queue ordering — mirrors the
- * design prototype's formula: impact, inverted health, vuln severity/count,
- * bus factor 1, and staleness all push a package up the queue.
- */
-export function getRiskScore(pkg: OsspreyPackage): number {
-  const impact = pkg.impactScore ?? 0;
-  const health = pkg.healthScore ?? 50;
-  const severity = pkg.vulnSeverity ? SEVERITY_RANK[pkg.vulnSeverity] : 0;
-  const busFactorPenalty = pkg.busFactor === 1 ? 20 : 0;
-  const stalePenalty = (pkg.monthsStale ?? 0) >= 18 ? 15 : 0;
-  return impact + (100 - health) * 0.8 + severity * 15 + pkg.vulnCount * 4 + busFactorPenalty + stalePenalty;
 }
