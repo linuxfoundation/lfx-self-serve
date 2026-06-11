@@ -190,7 +190,7 @@ export class OsspreyServerService {
       hasSecurityMd: null,
       ecosystemReach: null,
       contactGroup: null,
-      healthBreakdown: [],
+      healthBreakdown: ['—', '—', '—'],
       advisories: [],
       history: [],
       assessment: null,
@@ -211,7 +211,7 @@ export class OsspreyServerService {
           hs.securitySupplyChain != null ? `${Math.round(hs.securitySupplyChain)} / 35` : '—',
           hs.developmentActivity != null ? `${Math.round(hs.developmentActivity)} / 25` : '—',
         ]
-      : [];
+      : ['—', '—', '—'];
 
     const repo = detail.provenance?.repositoryMapping;
     const impact = detail.general?.impact;
