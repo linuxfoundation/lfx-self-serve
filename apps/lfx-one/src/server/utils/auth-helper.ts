@@ -80,12 +80,7 @@ export function getEffectiveUsername(req: Request): string | null {
   // back to it keeps the LFID-username identity path (#912) working across both Auth0 (nickname/username)
   // and Authelia (preferred_username) without affecting Auth0, where the earlier claims take precedence.
   // Mirrors the Authelia handling already in `getUsernameFromAuth`.
-  return (
-    (req.oidc?.user?.['nickname'] as string) ||
-    (req.oidc?.user?.['username'] as string) ||
-    (req.oidc?.user?.['preferred_username'] as string) ||
-    null
-  );
+  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
 }
 
 /**
