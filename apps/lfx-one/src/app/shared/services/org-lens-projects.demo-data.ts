@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import type {
+  HealthScore,
   InfluenceTrend,
   InfluenceTrendDirection,
   OrgLensProject,
@@ -352,8 +353,8 @@ const DESCRIPTION_BY_SLUG: Record<string, string> = {
 
 // Deterministic CHAOSS-style sub-scores so the health popover is stable across reloads. Real data supplies these.
 function buildHealthMetrics(project: Omit<OrgLensProject, 'description' | 'healthMetrics'>): ProjectHealthMetric[] {
-  const baseByHealth: Record<string, number> = { excellent: 84, healthy: 64, 'at-risk': 42 };
-  const base = baseByHealth[project.health] ?? 60;
+  const baseByHealth: Record<HealthScore, number> = { excellent: 84, healthy: 64, 'at-risk': 42 };
+  const base = baseByHealth[project.health];
   const seed = project.slug.length + Math.round(project.influenceScore);
   const score = (offset: number): number => Math.max(22, Math.min(98, base + ((seed * (offset + 3)) % 26) - 10));
   return [
