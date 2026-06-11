@@ -115,11 +115,12 @@ export class OsspreyPackagesTabComponent {
 
   protected getStewardNames(stewardIds: string[]): string {
     if (stewardIds.length === 0) return '—';
-    if (stewardIds.length === 1) {
-      const name = this.osspreyService.getStewardName(stewardIds[0]);
-      return name.length > 20 ? name.substring(0, 17) + '...' : name;
-    }
+    if (stewardIds.length === 1) return this.osspreyService.getStewardName(stewardIds[0]);
     return `${stewardIds.length} stewards`;
+  }
+
+  protected onSearchInput(event: Event): void {
+    this.filterChange.emit({ search: (event.target as HTMLInputElement).value });
   }
 
   protected toggleSortMenu(): void {
