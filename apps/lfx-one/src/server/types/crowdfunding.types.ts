@@ -113,14 +113,12 @@ export interface BackendDonationListResponse {
 export interface BackendSubscription {
   id: string;
   initiative_id: string;
-  initiative_name: string;
+  initiative_name?: string;
   initiative_logo_url?: string;
   status: string;
   amount_cents: number;
-  interval: string;
-  start_date: string;
-  next_charge_date?: string;
-  paused_at?: string;
+  frequency: string;
+  created_on: string;
 }
 
 export interface BackendSubscriptionListResponse {

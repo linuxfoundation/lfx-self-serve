@@ -177,13 +177,11 @@ function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
 export function mapSubscriptionToRecurringDonation(s: BackendSubscription): RecurringDonation {
   return {
     id: s.id,
-    name: s.initiative_name,
+    name: s.initiative_name ?? '',
     icon: s.initiative_logo_url ?? '',
     status: toValidRecurringStatus(s.status),
     amount: s.amount_cents / 100,
-    billingDescription: s.interval,
-    startDate: s.start_date,
-    nextChargeDate: s.next_charge_date,
-    pausedSince: s.paused_at,
+    billingDescription: s.frequency,
+    startDate: s.created_on,
   };
 }
