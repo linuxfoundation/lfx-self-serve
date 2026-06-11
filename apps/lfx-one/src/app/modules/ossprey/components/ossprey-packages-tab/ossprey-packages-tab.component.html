@@ -40,7 +40,7 @@
       }
     </div>
 
-    <div class="flex items-center gap-2.5">
+    <div class="flex items-center gap-2.5 ml-auto">
       <div class="relative">
         <button
           type="button"
@@ -176,7 +176,7 @@
   <lfx-table [value]="filteredPackages()" [loading]="loading()" [rowHover]="true" size="small" data-testid="ossprey-packages-table">
     <ng-template #header>
       <tr>
-        <th class="w-9">
+        <th class="w-9 hidden">
           <span
             [class]="
               allSelected()
@@ -204,9 +204,33 @@
         <th>Stewardship</th>
       </tr>
     </ng-template>
+    <ng-template #loadingbody let-rowData>
+      <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
+        <td class="hidden"></td>
+        <td>
+          <div class="flex flex-col gap-1.5">
+            <div class="lfx-skeleton-bar w-48"></div>
+            <div class="lfx-skeleton-bar w-36"></div>
+          </div>
+        </td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td><div class="lfx-skeleton-bar w-20"></div></td>
+        <td><div class="lfx-skeleton-bar w-8"></div></td>
+        <td><div class="lfx-skeleton-bar w-10"></div></td>
+        <td><div class="lfx-skeleton-bar w-24"></div></td>
+        <td>
+          <div class="flex flex-col gap-1.5">
+            <div class="lfx-skeleton-bar w-16"></div>
+            <div class="lfx-skeleton-bar w-20"></div>
+          </div>
+        </td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+      </tr>
+    </ng-template>
     <ng-template #body let-pkg>
       <tr (click)="packageClick.emit(pkg.id)" class="cursor-pointer">
-        <td (click)="$event.stopPropagation()">
+        <td class="hidden" (click)="$event.stopPropagation()">
           <span
             [class]="
               isPackageSelected(pkg.id)
@@ -229,8 +253,36 @@
         </td>
         <td>
           <span class="inline-flex items-center gap-2 text-gray-600 font-medium whitespace-nowrap">
-            <i [class]="getEcosystemIconClass(pkg.ecosystem) + ' text-base'" aria-hidden="true"></i>
-            {{ pkg.ecosystem }}
+            @switch (pkg.ecosystem) {
+              @case ('npm') {
+                <span
+                  class="inline-flex items-center justify-center bg-[#cb3837] text-white font-bold rounded px-1 py-0.5 leading-none tracking-tight flex-shrink-0"
+                  style="font-size: 9px"
+                  aria-hidden="true"
+                  >npm</span
+                >
+                npm
+              }
+              @case ('maven') {
+                <svg viewBox="0 0 24 24" width="16" height="16" class="flex-shrink-0" aria-hidden="true">
+                  <path d="M4 21C4 12 9.5 4.5 18 2c-1.7 9-7.5 15.5-14 19z" fill="#69a2d0" />
+                  <path d="M4 21c4.2-1 8-3.4 11-7.6C14 18.7 9.2 21 4 21z" fill="#cf2b58" />
+                </svg>
+                Maven
+              }
+              @case ('pypi') {
+                <i class="fa-brands fa-python text-[#3776ab] text-base flex-shrink-0" aria-hidden="true"></i>
+                PyPI
+              }
+              @case ('go') {
+                <i class="fa-brands fa-golang text-[#00ADD8] text-base flex-shrink-0" aria-hidden="true"></i>
+                Go
+              }
+              @default {
+                <i class="fa-light fa-cube text-gray-400 text-base flex-shrink-0" aria-hidden="true"></i>
+                {{ pkg.ecosystem }}
+              }
+            }
           </span>
         </td>
         <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" /></td>

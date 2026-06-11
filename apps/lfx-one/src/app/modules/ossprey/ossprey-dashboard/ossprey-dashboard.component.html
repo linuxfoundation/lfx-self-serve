@@ -12,9 +12,38 @@
   </div>
 
   <!-- KPI Metrics Strip -->
-  @if (!loading() && !loadError()) {
+  @if (initialLoading()) {
+    <div
+      class="flex flex-wrap items-stretch bg-white border border-gray-200 rounded-xl overflow-hidden mb-5 animate-pulse"
+      data-testid="ossprey-kpi-strip-skeleton">
+      <!-- Total packages skeleton -->
+      <div class="flex-1 basis-1/2 lg:basis-0 min-w-0 flex flex-col gap-3 px-4 py-4">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0"></div>
+          <div class="h-3 w-24 rounded bg-gray-200"></div>
+        </div>
+        <div class="h-8 w-16 rounded bg-gray-200"></div>
+      </div>
+      <div class="w-px bg-gray-100 flex-shrink-0 self-stretch hidden lg:block"></div>
+      <!-- Critical packages skeleton -->
+      <div class="flex-1 basis-1/2 lg:basis-0 min-w-0 flex flex-col gap-3 px-4 py-4">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0"></div>
+          <div class="h-3 w-28 rounded bg-gray-200"></div>
+        </div>
+        <div class="h-8 w-16 rounded bg-gray-200"></div>
+      </div>
+      <div class="w-px bg-gray-100 flex-shrink-0 self-stretch hidden lg:block"></div>
+      <!-- Status list skeleton -->
+      <div class="flex-1 basis-full lg:basis-0 min-w-0 flex flex-col justify-center px-3 py-2 gap-1">
+        <div class="h-9 rounded-lg bg-gray-100"></div>
+        <div class="h-9 rounded-lg bg-gray-100"></div>
+        <div class="h-9 rounded-lg bg-gray-100"></div>
+      </div>
+    </div>
+  } @else if (!loadError() && !initialLoading()) {
     <div class="flex flex-wrap items-stretch bg-white border border-gray-200 rounded-xl overflow-hidden mb-5" data-testid="ossprey-kpi-strip">
-      <!-- Total packages coverage -->
+      <!-- Total packages -->
       <div class="flex-1 basis-1/2 lg:basis-0 min-w-0 flex flex-col justify-between px-4 py-4 bg-gradient-to-br from-blue-100 via-blue-50 to-white">
         <div class="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
           <span class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0">
@@ -22,18 +51,23 @@
           </span>
           Total packages
         </div>
-        <div class="font-display font-light text-3xl text-slate-900 leading-none mb-3">{{ totalPackages() }}</div>
-        <div class="min-w-0">
-          <div class="h-1.5 rounded-full bg-gray-200 overflow-hidden mb-1.5">
-            <div class="h-full rounded-full bg-blue-500" [style.width.%]="coveragePercent()"></div>
-          </div>
-          <div class="text-xs text-gray-500 truncate">
-            <span class="font-semibold text-gray-700">{{ coveragePercent() }}% covered</span> · {{ coveredCount() }} active / assessing
-          </div>
-        </div>
+        <div class="font-display font-light text-3xl text-slate-900 leading-none">{{ totalPackages() }}</div>
       </div>
       <div class="w-px bg-gray-100 flex-shrink-0 self-stretch hidden lg:block"></div>
-      <!-- Status breakdown list -->
+      <!-- Critical packages -->
+      <div
+        class="flex-1 basis-1/2 lg:basis-0 min-w-0 flex flex-col justify-between px-4 py-4 bg-gradient-to-br from-slate-100 via-slate-50 to-white"
+        data-testid="ossprey-kpi-critical-packages">
+        <div class="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
+          <span class="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-shield-exclamation text-[11px]" aria-hidden="true"></i>
+          </span>
+          Critical packages
+        </div>
+        <div class="font-display font-light text-3xl text-slate-900 leading-none">{{ criticalCount() }}</div>
+      </div>
+      <div class="w-px bg-gray-100 flex-shrink-0 self-stretch hidden lg:block"></div>
+      <!-- Status breakdown -->
       <div class="flex-1 basis-full lg:basis-0 min-w-0 flex flex-col justify-center px-3 py-2">
         <button
           type="button"
@@ -86,7 +120,7 @@
     <lfx-ossprey-packages-tab
       [packages]="packages()"
       [filteredPackages]="filteredPackages()"
-      [loading]="loading()"
+      [loading]="tableLoading()"
       [statusCounts]="statusCounts()"
       [filters]="filters()"
       [selectedPackages]="selectedPackages()"
@@ -100,7 +134,7 @@
   }
 
   <!-- Bulk Actions Bar -->
-  @if (showBulkActions()) {
+  @if (false) {
     <div
       class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 z-40"
       data-testid="ossprey-bulk-actions-bar">
