@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OsspreyDashboardSortSpec, OsspreyFilterState, OsspreyListParams, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer } from 'rxjs';
+import { switchMap, catchError, of, map, timer, debounceTime } from 'rxjs';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
 import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/ossprey-packages-tab.component';
@@ -109,6 +109,7 @@ export class OsspreyDashboardComponent {
   private initPackages() {
     return toSignal<OsspreyPackage[] | undefined>(
       toObservable(this.filters).pipe(
+        debounceTime(300),
         switchMap((f) => {
           // 'risk' is intentionally absent — no sort params means the server applies its
           // own composite risk ordering rather than a simple field sort.

@@ -45,7 +45,17 @@ export class OsspreyPackageDrawerComponent {
 
   protected getHealthBreakdownPercent(item: string): number {
     const num = parseInt(item, 10);
-    return (num / 40) * 100;
+    return Math.min(100, (num / 40) * 100);
+  }
+
+  protected getSafeRepoUrl(repoUrl: string | null): string | null {
+    if (!repoUrl) return null;
+    try {
+      const url = new URL('https://' + repoUrl);
+      return url.protocol === 'https:' ? url.href : null;
+    } catch {
+      return null;
+    }
   }
 
   protected getMonthsStaleTagSeverity(monthsStale: number | null): TagSeverity {

@@ -157,5 +157,5 @@
 </div>
 
 <!-- Package Detail Drawer -->
-<lfx-ossprey-package-drawer [(visible)]="drawerVisible" [packageId]="selectedPackageId()" (visibleChange)="$event || onDrawerClose()">
+<lfx-ossprey-package-drawer [(visible)]="drawerVisible" [packageId]="selectedPackageId()" (visibleChange)="!$event && onDrawerClose()">
 </lfx-ossprey-package-drawer>

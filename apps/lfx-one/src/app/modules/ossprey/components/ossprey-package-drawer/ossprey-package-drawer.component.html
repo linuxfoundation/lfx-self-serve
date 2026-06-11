@@ -243,7 +243,11 @@
           <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-700">Repository Mapping</h3>
           <div class="flex justify-between items-center py-2 border-b border-gray-200">
             <span class="text-sm text-gray-600">Repository</span>
-            <a [href]="'https://' + packageData()!.repoUrl" target="_blank" class="text-sm font-semibold text-blue-600 hover:underline truncate"> View </a>
+            @if (getSafeRepoUrl(packageData()!.repoUrl); as safeUrl) {
+              <a [href]="safeUrl" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-blue-600 hover:underline truncate"> View </a>
+            } @else {
+              <span class="text-sm text-gray-400">—</span>
+            }
           </div>
           <div class="flex justify-between items-center py-2 border-b border-gray-200">
             <span class="text-sm text-gray-600">Last Release</span>
