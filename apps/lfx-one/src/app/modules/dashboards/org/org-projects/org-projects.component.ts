@@ -416,6 +416,11 @@ export class OrgProjectsComponent {
     const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}%`;
     return `Influence trend over the past year — combined ${fmt(t.deltaPct)}, technical ${fmt(t.technicalDeltaPct)}, ecosystem ${fmt(t.ecosystemDeltaPct)}.`;
   }
+  // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
+  protected healthAriaLabel(project: OrgLensProject): string {
+    const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
+    return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
+  }
   protected sparklineData(project: OrgLensProject): { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] } {
     const cached = this.sparklineCache.get(project);
     if (cached) {
@@ -514,6 +519,7 @@ export class OrgProjectsComponent {
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
         trendTooltipHtml: this.trendTooltip(project),
         trendAriaLabel: this.trendAriaLabel(project),
+        healthAriaLabel: this.healthAriaLabel(project),
       }))
     );
   }

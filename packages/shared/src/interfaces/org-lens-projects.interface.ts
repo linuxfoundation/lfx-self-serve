@@ -160,4 +160,6 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   trendTooltipHtml: string;
   /** Plain-text trend summary for screen readers / keyboard focus. */
   trendAriaLabel: string;
+  /** Plain-text health summary (rating + sub-scores) for screen readers / keyboard focus. */
+  healthAriaLabel: string;
 }

@@ -291,7 +291,8 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
  */
 function escapeCsvCell(value: string | number): string {
   const raw = String(value ?? '');
-  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  // Only string cells can carry a formula payload; leave numbers numeric (prefixing makes Excel treat them as text).
+  const safe = typeof value === 'string' && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 

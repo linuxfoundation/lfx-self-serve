@@ -216,19 +216,19 @@
                   <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
                 </button>
               </td>
-              <!-- Health (hover reveals LFX Insights detail) -->
+              <!-- Health: hover shows the LFX Insights detail popover for mouse users; the full rating + sub-scores
+                   are exposed via aria-label so keyboard / screen-reader users get the same information textually. -->
               <td>
-                <button
-                  type="button"
+                <span
                   class="inline-flex cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  tabindex="0"
+                  role="img"
+                  [attr.aria-label]="project.healthAriaLabel"
                   (mouseenter)="openHealth($event, project, healthPop)"
                   (mouseleave)="scheduleHealthHide(healthPop)"
-                  (focus)="openHealth($event, project, healthPop)"
-                  (blur)="scheduleHealthHide(healthPop)"
-                  [attr.aria-label]="'Health details: ' + healthLabel(project.health)"
                   [attr.data-testid]="'org-projects-health-' + project.slug">
                   <lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" />
-                </button>
+                </span>
               </td>
               <!-- Technical Influence (signal-strength bars + band label) -->
               <td>
