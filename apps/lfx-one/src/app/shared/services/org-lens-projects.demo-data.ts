@@ -385,3 +385,52 @@ export function getDemoProjectsResponse(orgUid: string, orgName: string): OrgLen
     })),
   };
 }
+
+// Demo catalog of projects a user can add to a workspace (distinct from the seeded DEMO_PROJECTS).
+const ADDABLE_PROJECTS: readonly { slug: string; name: string; foundation: OrgLensProjectFoundation; org: string }[] = [
+  { slug: 'cilium', name: 'Cilium', foundation: CNCF, org: 'cilium' },
+  { slug: 'istio', name: 'Istio', foundation: CNCF, org: 'istio' },
+  { slug: 'linkerd', name: 'Linkerd', foundation: CNCF, org: 'linkerd' },
+  { slug: 'helm', name: 'Helm', foundation: CNCF, org: 'helm' },
+  { slug: 'flux', name: 'Flux', foundation: CNCF, org: 'fluxcd' },
+  { slug: 'vitess', name: 'Vitess', foundation: CNCF, org: 'vitessio' },
+  { slug: 'etcd', name: 'etcd', foundation: CNCF, org: 'etcd-io' },
+  { slug: 'coredns', name: 'CoreDNS', foundation: CNCF, org: 'coredns' },
+  { slug: 'keda', name: 'KEDA', foundation: CNCF, org: 'kedacore' },
+  { slug: 'dapr', name: 'Dapr', foundation: CNCF, org: 'dapr' },
+  { slug: 'backstage', name: 'Backstage', foundation: CNCF, org: 'backstage' },
+  { slug: 'kubeflow', name: 'Kubeflow', foundation: LF_AI, org: 'kubeflow' },
+];
+
+function addableLogo(org: string): string {
+  return `https://github.com/${org}.png?size=80`;
+}
+
+/** Options for the "Add project(s)" multi-select (value=slug, label=name, logoUrl for the option icon). */
+export function getAddableProjectOptions(): { value: string; label: string; logoUrl: string }[] {
+  return ADDABLE_PROJECTS.map((p) => ({ value: p.slug, label: p.name, logoUrl: addableLogo(p.org) }));
+}
+
+/** Build full demo project rows for the given slugs (newly added → no org activity yet). */
+export function buildAddedProjects(slugs: readonly string[]): OrgLensProject[] {
+  return ADDABLE_PROJECTS.filter((p) => slugs.includes(p.slug)).map((p) => {
+    const base: Omit<OrgLensProject, 'description' | 'healthMetrics'> = {
+      slug: p.slug,
+      name: p.name,
+      logoUrl: addableLogo(p.org),
+      foundation: p.foundation,
+      health: 'healthy',
+      technicalInfluence: 'participating',
+      ecosystemInfluence: 'silent',
+      influenceScore: 12,
+      priorYearScore: 12,
+      trend: trend(0, [12, 12, 12, 12, 12, 12, 12]),
+      maintainers: [],
+      contributors: [],
+      participants: [],
+      commits1y: 0,
+      changeDriver: { label: 'Newly added', direction: 'flat' },
+    };
+    return { ...base, description: `${p.name} was recently added to this workspace.`, healthMetrics: buildHealthMetrics(base) };
+  });
+}

@@ -4,10 +4,10 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { Injectable } from '@angular/core';
-import type { OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
+import type { OrgLensProject, OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
 import { delay, Observable, of } from 'rxjs';
 
-import { getDemoProjectsResponse } from './org-lens-projects.demo-data';
+import { buildAddedProjects, getAddableProjectOptions, getDemoProjectsResponse } from './org-lens-projects.demo-data';
 
 /** Simulated network latency so the page exercises its loading skeletons. */
 const DEMO_LATENCY_MS = 450;
@@ -26,5 +26,15 @@ const DEMO_LATENCY_MS = 450;
 export class OrgLensProjectsService {
   public getProjects(orgUid: string, orgName: string): Observable<OrgLensProjectsResponse> {
     return of(getDemoProjectsResponse(orgUid, orgName)).pipe(delay(DEMO_LATENCY_MS));
+  }
+
+  /** Catalog of projects that can be added to a workspace (`{ value, label, logoUrl }` for the multi-select). */
+  public getAddableProjectOptions(): { value: string; label: string; logoUrl: string }[] {
+    return getAddableProjectOptions();
+  }
+
+  /** Build full project rows for the given catalog slugs (used when the user adds projects to a workspace). */
+  public buildAddedProjects(slugs: readonly string[]): OrgLensProject[] {
+    return buildAddedProjects(slugs);
   }
 }

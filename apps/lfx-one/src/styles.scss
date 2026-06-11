@@ -361,12 +361,19 @@ html {
   }
 }
 
-// Org Lens projects — explanatory column tooltips need more width than PrimeNG's default 12.5rem cap.
+// Org Lens projects — explanatory column tooltips need more width than the default.
 // Tooltips are appended to <body>, so they must be styled globally (component/Tailwind-scoped styles don't reach them).
-// Higher specificity (`.p-tooltip.<class>`) + !important so these win over PrimeNG's default 12.5rem cap
-// regardless of stylesheet order.
+// PrimeNG sets `width: fit-content` inline on the tooltip container, which can shrink it below the text max-width;
+// a `min-width` floor on the container (min-width coexists with the inline width) forces a readable width, and
+// !important wins over both PrimeNG's layered theme and its inline style.
+.p-tooltip.lfx-tooltip-wide {
+  min-width: 26rem !important;
+  max-width: 40rem !important;
+}
+
 .p-tooltip.lfx-tooltip-wide .p-tooltip-text {
-  max-width: 36rem !important;
+  max-width: 40rem !important;
+  white-space: normal !important;
 }
 
 .p-tooltip.lfx-tooltip-nowrap .p-tooltip-text {

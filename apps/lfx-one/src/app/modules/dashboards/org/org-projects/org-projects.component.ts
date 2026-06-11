@@ -112,12 +112,17 @@ export class OrgProjectsComponent {
   protected readonly workspaceForm = new FormGroup({
     name: new FormControl<string>('', { nonNullable: true }),
   });
+  /** Selected project slugs for the "Add project(s)" dialog. */
+  protected readonly addProjectsForm = new FormGroup({
+    projects: new FormControl<string[]>([], { nonNullable: true }),
+  });
+  /** Catalog of projects that can be added to the workspace (with logos for the multi-select). */
+  protected readonly addableProjectOptions = this.projectsService.getAddableProjectOptions();
 
   // Writable Signals
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
-  /** Per-user workspace pin/hide state (client-only; never mutates the foundation catalog). */
-  protected readonly pinnedSlugs = signal<ReadonlySet<string>>(new Set());
+  /** Slugs hidden from the current workspace (client-only; never mutates the foundation catalog). */
   protected readonly hiddenSlugs = signal<ReadonlySet<string>>(new Set());
   /** Shared workspaces (seeded presets + user-created); editable via the workspace dropdown. */
   protected readonly workspaces = signal<OrgProjectsWorkspace[]>([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
@@ -125,6 +130,10 @@ export class OrgProjectsComponent {
   protected readonly editingWorkspace = signal<OrgProjectsWorkspace | null>(null);
   /** Two-way visibility for the workspace add/settings dialog (`[(visible)]`). */
   protected readonly workspaceDialogOpen = model(false);
+  /** Two-way visibility for the "Add project(s)" dialog (`[(visible)]`). */
+  protected readonly addProjectsDialogOpen = model(false);
+  /** Projects added to the current workspace via the Add Project dialog (client-only demo state). */
+  protected readonly addedProjects = signal<OrgLensProject[]>([]);
   /** Bumped to re-trigger the demo fetch from the inline error-retry CTA. */
   private readonly reload = signal(0);
   /** Action menu items rebuilt per row when the kebab is opened. */
@@ -240,8 +249,19 @@ export class OrgProjectsComponent {
     return this.sortDir() === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
   }
 
-  protected openFindProject(): void {
-    // +Find project opens an add-project modal whose internals ship in a separate ticket.
+  protected openAddProjects(): void {
+    this.addProjectsForm.setValue({ projects: [] });
+    this.addProjectsDialogOpen.set(true);
+  }
+
+  protected confirmAddProjects(): void {
+    const slugs = this.addProjectsForm.getRawValue().projects;
+    const existing = new Set([...(this.response()?.projects ?? []), ...this.addedProjects()].map((p) => p.slug));
+    const additions = this.projectsService.buildAddedProjects(slugs).filter((p) => !existing.has(p.slug));
+    if (additions.length) {
+      this.addedProjects.update((prev) => [...prev, ...additions]);
+    }
+    this.addProjectsDialogOpen.set(false);
   }
 
   protected selectWorkspace(id: OrgProjectsWorkspaceId): void {
@@ -283,14 +303,15 @@ export class OrgProjectsComponent {
 
   protected deleteWorkspace(): void {
     const editing = this.editingWorkspace();
-    // Always keep at least one workspace so the company never ends up with none.
-    if (!editing || this.workspaces().length <= 1) {
+    if (!editing) {
       return;
     }
+    // Re-seed the default if the last workspace is removed so the company is never left with none.
     const remaining = this.workspaces().filter((w) => w.id !== editing.id);
-    this.workspaces.set(remaining);
-    if (this.selectedWorkspaceId() === editing.id) {
-      this.selectWorkspace(remaining[0].id);
+    const next = remaining.length > 0 ? remaining : [...DEFAULT_ORG_PROJECTS_WORKSPACES];
+    this.workspaces.set(next);
+    if (!next.some((w) => w.id === this.selectedWorkspaceId())) {
+      this.selectWorkspace(next[0].id);
     }
     this.workspaceDialogOpen.set(false);
   }
@@ -392,9 +413,6 @@ export class OrgProjectsComponent {
     const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}%`;
     return `Influence trend over the past year — combined ${fmt(t.deltaPct)}, technical ${fmt(t.technicalDeltaPct)}, ecosystem ${fmt(t.ecosystemDeltaPct)}.`;
   }
-  protected isPinned(slug: string): boolean {
-    return this.pinnedSlugs().has(slug);
-  }
   protected sparklineData(project: OrgLensProject): { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] } {
     const cached = this.sparklineCache.get(project);
     if (cached) {
@@ -459,7 +477,7 @@ export class OrgProjectsComponent {
 
   private initFilteredProjects(): Signal<OrgLensProject[]> {
     return computed(() => {
-      const all = this.response()?.projects ?? [];
+      const all = [...(this.response()?.projects ?? []), ...this.addedProjects()];
       const workspace = this.selectedWorkspaceId();
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
       const employees = this.formValue().employees?.filter(Boolean) ?? [];
@@ -468,11 +486,7 @@ export class OrgProjectsComponent {
         .filter((p) => !hidden.has(p.slug))
         .filter((p) => this.matchesWorkspace(p, workspace))
         .filter((p) => foundation === ALL_FOUNDATIONS || p.foundation.slug === foundation)
-        .filter(
-          (p) =>
-            employees.length === 0 ||
-            [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id))
-        );
+        .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
     });
   }
 
@@ -481,15 +495,7 @@ export class OrgProjectsComponent {
       const projects = [...this.filteredProjects()];
       const field = this.sortField();
       const dir = this.sortDir();
-      const pinned = this.pinnedSlugs();
-      projects.sort((a, b) => {
-        const aPinned = pinned.has(a.slug);
-        const bPinned = pinned.has(b.slug);
-        if (aPinned !== bPinned) {
-          return aPinned ? -1 : 1;
-        }
-        return this.compareProjects(a, b, field, dir);
-      });
+      projects.sort((a, b) => this.compareProjects(a, b, field, dir));
       return projects;
     });
   }
@@ -566,37 +572,11 @@ export class OrgProjectsComponent {
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {
-    const pinned = this.isPinned(project.slug);
-    return [
-      {
-        label: pinned ? 'Unpin from top' : 'Pin to top',
-        icon: pinned ? 'fa-light fa-thumbtack-slash' : 'fa-light fa-thumbtack',
-        command: () => this.togglePin(project.slug),
-      },
-      { label: 'Open detail', icon: 'fa-light fa-arrow-up-right-from-square', command: () => this.openDetail(project) },
-      { label: 'Add to workspace', icon: 'fa-light fa-plus', command: () => this.addToWorkspace() },
-      { label: 'Hide from this workspace', icon: 'fa-light fa-eye-slash', command: () => this.hideFromWorkspace(project.slug) },
-    ];
-  }
-
-  private togglePin(slug: string): void {
-    this.pinnedSlugs.update((set) => {
-      const next = new Set(set);
-      if (next.has(slug)) {
-        next.delete(slug);
-      } else {
-        next.add(slug);
-      }
-      return next;
-    });
+    return [{ label: 'Hide project from workspace', icon: 'fa-light fa-eye-slash', command: () => this.hideFromWorkspace(project.slug) }];
   }
 
   private hideFromWorkspace(slug: string): void {
     this.hiddenSlugs.update((set) => new Set(set).add(slug));
-  }
-
-  private addToWorkspace(): void {
-    // Add-to-workspace writes to the per-user workspace project list; CRUD flow is a separate ticket.
   }
 
   private uniqueWorkspaceId(name: string): string {
