@@ -279,7 +279,16 @@ export class CommitteeMembersComponent {
   }
 
   private cleanErrorMessage(err: unknown): string {
-    return (err as { error?: { error?: { message?: string } } })?.error?.error?.message ?? 'Could not save changes. Please try again.';
+    // The BFF returns either `{ error: { message } }` (validation) or `{ error: string }`
+    // (MicroserviceError/BaseApiError) — tolerate both so the server detail survives to the toast.
+    const inner = (err as { error?: { error?: unknown } })?.error?.error;
+    if (typeof inner === 'string' && inner.trim()) {
+      return inner;
+    }
+    if (inner && typeof inner === 'object' && typeof (inner as { message?: unknown }).message === 'string' && (inner as { message: string }).message.trim()) {
+      return (inner as { message: string }).message;
+    }
+    return 'Could not save changes. Please try again.';
   }
 
   private initResponse(): Signal<OrgPeopleCommitteeMembersResponse> {

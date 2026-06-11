@@ -170,7 +170,10 @@ export class OrgPeopleCommitteeMembersService {
     for (const a of assignments) {
       if (a.person.email) emails.add(a.person.email);
       if (a.committeeUid) committees.add(a.committeeUid);
-      if (a.projectUid) foundations.add(a.projectUid);
+      // Count by projectUid, but fall back to the foundation slug when the UID is missing so the tile
+      // never shows 0 foundations while the table still renders foundation values (un-enriched seats).
+      const foundationKey = a.projectUid || a.foundationSlug;
+      if (foundationKey) foundations.add(foundationKey);
     }
     return { individualCount: emails.size, committeeCount: committees.size, foundationsCovered: foundations.size };
   }
