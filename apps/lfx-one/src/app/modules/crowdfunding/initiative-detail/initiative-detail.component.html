@@ -17,7 +17,8 @@
       [initiative]="detail"
       [activeTab]="activeTab()"
       (tabChange)="activeTab.set($event)"
-      (settingsClick)="settingsDrawerVisible.set(true)" />
+      (settingsClick)="settingsDrawerVisible.set(true)"
+      (statusChange)="onStatusChange($event)" />
 
     <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" (initiativeSaved)="onInitiativeSaved($event)" />
 

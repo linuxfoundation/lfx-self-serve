@@ -144,6 +144,7 @@ export interface BackendUpdateInitiativeInput {
   industry?: string;
   logo_url?: string;
   website_url?: string;
+  status?: string;
   goals?: BackendGoalInput[];
   beneficiaries?: BackendBeneficiaryInput[];
 }

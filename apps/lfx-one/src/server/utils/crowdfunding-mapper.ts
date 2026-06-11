@@ -29,10 +29,10 @@ import {
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
 
-const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
+const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['submitted', 'pending', 'published', 'declined', 'hidden'];
 
 function toValidInitiativeStatus(value: unknown): CrowdfundingInitiativeStatus {
-  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus) ? (value as CrowdfundingInitiativeStatus) : 'active';
+  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus) ? (value as CrowdfundingInitiativeStatus) : 'pending';
 }
 
 function toValidFundType(value: unknown): FundType {

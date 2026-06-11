@@ -4,7 +4,7 @@
 import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { CrowdfundingInitiativeStatus, InitiativeBase, FilterPillOption } from '@lfx-one/shared/interfaces';
+import { InitiativeBase, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { InitiativeCardComponent } from '../initiative-card/initiative-card.component';
 import { CardComponent } from '@components/card/card.component';
 
@@ -21,16 +21,22 @@ export class InitiativesListComponent {
   public readonly initiativeClick = output<string>();
   public readonly loadMore = output<void>();
 
-  protected readonly activeFilter = signal<CrowdfundingInitiativeStatus>('active');
+  protected readonly activeFilter = signal<'active' | 'pending' | 'archived'>('active');
 
   protected readonly statusCounts = this.initStatusCounts();
   protected readonly filterOptions = this.initFilterOptions();
-  protected readonly filteredInitiatives = computed(() => this.initiatives().filter((i) => i.status === this.activeFilter()));
+  protected readonly filteredInitiatives = computed(() => {
+    const filter = this.activeFilter();
+    return this.initiatives().filter((i) => {
+      if (filter === 'active') return i.status === 'published';
+      if (filter === 'pending') return i.status === 'pending' || i.status === 'submitted';
+      return i.status === 'hidden' || i.status === 'declined';
+    });
+  });
 
-  protected setFilter(status: string): void {
-    const valid: CrowdfundingInitiativeStatus[] = ['active', 'pending', 'closed'];
-    if (valid.includes(status as CrowdfundingInitiativeStatus)) {
-      this.activeFilter.set(status as CrowdfundingInitiativeStatus);
+  protected setFilter(value: string): void {
+    if (value === 'active' || value === 'pending' || value === 'archived') {
+      this.activeFilter.set(value);
     }
   }
 
@@ -42,13 +48,13 @@ export class InitiativesListComponent {
     this.loadMore.emit();
   }
 
-  private initStatusCounts(): Signal<{ active: number; pending: number; closed: number }> {
+  private initStatusCounts(): Signal<{ active: number; pending: number; archived: number }> {
     return computed(() => {
       const all = this.initiatives();
       return {
-        active: all.filter((i) => i.status === 'active').length,
-        pending: all.filter((i) => i.status === 'pending').length,
-        closed: all.filter((i) => i.status === 'closed').length,
+        active: all.filter((i) => i.status === 'published').length,
+        pending: all.filter((i) => i.status === 'pending' || i.status === 'submitted').length,
+        archived: all.filter((i) => i.status === 'hidden' || i.status === 'declined').length,
       };
     });
   }
@@ -59,7 +65,7 @@ export class InitiativesListComponent {
       return [
         { id: 'active', label: `Active (${counts.active})` },
         { id: 'pending', label: `Pending (${counts.pending})` },
-        { id: 'closed', label: `Closed (${counts.closed})` },
+        { id: 'archived', label: `Archived (${counts.archived})` },
       ];
     });
   }

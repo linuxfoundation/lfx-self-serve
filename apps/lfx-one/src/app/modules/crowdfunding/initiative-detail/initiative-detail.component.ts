@@ -4,9 +4,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { filter, map, switchMap } from 'rxjs';
+import { filter, firstValueFrom, map, switchMap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
-import { InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
@@ -39,6 +39,17 @@ export class InitiativeDetailComponent {
 
   protected onInitiativeSaved(updated: InitiativeDetail): void {
     this.initiativeOverride.set(updated);
+  }
+
+  protected async onStatusChange(status: CrowdfundingInitiativeStatus): Promise<void> {
+    const current = this.initiative();
+    if (!current) return;
+    try {
+      const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(current.id, { status }), { defaultValue: null });
+      if (updated) this.initiativeOverride.set(updated);
+    } catch {
+      // HTTP error surfaced by the global error handler
+    }
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
