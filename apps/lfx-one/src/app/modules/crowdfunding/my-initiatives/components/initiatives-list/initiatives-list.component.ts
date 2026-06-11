@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, signal, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { CrowdfundingInitiativeStatus, InitiativeBase, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { InitiativeCardComponent } from '../initiative-card/initiative-card.component';
@@ -9,13 +10,16 @@ import { CardComponent } from '@components/card/card.component';
 
 @Component({
   selector: 'lfx-initiatives-list',
-  imports: [CardComponent, FilterPillsComponent, InitiativeCardComponent],
+  imports: [ButtonComponent, CardComponent, FilterPillsComponent, InitiativeCardComponent],
   templateUrl: './initiatives-list.component.html',
   styleUrl: './initiatives-list.component.scss',
 })
 export class InitiativesListComponent {
   public readonly initiatives = input.required<InitiativeBase[]>();
+  public readonly hasMore = input<boolean>(false);
+  public readonly loadingMore = input<boolean>(false);
   public readonly initiativeClick = output<string>();
+  public readonly loadMore = output<void>();
 
   protected readonly activeFilter = signal<CrowdfundingInitiativeStatus>('active');
 
@@ -32,6 +36,10 @@ export class InitiativesListComponent {
 
   protected onCardClick(slug: string): void {
     this.initiativeClick.emit(slug);
+  }
+
+  protected onLoadMore(): void {
+    this.loadMore.emit();
   }
 
   private initStatusCounts(): Signal<{ active: number; pending: number; closed: number }> {

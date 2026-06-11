@@ -14,6 +14,12 @@ import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
+const parseNonNegativeInt = (val: unknown): number | undefined => {
+  if (val == null || val === '') return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+};
+
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
   private readonly crowdfundingAuthService = new CrowdfundingAuthService();
@@ -28,11 +34,6 @@ export class CrowdfundingController {
       }
 
       const { pageSize, offset } = req.query;
-      const parseNonNegativeInt = (val: unknown): number | undefined => {
-        if (val == null || val === '') return undefined;
-        const n = Number(val);
-        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
-      };
 
       const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
@@ -143,11 +144,6 @@ export class CrowdfundingController {
       }
 
       const { pageSize, offset } = req.query;
-      const parseNonNegativeInt = (val: unknown): number | undefined => {
-        if (val == null || val === '') return undefined;
-        const n = Number(val);
-        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
-      };
 
       const donations = await this.crowdfundingService.getMyDonations(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
@@ -336,12 +332,6 @@ export class CrowdfundingController {
         res.status(400).json({ message: `Invalid type '${resolvedType}'. Allowed values: ${ALLOWED_TYPES.join(', ')}` });
         return;
       }
-
-      const parseNonNegativeInt = (val: unknown): number | undefined => {
-        if (val == null || val === '') return undefined;
-        const n = Number(val);
-        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
-      };
 
       const transactions = await this.crowdfundingService.getInitiativeTransactions(
         req,
