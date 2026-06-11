@@ -165,7 +165,7 @@ test.describe('Org People → Board tab', () => {
     // SC-004: total tile == distinct row count; voting + non-voting == total seat count.
     const total = await page.getByTestId('org-people-board-stat-total').innerText();
     const rowCount = await page.locator('[data-testid^="org-people-board-row-"]').count();
-    expect(parseInt(total, 10)).toBe(rowCount);
+    expect(Number(total.replace(/,/g, ''))).toBe(rowCount);
     expect(await page.getByTestId('org-people-board-stat-voting').innerText()).toContain('2');
     expect(await page.getByTestId('org-people-board-stat-nonvoting').innerText()).toContain('3');
     expect(await page.getByTestId('org-people-board-stat-foundations').innerText()).toContain('3');

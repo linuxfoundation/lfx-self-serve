@@ -83,12 +83,13 @@ export class OrgPeopleBoardMembersService {
 
   /** Filter-independent board stats (FR-004): distinct members / voting seats / non-voting seats / distinct foundations. */
   private computeStats(assignments: CommitteeMemberAssignment[]): BoardMemberStats {
-    const emails = new Set<string>();
+    const memberKeys = new Set<string>();
     const foundations = new Set<string>();
     let votingCount = 0;
     let nonVotingCount = 0;
     for (const a of assignments) {
-      if (a.person.email) emails.add(a.person.email);
+      // Match the table's grouping key so an email-less seat still counts as one distinct member.
+      memberKeys.add(a.person.email || a.memberUid);
       // Count by projectUid, falling back to the foundation slug when the UID is missing so the tile
       // never shows 0 foundations while the table still renders foundation values (un-enriched seats).
       const foundationKey = a.projectUid || a.foundationSlug;
@@ -96,6 +97,6 @@ export class OrgPeopleBoardMembersService {
       if (isVotingStatus(a.votingStatus)) votingCount += 1;
       else nonVotingCount += 1;
     }
-    return { totalBoardMembers: emails.size, votingCount, nonVotingCount, foundationsCovered: foundations.size };
+    return { totalBoardMembers: memberKeys.size, votingCount, nonVotingCount, foundationsCovered: foundations.size };
   }
 }

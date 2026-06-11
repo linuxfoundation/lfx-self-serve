@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  EDIT_TOOLTIP_DEFAULT,
+  EDIT_TOOLTIP_BOARD_DEFAULT,
   EDIT_TOOLTIP_NOT_ORG_EDITABLE,
   isVotingStatus,
-  REASSIGN_TOOLTIP_DEFAULT,
+  REASSIGN_TOOLTIP_BOARD_DEFAULT,
   REASSIGN_TOOLTIP_NO_EDITABLE_SEATS,
   votingStatusPillClass,
 } from '@lfx-one/shared/constants';
@@ -92,11 +92,11 @@ function buildVotingPills(group: BoardMemberPersonGroup): BoardVotingPill[] {
 
 function buildReassignTooltip(group: BoardMemberPersonGroup, opts: CommitteeMembersDecorateOptions): string {
   if (!opts.canEdit) return opts.editDisabledTooltip;
-  return group.editableCount === 0 ? REASSIGN_TOOLTIP_NO_EDITABLE_SEATS : REASSIGN_TOOLTIP_DEFAULT;
+  return group.editableCount === 0 ? REASSIGN_TOOLTIP_NO_EDITABLE_SEATS : REASSIGN_TOOLTIP_BOARD_DEFAULT;
 }
 
 function buildEditTooltip(assignment: CommitteeMemberAssignment, opts: CommitteeMembersDecorateOptions): string {
   if (!opts.canEdit) return opts.editDisabledTooltip;
-  if (assignment.isOrgEditable) return EDIT_TOOLTIP_DEFAULT;
+  if (assignment.isOrgEditable) return EDIT_TOOLTIP_BOARD_DEFAULT;
   return assignment.reason ?? EDIT_TOOLTIP_NOT_ORG_EDITABLE;
 }
