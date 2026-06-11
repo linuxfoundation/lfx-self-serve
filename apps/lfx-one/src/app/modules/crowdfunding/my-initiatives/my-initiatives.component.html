@@ -25,5 +25,10 @@
   }
 
   <!-- Initiatives list with filter pills -->
-  <lfx-initiatives-list [initiatives]="initiatives()" (initiativeClick)="onInitiativeClick($event)" />
+  <lfx-initiatives-list
+    [initiatives]="initiatives()"
+    [hasMore]="initiativesHasMore()"
+    [loadingMore]="loadingMore()"
+    (loadMore)="onLoadMoreInitiatives()"
+    (initiativeClick)="onInitiativeClick($event)" />
 </div>

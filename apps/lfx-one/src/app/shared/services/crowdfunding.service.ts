@@ -54,7 +54,9 @@ export class CrowdfundingService {
   }
 
   public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`).pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
+    return this.http
+      .get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`)
+      .pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {

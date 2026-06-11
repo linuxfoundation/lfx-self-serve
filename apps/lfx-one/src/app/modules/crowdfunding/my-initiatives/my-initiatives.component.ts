@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { environment } from '@environments/environment';
-import { CrowdfundingInitiativesStats, InitiativeBase, InitiativesResponse } from '@lfx-one/shared/interfaces';
+import { CrowdfundingInitiativesStats, InitiativesResponse } from '@lfx-one/shared/interfaces';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_INITIATIVES_RESPONSE } from '@lfx-one/shared/constants';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { map } from 'rxjs';
+import { finalize, scan, switchMap } from 'rxjs/operators';
 import { InitiativesStatsBarComponent } from './components/initiatives-stats-bar/initiatives-stats-bar.component';
 import { InitiativesListComponent } from './components/initiatives-list/initiatives-list.component';
 
@@ -25,8 +26,16 @@ export class MyInitiativesComponent {
   // ─── Public Fields ─────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = environment.urls.crowdfunding;
 
-  // ─── Computed Signals ──────────────────────────────────────────────────────
-  protected readonly initiatives: Signal<InitiativeBase[]> = this.initInitiatives();
+  // ─── Simple WritableSignals ───────────────────────────────────────────────
+  protected readonly loadingMore = signal(false);
+
+  // ─── Pagination Driver ────────────────────────────────────────────────────
+  private readonly initiativesOffset = signal(0);
+
+  // ─── Computed Signals ─────────────────────────────────────────────────────
+  private readonly initiativesState: Signal<InitiativesResponse> = this.initInitiatives();
+  protected readonly initiatives = computed(() => this.initiativesState().data);
+  protected readonly initiativesHasMore = computed(() => this.initiativesState().data.length < this.initiativesState().total);
   protected readonly stats: Signal<CrowdfundingInitiativesStats | undefined> = this.initStats();
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
@@ -34,9 +43,22 @@ export class MyInitiativesComponent {
     void this.router.navigate(['/crowdfunding/initiatives', slug]);
   }
 
+  protected onLoadMoreInitiatives(): void {
+    if (this.loadingMore()) return;
+    this.loadingMore.set(true);
+    this.initiativesOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
+  }
+
   // ─── Private Initializers ──────────────────────────────────────────────────
-  private initInitiatives(): Signal<InitiativeBase[]> {
-    return toSignal(this.crowdfundingService.getMyInitiatives().pipe(map((res: InitiativesResponse) => res.data)), { initialValue: [] });
+  private initInitiatives(): Signal<InitiativesResponse> {
+    return toSignal(
+      toObservable(this.initiativesOffset).pipe(
+        switchMap((offset) => this.crowdfundingService.getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
+        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE),
+        finalize(() => this.loadingMore.set(false))
+      ),
+      { initialValue: EMPTY_INITIATIVES_RESPONSE }
+    );
   }
 
   private initStats(): Signal<CrowdfundingInitiativesStats | undefined> {
