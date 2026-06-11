@@ -78,6 +78,12 @@ export class CdpService {
    * Get a valid CDP access token using PCC client credentials with CDP audience
    */
   public async generateToken(req: Request | undefined): Promise<string> {
+    const overrideToken = process.env['CDP_ACCESS_TOKEN'];
+    if (overrideToken) {
+      logger.debug(req, 'generate_cdp_token', 'Using CDP_ACCESS_TOKEN override');
+      return overrideToken;
+    }
+
     if (this.cachedToken && Date.now() < this.cachedToken.expiresAt) {
       logger.debug(req, 'generate_cdp_token', 'Using cached CDP token');
       return this.cachedToken.token;

@@ -14,7 +14,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
-  getEcosystemIconClass,
   getHealthLabel,
   getHealthTagSeverity,
   getLifecycleLabel,
@@ -56,7 +55,6 @@ export class OsspreyPackageDrawerComponent {
   protected readonly getLifecycleLabel = getLifecycleLabel;
   protected readonly getLifecycleTagSeverity = getLifecycleTagSeverity;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
-  protected readonly getEcosystemIconClass = getEcosystemIconClass;
   protected readonly getHealthLabel = getHealthLabel;
   protected readonly getHealthTagSeverity = getHealthTagSeverity;
 

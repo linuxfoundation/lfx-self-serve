@@ -20,7 +20,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
-  getEcosystemIconClass,
   getHealthLabel,
   getHealthTagSeverity,
   getLifecycleLabel,
@@ -120,7 +119,6 @@ export class OsspreyPackagesTabComponent {
   protected readonly getHealthTagSeverity = getHealthTagSeverity;
   protected readonly getHealthLabel = getHealthLabel;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
-  protected readonly getEcosystemIconClass = getEcosystemIconClass;
 
   protected isPackageSelected(id: string): boolean {
     return this.selectedPackages().has(id);

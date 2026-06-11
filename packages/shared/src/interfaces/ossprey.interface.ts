@@ -49,16 +49,14 @@ export interface OsspreyListParams {
   pageSize?: number;
   ecosystem?: string;
   lifecycle?: string;
+  status?: OsspreyStatus | 'all';
+  healthBand?: OsspreyHealthBand;
+  vulnFilter?: 'critical' | 'high' | 'any';
   busFactor1Only?: boolean;
   staleOnly?: boolean;
   unstewardedOnly?: boolean;
-  sortBy?: 'name' | 'health' | 'impact' | 'openVulns';
-  sortDir?: 'asc' | 'desc';
-}
-
-export interface OsspreyDashboardSortSpec {
-  sortBy: OsspreyListParams['sortBy'];
-  sortDir: OsspreyListParams['sortDir'];
+  sortBy?: OspreySortKey;
+  search?: string;
 }
 
 export interface CdpAdvisory {
@@ -232,4 +230,14 @@ export interface OsspreyLoadResult {
   packages: OsspreyPackage[];
   total: number | null;
   error: boolean;
+}
+
+export interface CdpPackagesMetricsResponse {
+  totalPackages: number;
+  criticalPackages: number;
+}
+
+export interface OsspreyMetrics {
+  totalPackages: number;
+  criticalPackages: number;
 }

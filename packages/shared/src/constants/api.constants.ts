@@ -80,6 +80,7 @@ export const CDP_CONFIG = {
     MEMBER_PROJECT_AFFILIATION: (memberId: string, projectId: string) => `/v1/members/${memberId}/project-affiliations/${projectId}`,
     ORGANIZATIONS: '/v1/organizations',
     PACKAGES_LIST: '/v1/packages',
+    PACKAGES_METRICS: '/v1/packages/metrics',
     PACKAGE_DETAIL: '/v1/packages/detail',
   },
 } as const;
