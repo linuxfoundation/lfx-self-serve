@@ -44,3 +44,9 @@ export interface CommitteeMemberPersonGroupVm extends CommitteeMemberPersonGroup
   /** Precomputed tooltip for the main-row Reassign pencil — encodes (canEdit × editableCount) so the template stays a flat binding (no nested ternary). */
   reassignTooltip: string;
 }
+
+/** Tooltip-decoration inputs that depend on caller state (FGA writer gate + the shared "you can't edit" string). */
+export interface CommitteeMembersDecorateOptions {
+  canEdit: boolean;
+  editDisabledTooltip: string;
+}

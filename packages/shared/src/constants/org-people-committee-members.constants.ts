@@ -14,6 +14,15 @@ export function isBoardCategory(category: string | null | undefined): boolean {
 /** Default sort column for the People → Committee table (FR-021). */
 export const ORG_PEOPLE_COMMITTEE_MEMBERS_DEFAULT_SORT_COLUMN: CommitteeMembersSortColumn = 'name';
 
+/** Main-row Reassign pencil tooltip — writer can edit, but the person holds no org-reassignable seats. */
+export const REASSIGN_TOOLTIP_NO_EDITABLE_SEATS = 'No org-reassignable seats for this person';
+/** Main-row Reassign pencil tooltip — writer can edit and the person has ≥ 1 reassignable seat. */
+export const REASSIGN_TOOLTIP_DEFAULT = 'Reassign committee roles';
+/** Sub-row Edit pencil tooltip — writer can edit this org-editable seat. */
+export const EDIT_TOOLTIP_DEFAULT = 'Edit committee role';
+/** Sub-row Edit pencil tooltip — seat is foundation-controlled and not editable here (fallback when no upstream reason). */
+export const EDIT_TOOLTIP_NOT_ORG_EDITABLE = 'This seat is foundation-controlled and not editable here.';
+
 /** Zero-valued envelope — `toSignal` initialValue + the no-account / no-seats fallback. */
 export const EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE: OrgPeopleCommitteeMembersResponse = {
   orgUid: '',

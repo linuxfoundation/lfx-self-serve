@@ -1,24 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { votingStatusPillClass } from '@lfx-one/shared/constants';
+import {
+  EDIT_TOOLTIP_DEFAULT,
+  EDIT_TOOLTIP_NOT_ORG_EDITABLE,
+  REASSIGN_TOOLTIP_DEFAULT,
+  REASSIGN_TOOLTIP_NO_EDITABLE_SEATS,
+  votingStatusPillClass,
+} from '@lfx-one/shared/constants';
 import type {
   CommitteeMemberAssignment,
   CommitteeMemberAssignmentVm,
   CommitteeMemberPersonGroup,
   CommitteeMemberPersonGroupVm,
+  CommitteeMembersDecorateOptions,
 } from '@lfx-one/shared/interfaces';
-
-/** Tooltip-decoration inputs that depend on caller state (FGA writer gate + the shared "you can't edit" string). */
-export interface CommitteeMembersDecorateOptions {
-  canEdit: boolean;
-  editDisabledTooltip: string;
-}
-
-const REASSIGN_TOOLTIP_NO_EDITABLE_SEATS = 'No org-reassignable seats for this person';
-const REASSIGN_TOOLTIP_DEFAULT = 'Reassign committee roles';
-const EDIT_TOOLTIP_DEFAULT = 'Edit committee role';
-const EDIT_TOOLTIP_NOT_ORG_EDITABLE = 'This seat is foundation-controlled and not editable here.';
 
 /**
  * Group org-wide seats by person (email key, first-wins display); computes the foundation labels,

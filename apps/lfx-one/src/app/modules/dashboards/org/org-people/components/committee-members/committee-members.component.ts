@@ -173,6 +173,11 @@ export class CommitteeMembersComponent {
       }));
     if (roles.length === 0) return;
 
+    // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is
+    // blank — never pass it as the contact email. Source the person's real email from the assignments so
+    // the modal's duplicate/self-selection guard + typeahead exclusion compare against an actual address.
+    const currentEmail = group.assignments.find((a) => a.person.email)?.person.email ?? '';
+
     const ref = this.dialogService.open(ReassignCommitteeRolesModalComponent, {
       width: '600px',
       modal: true,
@@ -180,7 +185,7 @@ export class CommitteeMembersComponent {
       dismissableMask: true,
       showHeader: false,
       data: {
-        person: { fullName: group.displayName, email: group.email, initials: group.initials },
+        person: { fullName: group.displayName, email: currentEmail, initials: group.initials },
         roles,
         orgUid,
         submit: (intent) => this.performBulkReassign(intent, orgUid),
