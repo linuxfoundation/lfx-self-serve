@@ -122,8 +122,8 @@ export class OrgProjectsComponent {
   // Writable Signals
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
-  /** Slugs hidden from the current workspace (client-only; never mutates the foundation catalog). */
-  protected readonly hiddenSlugs = signal<ReadonlySet<string>>(new Set());
+  /** Hidden project slugs keyed by workspace id — hide is workspace-local (client-only; never mutates the catalog). */
+  protected readonly hiddenByWorkspace = signal<Record<string, ReadonlySet<string>>>({});
   /** Shared workspaces (seeded presets + user-created); editable via the workspace dropdown. */
   protected readonly workspaces = signal<OrgProjectsWorkspace[]>([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
   /** Workspace being renamed/deleted in the settings dialog; `null` while the dialog adds a new one. */
@@ -132,8 +132,8 @@ export class OrgProjectsComponent {
   protected readonly workspaceDialogOpen = model(false);
   /** Two-way visibility for the "Add project(s)" dialog (`[(visible)]`). */
   protected readonly addProjectsDialogOpen = model(false);
-  /** Projects added to the current workspace via the Add Project dialog (client-only demo state). */
-  protected readonly addedProjects = signal<OrgLensProject[]>([]);
+  /** Projects added via the Add Project dialog, keyed by workspace id — add is workspace-local (client-only demo state). */
+  protected readonly addedByWorkspace = signal<Record<string, OrgLensProject[]>>({});
   /** Bumped to re-trigger the demo fetch from the inline error-retry CTA. */
   private readonly reload = signal(0);
   /** Action menu items rebuilt per row when the kebab is opened. */
@@ -256,10 +256,11 @@ export class OrgProjectsComponent {
 
   protected confirmAddProjects(): void {
     const slugs = this.addProjectsForm.getRawValue().projects;
-    const existing = new Set([...(this.response()?.projects ?? []), ...this.addedProjects()].map((p) => p.slug));
+    const ws = this.selectedWorkspaceId();
+    const existing = new Set([...(this.response()?.projects ?? []), ...(this.addedByWorkspace()[ws] ?? [])].map((p) => p.slug));
     const additions = this.projectsService.buildAddedProjects(slugs).filter((p) => !existing.has(p.slug));
     if (additions.length) {
-      this.addedProjects.update((prev) => [...prev, ...additions]);
+      this.addedByWorkspace.update((map) => ({ ...map, [ws]: [...(map[ws] ?? []), ...additions] }));
     }
     this.addProjectsDialogOpen.set(false);
   }
@@ -306,11 +307,13 @@ export class OrgProjectsComponent {
     if (!editing) {
       return;
     }
+    // Capture before mutating: once removed, selectedWorkspaceId() already falls back, hiding the stale `?workspace=`.
+    const wasActive = this.selectedWorkspaceId() === editing.id;
     // Re-seed the default if the last workspace is removed so the company is never left with none.
     const remaining = this.workspaces().filter((w) => w.id !== editing.id);
     const next = remaining.length > 0 ? remaining : [...DEFAULT_ORG_PROJECTS_WORKSPACES];
     this.workspaces.set(next);
-    if (!next.some((w) => w.id === this.selectedWorkspaceId())) {
+    if (wasActive) {
       this.selectWorkspace(next[0].id);
     }
     this.workspaceDialogOpen.set(false);
@@ -477,13 +480,13 @@ export class OrgProjectsComponent {
 
   private initFilteredProjects(): Signal<OrgLensProject[]> {
     return computed(() => {
-      const all = [...(this.response()?.projects ?? []), ...this.addedProjects()];
       const workspace = this.selectedWorkspaceId();
+      const all = [...(this.response()?.projects ?? []), ...(this.addedByWorkspace()[workspace] ?? [])];
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
       // Drop stale/unknown employee ids from the URL so a shared deep link can't filter everything out.
       const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
       const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
-      const hidden = this.hiddenSlugs();
+      const hidden = this.hiddenByWorkspace()[workspace] ?? new Set<string>();
       return all
         .filter((p) => !hidden.has(p.slug))
         .filter((p) => this.matchesWorkspace(p, workspace))
@@ -578,7 +581,8 @@ export class OrgProjectsComponent {
   }
 
   private hideFromWorkspace(slug: string): void {
-    this.hiddenSlugs.update((set) => new Set(set).add(slug));
+    const ws = this.selectedWorkspaceId();
+    this.hiddenByWorkspace.update((map) => ({ ...map, [ws]: new Set(map[ws] ?? []).add(slug) }));
   }
 
   private uniqueWorkspaceId(name: string): string {
