@@ -177,15 +177,18 @@ export interface OsspreyPackage {
   stewardIds: string[];
   lastActivityLabel: string;
   lastActivityTime: string;
-  weeklyDownloads: string | null;
-  dependentCount: string | null;
-  directDependentCount: string | null;
+  downloadsLastMonth: string | null;
+  dependentPackages: string | null;
+  dependentRepos: string | null;
   scoreCardScore: string | null;
   lastRelease: string | null;
   lastCommit: string | null;
   repoUrl: string | null;
+  mappingConfidence: number | null;
   supplyChainMapping: 'High' | 'Medium' | 'Low' | null;
   provenance: 'Full' | 'Partial' | 'None' | null;
+  pvrEnabled: boolean | null;
+  criticalVulnFlag: boolean | null;
   hasSecurityMd: boolean | null;
   ecosystemReach: string | null;
   contactGroup: OsspreyContactGroup | null;
@@ -223,4 +226,10 @@ export interface OsspreyStatusCounts {
 export interface OsspreyFilterChip {
   label: string;
   clear: Partial<OsspreyFilterState>;
+}
+
+export interface OsspreyLoadResult {
+  packages: OsspreyPackage[];
+  total: number | null;
+  error: boolean;
 }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyEcosystem, OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
+import { OsspreyEcosystem, OsspreyHealthBand, OsspreyLifecycle, OsspreyPackage, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
 
 export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
   const map: Record<OsspreyStatus, TagSeverity> = {
@@ -28,10 +28,11 @@ export function getLifecycleTagSeverity(lifecycle: OsspreyLifecycle | null): Tag
   return map[lifecycle] ?? 'secondary';
 }
 
-export function getHealthTagSeverity(score: number): TagSeverity {
-  if (score >= 75) return 'success';
+export function getHealthTagSeverity(score: number | null): TagSeverity {
+  if (score === null) return 'secondary';
+  if (score >= 70) return 'success';
   if (score >= 50) return 'info';
-  if (score >= 25) return 'warn';
+  if (score >= 30) return 'warn';
   return 'danger';
 }
 
@@ -50,10 +51,12 @@ export function formatStatus(status: string): string {
   return status.replace(/_/g, ' ');
 }
 
+// Band thresholds mirror the design spec (design/LFX-OSSPREY-Admin-Dashboard.html):
+// healthy ≥70, fair ≥50, concerning ≥30, otherwise critical.
 export function getHealthBand(score: number): OsspreyHealthBand {
-  if (score >= 75) return 'healthy';
+  if (score >= 70) return 'healthy';
   if (score >= 50) return 'fair';
-  if (score >= 25) return 'concerning';
+  if (score >= 30) return 'concerning';
   return 'critical';
 }
 
@@ -69,10 +72,31 @@ export function getLifecycleLabel(lifecycle: OsspreyLifecycle | null): string {
 
 export function getEcosystemIconClass(ecosystem: OsspreyEcosystem | string): string {
   const classes: Record<string, string> = {
-    npm: 'logo-npm',
-    maven: 'logo-maven',
-    pypi: 'logo-pypi',
-    go: 'logo-go',
+    npm: 'fa-brands fa-npm',
+    maven: 'fa-brands fa-java',
+    pypi: 'fa-brands fa-python',
+    go: 'fa-brands fa-golang',
   };
-  return classes[ecosystem] ?? 'logo-npm';
+  return classes[ecosystem] ?? 'fa-light fa-cube';
+}
+
+const SEVERITY_RANK: Record<OspreySeverity, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+/**
+ * Composite "risk priority" used for the default queue ordering — mirrors the
+ * design prototype's formula: impact, inverted health, vuln severity/count,
+ * bus factor 1, and staleness all push a package up the queue.
+ */
+export function getRiskScore(pkg: OsspreyPackage): number {
+  const impact = pkg.impactScore ?? 0;
+  const health = pkg.healthScore ?? 50;
+  const severity = pkg.vulnSeverity ? SEVERITY_RANK[pkg.vulnSeverity] : 0;
+  const busFactorPenalty = pkg.busFactor === 1 ? 20 : 0;
+  const stalePenalty = (pkg.monthsStale ?? 0) >= 18 ? 15 : 0;
+  return impact + (100 - health) * 0.8 + severity * 15 + pkg.vulnCount * 4 + busFactorPenalty + stalePenalty;
 }

@@ -43,7 +43,9 @@ export class OsspreyController {
 
   public async getPackage(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_ossprey_package');
-    const purl = decodeURIComponent(req.params['purl'] as string);
+    // Express already URL-decodes route params — decoding again would corrupt
+    // purls with literal %-escapes (e.g. scoped npm: pkg:npm/%40scope/name).
+    const purl = req.params['purl'] as string;
 
     try {
       const pkg = await this.osspreyService.getPackage(req, purl);

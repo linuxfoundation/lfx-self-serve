@@ -7,7 +7,16 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
-import { ALL_LENSES, COMMITTEE_LABEL, DOCUMENT_LABEL, MAILING_LIST_LABEL, ORG_LENS_ENABLED_FLAG, SURVEY_LABEL, VOTE_LABEL } from '@lfx-one/shared/constants';
+import {
+  ALL_LENSES,
+  COMMITTEE_LABEL,
+  DOCUMENT_LABEL,
+  MAILING_LIST_LABEL,
+  ORG_LENS_ENABLED_FLAG,
+  OSSPREY_ENABLED_FLAG,
+  SURVEY_LABEL,
+  VOTE_LABEL,
+} from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
@@ -46,6 +55,9 @@ export class MainLayoutComponent {
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
+  /** Dark-launch gate for the OSSPREY admin dashboard; hides the Security nav section when off. */
+  private readonly isOsspreyEnabled = this.featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false);
+
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
@@ -74,11 +86,16 @@ export class MainLayoutComponent {
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.orgLensItems : this.meLensItems;
+        return this.isOrgLensEnabled() ? this.orgLensItems : this.visibleMeLensItems();
       default:
-        return this.meLensItems;
+        return this.visibleMeLensItems();
     }
   });
+
+  // Me Lens nav with feature-flagged sections stripped (Security/OSSPREY is dark-launched).
+  private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
+    this.isOsspreyEnabled() ? this.meLensItems : this.meLensItems.filter((item) => item.label !== 'Security')
+  );
 
   // --- Me Lens Items ---
   private readonly meLensItems: SidebarMenuItem[] = [

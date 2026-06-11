@@ -8,6 +8,7 @@ import { executiveDirectorGuard } from './shared/guards/executive-director.guard
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 
 const loadOrgPlaceholderPage = () =>
@@ -347,6 +348,7 @@ export const routes: Routes = [
       },
       {
         path: 'ossprey',
+        canMatch: [osspreyEnabledGuard],
         loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
       },
     ],
