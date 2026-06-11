@@ -34,9 +34,13 @@ export interface CommitteeMemberAssignmentVm extends CommitteeMemberAssignment {
   votingStatusPillClass: string;
   /** True only on the first sub-row of each foundation block (so the label renders once per group). */
   showFoundationLabel: boolean;
+  /** Precomputed tooltip for the sub-row Edit pencil — encodes (canEdit × isOrgEditable × reason) so the template stays a flat binding (no nested ternary). */
+  editTooltip: string;
 }
 
 /** A person group with its sub-rows pre-sorted (foundation A→Z, then committee A→Z) + decorated. */
 export interface CommitteeMemberPersonGroupVm extends CommitteeMemberPersonGroup {
   sortedAssignments: CommitteeMemberAssignmentVm[];
+  /** Precomputed tooltip for the main-row Reassign pencil — encodes (canEdit × editableCount) so the template stays a flat binding (no nested ternary). */
+  reassignTooltip: string;
 }

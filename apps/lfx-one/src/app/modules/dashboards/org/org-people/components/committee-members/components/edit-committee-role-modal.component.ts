@@ -41,9 +41,14 @@ export class EditCommitteeRoleModalComponent {
   protected readonly employees = signal<KeyContactEmployee[]>([]);
   protected readonly employeeSearchUnavailable = signal(false);
   protected readonly suggestionsOpen = signal(false);
+  // Active-descendant pattern: keyboard navigates a highlighted option via ArrowUp/Down while focus
+  // stays on the input. -1 means "nothing highlighted yet".
+  protected readonly activeOptionIndex = signal<number>(-1);
+  protected readonly optionIdPrefix = 'edit-committee-employee-option-';
 
   protected readonly filteredEmployees: Signal<KeyContactEmployee[]> = computed(() => this.initFilteredEmployees());
   protected readonly saveEnabled: Signal<boolean> = computed(() => this.initSaveEnabled());
+  protected readonly activeOptionId: Signal<string | null> = computed(() => this.initActiveOptionId());
 
   private readonly excludedEmails: Signal<Set<string>> = computed(() => this.initExcludedEmails());
 
@@ -66,6 +71,9 @@ export class EditCommitteeRoleModalComponent {
   protected onEmailChange(value: string): void {
     this.emailField.set(value);
     this.suggestionsOpen.set(true);
+    // The filtered list re-orders with every keystroke — drop the previous highlight so the user
+    // doesn't accidentally Enter-select a stale option.
+    this.activeOptionIndex.set(-1);
     if (this.duplicateError()) this.duplicateError.set(null);
     if (this.emailFormatError() && EMAIL_REGEX.test(value.trim())) {
       this.emailFormatError.set(null);
@@ -74,6 +82,7 @@ export class EditCommitteeRoleModalComponent {
 
   protected onEmailBlur(): void {
     this.suggestionsOpen.set(false);
+    this.activeOptionIndex.set(-1);
     this.duplicateError.set(null);
     const value = this.emailField().trim();
     if (value && !EMAIL_REGEX.test(value)) {
@@ -90,6 +99,51 @@ export class EditCommitteeRoleModalComponent {
     this.emailFormatError.set(null);
     this.duplicateError.set(null);
     this.suggestionsOpen.set(false);
+    this.activeOptionIndex.set(-1);
+  }
+
+  // Active-descendant keyboard handler — ArrowUp/Down wrap-navigate the listbox without moving focus,
+  // Enter selects the highlighted option (else falls through to onFormKeydown's Save), Escape closes.
+  // Without this a keyboard-only user couldn't reach a suggestion: (blur) closes the panel as soon as
+  // focus would move off the input.
+  protected onEmailKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      if (this.suggestionsOpen()) {
+        // Swallow so the parent PrimeNG dialog doesn't also close the modal on the same key.
+        event.preventDefault();
+        event.stopPropagation();
+        this.suggestionsOpen.set(false);
+        this.activeOptionIndex.set(-1);
+      }
+      return;
+    }
+
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+
+    if (!this.suggestionsOpen() && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      this.suggestionsOpen.set(true);
+    }
+
+    const options = this.filteredEmployees();
+    if (options.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      const idx = this.activeOptionIndex();
+      this.activeOptionIndex.set(idx < 0 ? 0 : (idx + 1) % options.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      const idx = this.activeOptionIndex();
+      this.activeOptionIndex.set(idx < 0 ? options.length - 1 : (idx - 1 + options.length) % options.length);
+    } else if (event.key === 'Enter') {
+      const idx = this.activeOptionIndex();
+      if (idx >= 0 && idx < options.length) {
+        // A highlighted option wins over the form-level Save handler.
+        event.preventDefault();
+        event.stopPropagation();
+        this.onSelectEmployee(options[idx]);
+      }
+    }
   }
 
   protected onFormKeydown(event: KeyboardEvent): void {
@@ -165,5 +219,12 @@ export class EditCommitteeRoleModalComponent {
     if (this.lastNameField().trim().length === 0) return false;
     if (this.emailFormatError() || this.duplicateError()) return false;
     return true;
+  }
+
+  private initActiveOptionId(): string | null {
+    const idx = this.activeOptionIndex();
+    if (idx < 0) return null;
+    if (idx >= this.filteredEmployees().length) return null;
+    return `${this.optionIdPrefix}${idx}`;
   }
 }

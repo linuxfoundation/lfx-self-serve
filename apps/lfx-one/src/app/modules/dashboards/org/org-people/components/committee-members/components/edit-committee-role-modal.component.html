@@ -71,6 +71,7 @@
             aria-haspopup="listbox"
             aria-controls="edit-committee-employee-suggestions-id"
             [attr.aria-expanded]="suggestionsOpen() && filteredEmployees().length > 0"
+            [attr.aria-activedescendant]="activeOptionId()"
             [attr.aria-describedby]="
               (emailFormatError() ? 'edit-committee-email-error-id' : null) || (duplicateError() ? 'edit-committee-duplicate-error-id' : null)
             "
@@ -81,6 +82,7 @@
             (ngModelChange)="onEmailChange($event)"
             (focus)="onEmailFocus()"
             (blur)="onEmailBlur()"
+            (keydown)="onEmailKeydown($event)"
             autocomplete="off" />
         </span>
         @if (suggestionsOpen() && filteredEmployees().length > 0) {
@@ -90,13 +92,16 @@
             aria-label="Employee suggestions"
             class="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
             data-testid="org-people-committee-modal-edit-employee-suggestions">
-            @for (emp of filteredEmployees(); track emp.email) {
+            @for (emp of filteredEmployees(); track emp.email; let i = $index) {
               <li role="presentation">
                 <button
                   type="button"
                   role="option"
+                  [attr.id]="optionIdPrefix + i"
                   [attr.aria-label]="emp.fullName + ' (' + emp.email + ')'"
+                  [attr.aria-selected]="activeOptionIndex() === i"
                   class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+                  [class.bg-gray-100]="activeOptionIndex() === i"
                   [attr.data-testid]="'org-people-committee-modal-edit-employee-option-' + emp.email"
                   (mousedown)="$event.preventDefault()"
                   (click)="onSelectEmployee(emp)">

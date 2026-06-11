@@ -226,7 +226,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     expect(patchCount).toBe(3);
   });
 
-  test('a 409 on one PATCH surfaces an inline partial-failure error and keeps the modal open', async ({ page }) => {
+  test('a 409 on one PATCH closes the modal and surfaces a partial-success warning toast', async ({ page }) => {
     await stubAccountContext(page);
     await stubCommitteeMembers(page);
     await stubEmployees(page);
@@ -250,8 +250,11 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     await page.getByTestId('org-people-committee-modal-reassign-last-name-input').fill('Dev');
     await page.getByTestId('org-people-committee-modal-reassign-primary-button').click();
 
-    await expect(page.getByTestId('org-people-committee-modal-reassign-save-error')).toContainText('succeeded');
-    await expect(page.getByTestId('org-people-committee-modal-reassign')).toBeVisible();
+    // Modal resolves on partial success — leaving it open would re-PATCH already-succeeded seats
+    // (their `memberUid` has moved upstream) and 404 them, so the modal closes and a warning toast
+    // summarizes the outcome instead.
+    await expect(page.getByTestId('org-people-committee-modal-reassign')).toHaveCount(0, { timeout: TOAST_TIMEOUT });
+    await expect(page.getByTestId('org-people-committee-toast-success')).toContainText('succeeded', { timeout: TOAST_TIMEOUT });
   });
 
   test('all PATCHes failing surfaces the cleaned error and keeps the modal open', async ({ page }) => {
@@ -348,6 +351,30 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     await gotoCommitteeTab(page);
     await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
     await expect(page.getByTestId('org-people-committee-edit-m-tsc')).toBeDisabled();
+  });
+
+  test('ArrowDown + Enter on the employee combobox selects the highlighted option (keyboard a11y)', async ({ page }) => {
+    await stubAccountContext(page);
+    await stubCommitteeMembers(page);
+    await stubEmployees(page);
+
+    await gotoCommitteeTab(page);
+    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId('org-people-committee-edit-m-inc').click();
+
+    const emailInput = page.getByTestId('org-people-committee-modal-edit-email-input');
+    await emailInput.fill('toyota.com');
+    await emailInput.press('ArrowDown');
+
+    // The first option in the listbox is highlighted; aria-activedescendant on the input points to its id.
+    await expect(emailInput).toHaveAttribute('aria-activedescendant', 'edit-committee-employee-option-0');
+
+    await emailInput.press('Enter');
+
+    // Selecting via keyboard fills the email + name fields just like the click handler does.
+    await expect(emailInput).toHaveValue(REPLACEMENT_EMAIL);
+    await expect(page.getByTestId('org-people-committee-modal-edit-first-name-input')).toHaveValue('Cara');
+    await expect(page.getByTestId('org-people-committee-modal-edit-last-name-input')).toHaveValue('Dev');
   });
 
   test('Cancel closes the Edit modal without firing a PATCH', async ({ page }) => {

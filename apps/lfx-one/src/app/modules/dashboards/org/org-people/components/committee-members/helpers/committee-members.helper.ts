@@ -2,10 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 import { votingStatusPillClass } from '@lfx-one/shared/constants';
-import type { CommitteeMemberAssignment, CommitteeMemberAssignmentVm, CommitteeMemberPersonGroup } from '@lfx-one/shared/interfaces';
+import type {
+  CommitteeMemberAssignment,
+  CommitteeMemberAssignmentVm,
+  CommitteeMemberPersonGroup,
+  CommitteeMemberPersonGroupVm,
+} from '@lfx-one/shared/interfaces';
 
 // Re-exported so the component template + modals import the pill helper from one place (spec 027).
 export { votingStatusPillClass };
+
+/** Tooltip-decoration inputs that depend on caller state (FGA writer gate + the shared "you can't edit" string). */
+export interface CommitteeMembersDecorateOptions {
+  canEdit: boolean;
+  editDisabledTooltip: string;
+}
+
+const REASSIGN_TOOLTIP_NO_EDITABLE_SEATS = 'No org-reassignable seats for this person';
+const REASSIGN_TOOLTIP_DEFAULT = 'Reassign committee roles';
+const EDIT_TOOLTIP_DEFAULT = 'Edit committee role';
+const EDIT_TOOLTIP_NOT_ORG_EDITABLE = 'This seat is foundation-controlled and not editable here.';
 
 /**
  * Group org-wide seats by person (lowercased email; first-wins for display fields). Computes the
@@ -42,10 +58,11 @@ export function buildPersonGroups(assignments: CommitteeMemberAssignment[]): Com
 
 /**
  * Decorate a person's seats for the expanded sub-table: order by foundation A→Z then committee A→Z,
- * attach the voting-status pill class, and flag `showFoundationLabel` on the first sub-row of each
- * foundation block so the foundation name renders once per group (FR-008).
+ * attach the voting-status pill class, flag `showFoundationLabel` on the first sub-row of each
+ * foundation block (FR-008), and precompute the per-seat Edit-pencil tooltip so the template
+ * binding stays a flat `[pTooltip]="a.editTooltip"` (no nested ternary).
  */
-export function decorateAssignments(group: CommitteeMemberPersonGroup): CommitteeMemberAssignmentVm[] {
+export function decorateAssignments(group: CommitteeMemberPersonGroup, opts: CommitteeMembersDecorateOptions): CommitteeMemberAssignmentVm[] {
   const sorted = [...group.assignments].sort((a, b) => {
     const f = a.foundationName.localeCompare(b.foundationName, undefined, { sensitivity: 'base' });
     if (f !== 0) return f;
@@ -55,5 +72,29 @@ export function decorateAssignments(group: CommitteeMemberPersonGroup): Committe
     ...a,
     votingStatusPillClass: votingStatusPillClass(a.votingStatus),
     showFoundationLabel: idx === 0 || sorted[idx - 1].foundationName !== a.foundationName,
+    editTooltip: buildEditTooltip(a, opts),
   }));
+}
+
+/**
+ * Build the full main-row + sub-row view-model in one place so templates bind flat fields only —
+ * keeps tooltip composition (canEdit × editableCount × isOrgEditable × reason) out of the HTML.
+ */
+export function decoratePersonGroup(group: CommitteeMemberPersonGroup, opts: CommitteeMembersDecorateOptions): CommitteeMemberPersonGroupVm {
+  return {
+    ...group,
+    sortedAssignments: decorateAssignments(group, opts),
+    reassignTooltip: buildReassignTooltip(group, opts),
+  };
+}
+
+function buildReassignTooltip(group: CommitteeMemberPersonGroup, opts: CommitteeMembersDecorateOptions): string {
+  if (!opts.canEdit) return opts.editDisabledTooltip;
+  return group.editableCount === 0 ? REASSIGN_TOOLTIP_NO_EDITABLE_SEATS : REASSIGN_TOOLTIP_DEFAULT;
+}
+
+function buildEditTooltip(assignment: CommitteeMemberAssignment, opts: CommitteeMembersDecorateOptions): string {
+  if (!opts.canEdit) return opts.editDisabledTooltip;
+  if (assignment.isOrgEditable) return EDIT_TOOLTIP_DEFAULT;
+  return assignment.reason ?? EDIT_TOOLTIP_NOT_ORG_EDITABLE;
 }

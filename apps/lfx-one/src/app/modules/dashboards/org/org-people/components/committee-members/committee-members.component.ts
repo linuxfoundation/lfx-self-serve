@@ -36,7 +36,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { CommitteeMembersService } from '../../services/committee-members.service';
 import { EditCommitteeRoleModalComponent } from './components/edit-committee-role-modal.component';
 import { ReassignCommitteeRolesModalComponent } from './components/reassign-committee-roles-modal.component';
-import { buildPersonGroups, decorateAssignments } from './helpers/committee-members.helper';
+import { buildPersonGroups, decoratePersonGroup } from './helpers/committee-members.helper';
 
 /** Org Lens — People → Committee tab (spec 027). Org-wide, non-Board committee-member roster grouped by person, with filter/sort/expand (US1+US2). Reassign/Edit modals wired in US3/US4. */
 @Component({
@@ -214,7 +214,12 @@ export class CommitteeMembersComponent {
     this.wireDialogToAccountChange(ref);
   }
 
-  // Fan out one PUT per selected seat; refresh after; throw on any failure so the modal can surface an inline retry.
+  // Fan out one PUT per selected seat; refresh after. Full failure throws (modal stays open with the
+  // inline error). Partial success RESOLVES (modal closes) and a warning toast summarizes the result —
+  // succeeded seats already moved upstream, so leaving the modal open with stale `selectedKeys` would
+  // re-PATCH already-succeeded `memberUid`s and 404 them (the original seat no longer exists). The
+  // follow-up "retry just the failures" UX requires a per-role-result contract on `submit`, which is
+  // out of scope for this round (tracked separately).
   private async performBulkReassign(intent: ReassignCommitteeRolesSubmitEvent, orgUid: string): Promise<void> {
     const ops = intent.selected.map((role) =>
       firstValueFrom(
@@ -230,9 +235,9 @@ export class CommitteeMembersComponent {
     const results = await Promise.allSettled(ops);
     this.retry();
 
+    const total = intent.selected.length;
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     if (failures.length === 0) {
-      const total = intent.selected.length;
       this.messageService.add({
         key: 'org-people-committee-toast-success',
         severity: 'success',
@@ -243,12 +248,17 @@ export class CommitteeMembersComponent {
       return;
     }
 
-    const total = intent.selected.length;
     const succeeded = total - failures.length;
     if (succeeded === 0) {
       throw new Error(this.cleanErrorMessage(failures[0].reason));
     }
-    throw new Error(`${succeeded} of ${total} reassignments succeeded. Reopen this dialog to retry the remaining roles with fresh state.`);
+    this.messageService.add({
+      key: 'org-people-committee-toast-success',
+      severity: 'warn',
+      summary: 'Some reassignments did not succeed',
+      detail: `${succeeded} of ${total} succeeded. Reopen this dialog to retry the remaining ${total - succeeded}.`,
+      life: 6000,
+    });
   }
 
   // Single PUT; refresh after; re-throw the cleaned message so the modal can surface an inline retry.
@@ -387,7 +397,8 @@ export class CommitteeMembersComponent {
   }
 
   private initDecoratedGroups(): CommitteeMemberPersonGroupVm[] {
-    return this.sortedGroups().map((g) => ({ ...g, sortedAssignments: decorateAssignments(g) }));
+    const opts = { canEdit: this.canEdit(), editDisabledTooltip: this.editDisabledTooltip };
+    return this.sortedGroups().map((g) => decoratePersonGroup(g, opts));
   }
 
   private initCanEdit(): boolean {
