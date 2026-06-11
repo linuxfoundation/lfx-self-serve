@@ -19,12 +19,8 @@ import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service
 import { ProjectService } from './project.service';
 
 /**
- * Org Lens People → Committee tab (spec 027). Serves the org-wide, NON-Board committee-member
- * roster grouped per seat, and proxies single-seat reassigns. Reuses the spec-026
- * committee-service endpoints unchanged (read drain + atomic reassign); the only upstream change is
- * the additive `project_uid`/`project_slug` fields on the seat DTO (decision B) which surface the
- * foundation per seat. Board seats are excluded here (FR-003); foundation display names are enriched
- * once per request via the query-service (D-003).
+ * Org Lens People → Committee tab (spec 027): serves the org-wide NON-Board roster (Board excluded, FR-003)
+ * and proxies single-seat reassigns, reusing the spec-026 drain/reassign with foundation enrichment (D-003).
  */
 export class OrgPeopleCommitteeMembersService {
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;

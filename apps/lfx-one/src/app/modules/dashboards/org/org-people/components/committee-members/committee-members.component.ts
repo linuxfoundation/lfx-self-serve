@@ -114,9 +114,8 @@ export class CommitteeMembersComponent {
       this.resetAllState();
     });
 
-    // Cascade reset (FR-006): when the foundation filter changes, clear any committee selection so a
-    // stale committee value (no longer in the narrowed options) can't render a blank <p-select> + a
-    // misleading "no matches" empty state.
+    // Cascade reset (FR-006): clear the committee selection when the foundation filter changes so a
+    // stale value can't render a blank <p-select> + a misleading "no matches" state.
     this.filterForm.controls.foundation.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed()).subscribe(() => {
       if (this.filterForm.controls.committee.value) {
         this.filterForm.controls.committee.setValue('');
@@ -214,12 +213,8 @@ export class CommitteeMembersComponent {
     this.wireDialogToAccountChange(ref);
   }
 
-  // Fan out one PUT per selected seat; refresh after. Full failure throws (modal stays open with the
-  // inline error). Partial success RESOLVES (modal closes) and a warning toast summarizes the result —
-  // succeeded seats already moved upstream, so leaving the modal open with stale `selectedKeys` would
-  // re-PATCH already-succeeded `memberUid`s and 404 them (the original seat no longer exists). The
-  // follow-up "retry just the failures" UX requires a per-role-result contract on `submit`, which is
-  // out of scope for this round (tracked separately).
+  // Fan out one PUT per seat, then refresh: full failure throws (modal stays open with the inline error);
+  // partial success resolves with a warning toast (re-PATCHing succeeded seats would 404 on a gone seat).
   private async performBulkReassign(intent: ReassignCommitteeRolesSubmitEvent, orgUid: string): Promise<void> {
     const ops = intent.selected.map((role) =>
       firstValueFrom(

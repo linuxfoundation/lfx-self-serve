@@ -75,11 +75,8 @@ export function getEffectiveUsername(req: Request): string | null {
   if (req.appSession?.['impersonationUser']?.username) {
     return req.appSession['impersonationUser'].username as string;
   }
-  // `preferred_username` is the Authelia (local/self-hosted OIDC) equivalent of the LFID username —
-  // Authelia's default claims policy emits `preferred_username` but not `nickname`/`username`. Falling
-  // back to it keeps the LFID-username identity path (#912) working across both Auth0 (nickname/username)
-  // and Authelia (preferred_username) without affecting Auth0, where the earlier claims take precedence.
-  // Mirrors the Authelia handling already in `getUsernameFromAuth`.
+  // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
+  // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
   return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
 }
 

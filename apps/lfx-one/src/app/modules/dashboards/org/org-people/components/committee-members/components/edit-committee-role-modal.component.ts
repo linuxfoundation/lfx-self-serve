@@ -102,10 +102,8 @@ export class EditCommitteeRoleModalComponent {
     this.activeOptionIndex.set(-1);
   }
 
-  // Active-descendant keyboard handler — ArrowUp/Down wrap-navigate the listbox without moving focus,
-  // Enter selects the highlighted option (else falls through to onFormKeydown's Save), Escape closes.
-  // Without this a keyboard-only user couldn't reach a suggestion: (blur) closes the panel as soon as
-  // focus would move off the input.
+  // Active-descendant keyboard handler: ArrowUp/Down navigate the listbox without moving focus, Enter
+  // selects the highlight (else Save), Escape closes — keyboard users can't reach a suggestion otherwise.
   protected onEmailKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       if (this.suggestionsOpen()) {
