@@ -28,10 +28,6 @@ export class OsspreyService {
     return this.http.get<OsspreyPackagesResponse>('/api/ossprey/packages', { params: httpParams });
   }
 
-  public getStewardName(id: string): string {
-    return id;
-  }
-
   public getPackage(purl: string): Observable<OsspreyPackage | null> {
     return this.http.get<OsspreyPackage>(`/api/ossprey/packages/${encodeURIComponent(purl)}`).pipe(
       catchError((err) => {

@@ -175,15 +175,18 @@ export class OsspreyServerService {
       stewardIds: [],
       lastActivityLabel: '—',
       lastActivityTime: '',
-      weeklyDownloads: null,
-      dependentCount: null,
-      directDependentCount: null,
+      downloadsLastMonth: null,
+      dependentPackages: null,
+      dependentRepos: null,
       scoreCardScore: null,
       lastRelease: null,
       lastCommit: null,
       repoUrl: null,
+      mappingConfidence: null,
       supplyChainMapping: null,
       provenance: null,
+      pvrEnabled: null,
+      criticalVulnFlag: null,
       hasSecurityMd: null,
       ecosystemReach: null,
       contactGroup: null,
@@ -199,16 +202,22 @@ export class OsspreyServerService {
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
     const hs = detail.general?.healthScore;
-    const healthBreakdown: string[] = [];
-    if (hs) {
-      if (hs.maintainerHealth != null) healthBreakdown.push(`${Math.round(hs.maintainerHealth)} / 40`);
-      if (hs.securitySupplyChain != null) healthBreakdown.push(`${Math.round(hs.securitySupplyChain)} / 35`);
-      if (hs.developmentActivity != null) healthBreakdown.push(`${Math.round(hs.developmentActivity)} / 25`);
-    }
+    // Fixed positional slots — the drawer labels them Maintainer health /
+    // Security & supply chain / Development activity, so missing scores keep
+    // their position instead of shifting the rest.
+    const healthBreakdown: string[] = hs
+      ? [
+          hs.maintainerHealth != null ? `${Math.round(hs.maintainerHealth)} / 40` : '—',
+          hs.securitySupplyChain != null ? `${Math.round(hs.securitySupplyChain)} / 35` : '—',
+          hs.developmentActivity != null ? `${Math.round(hs.developmentActivity)} / 25` : '—',
+        ]
+      : [];
 
     const repo = detail.provenance?.repositoryMapping;
     const impact = detail.general?.impact;
     const risk = detail.general?.riskSignals;
+    const cvd = detail.security?.cvd;
+    const integrity = detail.provenance?.supplyChainIntegrity;
 
     return {
       id: detail.purl,
@@ -226,15 +235,18 @@ export class OsspreyServerService {
       stewardIds: [],
       lastActivityLabel: '—',
       lastActivityTime: '',
-      weeklyDownloads: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
-      dependentCount: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
-      directDependentCount: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
+      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
+      dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,
       lastRelease: this.formatDate(risk?.lastRelease),
       lastCommit: this.formatDate(repo?.lastCommitAt),
       repoUrl: this.stripProtocol(repo?.declaredRepo),
-      supplyChainMapping: null,
-      provenance: null,
+      mappingConfidence: repo?.mappingConfidence ?? null,
+      supplyChainMapping: this.mapConfidenceBand(repo?.mappingConfidence),
+      provenance: this.mapProvenance(integrity),
+      pvrEnabled: cvd?.isPvrEnabled ?? null,
+      criticalVulnFlag: cvd?.criticalVulnerabilityFlag ?? null,
       hasSecurityMd: risk?.hasSecurityFile ?? null,
       ecosystemReach: impact?.transitiveReach ?? null,
       contactGroup: null,
@@ -243,6 +255,22 @@ export class OsspreyServerService {
       history: [],
       assessment: null,
     };
+  }
+
+  private mapConfidenceBand(confidence?: number | null): OsspreyPackage['supplyChainMapping'] {
+    if (confidence == null) return null;
+    if (confidence >= 0.9) return 'High';
+    if (confidence >= 0.7) return 'Medium';
+    return 'Low';
+  }
+
+  private mapProvenance(integrity?: { buildProvenance: unknown | null; signedReleases: unknown | null } | null): OsspreyPackage['provenance'] {
+    if (!integrity) return null;
+    const hasBuild = Boolean(integrity.buildProvenance);
+    const hasSigned = Boolean(integrity.signedReleases);
+    if (hasBuild && hasSigned) return 'Full';
+    if (hasBuild || hasSigned) return 'Partial';
+    return 'None';
   }
 
   private worstSeverityFromCounts(vulns: { low: number; medium: number; high: number; critical: number } | null): OspreySeverity | null {

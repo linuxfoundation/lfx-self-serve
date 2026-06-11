@@ -12,103 +12,92 @@
   </div>
 
   <!-- KPI Metrics Strip -->
-  @if (!loading()) {
-    <div class="osp-v1m" data-testid="ossprey-kpi-strip">
+  @if (!loading() && !loadError()) {
+    <div class="flex flex-wrap items-stretch bg-white border border-gray-200 rounded-xl overflow-hidden mb-5" data-testid="ossprey-kpi-strip">
       <!-- Total packages coverage -->
-      <div class="osp-v1c grad">
-        <div class="osp-v1c-h">
-          <span class="osp-v1c-ic" style="background: var(--blue); color: #fff">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path
-                d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-              <path d="M3.3 7 12 12l8.7-5" />
-              <path d="M12 22V12" />
-            </svg>
+      <div class="flex-1 basis-1/2 lg:basis-0 min-w-0 flex flex-col justify-between px-4 py-4 bg-gradient-to-br from-blue-100 via-blue-50 to-white">
+        <div class="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
+          <span class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-box text-[11px]" aria-hidden="true"></i>
           </span>
           Total packages
         </div>
-        <div class="osp-v1c-num">{{ (packages() ?? []).length }}</div>
-        <div class="osp-v1c-prog">
-          <div class="osp-v1c-bar blue">
-            <i [style.width.%]="coveragePercent()"></i>
+        <div class="font-display font-light text-3xl text-slate-900 leading-none mb-3">{{ totalPackages() }}</div>
+        <div class="min-w-0">
+          <div class="h-1.5 rounded-full bg-gray-200 overflow-hidden mb-1.5">
+            <div class="h-full rounded-full bg-blue-500" [style.width.%]="coveragePercent()"></div>
           </div>
-          <div class="osp-v1c-meta">
-            <b>{{ coveragePercent() }}% covered</b> · {{ coveredCount() }} active / assessing
+          <div class="text-xs text-gray-500 truncate">
+            <span class="font-semibold text-gray-700">{{ coveragePercent() }}% covered</span> · {{ coveredCount() }} active / assessing
           </div>
         </div>
       </div>
-      <div class="osp-v1d"></div>
+      <div class="w-px bg-gray-100 flex-shrink-0 self-stretch hidden lg:block"></div>
       <!-- Status breakdown list -->
-      <div class="osp-v1slist">
-        <button class="osp-v1r" (click)="onFilterChange({ tab: 'unassigned' })" data-testid="ossprey-kpi-unassigned">
-          <span class="osp-v1r-ic" style="background: #e2e8f0; color: var(--g600)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <line x1="17" y1="8" x2="22" y2="13" />
-              <line x1="22" y1="8" x2="17" y2="13" />
-            </svg>
+      <div class="flex-1 basis-full lg:basis-0 min-w-0 flex flex-col justify-center px-3 py-2">
+        <button
+          type="button"
+          class="flex items-center gap-3 px-2.5 py-2 rounded-lg w-full text-left hover:bg-gray-50 transition-colors"
+          (click)="onFilterChange({ tab: 'unassigned' })"
+          data-testid="ossprey-kpi-unassigned">
+          <span class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-user-xmark text-[11px]" aria-hidden="true"></i>
           </span>
-          <span class="osp-v1r-l">Unassigned</span>
-          <span class="osp-v1r-v">{{ statusCounts().unassigned }}</span>
-          <span class="chev">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </span>
+          <span class="flex-1 text-sm text-slate-900 whitespace-nowrap">Unassigned</span>
+          <span class="text-[15px] font-medium text-slate-900 tabular-nums">{{ statusCounts().unassigned }}</span>
+          <i class="fa-light fa-chevron-right text-gray-400 ml-2" aria-hidden="true"></i>
         </button>
-        <button class="osp-v1r warn" (click)="onFilterChange({ tab: 'needs_attention' })" data-testid="ossprey-kpi-needs-attention">
-          <span class="osp-v1r-ic" style="background: #f59e0b; color: #fff">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10 10h4" />
-              <path d="M19 7V5a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v3" />
-              <path d="M20 21a2 2 0 0 0 2-2v-3.851c0-1.39-2-2.962-2-4.829V8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1z" />
-              <path d="M22 16H2" />
-              <path d="M4 21a2 2 0 0 1-2-2v-3.851c0-1.39 2-2.962 2-4.829V8a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1z" />
-              <path d="M9 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2" />
-            </svg>
+        <button
+          type="button"
+          class="flex items-center gap-3 px-2.5 py-2 rounded-lg w-full text-left hover:bg-gray-50 transition-colors"
+          (click)="onFilterChange({ tab: 'needs_attention' })"
+          data-testid="ossprey-kpi-needs-attention">
+          <span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-binoculars text-[11px]" aria-hidden="true"></i>
           </span>
-          <span class="osp-v1r-l">Needs attention</span>
-          <span class="osp-v1r-v">{{ statusCounts().needs_attention }}</span>
-          <span class="chev">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </span>
+          <span class="flex-1 text-sm text-slate-900 whitespace-nowrap">Needs attention</span>
+          <span class="text-[15px] font-medium text-amber-600 tabular-nums">{{ statusCounts().needs_attention }}</span>
+          <i class="fa-light fa-chevron-right text-gray-400 ml-2" aria-hidden="true"></i>
         </button>
-        <button class="osp-v1r danger" (click)="onFilterChange({ tab: 'escalated' })" data-testid="ossprey-kpi-escalated">
-          <span class="osp-v1r-ic" style="background: var(--red); color: #fff">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
+        <button
+          type="button"
+          class="flex items-center gap-3 px-2.5 py-2 rounded-lg w-full text-left hover:bg-gray-50 transition-colors"
+          (click)="onFilterChange({ tab: 'escalated' })"
+          data-testid="ossprey-kpi-escalated">
+          <span class="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-arrow-up text-[11px]" aria-hidden="true"></i>
           </span>
-          <span class="osp-v1r-l">Escalated</span>
-          <span class="osp-v1r-v">{{ statusCounts().escalated }}</span>
-          <span class="chev">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </span>
+          <span class="flex-1 text-sm text-slate-900 whitespace-nowrap">Escalated</span>
+          <span class="text-[15px] font-medium text-red-600 tabular-nums">{{ statusCounts().escalated }}</span>
+          <i class="fa-light fa-chevron-right text-gray-400 ml-2" aria-hidden="true"></i>
         </button>
       </div>
     </div>
   }
 
-  <!-- Packages Tab -->
-  <lfx-ossprey-packages-tab
-    [packages]="packages() ?? []"
-    [filteredPackages]="packages() ?? []"
-    [statusCounts]="statusCounts()"
-    [filters]="filters()"
-    [selectedPackages]="selectedPackages()"
-    (filterChange)="onFilterChange($event)"
-    (sortChange)="onSortChange($event)"
-    (packageClick)="onPackageClick($event)"
-    (togglePackage)="onTogglePackage($event)"
-    (toggleAll)="onToggleAll($event)"
-    (clearFilters)="onClearFilters()">
-  </lfx-ossprey-packages-tab>
+  @if (loadError()) {
+    <div class="flex flex-col items-center justify-center gap-2 py-16 bg-white border border-gray-200 rounded-xl mb-5" data-testid="ossprey-load-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-gray-700">Unable to load packages</p>
+      <p class="text-xs text-gray-500">Something went wrong while fetching the critical package set. Please try again.</p>
+    </div>
+  } @else {
+    <!-- Packages Tab -->
+    <lfx-ossprey-packages-tab
+      [packages]="packages()"
+      [filteredPackages]="filteredPackages()"
+      [loading]="loading()"
+      [statusCounts]="statusCounts()"
+      [filters]="filters()"
+      [selectedPackages]="selectedPackages()"
+      (filterChange)="onFilterChange($event)"
+      (sortChange)="onSortChange($event)"
+      (packageClick)="onPackageClick($event)"
+      (togglePackage)="onTogglePackage($event)"
+      (toggleAll)="onToggleAll($event)"
+      (clearFilters)="onClearFilters()">
+    </lfx-ossprey-packages-tab>
+  }
 
   <!-- Bulk Actions Bar -->
   @if (showBulkActions()) {
@@ -116,24 +105,29 @@
       class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 z-40"
       data-testid="ossprey-bulk-actions-bar">
       <button
+        type="button"
         (click)="clearSelection()"
         class="w-8 h-8 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors"
+        aria-label="Clear selection"
         data-testid="ossprey-bulk-close">
-        ✕
+        <i class="fa-light fa-xmark" aria-hidden="true"></i>
       </button>
       <div class="text-sm font-semibold text-slate-900">{{ selectedPackages().size }} selected</div>
       <div class="w-px h-6 bg-gray-300"></div>
       <button
+        type="button"
         class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
         data-testid="ossprey-bulk-assign">
         Assign Steward
       </button>
       <button
+        type="button"
         class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
         data-testid="ossprey-bulk-escalate">
         Escalate
       </button>
       <button
+        type="button"
         class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
         data-testid="ossprey-bulk-assess">
         Spot-check
@@ -143,5 +137,9 @@
 </div>
 
 <!-- Package Detail Drawer -->
-<lfx-ossprey-package-drawer [(visible)]="drawerVisible" [packageId]="selectedPackageId()" (visibleChange)="!$event && onDrawerClose()">
+<lfx-ossprey-package-drawer
+  [(visible)]="drawerVisible"
+  [packageId]="selectedPackageId()"
+  [packageStatus]="selectedPackageStatus()"
+  (visibleChange)="!$event && onDrawerClose()">
 </lfx-ossprey-package-drawer>
