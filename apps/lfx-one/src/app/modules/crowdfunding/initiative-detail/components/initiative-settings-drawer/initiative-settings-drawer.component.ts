@@ -108,7 +108,7 @@ export class InitiativeSettingsDrawerComponent {
       .subscribe(() => {
         const init = this.initiative();
         const existingTopics = init.industry
-          ? init.industry.split(',').map((v) => v.trim()).filter(Boolean)
+          ? init.industry.split(',').map((v) => v.trim()).filter((v) => v && v.toLowerCase() !== 'null')
           : [];
         this.form.patchValue({
           name: init.name,
