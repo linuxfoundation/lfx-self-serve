@@ -364,4 +364,45 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
   });
 });
 
+test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
+  test('shows a retryable unavailable state when GET current fails, then recovers on retry', async ({ page }) => {
+    await mockCommitteeShell(page);
+
+    // First read fails (e.g. upstream 503 "bucket not initialized"); the retry
+    // succeeds with an empty envelope. Verifies a failed read renders the
+    // distinct unavailable state instead of masquerading as "no brief yet".
+    let calls = 0;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+      calls += 1;
+      if (calls === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'group-weekly-briefs bucket not initialized' }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ brief: null, throttle: DEFAULT_THROTTLE } as WeeklyBriefCurrentResponse),
+      });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Failed read → distinct unavailable state, NOT the empty "No brief yet" prompt.
+    const unavailable = page.getByTestId('weekly-brief-card-unavailable-state');
+    await expect(unavailable).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(unavailable).toContainText('temporarily unavailable');
+    await expect(page.getByTestId('weekly-brief-card-empty-state')).toHaveCount(0);
+
+    // Retry re-fetches; the now-succeeding read swaps to the empty state.
+    await page.getByTestId('weekly-brief-card-unavailable-retry-button').click();
+    await expect(page.getByTestId('weekly-brief-card-empty-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-unavailable-state')).toHaveCount(0);
+  });
+});
+
 // Generated with [Claude Code](https://claude.ai/code)

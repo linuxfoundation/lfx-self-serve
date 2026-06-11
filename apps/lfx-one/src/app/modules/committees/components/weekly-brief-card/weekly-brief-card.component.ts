@@ -32,6 +32,7 @@ export class WeeklyBriefCardComponent {
 
   // UI state signals
   public readonly fetchLoading = signal(true);
+  public readonly fetchError = signal(false);
   public readonly generating = signal(false);
   public readonly saving = signal(false);
   public readonly editMode = signal(false);
@@ -170,6 +171,10 @@ export class WeeklyBriefCardComponent {
     this.editMode.set(false);
   }
 
+  public onRetry(): void {
+    this.refresh$.next();
+  }
+
   // Private initializers
   private initBriefResponse(): Signal<WeeklyBriefCurrentResponse | null> {
     const committee$ = toObservable(this.committee);
@@ -178,8 +183,15 @@ export class WeeklyBriefCardComponent {
         filter(([c]) => !!c?.uid),
         switchMap(([c]) => {
           this.fetchLoading.set(true);
+          this.fetchError.set(false);
           return this.weeklyBriefService.getWeeklyBrief(c.uid).pipe(
-            catchError(() => of(null as WeeklyBriefCurrentResponse | null)),
+            catchError(() => {
+              // A failed read (e.g. upstream 503) must not look like "no brief
+              // yet" — flag it so the template can show a distinct, retryable
+              // unavailable state instead of the empty-state Generate prompt.
+              this.fetchError.set(true);
+              return of(null as WeeklyBriefCurrentResponse | null);
+            }),
             finalize(() => this.fetchLoading.set(false))
           );
         })
