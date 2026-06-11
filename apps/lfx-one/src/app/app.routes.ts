@@ -345,6 +345,10 @@ export const routes: Routes = [
         redirectTo: 'badges',
         pathMatch: 'full',
       },
+      {
+        path: 'ossprey',
+        loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
+      },
     ],
   },
   // Public-facing user documentation portal (LFXV2-2001).
