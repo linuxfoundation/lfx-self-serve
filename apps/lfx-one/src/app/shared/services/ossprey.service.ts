@@ -36,6 +36,7 @@ export class OsspreyService {
     return this.http.get<OsspreyPackage>(`/api/ossprey/packages/${encodeURIComponent(purl)}`).pipe(
       catchError((err) => {
         if (err.status === 404) return of(null);
+        console.error('[OsspreyService] getPackage failed', { purl, status: err.status, message: err.message });
         throw err;
       })
     );

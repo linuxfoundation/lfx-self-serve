@@ -267,7 +267,7 @@ export class OsspreyServerService {
     return advisories.map((adv) => ({
       id: adv.osvId,
       severity: adv.severity,
-      description: adv.osvId,
+      description: adv.resolution ?? adv.osvId,
       state: 'Open' as const,
       cvss: null,
       publishedAt: null,
