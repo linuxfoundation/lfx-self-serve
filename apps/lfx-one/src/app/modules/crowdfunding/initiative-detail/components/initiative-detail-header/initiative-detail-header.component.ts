@@ -66,7 +66,10 @@ export class InitiativeDetailHeaderComponent {
   protected readonly avatarStyleClass = computed(() => CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES[this.initiative().initiativeType]);
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
   protected readonly industryTags = computed(() =>
-    (this.initiative().industry ?? '').split(',').map((t) => t.trim()).filter(Boolean)
+    (this.initiative().industry ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
   );
 
   protected onMoreClick(event: Event): void {
