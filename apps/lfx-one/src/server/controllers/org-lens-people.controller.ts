@@ -11,6 +11,7 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleBoardMembersService } from '../services/org-people-board-members.service';
 import { OrgPeopleCommitteeMembersService } from '../services/org-people-committee-members.service';
 import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
@@ -27,6 +28,7 @@ export class OrgLensPeopleController {
   private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
   private readonly contributorsService: OrgPeopleContributorsService;
   private readonly committeeMembersService: OrgPeopleCommitteeMembersService;
+  private readonly boardMembersService: OrgPeopleBoardMembersService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
@@ -35,6 +37,7 @@ export class OrgLensPeopleController {
     this.eventAttendeesService = new OrgPeopleEventAttendeesService();
     this.contributorsService = new OrgPeopleContributorsService();
     this.committeeMembersService = new OrgPeopleCommitteeMembersService();
+    this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -166,6 +169,63 @@ export class OrgLensPeopleController {
       const response = await this.committeeMembersService.reassignSeat(req, orgUid, seatId, body);
 
       logger.success(req, 'reassign_committee_member', startTime, {
+        org_uid: orgUid,
+        seat_id: seatId,
+        committee_uid: body.committeeUid,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/board-members — org-wide Board-only roster + stats (spec 028). */
+  public async getBoardMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_people_board_members', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_people_board_members');
+
+      const response = await this.boardMembersService.getBoardMembers(req, orgUid);
+
+      logger.success(req, 'get_org_people_board_members', startTime, {
+        org_uid: orgUid,
+        assignment_count: response.assignments.length,
+        total_board_members: response.stats.totalBoardMembers,
+        voting_count: response.stats.votingCount,
+        non_voting_count: response.stats.nonVotingCount,
+        foundations_covered: response.stats.foundationsCovered,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/orgs/:orgUid/lens/people/board-members/:seatId/reassign — reassign one Membership-Entitlement board seat (spec 028 US3/US4). */
+  public async reassignBoardMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const seatId = req.params['seatId'];
+    const startTime = logger.startOperation(req, 'reassign_board_member', {
+      org_uid: orgUid,
+      seat_id: seatId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'reassign_board_member');
+      this.assertSeatId(seatId, 'reassign_board_member');
+      const body = this.assertReassignBody(req.body, 'reassign_board_member');
+
+      const response = await this.boardMembersService.reassignSeat(req, orgUid, seatId, body);
+
+      logger.success(req, 'reassign_board_member', startTime, {
         org_uid: orgUid,
         seat_id: seatId,
         committee_uid: body.committeeUid,

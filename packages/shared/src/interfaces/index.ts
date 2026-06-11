@@ -190,6 +190,7 @@ export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';
 
 // Org People — Committee tab (spec 027)
+export * from './org-people-board-members.interface';
 export * from './org-people-committee-members.interface';
 export * from './org-people-committee-members.internal.interface';
 

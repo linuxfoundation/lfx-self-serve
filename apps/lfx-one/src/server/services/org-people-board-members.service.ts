@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  BoardMemberStats,
   CommitteeMemberAssignment,
-  CommitteeMemberStats,
   CommitteeServiceOrgSeat,
-  OrgPeopleCommitteeMembersResponse,
+  OrgPeopleBoardMembersResponse,
   ReassignCommitteeMemberBody,
   ReassignCommitteeMemberResponse,
 } from '@lfx-one/shared/interfaces';
-import { isBoardCategory } from '@lfx-one/shared/constants';
+import { isBoardCategory, isVotingStatus } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import { enrichFoundationNames, toAssignment } from './committee-seat-assignment.mapper';
@@ -18,11 +18,8 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { ProjectService } from './project.service';
 
-/**
- * Org Lens People → Committee tab (spec 027): serves the org-wide NON-Board roster (Board excluded, FR-003)
- * and proxies single-seat reassigns, reusing the spec-026 drain/reassign with foundation enrichment (D-003).
- */
-export class OrgPeopleCommitteeMembersService {
+/** Org Lens People → Board tab (spec 028): org-wide Board-ONLY roster (FR-003, inverse of the Committee tab) + single-seat reassign, reusing the spec-026 drain + shared seat-mapper (D-101/D-003). */
+export class OrgPeopleBoardMembersService {
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;
   private readonly projectService: ProjectService;
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -33,32 +30,33 @@ export class OrgPeopleCommitteeMembersService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Org-wide non-Board roster (FR-001/003/004): drain → exclude Board → enrich foundation names → map → stats. */
-  public async getCommitteeMembers(req: Request, orgUid: string): Promise<OrgPeopleCommitteeMembersResponse> {
+  /** Org-wide Board roster (FR-001/003/004): drain → KEEP Board → enrich foundation names → map → board stats. */
+  public async getBoardMembers(req: Request, orgUid: string): Promise<OrgPeopleBoardMembersResponse> {
     // Org-wide drain: no project filter → committee-service's organization-only scope (every
     // foundation the org holds seats on); the shared drain enforces the 200-page fail-closed cap.
     const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid);
-    const nonBoard = seats.filter((s) => !isBoardCategory(s.committee_category));
+    // KEEP only Board-category seats — the exact inverse of the Committee tab's `!isBoardCategory`.
+    const board = seats.filter((s) => isBoardCategory(s.committee_category));
 
-    const foundationNames = await enrichFoundationNames(req, nonBoard, this.projectService);
-    const assignments = nonBoard.map((s) => toAssignment(s, foundationNames));
+    const foundationNames = await enrichFoundationNames(req, board, this.projectService);
+    const assignments = board.map((s) => toAssignment(s, foundationNames));
     const stats = this.computeStats(assignments);
 
     return { orgUid, assignments, stats };
   }
 
-  /** Reassign one Membership-Entitlement seat (FR-017): proxies the spec-026 committee-service atomic reassign. */
+  /** Reassign one Membership-Entitlement board seat (FR-017): proxies the spec-026 committee-service atomic reassign. */
   public async reassignSeat(req: Request, orgUid: string, seatId: string, body: ReassignCommitteeMemberBody): Promise<ReassignCommitteeMemberResponse> {
     const upstreamPath = `/committees/b2b-org/${orgUid}/seats/${seatId}/reassign`;
-    logger.debug(req, 'reassign_committee_member_proxy', 'Proxying reassign to committee-service', {
+    logger.debug(req, 'reassign_board_member_proxy', 'Proxying reassign to committee-service', {
       org_uid: orgUid,
       seat_id: seatId,
       committee_uid: body.committeeUid,
       upstream_path: upstreamPath,
     });
-    // Verb mapping (matches spec 026 `org-lens-board-committee.service.ts`): the BFF surface is PATCH
-    // (REST partial-update convention), but committee-service defines reassign as PUT — so we issue PUT
-    // here deliberately. NOT a bug: committee-service implements PUT /committees/b2b-org/{uid}/seats/{member_uid}/reassign.
+    // Verb mapping (matches spec 026/027 `org-people-committee-members.service.ts`): the BFF surface is
+    // PATCH (REST partial-update convention), but committee-service defines reassign as PUT — so we issue
+    // PUT here deliberately. NOT a bug: committee-service implements PUT /committees/b2b-org/{uid}/seats/{member_uid}/reassign.
     const upstream = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat>(
       req,
       'LFX_V2_COMMITTEE_SERVICE',
@@ -75,7 +73,7 @@ export class OrgPeopleCommitteeMembersService {
 
     const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);
-    logger.debug(req, 'reassign_committee_member_proxy', 'committee-service returned reassigned seat', {
+    logger.debug(req, 'reassign_board_member_proxy', 'committee-service returned reassigned seat', {
       org_uid: orgUid,
       seat_id: seat.seatId,
       committee_uid: seat.committeeUid,
@@ -83,19 +81,21 @@ export class OrgPeopleCommitteeMembersService {
     return { orgUid, seat };
   }
 
-  /** Filter-independent stats (FR-004): distinct emails / committees / foundations across the FULL roster. */
-  private computeStats(assignments: CommitteeMemberAssignment[]): CommitteeMemberStats {
+  /** Filter-independent board stats (FR-004): distinct members / voting seats / non-voting seats / distinct foundations. */
+  private computeStats(assignments: CommitteeMemberAssignment[]): BoardMemberStats {
     const emails = new Set<string>();
-    const committees = new Set<string>();
     const foundations = new Set<string>();
+    let votingCount = 0;
+    let nonVotingCount = 0;
     for (const a of assignments) {
       if (a.person.email) emails.add(a.person.email);
-      if (a.committeeUid) committees.add(a.committeeUid);
-      // Count by projectUid, but fall back to the foundation slug when the UID is missing so the tile
+      // Count by projectUid, falling back to the foundation slug when the UID is missing so the tile
       // never shows 0 foundations while the table still renders foundation values (un-enriched seats).
       const foundationKey = a.projectUid || a.foundationSlug;
       if (foundationKey) foundations.add(foundationKey);
+      if (isVotingStatus(a.votingStatus)) votingCount += 1;
+      else nonVotingCount += 1;
     }
-    return { individualCount: emails.size, committeeCount: committees.size, foundationsCovered: foundations.size };
+    return { totalBoardMembers: emails.size, votingCount, nonVotingCount, foundationsCovered: foundations.size };
   }
 }

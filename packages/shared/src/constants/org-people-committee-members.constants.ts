@@ -30,13 +30,13 @@ export const EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE: OrgPeopleCommitteeMemb
   stats: { individualCount: 0, committeeCount: 0, foundationsCovered: 0 },
 };
 
-/**
- * Tailwind pill classes for a seat's voting status. A real voting status (e.g. "Voting Rep")
- * gets an emerald pill; "Non-voting" / "None" / empty gets a neutral slate pill — matching the
- * spec-027 wireframe (Non-voting rendered as a gray pill).
- */
-export function votingStatusPillClass(status: string | null | undefined): string {
+/** True when a voting status is VOTING (non-empty, not "non-voting"/"none"); the single classifier shared by the pill + Board stat tiles + Board "All Statuses" filter (D-102). */
+export function isVotingStatus(status: string | null | undefined): boolean {
   const s = (status ?? '').trim().toLowerCase();
-  const isVoting = s.length > 0 && s !== 'non-voting' && s !== 'none';
-  return isVoting ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-50 text-slate-600';
+  return s.length > 0 && s !== 'non-voting' && s !== 'none';
+}
+
+/** Tailwind pill classes for a voting status — emerald when voting, neutral slate when "Non-voting"/"None"/empty. Delegates to `isVotingStatus` (D-102). */
+export function votingStatusPillClass(status: string | null | undefined): string {
+  return isVotingStatus(status) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-50 text-slate-600';
 }
