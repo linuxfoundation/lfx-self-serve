@@ -128,7 +128,9 @@ export class CrowdfundingService {
         }
         return of(fallback);
       }
-      console.error(`[CrowdfundingService] ${label} failed`, err);
+      if (err.status !== 404) {
+        console.error(`[CrowdfundingService] ${label} failed`, err);
+      }
       return of(fallback);
     };
   }

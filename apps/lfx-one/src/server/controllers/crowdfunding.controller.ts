@@ -300,6 +300,10 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
 
     try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_by_slug' });
+      }
+
       const { slug } = req.params;
       const initiative = await this.crowdfundingService.getInitiativeBySlug(req, slug);
 
@@ -321,6 +325,10 @@ export class CrowdfundingController {
     const startTime = logger.startOperation(req, 'get_initiative_transactions');
 
     try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_initiative_transactions' });
+      }
+
       const { slug } = req.params;
       const { type, size, from } = req.query;
 
