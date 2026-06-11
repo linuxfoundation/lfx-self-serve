@@ -87,6 +87,8 @@ export class OrgProjectsComponent {
   private readonly projectsService = inject(OrgLensProjectsService);
   /** Pending hide timer for the health popover (lets the cursor cross into the popover). */
   private healthHideTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Stable chart-data cache keyed by project reference — avoids reallocating on every template call. */
+  private readonly sparklineCache = new WeakMap<OrgLensProject, { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] }>();
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
@@ -394,10 +396,16 @@ export class OrgProjectsComponent {
     return this.pinnedSlugs().has(slug);
   }
   protected sparklineData(project: OrgLensProject): { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] } {
-    return {
+    const cached = this.sparklineCache.get(project);
+    if (cached) {
+      return cached;
+    }
+    const data = {
       labels: project.trend.series.map((_, i) => String(i)),
       datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
     };
+    this.sparklineCache.set(project, data);
+    return data;
   }
 
   // Private initializers
