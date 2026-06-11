@@ -524,64 +524,6 @@
         </div>
       }
 
-      <!-- EDIT MODE: LinkedIn Sponsored Content -->
-      @if (editLinkedInVariants().length > 0 || isPlatformSelected('linkedin-ads')) {
-        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-copy-edit">
-          <div class="mb-3 flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-gray-900">
-              <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
-              LinkedIn Sponsored Content
-              <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-normal text-blue-700">Editing</span>
-            </h3>
-            <button type="button" (click)="addLinkedInVariant()" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-              <i class="fa-light fa-plus" aria-hidden="true"></i> Add Variant
-            </button>
-          </div>
-          <div class="flex flex-col gap-4">
-            @for (variant of editLinkedInVariants(); track $index; let i = $index) {
-              <div class="relative rounded-md border border-gray-200 bg-gray-50 p-3">
-                <div class="mb-1 flex items-center justify-between">
-                  <h4 class="text-xs font-medium text-gray-500">Variant {{ i + 1 }}</h4>
-                  @if (editLinkedInVariants().length > 1) {
-                    <button
-                      type="button"
-                      (click)="removeLinkedInVariant(i)"
-                      class="text-gray-400 hover:text-red-500"
-                      [attr.aria-label]="'Remove variant ' + (i + 1)">
-                      <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
-                    </button>
-                  }
-                </div>
-                <div class="flex flex-col gap-2">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-xs text-gray-500">Intro Text (max 600 chars)</label>
-                    <textarea
-                      #introTextInput
-                      [value]="variant.introText"
-                      (input)="updateLinkedInVariant(i, 'introText', introTextInput.value)"
-                      maxlength="600"
-                      rows="3"
-                      class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
-                    <span class="text-right text-xs text-gray-400">{{ variant.introText.length }}/600</span>
-                  </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-xs text-gray-500">Headline (max 200 chars)</label>
-                    <input
-                      #headlineInput
-                      type="text"
-                      [value]="variant.headline"
-                      (input)="updateLinkedInVariant(i, 'headline', headlineInput.value)"
-                      maxlength="200"
-                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                    <span class="text-right text-xs text-gray-400">{{ variant.headline.length }}/200</span>
-                  </div>
-                </div>
-              </div>
-            }
-          </div>
-        </div>
-      }
-
       <!-- EDIT MODE: Keywords -->
       @if (editKeywords().length > 0) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-keywords-edit">
@@ -776,44 +718,8 @@
         </div>
       }
 
-      <!-- READ-ONLY MODE: LinkedIn Sponsored Content -->
-      @if (linkedInCopy(); as linkedin) {
-        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-copy">
-          <h3 class="mb-4 text-sm font-semibold text-gray-900">
-            <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
-            LinkedIn Sponsored Content
-          </h3>
-
-          <div class="flex flex-col gap-4">
-            @for (variant of linkedin.variants; track $index; let i = $index) {
-              <div class="rounded-md border border-gray-200 bg-gray-50 p-3">
-                <h4 class="mb-1.5 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</h4>
-                <p class="mb-2 whitespace-pre-line text-sm text-gray-800">{{ variant.introText }}</p>
-                <p class="text-xs font-medium text-gray-600">{{ variant.headline }}</p>
-              </div>
-            }
-
-            @if (linkedin.recommendedGeoTargets.length > 0) {
-              <div>
-                <h4 class="mb-2 text-xs font-medium text-gray-500">Recommended Geo Targets</h4>
-                <div class="flex flex-wrap gap-1.5">
-                  @for (geo of linkedin.recommendedGeoTargets; track geo.urn) {
-                    <span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{{ geo.label }}</span>
-                  }
-                </div>
-              </div>
-            }
-
-            <div>
-              <h4 class="mb-1 text-xs font-medium text-gray-500">Targeting Profile</h4>
-              <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">{{ linkedin.recommendedTargetingProfile }}</span>
-            </div>
-          </div>
-        </div>
-      }
-
       <!-- Raw Copy (fallback if structured sections not available) -->
-      @if (!getSearchCopy() && !getDisplayCopy() && !linkedInCopy() && copyBuffer()) {
+      @if (!getSearchCopy() && !getDisplayCopy() && copyBuffer()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-ad-copy">
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Generated Ad Copy</h3>
@@ -860,6 +766,135 @@
                 }
               </tbody>
             </table>
+          </div>
+        </div>
+      }
+
+      <!-- READ-ONLY MODE: LinkedIn Sponsored Content -->
+      @if (linkedInSponsoredCopy(); as liCopy) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-copy">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
+            LinkedIn Sponsored Content
+          </h3>
+          <div class="flex flex-col gap-3">
+            @if (asArray(liCopy['variants']); as variants) {
+              @for (v of $any(variants); track $index) {
+                <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
+                  <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ $index + 1 }}</p>
+                  <p class="whitespace-pre-line text-sm text-gray-800">{{ v['intro_text'] ?? v['introText'] }}</p>
+                  <p class="mt-2 text-xs font-semibold text-gray-700">{{ v['headline'] }}</p>
+                </div>
+              }
+            }
+          </div>
+        </div>
+      }
+
+      <!-- READ-ONLY MODE: LinkedIn Strategy -->
+      @if (linkedInStrategy(); as strategy) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-linkedin-strategy">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">
+            <i class="fa-brands fa-linkedin mr-1.5 text-blue-600" aria-hidden="true"></i>
+            LinkedIn Targeting Strategy
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <!-- Rationale -->
+            <div>
+              <h4 class="mb-1 text-xs font-medium text-gray-500">Targeting Rationale</h4>
+              <p class="text-sm text-gray-700">{{ strategy.targetingRationale }}</p>
+            </div>
+
+            <!-- Profile -->
+            <div>
+              <h4 class="mb-1 text-xs font-medium text-gray-500">Targeting Profile</h4>
+              <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">{{ strategy.targetingProfile }}</span>
+            </div>
+
+            <!-- Skills -->
+            @if (strategy.recommendedSkills.length > 0) {
+              <div>
+                <h4 class="mb-2 text-xs font-medium text-gray-500">Recommended Skills</h4>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (skill of strategy.recommendedSkills; track skill) {
+                    <span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700">{{ skill }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Groups -->
+            @if (strategy.recommendedGroups.length > 0) {
+              <div>
+                <h4 class="mb-2 text-xs font-medium text-gray-500">Recommended Groups</h4>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (group of strategy.recommendedGroups; track group) {
+                    <span class="rounded-full bg-violet-50 px-2.5 py-1 text-xs text-violet-700">{{ group }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Job Functions -->
+            @if (strategy.recommendedJobFunctions.length > 0) {
+              <div>
+                <h4 class="mb-2 text-xs font-medium text-gray-500">Job Functions</h4>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (fn of strategy.recommendedJobFunctions; track fn) {
+                    <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">{{ fn }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Geo Targets -->
+            @if (strategy.geoTargets.length > 0) {
+              <div>
+                <h4 class="mb-2 text-xs font-medium text-gray-500">Geo Targets</h4>
+                <div class="flex flex-col gap-1.5">
+                  @for (geo of strategy.geoTargets; track geo.name) {
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="font-medium text-gray-800">{{ geo.name }}</span>
+                      <span class="text-gray-400">—</span>
+                      <span class="text-gray-500">{{ geo.rationale }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Budget Recommendation -->
+            <div>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Budget Recommendation</h4>
+              <div class="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div class="flex items-center gap-4 text-sm">
+                  <span class="text-gray-600"
+                    >Daily: <span class="font-medium text-gray-900">${{ strategy.budgetRecommendation.dailyBudgetUsd }}</span></span
+                  >
+                  <span class="text-gray-600"
+                    >Lifetime: <span class="font-medium text-gray-900">${{ strategy.budgetRecommendation.lifetimeBudgetUsd }}</span></span
+                  >
+                </div>
+                <p class="mt-1 text-xs text-gray-500">{{ strategy.budgetRecommendation.rationale }}</p>
+              </div>
+            </div>
+
+            <!-- Audience Estimate -->
+            @if (strategy.audienceEstimate) {
+              <div>
+                <h4 class="mb-1 text-xs font-medium text-gray-500">Audience Estimate</h4>
+                <p class="text-sm text-gray-700">{{ strategy.audienceEstimate }}</p>
+              </div>
+            }
+
+            <!-- Campaign Structure Notes -->
+            @if (strategy.campaignStructureNotes) {
+              <div>
+                <h4 class="mb-1 text-xs font-medium text-gray-500">Campaign Structure Notes</h4>
+                <p class="text-sm text-gray-700">{{ strategy.campaignStructureNotes }}</p>
+              </div>
+            }
           </div>
         </div>
       }

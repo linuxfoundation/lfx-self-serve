@@ -13,6 +13,7 @@ import type {
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
+import { normalizeToUrl } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -54,7 +55,8 @@ export class OrgPeopleEventAttendeesService {
       eventLocation: row.EVENT_LOCATION,
       eventCity: row.EVENT_CITY,
       eventCountry: row.EVENT_COUNTRY,
-      eventUrl: row.EVENT_URL,
+      // Normalize scheme-less DB URLs (e.g. "regfox.com/..") so a future clickable event name binds a safe absolute href.
+      eventUrl: normalizeToUrl(row.EVENT_URL ?? ''),
       foundationId: row.FOUNDATION_ID,
       foundationName: row.FOUNDATION_NAME,
       eventStartDate: toIsoDate(row.EVENT_START_DATE),

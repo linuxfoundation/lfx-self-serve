@@ -43,7 +43,7 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
   }
 
   // Fall back to OIDC claims for non-authelia tokens
-  return getEffectiveSub(req);
+  return getEffectiveUsername(req);
 }
 
 /**
@@ -82,6 +82,11 @@ export function getEffectiveUsername(req: Request): string | null {
  * Gets the effective sub (user ID) for the current request context.
  * During impersonation, returns the target user's sub from the impersonation session.
  * Otherwise returns the OIDC session user's sub.
+ *
+ * @deprecated Prefer getEffectiveUsername for APIs that accept the LFID username.
+ * The Auth0 sub claim is being phased out across backend APIs in favour of the LFID
+ * username. Only use this function for call sites whose upstream handler has not yet
+ * been migrated to accept a username.
  */
 export function getEffectiveSub(req: Request): string | null {
   if (req.appSession?.['impersonationUser']?.sub) {

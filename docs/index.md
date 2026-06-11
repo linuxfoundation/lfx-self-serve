@@ -187,12 +187,11 @@ lfx-one/
 
 ## Deployment
 
-The application supports deployment with PM2:
+The application deploys as a Helm chart:
 
-1. **Node.js with PM2**: Production process management with clustering and
-   zero-downtime deployments
-
-See the [deployment documentation](docs/deployment.md) for detailed instructions.
+- Chart source: `charts/lfx-self-serve/README.md` (in the repo root, outside this docs site)
+- Deployed values, image tags, ApplicationSets, environment promotion: `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`)
+- Shared platform chart (NATS, OpenFGA, OpenSearch, Heimdall): `lfx-v2-helm`
 
 ## 📚 Documentation
 
@@ -213,7 +212,7 @@ Comprehensive documentation organized by domain:
 - **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 20 SSR integration
 - **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
 - **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
-- **[Deployment](docs/deployment.md)** - PM2 configuration and production deployment
+- **Deployment** - Chart README at `charts/lfx-self-serve/README.md`; deployed values in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 
 #### 📦 [Shared Architecture](docs/architecture/shared/)
 

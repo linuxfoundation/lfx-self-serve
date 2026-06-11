@@ -6,7 +6,7 @@ import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -22,7 +22,7 @@ export class OrgMembershipResolverService {
   // Hard cap for in-process membership memo entries.
   private static readonly membershipsCacheMaxEntries = 2_000;
 
-  // Per-caller memo of project_membership docs keyed by `${sub}:${b2bOrgUid}:${slug}`.
+  // Per-caller memo of project_membership docs keyed by `${username}:${b2bOrgUid}:${slug}`.
   private static readonly membershipsCache = new Map<string, { docs: ProjectMembershipDoc[]; expiresAt: number }>();
 
   // In-flight dedup for concurrent prefetch + resolve reads.
@@ -81,7 +81,7 @@ export class OrgMembershipResolverService {
     const slug = (foundationSlug ?? '').trim();
     if (!b2bOrgUid || !isFilterSafeIdentifier(b2bOrgUid) || !slug || !isFilterSafeIdentifier(slug)) return [];
 
-    const key = `${getEffectiveSub(req) ?? 'anon'}:${b2bOrgUid}:${slug.toLowerCase()}`;
+    const key = `${getEffectiveUsername(req) ?? 'anon'}:${b2bOrgUid}:${slug.toLowerCase()}`;
     const cached = OrgMembershipResolverService.membershipsCache.get(key);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.docs;
