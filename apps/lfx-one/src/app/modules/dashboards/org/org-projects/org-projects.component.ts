@@ -480,7 +480,9 @@ export class OrgProjectsComponent {
       const all = [...(this.response()?.projects ?? []), ...this.addedProjects()];
       const workspace = this.selectedWorkspaceId();
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
-      const employees = this.formValue().employees?.filter(Boolean) ?? [];
+      // Drop stale/unknown employee ids from the URL so a shared deep link can't filter everything out.
+      const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
+      const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
       const hidden = this.hiddenSlugs();
       return all
         .filter((p) => !hidden.has(p.slug))

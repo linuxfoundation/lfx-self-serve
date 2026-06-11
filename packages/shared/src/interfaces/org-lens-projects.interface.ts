@@ -4,10 +4,11 @@
 /**
  * Org Lens — Projects page contracts (LFXV2-1883 / LFXV2-1884).
  *
- * These are the real API contracts the Projects page renders against. The current
- * implementation is fed by a demo-data fixture through `OrgLensProjectsService`; the
- * live Snowflake / LFX Insights integration (a separate story) will populate the same
- * shapes without any component changes.
+ * The wire contracts (OrgLensProject, OrgLensProjectsResponse, etc.) are what the API returns;
+ * the current implementation is fed by a demo-data fixture through `OrgLensProjectsService`, and the
+ * live Snowflake / LFX Insights integration (a separate story) will populate the same shapes without
+ * any component changes. The "Client-only view models" section at the bottom is NOT on the wire —
+ * it is built in the component and must never be populated from API data.
  */
 
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
@@ -133,6 +134,13 @@ export type OrgProjectsSortField = 'name' | 'health' | 'technicalInfluence' | 'e
 
 /** Sort direction (`?dir=`). */
 export type SortDirection = 'asc' | 'desc';
+
+/*
+ * ── Client-only view models (NOT API wire contracts) ─────────────────────────
+ * Built in the component off the wire types above; never populated from API data.
+ * `trendTooltipHtml` is component-authored markup rendered with `[escape]="false"`,
+ * so it must never be sourced from the wire — keep these types out of any API mapping.
+ */
 
 /** A single rounded bar in the influence signal-strength icon (precomputed for the table view-model). */
 export interface OrgProjectsSignalBar {

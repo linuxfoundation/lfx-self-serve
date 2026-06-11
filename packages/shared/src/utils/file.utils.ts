@@ -311,7 +311,8 @@ export function rowsToCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): 
  * @param rows - Array of rows, each an array of cell values
  */
 export function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<string | number>>): void {
-  if (typeof document === 'undefined') {
+  // Browser-only: bail unless the full DOM + Blob URL APIs exist (a partial SSR DOM may lack createObjectURL).
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
     return;
   }
 
@@ -319,7 +320,7 @@ export function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = filename;
+  anchor.download = sanitizeFilename(filename);
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
