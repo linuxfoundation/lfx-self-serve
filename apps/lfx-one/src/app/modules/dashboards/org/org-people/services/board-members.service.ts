@@ -12,7 +12,7 @@ import type {
   ReassignCommitteeMemberResponse,
 } from '@lfx-one/shared/interfaces';
 
-/** HTTP client for the Org Lens → People → Board tab (spec 028). Read + single-seat reassign + the reused org-wide employee picker. */
+/** HTTP client for the Org Lens → People → Board tab. Read + single-seat reassign + the reused org-wide employee picker. */
 @Injectable({ providedIn: 'root' })
 export class BoardMembersService {
   private readonly http = inject(HttpClient);

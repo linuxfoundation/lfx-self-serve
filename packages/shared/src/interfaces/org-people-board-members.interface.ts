@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Spec 028 — Org Lens People → Board tab. Wire (BFF ↔ client) + client view-model types for the
-// org-wide, Board-ONLY roster. This is the inverted-filter sibling of spec 027 (People → Committee
-// tab): a board seat is a committee seat whose category is Board, so the per-seat wire shape is
-// reused verbatim from `org-people-committee-members.interface.ts` (D-103). Only the stats shape,
-// the per-person aggregation (voting counts), and the envelope differ.
+// Org Lens People → Board tab. Wire (BFF ↔ client) + client view-model types for the org-wide,
+// Board-ONLY roster. A board seat is a committee seat whose category is Board, so the per-seat wire
+// shape is reused verbatim from `org-people-committee-members.interface.ts`; only the stats shape,
+// the per-person aggregation (voting counts), and the response envelope differ here.
 
 import type { CommitteeMemberAssignment } from './org-people-committee-members.interface';
 import type { CommitteeMemberAssignmentVm } from './org-people-committee-members.internal.interface';

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** People → Board tab E2E (spec 028 US1 read + US2 filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
+/** People → Board tab E2E (read + filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
 
 import { expect, Page, test } from '@playwright/test';
 
@@ -145,7 +145,7 @@ async function gotoBoardTab(page: Page): Promise<void> {
 
 test.setTimeout(120_000);
 
-test.describe('Org People → Board tab (spec 028 US1 + US2)', () => {
+test.describe('Org People → Board tab', () => {
   test('renders the org board roster grouped by person with correct stats (SC-001 perf + SC-004 counts)', async ({ page }) => {
     await stubAccountContext(page);
     await stubBoardMembers(page);

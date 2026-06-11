@@ -18,7 +18,7 @@ import type {
   CommitteeMembersDecorateOptions,
 } from '@lfx-one/shared/interfaces';
 
-/** Group org-wide Board seats by person (email key, first-wins) → foundation labels + voting/non-voting + editable counts (spec 028 data-model §6). */
+/** Group org-wide Board seats by person (email key, first-wins) → foundation labels + voting/non-voting + editable counts. */
 export function buildBoardPersonGroups(assignments: CommitteeMemberAssignment[]): BoardMemberPersonGroup[] {
   const byEmail = new Map<string, CommitteeMemberAssignment[]>();
   for (const a of assignments) {

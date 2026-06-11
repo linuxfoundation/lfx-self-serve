@@ -20,7 +20,7 @@ import { take } from 'rxjs';
 
 import { BoardMembersService } from '../../../services/board-members.service';
 
-/** Spec 028 US3 — bulk-reassign one person's N Membership-Entitlement board seats; the parent fans out the PUTs. Reuses the spec-027 committee modal contracts (D-103). */
+/** Bulk-reassign one person's N Membership-Entitlement board seats; the parent fans out the PUTs. Reuses the committee modal contracts. */
 @Component({
   selector: 'lfx-reassign-board-roles-modal',
   standalone: true,

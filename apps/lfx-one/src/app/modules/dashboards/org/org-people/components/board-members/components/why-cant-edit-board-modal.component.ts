@@ -5,7 +5,7 @@ import { Component, inject } from '@angular/core';
 import type { WhyCantEditBoardDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
-/** Spec 028 — explains why a board seat/member is read-only (foundation-controlled or no writer authority). Buttons close-only for now. */
+/** Explains why a board seat/member is read-only (foundation-controlled or no writer authority). Buttons close-only for now. */
 @Component({
   selector: 'lfx-why-cant-edit-board-modal',
   standalone: true,

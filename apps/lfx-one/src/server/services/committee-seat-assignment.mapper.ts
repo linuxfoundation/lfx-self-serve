@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Spec 028 (D-101) — shared seat→assignment mapper extracted from `OrgPeopleCommitteeMembersService`
-// so both the Committee tab (spec 027) and the Board tab (spec 028) reuse the same foundation-name
-// enrichment + camelCase mapping with zero duplication. Behavior is byte-identical to the original
-// private methods; the committee read/reassign responses are unchanged.
+// Shared seat→assignment mapper extracted from `OrgPeopleCommitteeMembersService` so both the
+// Committee tab and the Board tab reuse the same foundation-name enrichment + camelCase mapping
+// with zero duplication. Behavior is byte-identical to the original private methods; the committee
+// read/reassign responses are unchanged.
 
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';

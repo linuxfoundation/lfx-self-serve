@@ -181,7 +181,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/board-members — org-wide Board-only roster + stats (spec 028). */
+  /** GET /api/orgs/:orgUid/lens/people/board-members — org-wide Board-only roster + stats. */
   public async getBoardMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_people_board_members', {
@@ -209,7 +209,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** PATCH /api/orgs/:orgUid/lens/people/board-members/:seatId/reassign — reassign one Membership-Entitlement board seat (spec 028 US3/US4). */
+  /** PATCH /api/orgs/:orgUid/lens/people/board-members/:seatId/reassign — reassign one Membership-Entitlement board seat. */
   public async reassignBoardMember(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const seatId = req.params['seatId'];

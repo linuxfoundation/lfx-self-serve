@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** People → Board tab reassign E2E (spec 028 US3 bulk modal + US4 single-edit modal). Deterministic via route mocks. */
+/** People → Board tab reassign E2E (bulk reassign modal + single-edit modal). Deterministic via route mocks. */
 
 import { expect, Page, Route, test } from '@playwright/test';
 

@@ -12,7 +12,7 @@ import { take } from 'rxjs';
 
 import { BoardMembersService } from '../../../services/board-members.service';
 
-/** Spec 028 US4 — reassign a single Membership-Entitlement board seat to a new holder. Reuses the spec-027 committee modal contracts (D-103). */
+/** Reassign a single Membership-Entitlement board seat to a new holder. Reuses the committee modal contracts. */
 @Component({
   selector: 'lfx-edit-board-role-modal',
   standalone: true,

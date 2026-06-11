@@ -18,7 +18,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { ProjectService } from './project.service';
 
-/** Org Lens People → Board tab (spec 028): org-wide Board-ONLY roster (FR-003, inverse of the Committee tab) + single-seat reassign, reusing the spec-026 drain + shared seat-mapper (D-101/D-003). */
+/** Org Lens People → Board tab: org-wide Board-ONLY roster (the inverse of the Committee tab) + single-seat reassign, reusing the shared committee-service drain + seat-mapper. */
 export class OrgPeopleBoardMembersService {
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;
   private readonly projectService: ProjectService;
@@ -45,7 +45,7 @@ export class OrgPeopleBoardMembersService {
     return { orgUid, assignments, stats };
   }
 
-  /** Reassign one Membership-Entitlement board seat (FR-017): proxies the spec-026 committee-service atomic reassign. */
+  /** Reassign one Membership-Entitlement board seat: proxies the committee-service atomic reassign. */
   public async reassignSeat(req: Request, orgUid: string, seatId: string, body: ReassignCommitteeMemberBody): Promise<ReassignCommitteeMemberResponse> {
     const upstreamPath = `/committees/b2b-org/${orgUid}/seats/${seatId}/reassign`;
     logger.debug(req, 'reassign_board_member_proxy', 'Proxying reassign to committee-service', {
@@ -54,7 +54,7 @@ export class OrgPeopleBoardMembersService {
       committee_uid: body.committeeUid,
       upstream_path: upstreamPath,
     });
-    // Verb mapping (matches spec 026/027 `org-people-committee-members.service.ts`): the BFF surface is
+    // Verb mapping (matches `org-people-committee-members.service.ts`): the BFF surface is
     // PATCH (REST partial-update convention), but committee-service defines reassign as PUT — so we issue
     // PUT here deliberately. NOT a bug: committee-service implements PUT /committees/b2b-org/{uid}/seats/{member_uid}/reassign.
     const upstream = await this.microserviceProxy.proxyRequest<CommitteeServiceOrgSeat>(

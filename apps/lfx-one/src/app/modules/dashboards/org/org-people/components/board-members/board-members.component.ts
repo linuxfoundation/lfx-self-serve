@@ -47,7 +47,7 @@ import { ReassignBoardRolesModalComponent } from './components/reassign-board-ro
 import { WhyCantEditBoardModalComponent } from './components/why-cant-edit-board-modal.component';
 import { buildBoardPersonGroups, decorateBoardPersonGroup } from './helpers/board-members.helper';
 
-/** Org Lens — People → Board tab (spec 028). Org-wide, Board-only roster grouped by person, with filter/sort/expand (US1+US2) and Reassign/Edit modals (US3/US4). Inverted-filter sibling of the spec-027 Committee tab. */
+/** Org Lens — People → Board tab. Org-wide, Board-only roster grouped by person, with filter/sort/expand and Reassign/Edit modals. Inverted-filter sibling of the Committee tab. */
 @Component({
   selector: 'lfx-org-people-board-members',
   standalone: true,
