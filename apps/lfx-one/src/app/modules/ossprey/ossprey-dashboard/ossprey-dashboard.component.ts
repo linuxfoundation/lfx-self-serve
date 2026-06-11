@@ -86,11 +86,13 @@ export class OsspreyDashboardComponent {
     return total === 0 ? 0 : Math.round((this.coveredCount() / total) * 100);
   });
 
+  protected readonly criticalCount = computed(() => this.packages().filter((p) => p.healthScore !== null && p.healthScore < 30).length);
+
   protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
     const pkgs = this.packages();
     return {
       all: pkgs.length,
-      unassigned: pkgs.filter((p) => p.status === 'unassigned').length,
+      unassigned: pkgs.length,
       open: pkgs.filter((p) => p.status === 'open').length,
       assessing: pkgs.filter((p) => p.status === 'assessing').length,
       active: pkgs.filter((p) => p.status === 'active').length,
