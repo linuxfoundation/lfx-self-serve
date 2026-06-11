@@ -1,0 +1,261 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+
+  /* CSS custom properties cascade to all child components */
+  --rail: #002741;
+  --blue: #009aff;
+  --blue-600: #0086e0;
+  --blue-50: #ecf4ff;
+  --blue-100: #dbe9ff;
+  --green: #22c55e;
+  --green-bg: #e9f9ef;
+  --red: #e5484d;
+  --red-bg: #fdeced;
+  --amber: #c2820a;
+  --amber-bg: #fdf3e3;
+  --ink: #0f172b;
+  --g950: #030712;
+  --g700: #314158;
+  --g600: #45556c;
+  --g500: #62748e;
+  --g400: #90a1b9;
+  --g300: #cad5e2;
+  --g200: #e2e8f0;
+  --g100: #f1f5f9;
+  --g50: #f8fafc;
+  --white: #fff;
+  --border: #e2e8f0;
+}
+
+/* ── KPI Metrics Strip ── */
+.osp-v1m {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 20px;
+
+  @media (max-width: 1080px) {
+    flex-wrap: wrap;
+  }
+}
+
+.osp-v1c {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 15px 18px;
+  min-width: 0;
+
+  &.grad {
+    background: linear-gradient(135deg, #e6efff 0%, #f1f7ff 55%, #fbfdff 100%);
+  }
+
+  @media (max-width: 1080px) {
+    flex: 1 1 50%;
+  }
+}
+
+.osp-v1c-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 7px;
+}
+
+.osp-v1c-ic {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+.osp-v1c-num {
+  font-size: 30px;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin-bottom: 11px;
+}
+
+.osp-v1c-prog {
+  min-width: 0;
+}
+
+.osp-v1c-bar {
+  height: 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 6px;
+
+  i {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+  }
+
+  &.blue i {
+    background: var(--blue);
+  }
+
+  &.dark i {
+    background: var(--rail);
+  }
+}
+
+.osp-v1c-meta {
+  font-size: 11.5px;
+  color: var(--g500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  b {
+    color: var(--g700);
+    font-weight: 600;
+  }
+}
+
+.osp-v1d {
+  width: 1px;
+  background: var(--g100);
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.osp-v1slist {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 9px 12px;
+  min-width: 0;
+
+  @media (max-width: 1080px) {
+    flex: 1 1 100%;
+  }
+}
+
+.osp-v1r {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+
+  &:hover {
+    background: var(--g50);
+  }
+
+  &.warn .osp-v1r-v {
+    color: var(--amber);
+  }
+
+  &.danger .osp-v1r-v {
+    color: var(--red);
+  }
+}
+
+.osp-v1r-ic {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+.osp-v1r-l {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.osp-v1r-v {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.osp-v1r .chev {
+  color: var(--g400);
+  display: flex;
+  margin-left: 8px;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* ── Tabbar ── */
+.osp-tabbar {
+  display: flex;
+  gap: 8px;
+}
+
+.osp-pgtab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 15px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #62748e;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.osp-pgtab:hover {
+  color: #314158;
+}
+
+.osp-pgtab.on {
+  color: #009aff;
+  border-bottom-color: #009aff;
+}
+
+.osp-pgtab svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
