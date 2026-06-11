@@ -6,9 +6,11 @@ import {
   CdpAdvisory,
   CdpPackageDetail,
   CdpPackagesListResponse,
+  CdpPackagesMetricsResponse,
   CdpStewardshipSummary,
   OsspreyAdvisory,
   OsspreyListParams,
+  OsspreyMetrics,
   OsspreyPackage,
   OsspreyPackagesResponse,
   OspreySeverity,
@@ -49,8 +51,19 @@ export class OsspreyServerService {
       if (params.busFactor1Only) url.searchParams.set('busFactor1Only', 'true');
       if (params.staleOnly) url.searchParams.set('staleOnly', 'true');
       if (params.unstewardedOnly) url.searchParams.set('unstewardedOnly', 'true');
-      if (params.sortBy) url.searchParams.set('sortBy', params.sortBy);
-      if (params.sortDir) url.searchParams.set('sortDir', params.sortDir);
+      if (params.search) url.searchParams.set('name', params.search);
+      if (params.status && params.status !== 'all') url.searchParams.set('status', params.status);
+      if (params.healthBand) url.searchParams.set('healthBand', params.healthBand);
+      if (params.vulnFilter) url.searchParams.set('vulnSeverity', params.vulnFilter);
+      const cdpSortMap: Record<string, string> = { impact: 'impact', health: 'health', vulns: 'openVulns', name: 'name', risk: 'risk' };
+      const cdpSortDirMap: Record<string, string> = { impact: 'desc', health: 'asc', vulns: 'desc', name: 'asc', risk: 'desc' };
+      if (params.sortBy) {
+        const cdpSort = cdpSortMap[params.sortBy];
+        if (cdpSort) {
+          url.searchParams.set('sortBy', cdpSort);
+          url.searchParams.set('sortDir', cdpSortDirMap[params.sortBy] ?? 'asc');
+        }
+      }
 
       logger.debug(req, 'get_ossprey_packages', 'Fetching packages from CDP', {
         url: url.toString(),
@@ -82,15 +95,65 @@ export class OsspreyServerService {
         total: data.total,
       });
 
-      return {
-        packages: (data.packages ?? []).map((item) => this.mapListItem(item)),
-        total: data.total,
-      };
+      const packages = (data.packages ?? []).map((item) => this.mapListItem(item));
+
+      return { packages, total: data.total };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
 
       throw new MicroserviceError('Failed to fetch OSSPREY packages', 502, 'OSSPREY_FETCH_ERROR', {
         operation: 'get_ossprey_packages',
+        service: 'ossprey_service',
+      });
+    }
+  }
+
+  public async getMetrics(req: Request): Promise<OsspreyMetrics> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_ossprey_metrics',
+          service: 'ossprey_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_METRICS}`);
+
+      logger.debug(req, 'get_ossprey_metrics', 'Fetching package metrics from CDP', {
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP metrics request failed: ${response.statusText}`, response.status, 'CDP_METRICS_ERROR', {
+          operation: 'get_ossprey_metrics',
+          service: 'ossprey_service',
+          errorBody: errorText,
+        });
+      }
+
+      const data = (await response.json()) as CdpPackagesMetricsResponse;
+
+      return {
+        totalPackages: data.totalPackages ?? 0,
+        criticalPackages: data.criticalPackages ?? 0,
+      };
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch OSSPREY metrics', 502, 'OSSPREY_METRICS_ERROR', {
+        operation: 'get_ossprey_metrics',
         service: 'ossprey_service',
       });
     }
@@ -195,6 +258,23 @@ export class OsspreyServerService {
       history: [],
       assessment: null,
     };
+  }
+
+  private getHealthBand(score: number): string {
+    if (score >= 70) return 'healthy';
+    if (score >= 50) return 'fair';
+    if (score >= 30) return 'concerning';
+    return 'critical';
+  }
+
+  private getRiskScore(pkg: OsspreyPackage): number {
+    const severityRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+    const impact = pkg.impactScore ?? 0;
+    const health = pkg.healthScore ?? 50;
+    const severity = pkg.vulnSeverity ? (severityRank[pkg.vulnSeverity] ?? 0) : 0;
+    const busFactorPenalty = pkg.busFactor === 1 ? 20 : 0;
+    const stalePenalty = (pkg.monthsStale ?? 0) >= 18 ? 15 : 0;
+    return impact + (100 - health) * 0.8 + severity * 15 + pkg.vulnCount * 4 + busFactorPenalty + stalePenalty;
   }
 
   private mapPackageDetail(detail: CdpPackageDetail): OsspreyPackage {
