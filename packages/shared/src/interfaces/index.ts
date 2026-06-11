@@ -189,6 +189,10 @@ export * from './org-lens-access.interface';
 export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';
 
+// Org People — Committee tab (spec 027)
+export * from './org-people-committee-members.interface';
+export * from './org-people-committee-members.internal.interface';
+
 // Org People — Trainees tab (LFXV2-1876)
 export * from './org-people-trainees.interface';
 

@@ -156,6 +156,11 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
+  /** Spec 027: org-wide seat drain (no project filter) for the People → Committee tab. Reuses the private drain + its 200-page fail-closed safety cap so the org-wide roster never duplicates the pagination logic. */
+  public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+    return this.fetchOrgSeats(req, orgUid);
+  }
+
   /** Resolve the membership's project family (foundation root + descendants) for seat scoping (spec 026 T007a): SFID → slug (getFoundationSlug) → uid (getProjectIdBySlug) → family (getFoundationProjectUids); `undefined` when unresolvable so callers return an EMPTY list, never the org-wide roster. */
   private async resolveFamilyProjectUids(req: Request, orgUid: string, foundationId: string): Promise<string[] | undefined> {
     try {
@@ -186,8 +191,8 @@ export class OrgLensBoardCommitteeService {
    * Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`).
    * The board/committee tabs always pass a resolved `projectUids` family (root + descendants, spec 026 T014) and
    * drain every page (fail-closed on the safety cap so a truncated roster never ships). The org-wide call (no
-   * `projectUids`) is used ONLY by the Reassign people picker (`getOrgEmployees`), which passes a small `maxPages`
-   * bound + `allowTruncation` so the typeahead never drains the full cross-foundation roster.
+   * `projectUids`) is used by the Reassign people picker (`getOrgEmployees`), and — spec 027 — by the public
+   * `fetchAllOrgSeats` wrapper for the org-wide People → Committee tab read.
    */
   private async fetchOrgSeats(
     req: Request,

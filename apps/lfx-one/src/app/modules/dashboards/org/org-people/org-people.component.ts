@@ -12,6 +12,7 @@ import { AccountContextService } from '@services/account-context.service';
 import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
 import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
+import { CommitteeMembersComponent } from './components/committee-members/committee-members.component';
 import { ContributorsComponent } from './components/contributors/contributors.component';
 import { EventAttendeesComponent } from './components/event-attendees/event-attendees.component';
 import { KeyContactsComponent } from './components/key-contacts/key-contacts.component';
@@ -24,6 +25,7 @@ import { TraineesComponent } from './components/trainees/trainees.component';
     EmptyStateComponent,
     AllEmployeesComponent,
     KeyContactsComponent,
+    CommitteeMembersComponent,
     TraineesComponent,
     EventAttendeesComponent,
     ContributorsComponent,

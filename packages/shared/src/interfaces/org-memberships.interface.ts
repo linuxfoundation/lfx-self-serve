@@ -269,6 +269,13 @@ export interface CommitteeServiceOrgSeat {
   committee_uid: string;
   committee_name: string;
   committee_category: string;
+  /**
+   * Spec 027 (committee-service additive DTO fields): the foundation (project) the seat's committee
+   * belongs to. Optional — a member may predate project tagging. Used by the org-wide People →
+   * Committee tab to group/filter/stat by foundation.
+   */
+  project_uid?: string | null;
+  project_slug?: string | null;
   first_name: string;
   last_name: string;
   email: string;
