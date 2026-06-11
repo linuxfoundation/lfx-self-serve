@@ -61,15 +61,15 @@
         }
       } @else {
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-committee-stat-individuals">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().individualCount }}</div>
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().individualCount | number }}</div>
           <div class="mt-1 text-xs text-gray-500">Individuals</div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-committee-stat-committees">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().committeeCount }}</div>
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().committeeCount | number }}</div>
           <div class="mt-1 text-xs text-gray-500">Committees</div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-committee-stat-foundations">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().foundationsCovered }}</div>
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().foundationsCovered | number }}</div>
           <div class="mt-1 text-xs text-gray-500">Foundations with committee members</div>
         </div>
       }

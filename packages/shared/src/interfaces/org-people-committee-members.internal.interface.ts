@@ -12,9 +12,9 @@ export type CommitteeMembersSortColumn = 'name' | 'foundations' | 'committees';
 /** Sort direction — 1 ascending, -1 descending. */
 export type CommitteeMembersSortDirection = 1 | -1;
 
-/** One person row — derived by grouping assignments by lowercased email (first-wins for display fields). */
+/** One person row — derived by grouping assignments by lowercased email, falling back to the seat `memberUid` when email is blank (first-wins for display fields). */
 export interface CommitteeMemberPersonGroup {
-  /** Lowercased email — the group identity key. */
+  /** Group identity key — the person's lowercased email, or the seat `memberUid` fallback when email is blank. Not guaranteed to be an email. */
   email: string;
   displayName: string;
   jobTitle: string | null;
