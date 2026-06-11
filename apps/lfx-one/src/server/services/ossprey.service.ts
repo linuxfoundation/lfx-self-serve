@@ -260,23 +260,6 @@ export class OsspreyServerService {
     };
   }
 
-  private getHealthBand(score: number): string {
-    if (score >= 70) return 'healthy';
-    if (score >= 50) return 'fair';
-    if (score >= 30) return 'concerning';
-    return 'critical';
-  }
-
-  private getRiskScore(pkg: OsspreyPackage): number {
-    const severityRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
-    const impact = pkg.impactScore ?? 0;
-    const health = pkg.healthScore ?? 50;
-    const severity = pkg.vulnSeverity ? (severityRank[pkg.vulnSeverity] ?? 0) : 0;
-    const busFactorPenalty = pkg.busFactor === 1 ? 20 : 0;
-    const stalePenalty = (pkg.monthsStale ?? 0) >= 18 ? 15 : 0;
-    return impact + (100 - health) * 0.8 + severity * 15 + pkg.vulnCount * 4 + busFactorPenalty + stalePenalty;
-  }
-
   private mapPackageDetail(detail: CdpPackageDetail): OsspreyPackage {
     const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
