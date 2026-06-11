@@ -136,7 +136,7 @@ export const routes: Routes = [
               description: "Open-source contributions from your organization's contributors.",
               icon: 'fa-light fa-code',
             },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
           },
           {
             path: 'events',

@@ -202,6 +202,9 @@ export * from './org-people-event-attendees.interface';
 // Org People — Contributors tab (LFXV2-1874)
 export * from './org-people-contributors.interface';
 
+// Org Lens — Code Contributions page (LFXV2-1894)
+export * from './org-contributions.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 
