@@ -385,14 +385,7 @@
           <div class="relative flex flex-col gap-3.5 pl-5 before:absolute before:left-1 before:top-1 before:bottom-1 before:w-0.5 before:bg-gray-200">
             @for (entry of pkg.history; track entry.label) {
               <div class="relative">
-                <span
-                  [class]="
-                    entry.type === 'danger'
-                      ? 'absolute -left-5 top-1 w-2.5 h-2.5 rounded-full border-2 border-white bg-red-500'
-                      : entry.type === 'success'
-                        ? 'absolute -left-5 top-1 w-2.5 h-2.5 rounded-full border-2 border-white bg-emerald-500'
-                        : 'absolute -left-5 top-1 w-2.5 h-2.5 rounded-full border-2 border-white bg-blue-500'
-                  "></span>
+                <span [class]="getHistoryDotClass(entry.type)"></span>
                 <div class="text-sm text-gray-700">{{ entry.label }}</div>
                 <div class="text-xs text-gray-400 mt-0.5">{{ entry.timeAgo }}</div>
               </div>

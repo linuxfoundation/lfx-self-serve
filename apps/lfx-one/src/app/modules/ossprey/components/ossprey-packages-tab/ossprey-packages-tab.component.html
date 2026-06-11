@@ -184,6 +184,8 @@
                 : 'inline-flex w-4 h-4 items-center justify-center rounded border bg-white border-gray-300 hover:border-blue-500 cursor-pointer'
             "
             (click)="onToggleAllClick()"
+            (keydown.enter)="onToggleAllClick()"
+            (keydown.space)="onToggleAllClick(); $event.preventDefault()"
             role="checkbox"
             tabindex="0"
             [attr.aria-checked]="allSelected()"
@@ -238,6 +240,8 @@
                 : 'inline-flex w-4 h-4 items-center justify-center rounded border bg-white border-gray-300 hover:border-blue-500 cursor-pointer'
             "
             (click)="togglePackage.emit({ id: pkg.id, event: $event })"
+            (keydown.enter)="togglePackage.emit({ id: pkg.id, event: $event })"
+            (keydown.space)="togglePackage.emit({ id: pkg.id, event: $event }); $event.preventDefault()"
             role="checkbox"
             tabindex="0"
             [attr.aria-checked]="isPackageSelected(pkg.id)"

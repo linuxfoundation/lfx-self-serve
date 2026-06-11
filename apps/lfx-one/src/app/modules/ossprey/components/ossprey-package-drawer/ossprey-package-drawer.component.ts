@@ -69,11 +69,19 @@ export class OsspreyPackageDrawerComponent {
   protected getSafeRepoUrl(repoUrl: string | null): string | null {
     if (!repoUrl) return null;
     try {
-      const url = new URL('https://' + repoUrl);
+      const urlString = repoUrl.includes('://') ? repoUrl : 'https://' + repoUrl;
+      const url = new URL(urlString);
       return url.protocol === 'https:' ? url.href : null;
     } catch {
       return null;
     }
+  }
+
+  protected getHistoryDotClass(entryType: string | undefined): string {
+    const base = 'absolute -left-5 top-1 w-2.5 h-2.5 rounded-full border-2 border-white';
+    if (entryType === 'danger') return `${base} bg-red-500`;
+    if (entryType === 'success') return `${base} bg-emerald-500`;
+    return `${base} bg-blue-500`;
   }
 
   protected getHealthBreakdownSlot(pkg: OsspreyPackage, index: number): string {
