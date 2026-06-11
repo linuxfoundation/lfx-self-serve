@@ -53,9 +53,12 @@ export class MyInitiativesComponent {
   private initInitiatives(): Signal<InitiativesResponse> {
     return toSignal(
       toObservable(this.initiativesOffset).pipe(
-        switchMap((offset) => this.crowdfundingService.getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
-        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE),
-        finalize(() => this.loadingMore.set(false))
+        switchMap((offset) =>
+          this.crowdfundingService
+            .getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })
+            .pipe(finalize(() => this.loadingMore.set(false)))
+        ),
+        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE)
       ),
       { initialValue: EMPTY_INITIATIVES_RESPONSE }
     );

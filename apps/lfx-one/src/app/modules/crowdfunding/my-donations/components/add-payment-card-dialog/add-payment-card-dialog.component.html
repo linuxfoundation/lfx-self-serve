@@ -11,7 +11,7 @@
   <div class="flex flex-col gap-1.5" data-testid="add-card-field-number">
     <label id="card-number-label" class="text-sm font-medium text-gray-700"> Card number <span class="text-red-500" aria-hidden="true">*</span> </label>
     <div
-      class="flex items-center border rounded-md shadow-xs transition-all"
+      class="flex items-center border rounded-md shadow-sm transition-all"
       [class.border-neutral-900]="cardNumberFocused()"
       [class.border-red-500]="!cardNumberFocused() && cardNumberError()"
       [class.border-gray-200]="!cardNumberFocused() && !cardNumberError()">
@@ -28,7 +28,7 @@
     <div class="col-span-2 flex flex-col gap-1.5" data-testid="add-card-field-expiry">
       <label id="card-expiry-label" class="text-sm font-medium text-gray-700"> Expiry <span class="text-red-500" aria-hidden="true">*</span> </label>
       <div
-        class="flex items-center border rounded-md shadow-xs transition-all"
+        class="flex items-center border rounded-md shadow-sm transition-all"
         [class.border-neutral-900]="cardExpiryFocused()"
         [class.border-red-500]="!cardExpiryFocused() && cardExpiryError()"
         [class.border-gray-200]="!cardExpiryFocused() && !cardExpiryError()">
@@ -43,7 +43,7 @@
     <div class="flex flex-col gap-1.5" data-testid="add-card-field-cvc">
       <label id="card-cvc-label" class="text-sm font-medium text-gray-700"> CVC <span class="text-red-500" aria-hidden="true">*</span> </label>
       <div
-        class="flex items-center border rounded-md shadow-xs transition-all"
+        class="flex items-center border rounded-md shadow-sm transition-all"
         [class.border-neutral-900]="cardCvcFocused()"
         [class.border-red-500]="!cardCvcFocused() && cardCvcError()"
         [class.border-gray-200]="!cardCvcFocused() && !cardCvcError()">
