@@ -222,14 +222,16 @@ export class BoardMembersComponent {
   // "Why can't I edit?" affordance (FR-009/FR-012) — opens an explanatory modal; buttons close-only for now.
   protected onWhyCantEdit(reason: string, event: Event): void {
     event.stopPropagation();
-    this.dialogService.open(WhyCantEditBoardModalComponent, {
+    const ref = this.dialogService.open(WhyCantEditBoardModalComponent, {
       width: '440px',
       modal: true,
       closable: true,
       dismissableMask: true,
       showHeader: false,
       data: { reason } satisfies WhyCantEditBoardDialogData,
-    });
+    }) as DynamicDialogRef;
+
+    this.wireDialogToAccountChange(ref);
   }
 
   // Fan out one PUT per seat, then refresh: full failure throws (modal stays open with the inline error);

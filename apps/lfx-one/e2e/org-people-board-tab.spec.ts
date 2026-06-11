@@ -123,7 +123,7 @@ async function stubAccountContext(page: Page, opts: { writers: string[]; auditor
 }
 
 async function stubBoardMembers(page: Page, body: unknown = boardMembersResponse(), status = 200): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members$/, (route) => {
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members(?:\?.*)?$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
@@ -206,6 +206,10 @@ test.describe('Org People → Board tab', () => {
 
     await gotoBoardTab(page);
     await expect(page.getByTestId('org-people-board-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The error state's recovery affordance is the shared empty-state CTA button labelled "Retry".
+    const retry = page.getByRole('button', { name: /Retry/i });
+    await expect(retry).toBeVisible();
+    await expect(retry).toBeEnabled();
   });
 
   test('foundation-controlled seat shows "Why can\'t I edit?" instead of a Reassign pencil', async ({ page }) => {

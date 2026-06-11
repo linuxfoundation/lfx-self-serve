@@ -17,7 +17,7 @@ export interface BoardMemberStats {
   votingCount: number;
   /** Count of board seats classified as non-voting. */
   nonVotingCount: number;
-  /** Distinct `projectUid` (foundations with a board member). */
+  /** Distinct foundations with a board member — keyed by `projectUid`, falling back to `foundationSlug` when the UID is missing. */
   foundationsCovered: number;
 }
 

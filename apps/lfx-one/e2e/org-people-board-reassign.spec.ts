@@ -114,21 +114,21 @@ async function stubAccountContext(page: Page, opts: { writers: string[] } = { wr
 }
 
 async function stubBoardMembers(page: Page, body: unknown = boardMembersResponse()): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members$/, (route) => {
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members(?:\?.*)?$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }
 
 async function stubEmployees(page: Page, employees: unknown[] = MOCK_EMPLOYEES, status = 200): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/employees$/, (route) => {
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/employees(?:\?.*)?$/, (route) => {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ orgUid: MOCK_UID, employees }) });
   });
 }
 
 /** Stubs the PATCH board reassign proxy; the handler decides what to return per request. */
 async function stubReassignPatch(page: Page, handler: (route: Route) => Promise<void> | void): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members\/[^/]+\/reassign$/, async (route) => {
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/board-members\/[^/]+\/reassign(?:\?.*)?$/, async (route) => {
     if (route.request().method() !== 'PATCH') return route.fallback();
     await handler(route);
   });
