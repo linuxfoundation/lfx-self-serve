@@ -358,10 +358,16 @@
                 <div>
                   <p class="text-sm font-medium text-gray-900">{{ campaign.campaignName }}</p>
                   <p class="text-xs text-gray-500">
-                    @if (campaign.platform === 'linkedin-ads') {
-                      linkedin · {{ campaign.adCount }} creatives
-                    } @else {
-                      {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
+                    @switch (campaign.platform) {
+                      @case ('linkedin-ads') {
+                        linkedin · {{ campaign.adCount }} creatives
+                      }
+                      @case ('reddit-ads') {
+                        social · {{ campaign.adGroupCount }} ad groups · {{ campaign.adCount }} ads
+                      }
+                      @default {
+                        {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
+                      }
                     }
                   </p>
                 </div>
@@ -370,10 +376,16 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-                  @if (campaign.platform === 'linkedin-ads') {
-                    Open in LinkedIn
-                  } @else {
-                    Open in Google Ads
+                  @switch (campaign.platform) {
+                    @case ('linkedin-ads') {
+                      Open in LinkedIn
+                    }
+                    @case ('reddit-ads') {
+                      Open in Reddit Ads
+                    }
+                    @default {
+                      Open in Google Ads
+                    }
                   }
                   <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
                 </a>

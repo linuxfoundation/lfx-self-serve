@@ -27,7 +27,7 @@ export interface LinkedInAdAccount {
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored';
+export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -128,6 +128,7 @@ export interface CampaignBriefOutput {
   campaignGoal: CampaignGoal | null;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
+  redditCopy?: RedditBriefCopy;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +198,50 @@ export interface LinkedInCampaignCreateResult {
   steps: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Reddit Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+export interface RedditAdVariant {
+  headline: string;
+  body?: string;
+}
+
+export interface RedditBriefCopy {
+  variants: RedditAdVariant[];
+  recommendedSubreddits: string[];
+  recommendedInterests: string[];
+  recommendedKeywords: string[];
+  recommendedGeos: string[];
+}
+
+export interface RedditCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  startDate: string;
+  endDate: string;
+  geoTargets: string[];
+  subreddits: string[];
+  interests: string[];
+  keywords: string[];
+  variants: RedditAdVariant[];
+  project?: string;
+}
+
+export interface RedditCampaignCreateResult {
+  platform: 'reddit-ads';
+  campaignName: string;
+  campaignId: string;
+  adGroupName: string;
+  adGroupId: string;
+  adCount: number;
+  redditUrl: string;
+  steps: string[];
+}
+
 export interface CampaignBriefRefineRequest {
   currentCopy: Record<string, unknown>;
   currentKeywords: CampaignKeyword[];
@@ -232,6 +277,7 @@ export interface CampaignCreateRequest {
   driveFolderUrl?: string;
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
+  redditConfig?: RedditCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {

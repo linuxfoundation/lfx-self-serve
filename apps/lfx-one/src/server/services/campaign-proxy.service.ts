@@ -17,12 +17,14 @@ import type {
   CampaignSSEEventType,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
+  RedditCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
+import { executeRedditCampaignCreation } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
 // Google Ads gRPC client (via google-ads-api)
@@ -359,8 +361,10 @@ REDDIT PROMOTED POSTS (key: "reddit_promoted"):
 - variants: array of 2-3 ad variations, each containing:
   - headline: ≤ 300 characters (the post title — must feel native to Reddit, not corporate)
   - body: ≤ 500 characters (optional body text for text ads — conversational, community-focused)
-- recommended_subreddits: array of 3-6 relevant subreddit names (e.g. "r/kubernetes", "r/devops", "r/opensource") — select based on event topic and target audience.
+- recommended_subreddits: array of 10-15 REAL subreddit names that exist on Reddit (e.g. "kubernetes", "devops", "opensource", "programming", "cloudcomputing", "docker", "homelab", "sysadmin", "linux", "CNCF"). Use lowercase subreddit names WITHOUT the "r/" prefix. Only include subreddits that actually exist and are active. Select based on event topic and target audience.
 - recommended_interests: array of 3-5 Reddit interest categories (e.g. "Technology", "Programming", "Cloud Computing")
+- recommended_keywords: array of 10-15 high-intent keywords related to the event topic (e.g. "kubernetes conference", "cloud native summit", "devops training", "container orchestration"). These are used for Reddit keyword targeting.
+- recommended_geos: array of 2-5 ISO 3166-1 alpha-2 country codes for geo targeting, based on the event location and surrounding high-intent countries. For example, an event in Japan should target ["JP", "KR", "SG", "AU", "IN"]. An event in San Francisco should target ["US", "CA"]. Always include the event's host country first.
 
 REDDIT COPY RULES:
 - Headlines must feel like organic Reddit posts — no marketing jargon, no ALL CAPS
@@ -869,9 +873,11 @@ export class CampaignProxyService {
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
+    const includeReddit = platforms.includes('reddit-ads');
 
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
+    const redditResults: RedditCampaignCreateResult[] = [];
     const errors: string[] = [];
 
     if (unsupported.length > 0) {
@@ -889,6 +895,14 @@ export class CampaignProxyService {
         promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
       } else {
         errors.push('LinkedIn Ads was selected but no LinkedIn configuration was provided.');
+      }
+    }
+
+    if (includeReddit) {
+      if (effectiveBody.redditConfig) {
+        promises.push(this.executeRedditDispatch(effectiveBody, redditResults, errors));
+      } else {
+        errors.push('Reddit Ads was selected but no Reddit configuration was provided.');
       }
     }
 
@@ -912,6 +926,17 @@ export class CampaignProxyService {
         adCount: li.creativeCount,
         campaignUrl: li.linkedInUrl,
         steps: li.steps,
+      })),
+      ...redditResults.map((r) => ({
+        platform: 'reddit-ads' as const,
+        type: 'social' as const,
+        campaignName: r.campaignName,
+        campaignId: r.campaignId,
+        adGroupCount: 1,
+        keywordCount: 0,
+        adCount: r.adCount,
+        campaignUrl: r.redditUrl,
+        steps: r.steps,
       })),
     ];
 
@@ -973,6 +998,27 @@ export class CampaignProxyService {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unknown LinkedIn error';
       errors.push(`linkedin-ads: ${msg}`);
+    }
+  }
+
+  private async executeRedditDispatch(body: CampaignCreateRequest, results: RedditCampaignCreateResult[], errors: string[]): Promise<void> {
+    const config = body.redditConfig!;
+    try {
+      const result = await executeRedditCampaignCreation(undefined, {
+        ...config,
+        eventName: config.eventName || body.eventName,
+        eventSlug: config.eventSlug || body.eventSlug,
+        registrationUrl: config.registrationUrl || body.registrationUrl,
+        hsToken: config.hsToken || body.hsToken,
+        startDate: config.startDate || body.startDate,
+        endDate: config.endDate || body.endDate,
+        geoTargets: config.geoTargets?.length ? config.geoTargets : [body.countryCode],
+        project: config.project || body.project,
+      });
+      results.push(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Unknown Reddit error';
+      errors.push(`reddit-ads: ${msg}`);
     }
   }
 

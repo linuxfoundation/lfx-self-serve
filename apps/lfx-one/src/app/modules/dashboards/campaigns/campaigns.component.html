@@ -60,22 +60,26 @@
   </div>
 
   <!-- Tab Content -->
-  @for (tab of tabs; track tab.id) {
-    <div
-      role="tabpanel"
-      [id]="'panel-' + tab.id"
-      [attr.aria-labelledby]="'tab-' + tab.id"
-      [hidden]="selectedTab() !== tab.id"
-      [attr.data-testid]="'campaigns-' + tab.id + '-panel'">
-      @if (tab.id === 'planning') {
+  @switch (selectedTab()) {
+    @case ('planning') {
+      <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
         <lfx-planning-tab (proceedToImplementation)="onProceedToImplementation($event)" data-testid="campaigns-planning-tab" />
-      } @else if (tab.id === 'implementation') {
+      </div>
+    }
+    @case ('implementation') {
+      <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
         <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
-      } @else if (tab.id === 'insights') {
+      </div>
+    }
+    @case ('insights') {
+      <div role="tabpanel" id="panel-insights" aria-labelledby="tab-insights" data-testid="campaigns-insights-panel">
         <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
-      } @else if (tab.id === 'optimization') {
+      </div>
+    }
+    @case ('optimization') {
+      <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
         <lfx-optimization-tab data-testid="campaigns-optimization-tab" />
-      }
-    </div>
+      </div>
+    }
   }
 </div>

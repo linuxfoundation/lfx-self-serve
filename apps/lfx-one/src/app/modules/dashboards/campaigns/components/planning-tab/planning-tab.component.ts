@@ -118,6 +118,28 @@ export class PlanningTabComponent implements OnInit {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
   }
 
+  // === Public Methods ===
+  public reset(): void {
+    this.briefSubscription?.unsubscribe();
+    this.briefSubscription = null;
+    this.step.set('input');
+    this.statusMessages.set([]);
+    this.eventDetails.set(null);
+    this.copyBuffer.set('');
+    this.structuredCopy.set(null);
+    this.hsUtm.set(null);
+    this.keywords.set([]);
+    this.linkedInStrategy.set(null);
+    this.errorMessage.set(null);
+    this.isEditing.set(false);
+    this.isRefining.set(false);
+    this.isRefineStreaming.set(false);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
+    this.lastAppliedFeedback.set(null);
+    this.refineCount.set(0);
+  }
+
   // === Protected Methods ===
   protected togglePlatform(platformId: CampaignPlatform): void {
     const current = new Set(this.selectedPlatforms());
@@ -213,27 +235,6 @@ export class PlanningTabComponent implements OnInit {
           }
         },
       });
-  }
-
-  protected reset(): void {
-    this.briefSubscription?.unsubscribe();
-    this.briefSubscription = null;
-    this.step.set('input');
-    this.statusMessages.set([]);
-    this.eventDetails.set(null);
-    this.copyBuffer.set('');
-    this.structuredCopy.set(null);
-    this.hsUtm.set(null);
-    this.keywords.set([]);
-    this.linkedInStrategy.set(null);
-    this.errorMessage.set(null);
-    this.isEditing.set(false);
-    this.isRefining.set(false);
-    this.isRefineStreaming.set(false);
-    this.refineFeedback.set('');
-    this.refineStatusMessages.set([]);
-    this.lastAppliedFeedback.set(null);
-    this.refineCount.set(0);
   }
 
   protected onProceedToImplementation(): void {
