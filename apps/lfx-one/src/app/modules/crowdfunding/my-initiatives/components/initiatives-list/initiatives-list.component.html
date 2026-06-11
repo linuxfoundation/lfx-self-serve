@@ -16,8 +16,8 @@
     <div class="flex flex-col items-center gap-3 py-16 text-gray-400" data-testid="initiatives-empty-state">
       <i class="fa-light fa-box-archive text-5xl" aria-hidden="true"></i>
       <p class="text-sm font-medium text-gray-500">
-        @if (activeFilter() === 'closed') {
-          No closed initiatives
+        @if (activeFilter() === 'archived') {
+          No archived initiatives
         } @else if (activeFilter() === 'pending') {
           No pending initiatives
         } @else {

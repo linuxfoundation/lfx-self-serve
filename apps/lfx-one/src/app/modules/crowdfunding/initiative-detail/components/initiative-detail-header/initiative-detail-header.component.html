@@ -21,18 +21,30 @@
       </span>
       <div class="flex items-center gap-2 flex-wrap">
         <h1 class="text-xl font-bold text-gray-900">{{ initiative().name }}</h1>
-        @if (initiative().status === 'active') {
-          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"> Active </span>
-        } @else if (initiative().status === 'pending') {
-          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"> Pending </span>
-        } @else {
-          <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"> Closed </span>
+        @switch (initiative().status) {
+          @case ('published') {
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Published</span>
+          }
+          @case ('pending') {
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Pending</span>
+          }
+          @case ('submitted') {
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Submitted</span>
+          }
+          @case ('hidden') {
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Hidden</span>
+          }
+          @case ('declined') {
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">Declined</span>
+          }
         }
       </div>
-      <p class="text-sm text-gray-500">{{ initiative().description }}</p>
-      @if (initiative().industry) {
+      <lfx-markdown-renderer class="text-sm text-gray-500" [content]="initiative().description" />
+      @if (industryTags().length > 0) {
         <div class="flex items-center gap-1.5 flex-wrap mt-1" data-testid="initiative-tags">
-          <lfx-tag [value]="initiative().industry!" severity="secondary" [rounded]="true" />
+          @for (tag of industryTags(); track tag) {
+            <lfx-tag [value]="tag" severity="secondary" [rounded]="true" />
+          }
         </div>
       }
     </div>
@@ -55,20 +67,25 @@
         size="small"
         data-testid="initiative-settings-btn"
         (click)="settingsClick.emit()" />
-      <lfx-button icon="fa-light fa-ellipsis" severity="secondary" size="small" data-testid="initiative-more-btn" (click)="onMoreClick($event)" />
-      <lfx-menu #moreMenu [model]="moreMenuItems" [popup]="true" appendTo="body" styleClass="w-72">
-        <ng-template #item let-item>
-          <button class="flex flex-col gap-0.5 w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors" [class.hover:bg-red-50]="item.danger">
-            <div class="flex items-center gap-2 text-sm font-medium" [class.text-gray-800]="!item.danger" [class.text-red-600]="item.danger">
-              <i [class]="item.icon" aria-hidden="true"></i>
-              {{ item.label }}
-            </div>
-            @if (item.description) {
-              <div class="text-xs text-gray-400 leading-relaxed pl-5">{{ item.description }}</div>
-            }
-          </button>
-        </ng-template>
-      </lfx-menu>
+      @if (moreMenuItems().length > 0) {
+        <lfx-button icon="fa-light fa-ellipsis" severity="secondary" size="small" data-testid="initiative-more-btn" (click)="onMoreClick($event)" />
+        <lfx-menu #moreMenu [model]="moreMenuItems()" [popup]="true" appendTo="body" styleClass="w-72">
+          <ng-template #item let-item>
+            <button
+              class="flex flex-col gap-0.5 w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+              [class.hover:bg-red-50]="item.danger"
+              (click)="item.command?.($event)">
+              <div class="flex items-center gap-2 text-sm font-medium" [class.text-gray-800]="!item.danger" [class.text-red-600]="item.danger">
+                <i [class]="item.icon" aria-hidden="true"></i>
+                {{ item.label }}
+              </div>
+              @if (item.description) {
+                <div class="text-xs text-gray-400 leading-relaxed pl-5">{{ item.description }}</div>
+              }
+            </button>
+          </ng-template>
+        </lfx-menu>
+      }
     </div>
   </div>
 

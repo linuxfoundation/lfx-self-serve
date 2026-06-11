@@ -160,7 +160,7 @@ export class CrowdfundingService {
   public async getInitiativesStats(req: Request): Promise<CrowdfundingInitiativesStats> {
     const { data } = await this.getMyInitiatives(req);
     return {
-      activeCount: data.filter((i) => i.status === 'active').length,
+      activeCount: data.filter((i) => i.status === 'published').length,
       totalRaised: data.reduce((sum, i) => sum + (i.fundingStatus?.amountRaisedCents ?? 0), 0) / 100,
       monthlyGain: 0,
       totalSponsors: data.reduce((sum, i) => sum + (i.initiativeStats?.supporters ?? 0), 0),
@@ -281,6 +281,7 @@ export class CrowdfundingService {
     if (input.industry !== undefined) body.industry = input.industry;
     if (input.logoUrl !== undefined) body.logo_url = input.logoUrl;
     if (input.websiteUrl !== undefined) body.website_url = input.websiteUrl;
+    if (input.status !== undefined) body.status = input.status;
     if (input.goals !== undefined) {
       body.goals = input.goals.map((g): BackendGoalInput => ({ name: g.name, amount_cents: g.amountCents }));
     }

@@ -6,7 +6,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ALLOWED_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
-import { UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { CrowdfundingInitiativeStatus, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
@@ -271,6 +271,7 @@ export class CrowdfundingController {
       if (typeof body['industry'] === 'string') input.industry = body['industry'];
       if (typeof body['logoUrl'] === 'string') input.logoUrl = body['logoUrl'];
       if (typeof body['websiteUrl'] === 'string') input.websiteUrl = body['websiteUrl'].trim() || undefined;
+      if (typeof body['status'] === 'string') input.status = body['status'] as CrowdfundingInitiativeStatus;
 
       if (Array.isArray(body['goals'])) {
         input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
