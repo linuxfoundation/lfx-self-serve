@@ -17,7 +17,7 @@ import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 
 /** BFF for org-identity routes: `/me/role-grants` + account-id-keyed canonical-record endpoint. See contracts/bff-org-*.md. */
 export class OrgIdentityController {
@@ -36,10 +36,7 @@ export class OrgIdentityController {
     const startTime = logger.startOperation(req, 'get_org_role_grants');
 
     try {
-      // Spec 022 — use the full auth0 sub (e.g. "auth0|lguerra") rather than the nickname (`lguerra`)
-      // because the upstream `b2b_org_settings` index stores `data.writers[].username` and the
-      // `member:` / `writers.username:` tags in the prefixed form. Nickname-form misses every row.
-      const username = getEffectiveSub(req);
+      const username = getEffectiveUsername(req);
       if (!username) {
         throw ServiceValidationError.forField('username', 'Authenticated username is required', {
           operation: 'get_org_role_grants',

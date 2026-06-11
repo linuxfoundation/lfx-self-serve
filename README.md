@@ -243,12 +243,16 @@ The application is organized into feature modules under `apps/lfx-one/src/app/mo
 
 ## Deployment
 
-The application supports deployment with PM2:
+The application is deployed via the in-repo Helm chart and the central GitOps repo:
 
-1. **Node.js with PM2**: Production process management with clustering and
-   zero-downtime deployments
+- **Chart** — `charts/lfx-self-serve/` ([README](charts/lfx-self-serve/README.md)) defines the
+  Self Serve service template, values, and Kubernetes resources.
+- **GitOps** — `lfx-v2-argocd` (sibling repo) owns environment values, chart pins,
+  image tags, ExternalSecret references, and dev/staging/prod ApplicationSets.
 
-See the [deployment documentation](docs/deployment.md) for detailed instructions.
+Runtime continues to use Node.js with PM2 (`apps/lfx-one/ecosystem.config.js`)
+inside the container. See the chart README and the `lfx-v2-argocd` repo for
+deployment specifics.
 
 ## 📚 Documentation
 
@@ -284,7 +288,7 @@ The [Architecture Overview](docs/architecture.md) is the jumping-off point. Each
 - **[NATS Integration](docs/architecture/backend/nats-integration.md)** — Request/reply pattern, lazy connections
 - **[Snowflake Integration](docs/architecture/backend/snowflake-integration.md)** — Singleton pool, query deduplication
 - **[Public Meetings](docs/architecture/backend/public-meetings.md)** — Unauthenticated meeting access, M2M tokens
-- **[Deployment](docs/deployment.md)** — PM2 configuration and production deployment
+- **[Deployment chart](charts/lfx-self-serve/README.md)** — Self Serve Helm chart (templates, values); environment rollout lives in the `lfx-v2-argocd` repo
 
 #### 📦 [Shared Architecture](docs/architecture/shared/)
 

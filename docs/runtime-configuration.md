@@ -385,5 +385,5 @@ If migrating from the previous build-time approach:
 ## Related Documentation
 
 - [Feature Flags](./architecture/frontend/feature-flags.md) - LaunchDarkly integration details
-- [Deployment Guide](./deployment.md) - Deployment processes and environments
+- Deployment - Chart README at `charts/lfx-self-serve/README.md`; deployed values, image tags, ApplicationSets in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 - [SSR Server](./architecture/backend/ssr-server.md) - Server-side rendering architecture

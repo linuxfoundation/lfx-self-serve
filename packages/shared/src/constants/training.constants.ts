@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgCertificationsResponse, OrgTrainingTabId } from '../interfaces/training.interface';
+import type { OrgCertificationsResponse, OrgTrainingsResponse, OrgTrainingTabId } from '../interfaces/training.interface';
 
 // ─── Org Training page constants ───────────────────────────────────────────
 
@@ -53,6 +53,28 @@ export const EMPTY_ORG_CERTIFICATIONS_RESPONSE: OrgCertificationsResponse = {
 
 /** Sort fields whose first click should default to descending (count columns); all others default to ascending. */
 export const DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS: ReadonlySet<string> = new Set(['CERTIFIED_COUNT', 'IN_PROGRESS_COUNT']);
+
+// ─── Org Trainings tab (LFXV2-1897) ────────────────────────────────────────
+
+export const DEFAULT_ORG_TRAININGS_PAGE_SIZE = 10;
+export const MAX_ORG_TRAININGS_PAGE_SIZE = 100;
+
+/** Hard cap on rows returned by the training-employees roster query. */
+export const MAX_ORG_TRAINING_EMPLOYEES = 500;
+
+export const DEFAULT_ORG_TRAININGS_SORT_FIELD = 'COMPLETED_COUNT';
+export const DEFAULT_ORG_TRAININGS_SORT_ORDER: 'ASC' | 'DESC' = 'DESC';
+
+export const VALID_ORG_TRAINING_SORT_FIELDS: ReadonlySet<string> = new Set(['COURSE_NAME', 'FOUNDATION_NAME', 'LEVEL', 'IN_PROGRESS_COUNT', 'COMPLETED_COUNT']);
+
+export const EMPTY_ORG_TRAININGS_RESPONSE: OrgTrainingsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_ORG_TRAININGS_PAGE_SIZE,
+  offset: 0,
+};
+
+export const DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS: ReadonlySet<string> = new Set(['IN_PROGRESS_COUNT', 'COMPLETED_COUNT']);
 
 // ─── Me-lens training constants ────────────────────────────────────────────
 

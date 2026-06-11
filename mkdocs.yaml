@@ -6,7 +6,6 @@ nav:
   - Home: index.md
   - Architecture: architecture.md
   - Build Time Secrets: build-time-secrets.md
-  - Deployment: deployment.md
   - Troubleshooting: troubleshooting.md
   - Architecture Guide:
     - Overview: architecture/README.md

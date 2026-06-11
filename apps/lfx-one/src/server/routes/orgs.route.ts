@@ -49,9 +49,13 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationSlug', (req, res, next) => orgLensMembershipsController.getMembershipDetail(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/board-seats', (req, res, next) => orgLensBoardCommitteeController.getBoardSeats(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/committee-seats', (req, res, next) => orgLensBoardCommitteeController.getCommitteeSeats(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/seats', (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/voting-history', (req, res, next) => orgLensBoardCommitteeController.getVotingHistory(req, res, next));
+  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', (req, res, next) =>
+    orgLensBoardCommitteeController.reassignSeat(req, res, next)
+  );
+  // Spec 026 — org-wide people picker (key contacts + committee members) for the Reassign modal.
+  router.get('/:orgUid/lens/employees', (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/documents', (req, res, next) => orgLensDocumentsController.getMembershipDocuments(req, res, next));
   router.get('/:orgUid/lens/key-contacts/employees', (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
   router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', (req, res, next) => orgLensKeyContactsController.addKeyContact(req, res, next));
@@ -97,6 +101,9 @@ function buildOrgsRouter(): Router {
     orgLensTrainingController.getCertificationEmployees(req, res, next)
   );
   router.get('/:orgUid/lens/training/certifications', (req, res, next) => orgLensTrainingController.getOrgCertifications(req, res, next));
+  // LFXV2-1897 — Trainings tab table + drill-down rosters.
+  router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

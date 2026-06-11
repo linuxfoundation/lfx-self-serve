@@ -21,6 +21,11 @@ import type {
   CampaignPlatformOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
+  LinkedInBriefCopy,
+  LinkedInCreativeVariant,
+  LinkedInGeoTarget,
+  LinkedInTargetingProfile,
+  LinkedInTargetingStrategy,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -71,6 +76,7 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   protected lastLookedUpEvent = '';
   private readonly urlInput$ = new Subject<string>();
 
@@ -97,6 +103,12 @@ export class PlanningTabComponent implements OnInit {
   protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && this.selectedPlatforms().size > 0);
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
+  protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
+    const copy = this.structuredCopy();
+    if (!copy) return null;
+    const nested = copy['platforms'] as Record<string, unknown> | undefined;
+    return (copy['linkedin_sponsored'] as Record<string, unknown>) ?? (nested?.['linkedin_sponsored'] as Record<string, unknown>) ?? null;
+  });
 
   // === Private State ===
   private briefSubscription: Subscription | null = null;
@@ -119,6 +131,10 @@ export class PlanningTabComponent implements OnInit {
 
   protected isPlatformSelected(platformId: CampaignPlatform): boolean {
     return this.selectedPlatforms().has(platformId);
+  }
+
+  protected asArray(value: unknown): unknown[] | null {
+    return Array.isArray(value) ? value.filter((v) => v != null) : null;
   }
 
   protected onUrlInput(): void {
@@ -168,6 +184,7 @@ export class PlanningTabComponent implements OnInit {
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
+    this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
 
     const budgetRaw = this.briefForm.controls.totalBudget.value;
@@ -178,7 +195,7 @@ export class PlanningTabComponent implements OnInit {
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
-      totalBudget: budgetStr ? Number(budgetStr) : undefined,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
     };
 
     this.briefSubscription = this.campaignService
@@ -208,6 +225,7 @@ export class PlanningTabComponent implements OnInit {
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
     this.keywords.set([]);
+    this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     this.isEditing.set(false);
     this.isRefining.set(false);
@@ -244,9 +262,11 @@ export class PlanningTabComponent implements OnInit {
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
       hsUtm: this.hsUtm(),
-      totalBudget: budgetStr ? Number(budgetStr) : null,
+      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
+      selectedPlatforms: [...this.selectedPlatforms()],
+      linkedInCopy: this.getLinkedInCopy(),
     });
   }
 
@@ -435,6 +455,8 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
+      case 'linkedin_strategy':
+        break;
       case 'error':
         this.refineStatusMessages.update((msgs) => [...msgs, event.data as string]);
         this.isRefineStreaming.set(false);
@@ -450,6 +472,44 @@ export class PlanningTabComponent implements OnInit {
   }
 
   // === Private Methods ===
+  private getLinkedInCopy(): LinkedInBriefCopy | undefined {
+    if (!this.selectedPlatforms().has('linkedin-ads')) return undefined;
+    const liCopy = this.linkedInSponsoredCopy();
+    const strategy = this.linkedInStrategy();
+    const variants: LinkedInCreativeVariant[] = [];
+    if (liCopy) {
+      const rawVariants = liCopy['variants'];
+      for (const v of (Array.isArray(rawVariants) ? rawVariants : []) as Record<string, unknown>[]) {
+        if (!v || typeof v !== 'object') continue;
+        const introRaw = v['intro_text'] ?? v['introText'] ?? '';
+        const headlineRaw = v['headline'] ?? '';
+        const imageRaw = v['image_urn'] ?? v['imageUrn'];
+        variants.push({
+          introText: typeof introRaw === 'string' ? introRaw : String(introRaw),
+          headline: typeof headlineRaw === 'string' ? headlineRaw : String(headlineRaw),
+          imageUrn: typeof imageRaw === 'string' ? imageRaw : undefined,
+        });
+      }
+    }
+    const recommendedGeos: LinkedInGeoTarget[] = [];
+    const rawGeos = liCopy?.['resolved_geo_targets'];
+    if (Array.isArray(rawGeos)) {
+      for (const g of rawGeos) {
+        if (g && typeof g === 'object' && typeof g['label'] === 'string' && typeof g['urn'] === 'string') {
+          recommendedGeos.push({ label: g['label'], urn: g['urn'] });
+        }
+      }
+    }
+    const profile: LinkedInTargetingProfile =
+      (liCopy?.['recommended_targeting_profile'] as LinkedInTargetingProfile) ?? strategy?.targetingProfile ?? 'cloud-native';
+    return {
+      variants,
+      recommendedGeoTargets: recommendedGeos,
+      recommendedTargetingProfile: profile,
+      strategy: strategy ?? undefined,
+    };
+  }
+
   private extractEventName(url: string): string {
     try {
       const pathname = new URL(url).pathname.replace(/\/+$/, '');
@@ -536,6 +596,38 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
+      case 'linkedin_strategy': {
+        const raw = event.data as Record<string, unknown>;
+        const rawBudget = (raw['budget_recommendation'] ?? {}) as Record<string, unknown>;
+        const rawSkills = raw['recommended_skills'];
+        const rawGroups = raw['recommended_groups'];
+        const rawJobFunctions = raw['recommended_job_functions'];
+        const rawGeoTargets = raw['geo_targets'];
+        this.linkedInStrategy.set({
+          targetingProfile: (raw['targeting_profile'] as LinkedInTargetingProfile) ?? 'cloud-native',
+          targetingRationale: (raw['targeting_rationale'] as string) ?? '',
+          recommendedSkills: Array.isArray(rawSkills) ? (rawSkills as string[]) : [],
+          recommendedGroups: Array.isArray(rawGroups) ? (rawGroups as string[]) : [],
+          recommendedJobFunctions: Array.isArray(rawJobFunctions) ? (rawJobFunctions as string[]) : [],
+          geoTargets: Array.isArray(rawGeoTargets)
+            ? (rawGeoTargets as unknown[]).filter(
+                (g): g is { name: string; rationale: string } =>
+                  !!g &&
+                  typeof g === 'object' &&
+                  typeof (g as Record<string, unknown>)['name'] === 'string' &&
+                  typeof (g as Record<string, unknown>)['rationale'] === 'string'
+              )
+            : [],
+          budgetRecommendation: {
+            dailyBudgetUsd: this.safeNumber(rawBudget['daily_budget_usd'] ?? rawBudget['dailyBudgetUsd']),
+            lifetimeBudgetUsd: this.safeNumber(rawBudget['lifetime_budget_usd'] ?? rawBudget['lifetimeBudgetUsd']),
+            rationale: (rawBudget['rationale'] as string) ?? '',
+          },
+          audienceEstimate: (raw['audience_estimate'] as string) ?? '',
+          campaignStructureNotes: (raw['campaign_structure_notes'] as string) ?? '',
+        });
+        break;
+      }
       case 'error':
         this.errorMessage.set(event.data as string);
         this.step.set('input');
@@ -544,5 +636,10 @@ export class PlanningTabComponent implements OnInit {
         this.step.set('review');
         break;
     }
+  }
+
+  private safeNumber(value: unknown): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
   }
 }

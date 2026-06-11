@@ -191,3 +191,138 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
     return normalizedExtractedDomain === normalizedAllowedDomain;
   });
 };
+
+// ---------------------------------------------------------------------------
+// SSRF-safe URL validation and fetch for scraping user-provided URLs.
+// Validates protocol, port, hostname patterns, and DNS-resolved IPs.
+// Fetches connect directly to DNS-resolved IPs to prevent DNS rebinding.
+// ---------------------------------------------------------------------------
+
+const PRIVATE_IP_PATTERNS = [
+  /^localhost$/i,
+  /^127\.\d+\.\d+\.\d+$/,
+  /^0\.\d+\.\d+\.\d+$/,
+  /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+  /^192\.168\.\d+\.\d+$/,
+  /^169\.254\.\d+\.\d+$/,
+  /^::1$/,
+  /^::ffff:\d+\.\d+\.\d+\.\d+$/i,
+  /^f[cd][0-9a-f]{2}:/i,
+  /^fe80:/i,
+];
+
+interface SsrfSafeTarget {
+  host: string;
+  hostname: string;
+  port: number;
+  path: string;
+  resolvedIp: string;
+}
+
+async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Only HTTPS URLs are allowed');
+  }
+
+  const port = parsed.port ? Number(parsed.port) : 443;
+  if (port !== 80 && port !== 443) {
+    throw new Error('Only ports 80 and 443 are allowed');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
+    throw new Error('URLs targeting private/internal hosts are not allowed');
+  }
+
+  const { promises: dns } = await import('node:dns');
+  let addresses4: string[];
+  let addresses6: string[];
+  try {
+    [addresses4, addresses6] = await Promise.all([
+      dns.resolve4(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+      dns.resolve6(hostname).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return [];
+        throw err;
+      }),
+    ]);
+  } catch {
+    throw new Error('DNS resolution failed — cannot verify host safety');
+  }
+  const allAddresses = [...addresses4, ...addresses6];
+  if (allAddresses.length === 0) {
+    throw new Error('DNS resolution returned no addresses');
+  }
+  for (const addr of allAddresses) {
+    const checkAddr = addr.replace(/^::ffff:/i, '');
+    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
+      throw new Error('Blocked host: resolves to private IP');
+    }
+  }
+
+  return { host: parsed.host, hostname, port, path: `${parsed.pathname}${parsed.search}`, resolvedIp: allAddresses[0] };
+}
+
+export async function validateScrapeUrl(url: string): Promise<string> {
+  const target = await resolveAndValidate(url);
+  return `https://${target.host}${target.path}`;
+}
+
+export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
+  const https = await import('node:https');
+  const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+
+  const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; location?: string }> =>
+    new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: t.resolvedIp,
+          port: t.port,
+          path: t.path,
+          method: 'GET',
+          headers: { Host: t.host, 'User-Agent': 'Mozilla/5.0 (compatible; LFX/1.0)' },
+          servername: t.hostname,
+          signal: combinedSignal,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const loc = res.headers['location'];
+            resolve({ body: Buffer.concat(chunks).toString('utf-8'), statusCode: res.statusCode ?? 0, location: Array.isArray(loc) ? loc[0] : loc });
+          });
+          res.on('error', reject);
+        }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+
+  let target = await resolveAndValidate(url);
+  let result = await doRequest(target);
+
+  let redirectCount = 0;
+  while (result.statusCode >= 300 && result.statusCode < 400 && redirectCount < 5) {
+    if (!result.location) break;
+    const nextUrl = new URL(result.location, `https://${target.host}${target.path}`).href;
+    target = await resolveAndValidate(nextUrl);
+    result = await doRequest(target);
+    redirectCount++;
+  }
+
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    return { html: '', ok: false, status: result.statusCode };
+  }
+
+  return { html: result.body, ok: true, status: result.statusCode };
+}

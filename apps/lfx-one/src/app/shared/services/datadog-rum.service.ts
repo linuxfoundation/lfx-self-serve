@@ -22,7 +22,7 @@ export class DataDogRumService {
     }
 
     datadogRum.setUser({
-      id: user.sub,
+      id: user['https://sso.linuxfoundation.org/claims/username'],
       name: user.name || '',
       email: user.email || '',
     });

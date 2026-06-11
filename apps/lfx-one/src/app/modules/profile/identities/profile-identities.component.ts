@@ -25,6 +25,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, map, of, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../components/add-account-dialog/add-account-dialog.component';
+import { ProfileLinuxEmailComponent } from '../linux-email/profile-linux-email.component';
 import { RemoveIdentityDialogComponent } from '../components/remove-identity-dialog/remove-identity-dialog.component';
 import { VerifyIdentityDialogComponent } from '../components/verify-identity-dialog/verify-identity-dialog.component';
 
@@ -35,7 +36,7 @@ interface IdentitiesState {
 
 @Component({
   selector: 'lfx-profile-identities',
-  imports: [CardComponent, ButtonComponent, MenuComponent, MessageComponent, OpenIntercomDirective],
+  imports: [CardComponent, ButtonComponent, MenuComponent, MessageComponent, OpenIntercomDirective, ProfileLinuxEmailComponent],
   providers: [DialogService],
   templateUrl: './profile-identities.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -66,6 +67,10 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly isEmpty: Signal<boolean> = computed(
     () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
   );
+
+  // Raw EnrichedIdentity[] passed to ProfileLinuxEmailComponent to avoid a duplicate
+  // getIdentities() fetch when both panels render on the Identities tab.
+  public readonly enrichedIdentities: Signal<EnrichedIdentity[]> = computed(() => this.identitiesState().identities);
 
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
