@@ -145,10 +145,12 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
 }
 
 export class CrowdfundingService {
-  public async getMyInitiatives(req: Request): Promise<InitiativesResponse> {
-    const startTime = logger.startOperation(req, 'cf_get_my_initiatives');
+  public async getMyInitiatives(req: Request, pageSize?: number, offset?: number): Promise<InitiativesResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_initiatives', { pageSize, offset });
 
-    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', '/v1/me/initiatives');
+    const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
+    const off = offset ?? 0;
+    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `/v1/me/initiatives?limit=${limit}&offset=${off}`);
     const data = raw.data.map(mapToInitiativeBase);
 
     logger.success(req, 'cf_get_my_initiatives', startTime, { count: data.length });

@@ -37,9 +37,13 @@ export class CrowdfundingService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
 
-  public getMyInitiatives(): Observable<InitiativesResponse> {
+  public getMyInitiatives(params?: { pageSize?: number; offset?: number }): Observable<InitiativesResponse> {
+    let httpParams = new HttpParams();
+    if (params?.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
+
     return this.http
-      .get<InitiativesResponse>('/api/crowdfunding/initiatives')
+      .get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
   }
 
@@ -50,7 +54,7 @@ export class CrowdfundingService {
   }
 
   public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${slug}`).pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
+    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`).pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {
@@ -110,7 +114,7 @@ export class CrowdfundingService {
     if (params?.from != null) httpParams = httpParams.set('from', String(params.from));
 
     return this.http
-      .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${slug}/transactions`, { params: httpParams })
+      .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}/transactions`, { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getInitiativeTransactions')));
   }
 

@@ -137,7 +137,7 @@ export interface BackendBeneficiaryInput {
   email?: string;
 }
 
-/** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{slug} on the upstream crowdfunding service. */
+/** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{id} on the upstream crowdfunding service. */
 export interface BackendUpdateInitiativeInput {
   name?: string;
   description?: string;

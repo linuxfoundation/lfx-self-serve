@@ -27,7 +27,14 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_initiatives' });
       }
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req);
+      const { pageSize, offset } = req.query;
+      const parseNonNegativeInt = (val: unknown): number | undefined => {
+        if (val == null || val === '') return undefined;
+        const n = Number(val);
+        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+      };
+
+      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 

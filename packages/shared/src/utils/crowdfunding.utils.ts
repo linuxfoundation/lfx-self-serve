@@ -8,6 +8,7 @@
  * color-code donor avatars consistently across crowdfunding components.
  */
 export function getDonorAvatarClass(name: string, palette: string[]): string {
+  if (palette.length === 0) return '';
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = (hash * 31 + name.charCodeAt(i)) & 0xffffff;
