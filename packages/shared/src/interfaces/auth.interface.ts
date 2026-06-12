@@ -188,6 +188,36 @@ export interface AuthConfig {
 }
 
 /**
+ * Parameters passed to the provider-specific token request builder functions.
+ */
+export interface TokenRequestParams {
+  issuerBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  audience: string;
+  scope?: string;
+}
+
+/**
+ * Options for exchanging a refresh token for an audience-scoped access token.
+ * @description Configuration for the OIDC refresh token exchange flow.
+ */
+export interface RefreshTokenExchangeOptions {
+  issuerBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  audience: string;
+  /** Requested scope(s) to include in the token exchange body. */
+  scope?: string;
+  /**
+   * When provided, the token is cached in req.appSession under
+   * `<sessionKey>` (token) and `<sessionKey>ExpiresAt` (unix seconds).
+   */
+  sessionKey?: string;
+}
+
+/**
  * Error response from email to username NATS lookup
  * @description Response structure when user email is not found
  */

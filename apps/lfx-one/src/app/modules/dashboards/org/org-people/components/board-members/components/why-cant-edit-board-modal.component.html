@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex max-h-[80vh] flex-col items-center gap-4 p-6 text-center" data-testid="org-people-board-modal-why">
+  <button
+    type="button"
+    class="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+    aria-label="Close"
+    data-testid="org-people-board-modal-why-close"
+    (click)="onClose()">
+    <i class="fa-light fa-xmark text-lg"></i>
+  </button>
+
+  <div class="flex h-14 w-14 items-center justify-center rounded-full border-2 border-blue-400 text-blue-500">
+    <i class="fa-light fa-circle-info text-2xl" aria-hidden="true"></i>
+  </div>
+
+  <h3 class="text-xl font-bold text-gray-900" data-testid="org-people-board-modal-why-title">Why can't I edit this member?</h3>
+
+  <p class="text-sm leading-relaxed text-gray-600" data-testid="org-people-board-modal-why-body">{{ reason }}</p>
+
+  <div class="mt-2 flex items-center justify-center gap-3">
+    <button
+      type="button"
+      class="inline-flex items-center justify-center rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      data-testid="org-people-board-modal-why-got-it"
+      (click)="onClose()">
+      Got it
+    </button>
+    <button
+      type="button"
+      class="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-5 py-2 text-sm font-semibold text-blue-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      data-testid="org-people-board-modal-why-contact"
+      (click)="onClose()">
+      Contact Foundation
+    </button>
+  </div>
+</div>

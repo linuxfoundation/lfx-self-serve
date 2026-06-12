@@ -4,7 +4,7 @@
 import { B2bOrgIndexedDoc, GetOrgItemsParams, OrgItem, OrgItemsResponse, ResolvedOrgRole } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -32,8 +32,7 @@ export class OrgNavigationService {
       selectedUid = undefined;
     }
 
-    // Spec 022 — use the auth0 sub form (matches indexed `member:auth0|<id>` tags + stored `data.writers[].username`).
-    const username = getEffectiveSub(req);
+    const username = getEffectiveUsername(req);
     if (!username) {
       logger.warning(req, 'get_org_items', 'No authenticated username — returning empty access-aware list');
       return { items: [], next_page_token: null, upstream_failed: true };
