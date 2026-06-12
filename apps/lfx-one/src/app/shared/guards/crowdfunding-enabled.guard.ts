@@ -41,6 +41,7 @@ export const crowdfundingEnabledGuard: CanMatchFn = async () => {
   }
 
   if (!featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false)()) {
+    // `return false` stops Angular matching any other route while the browser processes the external redirect.
     window.location.replace(environment.urls.crowdfunding);
     return false;
   }
