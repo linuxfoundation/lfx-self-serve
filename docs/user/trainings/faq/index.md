@@ -11,7 +11,7 @@ intercom_collection: Trainings
 
 ## How do I contact the LF Education team?
 
-Use https://training.linuxfoundation.org/about/contact-us/
+Use <https://training.linuxfoundation.org/about/contact-us/>
 
 ## How do I enroll in a training course?
 
@@ -31,9 +31,9 @@ Training enrollment expiry, if applicable, is shown in the LF Training Portal. C
 
 ## Can I earn a badge by completing a training course or certification?
 
-Yes. Completing certain Linux Foundation training programs qualifies you for LFX badges. After completing your training or certification, you will receive a separate email with instructions on how to claim your digital badge at our partner Acclaim’s website.  
+Yes. Completing certain Linux Foundation training programs qualifies you for LFX badges. After completing your training or certification, you will receive a separate email with instructions on how to claim your digital badge at our partner Acclaim’s website.
 
-If it has been more than 2 days since you received your Pass notification and you still have not received the email from Credly, please be sure to check your spam folder and then contact the LF Education support team in their support portal at https://trainingsupport.linuxfoundation.org
+If it has been more than 2 days since you received your Pass notification and you still have not received the email from Credly, please be sure to check your spam folder and then contact the LF Education support team in their support portal at <https://trainingsupport.linuxfoundation.org>
 
 ## Where can I find a list of available training courses?
 
