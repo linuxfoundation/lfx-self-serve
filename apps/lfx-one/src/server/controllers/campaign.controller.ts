@@ -11,9 +11,9 @@ import type {
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService } from '../services/campaign-metrics.service';
+import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
@@ -313,8 +313,10 @@ export class CampaignController {
   }
 
   public getLinkedInAccounts(_req: Request, res: Response): void {
-    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
-    res.json(accounts);
+    const config = getLinkedInConfig();
+    // Return default account first so clients defaulting to accounts[0] honour the configured default.
+    const sorted = [...config.accounts].sort((a) => (a.accountId === config.defaultAccountId ? -1 : 0));
+    res.json(sorted);
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -322,7 +324,8 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
-    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawKey) ?? LINKEDIN_ACCOUNTS[0];
+    const config = getLinkedInConfig();
+    const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {

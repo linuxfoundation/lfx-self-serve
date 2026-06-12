@@ -207,13 +207,16 @@ function getAccountId(override?: string): string {
   if (override) {
     const config = getLinkedInConfig();
     if (!config.accounts.some((a) => a.accountId === override)) {
-      throw new Error(`Unsupported LinkedIn ad account ID: "${override}" — not in the runtime config. Check the linkedin-config ConfigMap.`);
+      throw new Error('Unsupported LinkedIn ad account ID — not in the runtime config. Check the linkedin-config ConfigMap.');
     }
     logger.debug(undefined, 'linkedin_config', 'Using LinkedIn account from request', { source: 'request' });
     return override;
   }
   const envValue = process.env['LINKEDIN_AD_ACCOUNT_ID'];
   if (envValue) {
+    if (!/^\d+$/.test(envValue)) {
+      throw new Error('LINKEDIN_AD_ACCOUNT_ID must be a numeric string (LinkedIn ad account IDs are digit-only)');
+    }
     logger.debug(undefined, 'linkedin_config', 'Using LinkedIn account from env', { source: 'env' });
     return envValue;
   }
