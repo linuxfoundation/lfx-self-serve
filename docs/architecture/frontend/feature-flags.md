@@ -760,13 +760,13 @@ const userContext: EvaluationContext = {
 
 **Context Structure:**
 
-| Field             | Type   | Required | Description                                                         |
-| ----------------- | ------ | -------- | ------------------------------------------------------------------- |
-| `kind`            | string | Yes      | Always 'user' for user contexts                                     |
+| Field             | Type   | Required | Description                                                            |
+| ----------------- | ------ | -------- | ---------------------------------------------------------------------- |
+| `kind`            | string | Yes      | Always 'user' for user contexts                                        |
 | `targetingKey`    | string | Yes      | LFID username (`preferred_username` → `username` → SSO username claim) |
-| `name`            | string | No       | Display name for LaunchDarkly UI    |
-| `email`           | string | No       | Email for targeting rules           |
-| Custom attributes | any    | No       | Additional attributes for targeting |
+| `name`            | string | No       | Display name for LaunchDarkly UI                                       |
+| `email`           | string | No       | Email for targeting rules                                              |
+| Custom attributes | any    | No       | Additional attributes for targeting                                    |
 
 **Targeting Use Cases:**
 
