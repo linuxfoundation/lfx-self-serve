@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyHealthBand, OsspreyListParams, OsspreyMetrics, OsspreyPackagesResponse, OsspreyStatus, OspreySortKey } from '@lfx-one/shared/interfaces';
+import { OsspreyListParams, OsspreyMetrics, OsspreyPackagesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, parseOsspreyStatus, parseOsspreyHealthBand, parseOsspreyVulnFilter, parseOspreySortKey } from '../helpers/validation.helper';
 import { OsspreyServerService } from '../services/ossprey.service';
 import { logger } from '../services/logger.service';
 
@@ -37,13 +37,13 @@ export class OsspreyController {
         search: getStringQueryParam(req, 'search'),
         ecosystem: getStringQueryParam(req, 'ecosystem'),
         lifecycle: getStringQueryParam(req, 'lifecycle'),
-        status: getStringQueryParam(req, 'status') as OsspreyStatus | undefined,
-        healthBand: getStringQueryParam(req, 'healthBand') as OsspreyHealthBand | undefined,
-        vulnFilter: getStringQueryParam(req, 'vulnFilter') as OsspreyListParams['vulnFilter'],
+        status: parseOsspreyStatus(req),
+        healthBand: parseOsspreyHealthBand(req),
+        vulnFilter: parseOsspreyVulnFilter(req),
         busFactor1Only: getStringQueryParam(req, 'busFactor1Only') === 'true',
         staleOnly: getStringQueryParam(req, 'staleOnly') === 'true',
         unstewardedOnly: getStringQueryParam(req, 'unstewardedOnly') === 'true',
-        sortBy: getStringQueryParam(req, 'sortBy') as OspreySortKey | undefined,
+        sortBy: parseOspreySortKey(req),
       };
 
       const data: OsspreyPackagesResponse = await this.osspreyService.getPackages(req, params);

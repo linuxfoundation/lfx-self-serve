@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyStatusCounts } from '../interfaces';
+import { OsspreyStatusCounts, OspreySortKey, OsspreyEcosystem, OsspreyLifecycle, OsspreyHealthBand } from '../interfaces';
 
 /** Status pills shown above the OSSPREY package queue, in display order. */
 export const OSSPREY_STATUS_PILLS: { key: keyof OsspreyStatusCounts; label: string }[] = [
@@ -15,7 +15,7 @@ export const OSSPREY_STATUS_PILLS: { key: keyof OsspreyStatusCounts; label: stri
 ];
 
 /** Sort options for the OSSPREY package queue. */
-export const OSSPREY_SORT_OPTIONS: { value: string; label: string }[] = [
+export const OSSPREY_SORT_OPTIONS: Array<{ value: OspreySortKey; label: string }> = [
   { value: 'risk', label: 'Risk priority' },
   { value: 'impact', label: 'Impact score' },
   { value: 'health', label: 'Health (worst first)' },
@@ -24,7 +24,7 @@ export const OSSPREY_SORT_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Ecosystem options for the OSSPREY filter panel. */
-export const OSSPREY_ECOSYSTEM_OPTIONS: { value: string; label: string }[] = [
+export const OSSPREY_ECOSYSTEM_OPTIONS: Array<{ value: OsspreyEcosystem | ''; label: string }> = [
   { value: '', label: 'All ecosystems' },
   { value: 'npm', label: 'npm' },
   { value: 'maven', label: 'Maven' },
@@ -33,7 +33,7 @@ export const OSSPREY_ECOSYSTEM_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Lifecycle options for the OSSPREY filter panel. */
-export const OSSPREY_LIFECYCLE_OPTIONS: { value: string; label: string }[] = [
+export const OSSPREY_LIFECYCLE_OPTIONS: Array<{ value: OsspreyLifecycle | ''; label: string }> = [
   { value: '', label: 'All lifecycle' },
   { value: 'active', label: 'Active' },
   { value: 'stable', label: 'Stable' },
@@ -42,7 +42,7 @@ export const OSSPREY_LIFECYCLE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Health band options for the OSSPREY filter panel (bands match the design spec). */
-export const OSSPREY_HEALTH_OPTIONS: { value: string; label: string }[] = [
+export const OSSPREY_HEALTH_OPTIONS: Array<{ value: OsspreyHealthBand | ''; label: string }> = [
   { value: '', label: 'All health' },
   { value: 'healthy', label: 'Healthy (70+)' },
   { value: 'fair', label: 'Fair (50–69)' },
@@ -51,7 +51,7 @@ export const OSSPREY_HEALTH_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Open-vulnerability options for the OSSPREY filter panel. */
-export const OSSPREY_VULN_OPTIONS: { value: string; label: string }[] = [
+export const OSSPREY_VULN_OPTIONS: Array<{ value: 'any' | 'high' | 'critical' | ''; label: string }> = [
   { value: '', label: 'Any vulns' },
   { value: 'any', label: 'Has any vulnerability' },
   { value: 'high', label: 'High or above' },

@@ -53,7 +53,7 @@ export function formatStatus(status: string): string {
 
 // Band thresholds mirror the design spec (design/LFX-OSSPREY-Admin-Dashboard.html):
 // healthy ≥70, fair ≥50, concerning ≥30, otherwise critical.
-export function getHealthBand(score: number): OsspreyHealthBand {
+function getHealthBand(score: number): OsspreyHealthBand {
   if (score >= 70) return 'healthy';
   if (score >= 50) return 'fair';
   if (score >= 30) return 'concerning';

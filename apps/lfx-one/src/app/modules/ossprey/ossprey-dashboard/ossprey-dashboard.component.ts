@@ -54,8 +54,6 @@ export class OsspreyDashboardComponent {
   protected readonly packages = computed<OsspreyPackage[]>(() => this.loadResult()?.packages ?? []);
   protected readonly totalPackages = computed(() => this.metricsResult()?.totalPackages ?? 0);
 
-  protected readonly filteredPackages = this.packages;
-
   protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
 
   protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
@@ -107,7 +105,7 @@ export class OsspreyDashboardComponent {
   }
 
   protected onToggleAll(payload: { checked: boolean }): void {
-    const pkgs = this.filteredPackages();
+    const pkgs = this.packages();
     const selected = new Set(this.selectedPackages());
     if (payload.checked) {
       pkgs.forEach((p) => selected.add(p.id));
@@ -142,7 +140,14 @@ export class OsspreyDashboardComponent {
   }
 
   private initMetrics() {
-    return toSignal<OsspreyMetrics | undefined>(this.osspreyService.getMetrics().pipe(catchError(() => of(undefined))));
+    return toSignal<OsspreyMetrics | undefined>(
+      this.osspreyService.getMetrics().pipe(
+        catchError((err) => {
+          console.warn('[OSSPREY] metrics fetch failed — KPI strip will show zeros', err);
+          return of(undefined);
+        })
+      )
+    );
   }
 
   private initLoadResult() {
