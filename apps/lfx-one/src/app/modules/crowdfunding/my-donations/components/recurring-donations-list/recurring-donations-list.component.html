@@ -21,8 +21,12 @@
     @for (entry of donationsWithMenuItems(); track entry.donation.id; let i = $index) {
       <div class="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg" [attr.data-testid]="'recurring-card-' + entry.donation.id">
         <!-- Icon -->
-        <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-50 text-xl flex-shrink-0" aria-hidden="true">
-          {{ entry.donation.icon }}
+        <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-50 flex-shrink-0 overflow-hidden" aria-hidden="true">
+          @if (entry.donation.icon) {
+            <img [src]="entry.donation.icon" [alt]="entry.donation.name + ' logo'" class="w-full h-full object-contain" />
+          } @else {
+            <i class="fa-light fa-circle-dollar text-xl text-gray-400"></i>
+          }
         </div>
 
         <!-- Details -->
