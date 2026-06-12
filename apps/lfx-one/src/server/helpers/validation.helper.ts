@@ -191,16 +191,7 @@ export function getValidatedMonth(req: Request, operation: string): string | und
  * @param options Validation options including operation name
  * @returns true if validation passes, false if validation fails (error sent to next)
  */
-const VALID_OSSPREY_STATUSES: readonly OsspreyStatus[] = [
-  'unassigned',
-  'open',
-  'assessing',
-  'active',
-  'needs_attention',
-  'escalated',
-  'blocked',
-  'inactive',
-];
+const VALID_OSSPREY_STATUSES: readonly OsspreyStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
 const VALID_OSSPREY_HEALTH_BANDS: readonly OsspreyHealthBand[] = ['healthy', 'fair', 'concerning', 'critical'];
 const VALID_OSSPREY_VULN_FILTERS: readonly NonNullable<OsspreyListParams['vulnFilter']>[] = ['any', 'high', 'critical'];
 const VALID_OSSPREY_SORT_KEYS: readonly OspreySortKey[] = ['risk', 'impact', 'health', 'vulns', 'name'];
