@@ -172,12 +172,20 @@ export class InitiativeSettingsDrawerComponent {
         const enabledItems = this.distributionItems().filter((i) => i.enabled);
         if (enabledItems.length > 0) {
           if (this.totalAllocated() > 100) {
-            this.messageService.add({ severity: 'error', summary: 'Invalid distribution', detail: 'Funding distribution exceeds 100%. Adjust the percentages before saving.' });
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Invalid distribution',
+              detail: 'Funding distribution exceeds 100%. Adjust the percentages before saving.',
+            });
             return;
           }
           const nonZeroItems = enabledItems.filter((i) => i.percentage > 0);
           if (nonZeroItems.length === 0) {
-            this.messageService.add({ severity: 'error', summary: 'Invalid distribution', detail: 'At least one enabled category must have a percentage greater than 0.' });
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Invalid distribution',
+              detail: 'At least one enabled category must have a percentage greater than 0.',
+            });
             return;
           }
           input.goals = nonZeroItems.map((i) => ({ name: i.label, amountCents: Math.round((i.percentage / 100) * goalCents) }));
