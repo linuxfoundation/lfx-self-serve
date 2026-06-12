@@ -60,22 +60,20 @@
         </div>
         <p class="text-xs text-gray-500">{{ progressPercent() }}% funded · {{ initiative().initiativeStats?.supporters ?? 0 }} sponsors</p>
       </div>
-      @if (initiative().websiteUrl) {
-        <div class="flex-shrink-0">
-          <a
-            [href]="initiative().websiteUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-300 bg-white rounded px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"
-            (click)="$event.stopPropagation()"
-            (keydown.enter)="$event.stopPropagation()"
-            (keydown.space)="$event.stopPropagation()"
-            data-testid="initiative-card-view-public">
-            View Public
-            <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
-          </a>
-        </div>
-      }
+      <div class="flex-shrink-0">
+        <a
+          [href]="publicPageUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-300 bg-white rounded px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"
+          (click)="$event.stopPropagation()"
+          (keydown.enter)="$event.stopPropagation()"
+          (keydown.space)="$event.stopPropagation()"
+          data-testid="initiative-card-view-public">
+          View Public
+          <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+        </a>
+      </div>
     } @else if (initiative().status === 'pending') {
       <div class="flex items-center gap-2 text-xs text-gray-400 whitespace-nowrap">
         <i class="fa-light fa-clock" aria-hidden="true"></i>

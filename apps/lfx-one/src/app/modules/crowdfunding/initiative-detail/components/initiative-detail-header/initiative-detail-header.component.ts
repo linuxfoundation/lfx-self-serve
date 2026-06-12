@@ -14,6 +14,7 @@ import {
   CROWDFUNDING_FUND_TYPE_LABELS,
 } from '@lfx-one/shared/constants';
 import { InitiativeDetail, InitiativeMenuItem, TabOption } from '@lfx-one/shared/interfaces';
+import { environment } from '@environments/environment';
 
 @Component({
   selector: 'lfx-initiative-detail-header',
@@ -32,7 +33,6 @@ export class InitiativeDetailHeaderComponent {
   protected readonly tabOptions: TabOption<string>[] = [
     { value: 'overview', label: 'Overview' },
     { value: 'financials', label: 'Financials' },
-    { value: 'announcements', label: 'Announcements' },
   ];
 
   protected readonly moreMenuItems: InitiativeMenuItem[] = [
@@ -53,6 +53,7 @@ export class InitiativeDetailHeaderComponent {
   protected readonly fundTypeIcon = computed(() => CROWDFUNDING_FUND_TYPE_ICONS[this.initiative().initiativeType]);
   protected readonly fundTypeColorClass = computed(() => CROWDFUNDING_FUND_TYPE_COLOR_CLASSES[this.initiative().initiativeType]);
   protected readonly avatarStyleClass = computed(() => CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES[this.initiative().initiativeType]);
+  protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
 
   protected onMoreClick(event: Event): void {
     this.moreMenu()?.toggle(event);

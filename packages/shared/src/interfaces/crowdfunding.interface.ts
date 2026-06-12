@@ -250,6 +250,47 @@ export interface PaymentMethod {
   expiryYear: number;
 }
 
+export interface TopicOption {
+  value: string;
+  label: string;
+}
+
+export interface UpdateGoalInput {
+  name: string;
+  amountCents: number;
+}
+
+export interface UpdateBeneficiaryInput {
+  name?: string;
+  email?: string;
+}
+
+export interface UpdateInitiativeInput {
+  name?: string;
+  description?: string;
+  industry?: string;
+  logoUrl?: string;
+  websiteUrl?: string;
+  goals?: UpdateGoalInput[];
+  beneficiaries?: UpdateBeneficiaryInput[];
+}
+
+export interface PresignedURLResult {
+  uploadUrl: string;
+  destinationUrl: string;
+  requiredHeaders: Record<string, string>;
+}
+
+export type FundCategory = 'development' | 'marketing' | 'meetups' | 'bug_bounty' | 'travel' | 'documentation';
+
+export interface FundDistributionItem {
+  category: FundCategory;
+  label: string;
+  description: string;
+  enabled: boolean;
+  percentage: number;
+}
+
 export interface InitiativeMenuItem {
   label?: string;
   icon?: string;

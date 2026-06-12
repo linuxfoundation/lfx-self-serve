@@ -47,7 +47,7 @@
 
   @if (hasMore()) {
     <div class="flex justify-center pt-3" data-testid="donation-history-load-more">
-      <lfx-button label="Load more" severity="secondary" size="small" (click)="onLoadMore()" />
+      <lfx-button label="Load more" severity="secondary" size="small" [loading]="loadingMore()" [disabled]="loadingMore()" (onClick)="onLoadMore()" />
     </div>
   }
 </div>

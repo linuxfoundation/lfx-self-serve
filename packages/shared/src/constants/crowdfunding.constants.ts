@@ -7,9 +7,11 @@ import {
   CrowdfundingTransaction,
   CrowdfundingTransactionList,
   DonationStats,
+  FundDistributionItem,
   InitiativesResponse,
   MyDonationsResponse,
   RecurringDonationsResponse,
+  TopicOption,
 } from '../interfaces/crowdfunding.interface';
 
 export const CROWDFUNDING_FUND_TYPE_LABELS: Record<FundType, string> = {
@@ -68,3 +70,67 @@ export const EMPTY_TRANSACTION_STATE: { items: CrowdfundingTransaction[]; totalC
 export const EMPTY_MY_DONATIONS: MyDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = { data: [], total: 0, pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset: 0 };
 export const EMPTY_DONATION_STATS: DonationStats = { totalDonated: 0, initiativesSupported: 0, activeRecurringAmount: 0, activeRecurringCount: 0 };
+
+export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+
+export const DEFAULT_FUND_DISTRIBUTION: FundDistributionItem[] = [
+  {
+    category: 'development',
+    label: 'Development',
+    description: 'Pay your top developers, and bring in new talent to add features and fix bugs.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'marketing',
+    label: 'Marketing',
+    description: 'Promote and grow your project through collateral, website redesign, or event swag.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'meetups',
+    label: 'Meetups',
+    description: 'Connect with your community through local meetups or industry events.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'bug_bounty',
+    label: 'Bug Bounty',
+    description: 'Have your community help identify bugs and get rewarded.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'travel',
+    label: 'Travel',
+    description: 'Send project members to conferences, meetups, or customer meetings.',
+    enabled: false,
+    percentage: 0,
+  },
+  {
+    category: 'documentation',
+    label: 'Documentation',
+    description: 'Drive specific documentation initiatives within your project.',
+    enabled: false,
+    percentage: 0,
+  },
+];
+
+export const CROWDFUNDING_TOPIC_OPTIONS: TopicOption[] = [
+  { value: 'security', label: 'Security' },
+  { value: 'cloud_native', label: 'Cloud Native' },
+  { value: 'developer_tools', label: 'Developer Tools' },
+  { value: 'ai_ml', label: 'AI / ML' },
+  { value: 'infrastructure', label: 'Infrastructure' },
+  { value: 'devops', label: 'DevOps' },
+  { value: 'observability', label: 'Observability' },
+  { value: 'networking', label: 'Networking' },
+  { value: 'storage', label: 'Storage' },
+  { value: 'serverless', label: 'Serverless' },
+  { value: 'web_standards', label: 'Web Standards' },
+  { value: 'runtime', label: 'Runtime' },
+];

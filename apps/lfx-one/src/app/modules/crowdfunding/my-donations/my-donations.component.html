@@ -27,17 +27,16 @@
     [donations]="recurringDonations()"
     [cancelledCount]="cancelledCount()"
     (viewCancelled)="onViewCancelled()"
-    (changeAmount)="onChangeAmount($event)"
-    (pauseDonation)="onPauseDonation($event)"
-    (resumeDonation)="onResumeDonation($event)"
     (cancelDonation)="onCancelDonation($event)" />
 
   <!-- Donation history -->
   <div class="flex flex-col gap-3" data-testid="donation-history-section">
     <h2 class="text-sm font-bold text-gray-900">Donation History</h2>
-    <lfx-donation-history-table [items]="donationHistory()" [hasMore]="donationHistoryHasMore()" (loadMore)="onLoadMoreDonations()" />
+    <lfx-donation-history-table [items]="donationHistory()" [hasMore]="donationHistoryHasMore()" [loadingMore]="loadingMore()" (loadMore)="onLoadMoreDonations()" />
   </div>
 
   <!-- Payment methods -->
   <lfx-payment-methods [methods]="paymentMethods()" (removeCard)="onRemoveCard($event)" />
 </div>
+
+<p-confirmDialog />
