@@ -315,7 +315,10 @@ export class CampaignController {
   public getLinkedInAccounts(_req: Request, res: Response): void {
     const config = getLinkedInConfig();
     // Return default account first so clients defaulting to accounts[0] honour the configured default.
-    const sorted = [...config.accounts].sort((a) => (a.accountId === config.defaultAccountId ? -1 : 0));
+    const sorted = [
+      ...config.accounts.filter((a) => a.accountId === config.defaultAccountId),
+      ...config.accounts.filter((a) => a.accountId !== config.defaultAccountId),
+    ];
     res.json(sorted);
   }
 
