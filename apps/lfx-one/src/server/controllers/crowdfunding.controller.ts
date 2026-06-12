@@ -5,7 +5,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { ALLOWED_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
+import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES } from '@lfx-one/shared/constants';
 import { CrowdfundingInitiativeStatus, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -271,12 +271,20 @@ export class CrowdfundingController {
       if (typeof body['industry'] === 'string') input.industry = body['industry'];
       if (typeof body['logoUrl'] === 'string') input.logoUrl = body['logoUrl'];
       if (typeof body['websiteUrl'] === 'string') input.websiteUrl = body['websiteUrl'].trim() || undefined;
-      if (typeof body['status'] === 'string') input.status = body['status'] as CrowdfundingInitiativeStatus;
+      if (typeof body['status'] === 'string') {
+        const rawStatus = body['status'];
+        if (!CROWDFUNDING_INITIATIVE_STATUSES.includes(rawStatus as (typeof CROWDFUNDING_INITIATIVE_STATUSES)[number])) {
+          throw ServiceValidationError.forField('status', `status must be one of: ${CROWDFUNDING_INITIATIVE_STATUSES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.status = rawStatus as CrowdfundingInitiativeStatus;
+      }
 
       if (Array.isArray(body['goals'])) {
         input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
           name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',
-          amountCents: Number.isFinite(Number(g['amountCents'])) ? Math.floor(Number(g['amountCents'])) : 0,
+          amountCents: parseNonNegativeInt(g['amountCents']) ?? 0,
         }));
       }
 
