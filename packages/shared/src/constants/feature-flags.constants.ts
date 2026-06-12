@@ -2,3 +2,4 @@
 // SPDX-License-Identifier: MIT
 
 export const ORG_LENS_ENABLED_FLAG = 'org-lens-enabled';
+export const CROWDFUNDING_ENABLED_FLAG = 'crowdfunding-enabled';
