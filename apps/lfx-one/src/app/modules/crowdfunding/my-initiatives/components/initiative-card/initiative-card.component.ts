@@ -30,16 +30,13 @@ export class InitiativeCardComponent {
 
   protected readonly progressPercent = this.initProgressPercent();
 
-  protected readonly isClickable = computed(() => this.initiative().status !== 'pending' && this.initiative().status !== 'submitted');
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
 
   protected readonly formattedRaised = computed(() => formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
   protected readonly formattedGoal: Signal<string | null> = this.initFormattedGoal();
 
   protected onCardClick(): void {
-    if (this.isClickable()) {
-      this.cardClick.emit(this.initiative().slug);
-    }
+    this.cardClick.emit(this.initiative().slug);
   }
 
   private initFormattedGoal(): Signal<string | null> {
