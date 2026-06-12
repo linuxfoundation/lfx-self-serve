@@ -11,6 +11,13 @@ export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimi
 
 export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
 
+export interface LinkedInTargetingProfileConfig {
+  id: LinkedInTargetingProfile;
+  label: string;
+  skills: readonly string[];
+  groups: readonly string[];
+}
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 export type CampaignType = 'search' | 'demand-gen' | 'sponsored';
@@ -68,6 +75,7 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'linkedin_strategy'
   | 'error'
   | 'done'
   | 'shutdown';
@@ -79,6 +87,8 @@ export interface CampaignBriefRequest {
   targetAudience?: string;
   valueProp?: string;
   totalBudget?: number;
+  refineFeedback?: string;
+  previousCopy?: Record<string, unknown>;
 }
 
 export interface CampaignEventDetails {
@@ -128,27 +138,40 @@ export interface LinkedInCreativeVariant {
   imageUrn?: string;
 }
 
+export interface LinkedInTargetingStrategy {
+  targetingProfile: LinkedInTargetingProfile;
+  targetingRationale: string;
+  recommendedSkills: string[];
+  recommendedGroups: string[];
+  recommendedJobFunctions: string[];
+  geoTargets: { name: string; rationale: string }[];
+  budgetRecommendation: {
+    dailyBudgetUsd: number;
+    lifetimeBudgetUsd: number;
+    rationale: string;
+  };
+  audienceEstimate: string;
+  campaignStructureNotes: string;
+}
+
 export interface LinkedInBriefCopy {
   variants: LinkedInCreativeVariant[];
   recommendedGeoTargets: LinkedInGeoTarget[];
   recommendedTargetingProfile: LinkedInTargetingProfile;
-}
-
-export interface LinkedInTargetingProfileConfig {
-  id: LinkedInTargetingProfile;
-  label: string;
-  skills: readonly string[];
-  groups: readonly string[];
+  strategy?: LinkedInTargetingStrategy;
 }
 
 /**
  * One ad account / org pairing in the runtime LinkedIn config.
  * Loaded server-side from the mounted ConfigMap; not used in the client bundle.
+ * `status` is optional to preserve graceful degradation if the ConfigMap
+ * omits it; production ConfigMaps always supply it.
  */
 export interface LinkedInAccount {
   accountId: string;
   label: string;
   orgId: string;
+  status?: 'ACTIVE' | 'BILLING_HOLD';
 }
 
 /**
@@ -168,25 +191,22 @@ export interface LinkedInRuntimeConfig {
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
-/** Fields shared between CampaignCreateRequest and LinkedInCampaignCreateRequest. */
-export interface CampaignCreateBase {
+export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
+  dates: string;
   registrationUrl: string;
   hsToken?: string;
   budgetUsd: number;
+  lifetimeBudget: boolean;
   startDate: string;
   endDate: string;
-  project?: string;
-  driveFolderUrl?: string;
-}
-
-export interface LinkedInCampaignCreateRequest extends CampaignCreateBase {
-  dates: string;
-  lifetimeBudget: boolean;
   geoTargets: LinkedInGeoTarget[];
   targetingProfile: LinkedInTargetingProfile;
   variants: LinkedInCreativeVariant[];
+  project?: string;
+  driveFolderUrl?: string;
+  adAccountId?: string;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -196,7 +216,7 @@ export interface LinkedInCampaignCreateResult {
   campaignName: string;
   campaignId: string;
   creativeCount: number;
-  campaignUrl: string;
+  linkedInUrl: string;
   steps: string[];
 }
 
@@ -208,10 +228,21 @@ export interface CampaignBriefRefineRequest {
   platforms?: CampaignPlatform[];
 }
 
-export interface CampaignCreateRequest extends CampaignCreateBase {
+// ---------------------------------------------------------------------------
+// Campaign Creation (Implementation Phase)
+// ---------------------------------------------------------------------------
+
+export interface CampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
   countryCode: string;
+  registrationUrl: string;
+  hsToken?: string;
   campaignTypes: CampaignType[];
+  budgetUsd: number;
   searchBudgetPct: number;
+  startDate: string;
+  endDate: string;
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
@@ -220,12 +251,14 @@ export interface CampaignCreateRequest extends CampaignCreateBase {
   displayBusinessName?: string;
   displayCallToAction?: string;
   geoTargets: string[];
+  project?: string;
+  driveFolderUrl?: string;
   platforms?: CampaignPlatform[];
-  linkedInConfig?: Omit<LinkedInCampaignCreateRequest, keyof CampaignCreateBase>;
+  linkedInConfig?: LinkedInCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {
-  platform: 'google-ads';
+  platform: CampaignPlatform;
   type: CampaignType;
   campaignName: string;
   campaignId: string;
@@ -236,12 +269,9 @@ export interface CampaignCreateResult {
   steps: string[];
 }
 
-/** Discriminated union of per-platform create results. */
-export type CampaignResult = CampaignCreateResult | LinkedInCampaignCreateResult;
-
 export interface CampaignCreateResponse {
   success: boolean;
-  campaigns: CampaignResult[];
+  campaigns: CampaignCreateResult[];
   errors: string[];
 }
 
@@ -279,7 +309,7 @@ export interface CampaignMetrics {
   pacingPct: number;
   pacingLabel: PacingLabel;
   campaignId: string;
-  campaignUrl: string;
+  googleAdsUrl: string;
 }
 
 export interface CampaignActionItem {
@@ -330,7 +360,7 @@ export interface KeywordMetrics {
   criterionId: string;
   campaign: string;
   campaignId: string;
-  campaignUrl: string;
+  googleAdsUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -385,7 +415,7 @@ export interface ImpressionShareMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  campaignUrl: string;
+  googleAdsUrl: string;
   impressionShare: number | null;
   budgetLostShare: number | null;
   rankLostShare: number | null;
@@ -431,7 +461,7 @@ export interface SearchTermMetrics {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  campaignUrl: string;
+  googleAdsUrl: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -450,7 +480,7 @@ export interface QualityScoreInsight {
   campaignName: string;
   eventName: string;
   campaignId: string;
-  campaignUrl: string;
+  googleAdsUrl: string;
   impressions: number;
   clicks: number;
   spend: number;
@@ -483,6 +513,67 @@ export interface OptimizationInsightsResponse {
   qualityScores: QualityScoreInsight[];
   geoPerformance: GeoPerformance[];
   dayOfWeek: DayOfWeekPerformance[];
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type LinkedInPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+export type LinkedInActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface LinkedInCreativeMetrics {
+  creativeId: string;
+  creativeName: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  conversions: number;
+  status: string;
+}
+
+export interface LinkedInCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  eventName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: LinkedInPacingLabel;
+  creatives: LinkedInCreativeMetrics[];
+  startDate: string;
+  endDate: string;
+}
+
+export interface LinkedInAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface LinkedInActionItem {
+  priority: LinkedInActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface LinkedInMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: LinkedInCampaignMetrics[];
+  accountTotals: LinkedInAccountTotals;
+  actionItems: LinkedInActionItem[];
 }
 
 // ---------------------------------------------------------------------------

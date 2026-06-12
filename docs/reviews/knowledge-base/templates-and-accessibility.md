@@ -128,7 +128,7 @@ Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus ma
 
 **Failure message:** Template uses a PrimeNG primitive directly instead of its LFX wrapper — bypasses wrapper defaults and breaks UI-library independence.
 
-**Fix:** replace with the LFX wrapper (`<lfx-button>`, `<lfx-tabs>`, etc.). If a wrapper doesn't exist yet for the primitive you need, add one under `shared/components/` and update the import — don't reach into PrimeNG directly from a feature module.
+**Fix:** replace with the LFX wrapper (e.g. `<lfx-button>`, `<lfx-select>`, `<lfx-table>` — see `apps/lfx-one/src/app/shared/components/` for the current set). If a wrapper doesn't exist yet for the primitive you need (e.g. there is no `lfx-tabs` / `lfx-tooltip` today), add one under `shared/components/` and update the import — don't reach into PrimeNG directly from a feature module.
 
 ---
 

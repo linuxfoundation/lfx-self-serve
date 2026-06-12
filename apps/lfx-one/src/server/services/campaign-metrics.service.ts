@@ -10,11 +10,13 @@ import type {
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
+  LinkedInMonitorResponse,
   PacingLabel,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
+import { getLinkedInAnalytics } from './linkedin-ads.service';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -200,7 +202,7 @@ function parseCampaignMetrics(row: unknown, days: number, rangeStart: string, ra
     pacingPct,
     pacingLabel,
     campaignId,
-    campaignUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: buildGoogleAdsUrl(campaignId),
   };
 }
 
@@ -232,7 +234,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
         issue: `Campaign limited by Google — only ${c.impressions.toLocaleString()} impressions on $${c.budgetDay.toFixed(2)}/day budget`,
         action: 'Switch bid strategy to Maximize Clicks, or expand keyword match types to increase eligible auctions',
@@ -243,7 +245,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'HIGH',
         issue: `Budget is $${c.budgetDay.toFixed(2)}/day — this is a placeholder and won't generate meaningful traffic`,
         action: 'Set a real daily budget (typically $10–50/day for events) before expecting results',
@@ -254,7 +256,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Campaign is paused — spent $${c.spend.toFixed(2)} before pause`,
         action: 'Check if this was intentionally paused or if the event is still upcoming and needs reactivation',
@@ -265,7 +267,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Only spending ${c.pacingPct}% of $${c.budgetDay.toFixed(2)}/day budget — $${c.spend.toFixed(2)} spent vs $${(c.budgetDay * 30).toFixed(2)} expected`,
         action: 'Broaden targeting (locations, audiences), add broad match keywords, or increase bids to win more auctions',
@@ -276,7 +278,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Spending ${c.pacingPct}% of budget — demand exceeds $${c.budgetDay.toFixed(2)}/day cap, ads stop showing mid-day`,
         action: 'Increase daily budget to capture missed impressions, or narrow targeting to focus spend on highest-value audiences',
@@ -287,7 +289,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Search CTR is ${c.ctr.toFixed(2)}% (benchmark: 2%+) — ${c.clicks} clicks from ${c.impressions.toLocaleString()} impressions`,
         action: 'Improve headline relevance to search intent, add negative keywords to filter irrelevant queries',
@@ -298,7 +300,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Display CTR is ${c.ctr.toFixed(2)}% (benchmark: 0.3%+) — ${c.clicks} clicks from ${c.impressions.toLocaleString()} impressions`,
         action: 'Refresh creative assets, check for audience overlap across campaigns, or narrow placement targeting',
@@ -309,7 +311,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `${c.clicks} clicks ($${c.spend.toFixed(2)} spent) but 0 conversions — traffic is not converting`,
         action: 'Verify conversion tracking is firing correctly, check landing page load speed, and review if the CTA matches the ad promise',
@@ -320,7 +322,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Avg CPC is $${c.avgCpc.toFixed(2)} — spending $${c.spend.toFixed(2)} for only ${c.clicks} clicks`,
         action: 'Switch to a Target CPA or Maximize Clicks bid strategy, add long-tail keywords with lower competition',
@@ -331,7 +333,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `${c.impressions.toLocaleString()} impressions but 0 clicks — ads are showing but no one is clicking`,
         action: 'Rewrite ad copy to be more compelling, ensure headlines match search intent, test different CTAs',
@@ -342,7 +344,7 @@ function generateActionItems(campaigns: CampaignMetrics[]): CampaignActionItem[]
       items.push({
         eventName: c.eventName,
         campaigns: [c.shortName],
-        campaignUrls: { [c.shortName]: c.campaignUrl },
+        campaignUrls: { [c.shortName]: c.googleAdsUrl },
         priority: 'MED',
         issue: `Campaign is still in draft — $${c.budgetDay.toFixed(2)}/day budget allocated but not running`,
         action: 'Upload creative assets, review ad groups, publish the campaign (then pause if not ready to go live)',
@@ -371,7 +373,7 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     criterionId: String(extractNested(r, 'ad_group_criterion.criterion_id') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
-    campaignUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: buildGoogleAdsUrl(campaignId),
     impressions: Number(extractNested(r, 'metrics.impressions') || 0),
     clicks,
     ctr: Number(extractNested(r, 'metrics.ctr') || 0) * 100,
@@ -397,4 +399,15 @@ function aggregateDemoBuckets(rows: unknown[], labelExtractor: (row: Record<stri
   }
 
   return [...buckets.values()];
+}
+
+// ---------------------------------------------------------------------------
+// CampaignMetricsService — LinkedIn analytics
+// ---------------------------------------------------------------------------
+
+export class LinkedInMetricsService {
+  public async getLinkedInMonitorData(req: Request, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
+    logger.debug(req, 'linkedin_monitor', 'Fetching LinkedIn campaign analytics', { accountId, days });
+    return getLinkedInAnalytics(req, accountId, days);
+  }
 }

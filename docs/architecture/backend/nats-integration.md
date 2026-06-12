@@ -321,7 +321,7 @@ Solution: Verify target microservice deployment and health
 
 - [Backend Architecture Overview](./README.md)
 - [Project Service Integration](../../CLAUDE.md#backend-stack)
-- [Environment Configuration](../../deployment.md#environment-variables)
+- Environment Configuration - chart values in `charts/lfx-self-serve/README.md`; deployed values in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 - [Microservice Proxy Service](./README.md#microservice-integration)
 
 ## 📚 External Resources

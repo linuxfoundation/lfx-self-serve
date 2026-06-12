@@ -18,6 +18,8 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
+  LinkedInAccountOption,
+  LinkedInMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -65,6 +67,14 @@ export class CampaignService {
 
   public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
+  }
+
+  public getLinkedInAccounts(): Observable<LinkedInAccountOption[]> {
+    return this.http.get<LinkedInAccountOption[]>('/api/campaigns/linkedin/accounts');
+  }
+
+  public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {

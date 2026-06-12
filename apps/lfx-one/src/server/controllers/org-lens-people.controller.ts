@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
-import type { OrgContributorTimeRange } from '@lfx-one/shared/interfaces';
+import { EMAIL_REGEX, ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -10,6 +11,8 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
+import { OrgPeopleBoardMembersService } from '../services/org-people-board-members.service';
+import { OrgPeopleCommitteeMembersService } from '../services/org-people-committee-members.service';
 import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
@@ -24,6 +27,8 @@ export class OrgLensPeopleController {
   private readonly traineesService: OrgPeopleTraineesService;
   private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
   private readonly contributorsService: OrgPeopleContributorsService;
+  private readonly committeeMembersService: OrgPeopleCommitteeMembersService;
+  private readonly boardMembersService: OrgPeopleBoardMembersService;
 
   public constructor() {
     this.service = new OrgLensPeopleService();
@@ -31,6 +36,8 @@ export class OrgLensPeopleController {
     this.traineesService = new OrgPeopleTraineesService();
     this.eventAttendeesService = new OrgPeopleEventAttendeesService();
     this.contributorsService = new OrgPeopleContributorsService();
+    this.committeeMembersService = new OrgPeopleCommitteeMembersService();
+    this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
   /** GET /api/orgs/:orgUid/lens/people/all */
@@ -109,6 +116,119 @@ export class OrgLensPeopleController {
         individual_count: response.stats.individualCount,
         foundations_covered: response.stats.foundationsCovered,
         unfilled_required_role_count: response.stats.unfilledRequiredRoleCount,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/committee-members — org-wide non-Board committee-member roster + stats (spec 027). */
+  public async getCommitteeMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_people_committee_members', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_people_committee_members');
+
+      const response = await this.committeeMembersService.getCommitteeMembers(req, orgUid);
+
+      logger.success(req, 'get_org_people_committee_members', startTime, {
+        org_uid: orgUid,
+        assignment_count: response.assignments.length,
+        individual_count: response.stats.individualCount,
+        committee_count: response.stats.committeeCount,
+        foundations_covered: response.stats.foundationsCovered,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/orgs/:orgUid/lens/people/committee-members/:seatId/reassign — reassign one Membership-Entitlement seat (spec 027 US3/US4). */
+  public async reassignCommitteeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const seatId = req.params['seatId'];
+    const startTime = logger.startOperation(req, 'reassign_committee_member', {
+      org_uid: orgUid,
+      seat_id: seatId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'reassign_committee_member');
+      this.assertSeatId(seatId, 'reassign_committee_member');
+      const body = this.assertReassignBody(req.body, 'reassign_committee_member');
+
+      const response = await this.committeeMembersService.reassignSeat(req, orgUid, seatId, body);
+
+      logger.success(req, 'reassign_committee_member', startTime, {
+        org_uid: orgUid,
+        seat_id: seatId,
+        committee_uid: body.committeeUid,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/board-members — org-wide Board-only roster + stats. */
+  public async getBoardMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_people_board_members', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_people_board_members');
+
+      const response = await this.boardMembersService.getBoardMembers(req, orgUid);
+
+      logger.success(req, 'get_org_people_board_members', startTime, {
+        org_uid: orgUid,
+        assignment_count: response.assignments.length,
+        total_board_members: response.stats.totalBoardMembers,
+        voting_count: response.stats.votingCount,
+        non_voting_count: response.stats.nonVotingCount,
+        foundations_covered: response.stats.foundationsCovered,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/orgs/:orgUid/lens/people/board-members/:seatId/reassign — reassign one Membership-Entitlement board seat. */
+  public async reassignBoardMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const seatId = req.params['seatId'];
+    const startTime = logger.startOperation(req, 'reassign_board_member', {
+      org_uid: orgUid,
+      seat_id: seatId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'reassign_board_member');
+      this.assertSeatId(seatId, 'reassign_board_member');
+      const body = this.assertReassignBody(req.body, 'reassign_board_member');
+
+      const response = await this.boardMembersService.reassignSeat(req, orgUid, seatId, body);
+
+      logger.success(req, 'reassign_board_member', startTime, {
+        org_uid: orgUid,
+        seat_id: seatId,
+        committee_uid: body.committeeUid,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -210,6 +330,33 @@ export class OrgLensPeopleController {
     if (!PERSON_KEY_PATTERN.test(personKey)) {
       throw ServiceValidationError.forField('personKey', 'Invalid personKey format', { operation });
     }
+  }
+
+  /** Validate the seat id before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). Mirrors OrgLensBoardCommitteeController.assertSeatId. */
+  private assertSeatId(seatId: string | undefined, operation: string): asserts seatId is string {
+    if (!seatId || !isFilterSafeIdentifier(seatId)) {
+      throw ServiceValidationError.forField('seatId', 'seatId path parameter is required and must be a valid identifier', { operation });
+    }
+  }
+
+  /** Validate + normalize the reassign body (committeeUid filter-safe; email lowercased + regex-checked). Mirrors OrgLensBoardCommitteeController.assertReassignBody. */
+  private assertReassignBody(body: unknown, operation: string): ReassignCommitteeMemberBody {
+    const b = (body ?? {}) as Partial<ReassignCommitteeMemberBody>;
+    const committeeUid = typeof b.committeeUid === 'string' ? b.committeeUid.trim() : '';
+    const firstName = typeof b.firstName === 'string' ? b.firstName.trim() : '';
+    const lastName = typeof b.lastName === 'string' ? b.lastName.trim() : '';
+    const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
+
+    if (!committeeUid || !email || !firstName || !lastName) {
+      throw ServiceValidationError.forField('body', 'committeeUid, firstName, lastName and email are required', { operation });
+    }
+    if (!isFilterSafeIdentifier(committeeUid)) {
+      throw ServiceValidationError.forField('committeeUid', 'committeeUid must be a valid identifier', { operation });
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      throw ServiceValidationError.forField('email', 'email must be a valid email address', { operation });
+    }
+    return { committeeUid, firstName, lastName, email };
   }
 }
 

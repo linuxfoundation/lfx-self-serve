@@ -3,6 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > Auto-loaded by Claude Code at session start. Read this first.
+>
+> **Important: invoke `/lfx-skills:lfx` for any cross-repo task or "where does X live" question.** Routes to owning repos and pulls in their CLAUDE.md, skills, and rules. If `/lfx-skills:lfx` is not found, install with `/plugin marketplace add linuxfoundation/lfx-skills` then `/plugin install lfx-skills@lfx-skills`.
 
 ## Project Overview
 
@@ -10,9 +12,9 @@ LFX One is a Turborepo monorepo containing an Angular 20 SSR application with st
 
 ## Working mode
 
-You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/develop` skill.
+You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/self-serve-dev` skill.
 
-**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the `lfx-self-serve-code-reviewer` and `lfx-self-serve-learnings-reviewer` subagents in parallel (`subagent_type: lfx-self-serve-code-reviewer` / `subagent_type: lfx-self-serve-learnings-reviewer`, both with `run_in_background: true`) — their definitions in `.claude/agents/` carry the full review playbook. Default to delegating when the task is wide, parallel, or read-heavy.
+**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the central `lfx-skills` reviewer trio in parallel (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, and `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all with `run_in_background: true`). If Claude displays plugin agents without a namespace, use the equivalent displayed names. This repo's local `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, architecture docs, review checklists, and KB remain the review source of truth. Default to delegating when the task is wide, parallel, or read-heavy.
 
 ## Domain language
 
@@ -29,7 +31,7 @@ When a feature affects multiple personas differently, flag it explicitly.
 
 ## Quick Start
 
-**Prerequisites:** Node.js ≥22, Yarn 4.x (via corepack), Docker (for the local microservice stack).
+**Prerequisites:** Node.js ≥22 and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.
 
 For first-time setup (1Password env vars, microservice stack, etc.) invoke the `/setup` skill — it handles prerequisites, clone, install, env vars, and the dev server.
 
@@ -87,7 +89,7 @@ lfx-self-serve/
 │       │   ├── controllers/  # Route controllers
 │       │   ├── errors/       # Custom error classes (base, authentication, microservice, service-validation)
 │       │   ├── helpers/      # Server helpers (api-gateway, error-serializer, http-status, ics, meeting, poll-endpoint, query-service, url-validation, validation)
-│       │   ├── middleware/   # Express middleware (auth, error-handler, rate-limit)
+│       │   ├── middleware/   # Express middleware (auth, error-handler, rate-limit, require-executive-director)
 │       │   ├── pdf-templates/ # PDF generation templates (e.g., visa-letter-manual)
 │       │   ├── routes/       # API route definitions
 │       │   ├── services/     # Backend services (api-client, microservice-proxy, nats, snowflake, etc.)
@@ -129,8 +131,10 @@ The application is organized into feature modules under `apps/lfx-one/src/app/mo
 | **dashboards**    | Lens-based dashboards (Me, Foundation, Project, Org) and supporting drawers      |
 | **documents**     | Document management — browse and manage project documents                        |
 | **events**        | Events — browse LFX events and manage attendance                                 |
+| **invite**        | Invite acceptance — token-based invite landing and error pages                   |
 | **mailing-lists** | Mailing list management — subscribe, unsubscribe, and manage lists               |
 | **meetings**      | Meeting scheduling — create, manage, and join meetings with calendar integration |
+| **newsletters**   | Newsletter management — list, manage, and view newsletter analytics              |
 | **profile**       | User profile — profile management and account settings                           |
 | **settings**      | Application settings — preferences and configuration                             |
 | **surveys**       | Survey management — create surveys, collect responses, view NPS analytics        |
@@ -175,7 +179,7 @@ For missing sign-off recovery (single-commit amend, or older commits / cherry-pi
 
 - Always reference PrimeNG's component interface when defining types — all PrimeNG components are wrapped in LFX components for UI library independence.
 - Use direct imports for standalone components (no barrel exports).
-- Authentication is selective: public routes (`/meeting`, `/public/api`) bypass auth, protected routes require it. Auth0/Authelia via express-openid-connect; custom `/login` handler with URL validation. Prefer user bearer tokens over M2M tokens except in genuinely public endpoints — see `.claude/rules/development-rules.md` for the M2M usage rules.
+- Authentication is selective: public routes (`/meetings/` SSR pages, `/public/api`) allow anonymous access (optional auth), protected routes require it. Auth0/Authelia via express-openid-connect; custom `/login` handler with URL validation. Prefer user bearer tokens over M2M tokens except in genuinely public endpoints — see `.claude/rules/development-rules.md` for the M2M usage rules.
 
 ### Dev server
 
@@ -211,79 +215,50 @@ For local auth issues (Authelia at `auth.k8s.orb.local`, broken cookies, client-
 
 ## Rule Files
 
-Detailed patterns are in `.claude/rules/` and loaded contextually based on the `paths:` frontmatter in each file:
-
-| Rule File                   | Paths                                                                       | Topics                                                                                                |
-| --------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `component-organization.md` | `**/*.component.ts`                                                         | Signal initialization, component structure order, model signals, interfaces, DELETE → CREATE rule     |
-| `logging-patterns.md`       | `**/server/**`                                                              | Logger service API, layer responsibilities, log levels, code examples                                 |
-| `ssr-safety.md`             | `**/*.component.ts`, `**/*.service.ts`, `**/*.directive.ts`, `**/server/**` | `isPlatformBrowser` guard, browser-only API rules, lazy-loading third-party libs                      |
-| `styling.md`                | `**/*.html`, `**/*.scss`, `**/*.component.ts`                               | Brand color scales (`lfxColors`), Tailwind config, no hard-coded hex                                  |
-| `development-rules.md`      | `*`                                                                         | Shared package, license headers, testing, formatting, doc maintenance                                 |
-| `commit-workflow.md`        | `*`                                                                         | Commit conventions, branch naming, PR format, PR sizing, JIRA tracking, sign-off + GPG signing policy |
-| `skill-guidance.md`         | `*`                                                                         | Guides Claude to suggest `/setup`, `/develop`, `/preflight` skills                                    |
+Detailed patterns are in `.claude/rules/` and loaded contextually based on the `paths:` frontmatter in each file. The full table of rule files, paths, and topics lives in `.claude/rules/skill-guidance.md`.
 
 ## Architecture Documentation
 
-| Document                                                                       | Topics                                                           |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [Angular Patterns](docs/architecture/frontend/angular-patterns.md)             | Zoneless change detection, signals, components                   |
-| [Component Architecture](docs/architecture/frontend/component-architecture.md) | PrimeNG wrapper patterns                                         |
-| [Lens & Persona System](docs/architecture/frontend/lens-system.md)             | `LensService`, persona detection, `ProjectContextService`        |
-| [Styling System](docs/architecture/frontend/styling-system.md)                 | Tailwind, fonts, theming                                         |
-| [Drawer Pattern](docs/architecture/frontend/drawer-pattern.md)                 | Drawer components, lazy loading, chart integration               |
-| [Backend Architecture](docs/architecture/backend/README.md)                    | Controller-Service pattern, Express.js server                    |
-| [Authentication](docs/architecture/backend/authentication.md)                  | Auth0 setup, selective auth middleware                           |
-| [Impersonation](docs/architecture/backend/impersonation.md)                    | User impersonation via Auth0 CTE                                 |
-| [Rate Limiting](docs/architecture/backend/rate-limiting.md)                    | `express-rate-limit` budgets for `/api`, `/public/api`, `/login` |
-| [Observability](docs/architecture/backend/observability.md)                    | OpenTelemetry auto-instrumentation, custom spans                 |
-| [SSR Server](docs/architecture/backend/ssr-server.md)                          | Server-side rendering                                            |
-| [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)        | Structured logging with Pino                                     |
-| [Error Handling](docs/architecture/backend/error-handling-architecture.md)     | Error classification, middleware                                 |
-| [Server Helpers](docs/architecture/backend/server-helpers.md)                  | Validation, pagination, URL utilities                            |
-| [Pagination](docs/architecture/backend/pagination.md)                          | Cursor-based pagination, infinite scroll                         |
-| [AI Service](docs/architecture/backend/ai-service.md)                          | LiteLLM proxy, agenda generation                                 |
-| [NATS Integration](docs/architecture/backend/nats-integration.md)              | Inter-service messaging                                          |
-| [Snowflake Integration](docs/architecture/backend/snowflake-integration.md)    | Analytics queries, connection pooling                            |
-| [Public Meetings](docs/architecture/backend/public-meetings.md)                | Unauthenticated access, M2M tokens                               |
-| [Shared Package](docs/architecture/shared/package-architecture.md)             | Types, interfaces, utilities, validators                         |
-| [E2E Testing](docs/architecture/testing/e2e-testing.md)                        | Dual architecture testing                                        |
-| [Testing Best Practices](docs/architecture/testing/testing-best-practices.md)  | Testing patterns and guide                                       |
+The full index of architecture docs (frontend, backend, shared, testing, deployment routing) lives in [`docs/architecture/README.md`](docs/architecture/README.md). Reviewers and skill workflows load these conditionally by changed-file path.
+
+Placement decision trees ("where does my component go?", "do I need a new module?", "new service or extend existing?", "user token vs M2M?") live in [`docs/architecture/placement.md`](docs/architecture/placement.md).
 
 ## Work cycle — post-commit and pre-PR reviews
 
-> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the `lfx-self-serve-code-reviewer` AND `lfx-self-serve-learnings-reviewer` subagents in parallel via the Agent tool (`subagent_type: lfx-self-serve-code-reviewer` / `subagent_type: lfx-self-serve-learnings-reviewer`, both `run_in_background: true`) — then keep working while they run. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
+> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the `lfx-skills:lfx-general-code-reviewer`, `lfx-skills:lfx-self-serve-code-reviewer`, AND `lfx-skills:lfx-self-serve-learnings-reviewer` subagents in parallel via the Agent tool (`subagent_type: lfx-skills:lfx-general-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all `run_in_background: true`) — then keep working while they run. If Claude displays plugin agents without the `lfx-skills:` namespace, use the equivalent displayed names. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
 >
-> **Once the PR is open, do NOT invoke the reviewer pair on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking subagent audits on top adds latency without proportional signal. The pair is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
+> **Once the PR is open, do NOT invoke the reviewer trio on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking subagent audits on top adds latency without proportional signal. The trio is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
 
 ### Post-commit (pre-PR phase, after every commit, parallel, asynchronous)
 
 1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
-2. **Immediately launch both reviewer subagents in parallel.** Issue two **Agent tool calls in a single message**:
-   - **`lfx-self-serve-code-reviewer`** (`subagent_type: lfx-self-serve-code-reviewer`, `run_in_background: true`) — general code review on the diff (Step 2, native senior-reviewer disposition) + convention audit (Step 3) against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts (Step 4). Renders a markdown review with General review / Upstream API / Repo conventions sections.
-   - **`lfx-self-serve-learnings-reviewer`** (`subagent_type: lfx-self-serve-learnings-reviewer`, `run_in_background: true`) — empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
+2. **Immediately launch all three reviewer subagents in parallel.** Issue three **Agent tool calls in a single message**:
+   - **`lfx-skills:lfx-general-code-reviewer`** (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `run_in_background: true`) — general senior code review for correctness, security, error handling, maintainability, tests, performance, and code truthfulness. Carries no repo-specific Self Serve rulebook.
+   - **`lfx-skills:lfx-self-serve-code-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, `run_in_background: true`) — Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
+   - **`lfx-skills:lfx-self-serve-learnings-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, `run_in_background: true`) — empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
 
-   **Why a required prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. The string itself doesn't drive subagent behavior — each subagent's playbook only parses for `branch` and `extra:` and otherwise defaults to `git show HEAD`. The canonical strings are operator plumbing, not instructions to the model.
+   **Why a required prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. The string itself doesn't drive subagent behavior — each subagent's playbook only parses for `target repo:`, `branch`, and `extra:` and otherwise defaults to `git show HEAD`. The canonical strings are operator plumbing, not instructions to the model. If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo.
 
-   **Post-commit mode prompt (exact, both subagents):** `Review the latest commit.` Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
+   **Post-commit mode prompt (exact, all three subagents):** `target repo: lfx-self-serve\n\nReview the latest commit.` Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
-4. **When a review pair returns:** read both reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
-5. **It's fine to keep committing while reviews are still running.** Each pair audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get two separate reports — one per commit. Read both as they arrive and address findings in subsequent commits.
+4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
+5. **It's fine to keep committing while reviews are still running.** Each trio audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get separate reports — one trio per commit. Read them as they arrive and address findings in subsequent commits.
 
 ### Pre-PR (drain the queue, sweep cumulative state, then open)
 
 When the work is "done" — no more code commits planned:
 
-1. **Wait for every running review to complete.** Each pair audits one commit, so the pair invoked by every recent commit needs to have returned before you continue.
-2. **If any returned pair flags Critical or reasonable Important:** add a fix commit, launch the reviewer pair again on the new state, wait. Loop until the pair returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
-3. **Full-branch sweep — only if the branch has more than one commit.** Launch both reviewer subagents again in parallel via the Agent tool. The Agent `prompt` parameter for each subagent must include the `branch` keyword so the subagent audits the branch's diff against `origin/main` instead of just the latest commit:
-   - **`lfx-self-serve-code-reviewer`**, prompt: **`branch\n\nReview the branch's diff against origin/main.`**
-   - **`lfx-self-serve-learnings-reviewer`**, prompt: **`branch\n\nReview the branch's diff against origin/main.`**
+1. **Wait for every running review to complete.** Each trio audits one commit, so the trio invoked by every recent commit needs to have returned before you continue.
+2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state, wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
+3. **Full-branch sweep — only if the branch has more than one commit.** Launch all three reviewer subagents again in parallel via the Agent tool. The Agent `prompt` parameter for each subagent must include the `branch` keyword so the subagent audits the branch's diff against `origin/main` instead of just the latest commit:
+   - **`lfx-skills:lfx-general-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
+   - **`lfx-skills:lfx-self-serve-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
+   - **`lfx-skills:lfx-self-serve-learnings-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
 
-   Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit pair. Address any new findings, then re-run the sweep until clean.
+   Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit trio. Address any new findings, then re-run the sweep until clean.
 
-4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, JIRA, conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit pair and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
+4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, JIRA, conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
 5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
 6. **Only then push and open the PR.** (Reviewers run `/lfx-review-pr` against the open PR — that should not be your first standards check.)
 
@@ -294,7 +269,7 @@ When the work is "done" — no more code commits planned:
 3. Roll fixes into a single `fix(review): ...` commit. Reply + resolve each thread (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies` + the `resolveReviewThread` GraphQL mutation).
 4. Push. Repeat until clean.
 
-After `/compact`, re-invoke `/develop` or the relevant convention skill if continuing work that depends on it.
+After `/compact`, re-invoke `/self-serve-dev` or the relevant convention skill if continuing work that depends on it.
 
 ## What NOT to do
 
@@ -303,11 +278,11 @@ After `/compact`, re-invoke `/develop` or the relevant convention skill if conti
 - ❌ Hard-code brand hex values (reference `lfxColors` scales)
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
-- ❌ Open a PR without launching the post-commit reviewer pair (`lfx-self-serve-code-reviewer` + `lfx-self-serve-learnings-reviewer` subagents, in parallel via the Agent tool) after every pre-PR commit and draining the queue clean — both reviews are non-negotiable pre-PR
-- ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the pair is no longer invoked)
+- ❌ Open a PR without launching the post-commit reviewer trio (`lfx-skills:lfx-general-code-reviewer` + `lfx-skills:lfx-self-serve-code-reviewer` + `lfx-skills:lfx-self-serve-learnings-reviewer`, in parallel via the Agent tool) after every pre-PR commit and draining the queue clean — all three reviews are non-negotiable pre-PR
+- ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the trio is no longer invoked)
 - ❌ Open a multi-commit PR without running the pre-PR full-branch sweep (`branch` arg) — per-commit reviews can miss cross-commit drift
 - ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
 - ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
 - ❌ Commit and claim "done" before `yarn build` passes
 - ❌ Re-introduce Figma references — design source is HTML/GitHub
-- ❌ Edit `CLAUDE.md` or other `lfx-preflight` protected files without code-owner review
+- ❌ Edit `CLAUDE.md` or other preflight-protected files without code-owner review

@@ -46,7 +46,7 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
       .get('recording_enabled')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((recordingEnabled: boolean) => {
-        const dependentControls = ['transcript_enabled', 'zoom_ai_enabled', 'youtube_upload_enabled'];
+        const dependentControls = ['transcript_enabled', 'youtube_upload_enabled'];
 
         dependentControls.forEach((controlName) => {
           const control = this.form().get(controlName);
