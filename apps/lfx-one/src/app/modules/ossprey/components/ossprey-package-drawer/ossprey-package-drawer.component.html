@@ -56,10 +56,14 @@
       }
 
       <!-- Tab Bar -->
-      <div class="flex border-b border-gray-200 -mx-5 px-5">
+      <div class="flex border-b border-gray-200 -mx-5 px-5" role="tablist">
         @for (tab of drawerTabs; track tab.key) {
           <button
             type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === tab.key"
+            [attr.aria-controls]="'ossprey-drawer-panel-' + tab.key"
+            [attr.id]="'ossprey-drawer-tab-' + tab.key"
             (click)="onTabChange(tab.key)"
             [class]="
               activeTab() === tab.key
@@ -383,7 +387,7 @@
       <div class="flex flex-col gap-4" data-testid="ossprey-drawer-history">
         @if (pkg.history.length > 0) {
           <div class="relative flex flex-col gap-3.5 pl-5 before:absolute before:left-1 before:top-1 before:bottom-1 before:w-0.5 before:bg-gray-200">
-            @for (entry of pkg.history; track entry.label) {
+            @for (entry of pkg.history; track entry.label + '|' + entry.timeAgo + '|' + (entry.type ?? '')) {
               <div class="relative">
                 <span [class]="getHistoryDotClass(entry.type)"></span>
                 <div class="text-sm text-gray-700">{{ entry.label }}</div>

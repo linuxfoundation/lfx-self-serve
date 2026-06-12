@@ -191,19 +191,19 @@ export function getValidatedMonth(req: Request, operation: string): string | und
  * @param options Validation options including operation name
  * @returns true if validation passes, false if validation fails (error sent to next)
  */
-const VALID_OSSPREY_STATUSES: readonly OsspreyStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
+const VALID_OSSPREY_STATUSES = ['all', 'unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'] as const;
 const VALID_OSSPREY_HEALTH_BANDS: readonly OsspreyHealthBand[] = ['healthy', 'fair', 'concerning', 'critical'];
 const VALID_OSSPREY_VULN_FILTERS: readonly NonNullable<OsspreyListParams['vulnFilter']>[] = ['any', 'high', 'critical'];
 const VALID_OSSPREY_SORT_KEYS: readonly OspreySortKey[] = ['risk', 'impact', 'health', 'vulns', 'name'];
 
-/** Returns a validated OsspreyStatus or undefined; throws 400 for unknown values. */
+/** Returns a validated OsspreyStatus or undefined; throws 400 for unknown values. 'all' is accepted as a no-op and returns undefined. */
 export function parseOsspreyStatus(req: Request): OsspreyStatus | undefined {
   const raw = getStringQueryParam(req, 'status');
   if (!raw) return undefined;
-  if (!VALID_OSSPREY_STATUSES.includes(raw as OsspreyStatus)) {
+  if (!VALID_OSSPREY_STATUSES.includes(raw as (typeof VALID_OSSPREY_STATUSES)[number])) {
     throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_OSSPREY_STATUSES.join(', ')}`, {});
   }
-  return raw as OsspreyStatus;
+  return raw === 'all' ? undefined : (raw as OsspreyStatus);
 }
 
 /** Returns a validated OsspreyHealthBand or undefined; throws 400 for unknown values. */

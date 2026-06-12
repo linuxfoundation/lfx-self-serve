@@ -368,11 +368,9 @@ export class OsspreyServerService {
 
   private calculateMonthsStale(lastCommitAt?: string | null): number | null {
     if (!lastCommitAt) return null;
-    try {
-      return Math.floor((Date.now() - new Date(lastCommitAt).getTime()) / (1000 * 60 * 60 * 24 * 30));
-    } catch {
-      return null;
-    }
+    const parsed = new Date(lastCommitAt).getTime();
+    if (Number.isNaN(parsed)) return null;
+    return Math.floor((Date.now() - parsed) / (1000 * 60 * 60 * 24 * 30));
   }
 
   private formatNumber(num: number): string {

@@ -138,6 +138,11 @@ export class OsspreyPackagesTabComponent {
     this.filterChange.emit({ search: (event.target as HTMLInputElement).value });
   }
 
+  protected onChipRemove(clear: Partial<OsspreyFilterState>): void {
+    this.filterChange.emit(clear);
+    this.filterForm.patchValue(clear as Parameters<typeof this.filterForm.patchValue>[0]);
+  }
+
   protected toggleSortMenu(): void {
     this.sortMenuOpen.update((open) => !open);
     this.filterPanelOpen.set(false);
