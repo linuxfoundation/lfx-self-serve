@@ -78,6 +78,82 @@ export interface M2MTokenResponse {
 }
 ```
 
+## 🆔 Identity Claims: `username` vs `sub`
+
+Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing the wrong one breaks upstream lookups. They are **not** interchangeable.
+
+### What each one is
+
+| Claim                          | Example          | Shape                                                   | Source claim(s)                                                                                                        |
+| ------------------------------ | ---------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                                             |
+| **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username`, `user.preferred_username` |
+
+- **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it). A few call sites still pass the prefixed `sub` upstream during the migration window — e.g. `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)`.
+- **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim (LFXV2-2122).
+
+### ID token vs access token — where the claims actually live
+
+Auth0 issues **two** JWTs per session, and they carry identity differently. This split is the central complication of the `sub` → `username` migration.
+
+|                | **ID token**                                                                                            | **Access token**                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Lives on       | `req.oidc.user` (typed as `User`)                                                                       | `req.oidc.accessToken.access_token`, decoded via `decodeJwtPayload()` into `LfxAccessTokenClaims` |
+| `sub`          | `user.sub`                                                                                              | `claims.sub`                                                                                      |
+| username claim | `https://sso.linuxfoundation.org/claims/username` (plus `nickname` / `username` / `preferred_username`) | `http://lfx.dev/claims/username` — **different namespace**                                        |
+| Consumed by    | The BFF only (SSR, analytics, persistence, the `getEffective*` helpers)                                 | Forwarded upstream as `Authorization: Bearer` to the Go microservices                             |
+
+Two consequences the migration depends on:
+
+- **`sub` is the only identifier present in both tokens under the same key.** The username claim is namespaced differently in each (`https://sso.linuxfoundation.org/...` in the ID token vs `http://lfx.dev/...` in the access token), so any code bridging the two must map between namespaces — they are not the same key.
+- **The access token is the only _token_ the BFF forwards upstream; the ID token never leaves the BFF.** `req.bearerToken` is the access token (refreshed in `auth.middleware.ts`, forwarded by `microservice-proxy.service.ts`). Upstream authorizes and matches claim-based identity off the access token's `sub` / `http://lfx.dev/claims/username` — never off the ID token, and never off the value `getEffectiveUsername` returns. (Upstream _can_ still see a username outside the JWT when the BFF passes one explicitly in a request param or payload — e.g. the bare `creator_username` persisted on surveys, or a NATS RPC payload — so any LFID handle a Go service needs must be sent on the wire deliberately, not assumed present in the token claims.) So the migration runs on two tracks: (1) **upstream matching** — what the Go services key on, driven by the access token's claims and Auth0 token config, largely outside this repo; and (2) **BFF-side identity** — the `getEffectiveSub` → `getEffectiveUsername` call-site flips and the front-end claim swap, which read the ID token and are fully in this repo.
+
+**Worked example — impersonation bridges the namespaces by hand.** Impersonation discards the target's ID token and rebuilds identity entirely from the exchanged **access token**, copying its `http://lfx.dev/claims/username` into every ID-token username slot so both namespaces resolve to the same handle (`server.ts`):
+
+```ts
+Object.assign(auth.user, {
+  sub: targetClaims.sub,
+  username: targetClaims['http://lfx.dev/claims/username'] || '',
+  'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
+  nickname: targetClaims['http://lfx.dev/claims/username'] || '',
+  // ...
+});
+```
+
+> **`getUsernameFromAuth()` naming.** For Authelia tokens it returns `preferred_username`; for Auth0 tokens it falls back to `getEffectiveUsername(req)` (LFXV2-2122). The name is still easy to misread — prefer `getEffectiveUsername` directly when you need the LFID handle.
+
+### When to use which
+
+| Use case                                                                              | Use          |
+| ------------------------------------------------------------------------------------- | ------------ |
+| Calling an upstream microservice / query-service API that keys on the LF login handle | **username** |
+| Persisting an author/owner/creator (`creator_id`, role grants, changelog viewer)      | **username** |
+| Analytics / observability user identity (DataDog RUM, OpenFeature targeting key)      | **username** |
+| Per-caller cache keys for user-scoped data                                            | **username** |
+| Anything that must match an Auth0 identity record exactly (rare, provider-specific)   | **sub**      |
+
+> **Default to `username`.** `sub` is being phased out of backend identity references — see the migration note below.
+
+### Server-side helpers (impersonation-aware)
+
+Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.ts`, never directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise.
+
+| Helper                      | Returns                                                            | Status                                                                              |
+| --------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                       |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — only for call sites whose upstream still wants the prefixed sub |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                             |
+
+### Migration: `sub` → `username` (LFXV2-1962 / LFXV2-2122)
+
+Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. **LFXV2-2122** (merged in [#912](https://github.com/linuxfoundation/lfx-self-serve/pull/912)) flipped the first wave in this repo:
+
+- **Front-end (ID token):** DataDog RUM `id`, OpenFeature `targetingKey`, and survey `creator_id` now read `https://sso.linuxfoundation.org/claims/username` (OpenFeature no longer falls back to `sub` — existing LaunchDarkly rules keyed on sub values need updating before deploy).
+- **BFF call sites:** `getEffectiveSub` → `getEffectiveUsername` in changelog, copilot, org-identity, org-navigation, org-lens-access, and org-membership cache keys; `project.service.ts` uses `resolveEmailToUsername` (not `resolveEmailToSub`) for permission and user-info lookups against the plain-LFID `b2b_org_settings` index.
+- **`getEffectiveSub`** is annotated `@deprecated` in `auth-helper.ts` and remains only where upstream still requires the prefixed sub (e.g. badges email lookup via auth-service).
+
+When adding new code, use `username` unless the specific upstream handler still requires the prefixed sub — and if so, note why inline.
+
 ## 🏗 Server-Side Implementation
 
 ### Auth Context Injection
