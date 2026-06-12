@@ -3,15 +3,17 @@
 
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import {
-  OsspreyDashboardSortSpec,
   OsspreyFilterState,
   OsspreyListParams,
+  OsspreyLoadResult,
+  OsspreyMetrics,
   OsspreyPackage,
   OspreySortKey,
   OsspreyStatusCounts,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer, debounceTime } from 'rxjs';
+import { switchMap, catchError, of, map, timer, debounceTime, tap } from 'rxjs';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
 import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/ossprey-packages-tab.component';
@@ -20,7 +22,6 @@ import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/
   selector: 'lfx-ossprey-dashboard',
   imports: [OsspreyPackageDrawerComponent, OsspreyPackagesTabComponent],
   templateUrl: './ossprey-dashboard.component.html',
-  styleUrl: './ossprey-dashboard.component.scss',
 })
 export class OsspreyDashboardComponent {
   private readonly osspreyService = inject(OsspreyService);
@@ -44,31 +45,36 @@ export class OsspreyDashboardComponent {
     unstewardedOnly: false,
   });
 
-  protected readonly packages = this.initPackages();
-  protected readonly loading = computed(() => this.packages() === undefined);
+  private readonly loadResult = this.initLoadResult();
+  private readonly metricsResult = this.initMetrics();
 
-  protected readonly coveredCount = computed(() => {
-    return (this.packages() ?? []).filter((p) => p.status === 'active' || p.status === 'assessing').length;
-  });
+  protected readonly tableLoading = signal(true);
+  protected readonly initialLoading = computed(() => this.loadResult() === undefined);
+  protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
+  protected readonly packages = computed<OsspreyPackage[]>(() => this.loadResult()?.packages ?? []);
+  protected readonly totalPackages = computed(() => this.metricsResult()?.totalPackages ?? 0);
 
-  protected readonly coveragePercent = computed(() => {
-    const total = (this.packages() ?? []).length;
-    return total === 0 ? 0 : Math.round((this.coveredCount() / total) * 100);
-  });
+  protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
 
   protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
-    const pkgs = this.packages() ?? [];
+    const total = this.totalPackages();
     return {
-      all: pkgs.length,
-      unassigned: pkgs.filter((p) => p.status === 'unassigned').length,
-      open: pkgs.filter((p) => p.status === 'open').length,
-      assessing: pkgs.filter((p) => p.status === 'assessing').length,
-      active: pkgs.filter((p) => p.status === 'active').length,
-      needs_attention: pkgs.filter((p) => p.status === 'needs_attention').length,
-      escalated: pkgs.filter((p) => p.status === 'escalated').length,
-      blocked: pkgs.filter((p) => p.status === 'blocked').length,
-      inactive: pkgs.filter((p) => p.status === 'inactive').length,
+      all: total,
+      unassigned: total,
+      open: 0,
+      assessing: 0,
+      active: 0,
+      needs_attention: 0,
+      escalated: 0,
+      blocked: 0,
+      inactive: 0,
     };
+  });
+
+  protected readonly selectedPackageStatus = computed(() => {
+    const id = this.selectedPackageId();
+    if (!id) return null;
+    return this.packages().find((p) => p.id === id)?.status ?? null;
   });
 
   protected onPackageClick(id: string): void {
@@ -99,7 +105,7 @@ export class OsspreyDashboardComponent {
   }
 
   protected onToggleAll(payload: { checked: boolean }): void {
-    const pkgs = this.packages() ?? [];
+    const pkgs = this.packages();
     const selected = new Set(this.selectedPackages());
     if (payload.checked) {
       pkgs.forEach((p) => selected.add(p.id));
@@ -133,33 +139,44 @@ export class OsspreyDashboardComponent {
     this.clearSelection();
   }
 
-  private initPackages() {
-    return toSignal<OsspreyPackage[] | undefined>(
+  private initMetrics() {
+    return toSignal<OsspreyMetrics | undefined>(
+      this.osspreyService.getMetrics().pipe(
+        catchError((err) => {
+          console.warn('[OSSPREY] metrics fetch failed — KPI strip will show zeros', err);
+          return of(undefined);
+        })
+      )
+    );
+  }
+
+  private initLoadResult() {
+    return toSignal<OsspreyLoadResult | undefined>(
       toObservable(this.filters).pipe(
+        tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap((f) => {
-          // 'risk' is intentionally absent — no sort params means the server applies its
-          // own composite risk ordering rather than a simple field sort.
-          const sortByMap: Record<string, OsspreyDashboardSortSpec> = {
-            impact: { sortBy: 'impact', sortDir: 'desc' },
-            health: { sortBy: 'health', sortDir: 'asc' },
-            vulns: { sortBy: 'openVulns', sortDir: 'desc' },
-            name: { sortBy: 'name', sortDir: 'asc' },
-          };
-          const sortSpec = sortByMap[f.sort];
+          // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
+          // Divergence is intentional for v1 — pagination will align them in a future iteration.
           const params: OsspreyListParams = {
-            ...(sortSpec ? { sortBy: sortSpec.sortBy, sortDir: sortSpec.sortDir } : {}),
+            pageSize: CDP_CONFIG.MAX_PAGE_SIZE,
+            sortBy: f.sort,
+            search: f.search || undefined,
+            status: f.tab !== 'all' ? f.tab : undefined,
             ecosystem: f.ecosystem || undefined,
             lifecycle: f.lifecycle || undefined,
+            healthBand: f.healthBand || undefined,
+            vulnFilter: f.vulnFilter || undefined,
             busFactor1Only: f.busFactor1Only || undefined,
             staleOnly: f.staleOnly || undefined,
             unstewardedOnly: f.unstewardedOnly || undefined,
           };
           return this.osspreyService.getPackages(params).pipe(
-            map((res) => res.packages ?? []),
-            catchError(() => of([] as OsspreyPackage[]))
+            map((res): OsspreyLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false })),
+            catchError(() => of<OsspreyLoadResult>({ packages: [], total: null, error: true }))
           );
-        })
+        }),
+        tap(() => this.tableLoading.set(false))
       )
     );
   }

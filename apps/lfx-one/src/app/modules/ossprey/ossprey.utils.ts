@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyEcosystem, OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
+import { OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
 
 export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
   const map: Record<OsspreyStatus, TagSeverity> = {
@@ -28,10 +28,11 @@ export function getLifecycleTagSeverity(lifecycle: OsspreyLifecycle | null): Tag
   return map[lifecycle] ?? 'secondary';
 }
 
-export function getHealthTagSeverity(score: number): TagSeverity {
-  if (score >= 75) return 'success';
+export function getHealthTagSeverity(score: number | null): TagSeverity {
+  if (score === null) return 'secondary';
+  if (score >= 70) return 'success';
   if (score >= 50) return 'info';
-  if (score >= 25) return 'warn';
+  if (score >= 30) return 'warn';
   return 'danger';
 }
 
@@ -50,10 +51,12 @@ export function formatStatus(status: string): string {
   return status.replace(/_/g, ' ');
 }
 
-export function getHealthBand(score: number): OsspreyHealthBand {
-  if (score >= 75) return 'healthy';
+// Band thresholds mirror the design spec (design/LFX-OSSPREY-Admin-Dashboard.html):
+// healthy ≥70, fair ≥50, concerning ≥30, otherwise critical.
+function getHealthBand(score: number): OsspreyHealthBand {
+  if (score >= 70) return 'healthy';
   if (score >= 50) return 'fair';
-  if (score >= 25) return 'concerning';
+  if (score >= 30) return 'concerning';
   return 'critical';
 }
 
@@ -65,14 +68,4 @@ export function getHealthLabel(score: number): string {
 export function getLifecycleLabel(lifecycle: OsspreyLifecycle | null): string {
   if (!lifecycle) return 'Unknown';
   return lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1);
-}
-
-export function getEcosystemIconClass(ecosystem: OsspreyEcosystem | string): string {
-  const classes: Record<string, string> = {
-    npm: 'logo-npm',
-    maven: 'logo-maven',
-    pypi: 'logo-pypi',
-    go: 'logo-go',
-  };
-  return classes[ecosystem] ?? 'logo-npm';
 }

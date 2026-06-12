@@ -66,8 +66,6 @@ snowflake.log
 # Superpowers (brainstorming session artifacts)
 .superpowers/
 
-# Playwright MCP
-.playwright-mcp
 
 # Design reference files (Cowork session artifacts, not source code)
 design/

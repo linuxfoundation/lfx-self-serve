@@ -2,23 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { FormBuilder } from '@angular/forms';
 import {
-  OsspreyEcosystem,
-  OsspreyFilterChip,
-  OsspreyFilterState,
-  OsspreyHealthBand,
-  OsspreyLifecycle,
-  OsspreyPackage,
-  OsspreyStatusCounts,
-} from '@lfx-one/shared/interfaces';
-import { OsspreyService } from '@shared/services/ossprey.service';
+  OSSPREY_ECOSYSTEM_OPTIONS,
+  OSSPREY_HEALTH_OPTIONS,
+  OSSPREY_LIFECYCLE_OPTIONS,
+  OSSPREY_SORT_OPTIONS,
+  OSSPREY_STATUS_PILLS,
+  OSSPREY_VULN_OPTIONS,
+} from '@lfx-one/shared/constants';
+import { OsspreyFilterChip, OsspreyFilterState, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
-  getEcosystemIconClass,
+  getHealthLabel,
   getHealthTagSeverity,
   getLifecycleLabel,
   getLifecycleTagSeverity,
@@ -27,15 +29,15 @@ import {
 
 @Component({
   selector: 'lfx-ossprey-packages-tab',
-  imports: [ButtonComponent, TableComponent, TagComponent],
+  imports: [ButtonComponent, CheckboxComponent, SelectComponent, TableComponent, TagComponent],
   templateUrl: './ossprey-packages-tab.component.html',
-  styleUrl: './ossprey-packages-tab.component.scss',
 })
 export class OsspreyPackagesTabComponent {
-  private readonly osspreyService = inject(OsspreyService);
+  private readonly formBuilder = inject(FormBuilder);
 
   public readonly packages = input<OsspreyPackage[]>([]);
   public readonly filteredPackages = input<OsspreyPackage[]>([]);
+  public readonly loading = input<boolean>(false);
   public readonly statusCounts = input<OsspreyStatusCounts>({
     all: 0,
     unassigned: 0,
@@ -71,14 +73,25 @@ export class OsspreyPackagesTabComponent {
   protected readonly sortMenuOpen = signal(false);
   protected readonly filterPanelOpen = signal(false);
 
-  // Draft state — synced from filters() when panel opens, committed on Apply
-  protected readonly draftEcosystem = signal<OsspreyEcosystem | ''>('');
-  protected readonly draftLifecycle = signal<OsspreyLifecycle | ''>('');
-  protected readonly draftHealthBand = signal<OsspreyHealthBand | ''>('');
-  protected readonly draftVulnFilter = signal<'critical' | 'high' | 'any' | ''>('');
-  protected readonly draftBusFactor1Only = signal(false);
-  protected readonly draftStaleOnly = signal(false);
-  protected readonly draftUnstewardedOnly = signal(false);
+  protected readonly statusPills = OSSPREY_STATUS_PILLS;
+  protected readonly sortOptions = OSSPREY_SORT_OPTIONS;
+  protected readonly ecosystemOptions = OSSPREY_ECOSYSTEM_OPTIONS;
+  protected readonly lifecycleOptions = OSSPREY_LIFECYCLE_OPTIONS;
+  protected readonly healthOptions = OSSPREY_HEALTH_OPTIONS;
+  protected readonly vulnOptions = OSSPREY_VULN_OPTIONS;
+
+  // Draft filter state — synced from filters() when the panel opens, committed on Apply.
+  protected readonly filterForm = this.formBuilder.nonNullable.group({
+    ecosystem: '',
+    lifecycle: '',
+    healthBand: '',
+    vulnFilter: '',
+    busFactor1Only: false,
+    staleOnly: false,
+    unstewardedOnly: false,
+  });
+
+  protected readonly sortLabel = computed(() => this.sortOptions.find((option) => option.value === this.filters().sort)?.label ?? 'Risk priority');
 
   protected readonly activeFilterChips = computed<OsspreyFilterChip[]>(() => {
     const f = this.filters();
@@ -104,8 +117,8 @@ export class OsspreyPackagesTabComponent {
   protected readonly getStatusTagSeverity = getStatusTagSeverity;
   protected readonly getLifecycleTagSeverity = getLifecycleTagSeverity;
   protected readonly getHealthTagSeverity = getHealthTagSeverity;
+  protected readonly getHealthLabel = getHealthLabel;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
-  protected readonly getEcosystemIconClass = getEcosystemIconClass;
 
   protected isPackageSelected(id: string): boolean {
     return this.selectedPackages().has(id);
@@ -117,7 +130,7 @@ export class OsspreyPackagesTabComponent {
 
   protected getStewardNames(stewardIds: string[]): string {
     if (stewardIds.length === 0) return '—';
-    if (stewardIds.length === 1) return this.osspreyService.getStewardName(stewardIds[0]);
+    if (stewardIds.length === 1) return stewardIds[0];
     return `${stewardIds.length} stewards`;
   }
 
@@ -125,76 +138,45 @@ export class OsspreyPackagesTabComponent {
     this.filterChange.emit({ search: (event.target as HTMLInputElement).value });
   }
 
-  protected onEcosystemChange(event: Event): void {
-    this.draftEcosystem.set((event.target as HTMLSelectElement).value as OsspreyEcosystem | '');
-  }
-
-  protected onLifecycleChange(event: Event): void {
-    this.draftLifecycle.set((event.target as HTMLSelectElement).value as OsspreyLifecycle | '');
-  }
-
-  protected onHealthBandChange(event: Event): void {
-    this.draftHealthBand.set((event.target as HTMLSelectElement).value as OsspreyHealthBand | '');
-  }
-
-  protected onVulnFilterChange(event: Event): void {
-    this.draftVulnFilter.set((event.target as HTMLSelectElement).value as 'critical' | 'high' | 'any' | '');
-  }
-
-  protected onBusFactorToggle(event: Event): void {
-    this.draftBusFactor1Only.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onStaleToggle(event: Event): void {
-    this.draftStaleOnly.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onUnstewardedToggle(event: Event): void {
-    this.draftUnstewardedOnly.set((event.target as HTMLInputElement).checked);
-  }
-
   protected toggleSortMenu(): void {
-    this.sortMenuOpen.update((v) => !v);
+    this.sortMenuOpen.update((open) => !open);
     this.filterPanelOpen.set(false);
   }
 
   protected toggleFilterPanel(): void {
     const willOpen = !this.filterPanelOpen();
-    this.filterPanelOpen.update((v) => !v);
+    this.filterPanelOpen.update((open) => !open);
     this.sortMenuOpen.set(false);
     if (willOpen) {
       const f = this.filters();
-      this.draftEcosystem.set(f.ecosystem);
-      this.draftLifecycle.set(f.lifecycle);
-      this.draftHealthBand.set(f.healthBand);
-      this.draftVulnFilter.set(f.vulnFilter);
-      this.draftBusFactor1Only.set(f.busFactor1Only);
-      this.draftStaleOnly.set(f.staleOnly);
-      this.draftUnstewardedOnly.set(f.unstewardedOnly);
+      this.filterForm.setValue({
+        ecosystem: f.ecosystem,
+        lifecycle: f.lifecycle,
+        healthBand: f.healthBand,
+        vulnFilter: f.vulnFilter,
+        busFactor1Only: f.busFactor1Only,
+        staleOnly: f.staleOnly,
+        unstewardedOnly: f.unstewardedOnly,
+      });
     }
   }
 
   protected applyFilters(): void {
+    const value = this.filterForm.getRawValue();
     this.filterChange.emit({
-      ecosystem: this.draftEcosystem(),
-      lifecycle: this.draftLifecycle(),
-      healthBand: this.draftHealthBand(),
-      vulnFilter: this.draftVulnFilter(),
-      busFactor1Only: this.draftBusFactor1Only(),
-      staleOnly: this.draftStaleOnly(),
-      unstewardedOnly: this.draftUnstewardedOnly(),
+      ecosystem: value.ecosystem as OsspreyFilterState['ecosystem'],
+      lifecycle: value.lifecycle as OsspreyFilterState['lifecycle'],
+      healthBand: value.healthBand as OsspreyFilterState['healthBand'],
+      vulnFilter: value.vulnFilter as OsspreyFilterState['vulnFilter'],
+      busFactor1Only: value.busFactor1Only,
+      staleOnly: value.staleOnly,
+      unstewardedOnly: value.unstewardedOnly,
     });
     this.filterPanelOpen.set(false);
   }
 
   protected resetAllFilters(): void {
-    this.draftEcosystem.set('');
-    this.draftLifecycle.set('');
-    this.draftHealthBand.set('');
-    this.draftVulnFilter.set('');
-    this.draftBusFactor1Only.set(false);
-    this.draftStaleOnly.set(false);
-    this.draftUnstewardedOnly.set(false);
+    this.filterForm.reset();
     this.clearFilters.emit();
     this.filterPanelOpen.set(false);
   }

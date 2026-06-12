@@ -242,6 +242,8 @@ app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
+// OSSPREY: LD-flag-controlled rollout for all authenticated LFX users (osspreyEnabledGuard).
+// Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
 app.use('/api/ossprey', osspreyRouter);
 
 app.use('/api/*', apiErrorHandler);

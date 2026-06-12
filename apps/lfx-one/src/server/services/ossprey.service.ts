@@ -6,9 +6,11 @@ import {
   CdpAdvisory,
   CdpPackageDetail,
   CdpPackagesListResponse,
+  CdpPackagesMetricsResponse,
   CdpStewardshipSummary,
   OsspreyAdvisory,
   OsspreyListParams,
+  OsspreyMetrics,
   OsspreyPackage,
   OsspreyPackagesResponse,
   OspreySeverity,
@@ -49,8 +51,19 @@ export class OsspreyServerService {
       if (params.busFactor1Only) url.searchParams.set('busFactor1Only', 'true');
       if (params.staleOnly) url.searchParams.set('staleOnly', 'true');
       if (params.unstewardedOnly) url.searchParams.set('unstewardedOnly', 'true');
-      if (params.sortBy) url.searchParams.set('sortBy', params.sortBy);
-      if (params.sortDir) url.searchParams.set('sortDir', params.sortDir);
+      if (params.search) url.searchParams.set('name', params.search);
+      if (params.status && params.status !== 'all') url.searchParams.set('status', params.status);
+      if (params.healthBand) url.searchParams.set('healthBand', params.healthBand);
+      if (params.vulnFilter) url.searchParams.set('vulnSeverity', params.vulnFilter);
+      const cdpSortMap: Record<string, string> = { impact: 'impact', health: 'health', vulns: 'openVulns', name: 'name', risk: 'risk' };
+      const cdpSortDirMap: Record<string, string> = { impact: 'desc', health: 'asc', vulns: 'desc', name: 'asc', risk: 'desc' };
+      if (params.sortBy) {
+        const cdpSort = cdpSortMap[params.sortBy];
+        if (cdpSort) {
+          url.searchParams.set('sortBy', cdpSort);
+          url.searchParams.set('sortDir', cdpSortDirMap[params.sortBy] ?? 'asc');
+        }
+      }
 
       logger.debug(req, 'get_ossprey_packages', 'Fetching packages from CDP', {
         url: url.toString(),
@@ -82,15 +95,65 @@ export class OsspreyServerService {
         total: data.total,
       });
 
-      return {
-        packages: (data.packages ?? []).map((item) => this.mapListItem(item)),
-        total: data.total,
-      };
+      const packages = (data.packages ?? []).map((item) => this.mapListItem(item));
+
+      return { packages, total: data.total };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
 
       throw new MicroserviceError('Failed to fetch OSSPREY packages', 502, 'OSSPREY_FETCH_ERROR', {
         operation: 'get_ossprey_packages',
+        service: 'ossprey_service',
+      });
+    }
+  }
+
+  public async getMetrics(req: Request): Promise<OsspreyMetrics> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_ossprey_metrics',
+          service: 'ossprey_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_METRICS}`);
+
+      logger.debug(req, 'get_ossprey_metrics', 'Fetching package metrics from CDP', {
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP metrics request failed: ${response.statusText}`, response.status, 'CDP_METRICS_ERROR', {
+          operation: 'get_ossprey_metrics',
+          service: 'ossprey_service',
+          errorBody: errorText,
+        });
+      }
+
+      const data = (await response.json()) as CdpPackagesMetricsResponse;
+
+      return {
+        totalPackages: data.totalPackages ?? 0,
+        criticalPackages: data.criticalPackages ?? 0,
+      };
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch OSSPREY metrics', 502, 'OSSPREY_METRICS_ERROR', {
+        operation: 'get_ossprey_metrics',
         service: 'ossprey_service',
       });
     }
@@ -175,19 +238,22 @@ export class OsspreyServerService {
       stewardIds: [],
       lastActivityLabel: '—',
       lastActivityTime: '',
-      weeklyDownloads: null,
-      dependentCount: null,
-      directDependentCount: null,
+      downloadsLastMonth: null,
+      dependentPackages: null,
+      dependentRepos: null,
       scoreCardScore: null,
       lastRelease: null,
       lastCommit: null,
       repoUrl: null,
+      mappingConfidence: null,
       supplyChainMapping: null,
       provenance: null,
+      pvrEnabled: null,
+      criticalVulnFlag: null,
       hasSecurityMd: null,
       ecosystemReach: null,
       contactGroup: null,
-      healthBreakdown: [],
+      healthBreakdown: ['—', '—', '—'],
       advisories: [],
       history: [],
       assessment: null,
@@ -199,16 +265,22 @@ export class OsspreyServerService {
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
     const hs = detail.general?.healthScore;
-    const healthBreakdown: string[] = [];
-    if (hs) {
-      if (hs.maintainerHealth != null) healthBreakdown.push(`${Math.round(hs.maintainerHealth)} / 40`);
-      if (hs.securitySupplyChain != null) healthBreakdown.push(`${Math.round(hs.securitySupplyChain)} / 35`);
-      if (hs.developmentActivity != null) healthBreakdown.push(`${Math.round(hs.developmentActivity)} / 25`);
-    }
+    // Fixed positional slots — the drawer labels them Maintainer health /
+    // Security & supply chain / Development activity, so missing scores keep
+    // their position instead of shifting the rest.
+    const healthBreakdown: string[] = hs
+      ? [
+          hs.maintainerHealth != null ? `${Math.round(hs.maintainerHealth)} / 40` : '—',
+          hs.securitySupplyChain != null ? `${Math.round(hs.securitySupplyChain)} / 35` : '—',
+          hs.developmentActivity != null ? `${Math.round(hs.developmentActivity)} / 25` : '—',
+        ]
+      : ['—', '—', '—'];
 
     const repo = detail.provenance?.repositoryMapping;
     const impact = detail.general?.impact;
     const risk = detail.general?.riskSignals;
+    const cvd = detail.security?.cvd;
+    const integrity = detail.provenance?.supplyChainIntegrity;
 
     return {
       id: detail.purl,
@@ -226,15 +298,18 @@ export class OsspreyServerService {
       stewardIds: [],
       lastActivityLabel: '—',
       lastActivityTime: '',
-      weeklyDownloads: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
-      dependentCount: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
-      directDependentCount: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
+      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
+      dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,
       lastRelease: this.formatDate(risk?.lastRelease),
       lastCommit: this.formatDate(repo?.lastCommitAt),
       repoUrl: this.stripProtocol(repo?.declaredRepo),
-      supplyChainMapping: null,
-      provenance: null,
+      mappingConfidence: repo?.mappingConfidence ?? null,
+      supplyChainMapping: this.mapConfidenceBand(repo?.mappingConfidence),
+      provenance: this.mapProvenance(integrity),
+      pvrEnabled: cvd?.isPvrEnabled ?? null,
+      criticalVulnFlag: cvd?.criticalVulnerabilityFlag ?? null,
       hasSecurityMd: risk?.hasSecurityFile ?? null,
       ecosystemReach: impact?.transitiveReach ?? null,
       contactGroup: null,
@@ -243,6 +318,22 @@ export class OsspreyServerService {
       history: [],
       assessment: null,
     };
+  }
+
+  private mapConfidenceBand(confidence?: number | null): OsspreyPackage['supplyChainMapping'] {
+    if (confidence == null) return null;
+    if (confidence >= 0.9) return 'High';
+    if (confidence >= 0.7) return 'Medium';
+    return 'Low';
+  }
+
+  private mapProvenance(integrity?: { buildProvenance: unknown | null; signedReleases: unknown | null } | null): OsspreyPackage['provenance'] {
+    if (!integrity) return null;
+    const hasBuild = Boolean(integrity.buildProvenance);
+    const hasSigned = Boolean(integrity.signedReleases);
+    if (hasBuild && hasSigned) return 'Full';
+    if (hasBuild || hasSigned) return 'Partial';
+    return 'None';
   }
 
   private worstSeverityFromCounts(vulns: { low: number; medium: number; high: number; critical: number } | null): OspreySeverity | null {
