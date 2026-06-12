@@ -84,10 +84,10 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 
 ### What each one is
 
-| Claim                          | Example          | Shape                                                   | Source claim(s)                                                                             |
-| ------------------------------ | ---------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                  |
-| **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username` |
+| Claim                          | Example          | Shape                                                   | Source claim(s)                                                                                                        |
+| ------------------------------ | ---------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                                             |
+| **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username`, `user.preferred_username` |
 
 - **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it). A few call sites still pass the prefixed `sub` upstream during the migration window — e.g. `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)`.
 - **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim (LFXV2-2122).
