@@ -52,8 +52,20 @@
         <!-- Enable Recording -->
         <lfx-feature-toggle [feature]="recordingFeature" [form]="form()"></lfx-feature-toggle>
 
-        <!-- Generate Transcripts -->
-        <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+        <!-- AI Meeting Summary (with nested settings) -->
+        <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
+          @if (form().get('zoom_ai_enabled')?.value) {
+            <div class="mt-4 pt-4 border-t border-gray-200">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label for="require-ai-approval" class="text-neutral-950">Require AI Summary Approval</label>
+                  <p class="text-sm text-gray-500">AI summary must be reviewed before sharing</p>
+                </div>
+                <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+              </div>
+            </div>
+          }
+        </lfx-feature-toggle>
 
         <!-- Recording & Summary Access (shown when recording OR AI summary is enabled) -->
         @if (form().get('recording_enabled')?.value || form().get('zoom_ai_enabled')?.value) {
@@ -76,23 +88,11 @@
 
     <!-- Right Column - Remaining Features -->
     <div class="flex flex-col gap-3">
+      <!-- Generate Transcripts -->
+      <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+
       <!-- YouTube Auto-upload -->
       <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()"></lfx-feature-toggle>
-
-      <!-- AI Meeting Summary (with nested settings) -->
-      <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
-        @if (form().get('zoom_ai_enabled')?.value) {
-          <div class="mt-4 pt-4 border-t border-gray-200">
-            <div class="flex items-center justify-between">
-              <div>
-                <label for="require-ai-approval" class="text-neutral-950">Require AI Summary Approval</label>
-                <p class="text-sm text-gray-500">AI summary must be reviewed before sharing</p>
-              </div>
-              <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
-            </div>
-          </div>
-        }
-      </lfx-feature-toggle>
 
       <!-- Show in Public Calendar -->
       <lfx-feature-toggle [feature]="calendarFeature" [form]="form()"></lfx-feature-toggle>
