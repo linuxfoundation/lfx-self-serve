@@ -14,6 +14,7 @@ import {
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
   ORG_LENS_ENABLED_FLAG,
+  OSSPREY_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -56,6 +57,8 @@ export class MainLayoutComponent {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate; collapses Crowdfunding sub-nav to an external link when off. */
   private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
+  /** Dark-launch gate for the OSSPREY admin dashboard; hides the Security nav section when off. */
+  private readonly isOsspreyEnabled = this.featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -85,14 +88,19 @@ export class MainLayoutComponent {
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.orgLensItems : this.meLensItems();
+        return this.isOrgLensEnabled() ? this.orgLensItems : this.visibleMeLensItems();
       default:
-        return this.meLensItems();
+        return this.visibleMeLensItems();
     }
   });
 
+  // Me Lens nav with feature-flagged sections stripped (Security/OSSPREY is dark-launched).
+  private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
+    this.isOsspreyEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
+  );
+
   // --- Me Lens Items ---
-  // Computed so the Crowdfunding nav entry reacts to the feature flag in real time.
+  // Computed so both Crowdfunding and Security/OSSPREY nav entries react to their feature flags in real time.
   private readonly meLensItems = computed((): SidebarMenuItem[] => {
     const crowdfundingItem: SidebarMenuItem = this.isCrowdfundingEnabled()
       ? {
@@ -165,6 +173,18 @@ export class MainLayoutComponent {
             label: 'My ' + DOCUMENT_LABEL.plural,
             icon: 'fa-light fa-folder-open',
             routerLink: '/documents',
+          },
+        ],
+      },
+      {
+        label: 'Security',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'OSSPREY Program',
+            icon: 'fa-light fa-shield-halved',
+            routerLink: '/ossprey',
           },
         ],
       },

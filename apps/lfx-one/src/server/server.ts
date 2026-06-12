@@ -54,6 +54,7 @@ import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
+import osspreyRouter from './routes/ossprey.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -245,6 +246,9 @@ app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
+// OSSPREY: LD-flag-controlled rollout for all authenticated LFX users (osspreyEnabledGuard).
+// Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
+app.use('/api/ossprey', osspreyRouter);
 
 app.use('/api/*', apiErrorHandler);
 
