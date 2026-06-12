@@ -7,6 +7,7 @@ import { authGuard } from './shared/guards/auth.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { crowdfundingEnabledGuard } from './shared/guards/crowdfunding-enabled.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -137,7 +138,7 @@ export const routes: Routes = [
               description: "Open-source contributions from your organization's contributors.",
               icon: 'fa-light fa-code',
             },
-            loadComponent: loadOrgPlaceholderPage,
+            loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
           },
           {
             path: 'events',
@@ -335,6 +336,12 @@ export const routes: Routes = [
         path: 'events',
         canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
+      },
+      {
+        path: 'crowdfunding',
+        data: { lens: 'me' },
+        canMatch: [crowdfundingEnabledGuard],
+        loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
       },
       {
         path: 'me/events',

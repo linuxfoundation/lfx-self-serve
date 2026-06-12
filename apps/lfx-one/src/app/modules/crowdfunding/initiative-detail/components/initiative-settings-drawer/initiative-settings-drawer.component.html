@@ -1,0 +1,321 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[600px] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="initiative-settings-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-0.5 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="initiative-settings-drawer-title">Initiative Settings</h2>
+        <p class="text-sm text-gray-500">{{ initiative().name }}</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="initiative-settings-drawer-close">
+        <i class="fa-light fa-xmark text-xl pointer-events-none"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 pb-2 overflow-x-hidden" data-testid="initiative-settings-drawer-content">
+    <!-- Tab bar -->
+    <div class="flex items-center border-b border-gray-200 -mx-6 px-6 -mt-2" data-testid="initiative-settings-tabs">
+      @for (tab of settingsTabs; track tab.value) {
+        <button
+          class="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
+          [class]="activeSettingsTab() === tab.value ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'"
+          (click)="activeSettingsTab.set(tab.value)"
+          [attr.data-testid]="'settings-tab-' + tab.value">
+          {{ tab.label }}
+          @if (activeSettingsTab() === tab.value) {
+            <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+          }
+        </button>
+      }
+    </div>
+
+    <!-- Initiative details tab -->
+    @if (activeSettingsTab() === 'details') {
+      <div class="flex flex-col gap-5" data-testid="settings-details-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">General Fund Details</h3>
+
+        <!-- Name -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-name">
+          <div class="flex items-center justify-between">
+            <label for="settings-name" class="text-sm font-medium text-gray-700">
+              Initiative name <span class="text-red-500" aria-hidden="true">*</span>
+            </label>
+            <span class="text-xs text-gray-400">{{ nameLength() }}/100</span>
+          </div>
+          <lfx-input-text [form]="form" control="name" id="settings-name" placeholder="Enter initiative name" />
+        </div>
+
+        <!-- Elevator pitch -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-description">
+          <div class="flex items-center justify-between">
+            <label for="settings-description" class="text-sm font-medium text-gray-700">
+              Elevator Pitch <span class="text-red-500" aria-hidden="true">*</span>
+            </label>
+            <span class="text-xs text-gray-400">{{ descriptionLength() }}/500</span>
+          </div>
+          <lfx-textarea
+            [form]="form"
+            control="description"
+            id="settings-description"
+            styleClass="w-full"
+            [rows]="4"
+            [maxlength]="500"
+            placeholder="Describe your initiative in a few sentences…" />
+        </div>
+
+        <!-- Topic / Category tags -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-tags">
+          <label for="settings-topics" class="text-sm font-medium text-gray-700">
+            Topic / Category <span class="text-red-500" aria-hidden="true">*</span>
+          </label>
+          <lfx-multi-select
+            [form]="form"
+            control="topics"
+            [options]="topicOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select topics"
+            filterPlaceHolder="Search topics"
+            data-testid="settings-topics-select" />
+        </div>
+
+        <!-- Website URL -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-website">
+          <label for="settings-website" class="text-sm font-medium text-gray-700">Website URL</label>
+          <lfx-input-text [form]="form" control="websiteUrl" id="settings-website" type="url" placeholder="https://example.org" />
+        </div>
+      </div>
+    }
+
+    <!-- Branding tab -->
+    @else if (activeSettingsTab() === 'branding') {
+      <div class="flex flex-col gap-5" data-testid="settings-branding-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Branding</h3>
+
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-logo">
+          <label class="text-sm font-medium text-gray-700"> Initiative logo <span class="text-red-500" aria-hidden="true">*</span> </label>
+
+          <!-- Uploading state -->
+          @if (uploadingLogo()) {
+            <div class="border border-dashed border-gray-300 rounded-xl px-5 py-6 flex items-center gap-5" data-testid="settings-logo-uploading">
+              <div class="w-12 h-12 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center shrink-0 overflow-hidden relative">
+                @if (logoUrl()) {
+                  <img [src]="logoUrl()" alt="Logo preview" class="w-full h-full object-cover opacity-50" />
+                } @else {
+                  <i class="fa-light fa-image text-gray-400 text-xl" aria-hidden="true"></i>
+                }
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <i class="fa-solid fa-spinner-third text-gray-500 animate-spin" aria-hidden="true"></i>
+                </div>
+              </div>
+              <span class="text-sm text-gray-500">Uploading…</span>
+            </div>
+          }
+
+          <!-- Has logo state -->
+          @else if (logoUrl()) {
+            <div class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50" data-testid="settings-logo-preview-container">
+              <div
+                class="w-16 h-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0"
+                data-testid="settings-logo-preview"
+                aria-label="Current initiative logo">
+                <img [src]="logoUrl()" [alt]="initiative().name + ' logo'" class="w-full h-full object-contain p-1" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <p class="text-xs text-gray-500">PNG, JPG, GIF, or WebP · Max 2 MB</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <lfx-button
+                    label="Remove"
+                    icon="fa-regular fa-trash-can"
+                    severity="secondary"
+                    size="small"
+                    (onClick)="removeLogo()"
+                    data-testid="settings-logo-remove-btn" />
+                  <lfx-button
+                    label="Choose different"
+                    icon="fa-solid fa-upload"
+                    severity="secondary"
+                    size="small"
+                    (onClick)="triggerLogoUpload()"
+                    data-testid="settings-logo-upload-btn" />
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Empty state -->
+          @else {
+            <div
+              class="border border-dashed border-gray-300 rounded-xl px-5 py-6 flex items-center justify-center gap-5 cursor-pointer hover:bg-gray-50 transition-colors"
+              (click)="triggerLogoUpload()"
+              role="button"
+              tabindex="0"
+              (keydown.enter)="$event.preventDefault(); triggerLogoUpload()"
+              (keydown.space)="$event.preventDefault(); triggerLogoUpload()"
+              data-testid="settings-logo-empty">
+              <i class="fa-solid fa-image text-gray-200 text-4xl shrink-0" aria-hidden="true"></i>
+              <div class="flex flex-col gap-2">
+                <p class="text-sm text-gray-900 leading-5"><span class="text-blue-600">Click to upload</span></p>
+                <p class="text-xs text-gray-400 leading-4">PNG, JPG, GIF, or WebP · Max 2 MB · 600×600px</p>
+              </div>
+            </div>
+          }
+
+          @if (logoUploadError()) {
+            <p class="text-xs text-red-500" role="alert" data-testid="settings-logo-error">{{ logoUploadError() }}</p>
+          }
+
+          <input
+            #logoFileInput
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            class="hidden"
+            aria-hidden="true"
+            (change)="onLogoFileSelected($event)"
+            data-testid="settings-logo-file-input" />
+        </div>
+      </div>
+    }
+
+    <!-- Beneficiaries tab -->
+    @else if (activeSettingsTab() === 'beneficiaries') {
+      <div class="flex flex-col gap-5" data-testid="settings-beneficiaries-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Beneficiaries</h3>
+
+        <p class="text-sm text-gray-500">You will be automatically added as a beneficiary. Add others who can submit expenses below.</p>
+
+        <div class="flex flex-col gap-3" data-testid="settings-beneficiaries-list">
+          @for (group of beneficiaryGroups(); track $index) {
+            <div class="flex items-center gap-2" [attr.data-testid]="'settings-beneficiary-row-' + $index">
+              <lfx-input-text [form]="group" control="name" placeholder="Full name" class="flex-1" [dataTest]="'beneficiary-name-' + $index" />
+              <lfx-input-text [form]="group" control="email" type="email" placeholder="Email" class="flex-[2]" [dataTest]="'beneficiary-email-' + $index" />
+              <button
+                type="button"
+                (click)="removeBeneficiary($index)"
+                class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                [attr.aria-label]="'Remove beneficiary ' + ($index + 1)">
+                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
+        </div>
+
+        <lfx-button
+          label="Add beneficiary"
+          icon="fa-solid fa-plus"
+          severity="secondary"
+          size="small"
+          styleClass="self-start"
+          (onClick)="addBeneficiary()"
+          data-testid="settings-add-beneficiary-btn" />
+      </div>
+    }
+
+    <!-- Funding tab -->
+    @else if (activeSettingsTab() === 'funding') {
+      <div class="flex flex-col gap-5" data-testid="settings-funding-tab">
+        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Funding</h3>
+
+        <p class="text-sm text-gray-500">
+          Provide your initial estimated general fund funding goal. You can update your goal at any time and continue raising funds after your goal is met.
+        </p>
+
+        <!-- Funding Goal -->
+        <div class="flex flex-col gap-1.5 max-w-[240px]" data-testid="settings-field-goal">
+          <label for="settings-goal" class="text-sm font-medium text-gray-700"> Funding Goal <span class="text-red-500" aria-hidden="true">*</span> </label>
+          <lfx-input-text [form]="form" control="goal" id="settings-goal" type="number" placeholder="0" icon="fa-light fa-dollar-sign" />
+        </div>
+
+        <!-- Distribution header -->
+        <div class="flex flex-col gap-1" data-testid="settings-distribution-header">
+          <p class="text-sm font-medium text-gray-700">Fund Distribution</p>
+          <p class="text-xs text-gray-500 leading-4">Allocate your funds across categories. Enabled categories must have a percentage greater than zero.</p>
+        </div>
+
+        <!-- Progress bar -->
+        @if (hasEnabledCategories()) {
+          <div class="flex flex-col gap-1" data-testid="settings-distribution-progress">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all"
+                  [class]="totalAllocated() > 100 ? 'bg-red-500' : 'bg-amber-500'"
+                  [style.width.%]="totalAllocated() > 100 ? 100 : totalAllocated()"></div>
+              </div>
+              <span class="text-xs font-semibold text-gray-900 shrink-0">{{ totalAllocated() }}%</span>
+            </div>
+            <p class="text-xs leading-4" [class]="totalAllocated() > 100 ? 'text-red-600' : 'text-amber-600'" data-testid="settings-distribution-remaining">
+              @if (remaining() >= 0) {
+                {{ remaining() }}% remaining
+              } @else {
+                {{ -remaining() }}% over budget
+              }
+            </p>
+          </div>
+        }
+
+        <!-- Distribution categories -->
+        <div class="flex flex-col" data-testid="settings-distribution-categories">
+          @for (item of distributionItems(); track item.category; let i = $index; let last = $last) {
+            <div
+              class="flex items-center gap-4 py-4"
+              [class.border-b]="!last"
+              [class.border-gray-200]="!last"
+              [attr.data-testid]="'settings-category-' + item.category">
+              <p-toggleSwitch [ngModel]="item.enabled" (onChange)="toggleCategory(i, $event.checked)" [ariaLabel]="'Enable ' + item.label + ' category'" />
+              <div class="flex-1 flex flex-col gap-0.5 min-w-0">
+                <p class="text-sm text-gray-900">{{ item.label }}</p>
+                <p class="text-xs text-gray-500 leading-4">{{ item.description }}</p>
+              </div>
+              @if (item.enabled) {
+                <div class="flex items-center gap-1.5 shrink-0" [attr.data-testid]="'settings-category-enabled-' + item.category">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    [value]="item.percentage > 0 ? item.percentage : ''"
+                    placeholder="0"
+                    (input)="updatePercentage(i, $event)"
+                    class="w-14 px-2 py-1.5 text-sm text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    [attr.aria-label]="item.label + ' percentage'"
+                    [attr.data-testid]="'settings-category-pct-' + item.category" />
+                  <span class="text-xs text-gray-500">%</span>
+                  <span class="text-sm text-gray-900 w-10 text-right" [attr.data-testid]="'settings-category-amount-' + item.category">
+                    {{ distributionAmounts()[i] }}
+                  </span>
+                </div>
+              } @else {
+                <div class="w-32 shrink-0"></div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Footer actions -->
+    <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
+      <lfx-button label="Cancel" severity="secondary" [disabled]="saving()" (onClick)="onClose()" data-testid="initiative-settings-cancel-btn" />
+      <lfx-button
+        label="Save changes"
+        severity="primary"
+        [loading]="saving()"
+        [disabled]="saving()"
+        (onClick)="onSave()"
+        data-testid="initiative-settings-save-btn" />
+    </div>
+  </div>
+</p-drawer>

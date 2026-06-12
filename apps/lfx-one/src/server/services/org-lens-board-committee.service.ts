@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   BoardSeat,
   CommitteeSeat,
@@ -21,9 +22,6 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
-
-/** committee-service `committee_category` value that routes a seat to the Board section (FR-003). */
-const COMMITTEE_CATEGORY_BOARD = 'Board';
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
@@ -54,8 +52,8 @@ export class OrgLensBoardCommitteeService {
       return { accountId, foundationId, boardSeats: [], committeeSeats: [] };
     }
     const seats = await this.fetchOrgSeats(req, accountId, { projectUids });
-    const boardSeats = seats.filter((s) => s.committee_category === COMMITTEE_CATEGORY_BOARD).map((s) => this.toBoardSeat(s));
-    const committeeSeats = seats.filter((s) => s.committee_category !== COMMITTEE_CATEGORY_BOARD).map((s) => this.toCommitteeSeat(s));
+    const boardSeats = seats.filter((s) => isBoardCategory(s.committee_category)).map((s) => this.toBoardSeat(s));
+    const committeeSeats = seats.filter((s) => !isBoardCategory(s.committee_category)).map((s) => this.toCommitteeSeat(s));
     return { accountId, foundationId, boardSeats, committeeSeats };
   }
 
@@ -147,13 +145,18 @@ export class OrgLensBoardCommitteeService {
         email: body.email,
       }
     );
-    const seat = upstream.committee_category === COMMITTEE_CATEGORY_BOARD ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
+    const seat = isBoardCategory(upstream.committee_category) ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
       seat_id: seat.seatId,
       committee_category: upstream.committee_category,
     });
     return { accountId, foundationId, seat };
+  }
+
+  /** Spec 027: org-wide seat drain (no project filter) for the People → Committee tab. Reuses the private drain + its 200-page fail-closed safety cap so the org-wide roster never duplicates the pagination logic. */
+  public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+    return this.fetchOrgSeats(req, orgUid);
   }
 
   /** Resolve the membership's project family (foundation root + descendants) for seat scoping (spec 026 T007a): SFID → slug (getFoundationSlug) → uid (getProjectIdBySlug) → family (getFoundationProjectUids); `undefined` when unresolvable so callers return an EMPTY list, never the org-wide roster. */
@@ -186,8 +189,8 @@ export class OrgLensBoardCommitteeService {
    * Proxy the org's committee seats from committee-service (user token forwarded; Heimdall gates `b2b_org#auditor`).
    * The board/committee tabs always pass a resolved `projectUids` family (root + descendants, spec 026 T014) and
    * drain every page (fail-closed on the safety cap so a truncated roster never ships). The org-wide call (no
-   * `projectUids`) is used ONLY by the Reassign people picker (`getOrgEmployees`), which passes a small `maxPages`
-   * bound + `allowTruncation` so the typeahead never drains the full cross-foundation roster.
+   * `projectUids`) is used by the Reassign people picker (`getOrgEmployees`), and — spec 027 — by the public
+   * `fetchAllOrgSeats` wrapper for the org-wide People → Committee tab read.
    */
   private async fetchOrgSeats(
     req: Request,

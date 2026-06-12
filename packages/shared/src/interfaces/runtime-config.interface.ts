@@ -38,4 +38,10 @@ export interface RuntimeConfig {
    * `intercom_user_jwt`.
    */
   intercomAppId: string;
+
+  /**
+   * Stripe publishable key for client-side Stripe Elements integration.
+   * Safe to expose in the browser — see https://stripe.com/docs/keys
+   */
+  stripePublishableKey: string;
 }

@@ -75,7 +75,9 @@ export function getEffectiveUsername(req: Request): string | null {
   if (req.appSession?.['impersonationUser']?.username) {
     return req.appSession['impersonationUser'].username as string;
   }
-  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || null;
+  // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
+  // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
+  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
 }
 
 /**
