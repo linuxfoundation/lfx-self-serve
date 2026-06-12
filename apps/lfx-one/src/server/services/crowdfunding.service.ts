@@ -158,12 +158,21 @@ export class CrowdfundingService {
   }
 
   public async getInitiativesStats(req: Request): Promise<CrowdfundingInitiativesStats> {
-    const { data } = await this.getMyInitiatives(req);
+    // Page through all initiatives so stats reflect the user's complete set, not just the first page.
+    const PAGE_SIZE = 100;
+    const allInitiatives: Awaited<ReturnType<typeof this.getMyInitiatives>>['data'] = [];
+    let offset = 0;
+    while (true) {
+      const page = await this.getMyInitiatives(req, PAGE_SIZE, offset);
+      allInitiatives.push(...page.data);
+      if (allInitiatives.length >= page.total || page.data.length === 0) break;
+      offset += PAGE_SIZE;
+    }
     return {
-      activeCount: data.filter((i) => i.status === 'published').length,
-      totalRaised: data.reduce((sum, i) => sum + (i.fundingStatus?.amountRaisedCents ?? 0), 0) / 100,
+      activeCount: allInitiatives.filter((i) => i.status === 'published').length,
+      totalRaised: allInitiatives.reduce((sum, i) => sum + (i.fundingStatus?.amountRaisedCents ?? 0), 0) / 100,
       monthlyGain: 0,
-      totalSponsors: data.reduce((sum, i) => sum + (i.initiativeStats?.supporters ?? 0), 0),
+      totalSponsors: allInitiatives.reduce((sum, i) => sum + (i.initiativeStats?.supporters ?? 0), 0),
     };
   }
 
@@ -212,25 +221,37 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
+    // Fetch all pages of donations and subscriptions in parallel so stats reflect the user's
+    // complete history, not just the first fixed-size page.
+    const STATS_PAGE_SIZE = 500;
+
+    async function fetchAllPages<T>(pageReq: Parameters<typeof cfFetch>[0], operation: string, basePath: string): Promise<T[]> {
+      const all: T[] = [];
+      let offset = 0;
+      while (true) {
+        const page = await cfFetch<{ data: T[]; meta: { total: number; limit: number; offset: number } }>(
+          pageReq,
+          operation,
+          `${basePath}?limit=${STATS_PAGE_SIZE}&offset=${offset}`
+        );
+        all.push(...page.data);
+        if (all.length >= page.meta.total || page.data.length === 0) break;
+        offset += STATS_PAGE_SIZE;
+      }
+      return all;
+    }
+
     // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
-    const [donationsRaw, subscriptionsRaw] = await Promise.all([
-      cfFetch<{ data: { amount_cents: number; initiative_id?: string }[]; meta: { total: number } }>(
-        req,
-        'getMyDonationStats_donations',
-        '/v1/me/donations?limit=500'
-      ),
-      cfFetch<{ data: { status: string; amount_cents: number }[]; meta: { total: number } }>(
-        req,
-        'getMyDonationStats_subscriptions',
-        '/v1/me/subscriptions?limit=500'
-      ),
+    const [allDonations, allSubscriptions] = await Promise.all([
+      fetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
+      fetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
     ]);
 
-    const totalDonated = donationsRaw.data.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
+    const totalDonated = allDonations.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
     // Filter to valid string IDs before counting — donations without initiative_id are excluded.
-    const initiativesSupported = new Set(donationsRaw.data.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
+    const initiativesSupported = new Set(allDonations.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
     // Recurring counts and amounts come from active subscriptions, not one-time donations.
-    const activeSubscriptions = subscriptionsRaw.data.filter((s) => s.status === 'active');
+    const activeSubscriptions = allSubscriptions.filter((s) => s.status === 'active');
     const activeRecurringCount = activeSubscriptions.length;
     const activeRecurringAmount = activeSubscriptions.reduce((sum, s) => sum + s.amount_cents, 0) / 100;
 

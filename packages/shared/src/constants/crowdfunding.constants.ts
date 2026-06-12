@@ -103,6 +103,10 @@ export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'im
 export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 
+// Runtime-checkable tuple of every valid initiative status value — used for server-side input validation.
+// Must stay in sync with CrowdfundingInitiativeStatus in crowdfunding.interface.ts.
+export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'published', 'declined', 'hidden'] as const;
+
 export const DEFAULT_FUND_DISTRIBUTION: FundDistributionItem[] = [
   {
     category: 'development',
