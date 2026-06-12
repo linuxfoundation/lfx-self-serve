@@ -156,6 +156,8 @@ export class OsspreyDashboardComponent {
         tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap((f) => {
+          // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
+          // Divergence is intentional for v1 — pagination will align them in a future iteration.
           const params: OsspreyListParams = {
             pageSize: CDP_CONFIG.MAX_PAGE_SIZE,
             sortBy: f.sort,
