@@ -117,6 +117,7 @@ export class MainLayoutComponent {
           label: 'Crowdfunding',
           icon: 'fa-light fa-circle-dollar',
           url: environment.urls.crowdfunding,
+          target: '_self',
         };
 
     return [

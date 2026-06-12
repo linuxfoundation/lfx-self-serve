@@ -35,13 +35,13 @@ export const crowdfundingEnabledGuard: CanMatchFn = async () => {
     );
     // Provider never became ready (no client id / LD unreachable) → redirect to external app.
     if (!ready) {
-      window.location.href = environment.urls.crowdfunding;
+      window.location.replace(environment.urls.crowdfunding);
       return false;
     }
   }
 
   if (!featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false)()) {
-    window.location.href = environment.urls.crowdfunding;
+    window.location.replace(environment.urls.crowdfunding);
     return false;
   }
 
