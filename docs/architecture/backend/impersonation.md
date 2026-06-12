@@ -161,8 +161,8 @@ Many controllers and services read the user's email/username from `req.oidc.user
 | Helper                      | Returns                                         | Notes                                                                               |
 | --------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)   | Email-keyed lookups                                                                 |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username | **Preferred** for identity references (LFID username, e.g. `lguerra`)               |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                    | **Deprecated** — Auth0 sub (prefixed, e.g. `auth0\|lguerra`); migrating to username |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `lguerra`)               |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                         | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|lguerra`); rare remaining sites |
 
 For the full `username` vs `sub` distinction and the LFXV2-1962 migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 

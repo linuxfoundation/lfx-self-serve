@@ -89,8 +89,8 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 | **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                  |
 | **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username` |
 
-- **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it). Some upstream paths still key on the **prefixed `sub`** during the migration window: the member-service `b2b_org_settings` index tags each doc with `member:auth0|<id>` (and `writers.username:auth0|<id>`) and stores the caller's role under `data.writers[].username` in the same prefixed form, so org role lookups resolve identity via `getEffectiveSub` (see `org-identity.controller.ts` / `org-navigation.service.ts`) — the bare nickname form misses every row there.
-- **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. For example, on surveys the bare username is persisted as `creator_username`, while the sibling `creator_id` currently stores the `sub` (migrating to username under LFXV2-1962).
+- **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it). A few call sites still pass the prefixed `sub` upstream during the migration window — e.g. `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)`.
+- **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim (LFXV2-2122).
 
 ### ID token vs access token — where the claims actually live
 
@@ -120,7 +120,7 @@ Object.assign(auth.user, {
 });
 ```
 
-> **Migration landmine.** `getUsernameFromAuth()` in `auth-helper.ts` is misleadingly named: for Authelia tokens it returns `preferred_username`, but for normal Auth0 tokens it falls back to `getEffectiveSub(req)` — i.e. it returns the prefixed `sub`, not a username. It is a concrete `sub`-as-username site to fix under LFXV2-1962.
+> **`getUsernameFromAuth()` naming.** For Authelia tokens it returns `preferred_username`; for Auth0 tokens it falls back to `getEffectiveUsername(req)` (LFXV2-2122). The name is still easy to misread — prefer `getEffectiveUsername` directly when you need the LFID handle.
 
 ### When to use which
 
@@ -140,15 +140,19 @@ Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.
 
 | Helper                      | Returns                                         | Status                                                                           |
 | --------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username | **Preferred** for all new identity references                                    |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                    | **Deprecated** — only for call sites whose upstream still wants the prefixed sub |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                    |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                         | **`@deprecated`** — only for call sites whose upstream still wants the prefixed sub |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)   | For email-keyed lookups                                                          |
 
-### Migration: `sub` → `username` (LFXV2-1962)
+### Migration: `sub` → `username` (LFXV2-1962 / LFXV2-2122)
 
-Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. As upstream handlers learn to accept the username, call sites flip from `getEffectiveSub` to `getEffectiveUsername`, and front-end identity references (DataDog RUM `id`, OpenFeature `targetingKey`, survey `creator_id`) will move to the `https://sso.linuxfoundation.org/claims/username` claim instead of `sub` (today they still read `sub` / `preferred_username`).
+Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. **LFXV2-2122** (merged in [#912](https://github.com/linuxfoundation/lfx-self-serve/pull/912)) flipped the first wave in this repo:
 
-`getEffectiveSub` remains as a fallback for the migration window and should be treated as deprecated (annotate it `@deprecated` in `auth-helper.ts` as the migration lands). When adding new code, use `username` unless the specific upstream handler still requires the prefixed sub — and if so, note why inline.
+- **Front-end (ID token):** DataDog RUM `id`, OpenFeature `targetingKey`, and survey `creator_id` now read `https://sso.linuxfoundation.org/claims/username` (OpenFeature no longer falls back to `sub` — existing LaunchDarkly rules keyed on sub values need updating before deploy).
+- **BFF call sites:** `getEffectiveSub` → `getEffectiveUsername` in changelog, copilot, org-identity, org-navigation, org-lens-access, and org-membership cache keys; `project.service.ts` uses `resolveEmailToUsername` (not `resolveEmailToSub`) for permission and user-info lookups against the plain-LFID `b2b_org_settings` index.
+- **`getEffectiveSub`** is annotated `@deprecated` in `auth-helper.ts` and remains only where upstream still requires the prefixed sub (e.g. badges email lookup via auth-service).
+
+When adding new code, use `username` unless the specific upstream handler still requires the prefixed sub — and if so, note why inline.
 
 ## 🏗 Server-Side Implementation
 

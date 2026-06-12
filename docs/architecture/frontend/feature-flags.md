@@ -154,7 +154,7 @@ export class FeatureFlagService {
         kind: 'user',
         name: user.name || '',
         email: user.email || '',
-        targetingKey: user.preferred_username || user.username || user.sub || '',
+        targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'],
       };
 
       await OpenFeature.setContext(userContext);
@@ -752,16 +752,18 @@ const userContext: EvaluationContext = {
   kind: 'user',
   name: user.name || '',
   email: user.email || '',
-  targetingKey: user.preferred_username || user.username || user.sub || '',
+  targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'],
 };
 ```
 
+> **Identity (LFXV2-2122).** `targetingKey` uses the LFID username claim chain above — not Auth0 `sub`. LaunchDarkly rules keyed on legacy `sub` values stop matching after deploy; update them to LFID usernames. See [Authentication — Identity Claims](../backend/authentication.md#-identity-claims-username-vs-sub).
+
 **Context Structure:**
 
-| Field             | Type   | Required | Description                         |
-| ----------------- | ------ | -------- | ----------------------------------- |
-| `kind`            | string | Yes      | Always 'user' for user contexts     |
-| `targetingKey`    | string | Yes      | Unique identifier for the user      |
+| Field             | Type   | Required | Description                                                         |
+| ----------------- | ------ | -------- | ------------------------------------------------------------------- |
+| `kind`            | string | Yes      | Always 'user' for user contexts                                     |
+| `targetingKey`    | string | Yes      | LFID username (`preferred_username` → `username` → SSO username claim) |
 | `name`            | string | No       | Display name for LaunchDarkly UI    |
 | `email`           | string | No       | Email for targeting rules           |
 | Custom attributes | any    | No       | Additional attributes for targeting |
@@ -778,7 +780,7 @@ const userContext: EvaluationContext = {
 ```typescript
 const userContext: EvaluationContext = {
   kind: 'user',
-  targetingKey: user.sub,
+  targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'],
   name: user.name,
   email: user.email,
   // Custom attributes for targeting
@@ -1448,8 +1450,8 @@ See [Runtime Configuration Troubleshooting](../../runtime-configuration.md#troub
 1. **Missing Targeting Key:**
 
    ```typescript
-   // targetingKey is required for user identification
-   targetingKey: user.preferred_username || user.username || user.sub || '';
+   // targetingKey is required — LFID username, not Auth0 sub
+   targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'];
    ```
 
 2. **Incorrect Attribute Names:**
