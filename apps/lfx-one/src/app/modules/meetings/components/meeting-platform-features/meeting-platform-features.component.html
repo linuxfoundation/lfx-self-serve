@@ -49,27 +49,28 @@
       <div class="flex flex-col gap-3">
         <h4 class="text-neutral-950">Meeting Features</h4>
 
-        <!-- Enable Recording (with nested settings) -->
-        <lfx-feature-toggle [feature]="recordingFeature" [form]="form()">
-          @if (form().get('recording_enabled')?.value) {
-            <div class="mt-4 pt-4 border-t border-gray-200">
-              <label for="artifact-visibility" class="block text-neutral-950 mb-2">Recording & Summary Access</label>
-              <lfx-select
-                size="small"
-                [form]="form()"
-                control="artifact_visibility"
-                [options]="artifactVisibilityOptions"
-                placeholder="Select artifact visibility"
-                styleClass="w-full"
-                id="artifact-visibility"
-                data-testid="artifact-visibility-select"></lfx-select>
-              <p class="mt-1 text-sm text-gray-500">Who can access recordings, transcripts, and AI summaries</p>
-            </div>
-          }
-        </lfx-feature-toggle>
+        <!-- Enable Recording -->
+        <lfx-feature-toggle [feature]="recordingFeature" [form]="form()"></lfx-feature-toggle>
 
         <!-- Generate Transcripts -->
         <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+
+        <!-- Recording & Summary Access (shown when recording OR AI summary is enabled) -->
+        @if (form().get('recording_enabled')?.value || form().get('zoom_ai_enabled')?.value) {
+          <div class="mt-2 pt-4 border-t border-gray-200">
+            <label for="artifact-visibility" class="block text-neutral-950 mb-2">Recording & Summary Access</label>
+            <lfx-select
+              size="small"
+              [form]="form()"
+              control="artifact_visibility"
+              [options]="artifactVisibilityOptions"
+              placeholder="Select artifact visibility"
+              styleClass="w-full"
+              id="artifact-visibility"
+              data-testid="artifact-visibility-select"></lfx-select>
+            <p class="mt-1 text-sm text-gray-500">Who can access recordings, transcripts, and AI summaries</p>
+          </div>
+        }
       </div>
     </div>
 
