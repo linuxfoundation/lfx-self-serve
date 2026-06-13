@@ -13,7 +13,7 @@ import type {
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
 } from '@lfx-one/shared/interfaces';
@@ -52,7 +52,7 @@ export class MonitoringTabComponent implements OnInit {
 
   // Platform switcher
   protected readonly selectedPlatform = signal<PlatformType>('google');
-  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly linkedInAccountOptions = signal<LinkedInAccount[]>([]);
   protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
@@ -104,7 +104,7 @@ export class MonitoringTabComponent implements OnInit {
         next: (accounts) => {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
-            this.selectedLinkedInAccountKey.set(accounts[0].key);
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
             if (this.selectedPlatform() === 'linkedin') {
               this.fetchLinkedInData();
             }
