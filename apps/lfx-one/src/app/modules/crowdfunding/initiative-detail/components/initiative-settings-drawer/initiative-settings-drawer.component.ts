@@ -22,6 +22,7 @@ import {
   DEFAULT_FUND_DISTRIBUTION,
   MAX_LOGO_SIZE_BYTES,
 } from '@lfx-one/shared/constants';
+import { FundType } from '@lfx-one/shared/enums';
 import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
@@ -71,6 +72,15 @@ export class InitiativeSettingsDrawerComponent {
     topics: new FormControl<string[]>([], Validators.required),
     websiteUrl: new FormControl(''),
     goal: new FormControl<number | null>(null, [Validators.min(0)]),
+    // event-type only
+    eventStartDate: new FormControl<string>(''),
+    eventEndDate: new FormControl<string>(''),
+    // security_audit (ostif) only
+    monetizationStrategy: new FormControl<string>(''),
+    currentSecurityStrategy: new FormControl<string>(''),
+    licenseType: new FormControl<string>(''),
+    totalBudgetCents: new FormControl<number | null>(null, [Validators.min(0)]),
+    termsConditions: new FormControl<boolean>(false),
   });
 
   protected readonly saving = signal(false);
@@ -101,6 +111,13 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly nameLength = computed(() => this.formValue().name?.length ?? 0);
   protected readonly descriptionLength = computed(() => this.formValue().description?.length ?? 0);
   protected readonly initiativeInitial = computed(() => this.initiative().name.charAt(0));
+  protected readonly isEventType = computed(() => this.initiative().initiativeType === FundType.EVENT);
+  protected readonly isSecurityAudit = computed(() => this.initiative().initiativeType === FundType.SECURITY_AUDIT);
+
+  protected get eventStartDateControl(): FormControl { return this.form.controls['eventStartDate'] as FormControl; }
+  protected get eventEndDateControl(): FormControl { return this.form.controls['eventEndDate'] as FormControl; }
+  protected get totalBudgetCentsControl(): FormControl { return this.form.controls['totalBudgetCents'] as FormControl; }
+  protected get termsConditionsControl(): FormControl { return this.form.controls['termsConditions'] as FormControl; }
 
   public constructor() {
     toObservable(this.visible)
@@ -119,6 +136,13 @@ export class InitiativeSettingsDrawerComponent {
           topics: existingTopics,
           websiteUrl: init.websiteUrl ?? '',
           goal: init.fundingStatus?.goalsTotalCents != null ? init.fundingStatus.goalsTotalCents / 100 : null,
+          eventStartDate: init.eventStartDate ? init.eventStartDate.substring(0, 10) : '',
+          eventEndDate: init.eventEndDate ? init.eventEndDate.substring(0, 10) : '',
+          monetizationStrategy: init.ostifDetail?.monetizationStrategy ?? '',
+          currentSecurityStrategy: init.ostifDetail?.currentSecurityStrategy ?? '',
+          licenseType: init.ostifDetail?.licenseType ?? '',
+          totalBudgetCents: init.ostifDetail?.totalBudgetCents ?? null,
+          termsConditions: init.ostifDetail?.termsConditions ?? false,
         });
         this.logoUrl.set(init.logoUrl ?? '');
         this.logoUploadError.set(null);
@@ -151,13 +175,21 @@ export class InitiativeSettingsDrawerComponent {
     this.saving.set(true);
 
     try {
-      const { name, description, topics, websiteUrl, goal } = this.form.value as {
-        name: string;
-        description: string;
-        topics: string[];
-        websiteUrl: string;
-        goal: number | null;
-      };
+      const { name, description, topics, websiteUrl, goal, eventStartDate, eventEndDate, monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents, termsConditions } =
+        this.form.value as {
+          name: string;
+          description: string;
+          topics: string[];
+          websiteUrl: string;
+          goal: number | null;
+          eventStartDate: string;
+          eventEndDate: string;
+          monetizationStrategy: string;
+          currentSecurityStrategy: string;
+          licenseType: string;
+          totalBudgetCents: number | null;
+          termsConditions: boolean;
+        };
 
       const input: UpdateInitiativeInput = {
         name,
@@ -166,6 +198,21 @@ export class InitiativeSettingsDrawerComponent {
         logoUrl: this.logoUrl(),
         websiteUrl: websiteUrl || undefined,
       };
+
+      if (this.isEventType()) {
+        input.eventStartDate = eventStartDate || undefined;
+        input.eventEndDate = eventEndDate || undefined;
+      }
+
+      if (this.isSecurityAudit()) {
+        input.ostifDetail = {
+          monetizationStrategy: monetizationStrategy || undefined,
+          currentSecurityStrategy: currentSecurityStrategy || undefined,
+          licenseType: licenseType || undefined,
+          totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents) : undefined,
+          termsConditions,
+        };
+      }
 
       if (goal != null) {
         const goalCents = Math.round(goal * 100);

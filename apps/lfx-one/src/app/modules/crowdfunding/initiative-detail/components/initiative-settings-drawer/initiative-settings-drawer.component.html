@@ -97,6 +97,88 @@
           <label for="settings-website" class="text-sm font-medium text-gray-700">Website URL</label>
           <lfx-input-text [form]="form" control="websiteUrl" id="settings-website" type="url" placeholder="https://example.org" />
         </div>
+
+        <!-- Event dates — shown for event-type initiatives only -->
+        @if (isEventType()) {
+          <div class="border-t border-gray-100 pt-5 flex flex-col gap-5" data-testid="settings-event-dates">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Event Dates</h3>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-event-start">
+              <label for="settings-event-start" class="text-sm font-medium text-gray-700">Event start date</label>
+              <input
+                type="date"
+                id="settings-event-start"
+                [formControl]="eventStartDateControl"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                data-testid="settings-event-start-input" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-event-end">
+              <label for="settings-event-end" class="text-sm font-medium text-gray-700">Event end date</label>
+              <input
+                type="date"
+                id="settings-event-end"
+                [formControl]="eventEndDateControl"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                data-testid="settings-event-end-input" />
+            </div>
+          </div>
+        }
+
+        <!-- Security audit details — shown for security_audit initiatives only -->
+        @if (isSecurityAudit()) {
+          <div class="border-t border-gray-100 pt-5 flex flex-col gap-5" data-testid="settings-security-audit">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Security Audit Details</h3>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-monetization">
+              <label for="settings-monetization" class="text-sm font-medium text-gray-700">Monetization strategy</label>
+              <lfx-textarea
+                [form]="form"
+                control="monetizationStrategy"
+                id="settings-monetization"
+                styleClass="w-full"
+                [rows]="3"
+                placeholder="Describe your monetization strategy…" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-security-strategy">
+              <label for="settings-security-strategy" class="text-sm font-medium text-gray-700">Current security strategy</label>
+              <lfx-textarea
+                [form]="form"
+                control="currentSecurityStrategy"
+                id="settings-security-strategy"
+                styleClass="w-full"
+                [rows]="3"
+                placeholder="Describe your current security strategy…" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-license">
+              <label for="settings-license" class="text-sm font-medium text-gray-700">License type</label>
+              <lfx-input-text [form]="form" control="licenseType" id="settings-license" placeholder="e.g. Apache 2.0, MIT" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-total-budget">
+              <label for="settings-total-budget" class="text-sm font-medium text-gray-700">Total budget (USD)</label>
+              <input
+                type="number"
+                id="settings-total-budget"
+                [formControl]="totalBudgetCentsControl"
+                min="0"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="0"
+                data-testid="settings-total-budget-input" />
+              <p class="text-xs text-gray-400">Enter the total budget in US dollars.</p>
+            </div>
+
+            <div class="flex items-center gap-3" data-testid="settings-field-terms">
+              <p-toggleSwitch
+                [ngModel]="termsConditionsControl.value"
+                (onChange)="termsConditionsControl.setValue($event.checked)"
+                inputId="settings-terms" />
+              <label for="settings-terms" class="text-sm font-medium text-gray-700 cursor-pointer">I agree to the terms and conditions</label>
+            </div>
+          </div>
+        }
       </div>
     }
 

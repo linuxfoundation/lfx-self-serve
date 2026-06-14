@@ -8,7 +8,9 @@ import {
   FinancialSummary,
   FundingGoal,
   InitiativeBase,
+  InitiativeContact,
   InitiativeDetail,
+  OSTIFDetail,
   SponsorEntry,
   CrowdfundingInitiativeStatus,
   MyDonation,
@@ -20,9 +22,11 @@ import {
 import { FundType } from '@lfx-one/shared/enums';
 
 import {
+  BackendContact,
   BackendDonation,
   BackendGoal,
   BackendInitiative,
+  BackendOSTIFDetail,
   BackendSponsor,
   BackendSubscription,
   BackendTransaction,
@@ -71,6 +75,13 @@ export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
 export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
   return {
     ...mapToInitiativeBase(b),
+    cocUrl: b.coc_url,
+    acceptFunding: b.accept_funding,
+    isOnline: b.is_online,
+    eventbriteUrl: b.eventbrite_url,
+    entityDetails: b.entity_details,
+    ostifDetail: b.ostif_detail ? mapOSTIFDetail(b.ostif_detail) : undefined,
+    contacts: (b.contacts ?? []).map(mapContact),
     currentBalanceCents: b.financials?.available_balance_cents,
     sponsors: (b.sponsors ?? []).map(mapSponsor),
     fundingGoals: (b.goals ?? []).map(mapFundingGoal),
@@ -80,6 +91,29 @@ export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
     impactStats: undefined,
     projectHealthStats: undefined,
     projectHealthRating: undefined,
+  };
+}
+
+function mapOSTIFDetail(o: BackendOSTIFDetail): OSTIFDetail {
+  return {
+    monetizationStrategy: o.monetization_strategy,
+    currentSecurityStrategy: o.current_security_strategy,
+    licenseType: o.license_type,
+    totalBudgetCents: o.total_budget_cents,
+    termsConditions: o.terms_conditions,
+  };
+}
+
+function mapContact(c: BackendContact): InitiativeContact {
+  return {
+    id: c.id,
+    contactType: c.contact_type,
+    firstName: c.first_name,
+    lastName: c.last_name,
+    email: c.email,
+    phoneNumber: c.phone_number,
+    otherContactOption: c.other_contact_option,
+    preferredContactMethod: c.preferred_contact_method,
   };
 }
 

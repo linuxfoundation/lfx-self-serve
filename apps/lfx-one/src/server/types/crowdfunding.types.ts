@@ -21,6 +21,35 @@ export interface BackendSponsor {
   total_cents: number;
 }
 
+export interface BackendOSTIFDetail {
+  monetization_strategy?: string;
+  current_security_strategy?: string;
+  license_type?: string;
+  total_budget_cents: number;
+  terms_conditions: boolean;
+}
+
+export interface BackendContact {
+  id: string;
+  contact_type: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone_number?: string;
+  other_contact_option?: string;
+  preferred_contact_method?: string;
+}
+
+export interface BackendContactInput {
+  contact_type: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone_number?: string;
+  other_contact_option?: string;
+  preferred_contact_method?: string;
+}
+
 export interface BackendInitiative {
   id: string;
   initiative_type: string;
@@ -33,11 +62,18 @@ export interface BackendInitiative {
   color?: string;
   logo_url?: string;
   website_url?: string;
+  coc_url?: string;
+  accept_funding: boolean;
   country?: string;
   city?: string;
+  is_online: boolean;
   application_url?: string;
+  eventbrite_url?: string;
   event_start_date?: string;
   event_end_date?: string;
+  entity_details?: Record<string, string>;
+  ostif_detail?: BackendOSTIFDetail;
+  contacts?: BackendContact[];
   created_on: string;
   updated_on: string;
   financials?: {
@@ -137,6 +173,14 @@ export interface BackendBeneficiaryInput {
   email?: string;
 }
 
+export interface BackendOSTIFDetailInput {
+  monetization_strategy?: string;
+  current_security_strategy?: string;
+  license_type?: string;
+  total_budget_cents?: number;
+  terms_conditions?: boolean;
+}
+
 /** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{id} on the upstream crowdfunding service. */
 export interface BackendUpdateInitiativeInput {
   name?: string;
@@ -145,6 +189,10 @@ export interface BackendUpdateInitiativeInput {
   logo_url?: string;
   website_url?: string;
   status?: string;
+  event_start_date?: string;
+  event_end_date?: string;
+  ostif_detail?: BackendOSTIFDetailInput;
+  contacts?: BackendContactInput[];
   goals?: BackendGoalInput[];
   beneficiaries?: BackendBeneficiaryInput[];
 }

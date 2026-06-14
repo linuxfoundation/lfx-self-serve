@@ -281,6 +281,32 @@ export class CrowdfundingController {
         input.status = rawStatus as CrowdfundingInitiativeStatus;
       }
 
+      if (typeof body['eventStartDate'] === 'string') input.eventStartDate = body['eventStartDate'];
+      if (typeof body['eventEndDate'] === 'string') input.eventEndDate = body['eventEndDate'];
+
+      if (body['ostifDetail'] !== null && typeof body['ostifDetail'] === 'object') {
+        const o = body['ostifDetail'] as Record<string, unknown>;
+        input.ostifDetail = {
+          monetizationStrategy: typeof o['monetizationStrategy'] === 'string' ? o['monetizationStrategy'] : undefined,
+          currentSecurityStrategy: typeof o['currentSecurityStrategy'] === 'string' ? o['currentSecurityStrategy'] : undefined,
+          licenseType: typeof o['licenseType'] === 'string' ? o['licenseType'] : undefined,
+          totalBudgetCents: typeof o['totalBudgetCents'] === 'number' ? o['totalBudgetCents'] : undefined,
+          termsConditions: typeof o['termsConditions'] === 'boolean' ? o['termsConditions'] : undefined,
+        };
+      }
+
+      if (Array.isArray(body['contacts'])) {
+        input.contacts = (body['contacts'] as Record<string, unknown>[]).map((c) => ({
+          contactType: typeof c['contactType'] === 'string' ? c['contactType'] : '',
+          firstName: typeof c['firstName'] === 'string' ? c['firstName'] : undefined,
+          lastName: typeof c['lastName'] === 'string' ? c['lastName'] : undefined,
+          email: typeof c['email'] === 'string' ? c['email'] : undefined,
+          phoneNumber: typeof c['phoneNumber'] === 'string' ? c['phoneNumber'] : undefined,
+          otherContactOption: typeof c['otherContactOption'] === 'string' ? c['otherContactOption'] : undefined,
+          preferredContactMethod: typeof c['preferredContactMethod'] === 'string' ? c['preferredContactMethod'] : undefined,
+        }));
+      }
+
       if (Array.isArray(body['goals'])) {
         input.goals = (body['goals'] as Record<string, unknown>[]).map((g) => ({
           name: typeof g['name'] === 'string' ? g['name'] : 'Annual Funding Goal',

@@ -303,6 +303,28 @@ export class CrowdfundingService {
     if (input.logoUrl !== undefined) body.logo_url = input.logoUrl;
     if (input.websiteUrl !== undefined) body.website_url = input.websiteUrl;
     if (input.status !== undefined) body.status = input.status;
+    if (input.eventStartDate !== undefined) body.event_start_date = input.eventStartDate;
+    if (input.eventEndDate !== undefined) body.event_end_date = input.eventEndDate;
+    if (input.ostifDetail !== undefined) {
+      body.ostif_detail = {
+        monetization_strategy: input.ostifDetail.monetizationStrategy,
+        current_security_strategy: input.ostifDetail.currentSecurityStrategy,
+        license_type: input.ostifDetail.licenseType,
+        total_budget_cents: input.ostifDetail.totalBudgetCents,
+        terms_conditions: input.ostifDetail.termsConditions,
+      };
+    }
+    if (input.contacts !== undefined) {
+      body.contacts = input.contacts.map((c) => ({
+        contact_type: c.contactType,
+        first_name: c.firstName,
+        last_name: c.lastName,
+        email: c.email,
+        phone_number: c.phoneNumber,
+        other_contact_option: c.otherContactOption,
+        preferred_contact_method: c.preferredContactMethod,
+      }));
+    }
     if (input.goals !== undefined) {
       body.goals = input.goals.map((g): BackendGoalInput => ({ name: g.name, amount_cents: g.amountCents }));
     }
