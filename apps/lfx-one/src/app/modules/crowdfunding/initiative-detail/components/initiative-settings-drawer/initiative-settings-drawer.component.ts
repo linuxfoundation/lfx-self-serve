@@ -88,7 +88,6 @@ export class InitiativeSettingsDrawerComponent {
     currentSecurityStrategy: new FormControl<string>(''),
     licenseType: new FormControl<string>(''),
     totalBudgetCents: new FormControl<number | null>(null, [Validators.min(0)]),
-    termsConditions: new FormControl<boolean>(false),
   });
 
   protected readonly saving = signal(false);
@@ -134,7 +133,6 @@ export class InitiativeSettingsDrawerComponent {
   protected get eventEndDateControl(): FormControl { return this.form.controls['eventEndDate'] as FormControl; }
   protected get isOnlineControl(): FormControl { return this.form.controls['isOnline'] as FormControl; }
   protected get totalBudgetCentsControl(): FormControl { return this.form.controls['totalBudgetCents'] as FormControl; }
-  protected get termsConditionsControl(): FormControl { return this.form.controls['termsConditions'] as FormControl; }
 
   public constructor() {
     toObservable(this.visible)
@@ -166,7 +164,6 @@ export class InitiativeSettingsDrawerComponent {
           currentSecurityStrategy: init.ostifDetail?.currentSecurityStrategy ?? '',
           licenseType: init.ostifDetail?.licenseType ?? '',
           totalBudgetCents: init.ostifDetail?.totalBudgetCents ?? null,
-          termsConditions: init.ostifDetail?.termsConditions ?? false,
         });
         this.logoUrl.set(init.logoUrl ?? '');
         this.logoUploadError.set(null);
@@ -203,7 +200,7 @@ export class InitiativeSettingsDrawerComponent {
       const {
         name, description, topics, websiteUrl, cocUrl, goal, ciiProjectId,
         eventStartDate, eventEndDate, applicationUrl, eventbriteUrl, country, city, isOnline,
-        monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents, termsConditions,
+        monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents,
       } = this.form.value as {
         name: string;
         description: string;
@@ -223,7 +220,6 @@ export class InitiativeSettingsDrawerComponent {
         currentSecurityStrategy: string;
         licenseType: string;
         totalBudgetCents: number | null;
-        termsConditions: boolean;
       };
 
       const input: UpdateInitiativeInput = {
@@ -255,7 +251,6 @@ export class InitiativeSettingsDrawerComponent {
           currentSecurityStrategy: currentSecurityStrategy || undefined,
           licenseType: licenseType || undefined,
           totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents) : undefined,
-          termsConditions,
         };
         const contactGs = this.contactGroups();
         if (contactGs.length > 0) {
