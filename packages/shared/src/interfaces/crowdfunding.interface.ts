@@ -36,6 +36,7 @@ export interface InitiativeBase {
   applicationUrl?: string;
   eventStartDate?: string;
   eventEndDate?: string;
+  ciiProjectId?: string;
   initiativeStats?: InitiativeStats;
   fundingStatus?: FundingStatus;
 }
@@ -137,8 +138,34 @@ export interface ProjectHealthStat {
   value: string;
 }
 
+export interface OSTIFDetail {
+  monetizationStrategy?: string;
+  currentSecurityStrategy?: string;
+  licenseType?: string;
+  totalBudgetCents: number;
+  termsConditions: boolean;
+}
+
+export interface InitiativeContact {
+  id: string;
+  contactType: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+  otherContactOption?: string;
+  preferredContactMethod?: string;
+}
+
 /** Full initiative data returned by the GET /initiatives/:slug detail endpoint. */
 export interface InitiativeDetail extends InitiativeBase {
+  cocUrl?: string;
+  acceptFunding?: boolean;
+  isOnline?: boolean;
+  eventbriteUrl?: string;
+  entityDetails?: Record<string, string>;
+  ostifDetail?: OSTIFDetail;
+  contacts?: InitiativeContact[];
   githubUrl?: string;
   currentBalanceCents?: number;
   sponsors?: SponsorEntry[];
@@ -265,13 +292,46 @@ export interface UpdateBeneficiaryInput {
   email?: string;
 }
 
+export interface UpdateOSTIFDetailInput {
+  monetizationStrategy?: string;
+  currentSecurityStrategy?: string;
+  licenseType?: string;
+  totalBudgetCents?: number;
+  termsConditions?: boolean;
+}
+
+export interface UpdateContactInput {
+  contactType: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+  otherContactOption?: string;
+  preferredContactMethod?: string;
+}
+
 export interface UpdateInitiativeInput {
   name?: string;
   description?: string;
   industry?: string;
   logoUrl?: string;
   websiteUrl?: string;
+  cocUrl?: string;
+  acceptFunding?: boolean;
   status?: CrowdfundingInitiativeStatus;
+  // project-only
+  ciiProjectId?: string;
+  // event-only
+  eventStartDate?: string;
+  eventEndDate?: string;
+  applicationUrl?: string;
+  eventbriteUrl?: string;
+  country?: string;
+  city?: string;
+  isOnline?: boolean;
+  // security_audit-only
+  ostifDetail?: UpdateOSTIFDetailInput;
+  contacts?: UpdateContactInput[];
   goals?: UpdateGoalInput[];
   beneficiaries?: UpdateBeneficiaryInput[];
 }

@@ -42,6 +42,11 @@ import { logger } from './logger.service';
 
 const cfBaseUrl = (): string => (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
 
+/** Converts a YYYY-MM-DD date string to RFC3339 (required by the Go backend's time.Time JSON decoder). */
+function toRFC3339Date(date: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00Z` : date;
+}
+
 const CF_TIMEOUT_MS = 30_000;
 
 function throwCfNetworkError(operation: string, error: unknown): never {
@@ -302,7 +307,37 @@ export class CrowdfundingService {
     if (input.industry !== undefined) body.industry = input.industry;
     if (input.logoUrl !== undefined) body.logo_url = input.logoUrl;
     if (input.websiteUrl !== undefined) body.website_url = input.websiteUrl;
+    if (input.cocUrl !== undefined) body.coc_url = input.cocUrl;
+    if (input.acceptFunding !== undefined) body.accept_funding = input.acceptFunding;
     if (input.status !== undefined) body.status = input.status;
+    if (input.ciiProjectId !== undefined) body.cii_project_id = input.ciiProjectId;
+    if (input.eventStartDate !== undefined) body.event_start_date = input.eventStartDate ? toRFC3339Date(input.eventStartDate) : input.eventStartDate;
+    if (input.eventEndDate !== undefined) body.event_end_date = input.eventEndDate ? toRFC3339Date(input.eventEndDate) : input.eventEndDate;
+    if (input.applicationUrl !== undefined) body.application_url = input.applicationUrl;
+    if (input.eventbriteUrl !== undefined) body.eventbrite_url = input.eventbriteUrl;
+    if (input.country !== undefined) body.country = input.country;
+    if (input.city !== undefined) body.city = input.city;
+    if (input.isOnline !== undefined) body.is_online = input.isOnline;
+    if (input.ostifDetail !== undefined) {
+      body.ostif_detail = {
+        monetization_strategy: input.ostifDetail.monetizationStrategy,
+        current_security_strategy: input.ostifDetail.currentSecurityStrategy,
+        license_type: input.ostifDetail.licenseType,
+        total_budget_cents: input.ostifDetail.totalBudgetCents,
+        terms_conditions: input.ostifDetail.termsConditions,
+      };
+    }
+    if (input.contacts !== undefined) {
+      body.contacts = input.contacts.map((c) => ({
+        contact_type: c.contactType,
+        first_name: c.firstName,
+        last_name: c.lastName,
+        email: c.email,
+        phone_number: c.phoneNumber,
+        other_contact_option: c.otherContactOption,
+        preferred_contact_method: c.preferredContactMethod,
+      }));
+    }
     if (input.goals !== undefined) {
       body.goals = input.goals.map((g): BackendGoalInput => ({ name: g.name, amount_cents: g.amountCents }));
     }
