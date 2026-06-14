@@ -71,10 +71,18 @@ export class InitiativeSettingsDrawerComponent {
     description: new FormControl('', [Validators.required, Validators.maxLength(500)]),
     topics: new FormControl<string[]>([], Validators.required),
     websiteUrl: new FormControl(''),
+    cocUrl: new FormControl(''),
     goal: new FormControl<number | null>(null, [Validators.min(0)]),
+    // project-only
+    ciiProjectId: new FormControl(''),
     // event-type only
     eventStartDate: new FormControl<string>(''),
     eventEndDate: new FormControl<string>(''),
+    applicationUrl: new FormControl(''),
+    eventbriteUrl: new FormControl(''),
+    country: new FormControl(''),
+    city: new FormControl(''),
+    isOnline: new FormControl<boolean>(false),
     // security_audit (ostif) only
     monetizationStrategy: new FormControl<string>(''),
     currentSecurityStrategy: new FormControl<string>(''),
@@ -89,6 +97,13 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly logoUploadError = signal<string | null>(null);
   protected readonly distributionItems = signal<FundDistributionItem[]>(DEFAULT_FUND_DISTRIBUTION.map((i) => ({ ...i })));
   protected readonly beneficiaryGroups = signal<FormGroup[]>([]);
+  protected readonly contactGroups = signal<FormGroup[]>([]);
+
+  protected readonly CONTACT_TYPES = [
+    { value: 'primary', label: 'Primary Contact' },
+    { value: 'secondary', label: 'Secondary Contact' },
+    { value: 'technical_lead', label: 'Technical Lead' },
+  ];
 
   protected readonly hasEnabledCategories = computed(() => this.distributionItems().some((i) => i.enabled));
   protected readonly totalAllocated = computed(() =>
@@ -113,9 +128,11 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly initiativeInitial = computed(() => this.initiative().name.charAt(0));
   protected readonly isEventType = computed(() => this.initiative().initiativeType === FundType.EVENT);
   protected readonly isSecurityAudit = computed(() => this.initiative().initiativeType === FundType.SECURITY_AUDIT);
+  protected readonly isProjectType = computed(() => this.initiative().initiativeType === ('project' as FundType));
 
   protected get eventStartDateControl(): FormControl { return this.form.controls['eventStartDate'] as FormControl; }
   protected get eventEndDateControl(): FormControl { return this.form.controls['eventEndDate'] as FormControl; }
+  protected get isOnlineControl(): FormControl { return this.form.controls['isOnline'] as FormControl; }
   protected get totalBudgetCentsControl(): FormControl { return this.form.controls['totalBudgetCents'] as FormControl; }
   protected get termsConditionsControl(): FormControl { return this.form.controls['termsConditions'] as FormControl; }
 
@@ -135,9 +152,16 @@ export class InitiativeSettingsDrawerComponent {
           description: init.description,
           topics: existingTopics,
           websiteUrl: init.websiteUrl ?? '',
+          cocUrl: init.cocUrl ?? '',
           goal: init.fundingStatus?.goalsTotalCents != null ? init.fundingStatus.goalsTotalCents / 100 : null,
+          ciiProjectId: init.ciiProjectId ?? '',
           eventStartDate: init.eventStartDate ? init.eventStartDate.substring(0, 10) : '',
           eventEndDate: init.eventEndDate ? init.eventEndDate.substring(0, 10) : '',
+          applicationUrl: init.applicationUrl ?? '',
+          eventbriteUrl: init.eventbriteUrl ?? '',
+          country: init.country ?? '',
+          city: init.city ?? '',
+          isOnline: init.isOnline ?? false,
           monetizationStrategy: init.ostifDetail?.monetizationStrategy ?? '',
           currentSecurityStrategy: init.ostifDetail?.currentSecurityStrategy ?? '',
           licenseType: init.ostifDetail?.licenseType ?? '',
@@ -158,6 +182,7 @@ export class InitiativeSettingsDrawerComponent {
           })
         );
         this.beneficiaryGroups.set([]);
+        this.contactGroups.set((init.contacts ?? []).map((c) => this.makeContactGroup(c)));
         this.activeSettingsTab.set('details');
       });
   }
@@ -175,21 +200,31 @@ export class InitiativeSettingsDrawerComponent {
     this.saving.set(true);
 
     try {
-      const { name, description, topics, websiteUrl, goal, eventStartDate, eventEndDate, monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents, termsConditions } =
-        this.form.value as {
-          name: string;
-          description: string;
-          topics: string[];
-          websiteUrl: string;
-          goal: number | null;
-          eventStartDate: string;
-          eventEndDate: string;
-          monetizationStrategy: string;
-          currentSecurityStrategy: string;
-          licenseType: string;
-          totalBudgetCents: number | null;
-          termsConditions: boolean;
-        };
+      const {
+        name, description, topics, websiteUrl, cocUrl, goal, ciiProjectId,
+        eventStartDate, eventEndDate, applicationUrl, eventbriteUrl, country, city, isOnline,
+        monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents, termsConditions,
+      } = this.form.value as {
+        name: string;
+        description: string;
+        topics: string[];
+        websiteUrl: string;
+        cocUrl: string;
+        goal: number | null;
+        ciiProjectId: string;
+        eventStartDate: string;
+        eventEndDate: string;
+        applicationUrl: string;
+        eventbriteUrl: string;
+        country: string;
+        city: string;
+        isOnline: boolean;
+        monetizationStrategy: string;
+        currentSecurityStrategy: string;
+        licenseType: string;
+        totalBudgetCents: number | null;
+        termsConditions: boolean;
+      };
 
       const input: UpdateInitiativeInput = {
         name,
@@ -197,11 +232,21 @@ export class InitiativeSettingsDrawerComponent {
         industry: topics.join(','),
         logoUrl: this.logoUrl(),
         websiteUrl: websiteUrl || undefined,
+        cocUrl: cocUrl || undefined,
       };
+
+      if (this.isProjectType()) {
+        input.ciiProjectId = ciiProjectId || undefined;
+      }
 
       if (this.isEventType()) {
         input.eventStartDate = eventStartDate || undefined;
         input.eventEndDate = eventEndDate || undefined;
+        input.applicationUrl = applicationUrl || undefined;
+        input.eventbriteUrl = eventbriteUrl || undefined;
+        input.country = country || undefined;
+        input.city = city || undefined;
+        input.isOnline = isOnline;
       }
 
       if (this.isSecurityAudit()) {
@@ -212,6 +257,17 @@ export class InitiativeSettingsDrawerComponent {
           totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents) : undefined,
           termsConditions,
         };
+        const contactGs = this.contactGroups();
+        if (contactGs.length > 0) {
+          input.contacts = contactGs.map((g) => ({
+            contactType: g.value.contactType as string,
+            firstName: (g.value.firstName as string) || undefined,
+            lastName: (g.value.lastName as string) || undefined,
+            email: (g.value.email as string) || undefined,
+            phoneNumber: (g.value.phoneNumber as string) || undefined,
+            preferredContactMethod: (g.value.preferredContactMethod as string) || undefined,
+          }));
+        }
       }
 
       if (goal != null) {
@@ -339,5 +395,28 @@ export class InitiativeSettingsDrawerComponent {
 
   protected removeBeneficiary(index: number): void {
     this.beneficiaryGroups.update((groups) => groups.filter((_, i) => i !== index));
+  }
+
+  protected addContact(contactType: string): void {
+    this.contactGroups.update((groups) => [...groups, this.makeContactGroup({ contactType })]);
+  }
+
+  protected removeContact(index: number): void {
+    this.contactGroups.update((groups) => groups.filter((_, i) => i !== index));
+  }
+
+  protected usedContactTypes(): string[] {
+    return this.contactGroups().map((g) => g.value.contactType as string);
+  }
+
+  private makeContactGroup(c: { contactType: string; firstName?: string; lastName?: string; email?: string; phoneNumber?: string; preferredContactMethod?: string }): FormGroup {
+    return new FormGroup({
+      contactType: new FormControl(c.contactType ?? ''),
+      firstName: new FormControl(c.firstName ?? ''),
+      lastName: new FormControl(c.lastName ?? ''),
+      email: new FormControl(c.email ?? '', Validators.email),
+      phoneNumber: new FormControl(c.phoneNumber ?? ''),
+      preferredContactMethod: new FormControl(c.preferredContactMethod ?? 'email'),
+    });
   }
 }

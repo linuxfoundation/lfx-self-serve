@@ -62,6 +62,7 @@ export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
     applicationUrl: b.application_url,
     eventStartDate: b.event_start_date,
     eventEndDate: b.event_end_date,
+    ciiProjectId: b.cii_project_id,
     fundingStatus: b.financials
       ? {
           goalsTotalCents: b.financials.goals_total_cents,

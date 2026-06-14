@@ -98,13 +98,27 @@
           <lfx-input-text [form]="form" control="websiteUrl" id="settings-website" type="url" placeholder="https://example.org" />
         </div>
 
-        <!-- Event dates — shown for event-type initiatives only -->
+        <!-- Code of Conduct URL — all types -->
+        <div class="flex flex-col gap-1.5" data-testid="settings-field-coc">
+          <label for="settings-coc" class="text-sm font-medium text-gray-700">Code of Conduct URL</label>
+          <lfx-input-text [form]="form" control="cocUrl" id="settings-coc" type="url" placeholder="https://example.org/code-of-conduct" />
+        </div>
+
+        <!-- CII Project ID — project type only -->
+        @if (isProjectType()) {
+          <div class="flex flex-col gap-1.5" data-testid="settings-field-cii">
+            <label for="settings-cii" class="text-sm font-medium text-gray-700">CII Project ID</label>
+            <lfx-input-text [form]="form" control="ciiProjectId" id="settings-cii" placeholder="CII Best Practices badge ID" />
+          </div>
+        }
+
+        <!-- Event details — shown for event-type initiatives only -->
         @if (isEventType()) {
-          <div class="border-t border-gray-100 pt-5 flex flex-col gap-5" data-testid="settings-event-dates">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Event Dates</h3>
+          <div class="border-t border-gray-100 pt-5 flex flex-col gap-5" data-testid="settings-event-details">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Event Details</h3>
 
             <div class="flex flex-col gap-1.5" data-testid="settings-field-event-start">
-              <label for="settings-event-start" class="text-sm font-medium text-gray-700">Event start date</label>
+              <label for="settings-event-start" class="text-sm font-medium text-gray-700">Start date</label>
               <input
                 type="date"
                 id="settings-event-start"
@@ -114,13 +128,42 @@
             </div>
 
             <div class="flex flex-col gap-1.5" data-testid="settings-field-event-end">
-              <label for="settings-event-end" class="text-sm font-medium text-gray-700">Event end date</label>
+              <label for="settings-event-end" class="text-sm font-medium text-gray-700">End date</label>
               <input
                 type="date"
                 id="settings-event-end"
                 [formControl]="eventEndDateControl"
                 class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 data-testid="settings-event-end-input" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-registration-url">
+              <label for="settings-registration-url" class="text-sm font-medium text-gray-700">Registration URL</label>
+              <lfx-input-text [form]="form" control="applicationUrl" id="settings-registration-url" type="url" placeholder="https://eventbrite.com/…" />
+            </div>
+
+            <div class="flex flex-col gap-1.5" data-testid="settings-field-eventbrite-url">
+              <label for="settings-eventbrite-url" class="text-sm font-medium text-gray-700">Eventbrite URL</label>
+              <lfx-input-text [form]="form" control="eventbriteUrl" id="settings-eventbrite-url" type="url" placeholder="https://eventbrite.com/e/…" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3" data-testid="settings-event-location">
+              <div class="flex flex-col gap-1.5">
+                <label for="settings-city" class="text-sm font-medium text-gray-700">City</label>
+                <lfx-input-text [form]="form" control="city" id="settings-city" placeholder="San Francisco" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="settings-country" class="text-sm font-medium text-gray-700">Country</label>
+                <lfx-input-text [form]="form" control="country" id="settings-country" placeholder="US" />
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3" data-testid="settings-field-is-online">
+              <p-toggleSwitch
+                [ngModel]="isOnlineControl.value"
+                (onChange)="isOnlineControl.setValue($event.checked)"
+                inputId="settings-is-online" />
+              <label for="settings-is-online" class="text-sm font-medium text-gray-700 cursor-pointer">Online event</label>
             </div>
           </div>
         }
@@ -176,6 +219,64 @@
                 (onChange)="termsConditionsControl.setValue($event.checked)"
                 inputId="settings-terms" />
               <label for="settings-terms" class="text-sm font-medium text-gray-700 cursor-pointer">I agree to the terms and conditions</label>
+            </div>
+
+            <!-- Contacts -->
+            <div class="flex flex-col gap-4" data-testid="settings-contacts">
+              <div class="flex items-center justify-between">
+                <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Contacts</h4>
+              </div>
+
+              @for (group of contactGroups(); track $index) {
+                <div class="flex flex-col gap-3 p-4 border border-gray-200 rounded-lg" [attr.data-testid]="'settings-contact-' + $index">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-700">
+                      @for (ct of CONTACT_TYPES; track ct.value) {
+                        @if (ct.value === group.value['contactType']) { {{ ct.label }} }
+                      }
+                    </span>
+                    <button
+                      type="button"
+                      (click)="removeContact($index)"
+                      class="text-gray-400 hover:text-red-500 transition-colors"
+                      [attr.aria-label]="'Remove contact ' + ($index + 1)">
+                      <i class="fa-light fa-trash-can text-sm" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-600">First name</label>
+                      <lfx-input-text [form]="group" control="firstName" placeholder="First name" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-600">Last name</label>
+                      <lfx-input-text [form]="group" control="lastName" placeholder="Last name" />
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Email</label>
+                    <lfx-input-text [form]="group" control="email" type="email" placeholder="contact@example.org" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Phone</label>
+                    <lfx-input-text [form]="group" control="phoneNumber" type="tel" placeholder="+1 (555) 000-0000" />
+                  </div>
+                </div>
+              }
+
+              <div class="flex gap-2 flex-wrap" data-testid="settings-add-contact-buttons">
+                @for (ct of CONTACT_TYPES; track ct.value) {
+                  @if (!usedContactTypes().includes(ct.value)) {
+                    <lfx-button
+                      [label]="'Add ' + ct.label"
+                      icon="fa-light fa-plus"
+                      severity="secondary"
+                      size="small"
+                      (onClick)="addContact(ct.value)"
+                      [attr.data-testid]="'settings-add-contact-' + ct.value" />
+                  }
+                }
+              </div>
             </div>
           </div>
         }

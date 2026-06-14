@@ -71,6 +71,7 @@ export interface BackendInitiative {
   eventbrite_url?: string;
   event_start_date?: string;
   event_end_date?: string;
+  cii_project_id?: string;
   entity_details?: Record<string, string>;
   ostif_detail?: BackendOSTIFDetail;
   contacts?: BackendContact[];
@@ -188,9 +189,20 @@ export interface BackendUpdateInitiativeInput {
   industry?: string;
   logo_url?: string;
   website_url?: string;
+  coc_url?: string;
+  accept_funding?: boolean;
   status?: string;
+  // project-only
+  cii_project_id?: string;
+  // event-only
   event_start_date?: string;
   event_end_date?: string;
+  application_url?: string;
+  eventbrite_url?: string;
+  country?: string;
+  city?: string;
+  is_online?: boolean;
+  // security_audit-only
   ostif_detail?: BackendOSTIFDetailInput;
   contacts?: BackendContactInput[];
   goals?: BackendGoalInput[];

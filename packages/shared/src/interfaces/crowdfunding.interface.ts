@@ -36,6 +36,7 @@ export interface InitiativeBase {
   applicationUrl?: string;
   eventStartDate?: string;
   eventEndDate?: string;
+  ciiProjectId?: string;
   initiativeStats?: InitiativeStats;
   fundingStatus?: FundingStatus;
 }
@@ -315,9 +316,20 @@ export interface UpdateInitiativeInput {
   industry?: string;
   logoUrl?: string;
   websiteUrl?: string;
+  cocUrl?: string;
+  acceptFunding?: boolean;
   status?: CrowdfundingInitiativeStatus;
+  // project-only
+  ciiProjectId?: string;
+  // event-only
   eventStartDate?: string;
   eventEndDate?: string;
+  applicationUrl?: string;
+  eventbriteUrl?: string;
+  country?: string;
+  city?: string;
+  isOnline?: boolean;
+  // security_audit-only
   ostifDetail?: UpdateOSTIFDetailInput;
   contacts?: UpdateContactInput[];
   goals?: UpdateGoalInput[];
