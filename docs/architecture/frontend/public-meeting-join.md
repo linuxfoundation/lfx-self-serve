@@ -55,7 +55,7 @@ Signed-out branch: Sign In CTA + OR divider + guest-join form
   ↓
 Anonymous submits name/email in guest-join form
   ↓
-POST /public/api/meetings/:id/join  (password from meeting.password in payload)
+POST /public/api/meetings/:id/join-url?password=<meeting.password>  (email/name in body)
   → Server: validates password, checks join window, returns Zoom URL
   ↓
 Browser opens Zoom
@@ -74,7 +74,7 @@ Component renders: title, time, recurrence, agenda
 Signed-out branch: Sign In CTA + OR divider + guest-join form
   ↓
 Anonymous submits guest-join form
-  → POST /public/api/meetings/:id/join with password
+  → POST /public/api/meetings/:id/join-url with password
   → Server: validates password, returns Zoom URL
   ↓
 Browser opens Zoom
@@ -87,7 +87,7 @@ User opens /meetings/:id?password=<uuid>
   ↓
 GET returns meeting with restricted: true
   ↓
-Guest-join form submission → POST /public/api/meetings/:id/join
+Guest-join form submission → POST /public/api/meetings/:id/join-url
   → Server: restrictedMeetingCheck — looks up registrant by email or username
     → If not found: 403 error displayed in red banner
     → If found: returns Zoom URL using registrant's stored email
@@ -172,9 +172,9 @@ Key signals and their gating:
 - **Private or restricted:** validates `?password` query param against `meeting.password` via `validatePassword` (`apps/lfx-one/src/server/utils/security.util.ts`). Missing or wrong password → HTTP 400 (`ServiceValidationError`).
 - Response always includes `meeting.password` — the client uses it to build copy-link and returnTo URLs.
 
-### POST `/public/api/meetings/:id/join`
+### POST `/public/api/meetings/:id/join-url`
 
-**Location:** `PublicMeetingController.postMeetingLink`
+**Location:** `PublicMeetingController.postMeetingJoinUrl`
 
 - Validates password unconditionally for all visibilities.
 - Validates join-time window (`isWithinJoinWindow`).
