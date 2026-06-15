@@ -58,6 +58,13 @@ export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 export type CommitteeInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
 
 /**
+ * How the add-member dialog adds people when a writer submits the form.
+ *  - invite:       create a pending committee_invite (invite-and-forget)
+ *  - add_directly: create a committee_member immediately with no invite
+ */
+export type AddMemberActionMode = 'invite' | 'add_directly';
+
+/**
  * A pending/resolved invitation for a person (by email) to join a committee.
  *
  * Mirrors the committee-service `committee_invite` resource — the invite-and-forget

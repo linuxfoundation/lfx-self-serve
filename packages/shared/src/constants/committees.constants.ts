@@ -482,6 +482,12 @@ export const COMMITTEE_PERMISSION_OPTIONS = [
   { label: 'Manage', value: 'manage' },
 ] as const;
 
+/** Add-member dialog: invite-by-email vs direct roster add (writers only). */
+export const ADD_MEMBER_ACTION_OPTIONS = [
+  { label: 'Add directly', value: 'add_directly' },
+  { label: 'Send invite', value: 'invite' },
+] as const;
+
 /**
  * Member visibility options for committee settings
  * @description Controls the visibility level of member profiles within a committee
