@@ -16,6 +16,7 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
+import { splitDisplayName } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
 
@@ -192,7 +193,7 @@ export class OrgLensPeopleService {
 
     return result.rows.map((row) => {
       const name = cleanDisplayName(row.NAME, row.EMAIL);
-      const [firstName, lastName] = splitName(name);
+      const [firstName, lastName] = splitDisplayName(name);
       return {
         personKey: row.PERSON_KEY,
         lfid: row.LFID,
@@ -417,19 +418,6 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
-}
-
-/** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable. Snowflake carries only a single `name`, so this is lossy (the live sources supply real first/last names directly). */
-function splitName(name: string): [string | null, string | null] {
-  const trimmed = (name ?? '').trim();
-  if (!trimmed || trimmed.includes('@')) {
-    return [null, null];
-  }
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) {
-    return [parts[0], null];
-  }
-  return [parts[0], parts.slice(1).join(' ')];
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */

@@ -75,3 +75,16 @@ export function stableKeyParity(key: string): 0 | 1 {
   for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
   return (sum & 1) as 0 | 1;
 }
+
+/** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
+export function splitDisplayName(name: string | null): [string | null, string | null] {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed || trimmed.includes('@')) {
+    return [null, null];
+  }
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) {
+    return [parts[0], null];
+  }
+  return [parts[0], parts.slice(1).join(' ')];
+}

@@ -12,6 +12,7 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
+import { splitDisplayName } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -23,6 +24,9 @@ import { OrgLensPeopleService } from './org-lens-people.service';
 
 /** TTL for the merged directory cache. The merge fans out to 4 upstreams (Snowflake + committee + query-service + member-service), so a short window collapses the burst of calls a tab + its pickers make on open without serving stale rosters. */
 const DIRECTORY_CACHE_TTL_MS = 30_000;
+
+/** Hard cap on cache entries so the singleton can't grow unbounded across every (org x caller) pair over the server's lifetime; oldest-first eviction mirrors OrgMembershipResolverService. */
+const DIRECTORY_CACHE_MAX_ENTRIES = 2_000;
 
 interface DirectoryCacheEntry {
   at: number;
@@ -86,6 +90,10 @@ export class OrgPeopleDirectoryService {
     }
 
     const merged = this.merge(req, accountId, base, seats, keyContacts, access);
+    if (!this.cache.has(cacheKey) && this.cache.size >= DIRECTORY_CACHE_MAX_ENTRIES) {
+      const oldest = this.cache.keys().next();
+      if (!oldest.done) this.cache.delete(oldest.value);
+    }
     this.cache.set(cacheKey, { at: Date.now(), value: merged });
     return merged;
   }
@@ -161,7 +169,7 @@ export class OrgPeopleDirectoryService {
         const existing = byEmail.get(email);
         if (existing) {
           this.addSource(existing, 'access');
-          const [firstName, lastName] = splitName(user.name);
+          const [firstName, lastName] = splitDisplayName(user.name);
           this.fill(existing, { firstName, lastName, title: user.jobTitle, avatarUrl: user.avatarUrl });
         } else {
           byEmail.set(email, this.rowFromAccess(user, email));
@@ -207,7 +215,7 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string): OrgAllEmployeeRow {
-    const [firstName, lastName] = splitName(user.name);
+    const [firstName, lastName] = splitDisplayName(user.name);
     return this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access');
   }
 
@@ -275,17 +283,4 @@ function computeStats(rows: OrgAllEmployeeRow[]): OrgAllEmployeeStats {
     if (inGov || hasCode || hasEvents || hasTraining) activeInOss++;
   }
   return { activeInOss, inGovernance, codeContributors, eventAttendees, trainees };
-}
-
-/** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
-function splitName(name: string | null): [string | null, string | null] {
-  const trimmed = (name ?? '').trim();
-  if (!trimmed || trimmed.includes('@')) {
-    return [null, null];
-  }
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) {
-    return [parts[0], null];
-  }
-  return [parts[0], parts.slice(1).join(' ')];
 }

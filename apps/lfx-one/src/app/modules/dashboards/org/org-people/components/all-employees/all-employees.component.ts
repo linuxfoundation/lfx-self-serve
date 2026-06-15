@@ -77,6 +77,9 @@ export class AllEmployeesComponent {
   // Expansion is per-(account, personKey) reset on account change → personKey is unique within an account, so keying by personKey alone is safe.
   protected readonly expansion = signal<Record<string, boolean>>({});
 
+  // personKeys whose avatar image failed to load — render initials instead of a broken image, declaratively (no imperative DOM access in this zoneless component). Reset on account switch via resetAllState.
+  protected readonly failedAvatarKeys = signal<Set<string>>(new Set());
+
   // detail caches are keyed by `${accountId}:${personKey}` so an in-flight response from account A can't pollute account B's view even if the same personKey exists in both. Value types include `| undefined` so indexed access is honest in template @let bindings (tsconfig has noUncheckedIndexedAccess off).
   protected readonly detailMap = signal<Record<string, OrgAllEmployeeDetail | undefined>>({});
   protected readonly detailLoading = signal<Record<string, boolean | undefined>>({});
@@ -235,9 +238,14 @@ export class AllEmployeesComponent {
     this.personPanel.open(row.name);
   }
 
-  /** Hide a broken avatar image so the initials rendered behind it become visible. */
-  protected onAvatarError(event: Event): void {
-    (event.target as HTMLImageElement).style.display = 'none';
+  /** Record a broken avatar so the template stops rendering the image and the initials behind it show through. */
+  protected onAvatarError(personKey: string): void {
+    this.failedAvatarKeys.update((keys) => {
+      if (keys.has(personKey)) return keys;
+      const next = new Set(keys);
+      next.add(personKey);
+      return next;
+    });
   }
 
   protected retry(): void {
@@ -274,9 +282,10 @@ export class AllEmployeesComponent {
       // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
       // always present, server-lowercased). Rows without an email can't be joined and render `—`.
       access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
-      // Access-only principals are merged in live with a synthetic `live-` personKey that has no Snowflake
-      // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic.
-      isSynthetic: row.sources.length === 1 && row.sources[0] === 'access',
+      // Live-only people (no `snowflake` source) carry a synthetic `live-` personKey with no stored Snowflake
+      // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
+      // regardless of which live source (access / board / committee / keyContact) added them.
+      isSynthetic: !row.sources.includes('snowflake'),
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
   }
@@ -414,6 +423,7 @@ export class AllEmployeesComponent {
     this.sortDirection.set(-1);
     this.limit.set(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
     this.expansion.set({});
+    this.failedAvatarKeys.set(new Set());
     this.detailMap.set({});
     this.detailLoading.set({});
     this.detailErrorMap.set({});

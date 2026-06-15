@@ -209,8 +209,13 @@
                       [class]="row.avatarColorClass"
                       aria-hidden="true">
                       {{ row.initials }}
-                      @if (row.avatarUrl) {
-                        <img [src]="row.avatarUrl" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover" (error)="onAvatarError($event)" />
+                      @if (row.avatarUrl && !failedAvatarKeys().has(row.personKey)) {
+                        <img
+                          [src]="row.avatarUrl"
+                          alt=""
+                          loading="lazy"
+                          class="absolute inset-0 h-full w-full object-cover"
+                          (error)="onAvatarError(row.personKey)" />
                       }
                     </span>
                     <span class="flex min-w-0 flex-col">
