@@ -89,19 +89,17 @@ export class OrgContributionsComponent {
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
   protected readonly dir = signal<ContributionsSortDirection>(this.initialParams.get('dir') === 'asc' ? 1 : -1);
+  protected readonly commitSort = signal<ContributionsCommitSortColumn>(this.parseInitialCommitSort());
+  protected readonly commitDir = signal<ContributionsSortDirection>(this.initialParams.get('commitDir') === 'asc' ? 1 : -1);
   protected readonly page = signal<number>(this.parseInitialPage());
   protected readonly size = signal<number>(this.parseInitialSize());
   protected readonly retryTrigger = signal<number>(0);
 
   // Repositories / Commits live on separate tabs within one content card (LFX card-tabs pattern).
-  protected readonly mainTab = signal<'repositories' | 'commits'>('repositories');
+  protected readonly mainTab = signal<'repositories' | 'commits'>(this.parseInitialView());
 
-  // Org-wide Commits feed sort is client-side over the rows the BFF already returned.
-  protected readonly commitSort = signal<ContributionsCommitSortColumn>('date');
-  protected readonly commitDir = signal<ContributionsSortDirection>(-1);
-
-  // Committer side panel — name of the committer whose detail drawer is open (null = closed).
-  protected readonly selectedCommitter = signal<string | null>(null);
+  // Committer side panel — contributorId of the committer whose detail drawer is open (null = closed).
+  protected readonly selectedContributorId = signal<string | null>(null);
   protected readonly committerTab = signal<CommitterPanelTab>('code');
 
   private readonly loadingState = signal<boolean>(true);
@@ -130,13 +128,15 @@ export class OrgContributionsComponent {
   protected readonly kpis = computed(() => this.response().kpis);
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
-  protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.initCommitRows());
+  protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());
   protected readonly commitAriaSortMap: Signal<Record<ContributionsCommitSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() =>
     this.initCommitAriaSortMap()
   );
   protected readonly committerDetail: Signal<OrgCommitterDetailVm | null> = computed(() => this.initCommitterDetail());
   protected readonly totalRecords = computed(() => this.response().totalRecords);
+  protected readonly commitsTotalRecords = computed(() => this.response().commitsTotalRecords);
+  protected readonly activeTotalRecords = computed(() => (this.mainTab() === 'commits' ? this.commitsTotalRecords() : this.totalRecords()));
 
   protected readonly projectOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initProjectOptions());
   protected readonly employeeOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initEmployeeOptions());
@@ -146,7 +146,7 @@ export class OrgContributionsComponent {
   protected readonly searchPlaceholder = computed(() => (this.mainTab() === 'commits' ? 'Search commits' : 'Search repositories'));
   protected readonly mainTabs: Signal<FilterPillOption[]> = computed(() => [
     { id: 'repositories', label: `Repositories (${this.totalRecords().toLocaleString()})` },
-    { id: 'commits', label: `Commits (${this.commitRows().length.toLocaleString()})` },
+    { id: 'commits', label: `Commits (${this.commitsTotalRecords().toLocaleString()})` },
   ]);
 
   protected readonly sortIconMap: Signal<Record<ContributionsSortColumn, string>> = computed(() => this.initSortIconMap());
@@ -161,6 +161,9 @@ export class OrgContributionsComponent {
     // Any filter change (everything except the page index) resets pagination to page 1.
     this.filterForm.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe(() => this.page.set(1));
     combineLatest([toObservable(this.sort), toObservable(this.dir), toObservable(this.size)])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.page.set(1));
+    combineLatest([toObservable(this.commitSort), toObservable(this.commitDir)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.page.set(1));
   }
@@ -185,9 +188,9 @@ export class OrgContributionsComponent {
     this.commitDir.set(column === 'date' ? -1 : 1);
   }
 
-  protected openCommitter(name: string): void {
+  protected openCommitter(contributorId: string): void {
     this.committerTab.set('code');
-    this.selectedCommitter.set(name);
+    this.selectedContributorId.set(contributorId);
   }
 
   protected setCommitterTab(tab: CommitterPanelTab): void {
@@ -224,12 +227,13 @@ export class OrgContributionsComponent {
 
   protected onCommitterPanelVisible(visible: boolean): void {
     if (!visible) {
-      this.selectedCommitter.set(null);
+      this.selectedContributorId.set(null);
     }
   }
 
   protected onMainTabChange(tabId: string): void {
     this.mainTab.set(tabId === 'commits' ? 'commits' : 'repositories');
+    this.page.set(1);
   }
 
   protected onTablePage(event: { first?: number; rows?: number }): void {
@@ -250,12 +254,15 @@ export class OrgContributionsComponent {
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
     return {
+      view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
       projects: values.projects ?? [],
       employees: values.employees ?? [],
       sort: this.sort(),
       dir: this.dir(),
+      commitSort: this.commitSort(),
+      commitDir: this.commitDir(),
       page: this.page(),
       size: this.size(),
     };
@@ -291,24 +298,6 @@ export class OrgContributionsComponent {
     );
   }
 
-  private initCommitRows(): OrgContributionCommitRowVm[] {
-    const rows = this.response().commits.map(decorateCommitFeedRow);
-    const col = this.commitSort();
-    const dir = this.commitDir();
-    return rows.sort((a, b) => {
-      switch (col) {
-        case 'project':
-          return a.projectName.localeCompare(b.projectName) * dir;
-        case 'committer':
-          return a.committerName.localeCompare(b.committerName) * dir;
-        case 'username':
-          return (a.username ?? '').localeCompare(b.username ?? '') * dir;
-        case 'date':
-          return (new Date(a.committedTs).getTime() - new Date(b.committedTs).getTime()) * dir;
-      }
-    });
-  }
-
   private initKpiCards(): StatCardItem[] {
     const k = this.kpis();
     return [
@@ -324,11 +313,11 @@ export class OrgContributionsComponent {
   }
 
   private initCommitterDetail(): OrgCommitterDetailVm | null {
-    const name = this.selectedCommitter();
-    if (!name) {
+    const contributorId = this.selectedContributorId();
+    if (!contributorId) {
       return null;
     }
-    const rows = this.commitRows().filter((c) => c.committerName === name);
+    const rows = this.commitRows().filter((c) => c.contributorId === contributorId);
     if (rows.length === 0) {
       return null;
     }
@@ -342,6 +331,7 @@ export class OrgContributionsComponent {
       source: first.source,
       sourceIconClass: first.sourceIconClass,
       profileUrl: first.profileUrl,
+      avatarUrl: first.committerAvatarUrl,
       initials: first.initials,
       avatarColorClass: first.avatarColorClass,
       totalCommits: rows.length,
@@ -418,12 +408,15 @@ export class OrgContributionsComponent {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
+        view: query.view === 'repositories' ? null : query.view,
         q: query.search || null,
         range: query.dateRange === CONTRIBUTIONS_DEFAULT_DATE_RANGE ? null : query.dateRange,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
+        commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,
+        commitDir: query.commitDir === 1 ? 'asc' : null,
         page: query.page > 1 ? query.page : null,
         size: query.size === CONTRIBUTIONS_DEFAULT_PAGE_SIZE ? null : query.size,
       },
@@ -440,6 +433,15 @@ export class OrgContributionsComponent {
   private parseInitialSort(): ContributionsSortColumn {
     const raw = this.initialParams.get('sort');
     return raw === 'firstCommit' || raw === 'lastCommit' ? raw : 'commits';
+  }
+
+  private parseInitialCommitSort(): ContributionsCommitSortColumn {
+    const raw = this.initialParams.get('commitSort');
+    return raw === 'project' || raw === 'committer' || raw === 'username' ? raw : 'date';
+  }
+
+  private parseInitialView(): 'repositories' | 'commits' {
+    return this.initialParams.get('view') === 'commits' ? 'commits' : 'repositories';
   }
 
   private parseInitialCsv(param: string): string[] {
