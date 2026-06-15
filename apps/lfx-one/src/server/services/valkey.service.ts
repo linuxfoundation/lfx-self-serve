@@ -162,5 +162,11 @@ export class ValkeyService implements CachePort {
   }
 }
 
-/** Shared singleton for convenient usage across services. */
-export const valkeyService = ValkeyService.getInstance();
+/** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */
+export const valkeyService: ValkeyService = new Proxy({} as ValkeyService, {
+  get: (_target, prop: string | symbol, receiver) => {
+    const instance = ValkeyService.getInstance();
+    const value = Reflect.get(instance, prop, receiver);
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
+});

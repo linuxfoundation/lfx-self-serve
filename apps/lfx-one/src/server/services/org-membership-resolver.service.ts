@@ -73,8 +73,9 @@ export class OrgMembershipResolverService {
   }
 
   // Fetches slug-scoped project_membership documents for one org UUID, served through the shared
-  // Valkey cache keyed by the authorization principal (access-token `sub`) so entries are strictly
-  // per-user. When the principal can't be resolved we fail closed: fetch fresh with no cache read/write.
+  // Valkey cache keyed by the authorization principal (the effective username/nickname from
+  // getEffectiveUsername(req)) so entries are strictly per-user. When the principal can't be
+  // resolved we fail closed: fetch fresh with no cache read/write.
   public async fetchMembershipsBySlug(req: Request, b2bOrgUid: string, foundationSlug: string): Promise<ProjectMembershipDoc[]> {
     const slug = (foundationSlug ?? '').trim();
     if (!b2bOrgUid || !isFilterSafeIdentifier(b2bOrgUid) || !slug || !isFilterSafeIdentifier(slug)) return [];
