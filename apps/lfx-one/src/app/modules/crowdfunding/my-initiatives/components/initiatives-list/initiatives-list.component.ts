@@ -3,6 +3,7 @@
 
 import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InitiativeBase, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { InitiativeCardComponent } from '../initiative-card/initiative-card.component';
@@ -10,7 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 
 @Component({
   selector: 'lfx-initiatives-list',
-  imports: [ButtonComponent, CardComponent, FilterPillsComponent, InitiativeCardComponent],
+  imports: [ButtonComponent, CardComponent, EmptyStateComponent, FilterPillsComponent, InitiativeCardComponent],
   templateUrl: './initiatives-list.component.html',
   styleUrl: './initiatives-list.component.scss',
 })
@@ -32,6 +33,27 @@ export class InitiativesListComponent {
       if (filter === 'pending') return i.status === 'pending' || i.status === 'submitted';
       return i.status === 'hidden' || i.status === 'declined';
     });
+  });
+
+  protected readonly emptyIcon = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'fa-light fa-box-archive';
+    if (filter === 'pending') return 'fa-light fa-hourglass';
+    return 'fa-light fa-box-dollar';
+  });
+
+  protected readonly emptyTitle = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'No archived initiatives';
+    if (filter === 'pending') return 'No pending initiatives';
+    return 'No active initiatives';
+  });
+
+  protected readonly emptySubtitle = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'Hidden or declined initiatives will appear here.';
+    if (filter === 'pending') return 'Initiatives awaiting review will appear here.';
+    return 'Fundraising initiatives you publish will appear here.';
   });
 
   protected setFilter(value: string): void {

@@ -2,6 +2,19 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col" data-testid="donation-history-table">
+  @if (items().length === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-hand-holding-heart"
+      title="No donations yet"
+      subtitle="Your donation history will appear here once you contribute to an initiative."
+      ctaLabel="Explore Initiatives"
+      [ctaHref]="exploreUrl()"
+      ctaTarget="_blank"
+      ctaRel="noopener noreferrer"
+      [ctaGhost]="true"
+      [ctaSize]="undefined"
+      data-testid="donation-history-empty-state" />
+  } @else {
   <div class="overflow-x-auto rounded-lg border border-gray-200">
     <table class="w-full text-sm" aria-label="Donation history">
       <thead>
@@ -35,5 +48,6 @@
     <div class="flex justify-center pt-3" data-testid="donation-history-load-more">
       <lfx-button label="Load more" severity="secondary" size="small" [loading]="loadingMore()" [disabled]="loadingMore()" (onClick)="onLoadMore()" />
     </div>
+  }
   }
 </div>
