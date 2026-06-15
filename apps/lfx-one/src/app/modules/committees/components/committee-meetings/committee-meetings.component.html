@@ -95,7 +95,7 @@
             size="small"
             [class]="isCalendarView() ? 'md:ml-auto' : ''"
             [routerLink]="['/meetings', 'create']"
-            [queryParams]="{ committee_uid: committee().uid }"
+            [queryParams]="createMeetingQueryParams()"
             data-testid="committee-meetings-create-btn"></lfx-button>
         }
       </div>
