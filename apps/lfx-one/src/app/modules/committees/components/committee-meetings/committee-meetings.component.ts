@@ -67,6 +67,10 @@ export class CommitteeMeetingsComponent {
   public isListView = computed(() => this.viewMode() === 'list');
   public isCalendarView = computed(() => this.viewMode() === 'calendar');
 
+  // Query params for the create-meeting route. Includes project slug so writerGuard
+  // can resolve write access — without it the guard redirects to the lens overview.
+  public createMeetingQueryParams: Signal<Record<string, string>> = this.initCreateMeetingQueryParams();
+
   // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
     search: new FormControl(''),
@@ -170,6 +174,17 @@ export class CommitteeMeetingsComponent {
   }
 
   // Private initializer functions
+
+  private initCreateMeetingQueryParams(): Signal<Record<string, string>> {
+    return computed(() => {
+      const committee = this.committee();
+      const params: Record<string, string> = { committee_uid: committee.uid };
+      if (committee.project_slug) {
+        params['project'] = committee.project_slug;
+      }
+      return params;
+    });
+  }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
     return toSignal(
