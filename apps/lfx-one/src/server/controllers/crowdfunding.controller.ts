@@ -284,8 +284,8 @@ export class CrowdfundingController {
       if (typeof body['cocUrl'] === 'string') input.cocUrl = body['cocUrl'].trim() || undefined;
       if (typeof body['acceptFunding'] === 'boolean') input.acceptFunding = body['acceptFunding'];
       if (typeof body['ciiProjectId'] === 'string') input.ciiProjectId = body['ciiProjectId'].trim() || undefined;
-      if (typeof body['eventStartDate'] === 'string') input.eventStartDate = body['eventStartDate'];
-      if (typeof body['eventEndDate'] === 'string') input.eventEndDate = body['eventEndDate'];
+      if (typeof body['eventStartDate'] === 'string') input.eventStartDate = body['eventStartDate'].trim() || undefined;
+      if (typeof body['eventEndDate'] === 'string') input.eventEndDate = body['eventEndDate'].trim() || undefined;
       if (typeof body['applicationUrl'] === 'string') input.applicationUrl = body['applicationUrl'].trim() || undefined;
       if (typeof body['eventbriteUrl'] === 'string') input.eventbriteUrl = body['eventbriteUrl'].trim() || undefined;
       if (typeof body['country'] === 'string') input.country = body['country'].trim() || undefined;

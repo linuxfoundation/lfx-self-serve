@@ -275,17 +275,14 @@ export class InitiativeSettingsDrawerComponent {
           licenseType: licenseType || undefined,
           totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents * 100) : undefined,
         };
-        const contactGs = this.contactGroups();
-        if (contactGs.length > 0) {
-          input.contacts = contactGs.map((g) => ({
-            contactType: g.value.contactType as string,
-            firstName: (g.value.firstName as string) || undefined,
-            lastName: (g.value.lastName as string) || undefined,
-            email: (g.value.email as string) || undefined,
-            phoneNumber: (g.value.phoneNumber as string) || undefined,
-            preferredContactMethod: (g.value.preferredContactMethod as string) || undefined,
-          }));
-        }
+        input.contacts = this.contactGroups().map((g) => ({
+          contactType: g.value.contactType as string,
+          firstName: (g.value.firstName as string) || undefined,
+          lastName: (g.value.lastName as string) || undefined,
+          email: (g.value.email as string) || undefined,
+          phoneNumber: (g.value.phoneNumber as string) || undefined,
+          preferredContactMethod: (g.value.preferredContactMethod as string) || undefined,
+        }));
       }
 
       if (goal != null) {
