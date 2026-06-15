@@ -166,10 +166,14 @@ export class NavigationService {
     const priority = lens === 'foundation' ? BOARD_SCOPED_PERSONA_PRIORITY : PROJECT_SCOPED_PERSONA_PRIORITY;
     const defaultItem = this.pickItemByPersonaPriority(page.items, priority);
     const context = lensItemToProjectContext(defaultItem);
+    // Only write ?project= to the URL if it was already present — prevents the default
+    // selection from injecting a wrong project slug into entity-specific URLs (e.g.
+    // /project/groups/:id) that a user navigated to without an explicit project context.
+    const syncUrl = !!this.router.parseUrl(this.router.url).queryParams['project'];
     if (lens === 'foundation') {
-      this.projectContextService.setFoundation(context);
+      this.projectContextService.setFoundation(context, syncUrl);
     } else {
-      this.projectContextService.setProject(context);
+      this.projectContextService.setProject(context, syncUrl);
     }
   }
 
