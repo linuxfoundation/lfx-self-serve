@@ -35,14 +35,18 @@ export class OrgOverviewComponent {
     () => this.loaded() && this.orgNavigationService.items().length === 0 && !this.selectedAccount().uid && !this.selectedAccount().accountId
   );
 
-  /** True once role grants settle and the caller has no org access (no direct/inherited grant and no persona-seeded account); mirrors the sidebar selector gate so zero-access users get a definitive denied state instead of an endless skeleton. */
+  /**
+   * True once role grants settle and the caller has no org access. Mirrors the sidebar org-selector
+   * visibility gate EXACTLY — direct writer/auditor grants or a persona-seeded account. Inherited-only
+   * grants intentionally do NOT count: the selector gate is direct-only, so an inherited-only user never
+   * triggers the selector's list fetch. If inherited grants were treated as access here, that user would
+   * stay on the loading skeleton forever instead of getting the definitive not-available state.
+   */
   protected readonly hasNoOrgAccess: Signal<boolean> = computed(
     () =>
       this.orgRoleGrantsService.loaded() &&
       this.orgRoleGrantsService.writerSet().size === 0 &&
       this.orgRoleGrantsService.auditorSet().size === 0 &&
-      this.orgRoleGrantsService.inheritedWriterSet().size === 0 &&
-      this.orgRoleGrantsService.inheritedAuditorSet().size === 0 &&
       this.accountContextService.availableAccounts().length === 0
   );
 }

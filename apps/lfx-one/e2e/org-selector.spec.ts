@@ -322,6 +322,66 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
   });
 });
 
+// S15 — no-access disclosure: a user whose role-grants settle empty (no direct
+// writer/auditor grant) AND who has no persona-seeded accounts must land on a
+// definitive "Organization Lens is not available" state on /org/overview — never an
+// endless loading skeleton. Stubs mirror S9 (the visibility gate's two inputs) so the
+// assertion is hermetic to the bootstrap user's real grants.
+test.describe('Org Selector — /org/overview no-access state (S15)', () => {
+  test('S15: empty role-grants + no persona-seeds renders the no-access state, not the skeleton', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          writers: [],
+          auditors: [],
+          cascadingWriters: [],
+          cascadingAuditors: [],
+          username: 'e2e-no-access',
+          loaded_at: new Date().toISOString(),
+        }),
+      })
+    );
+    await page.route('**/api/user/personas*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          personas: ['contributor'],
+          personaProjects: {},
+          projects: [],
+          organizations: [],
+          isRootWriter: false,
+        }),
+      })
+    );
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
+
+    if (!page.url().includes('/org/overview')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
+    }
+
+    // hasNoOrgAccess settles to true once the stubbed (empty) role-grants resolve — independent of the
+    // org-selector list fetch, which never fires for a zero-grants user. The no-access branch must win
+    // over the loading skeleton.
+    const root = page.getByTestId('org-overview-page');
+    await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
+    expect(page.url()).toContain('/org/overview');
+    await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('Organization Lens is not available');
+    // The skeleton and the no-org-selected empty state must NOT show in this branch.
+    await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
+    await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
+  });
+});
+
 // S12 — spec 022 US3: every row returned by /api/nav/org-items must carry a
 // non-null accountId. This is the FR-005 omission-policy enforcement gate.
 test.describe('Org Selector — spec 022 accountId non-null invariant (S12)', () => {
