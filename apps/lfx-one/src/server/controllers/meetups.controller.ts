@@ -99,8 +99,8 @@ export class MeetupsController {
     return {
       isPast,
       searchQuery: req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined,
-      community: req.query['community'] ? String(req.query['community']) : undefined,
-      role: req.query['role'] ? String(req.query['role']) : undefined,
+      community: req.query['community'] ? String(req.query['community']).trim() : undefined,
+      role: req.query['role'] ? String(req.query['role']).trim() : undefined,
       status,
       sortField: req.query['sortField'] ? String(req.query['sortField']) : undefined,
       pageSize,
