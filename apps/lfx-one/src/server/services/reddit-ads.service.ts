@@ -400,6 +400,17 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     throw new Error('Invalid budget: must be a positive number');
   }
 
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRe.test(config.startDate)) {
+    throw new Error(`Invalid start date format: ${config.startDate} — expected YYYY-MM-DD`);
+  }
+  if (!dateRe.test(config.endDate)) {
+    throw new Error(`Invalid end date format: ${config.endDate} — expected YYYY-MM-DD`);
+  }
+  if (config.endDate <= config.startDate) {
+    throw new Error(`End date ${config.endDate} must be after start date ${config.startDate}`);
+  }
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 

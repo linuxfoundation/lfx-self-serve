@@ -42,7 +42,7 @@
         type="button"
         role="tab"
         [attr.aria-selected]="selectedTab() === tab.id"
-        [attr.aria-controls]="'panel-' + tab.id"
+        [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
         [attr.id]="'tab-' + tab.id"
         [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
         (click)="selectTab(tab.id)"
