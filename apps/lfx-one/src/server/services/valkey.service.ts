@@ -132,13 +132,16 @@ export class ValkeyService implements CachePort {
   }
 
   /**
-   * Redacts the per-user tail of a cache key for logging. Keys are `${APP_PREFIX}:${NAMESPACE}:${principal}:…`,
-   * so we keep only the first two (non-user) segments and mask the rest — observability without leaking
-   * JWT `sub`/usernames into infrastructure logs.
+   * Redacts the per-user tail of a cache key for logging. Keys are `${APP_PREFIX}:${NAMESPACE}:${principal}:…`
+   * where the namespace itself may carry an optional `vN` version segment (e.g. `org-membership:v1`). We keep
+   * the non-user prefix — app prefix, namespace, and that optional version — and mask everything from the
+   * principal onward, preserving full namespace/version in logs without leaking usernames.
    */
   private static redactKey(key: string): string {
     const parts = key.split(':');
-    return parts.length <= 2 ? key : `${parts[0]}:${parts[1]}:***`;
+    if (parts.length <= 2) return key;
+    const keep = /^v\d+$/.test(parts[2]) ? 3 : 2;
+    return parts.length <= keep ? key : `${parts.slice(0, keep).join(':')}:***`;
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */
