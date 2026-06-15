@@ -43,7 +43,7 @@ The "Show Members" button is only rendered for `authenticated() && (meeting.orga
 
 ### Flow 1 — Anonymous, public upcoming meeting
 
-```
+```text
 User opens /meetings/:id (no ?password needed)
   ↓
 GET /public/api/meetings/:id
@@ -63,7 +63,7 @@ Browser opens Zoom
 
 ### Flow 2 — Anonymous, private/restricted upcoming meeting with valid password
 
-```
+```text
 User opens /meetings/:id?password=<uuid>  (from invite link)
   ↓
 GET /public/api/meetings/:id?password=<uuid>
@@ -82,7 +82,7 @@ Browser opens Zoom
 
 ### Flow 3 — Anonymous, restricted meeting (email confirmation required)
 
-```
+```text
 User opens /meetings/:id?password=<uuid>
   ↓
 GET returns meeting with restricted: true
@@ -97,7 +97,7 @@ Browser opens Zoom
 
 ### Flow 4 — Anonymous, missing or wrong password on private/restricted
 
-```
+```text
 User opens /meetings/:id  (no password, or wrong password)
   ↓
 GET /public/api/meetings/:id → Server returns 400 (ServiceValidationError)
@@ -107,7 +107,7 @@ Client catchError: status 400 → router.navigate(['/meetings/not-found'])
 
 ### Flow 5 — Authenticated organizer or invited user
 
-```
+```text
 User opens /meetings/:id (with or without ?password)
   ↓
 GET /public/api/meetings/:id
@@ -145,7 +145,7 @@ Key signals and their gating:
 
 **Template structure:**
 
-```
+```html
 <lfx-header>
 @if (meeting()) {
   badge row (Private / Ended / meeting-type / recurrence)

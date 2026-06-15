@@ -1102,6 +1102,19 @@ export interface UrlMetadataResponse {
 }
 
 /**
+ * Slim project context returned alongside public meeting endpoints.
+ * Only the fields needed for the join page — callers must not assume
+ * any other project fields are present.
+ */
+export type PublicMeetingProject = {
+  name: string;
+  slug: string;
+  logo_url: string;
+  uid: string;
+  parent_uid: string;
+};
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
@@ -1109,7 +1122,7 @@ export interface UrlMetadataResponse {
  */
 export interface PublicPastMeetingResponse {
   meeting: PastMeeting;
-  project: { name: string; slug: string; logo_url: string; uid: string; parent_uid: string };
+  project: PublicMeetingProject;
   full_access: boolean;
 }
 

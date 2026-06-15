@@ -30,7 +30,7 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
-  Project,
+  PublicMeetingProject,
   PublicPastMeetingResponse,
   QueryServiceCountResponse,
   UpdateMeetingAttachmentRequest,
@@ -212,7 +212,7 @@ export class MeetingService {
     );
   }
 
-  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: Project }> {
+  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
     let params = new HttpParams();
     if (password) {
       params = params.set('password', password);

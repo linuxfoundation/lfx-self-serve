@@ -122,6 +122,12 @@ export class PublicMeetingController {
         meeting.committee_members_count = 0;
       }
 
+      // The Zoom host key grants host privileges to whoever possesses it.
+      // Strip it from the response for unauthenticated callers.
+      if (!isAuthenticated) {
+        delete (meeting as Partial<Meeting>).host_key;
+      }
+
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
