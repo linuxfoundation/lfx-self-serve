@@ -100,19 +100,25 @@ export class OrgRoleGrantsService {
 
   /**
    * Rejects a corrupt/legacy/partial cached entry (so deserialize never throws and the response contract
-   * holds): both Maps must be present as arrays, and the fields later surfaced on the wire (`loadedAt`,
-   * `upstreamFailed`, `username`) must have their expected types — otherwise degrade to a miss + recompute.
+   * holds): both Maps must be present as arrays of `[key, value]` tuples, and the fields later surfaced on
+   * the wire (`loadedAt`, `upstreamFailed`, `username`) must have their expected types — otherwise degrade
+   * to a miss + recompute.
    */
   private static isValidCacheEntry(value: unknown): boolean {
     const entry = value as Partial<AccessAwareOrgsCacheEntry> | null;
     return (
       !!entry &&
-      Array.isArray(entry.resolved) &&
-      Array.isArray(entry.orgDocByUid) &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.resolved) &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.orgDocByUid) &&
       typeof entry.username === 'string' &&
       typeof entry.loadedAt === 'string' &&
       typeof entry.upstreamFailed === 'boolean'
     );
+  }
+
+  /** True only when the value is an array of `[key, value]` tuples — the exact shape `new Map(...)` can consume without throwing. */
+  private static isEntryTupleArray(value: unknown): boolean {
+    return Array.isArray(value) && value.every((item) => Array.isArray(item) && item.length === 2);
   }
 
   /** Maps → ordered entry arrays for JSON storage (insertion order preserved). */
