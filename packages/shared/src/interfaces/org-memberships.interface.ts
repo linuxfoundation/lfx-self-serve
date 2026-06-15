@@ -120,6 +120,8 @@ export interface KeyContactEmployee {
   fullName: string;
   jobTitle: string | null;
   initials: string;
+  /** Optional avatar/photo URL; the picker falls back to initials when absent. */
+  avatarUrl?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */
