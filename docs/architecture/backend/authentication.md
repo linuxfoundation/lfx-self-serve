@@ -90,7 +90,7 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 | **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username`, `user.preferred_username` |
 
 - **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse or display it raw (strip the prefix with `stripAuthPrefix` if you must show it). A few call sites still pass the prefixed `sub` upstream during the migration window — e.g. `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)`.
-- **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim (LFXV2-2122).
+- **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim.
 
 ### ID token vs access token — where the claims actually live
 
@@ -120,7 +120,7 @@ Object.assign(auth.user, {
 });
 ```
 
-> **`getUsernameFromAuth()` naming.** For Authelia tokens it returns `preferred_username`; for Auth0 tokens it falls back to `getEffectiveUsername(req)` (LFXV2-2122). The name is still easy to misread — prefer `getEffectiveUsername` directly when you need the LFID handle.
+> **`getUsernameFromAuth()` naming.** For Authelia tokens it returns `preferred_username`; for Auth0 tokens it falls back to `getEffectiveUsername(req)`. The name is still easy to misread — prefer `getEffectiveUsername` directly when you need the LFID handle.
 
 ### When to use which
 
@@ -144,9 +144,9 @@ Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — only for call sites whose upstream still wants the prefixed sub |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                             |
 
-### Migration: `sub` → `username` (LFXV2-1962 / LFXV2-2122)
+### Migration: `sub` → `username`
 
-Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. **LFXV2-2122** (merged in [#912](https://github.com/linuxfoundation/lfx-self-serve/pull/912)) flipped the first wave in this repo:
+Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. The first wave landed in [#912](https://github.com/linuxfoundation/lfx-self-serve/pull/912):
 
 - **Front-end (ID token):** DataDog RUM `id`, OpenFeature `targetingKey`, and survey `creator_id` now read `https://sso.linuxfoundation.org/claims/username` (OpenFeature no longer falls back to `sub` — existing LaunchDarkly rules keyed on sub values need updating before deploy).
 - **BFF call sites:** `getEffectiveSub` → `getEffectiveUsername` in changelog, copilot, org-identity, org-navigation, org-lens-access, and org-membership cache keys; `project.service.ts` uses `resolveEmailToUsername` (not `resolveEmailToSub`) for permission and user-info lookups against the plain-LFID `b2b_org_settings` index.

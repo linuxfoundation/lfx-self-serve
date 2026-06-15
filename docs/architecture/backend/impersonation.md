@@ -164,7 +164,7 @@ Many controllers and services read the user's email/username from `req.oidc.user
 | `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `lguerra`)                 |
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|lguerra`); rare remaining sites |
 
-For the full `username` vs `sub` distinction and the LFXV2-1962 migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
+For the full `username` vs `sub` distinction and the `sub` → `username` migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
 These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 

@@ -756,7 +756,7 @@ const userContext: EvaluationContext = {
 };
 ```
 
-> **Identity (LFXV2-2122).** `targetingKey` uses the LFID username claim chain above — not Auth0 `sub`. LaunchDarkly rules keyed on legacy `sub` values stop matching after deploy; update them to LFID usernames. See [Authentication — Identity Claims](../backend/authentication.md#-identity-claims-username-vs-sub).
+> **Identity.** `targetingKey` uses the LFID username claim chain above — not Auth0 `sub`. LaunchDarkly rules keyed on legacy `sub` values stop matching after deploy; update them to LFID usernames. See [Authentication — Identity Claims](../backend/authentication.md#-identity-claims-username-vs-sub).
 
 **Context Structure:**
 
