@@ -304,7 +304,7 @@ export class MeetupsService {
   private resolveMeetupsSchema(): string {
     const schema = process.env['MEETUPS_SNOWFLAKE_SCHEMA'] || MEETUPS_DEFAULT_SNOWFLAKE_SCHEMA;
     if (!MEETUPS_SNOWFLAKE_SCHEMA_PATTERN.test(schema)) {
-      throw new MicroserviceError('MEETUPS_SNOWFLAKE_SCHEMA must be a dot-separated Snowflake identifier path', 500, 'MEETUPS_SCHEMA_CONFIG_ERROR', {
+      throw new MicroserviceError('MEETUPS_SNOWFLAKE_SCHEMA must be a Snowflake DATABASE.SCHEMA identifier path', 500, 'MEETUPS_SCHEMA_CONFIG_ERROR', {
         operation: 'resolve_meetups_schema',
         service: 'meetups',
       });

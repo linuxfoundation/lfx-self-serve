@@ -8,7 +8,7 @@ import { MeetupsService } from '@app/shared/services/meetups.service';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MEETUP_FILTER_OPTIONS, MEETUP_STATUS_OPTIONS } from '@lfx-one/shared/constants';
-import { FilterOption, MeetupFilterOptionsResponse } from '@lfx-one/shared/interfaces';
+import { FilterOption, MeetupFilterOptionsResponse, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
 import { catchError, debounceTime, of } from 'rxjs';
 
 @Component({
@@ -24,20 +24,20 @@ export class MeetupsTopBarComponent {
   public readonly searchQuery = input<string>('');
   public readonly community = input<string | null>(null);
   public readonly role = input<string | null>(null);
-  public readonly status = input<string | null>(null);
-  public readonly statusOptions = input<FilterOption[]>(MEETUP_STATUS_OPTIONS);
+  public readonly status = input<MeetupStatusFilter | null>(null);
+  public readonly statusOptions = input<FilterOption<MeetupStatusFilter | null>[]>(MEETUP_STATUS_OPTIONS);
   public readonly searchQueryChange = output<string>();
 
   public readonly searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
     community: new FormControl<string | null>(null),
     role: new FormControl<string | null>(null),
-    status: new FormControl<string | null>(null),
+    status: new FormControl<MeetupStatusFilter | null>(null),
   });
 
   public readonly communityChange = outputFromObservable<string | null>(this.searchForm.get('community')!.valueChanges);
   public readonly roleChange = outputFromObservable<string | null>(this.searchForm.get('role')!.valueChanges);
-  public readonly statusChange = outputFromObservable<string | null>(this.searchForm.get('status')!.valueChanges);
+  public readonly statusChange = outputFromObservable<MeetupStatusFilter | null>(this.searchForm.get('status')!.valueChanges);
 
   protected readonly searchValue = signal('');
   private readonly filterOptions: Signal<MeetupFilterOptionsResponse> = this.initFilterOptions();
@@ -94,7 +94,7 @@ export class MeetupsTopBarComponent {
     });
   }
 
-  private syncInputToControl(source: Signal<string | null>, controlName: 'community' | 'role' | 'status'): void {
+  private syncInputToControl<T extends string>(source: Signal<T | null>, controlName: 'community' | 'role' | 'status'): void {
     const control = this.searchForm.get(controlName);
     toObservable(source)
       .pipe(takeUntilDestroyed())

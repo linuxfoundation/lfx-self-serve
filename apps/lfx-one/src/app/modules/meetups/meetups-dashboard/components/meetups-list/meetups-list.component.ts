@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetupsService } from '@app/shared/services/meetups.service';
@@ -8,7 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { DEFAULT_MEETUPS_PAGE_SIZE, EMPTY_MY_MEETUPS_RESPONSE } from '@lfx-one/shared/constants';
 import { MeetupStatusFilter, MeetupTabId, MyMeetupsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, debounceTime, filter, finalize, of, retry, skip, switchMap, timer } from 'rxjs';
+import { catchError, combineLatest, debounceTime, filter, finalize, of, retry, skip, switchMap, throwError, timer } from 'rxjs';
 
 import { MeetupsTableComponent } from '../meetups-table/meetups-table.component';
 
@@ -28,7 +29,7 @@ export class MeetupsListComponent {
   public readonly community = input<string | null>(null);
   public readonly searchQuery = input<string>('');
   public readonly role = input<string | null>(null);
-  public readonly status = input<string | null>(null);
+  public readonly status = input<MeetupStatusFilter | null>(null);
 
   protected readonly upcomingMeetupsLoading = signal(true);
   protected readonly pastMeetupsLoading = signal(true);
@@ -111,7 +112,7 @@ export class MeetupsListComponent {
           searchQuery: this.searchQuery() || undefined,
           role: this.role() ?? undefined,
           // The registered/not-registered filter only applies to upcoming discovery rows; past rows are already scoped to meetups the user joined.
-          status: isPast ? undefined : this.toMeetupStatusFilter(this.status()),
+          status: isPast ? undefined : (this.status() ?? undefined),
           sortField: sortFieldSignal(),
           sortOrder: sortOrderSignal(),
         }))
@@ -121,7 +122,10 @@ export class MeetupsListComponent {
         switchMap(({ offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }) => {
           loadingSignal.set(true);
           return this.meetupsService.getMyMeetups({ isPast, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }).pipe(
-            retry({ count: this.transientRetryCount, delay: () => timer(this.transientRetryDelayMs) }),
+            retry({
+              count: this.transientRetryCount,
+              delay: (error: unknown) => (this.isTransientLoadError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
+            }),
             catchError(() => {
               if (this.activeTab() === (isPast ? 'past' : 'upcoming')) {
                 this.showLoadError();
@@ -159,10 +163,7 @@ export class MeetupsListComponent {
     });
   }
 
-  private toMeetupStatusFilter(status: string | null): MeetupStatusFilter | undefined {
-    if (status === 'registered' || status === 'not-registered') {
-      return status;
-    }
-    return undefined;
+  private isTransientLoadError(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
   }
 }

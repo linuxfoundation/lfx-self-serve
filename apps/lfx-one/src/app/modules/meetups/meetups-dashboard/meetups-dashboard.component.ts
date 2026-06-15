@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, signal, viewChild } from 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { MEETUP_STATUS_OPTIONS } from '@lfx-one/shared/constants';
-import { FilterPillOption, MeetupTabId } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, MeetupStatusFilter, MeetupTabId } from '@lfx-one/shared/interfaces';
 
 import { MeetupsListComponent } from './components/meetups-list/meetups-list.component';
 import { MeetupsTopBarComponent } from './components/meetups-top-bar/meetups-top-bar.component';
@@ -22,7 +22,7 @@ export class MeetupsDashboardComponent {
   protected readonly activeTab = signal<MeetupTabId>('upcoming');
   protected readonly selectedCommunity = signal<string | null>(null);
   protected readonly selectedRole = signal<string | null>(null);
-  protected readonly selectedStatus = signal<string | null>(null);
+  protected readonly selectedStatus = signal<MeetupStatusFilter | null>(null);
   protected readonly selectedSearchQuery = signal('');
 
   protected readonly tabOptions: FilterPillOption[] = [
@@ -53,7 +53,7 @@ export class MeetupsDashboardComponent {
     this.selectedRole.set(value);
   }
 
-  protected onStatusChange(value: string | null): void {
+  protected onStatusChange(value: MeetupStatusFilter | null): void {
     this.selectedStatus.set(value);
   }
 
