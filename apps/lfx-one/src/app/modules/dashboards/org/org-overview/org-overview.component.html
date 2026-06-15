@@ -7,12 +7,14 @@
   [attr.data-loaded]="loaded()"
   [attr.data-empty]="isEmpty()"
   [attr.data-no-access]="hasNoOrgAccess()">
-  <header class="flex flex-col gap-1 md:flex-row md:items-center md:gap-3" data-testid="org-overview-header">
-    <h1 class="text-xl font-semibold text-gray-900" data-testid="org-overview-title">{{ companyName() }} Overview</h1>
-    @if (tierLabel(); as tier) {
-      <lfx-tag [value]="tier" severity="secondary" icon="fa-light fa-star" [rounded]="true" styleClass="text-xs" data-testid="org-overview-tier-badge" />
-    }
-  </header>
+  @if (!hasNoOrgAccess()) {
+    <header class="flex flex-col gap-1 md:flex-row md:items-center md:gap-3" data-testid="org-overview-header">
+      <h1 class="text-xl font-semibold text-gray-900" data-testid="org-overview-title">{{ companyName() }} Overview</h1>
+      @if (tierLabel(); as tier) {
+        <lfx-tag [value]="tier" severity="secondary" icon="fa-light fa-star" [rounded]="true" styleClass="text-xs" data-testid="org-overview-tier-badge" />
+      }
+    </header>
+  }
 
   @if (hasNoOrgAccess()) {
     <section

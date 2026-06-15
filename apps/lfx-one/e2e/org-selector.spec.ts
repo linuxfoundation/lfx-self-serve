@@ -5,7 +5,7 @@
  * Org Selector E2E — smoke set.
  *
  * The automated deliverable is the scenarios below — the remaining scenarios
- * (S4, S6, S7, S8, S10, S11) are covered manually.
+ * (S4, S6, S7, S8) are covered manually.
  *
  * Coverage map:
  * - S1: org-selector trigger renders for an authorized user
@@ -14,6 +14,12 @@
  * - S9: zero-grants visibility gate — stubbed authenticated session with empty
  *       role-grants AND empty persona-seeds leaves the org-selector slot
  *       reporting `data-visible="false"`
+ * - S10: cascading (inherited) row renders the "(inherited)" label + parent tooltip
+ * - S11: upstream failure surfaces the empty state — no fixture rows leak through
+ * - S12: every /api/nav/org-items row carries a non-null accountId
+ * - S13: Snowflake lens regression guard
+ * - S14: /org/overview empty state renders without redirect
+ * - S15: /org/overview no-access state renders instead of the skeleton
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
