@@ -2,19 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Org Selector E2E — Spec 020-org-selector-integration smoke set.
+ * Org Selector E2E — smoke set.
  *
- * Per spec Clarifications session 2 (T065) the entire automated test deliverable
- * is the four scenarios below — all other scenarios are covered manually via
- * `specs/020-org-selector-integration/quickstart.md` (S4, S6, S7, S8, S10, S11).
+ * The automated deliverable is the scenarios below — the remaining scenarios
+ * (S4, S6, S7, S8, S10, S11) are covered manually.
  *
  * Coverage map:
- * - S1: org-selector trigger renders for an authorized user (Story 1 / SC-002)
- * - S2: server-side search hits /api/nav/org-items?name=… and refreshes the list (Story 1 Scenario 2)
- * - S5: selection persists into selectedAccount + fires the canonical record fetch (Story 4)
+ * - S1: org-selector trigger renders for an authorized user
+ * - S2: server-side search hits /api/nav/org-items?name=… and refreshes the list
+ * - S5: selection persists into selectedAccount + fires the canonical record fetch
  * - S9: zero-grants visibility gate — stubbed authenticated session with empty
  *       role-grants AND empty persona-seeds leaves the org-selector slot
- *       reporting `data-visible="false"` (Story 1 Scenario 5 / Q3)
+ *       reporting `data-visible="false"`
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -32,7 +31,7 @@ const DATA_LOAD_TIMEOUT = 30_000;
 test.setTimeout(120_000);
 
 // Hard skip when the auth-bootstrap failed — surface a clear log so CI triage doesn't
-// chase a spec-020/022 regression that's actually a credentials issue. Use hostname-exact
+// chase a regression that's actually a credentials issue. Use hostname-exact
 // matching instead of substring `.includes('auth0.com')` so an attacker-controlled URL like
 // `https://evil.com/?ref=auth0.com` or `https://auth0.com.evil.com/` can't fool the skip
 // gate (CodeQL js/incomplete-url-substring-sanitization).
@@ -110,12 +109,12 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     await expect(firstRow).toBeVisible({ timeout: 15_000 });
 
     // Capture the row's data-testid which contains the org account id (SFID) we'll see in the canonical-fetch URL.
-    // Spec 002: the org identifier is the 18-char Salesforce account id (001-prefixed), not a UUID.
+    // The org identifier is the 18-char Salesforce account id (001-prefixed), not a UUID.
     const testId = await firstRow.getAttribute('data-testid');
     expect(testId).toMatch(/^org-item-001[A-Za-z0-9]{15}$/);
     const uid = testId!.replace('org-item-', '');
 
-    // Spec 002: the canonical-record route is account-id (SFID) keyed via `/api/orgs/uid/`; the legacy `/api/orgs/sfid/` route was removed.
+    // The canonical-record route is account-id (SFID) keyed via `/api/orgs/uid/`; the legacy `/api/orgs/sfid/` route was removed.
     const canonicalRequest = page.waitForResponse((response) => response.url().includes('/api/orgs/uid/'), {
       timeout: 15_000,
     });
@@ -147,16 +146,16 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
   });
 });
 
-// S10 — spec 022 US1: inherited (cascading) row renders with the "(inherited)" label
+// S10 — inherited (cascading) row renders with the "(inherited)" label
 // suffix and a tooltip carrying the parent name. We stub /api/orgs/me/role-grants and
 // /api/nav/org-items so the test is deterministic regardless of the bootstrap user's
 // actual grants — same hermetic pattern as S9.
-test.describe('Org Selector — spec 022 cascading row decoration (S10)', () => {
+test.describe('Org Selector — cascading row decoration (S10)', () => {
   test('S10: cascading row shows "(inherited)" label suffix and tooltip carries the parent name', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    // Spec 002: org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
+    // Org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
     const PARENT_UID = '0014100000Te2QjAAJ';
     const CHILD_UID = '0014100000TdzYmAAJ';
     const PARENT_NAME = 'Red Hat, Inc.';
@@ -223,10 +222,10 @@ test.describe('Org Selector — spec 022 cascading row decoration (S10)', () => 
   });
 });
 
-// S11 — spec 022 US2: upstream-failure deterministic empty state. Stub both BFF
+// S11 — upstream-failure deterministic empty state. Stub both BFF
 // endpoints to simulate the deleted-mock-fallback path, then assert the empty state
 // renders and no rows leak through.
-test.describe('Org Selector — spec 022 no mock fallback (S11)', () => {
+test.describe('Org Selector — no mock fallback (S11)', () => {
   test('S11: upstream failure surfaces the empty state — no fixture rows leak through', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -270,9 +269,9 @@ test.describe('Org Selector — spec 022 no mock fallback (S11)', () => {
   });
 });
 
-// S14 — spec 022 follow-up: when /api/nav/org-items returns empty, /org/overview
+// S14 — when /api/nav/org-items returns empty, /org/overview
 // must STAY on /org/overview (not bounce back to /) and render the empty-state
-// section. Replaces the pre-022 "redirect-on-empty" UX with an in-page disclosure.
+// section. Replaces the earlier "redirect-on-empty" UX with an in-page disclosure.
 test.describe('Org Selector — /org/overview empty state without redirect (S14)', () => {
   test('S14: empty org-items keeps the user on /org/overview and renders the empty-state section', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -382,9 +381,9 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
   });
 });
 
-// S12 — spec 022 US3: every row returned by /api/nav/org-items must carry a
-// non-null accountId. This is the FR-005 omission-policy enforcement gate.
-test.describe('Org Selector — spec 022 accountId non-null invariant (S12)', () => {
+// S12 — every row returned by /api/nav/org-items must carry a
+// non-null accountId. This is the omission-policy enforcement gate.
+test.describe('Org Selector — accountId non-null invariant (S12)', () => {
   test('S12: every row from /api/nav/org-items has a non-null, non-empty accountId', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -400,7 +399,7 @@ test.describe('Org Selector — spec 022 accountId non-null invariant (S12)', ()
     expect(Array.isArray(body.items)).toBe(true);
 
     if (body.upstream_failed) {
-      // Upstream unavailable — FR-005 cannot be evaluated; skip rather than fail.
+      // Upstream unavailable — the invariant cannot be evaluated; skip rather than fail.
       test.skip(true, 'Skipping S12 — upstream reported failed; cannot evaluate accountId invariant');
     }
 
@@ -411,11 +410,11 @@ test.describe('Org Selector — spec 022 accountId non-null invariant (S12)', ()
   });
 });
 
-// S13 — spec 022 US3 SC-007 protection: Snowflake-keyed lens routes must keep working.
+// S13 — Snowflake-keyed lens routes must keep working.
 // The cascading-rewrite intentionally preserves the cookie + /api/orgs/:accountId/lens/*
 // contract; this smoke check exercises one such route to fail loudly if a regression
 // pulls the rug from under the lens dashboards.
-test.describe('Org Selector — spec 022 Snowflake lens regression guard (S13)', () => {
+test.describe('Org Selector — Snowflake lens regression guard (S13)', () => {
   test('S13: /api/orgs/:accountId/lens/memberships/active returns 200 with a JSON array body for a real accountId', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -436,12 +435,12 @@ test.describe('Org Selector — spec 022 Snowflake lens regression guard (S13)',
 
     const lensResponse = await page.request.get(`/api/orgs/${encodeURIComponent(accountId!)}/lens/memberships/active`);
     // 200 with a body shape OR 404 are both acceptable signals that the route handler ran (vs. a 500 indicating
-    // a regression from the spec-022 rewrite). What we *guard against* is a contract-shape break.
+    // a regression from the cascading rewrite). What we *guard against* is a contract-shape break.
     expect([200, 404]).toContain(lensResponse.status());
     if (lensResponse.status() === 200) {
       const body = await lensResponse.json();
       // The route returns an array OR an object with an array property — both shapes are pre-existing
-      // contract surface from specs 013/018/019. We assert the response is JSON-decodable and not an error envelope.
+      // contract surface from the lens dashboards. We assert the response is JSON-decodable and not an error envelope.
       expect(body).toBeDefined();
       expect(body).not.toHaveProperty('error');
     }
@@ -453,7 +452,7 @@ test.describe('Org Selector — spec 022 Snowflake lens regression guard (S13)',
 // auditors) and `/api/user/personas` (empty `organizations`) — so the gate's
 // `(writers ∨ auditors ∨ personaSeeds)` clause evaluates false against the real
 // authenticated session. The slot exposes its computed state on `data-visible`
-// (added by spec 020 for testability), giving us a hermetic assertion without
+// (added for testability), giving us a hermetic assertion without
 // having to navigate to `/org` and unwind the empty-response redirect dance.
 test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
   test('S9: with empty role-grants AND empty persona-seeds, the slot reports data-visible="false" and the trigger is hidden', async ({ page }) => {
