@@ -13,9 +13,11 @@ export class EmployeeAvatarComponent {
   public readonly initials = input.required<string>();
   public readonly avatarUrl = input<string | null>(null);
 
-  protected readonly imageError = signal<boolean>(false);
+  // Track the URL that failed rather than a permanent boolean: this component instance is reused across
+  // rows in the picker/@for list, so a stale failure must not suppress a later, valid avatar URL.
+  protected readonly failedAvatarUrl = signal<string | null>(null);
 
   protected onImageError(): void {
-    this.imageError.set(true);
+    this.failedAvatarUrl.set(this.avatarUrl());
   }
 }

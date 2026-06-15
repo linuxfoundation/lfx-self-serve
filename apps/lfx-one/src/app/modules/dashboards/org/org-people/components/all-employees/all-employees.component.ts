@@ -274,7 +274,9 @@ export class AllEmployeesComponent {
       // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
       // always present, server-lowercased). Rows without an email can't be joined and render `—`.
       access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
-      isSynthetic: false,
+      // Access-only principals are merged in live with a synthetic `live-` personKey that has no Snowflake
+      // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic.
+      isSynthetic: row.sources.length === 1 && row.sources[0] === 'access',
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
   }

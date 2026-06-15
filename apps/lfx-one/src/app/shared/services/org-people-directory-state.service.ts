@@ -11,26 +11,31 @@ import { map, Observable, of, shareReplay, tap } from 'rxjs';
  *
  * One fetch per org is shared between the All Employees tab roster and the "Assign to Email"
  * pickers in the Board/Committee/Key-Contacts modals. Concurrent callers are deduped via
- * `shareReplay`; resolved responses are memoized until `invalidate` is called (e.g. on retry).
+ * `shareReplay`; resolved responses are memoized for a short TTL (or until `invalidate`, e.g. on retry).
  */
+// Client-side TTL so a long-lived SPA session re-hits the merged endpoint and picks up newly added live
+// people, rather than replaying the first response forever (which would bypass the server's short TTL).
+const DIRECTORY_CACHE_TTL_MS = 60_000;
+
 @Injectable({ providedIn: 'root' })
 export class OrgPeopleDirectoryStateService {
   private readonly http = inject(HttpClient);
 
-  private readonly byOrg = new Map<string, OrgAllEmployeesResponse>();
+  private readonly byOrg = new Map<string, { value: OrgAllEmployeesResponse; expiresAt: number }>();
   private readonly inFlight = new Map<string, Observable<OrgAllEmployeesResponse>>();
 
-  /** Cached merged directory for the org; fetches once and replays. */
+  /** Cached merged directory for the org; fetches once and replays until the TTL lapses. */
   public getDirectory(orgUid: string): Observable<OrgAllEmployeesResponse> {
     const cached = this.byOrg.get(orgUid);
-    if (cached) return of(cached);
+    if (cached && cached.expiresAt > Date.now()) return of(cached.value);
+    if (cached) this.byOrg.delete(orgUid);
 
     const existing = this.inFlight.get(orgUid);
     if (existing) return existing;
 
     const request$ = this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { live: 'true' } }).pipe(
       tap({
-        next: (res) => this.byOrg.set(orgUid, res),
+        next: (res) => this.byOrg.set(orgUid, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS }),
         finalize: () => this.inFlight.delete(orgUid),
       }),
       shareReplay({ bufferSize: 1, refCount: false })
@@ -62,7 +67,9 @@ export class OrgPeopleDirectoryStateService {
 function toEmployee(row: OrgAllEmployeeRow & { email: string }): KeyContactEmployee {
   const firstName = row.firstName ?? '';
   const lastName = row.lastName ?? '';
-  const fullName = row.name || `${firstName} ${lastName}`.trim() || row.email;
+  // Prefer the joined first/last (filled from live sources) over `row.name`, which can be an email
+  // placeholder for Snowflake rows that lack a real name; fall back to the name, then the email.
+  const fullName = `${firstName} ${lastName}`.trim() || row.name || row.email;
   return {
     email: row.email,
     firstName,

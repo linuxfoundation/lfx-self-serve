@@ -5,7 +5,7 @@
   class="relative flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-500 text-xs font-semibold text-white"
   aria-hidden="true">
   {{ initials() }}
-  @if (avatarUrl() && !imageError()) {
+  @if (avatarUrl() && failedAvatarUrl() !== avatarUrl()) {
     <img [src]="avatarUrl()" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover" (error)="onImageError()" />
   }
 </span>

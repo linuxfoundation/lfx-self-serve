@@ -14,6 +14,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
@@ -54,9 +55,13 @@ export class OrgPeopleDirectoryService {
     this.accessService = new OrgLensAccessService();
   }
 
-  /** Merged stored + live roster for the account. Cached for a short window keyed by accountId. */
+  /** Merged stored + live roster for the account. Cached for a short window keyed by account + caller. */
   public async getLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
-    const cached = this.cache.get(accountId);
+    // Key by caller too: the merge folds in request-scoped reads (committee seats via the caller's token,
+    // FGA-filtered key contacts, the caller's access view), so a plain accountId key could replay one
+    // caller's permission-filtered roster to a different caller within the TTL.
+    const cacheKey = this.cacheKey(req, accountId);
+    const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.at < DIRECTORY_CACHE_TTL_MS) {
       return cached.value;
     }
@@ -81,8 +86,13 @@ export class OrgPeopleDirectoryService {
     }
 
     const merged = this.merge(req, accountId, base, seats, keyContacts, access);
-    this.cache.set(accountId, { at: Date.now(), value: merged });
+    this.cache.set(cacheKey, { at: Date.now(), value: merged });
     return merged;
+  }
+
+  /** Cache key scoped to the org and the caller identity so permission-filtered reads aren't shared across callers. */
+  private cacheKey(req: Request, accountId: string): string {
+    return `${accountId}:${getEffectiveUsername(req) ?? 'anonymous'}`;
   }
 
   /** Seed the snowflake rows by lowercased email (no-email rows pass through), then fold each live source in. */
@@ -135,7 +145,7 @@ export class OrgPeopleDirectoryService {
         const existing = byEmail.get(email);
         if (existing) {
           this.addSource(existing, 'keyContact');
-          this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle });
+          this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
         } else {
           byEmail.set(email, this.rowFromKeyContact(emp, email));
         }
@@ -193,7 +203,7 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string): OrgAllEmployeeRow {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, null, 'keyContact');
+    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact');
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string): OrgAllEmployeeRow {

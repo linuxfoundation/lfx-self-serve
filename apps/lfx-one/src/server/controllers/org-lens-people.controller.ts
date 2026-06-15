@@ -368,10 +368,12 @@ export class OrgLensPeopleController {
 
 /** Truthy `?live` flag: present with no value, `true`, or `1` enable the merged live directory. Anything else (absent/`false`/`0`) keeps the Snowflake-only path. */
 function parseLiveFlag(req: Request): boolean {
-  const raw = req.query['live'];
+  // `qs` types a repeated param (`?live=true&live=true`) as an array; normalize to the last value so a
+  // duplicated flag still enables live mode instead of being silently treated as false.
+  const value = req.query['live'];
+  const raw = Array.isArray(value) ? value[value.length - 1] : value;
   if (raw === undefined) return false;
-  if (raw === '' || raw === 'true' || raw === '1') return true;
-  return false;
+  return raw === '' || raw === 'true' || raw === '1';
 }
 
 /** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
