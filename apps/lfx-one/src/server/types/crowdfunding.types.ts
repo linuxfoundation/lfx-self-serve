@@ -119,6 +119,8 @@ export interface BackendSubscription {
   amount_cents: number;
   frequency: string;
   created_on: string;
+  next_charge_date?: string;
+  paused_at?: string;
 }
 
 export interface BackendSubscriptionListResponse {

@@ -68,7 +68,7 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly form: FormGroup = new FormGroup({
     name: new FormControl('', [Validators.required, Validators.maxLength(100)]),
     description: new FormControl('', [Validators.required, Validators.maxLength(500)]),
-    topics: new FormControl<string[]>([]),
+    topics: new FormControl<string[]>([], { nonNullable: true }),
     websiteUrl: new FormControl(''),
     goal: new FormControl<number | null>(null, [Validators.min(0)]),
   });
@@ -108,7 +108,10 @@ export class InitiativeSettingsDrawerComponent {
       .subscribe(() => {
         const init = this.initiative();
         const existingTopics = init.industry
-          ? init.industry.split(',').map((v) => v.trim()).filter((v) => v && v.toLowerCase() !== 'null')
+          ? init.industry
+              .split(',')
+              .map((v) => v.trim())
+              .filter((v) => v && v.toLowerCase() !== 'null')
           : [];
         this.form.patchValue({
           name: init.name,
@@ -191,10 +194,12 @@ export class InitiativeSettingsDrawerComponent {
         }
       }
 
-      input.beneficiaries = this.beneficiaryGroups().map((g) => ({
-        name: (g.value.name as string) || undefined,
-        email: (g.value.email as string) || undefined,
-      }));
+      input.beneficiaries = this.beneficiaryGroups()
+        .map((g) => ({
+          name: (g.value.name as string) || undefined,
+          email: (g.value.email as string) || undefined,
+        }))
+        .filter((b) => b.name || b.email);
 
       const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
 

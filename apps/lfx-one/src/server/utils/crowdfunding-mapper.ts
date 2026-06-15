@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import {
   Beneficiary,
   CrowdfundingTransaction,
@@ -183,5 +181,7 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     amount: s.amount_cents / 100,
     billingDescription: s.frequency,
     startDate: s.created_on,
+    nextChargeDate: s.next_charge_date,
+    pausedSince: s.paused_at,
   };
 }

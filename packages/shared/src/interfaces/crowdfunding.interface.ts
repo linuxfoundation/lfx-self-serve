@@ -149,7 +149,6 @@ export interface InitiativeDetail extends InitiativeBase {
   financialSummary?: FinancialSummary;
 
   beneficiaries?: Beneficiary[];
-
 }
 
 export type CrowdfundingInitiativeStatus = 'submitted' | 'pending' | 'published' | 'declined' | 'hidden';
@@ -263,13 +262,11 @@ export interface UpdateGoalInput {
   amountCents: number;
 }
 
-
 export interface Beneficiary {
   id: string;
   name?: string;
   email?: string;
 }
-
 
 export interface UpdateBeneficiaryInput {
   name?: string;
