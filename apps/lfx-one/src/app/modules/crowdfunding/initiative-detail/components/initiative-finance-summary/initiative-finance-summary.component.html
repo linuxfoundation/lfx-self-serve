@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card data-testid="finance-summary-card">
+  <!-- Current balance -->
+  <div class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Current Balance</div>
+  <div class="text-3xl font-extrabold text-gray-900 tracking-tight mb-5">{{ formattedBalance() }}</div>
+
+  <!-- Raised / goal row -->
+  <div class="flex items-center justify-between text-sm mb-1.5">
+    <span>
+      <span class="font-bold text-gray-900">{{ formattedRaised() }} raised</span>
+      @if (formattedGoal()) {
+        <span class="text-gray-500">of {{ formattedGoal() }} goal</span>
+      }
+    </span>
+    <span class="text-gray-500 text-xs">{{ progressPercent() }}% funded</span>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+    <div
+      class="h-full bg-blue-600 rounded-full"
+      [style.width.%]="progressPercent()"
+      role="progressbar"
+      [attr.aria-valuenow]="progressPercent()"
+      aria-valuemin="0"
+      aria-valuemax="100"></div>
+  </div>
+  <p class="text-xs text-gray-500 mb-6">{{ initiative().sponsors?.length ?? 0 }} sponsors</p>
+
+  <!-- Funding goals -->
+  @if (fundingGoalsWithMeta().length > 0) {
+    <div class="text-sm font-bold text-gray-900 mb-4">Funding goals</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-7 gap-y-5" data-testid="allocation-grid">
+      @for (item of fundingGoalsWithMeta(); track item.id) {
+        <div class="flex items-center gap-3.5" data-testid="allocation-item">
+          <lfx-donut-chart [rings]="item.rings" />
+          <div class="min-w-0">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <span class="text-sm font-bold text-gray-900 truncate">{{ item.name }}</span>
+              <span class="w-px h-3 bg-gray-300 shrink-0"></span>
+              <span class="text-sm text-gray-400 whitespace-nowrap">Goal: {{ item.formattedGoal }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500">
+              <span class="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
+              Donated {{ item.formattedDonated }}
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500">
+              <span class="w-2 h-2 rounded-full bg-slate-800 shrink-0"></span>
+              Spent {{ item.formattedSpent }}
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</lfx-card>

@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="relative shrink-0" [style.width.px]="size()" [style.height.px]="size()" data-testid="donut-chart">
+  <svg [attr.width]="size()" [attr.height]="size()" [attr.viewBox]="'0 0 ' + size() + ' ' + size()" fill="none" xmlns="http://www.w3.org/2000/svg">
+    @for (ring of resolvedRings(); track $index) {
+      <!-- Track -->
+      <circle [attr.cx]="center()" [attr.cy]="center()" [attr.r]="ring.r" [attr.stroke]="trackColor()" [attr.stroke-width]="strokeWidth()" fill="none" />
+      <!-- Progress arc -->
+      <circle
+        [attr.cx]="center()"
+        [attr.cy]="center()"
+        [attr.r]="ring.r"
+        [attr.stroke]="ring.color"
+        [attr.stroke-width]="strokeWidth()"
+        stroke-linecap="round"
+        fill="none"
+        [attr.stroke-dasharray]="ring.dash + ' ' + ring.circumference"
+        [attr.transform]="'rotate(-90 ' + center() + ' ' + center() + ')'" />
+    }
+  </svg>
+
+  <!-- Center slot for optional label/icon -->
+  <div class="absolute inset-0 flex items-center justify-center">
+    <ng-content />
+  </div>
+</div>
