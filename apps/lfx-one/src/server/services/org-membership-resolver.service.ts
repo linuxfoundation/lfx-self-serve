@@ -93,13 +93,14 @@ export class OrgMembershipResolverService {
     }
 
     // Shared, cross-instance read-through cache; fail-soft (cache faults fall back to a direct fetch).
-    // The Array.isArray guard rejects a corrupt/legacy cache entry as a miss so a bad value can never
-    // reach resolveContext()'s .filter() and turn a cache hit into a 500.
+    // The shape guard rejects a corrupt/legacy cache entry as a miss so a bad value can never reach
+    // resolveContext()'s .filter() (e.g. a `null` element throwing on `.status`) and turn a cache hit
+    // into a 500.
     const promise = valkeyService.withCache(
       cacheKey,
       VALKEY_CACHE.ORG_MEMBERSHIP_TTL_SECONDS,
       () => this.runMembershipFetch(req, b2bOrgUid, slug),
-      Array.isArray
+      OrgMembershipResolverService.isMembershipDocArray
     );
 
     OrgMembershipResolverService.membershipsInFlight.set(cacheKey, promise);
@@ -108,6 +109,12 @@ export class OrgMembershipResolverService {
     } finally {
       OrgMembershipResolverService.membershipsInFlight.delete(cacheKey);
     }
+  }
+
+  // Accepts only a clean array of non-null membership objects. A malformed cache entry (nullish or
+  // non-object elements) degrades to a miss + refetch instead of throwing downstream in resolveContext().
+  private static isMembershipDocArray(value: unknown): value is ProjectMembershipDoc[] {
+    return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object');
   }
 
   // Builds the principal-bound, namespaced, versioned cache key, or null when the caller's identity

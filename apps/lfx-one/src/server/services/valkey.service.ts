@@ -67,12 +67,12 @@ export class ValkeyService implements CachePort {
       const parsed = JSON.parse(raw);
       // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
       if (accept && !accept(parsed)) {
-        logger.warning(undefined, 'valkey_get', 'Cached value failed shape check — treating as miss', { cache_key: key });
+        logger.warning(undefined, 'valkey_get', 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
         return null;
       }
       return parsed as T;
     } catch (err) {
-      logger.warning(undefined, 'valkey_get', 'Cache read failed — falling back to source', { err, cache_key: key });
+      logger.warning(undefined, 'valkey_get', 'Cache read failed — falling back to source', { err, cache_key: ValkeyService.redactKey(key) });
       return null;
     }
   }
@@ -82,13 +82,13 @@ export class ValkeyService implements CachePort {
     try {
       const serialized = JSON.stringify(value);
       if (Buffer.byteLength(serialized, 'utf8') > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: key });
+        logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: ValkeyService.redactKey(key) });
         return false;
       }
       await this.withTimeout(this.client.set(key, serialized, 'EX', ttlSeconds));
       return true;
     } catch (err) {
-      logger.warning(undefined, 'valkey_set', 'Cache write failed — continuing without caching', { err, cache_key: key });
+      logger.warning(undefined, 'valkey_set', 'Cache write failed — continuing without caching', { err, cache_key: ValkeyService.redactKey(key) });
       return false;
     }
   }
@@ -96,17 +96,19 @@ export class ValkeyService implements CachePort {
   public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
-      logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', { cache_key: key ?? undefined });
+      logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
+        cache_key: key ? ValkeyService.redactKey(key) : undefined,
+      });
       return fetcher();
     }
 
     const hit = await this.getJson<T>(key, accept);
     if (hit !== null) {
-      logger.debug(undefined, 'cache_hit', 'Cache hit', { cache_key: key });
+      logger.debug(undefined, 'cache_hit', 'Cache hit', { cache_key: ValkeyService.redactKey(key) });
       return hit;
     }
 
-    logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: key });
+    logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
     await this.setJson(key, result, ttlSeconds);
     return result;
@@ -120,6 +122,16 @@ export class ValkeyService implements CachePort {
     } catch {
       this.client.disconnect();
     }
+  }
+
+  /**
+   * Redacts the per-user tail of a cache key for logging. Keys are `${APP_PREFIX}:${NAMESPACE}:${principal}:…`,
+   * so we keep only the first two (non-user) segments and mask the rest — observability without leaking
+   * JWT `sub`/usernames into infrastructure logs.
+   */
+  private static redactKey(key: string): string {
+    const parts = key.split(':');
+    return parts.length <= 2 ? key : `${parts[0]}:${parts[1]}:***`;
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */

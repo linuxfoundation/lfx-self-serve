@@ -98,10 +98,21 @@ export class OrgRoleGrantsService {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
   }
 
-  /** Rejects a corrupt/legacy cached entry (so deserialize never throws): both Maps must be present as arrays. */
+  /**
+   * Rejects a corrupt/legacy/partial cached entry (so deserialize never throws and the response contract
+   * holds): both Maps must be present as arrays, and the fields later surfaced on the wire (`loadedAt`,
+   * `upstreamFailed`, `username`) must have their expected types — otherwise degrade to a miss + recompute.
+   */
   private static isValidCacheEntry(value: unknown): boolean {
     const entry = value as Partial<AccessAwareOrgsCacheEntry> | null;
-    return !!entry && Array.isArray(entry.resolved) && Array.isArray(entry.orgDocByUid) && typeof entry.username === 'string';
+    return (
+      !!entry &&
+      Array.isArray(entry.resolved) &&
+      Array.isArray(entry.orgDocByUid) &&
+      typeof entry.username === 'string' &&
+      typeof entry.loadedAt === 'string' &&
+      typeof entry.upstreamFailed === 'boolean'
+    );
   }
 
   /** Maps → ordered entry arrays for JSON storage (insertion order preserved). */
