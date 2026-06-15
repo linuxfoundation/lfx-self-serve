@@ -102,31 +102,36 @@ export class MainLayoutComponent {
   // --- Me Lens Items ---
   // Computed so both Crowdfunding and Security/OSSPREY nav entries react to their feature flags in real time.
   private readonly meLensItems = computed((): SidebarMenuItem[] => {
-    const crowdfundingItem: SidebarMenuItem = this.isCrowdfundingEnabled()
-      ? {
-          label: 'Crowdfunding',
-          icon: 'fa-light fa-circle-dollar',
-          isGroup: true,
-          expanded: true,
-          items: [
-            {
-              label: 'My Initiatives',
-              icon: 'fa-light fa-hand-holding-heart',
-              routerLink: '/crowdfunding/initiatives',
-            },
-            {
-              label: 'My Donations',
-              icon: 'fa-light fa-heart',
-              routerLink: '/crowdfunding/donations',
-            },
-          ],
-        }
-      : {
-          label: 'Crowdfunding',
-          icon: 'fa-light fa-circle-dollar',
-          url: environment.urls.crowdfunding,
-          target: '_self',
-        };
+    const crowdfundingEnabled = this.isCrowdfundingEnabled();
+
+    // Flag OFF: no internal pages exist, so Crowdfunding stays a single external
+    // link inside the My Growth section (its original placement).
+    const crowdfundingLink: SidebarMenuItem = {
+      label: 'Crowdfunding',
+      icon: 'fa-light fa-circle-dollar',
+      url: environment.urls.crowdfunding,
+      target: '_self',
+    };
+
+    // Flag ON: Crowdfunding is promoted to its own top-level section (peer of
+    // My Engagement / My Growth), with its sub-pages as section children.
+    const crowdfundingSection: SidebarMenuItem = {
+      label: 'Crowdfunding',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'My Initiatives',
+          icon: 'fa-light fa-box-dollar',
+          routerLink: '/crowdfunding/initiatives',
+        },
+        {
+          label: 'My Donations',
+          icon: 'fa-light fa-hand-heart',
+          routerLink: '/crowdfunding/donations',
+        },
+      ],
+    };
 
     return [
       {
@@ -203,7 +208,7 @@ export class MainLayoutComponent {
             icon: 'fa-light fa-chalkboard-teacher',
             url: environment.urls.mentorship,
           },
-          crowdfundingItem,
+          ...(crowdfundingEnabled ? [] : [crowdfundingLink]),
           {
             label: 'Badges',
             icon: 'fa-light fa-award',
@@ -211,6 +216,7 @@ export class MainLayoutComponent {
           },
         ],
       },
+      ...(crowdfundingEnabled ? [crowdfundingSection] : []),
       {
         label: 'My Account',
         isSection: true,
