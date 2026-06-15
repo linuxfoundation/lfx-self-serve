@@ -563,7 +563,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   // The versioned /rest/adAnalytics endpoint rejects RestLi query params; use /v2/adAnalyticsV2 which accepts them.
   const analyticsUrl = `https://api.linkedin.com/v2/adAnalyticsV2?q=analytics&pivot=CAMPAIGN&dateRange=(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))&timeGranularity=ALL&accounts=List(${encodeURIComponent(`urn:li:sponsoredAccount:${accountId}`)})&fields=impressions,clicks,costInLocalCurrency,externalWebsiteConversions`;
   const analyticsResp = await fetch(analyticsUrl, {
-    headers: { Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
+    headers: { ...baseHeaders, Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
     signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
   });
 
@@ -603,7 +603,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   const fetchCreativeForCampaign = async (camp: (typeof campaigns)[number]): Promise<void> => {
     const creativeUrl = `https://api.linkedin.com/v2/adAnalyticsV2?q=analytics&pivot=CREATIVE&dateRange=(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))&timeGranularity=ALL&campaigns=List(${encodeURIComponent(`urn:li:sponsoredCampaign:${camp.id}`)})&fields=impressions,clicks,costInLocalCurrency,externalWebsiteConversions`;
     const creativeResp = await fetch(creativeUrl, {
-      headers: { Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
+      headers: { ...baseHeaders, Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
       signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     });
     if (creativeResp.ok) {

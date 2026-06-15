@@ -406,7 +406,7 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
-    const account = REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) ?? REDDIT_ACCOUNTS[0];
+    const account = rawKey ? REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) : REDDIT_ACCOUNTS[0];
     if (!account) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid Reddit account key', {

@@ -208,8 +208,18 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     });
   }
 
+  const perCampaignMetrics = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
+  for (const camp of activeCampaigns) {
+    try {
+      const campMetrics = await fetchAccountMetrics(accountId, startDate, endDate);
+      perCampaignMetrics.set(camp.id, { impressions: campMetrics.impressions, clicks: campMetrics.clicks, spend: campMetrics.spend, conversions: 0 });
+    } catch {
+      perCampaignMetrics.set(camp.id, { impressions: 0, clicks: 0, spend: 0, conversions: 0 });
+    }
+  }
+
   const campaignMetrics: RedditCampaignMetrics[] = activeCampaigns.map((camp) => {
-    const metrics = { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
+    const metrics = perCampaignMetrics.get(camp.id) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
     const totalBudget = (camp.goal_value ?? 0) / 1_000_000;
     const dailyBudget = 0;
 
@@ -390,6 +400,9 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   const campaignResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`, campaignBody);
   const campData = (campaignResp.data as RedditCampaignData) ?? {};
   const campaignId = String(campData.id ?? '');
+  if (!campaignId) {
+    throw new Error('Reddit campaign creation succeeded but returned no campaign ID');
+  }
   steps.push(`Campaign created: ${campaignId} (PAUSED, $${config.budgetUsd.toFixed(2)} lifetime)`);
 
   // Step 3: Create ad group with targeting
@@ -405,6 +418,9 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
 
   if (config.keywords.length > 0) {
     baseTargeting['keywords'] = config.keywords;
+  }
+  if (config.interests.length > 0) {
+    baseTargeting['interests'] = config.interests;
   }
 
   const communityNames = config.subreddits.map((s) => s.replace(/^r\//, ''));
@@ -445,6 +461,9 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
 
   const agData = (adGroupResp.data as RedditCampaignData) ?? {};
   const adGroupId = String(agData.id ?? '');
+  if (!adGroupId) {
+    throw new Error('Reddit ad group creation succeeded but returned no ad group ID');
+  }
   steps.push(`Ad group created: ${adGroupId} (PAUSED, geo: ${geos.join(', ')})`);
   if (usedCommunities) {
     steps.push(`Targeting: ${communityNames.length} communities, ${config.keywords.length} keywords, ${geos.length} geos`);

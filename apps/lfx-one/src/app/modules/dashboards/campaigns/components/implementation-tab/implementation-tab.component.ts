@@ -116,6 +116,7 @@ export class ImplementationTabComponent {
     if (!sharedFieldsValid) return false;
 
     if (googleSelected && !this.campaignForm.controls.includeSearch.value && !this.campaignForm.controls.includeDemandGen.value) return false;
+    if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -241,6 +242,7 @@ export class ImplementationTabComponent {
     if (!sharedFieldsValid) return;
 
     if (googleSelected && !controls.includeSearch.value && !controls.includeDemandGen.value) return;
+    if (googleSelected && this.campaignForm.invalid) return;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return;
     if (linkedInSelected && this.linkedInVariants().length === 0) return;
