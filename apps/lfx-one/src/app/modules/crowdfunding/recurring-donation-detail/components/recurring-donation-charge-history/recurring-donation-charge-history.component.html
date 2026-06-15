@@ -1,0 +1,69 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="charge-history-section">
+  <h2 class="text-sm font-bold text-gray-900">Charge History</h2>
+
+  <div class="overflow-x-auto rounded-lg border border-gray-200">
+    <table class="w-full text-sm" aria-label="Charge history" data-testid="charge-history-table">
+      <thead>
+        <tr class="border-b border-gray-200 bg-gray-50">
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Period</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date Charged</th>
+          <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+          <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100 bg-white">
+        @for (item of chargeHistory(); track item.id) {
+          <tr class="hover:bg-gray-50 transition-colors" [attr.data-testid]="'charge-history-row-' + item.id">
+            <!-- Period -->
+            <td class="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+              {{ item.date | date: 'MMM yyyy' : 'UTC' }}
+            </td>
+
+            <!-- Status badge -->
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Paid</span>
+            </td>
+
+            <!-- Date Charged -->
+            <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+              {{ item.date | date: 'MMM d, yyyy' : 'UTC' }}
+            </td>
+
+            <!-- Amount -->
+            <td class="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">
+              {{ item.amountCents / 100 | currency: 'USD' }}
+            </td>
+
+            <!-- Invoice -->
+            <td class="px-4 py-3 text-right">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 border border-gray-200 rounded px-2 py-1 opacity-60 cursor-not-allowed"
+                [attr.aria-label]="'Download invoice for ' + (item.date | date: 'MMM yyyy' : 'UTC')"
+                title="Invoice downloads coming soon"
+                disabled
+                aria-disabled="true">
+                <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+                Invoice
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-400">No charge history yet.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (hasMore()) {
+    <div class="flex justify-center pt-1" data-testid="charge-history-load-more">
+      <lfx-button label="Load more" severity="secondary" size="small" (click)="loadMore.emit()" />
+    </div>
+  }
+</div>

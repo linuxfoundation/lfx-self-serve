@@ -62,6 +62,7 @@ export interface CrowdfundingTransaction {
   donorType?: 'organization' | 'individual';
   donorLogoUrl?: string;
   donorUsername?: string;
+  initiativeId?: string;
 }
 
 export interface CrowdfundingTransactionList {
@@ -206,6 +207,19 @@ export interface CrowdfundingInitiativeDetail extends CrowdfundingInitiative {
   matchPct?: number;
 }
 
+export type ChargeStatus = 'paid' | 'failed' | 'pending';
+
+/** A single line in the charge history for a recurring donation. */
+export interface ChargeHistoryItem {
+  id: string;
+  /** Display period, e.g. "May 2026". */
+  period: string;
+  status: ChargeStatus;
+  /** ISO date string of when the charge occurred. */
+  dateCharged: string;
+  amountCents: number;
+}
+
 export interface DonationStats {
   totalDonated: number;
   initiativesSupported: number;
@@ -226,6 +240,18 @@ export interface RecurringDonation {
   startDate: string;
   nextChargeDate?: string;
   pausedSince?: string;
+  /** Slug of the associated initiative — used to fetch charge history. */
+  initiativeSlug: string;
+  /** Total amount contributed to this initiative in dollars. */
+  totalContributed: number;
+  /** Fund type of the associated initiative. */
+  fundType: FundType;
+  /** Short description of the initiative. */
+  description?: string;
+  /** Topic tags for the initiative. */
+  tags?: string[];
+  /** Public URL for the initiative on the crowdfunding site. */
+  initiativeUrl?: string;
 }
 
 export type RecurringDonationsResponse = OffsetPaginatedResponse<RecurringDonation>;

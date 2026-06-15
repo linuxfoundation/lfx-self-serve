@@ -340,14 +340,16 @@ export class CrowdfundingService {
     slug: string,
     type?: 'donations' | 'expenses',
     size?: number,
-    from?: number
+    from?: number,
+    kind?: 'one-time' | 'recurring'
   ): Promise<CrowdfundingTransactionList | null> {
-    const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from });
+    const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from, kind });
 
     const params = new URLSearchParams();
     if (type) params.set('type', type);
     if (size != null) params.set('limit', String(size));
     if (from != null) params.set('offset', String(from));
+    if (kind) params.set('kind', kind);
     const qs = params.toString();
 
     // /v1/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
@@ -362,6 +364,7 @@ export class CrowdfundingService {
     }
 
     logger.success(req, 'cf_get_initiative_transactions', startTime, { total: raw.total_count });
+
     return {
       data: raw.data.map(mapToTransaction),
       totalCount: raw.total_count,
