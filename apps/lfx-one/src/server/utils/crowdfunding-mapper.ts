@@ -126,6 +126,7 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
     donorUsername: b.donor_username,
+    initiativeId: b.initiative_id,
   };
 }
 
@@ -183,5 +184,11 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     startDate: s.created_on,
     nextChargeDate: s.next_charge_date,
     pausedSince: s.paused_at,
+    initiativeSlug: s.initiative_slug ?? s.initiative_id,
+    totalContributed: s.total_contributed_cents != null ? s.total_contributed_cents / 100 : 0,
+    fundType: toValidFundType(s.initiative_fund_type),
+    description: s.initiative_description,
+    tags: s.initiative_tags,
+    initiativeUrl: s.initiative_url,
   };
 }
