@@ -38,11 +38,11 @@ export class OrgOverviewComponent {
   );
 
   /**
-   * True once role grants settle and the caller has no org access. Mirrors the sidebar org-selector
-   * visibility gate EXACTLY — direct writer/auditor grants or a persona-seeded account. Inherited-only
-   * grants intentionally do NOT count: the selector gate is direct-only, so an inherited-only user never
-   * triggers the selector's list fetch. If inherited grants were treated as access here, that user would
-   * stay on the loading skeleton forever instead of getting the definitive not-available state.
+   * True once role grants settle and the caller has no org access. Reuses the shared
+   * `AccountContextService.hasOrgSelectorAccess` predicate so this gate cannot drift from the sidebar
+   * org-selector visibility rule — direct writer/auditor grants or a persona-seeded account count;
+   * inherited-only grants do not (the selector is direct-only, so an inherited-only user never
+   * triggers the selector's list fetch and would otherwise stay on the skeleton forever).
    *
    * Also waits on personas settling. For users whose org seeds arrive only via the async personas
    * response (empty `auth.organizations` at SSR), role grants can settle empty before personas seed
@@ -50,11 +50,6 @@ export class OrgOverviewComponent {
    * message. Personas always settle, so this never re-introduces an indefinite skeleton.
    */
   protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () =>
-      this.orgRoleGrantsService.loaded() &&
-      this.personaService.personaLoaded() &&
-      this.orgRoleGrantsService.writerSet().size === 0 &&
-      this.orgRoleGrantsService.auditorSet().size === 0 &&
-      this.accountContextService.availableAccounts().length === 0
+    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContextService.hasOrgSelectorAccess()
   );
 }

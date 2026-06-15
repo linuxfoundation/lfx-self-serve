@@ -16,7 +16,6 @@ import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -52,7 +51,6 @@ export class SidebarComponent {
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
   private readonly userService = inject(UserService);
-  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
@@ -158,12 +156,10 @@ export class SidebarComponent {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
       if (!this.orgLensFlag()) return false;
-      if (this.orgRoleGrantsService.writerSet().size > 0) return true;
-      if (this.orgRoleGrantsService.auditorSet().size > 0) return true;
-      // Persona-seeds fallback per D-005 — keeps the selector visible for users on
-      // dev sandbox accounts that have a persona-seeded org list but no
+      // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
+      // the selector visible for users on dev sandbox accounts that have a seeded org list but no
       // settings-doc grants in the upstream b2b_org_settings docs.
-      return this.accountContextService.availableAccounts().length > 0;
+      return this.accountContextService.hasOrgSelectorAccess();
     });
   }
 
