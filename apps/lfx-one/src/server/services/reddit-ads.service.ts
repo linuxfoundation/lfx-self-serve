@@ -200,7 +200,7 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
   const account = REDDIT_ACCOUNTS.find((a) => a.accountId === accountId) ?? REDDIT_ACCOUNTS[0];
   const endDate = new Date().toISOString().split('T')[0];
   const startDateObj = new Date();
-  startDateObj.setUTCDate(startDateObj.getUTCDate() - days);
+  startDateObj.setUTCDate(startDateObj.getUTCDate() - (days - 1));
   const startDate = startDateObj.toISOString().split('T')[0];
 
   const campaigns = await fetchCampaigns(accountId);
@@ -218,20 +218,25 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     };
   }
 
-  const perCampaignResults = await Promise.allSettled(activeCampaigns.map((camp) => fetchCampaignMetrics(accountId, camp.id, startDate, endDate)));
-
+  const CAMPAIGN_BATCH_SIZE = 5;
   const perCampaignMetrics = new Map<string, RedditAccountMetrics>();
   const defaultMetrics: RedditAccountMetrics = { impressions: 0, clicks: 0, spend: 0 };
-  for (let i = 0; i < activeCampaigns.length; i++) {
-    const result = perCampaignResults[i];
-    if (result.status === 'fulfilled') {
-      perCampaignMetrics.set(activeCampaigns[i].id, result.value);
-    } else {
-      logger.warning(req, 'reddit_analytics', 'Per-campaign report fetch failed — metrics will show zero', {
-        campaignId: activeCampaigns[i].id,
-        error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
-      });
-      perCampaignMetrics.set(activeCampaigns[i].id, defaultMetrics);
+
+  for (let i = 0; i < activeCampaigns.length; i += CAMPAIGN_BATCH_SIZE) {
+    const batch = activeCampaigns.slice(i, i + CAMPAIGN_BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map((camp) => fetchCampaignMetrics(accountId, camp.id, startDate, endDate)));
+
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === 'fulfilled') {
+        perCampaignMetrics.set(batch[j].id, result.value);
+      } else {
+        logger.warning(req, 'reddit_analytics', 'Per-campaign report fetch failed — metrics will show zero', {
+          campaignId: batch[j].id,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+        perCampaignMetrics.set(batch[j].id, defaultMetrics);
+      }
     }
   }
 
@@ -390,6 +395,11 @@ function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: nu
 export async function executeRedditCampaignCreation(req: Request | undefined, config: RedditCampaignCreateRequest): Promise<RedditCampaignCreateResult> {
   const startTime = logger.startOperation(req, 'reddit_campaign_create', { eventName: config.eventName });
   const steps: string[] = [];
+
+  if (!Number.isFinite(config.budgetUsd) || config.budgetUsd <= 0) {
+    throw new Error('Invalid budget: must be a positive number');
+  }
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 
