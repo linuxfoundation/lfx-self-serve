@@ -31,11 +31,10 @@ export class ValkeyService implements CachePort {
       connectTimeout: VALKEY_CACHE.CONNECT_TIMEOUT_MS,
       // TLS terminates at the managed cache endpoint reached through a Kubernetes ExternalName.
       // The server certificate is issued for the cloud provider's host (e.g. *.cache.amazonaws.com),
-      // not the in-cluster service name in the URL, so strict hostname verification would always
-      // fail and silently leave the cache disabled. Traffic stays inside the VPC (security-group
-      // gated, no auth token), so we keep transit encryption but skip hostname verification —
-      // mirroring the cluster's socat proxy (openssl-connect ... verify=0).
-      ...(useTls ? { tls: { rejectUnauthorized: false } } : {}),
+      // not the in-cluster service name in the URL, so the default hostname check would always fail
+      // and silently leave the cache disabled. We keep full certificate-chain validation (the server
+      // is still authenticated against a trusted CA) and skip only the hostname match.
+      ...(useTls ? { tls: { checkServerIdentity: () => undefined } } : {}),
     });
 
     // Connection-level errors must never crash the process; log and continue (cache stays best-effort).
