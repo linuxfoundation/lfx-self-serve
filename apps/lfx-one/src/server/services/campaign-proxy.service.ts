@@ -1281,6 +1281,19 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
     }
   }
 
+  const rd = obj['reddit_promoted'] as Record<string, unknown> | undefined;
+  if (rd) {
+    const variants = rd['variants'] as unknown[] | undefined;
+    if (Array.isArray(variants)) {
+      for (const v of variants) {
+        if (v == null || typeof v !== 'object') continue;
+        const rec = v as Record<string, unknown>;
+        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 300);
+        if (typeof rec['body'] === 'string') rec['body'] = (rec['body'] as string).slice(0, 500);
+      }
+    }
+  }
+
   const platforms = obj['platforms'] as Record<string, unknown> | undefined;
   if (platforms) {
     if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
@@ -1289,6 +1302,7 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
       truncateAdCopy({ google_display: platforms[key] } as Record<string, unknown>);
     }
     if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
+    if (platforms['reddit_promoted']) truncateAdCopy({ reddit_promoted: platforms['reddit_promoted'] } as Record<string, unknown>);
   }
 }
 
@@ -1306,10 +1320,12 @@ function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
+  const includeReddit = platforms.includes('reddit-ads');
 
   const requestedKeys: string[] = [];
   if (includeGoogle) requestedKeys.push('google_search', 'google_display');
   if (includeLinkedIn) requestedKeys.push('linkedin_sponsored');
+  if (includeReddit) requestedKeys.push('reddit_promoted');
 
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
