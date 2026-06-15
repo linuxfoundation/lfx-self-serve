@@ -34,4 +34,15 @@ export class OrgOverviewComponent {
   protected readonly isEmpty: Signal<boolean> = computed(
     () => this.loaded() && this.orgNavigationService.items().length === 0 && !this.selectedAccount().uid && !this.selectedAccount().accountId
   );
+
+  /** True once role grants settle and the caller has no org access (no direct/inherited grant and no persona-seeded account); mirrors the sidebar selector gate so zero-access users get a definitive denied state instead of an endless skeleton. */
+  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
+    () =>
+      this.orgRoleGrantsService.loaded() &&
+      this.orgRoleGrantsService.writerSet().size === 0 &&
+      this.orgRoleGrantsService.auditorSet().size === 0 &&
+      this.orgRoleGrantsService.inheritedWriterSet().size === 0 &&
+      this.orgRoleGrantsService.inheritedAuditorSet().size === 0 &&
+      this.accountContextService.availableAccounts().length === 0
+  );
 }
