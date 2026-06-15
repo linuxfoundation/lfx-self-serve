@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -27,6 +27,8 @@ export class CommitteeSurveysComponent {
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
 
+  public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
+
   // State
   public loading = signal<boolean>(true);
   public resultsDrawerVisible = model<boolean>(false);
@@ -43,6 +45,17 @@ export class CommitteeSurveysComponent {
   }
 
   // Private initializer functions
+  private initCreateSurveyQueryParams(): Signal<Record<string, string>> {
+    return computed(() => {
+      const committee = this.committee();
+      const params: Record<string, string> = { committee_uid: committee.uid };
+      if (committee.project_slug) {
+        params['project'] = committee.project_slug;
+      }
+      return params;
+    });
+  }
+
   private initSurveys(): Signal<Survey[]> {
     return toSignal(
       toObservable(this.committee).pipe(
