@@ -120,7 +120,7 @@ export class OrgContributionsService {
   private async fetchKpis(accountId: string, scope: ScopeFilters, kpiSearch: SearchFilter): Promise<{ rows: ContributionsKpiRow[] }> {
     const sql = `
       SELECT
-        COUNT(DISTINCT project_id) AS PROJECTS_WITH_ACTIVITY,
+        COUNT(DISTINCT COALESCE(project_id, project_slug, project_name)) AS PROJECTS_WITH_ACTIVITY,
         COUNT(DISTINCT repository_url) AS REPOSITORIES,
         COUNT(DISTINCT commit_id) AS COMMITS
       FROM ${PLATINUM_TABLE}
