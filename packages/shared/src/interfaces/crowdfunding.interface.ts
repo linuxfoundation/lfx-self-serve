@@ -209,9 +209,10 @@ export interface CrowdfundingInitiativeDetail extends CrowdfundingInitiative {
   matchPct?: number;
 }
 
+// TODO: wire up when the CF API exposes charge status on subscription transactions
 export type ChargeStatus = 'paid' | 'failed' | 'pending';
 
-/** A single line in the charge history for a recurring donation. */
+// TODO: wire up when charge-status is available from the CF API
 export interface ChargeHistoryItem {
   id: string;
   /** Display period, e.g. "May 2026". */

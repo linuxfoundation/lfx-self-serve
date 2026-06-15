@@ -99,6 +99,22 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
   return response.json() as Promise<T>;
 }
 
+async function cfFetchAllPages<T>(req: Request, operation: string, basePath: string, pageSize = 500): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await cfFetch<{ data: T[]; meta: { total: number; limit: number; offset: number } }>(
+      req,
+      operation,
+      `${basePath}?limit=${pageSize}&offset=${offset}`
+    );
+    all.push(...page.data);
+    if (all.length >= page.meta.total || page.data.length === 0) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
 // cfFetchNullable calls the authenticated CF API but returns null on 404 instead of throwing.
 // All other errors (401, 403, 5xx, network) are rethrown so the error handler
 // can return an appropriate status rather than silently reporting "not found".
@@ -221,30 +237,10 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    // Fetch all pages of donations and subscriptions in parallel so stats reflect the user's
-    // complete history, not just the first fixed-size page.
-    const STATS_PAGE_SIZE = 500;
-
-    async function fetchAllPages<T>(pageReq: Parameters<typeof cfFetch>[0], operation: string, basePath: string): Promise<T[]> {
-      const all: T[] = [];
-      let offset = 0;
-      while (true) {
-        const page = await cfFetch<{ data: T[]; meta: { total: number; limit: number; offset: number } }>(
-          pageReq,
-          operation,
-          `${basePath}?limit=${STATS_PAGE_SIZE}&offset=${offset}`
-        );
-        all.push(...page.data);
-        if (all.length >= page.meta.total || page.data.length === 0) break;
-        offset += STATS_PAGE_SIZE;
-      }
-      return all;
-    }
-
     // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
     const [allDonations, allSubscriptions] = await Promise.all([
-      fetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
-      fetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
+      cfFetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
+      cfFetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
     ]);
 
     const totalDonated = allDonations.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
@@ -262,14 +258,10 @@ export class CrowdfundingService {
   public async getMyRecurringDonations(req: Request): Promise<RecurringDonationsResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_recurring_donations');
 
-    const raw = await cfFetch<{ data: BackendSubscription[]; meta: { total: number; limit: number; offset: number } }>(
-      req,
-      'getMyRecurringDonations',
-      '/v1/me/subscriptions'
-    );
+    const all = await cfFetchAllPages<BackendSubscription>(req, 'getMyRecurringDonations', '/v1/me/subscriptions');
 
-    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data.map(mapSubscriptionToRecurringDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: all.length });
+    return { data: all.map(mapSubscriptionToRecurringDonation), total: all.length, pageSize: all.length, offset: 0 };
   }
 
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
