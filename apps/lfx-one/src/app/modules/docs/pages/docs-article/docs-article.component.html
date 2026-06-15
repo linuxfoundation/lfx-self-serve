@@ -3,27 +3,32 @@
 
 @if (article(); as a) {
   <article class="mx-auto flex max-w-[1024px] flex-col gap-6 pt-6" data-testid="docs-article">
-    <div class="flex justify-end">
+    <!-- Sticky top bar: breadcrumb on the left, search on the right -->
+    <div
+      class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-gray-200 bg-white py-4"
+      data-testid="docs-article-topbar">
+      @if (a.breadcrumb.length > 1) {
+        <nav aria-label="Breadcrumb" data-testid="docs-breadcrumb">
+          <ol class="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+            @for (item of a.breadcrumb; let last = $last; track item.slug) {
+              <li class="flex items-center gap-2">
+                @if (!last) {
+                  <a [routerLink]="item.url" class="hover:text-primary hover:underline" data-testid="docs-breadcrumb-link">
+                    {{ item.title }}
+                  </a>
+                  <span aria-hidden="true">/</span>
+                } @else {
+                  <span class="text-gray-800" aria-current="page">{{ item.title }}</span>
+                }
+              </li>
+            }
+          </ol>
+        </nav>
+      } @else {
+        <span></span>
+      }
       <lfx-docs-search data-testid="docs-article-search" />
     </div>
-    @if (a.breadcrumb.length > 1) {
-      <nav aria-label="Breadcrumb" data-testid="docs-breadcrumb">
-        <ol class="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-          @for (item of a.breadcrumb; let last = $last; track item.slug) {
-            <li class="flex items-center gap-2">
-              @if (!last) {
-                <a [routerLink]="item.url" class="hover:text-primary hover:underline" data-testid="docs-breadcrumb-link">
-                  {{ item.title }}
-                </a>
-                <span aria-hidden="true">/</span>
-              } @else {
-                <span class="text-gray-800" aria-current="page">{{ item.title }}</span>
-              }
-            </li>
-          }
-        </ol>
-      </nav>
-    }
 
     <header class="flex flex-col gap-3">
       <div>
