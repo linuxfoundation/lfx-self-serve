@@ -169,7 +169,7 @@ export class NavigationService {
     // Only write ?project= to the URL if it was already present — prevents the default
     // selection from injecting a wrong project slug into entity-specific URLs (e.g.
     // /project/groups/:id) that a user navigated to without an explicit project context.
-    const syncUrl = !!this.router.parseUrl(this.router.url).queryParams['project'];
+    const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
     if (lens === 'foundation') {
       this.projectContextService.setFoundation(context, syncUrl);
     } else {
