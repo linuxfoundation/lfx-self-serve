@@ -107,11 +107,12 @@ export class InitiativeSettingsDrawerComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
+        // Unknown topic values are kept intentionally — the topics-dirty gate in onSave() prevents accidental overwrites.
         const existingTopics = init.industry
           ? init.industry
               .split(',')
               .map((v) => v.trim())
-              .filter((v) => v && v.toLowerCase() !== 'null')
+              .filter((v) => v && v.toLowerCase() !== 'null') // CF API bug: null tags serialised as the string "null"
           : [];
         this.form.patchValue({
           name: init.name,
@@ -295,6 +296,7 @@ export class InitiativeSettingsDrawerComponent {
   }
 
   private makeBeneficiaryGroup(b?: Beneficiary): FormGroup {
+    // `id` omitted intentionally — CF PATCH is full delete-and-replace, so name + email is the full contract.
     return new FormGroup({
       name: new FormControl(b?.name ?? ''),
       email: new FormControl(b?.email ?? '', Validators.email),
