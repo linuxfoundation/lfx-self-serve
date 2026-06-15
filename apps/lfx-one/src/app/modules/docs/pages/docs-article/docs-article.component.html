@@ -38,47 +38,54 @@
       <lfx-docs-search class="w-full md:w-80" data-testid="docs-article-search" />
     </div>
 
-    <header class="flex flex-col gap-3">
-      <div>
-        <h1 class="font-display text-3xl font-light" data-testid="docs-article-title">
-          {{ a.title }}
-        </h1>
-        @if (a.description) {
-          <p class="mt-1 text-sm text-gray-500" data-testid="docs-article-description">
-            {{ a.description }}
-          </p>
-        }
-      </div>
-      @if (a.lastUpdated) {
-        <p class="flex items-center gap-1.5 text-xs text-gray-500" data-testid="docs-article-updated">
-          <i class="fa-light fa-clock-rotate-left" aria-hidden="true"></i>
-          <span>
-            Last updated
-            <time [attr.datetime]="a.lastUpdated">{{ a.lastUpdated | date: 'mediumDate' : 'UTC' }}</time>
-          </span>
-        </p>
-      }
-    </header>
-
-    <div class="prose prose-lfx mt-4 max-w-none" [innerHTML]="a.bodyHtml" data-testid="docs-article-body"></div>
-
-    @if (siblings().length > 0) {
-      <aside class="mt-8 flex flex-col gap-3 border-t border-gray-200 pt-6" aria-labelledby="docs-siblings-heading">
-        <h2 id="docs-siblings-heading" class="text-base font-semibold text-gray-900">More in this topic</h2>
-        <ul class="flex flex-col gap-2" data-testid="docs-article-siblings">
-          @for (sibling of siblings(); track sibling.slug) {
-            <li>
-              <a
-                [routerLink]="sibling.url"
-                class="block rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                data-testid="docs-article-sibling-link">
-                {{ sibling.title }}
-              </a>
-            </li>
+    <!-- Two-column body: article content (left) + "More in this topic" rail (right, sticky) -->
+    <div class="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
+      <div class="flex min-w-0 flex-1 flex-col gap-6">
+        <header class="flex flex-col gap-3">
+          <div>
+            <h1 class="font-display text-3xl font-light" data-testid="docs-article-title">
+              {{ a.title }}
+            </h1>
+            @if (a.description) {
+              <p class="mt-1 text-sm text-gray-500" data-testid="docs-article-description">
+                {{ a.description }}
+              </p>
+            }
+          </div>
+          @if (a.lastUpdated) {
+            <p class="flex items-center gap-1.5 text-xs text-gray-500" data-testid="docs-article-updated">
+              <i class="fa-light fa-clock-rotate-left" aria-hidden="true"></i>
+              <span>
+                Last updated
+                <time [attr.datetime]="a.lastUpdated">{{ a.lastUpdated | date: 'mediumDate' : 'UTC' }}</time>
+              </span>
+            </p>
           }
-        </ul>
-      </aside>
-    }
+        </header>
+
+        <div class="prose prose-lfx mt-4 max-w-none" [innerHTML]="a.bodyHtml" data-testid="docs-article-body"></div>
+      </div>
+
+      @if (siblings().length > 0) {
+        <aside
+          class="flex flex-col gap-3 border-t border-gray-200 pt-6 lg:sticky lg:top-[105px] lg:mt-6 lg:w-1/4 lg:shrink-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0"
+          aria-labelledby="docs-siblings-heading">
+          <h2 id="docs-siblings-heading" class="text-xs uppercase tracking-wide text-gray-500">More in this topic</h2>
+          <ul class="flex flex-col gap-2" data-testid="docs-article-siblings">
+            @for (sibling of siblings(); track sibling.slug) {
+              <li>
+                <a
+                  [routerLink]="sibling.url"
+                  class="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  data-testid="docs-article-sibling-link">
+                  {{ sibling.title }}
+                </a>
+              </li>
+            }
+          </ul>
+        </aside>
+      }
+    </div>
   </article>
 } @else {
   <p class="text-gray-500" data-testid="docs-article-empty">Article not found.</p>
