@@ -6,7 +6,7 @@ export const VALKEY_CACHE = {
   /** App-level key prefix so entries never collide with other consumers of the shared backend. */
   APP_PREFIX: 'lfx-ui',
 
-  /** Domain + schema-version segment for the org membership resolver cache. Bump `v1`→`v2` to invalidate. */
+  /** Domain + schema-version segment for the org membership resolver cache. Bump `v1`→`v2` on a breaking shape change so reads/writes move to a fresh namespace and stale entries age out via TTL. */
   ORG_MEMBERSHIP_NAMESPACE: 'org-membership:v1',
 
   /** Domain + schema-version segment for the org access / role-grants cache. */
@@ -21,6 +21,6 @@ export const VALKEY_CACHE = {
   /** Connection timeout for the lazy client. */
   CONNECT_TIMEOUT_MS: 1000,
 
-  /** Skip caching values larger than this (bytes of the serialized JSON) to protect the single-node cache. */
+  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
   MAX_VALUE_BYTES: 1_048_576,
 } as const;
