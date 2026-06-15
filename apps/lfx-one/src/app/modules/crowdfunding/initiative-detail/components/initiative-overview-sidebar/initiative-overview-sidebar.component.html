@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="initiative-overview-sidebar">
+  <!-- Recent donations card -->
+  <lfx-card data-testid="recent-donations-card">
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-sm font-bold text-gray-900">Recent donations</div>
+    </div>
+    <div class="flex flex-col" data-testid="activity-feed">
+      @for (donation of recentDonationsWithMeta(); track donation.id) {
+        <div class="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0" data-testid="activity-row">
+          <lfx-avatar [label]="donation.donorName" shape="square" size="normal" [styleClass]="donation.avatarClass" />
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-gray-900 truncate">
+              {{ donation.donorName }}
+              @if (donation.donorType === 'organization') {
+                <span class="ml-1 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">ORG</span>
+              }
+            </div>
+            <div class="text-xs text-gray-400">{{ donation.date | date: 'MMM d, y' : 'UTC' }}</div>
+          </div>
+          <div class="text-sm font-bold text-gray-900 whitespace-nowrap">{{ donation.formattedAmount }}</div>
+        </div>
+      }
+      @if (recentDonationsWithMeta().length === 0) {
+        <p class="text-sm text-gray-400 py-4 text-center">No donations yet</p>
+      }
+    </div>
+  </lfx-card>
+</div>

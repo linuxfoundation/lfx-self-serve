@@ -2,7 +2,7 @@
 
 Findings that match any pattern below MUST be dropped, regardless of which source (rule file, checklist, pattern file) originally produced them. This list is the floor — even a quotable pattern doesn't survive if it matches a known false positive.
 
-Used by the `lfx-self-serve-learnings-reviewer` subagent (Step 4), and also relevant filter discipline for the `lfx-self-serve-code-reviewer` subagent.
+Used by the `lfx-skills:lfx-self-serve-learnings-reviewer` subagent (Step 4), and also relevant filter discipline for the `lfx-skills:lfx-self-serve-code-reviewer` subagent.
 
 ---
 
@@ -70,7 +70,7 @@ Used by the `lfx-self-serve-learnings-reviewer` subagent (Step 4), and also rele
 
 **Pattern matched:** any finding stating that `PORT=4200` (or related `PCC_BASE_URL=http://localhost:4200`) in `apps/lfx-one/.env.example` is incorrect because the deployment uses port 4000.
 
-**Why false:** in this repo, port 4200 is intentional for local development — the Angular dev server runs on 4200. The 4200→4000 port change only applies to deployment / production (PM2 ecosystem config, `docs/deployment.md`). CodeRabbit learned this in PR #261.
+**Why false:** in this repo, port 4200 is intentional for local development — the Angular dev server runs on 4200. The 4200→4000 port change only applies to deployment / production (`apps/lfx-one/ecosystem.config.js` PM2 config; deployed values live in the `lfx-v2-argocd` repo). CodeRabbit learned this in PR #261.
 
 **Source:** PR #261 CodeRabbit learning timestamp `2026-03-06T18:57:30.153Z`.
 

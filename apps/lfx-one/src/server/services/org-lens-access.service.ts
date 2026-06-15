@@ -16,7 +16,7 @@ import {
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
@@ -54,6 +54,16 @@ export class OrgLensAccessService {
     ]);
     const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
     return { orgUid, users, summary: this.buildSummary(users), canManage };
+  }
+
+  /**
+   * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
+   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Access tab — the directory orchestrator owns its own merge + enrichment.
+   */
+  public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
+    const settings = await this.fetchSettings(req, orgUid);
+    return this.mapPrincipals(settings);
   }
 
   /** Add Users — invite a NEW principal via the per-principal POST endpoint; returns the refreshed list. */
@@ -178,7 +188,7 @@ export class OrgLensAccessService {
 
   /** Caller can manage iff the selected org uid is a direct writer grant (D-005). UX gate only. */
   private async resolveCanManage(req: Request, orgUid: string): Promise<boolean> {
-    const username = getEffectiveSub(req);
+    const username = getEffectiveUsername(req);
     if (!username) return false;
     try {
       const grants = await this.roleGrants.getRoleGrants(req, username);
@@ -205,7 +215,7 @@ export class OrgLensAccessService {
         path: `/b2b_orgs/${orgUid}/settings/users`,
       });
 
-    const username = getEffectiveSub(req);
+    const username = getEffectiveUsername(req);
     if (!username) {
       throw forbidden();
     }

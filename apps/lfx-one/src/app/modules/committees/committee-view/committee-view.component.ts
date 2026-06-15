@@ -595,11 +595,14 @@ export class CommitteeViewComponent {
 
   private initAutoSelectInitialTab(): void {
     const navigationKey = computed(() => ({ id: this.committeeId(), tab: this.initialTab() }));
+    // toObservable must run in an injection context; build the streams here, not inside switchMap.
+    const visibleTabs$ = toObservable(this.visibleTabs);
+    const membersLoading$ = toObservable(this.membersLoading);
     toObservable(navigationKey)
       .pipe(
         switchMap(({ tab }) => {
           if (!tab) return EMPTY;
-          return combineLatest([toObservable(this.visibleTabs), toObservable(this.membersLoading)]).pipe(
+          return combineLatest([visibleTabs$, membersLoading$]).pipe(
             filter(([, loading]) => !loading),
             take(1),
             filter(([tabs]) => tabs.some((t) => t.key === tab)),

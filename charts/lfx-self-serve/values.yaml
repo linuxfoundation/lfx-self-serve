@@ -389,3 +389,7 @@ environment:
   # HubSpot Configuration (Campaign UTM Tracking)
   HUBSPOT_ACCESS_TOKEN:
     value:
+
+  # Stripe publishable key
+  STRIPE_PUBLISHABLE_KEY:
+    value:

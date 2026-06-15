@@ -59,7 +59,7 @@ Acceptable `%G?` codes: `G` (good signature) or `U` (good signature, signing key
 
 - **Target under 1000 lines of diff** — one feature, one bug fix, or one refactor per PR
 - **Don't bundle unrelated changes** — keeps reviews focused and rollbacks clean
-- PR sizing should be planned upfront during development — see the `/develop` skill's "Scope for PR Size" section for detailed guidance on splitting work
+- PR sizing should be planned upfront during development — see the `/self-serve-dev` skill's "Scope for PR Size" section for detailed guidance on splitting work
 
 ## External References
 

@@ -1,7 +1,7 @@
 [
   {
     "prompt": "I just joined the team, how do I set up?",
-    "expected_behavior": "Should walk through the full setup: prerequisites (Node, Yarn, Git), clone, env vars via 1Password with validation, install, start dev server, and verify. Should mention Docker is not required and suggest /develop when done."
+    "expected_behavior": "Should walk through the full setup: prerequisites (Node, Yarn, Git), clone, env vars via 1Password with validation, install, start dev server, and verify. Should mention Docker is not required and suggest /self-serve-dev when done."
   },
   {
     "prompt": "yarn install is failing with a corepack error",

@@ -50,20 +50,24 @@ export class ProjectContextService {
     this.cookieService.delete(this.projectStorageKey, '/');
   }
 
-  public setFoundation(foundation: ProjectContext): void {
+  public setFoundation(foundation: ProjectContext, syncUrl = true): void {
     if (isSameProjectContext(this.foundationSelection(), foundation)) {
       return;
     }
     this.foundationSelection.set(foundation);
-    this.syncProjectQueryParam(foundation.slug);
+    if (syncUrl) {
+      this.syncProjectQueryParam(foundation.slug);
+    }
   }
 
-  public setProject(project: ProjectContext): void {
+  public setProject(project: ProjectContext, syncUrl = true): void {
     if (isSameProjectContext(this.projectSelection(), project)) {
       return;
     }
     this.projectSelection.set(project);
-    this.syncProjectQueryParam(project.slug);
+    if (syncUrl) {
+      this.syncProjectQueryParam(project.slug);
+    }
   }
 
   public clearFoundation(): void {

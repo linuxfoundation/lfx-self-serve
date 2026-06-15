@@ -8,11 +8,20 @@ import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
-import type { CampaignMetrics, CampaignMonitorResponse, KeywordMetrics, KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignMetrics,
+  CampaignMonitorResponse,
+  KeywordMetrics,
+  KeywordMetricsResponse,
+  LinkedInAccountOption,
+  LinkedInMonitorResponse,
+  LinkedInPacingLabel,
+} from '@lfx-one/shared/interfaces';
 
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
+type PlatformType = 'google' | 'linkedin';
 
 const KEYWORD_PAGE_SIZE = 10;
 
@@ -28,6 +37,8 @@ export class MonitoringTabComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
+  private linkedInSub: Subscription | null = null;
+  private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   protected readonly Math = Math;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
@@ -38,6 +49,20 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+
+  // Platform switcher
+  protected readonly selectedPlatform = signal<PlatformType>('google');
+  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly selectedLinkedInAccountKey = signal<string>('');
+  protected readonly linkedInLoading = signal(false);
+  protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
+  protected readonly linkedInError = signal<string | null>(null);
+  protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
+  protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
+  protected readonly linkedInPulledAt = computed(() => {
+    const pulledAt = this.linkedInData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
@@ -72,15 +97,41 @@ export class MonitoringTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.fetchData();
+    this.campaignService
+      .getLinkedInAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
+            this.selectedLinkedInAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'linkedin') {
+              this.fetchLinkedInData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+        },
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
+    if (this.selectedPlatform() === 'linkedin') {
+      this.fetchLinkedInData();
+    } else {
+      this.linkedInData.set(null);
+    }
   }
 
   protected refresh(): void {
     this.fetchData();
+    if (this.selectedPlatform() === 'linkedin') {
+      this.fetchLinkedInData();
+    }
   }
 
   protected fetchData(): void {
@@ -142,6 +193,58 @@ export class MonitoringTabComponent implements OnInit {
         })
         .catch(() => undefined);
     }
+  }
+
+  protected setPlatform(p: PlatformType): void {
+    this.selectedPlatform.set(p);
+    if (p === 'linkedin') {
+      this.fetchLinkedInData();
+    }
+  }
+
+  protected setLinkedInAccount(key: string): void {
+    this.selectedLinkedInAccountKey.set(key);
+    this.fetchLinkedInData();
+  }
+
+  protected onLinkedInAccountChange(event: Event): void {
+    this.setLinkedInAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchLinkedInData(): void {
+    const accountKey = this.selectedLinkedInAccountKey();
+    if (!accountKey) return;
+    this.linkedInSub?.unsubscribe();
+    this.linkedInLoading.set(true);
+    this.linkedInError.set(null);
+    this.linkedInSub = this.campaignService
+      .getLinkedInMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.linkedInData.set(data);
+          this.linkedInLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn data');
+          this.linkedInLoading.set(false);
+        },
+      });
+  }
+
+  protected linkedInPacingClass(label: LinkedInPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
+  }
+
+  protected formatLinkedInCurrency(n: number): string {
+    return this.currencyFormatter.format(n);
+  }
+
+  protected formatLinkedInPct(n: number): string {
+    return `${n.toFixed(2)}%`;
   }
 
   protected eventLabel(campaignName: string): string {

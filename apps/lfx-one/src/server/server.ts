@@ -13,7 +13,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
+import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
+import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -48,9 +50,11 @@ import sitemapRouter from './routes/sitemap.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
+import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
+import osspreyRouter from './routes/ossprey.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -237,10 +241,14 @@ app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
+app.use('/api/crowdfunding', crowdfundingRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
+// OSSPREY: LD-flag-controlled rollout for all authenticated LFX users (osspreyEnabledGuard).
+// Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
+app.use('/api/ossprey', osspreyRouter);
 
 app.use('/api/*', apiErrorHandler);
 
@@ -250,6 +258,11 @@ app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallback
 
 // GitHub/LinkedIn OAuth redirect target.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
+
+const crowdfundingCallbackController = new CrowdfundingController();
+app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
+
+const crowdfundingAuthService = new CrowdfundingAuthService();
 
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
@@ -277,6 +290,17 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
+  }
+
+  if (
+    auth.authenticated &&
+    req.originalUrl.startsWith('/crowdfunding') &&
+    !req.query['error'] &&
+    crowdfundingAuthService.isConfigured() &&
+    !crowdfundingAuthService.hasValidToken(req)
+  ) {
+    res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
+    return;
   }
 
   if (auth.authenticated) {
@@ -331,6 +355,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     dataDogRumApplicationId: process.env['DD_RUM_APPLICATION_ID'] || '',
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
+    stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {

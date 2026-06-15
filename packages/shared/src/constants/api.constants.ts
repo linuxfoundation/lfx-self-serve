@@ -70,6 +70,8 @@ export const CHANGELOG_CONFIG = {
 export const CDP_CONFIG = {
   DEFAULT_STAGING_URL: 'https://lf-staging.crowd.dev/api',
   DEFAULT_PRODUCTION_URL: 'https://cm.lfx.dev/api',
+  /** Hard cap enforced by the CDP packages list endpoint (400 above this). */
+  MAX_PAGE_SIZE: 100,
   ENDPOINTS: {
     RESOLVE_MEMBER: '/v1/members/resolve',
     MEMBER_IDENTITIES: (memberId: string) => `/v1/members/${memberId}/identities`,
@@ -77,5 +79,8 @@ export const CDP_CONFIG = {
     MEMBER_PROJECT_AFFILIATIONS: (memberId: string) => `/v1/members/${memberId}/project-affiliations`,
     MEMBER_PROJECT_AFFILIATION: (memberId: string, projectId: string) => `/v1/members/${memberId}/project-affiliations/${projectId}`,
     ORGANIZATIONS: '/v1/organizations',
+    PACKAGES_LIST: '/v1/packages',
+    PACKAGES_METRICS: '/v1/packages/metrics',
+    PACKAGE_DETAIL: '/v1/packages/detail',
   },
 } as const;

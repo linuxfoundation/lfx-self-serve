@@ -110,7 +110,7 @@ Trust-boundary patterns across the stack — credential disclosure, identity enu
 
 **Detect:** for any new server file that calls `fetch(externalUrl)` / `axios.get(externalUrl)`, verify (a) hostname is checked against a private/loopback/link-local IP blocklist, (b) the resolved IP (post-DNS) is rechecked against the same blocklist before connecting, (c) the response Content-Type is validated, (d) the route is rate-limited.
 
-**Empirical citation:** PR #252 `apps/lfx-one/src/server/services/url-metadata.service.ts:109` — "The fetchUrlTitle flow only calls isBlockedHostname but does not resolve the hostname to an IP before fetching, leaving a DNS rebinding SSRF gap." Same PR also flagged missing rate limiting on the route (`url-metadata.route.ts:12`) and missing Content-Type validation (`url-metadata.service.ts:115`).
+**Empirical citation:** PR #252 (the `url-metadata.service.ts` / `url-metadata.route.ts` feature this was filed against has since been removed from the codebase) — "The fetchUrlTitle flow only calls isBlockedHostname but does not resolve the hostname to an IP before fetching, leaving a DNS rebinding SSRF gap." Plus missing rate limiting on the route and missing Content-Type validation. The pattern remains live for any new server-side external fetch; current external-fetch sites to cross-check are `apps/lfx-one/src/server/controllers/document.controller.ts` and `apps/lfx-one/src/server/services/credly.service.ts`.
 
 **Failure message:** Server-side external fetch missing full SSRF guard set (DNS-rebinding / Content-Type / rate-limit).
 

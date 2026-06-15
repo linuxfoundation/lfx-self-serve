@@ -27,7 +27,7 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 ## AI Service
 
-- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
+- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content)
 - **AI Environment Variables**: `AI_PROXY_URL` and `AI_API_KEY` required for AI functionality
 - **M2M Environment Variables**: `M2M_AUTH_CLIENT_ID`, `M2M_AUTH_CLIENT_SECRET` for machine-to-machine auth
 
@@ -57,22 +57,14 @@ In the authenticated-route case, always:
 
 ## External Microservice Repos
 
-When building or modifying API integrations, always check the upstream microservice repo to verify the actual API contract before writing proxy calls or defining interfaces:
+When building or modifying API integrations, always check the upstream microservice repo to verify the actual API contract before writing proxy calls or defining interfaces.
 
-| Domain        | Repo                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| Queries       | [lfx-v2-query-service](https://github.com/linuxfoundation/lfx-v2-query-service)               |
-| Projects      | [lfx-v2-project-service](https://github.com/linuxfoundation/lfx-v2-project-service)           |
-| Meetings      | [lfx-v2-meeting-service](https://github.com/linuxfoundation/lfx-v2-meeting-service)           |
-| Mailing Lists | [lfx-v2-mailing-list-service](https://github.com/linuxfoundation/lfx-v2-mailing-list-service) |
-| Committees    | [lfx-v2-committee-service](https://github.com/linuxfoundation/lfx-v2-committee-service)       |
-| Voting        | [lfx-v2-voting-service](https://github.com/linuxfoundation/lfx-v2-voting-service)             |
-| Surveys       | [lfx-v2-survey-service](https://github.com/linuxfoundation/lfx-v2-survey-service)             |
+See the `/lfx` skill's `references/repo-map.md` for the upstream microservice repo list (each entry includes the owning repo path, ownership scope, and default peers).
 
-- These are Go microservices using the Goa framework — API contracts are in `design/` (Goa DSL) and `gen/http/` (generated OpenAPI specs)
+- These are Go microservices using the Goa framework, API contracts are in `design/` (Goa DSL) and `gen/http/` (generated OpenAPI specs)
 - To check the API contract, read the OpenAPI spec: `gh api repos/linuxfoundation/<repo>/contents/gen/http/openapi3.yaml --jq '.content' | base64 -d`
 - To browse the Goa DSL definitions: `gh api repos/linuxfoundation/<repo>/contents/design --jq '.[].name'`
-- The LFX One backend is a thin proxy layer — request/response shapes must match upstream
+- The LFX One backend is a thin proxy layer, request/response shapes must match upstream
 
 ## Code Quality
 
@@ -83,8 +75,6 @@ When building or modifying API integrations, always check the upstream microserv
 - Always run `yarn build` to validate that changes compile correctly
 - Do not nest ternary expressions
 - Always use `flex + flex-col + gap-*` instead of `space-y-*`
-- Always prepend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code
-- Always use sequential thinking MCP for planning before making changes
 
 ## Testing
 

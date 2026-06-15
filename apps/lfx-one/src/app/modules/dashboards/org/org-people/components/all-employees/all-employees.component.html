@@ -164,7 +164,15 @@
                   <i [class]="icons.courses" aria-hidden="true"></i>
                 </button>
               </th>
-              <th class="px-4 py-3 font-medium">Org Lens Access</th>
+              <th scope="col" class="px-4 py-3 font-medium" [attr.aria-sort]="aria.access">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  (click)="onSort('access')">
+                  Org Lens Access
+                  <i [class]="icons.access" aria-hidden="true"></i>
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -197,10 +205,18 @@
                     [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-name'"
                     (click)="$event.stopPropagation(); onPersonClick(row)">
                     <span
-                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      class="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold text-white"
                       [class]="row.avatarColorClass"
                       aria-hidden="true">
                       {{ row.initials }}
+                      @if (row.avatarUrl && !failedAvatarKeys()[row.avatarKey]) {
+                        <img
+                          [src]="row.avatarUrl"
+                          alt=""
+                          loading="lazy"
+                          class="absolute inset-0 h-full w-full object-cover"
+                          (error)="onAvatarError(row.avatarKey)" />
+                      }
                     </span>
                     <span class="flex min-w-0 flex-col">
                       <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>

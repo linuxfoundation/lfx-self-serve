@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
+import { OrgLensContributionsController } from '../controllers/org-lens-contributions.controller';
 import { OrgLensDocumentsController } from '../controllers/org-lens-documents.controller';
 import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
@@ -25,6 +26,7 @@ function buildOrgsRouter(): Router {
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
   const orgLensAccessController = new OrgLensAccessController();
   const orgLensTrainingController = new OrgLensTrainingController();
+  const orgLensContributionsController = new OrgLensContributionsController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -77,6 +79,14 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
+  // Spec 027 — People → Committee tab (org-wide committee members). Registered BEFORE the `/:personKey/detail`
+  // matcher below so 'committee-members' isn't consumed as a personKey.
+  router.get('/:orgUid/lens/people/committee-members', (req, res, next) => orgLensPeopleController.getCommitteeMembers(req, res, next));
+  router.patch('/:orgUid/lens/people/committee-members/:seatId/reassign', (req, res, next) => orgLensPeopleController.reassignCommitteeMember(req, res, next));
+  // People → Board tab (org-wide Board-only members). Registered BEFORE the `/:personKey/detail`
+  // matcher below so 'board-members' isn't consumed as a personKey.
+  router.get('/:orgUid/lens/people/board-members', (req, res, next) => orgLensPeopleController.getBoardMembers(req, res, next));
+  router.patch('/:orgUid/lens/people/board-members/:seatId/reassign', (req, res, next) => orgLensPeopleController.reassignBoardMember(req, res, next));
   // LFXV2-1876 — People → Trainees tab. Keep above the `/:personKey/detail` matcher so 'trainees' isn't consumed as a personKey.
   router.get('/:orgUid/lens/people/trainees', (req, res, next) => orgLensPeopleController.getTrainees(req, res, next));
   // LFXV2-1875 — People → Event Attendees tab. Same guard rationale as above ('event-attendees' must not be consumed as a personKey).
@@ -102,6 +112,9 @@ function buildOrgsRouter(): Router {
   // LFXV2-1897 — Trainings tab table + drill-down rosters.
   router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
   router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
+
+  // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
+  router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));

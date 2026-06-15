@@ -7,7 +7,7 @@ import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { decodeJwtPayload } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { valkeyService } from './valkey.service';
@@ -110,13 +110,13 @@ export class OrgMembershipResolverService {
     }
   }
 
-  // Builds the principal-bound, namespaced, versioned cache key, or null when the authorization
-  // principal cannot be derived from the bearer token (fail-closed). The `sub` comes from the same
-  // access/impersonation token that FGA-filters the data downstream, so cache identity == authz identity.
+  // Builds the principal-bound, namespaced, versioned cache key, or null when the caller's identity
+  // cannot be resolved (fail-closed). The effective username is impersonation-aware and matches the
+  // principal the query-service FGA-filters on downstream, so cache identity == authz identity.
   private static buildCacheKey(req: Request, b2bOrgUid: string, slug: string): string | null {
-    const sub = decodeJwtPayload(req.bearerToken ?? '')?.sub;
-    if (!sub) return null;
-    return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${sub}:${b2bOrgUid}:${slug.toLowerCase()}`;
+    const username = getEffectiveUsername(req);
+    if (!username) return null;
+    return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${username}:${b2bOrgUid}:${slug.toLowerCase()}`;
   }
 
   // Performs the actual paginated, FGA-filtered project_membership fetch (the cache fetcher).

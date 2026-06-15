@@ -6,7 +6,7 @@ import { ChangelogViewMarkViewedResponse, ChangelogViewUnseenResponse } from '@l
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 export class ChangelogService {
@@ -32,7 +32,7 @@ export class ChangelogService {
   public async getUnseenCount(req: Request): Promise<ChangelogViewUnseenResponse> {
     this.assertConfigured('get_changelog_unseen');
 
-    const viewerId = getEffectiveSub(req);
+    const viewerId = getEffectiveUsername(req);
     if (!viewerId) {
       throw new MicroserviceError('User authentication required', 401, 'CHANGELOG_UNAUTHENTICATED', {
         operation: 'get_changelog_unseen',
@@ -69,7 +69,7 @@ export class ChangelogService {
   public async markViewed(req: Request): Promise<ChangelogViewMarkViewedResponse> {
     this.assertConfigured('mark_changelog_viewed');
 
-    const viewerId = getEffectiveSub(req);
+    const viewerId = getEffectiveUsername(req);
     if (!viewerId) {
       throw new MicroserviceError('User authentication required', 401, 'CHANGELOG_UNAUTHENTICATED', {
         operation: 'mark_changelog_viewed',

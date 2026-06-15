@@ -13,6 +13,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonProfilePanelService } from '@services/person-profile-panel.service';
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
@@ -42,12 +43,9 @@ export class AllEmployeesComponent {
   private static readonly rowClassActivity =
     'cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
 
-  private static readonly rowClassSynthetic = 'border-b border-gray-100';
-
-  private static readonly accessOnlyKeyPrefix = 'access:';
-
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(AllEmployeesService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly accessState = inject(OrgLensAccessStateService);
   private readonly personPanel = inject(PersonProfilePanelService);
   private readonly destroyRef = inject(DestroyRef);
@@ -71,12 +69,19 @@ export class AllEmployeesComponent {
   protected readonly selectedFoundationId = signal<string>('');
   protected readonly selectedActivity = signal<OrgAllEmployeeActivityFilter>('all');
 
-  protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('name');
-  protected readonly sortDirection = signal<OrgAllEmployeeSortDirection>(1);
+  // Default sort: Code Contributions (commits) descending.
+  protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
+  protected readonly sortDirection = signal<OrgAllEmployeeSortDirection>(-1);
   protected readonly limit = signal<number>(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
 
   // Expansion is per-(account, personKey) reset on account change → personKey is unique within an account, so keying by personKey alone is safe.
   protected readonly expansion = signal<Record<string, boolean>>({});
+
+  // Composite `personKey::avatarUrl` tokens whose avatar image failed to load — render initials instead of a broken
+  // image, declaratively (no imperative DOM access in this zoneless component). Keyed by URL (not personKey alone) so a
+  // later refetch with a new/now-valid URL can render again. A plain object enables template property access (no method
+  // call in the @if gate). Reset on account switch via resetAllState.
+  protected readonly failedAvatarKeys = signal<Record<string, true>>({});
 
   // detail caches are keyed by `${accountId}:${personKey}` so an in-flight response from account A can't pollute account B's view even if the same personKey exists in both. Value types include `| undefined` so indexed access is honest in template @let bindings (tsconfig has noUncheckedIndexedAccess off).
   protected readonly detailMap = signal<Record<string, OrgAllEmployeeDetail | undefined>>({});
@@ -112,7 +117,7 @@ export class AllEmployeesComponent {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.dataService.getAllEmployees(orgUid).pipe(
+        return this.directory.getDirectory(orgUid).pipe(
           tap(() => this.loadingState.set(false)),
           catchError(() => {
             this.fetchErrorState.set(true);
@@ -158,10 +163,6 @@ export class AllEmployeesComponent {
   // Lowercased email -> 'admin' | 'viewer' | 'invited' for the currently selected org. Empty until the
   // shared cache hydrates (either from this tab's ensureLoaded below, or pushed in by the Access tab).
   private readonly accessByEmail = this.accessState.accessByEmailFor(this.currentAccountId);
-
-  // Full roster signal — needed for the UNION step in initViewRows (which walks every roster entry,
-  // not just per-email lookups). `null` until the cache hydrates.
-  private readonly accessRoster = this.accessState.rosterForOrg(this.currentAccountId);
 
   public constructor() {
     // Hydrate the shared Org Lens access cache for every org we see (including the initial one) so the
@@ -240,7 +241,20 @@ export class AllEmployeesComponent {
     this.personPanel.open(row.name);
   }
 
+  /** Record a broken avatar (by composite `personKey::avatarUrl`) so the template stops rendering the image and the initials behind it show through. */
+  protected onAvatarError(avatarKey: string): void {
+    this.failedAvatarKeys.update((keys) => {
+      if (keys[avatarKey]) return keys;
+      return { ...keys, [avatarKey]: true };
+    });
+  }
+
   protected retry(): void {
+    // Drop the shared cache so the next fetch re-hits the merged live endpoint instead of replaying the failure.
+    const uid = this.accountContext.selectedAccount().uid;
+    if (uid) {
+      this.directory.invalidate(uid);
+    }
     this.retryTrigger.update((v) => v + 1);
   }
 
@@ -260,57 +274,22 @@ export class AllEmployeesComponent {
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
     const byEmail = this.accessByEmail();
-    const activityRows = this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
+    // The live directory endpoint already merges access-only principals into `rows` server-side, so there is
+    // no client-side synthetic UNION here. The access cache is still joined per row to render the badge cell.
+    return this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
+      avatarKey: row.avatarUrl ? `${row.personKey}::${row.avatarUrl}` : '',
       // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
       // always present, server-lowercased). Rows without an email can't be joined and render `—`.
       access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
-      isSynthetic: false,
+      // Live-only people (no `snowflake` source) carry a synthetic `live-` personKey with no stored Snowflake
+      // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
+      // regardless of which live source (access / board / committee / keyContact) added them.
+      isSynthetic: !row.sources.includes('snowflake'),
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
-
-    // UNION step: append synthetic rows for access principals whose lowercased email doesn't match any
-    // activity row. The diagnostic intent (LFXV2-2082 journal, 2026-06-04): a principal granted Org Lens
-    // access who shows zero activity is itself a data-quality signal worth surfacing in the table.
-    const roster = this.accessRoster();
-    if (!roster) return activityRows;
-
-    const activityEmails = new Set<string>();
-    for (const row of activityRows) {
-      const email = row.email?.toLowerCase();
-      if (email) activityEmails.add(email);
-    }
-
-    const syntheticRows: OrgAllEmployeeRowVm[] = [];
-    for (const user of roster.users) {
-      const emailKey = user.email.toLowerCase();
-      if (activityEmails.has(emailKey)) continue;
-      const personKey = `${AllEmployeesComponent.accessOnlyKeyPrefix}${emailKey}`;
-      syntheticRows.push({
-        personKey,
-        lfid: null,
-        cdpMemberId: null,
-        name: user.name,
-        title: user.jobTitle,
-        email: user.email,
-        seatsCount: 0,
-        boardSeatsCount: 0,
-        committeeSeatsCount: 0,
-        commitsCount: 0,
-        eventsCount: 0,
-        coursesCount: 0,
-        engagedFoundationIds: [],
-        initials: AllEmployeesComponent.computeInitials(user.name),
-        avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(personKey),
-        access: user.isPending ? 'invited' : user.role,
-        isSynthetic: true,
-        rowClass: AllEmployeesComponent.rowClassSynthetic,
-      });
-    }
-
-    return [...activityRows, ...syntheticRows];
   }
 
   private initFilteredRows(): OrgAllEmployeeRowVm[] {
@@ -374,6 +353,7 @@ export class AllEmployeesComponent {
       commits: active === 'commits' ? direction : 'none',
       events: active === 'events' ? direction : 'none',
       courses: active === 'courses' ? direction : 'none',
+      access: active === 'access' ? direction : 'none',
     };
   }
 
@@ -387,6 +367,7 @@ export class AllEmployeesComponent {
       commits: iconFor('commits'),
       events: iconFor('events'),
       courses: iconFor('courses'),
+      access: iconFor('access'),
     };
   }
 
@@ -440,16 +421,17 @@ export class AllEmployeesComponent {
     this.searchTerm.set('');
     this.selectedFoundationId.set('');
     this.selectedActivity.set('all');
-    this.sortColumn.set('name');
-    this.sortDirection.set(1);
+    this.sortColumn.set('commits');
+    this.sortDirection.set(-1);
     this.limit.set(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
     this.expansion.set({});
+    this.failedAvatarKeys.set({});
     this.detailMap.set({});
     this.detailLoading.set({});
     this.detailErrorMap.set({});
   }
 
-  private static numericSortValue(row: OrgAllEmployeeRow, column: Exclude<OrgAllEmployeeSortColumn, 'name'>): number {
+  private static numericSortValue(row: OrgAllEmployeeRowVm, column: Exclude<OrgAllEmployeeSortColumn, 'name'>): number {
     switch (column) {
       case 'seats':
         return row.seatsCount;
@@ -459,6 +441,22 @@ export class AllEmployeesComponent {
         return row.eventsCount;
       case 'courses':
         return row.coursesCount;
+      case 'access':
+        return AllEmployeesComponent.accessRank(row.access);
+    }
+  }
+
+  /** Sort rank for the Org Lens Access badge: Admin > Viewer > Invited > no access. */
+  private static accessRank(access: OrgAllEmployeeRowVm['access']): number {
+    switch (access) {
+      case 'admin':
+        return 3;
+      case 'viewer':
+        return 2;
+      case 'invited':
+        return 1;
+      default:
+        return 0;
     }
   }
 
