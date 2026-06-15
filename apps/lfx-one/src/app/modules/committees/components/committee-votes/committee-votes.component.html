@@ -18,7 +18,7 @@
           severity="info"
           size="small"
           [routerLink]="['/votes', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [queryParams]="createVoteQueryParams()"
           data-testid="committee-votes-create-btn"></lfx-button>
       }
     </lfx-votes-table>
@@ -31,7 +31,7 @@
           severity="info"
           size="small"
           [routerLink]="['/votes', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [queryParams]="createVoteQueryParams()"
           data-testid="committee-votes-empty-create-btn"></lfx-button>
       </div>
     }

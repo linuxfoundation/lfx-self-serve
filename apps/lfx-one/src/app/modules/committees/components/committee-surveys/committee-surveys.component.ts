@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
+import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveyService } from '@services/survey.service';
@@ -35,6 +36,7 @@ export class CommitteeSurveysComponent {
 
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
+  public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
 
   public viewSurveyResults(survey: Survey): void {
     this.selectedSurveyId.set(survey.uid);
@@ -43,6 +45,10 @@ export class CommitteeSurveysComponent {
   }
 
   // Private initializer functions
+  private initCreateSurveyQueryParams(): Signal<Record<string, string>> {
+    return computed(() => buildCommitteeCreateQueryParams(this.committee()));
+  }
+
   private initSurveys(): Signal<Survey[]> {
     return toSignal(
       toObservable(this.committee).pipe(
