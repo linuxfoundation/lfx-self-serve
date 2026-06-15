@@ -339,7 +339,7 @@ export class CrowdfundingController {
       }
 
       const { slug } = req.params;
-      const { type, size, from } = req.query;
+      const { type, size, from, kind } = req.query;
 
       const ALLOWED_TYPES = ['donations', 'expenses'] as const;
       type AllowedType = (typeof ALLOWED_TYPES)[number];
@@ -350,12 +350,22 @@ export class CrowdfundingController {
         return;
       }
 
+      const ALLOWED_KINDS = ['one-time', 'recurring'] as const;
+      type AllowedKind = (typeof ALLOWED_KINDS)[number];
+
+      const resolvedKind = kind ? String(kind) : undefined;
+      if (resolvedKind !== undefined && !ALLOWED_KINDS.includes(resolvedKind as AllowedKind)) {
+        res.status(400).json({ message: `Invalid kind '${resolvedKind}'. Allowed values: ${ALLOWED_KINDS.join(', ')}` });
+        return;
+      }
+
       const transactions = await this.crowdfundingService.getInitiativeTransactions(
         req,
         slug,
         resolvedType as AllowedType | undefined,
         parseNonNegativeInt(size),
-        parseNonNegativeInt(from)
+        parseNonNegativeInt(from),
+        resolvedKind as AllowedKind | undefined
       );
 
       if (!transactions) {

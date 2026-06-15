@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import {
   CrowdfundingTransaction,
   FinancialSummary,
@@ -121,6 +119,7 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
     donorUsername: b.donor_username,
+    initiativeId: b.initiative_id,
   };
 }
 
@@ -168,6 +167,10 @@ function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
 
 /** Maps a CF API Subscription (from GET /v1/me/subscriptions) to the RecurringDonation shape. */
 export function mapSubscriptionToRecurringDonation(s: BackendSubscription): RecurringDonation {
+  const rawFundType = s.initiative_fund_type;
+  const validFundTypes = Object.values(FundType) as string[];
+  const fundType: FundType = rawFundType && validFundTypes.includes(rawFundType) ? (rawFundType as FundType) : FundType.GENERAL_FUND;
+
   return {
     id: s.id,
     name: s.initiative_name,
@@ -178,5 +181,11 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     startDate: s.start_date,
     nextChargeDate: s.next_charge_date,
     pausedSince: s.paused_at,
+    initiativeSlug: s.initiative_slug ?? s.initiative_id,
+    totalContributed: s.total_contributed_cents != null ? s.total_contributed_cents / 100 : 0,
+    fundType,
+    description: s.initiative_description,
+    tags: s.initiative_tags,
+    initiativeUrl: s.initiative_url,
   };
 }

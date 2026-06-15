@@ -71,6 +71,8 @@ export interface BackendTransaction {
   donor_type?: 'organization' | 'individual';
   donor_logo_url?: string;
   donor_username?: string;
+  initiative_id?: string;
+  kind?: 'one-time' | 'recurring';
 }
 
 /** Raw snake_case response from GET /v1/me/payment-account on the upstream crowdfunding service. */
@@ -112,14 +114,20 @@ export interface BackendDonationListResponse {
 export interface BackendSubscription {
   id: string;
   initiative_id: string;
+  initiative_slug?: string;
   initiative_name: string;
   initiative_logo_url?: string;
+  initiative_description?: string;
+  initiative_tags?: string[];
+  initiative_url?: string;
+  initiative_fund_type?: string;
   status: string;
   amount_cents: number;
   interval: string;
   start_date: string;
   next_charge_date?: string;
   paused_at?: string;
+  total_contributed_cents?: number;
 }
 
 export interface BackendSubscriptionListResponse {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import { authGuard } from '@app/shared/guards/auth.guard';
 
 export const CROWDFUNDING_ROUTES: Routes = [
   {
@@ -20,5 +21,10 @@ export const CROWDFUNDING_ROUTES: Routes = [
   {
     path: 'donations',
     loadComponent: () => import('./my-donations/my-donations.component').then((m) => m.MyDonationsComponent),
+  },
+  {
+    path: 'donations/recurring/:id',
+    loadComponent: () => import('./recurring-donation-detail/recurring-donation-detail.component').then((m) => m.RecurringDonationDetailComponent),
+    canActivate: [authGuard],
   },
 ];
