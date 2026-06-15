@@ -26,6 +26,12 @@ export class RecurringDonationsListComponent {
 
   protected readonly donationsWithMenuItems = this.initDonationsWithMenuItems();
 
+  protected onCardKeyActivate(event: Event, donation: RecurringDonation): void {
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    this.viewDetail.emit(donation);
+  }
+
   protected onMenuToggle(event: Event, index: number): void {
     this.menus()[index]?.toggle(event);
   }
