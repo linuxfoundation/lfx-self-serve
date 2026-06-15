@@ -14,7 +14,9 @@ import type {
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
+  OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
+import { splitDisplayName } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
 
@@ -27,6 +29,7 @@ interface OrgPeopleAllRow {
   NAME: string | null;
   TITLE: string | null;
   EMAIL: string | null;
+  PHOTO: string | null;
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
@@ -173,6 +176,7 @@ export class OrgLensPeopleService {
         NAME,
         TITLE,
         EMAIL,
+        PHOTO,
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
@@ -187,21 +191,29 @@ export class OrgLensPeopleService {
 
     const result = await this.snowflakeService.execute<OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null }>(query, [accountId]);
 
-    return result.rows.map((row) => ({
-      personKey: row.PERSON_KEY,
-      lfid: row.LFID,
-      cdpMemberId: row.CDP_MEMBER_ID,
-      name: row.NAME ?? '',
-      title: row.TITLE,
-      email: row.EMAIL,
-      seatsCount: row.SEATS_COUNT ?? 0,
-      boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
-      committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
-      commitsCount: row.COMMITS_COUNT ?? 0,
-      eventsCount: row.EVENTS_COUNT ?? 0,
-      coursesCount: row.COURSES_COUNT ?? 0,
-      engagedFoundationIds: this.parseFoundationIdArray(row.ENGAGED_FOUNDATION_IDS),
-    }));
+    return result.rows.map((row) => {
+      const name = cleanDisplayName(row.NAME, row.EMAIL);
+      const [firstName, lastName] = splitDisplayName(name);
+      return {
+        personKey: row.PERSON_KEY,
+        lfid: row.LFID,
+        cdpMemberId: row.CDP_MEMBER_ID,
+        name,
+        firstName,
+        lastName,
+        title: row.TITLE,
+        email: row.EMAIL,
+        avatarUrl: row.PHOTO ?? null,
+        sources: ['snowflake'] as OrgPersonSource[],
+        seatsCount: row.SEATS_COUNT ?? 0,
+        boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
+        committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
+        commitsCount: row.COMMITS_COUNT ?? 0,
+        eventsCount: row.EVENTS_COUNT ?? 0,
+        coursesCount: row.COURSES_COUNT ?? 0,
+        engagedFoundationIds: this.parseFoundationIdArray(row.ENGAGED_FOUNDATION_IDS),
+      };
+    });
   }
 
   private async fetchAllEmployeeStats(accountId: string): Promise<OrgAllEmployeeStats> {
@@ -406,6 +418,16 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
+}
+
+/** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */
+function cleanDisplayName(rawName: string | null, email: string | null): string {
+  const name = (rawName ?? '').trim();
+  const isPlaceholder = name === '' || /\[\[[^\]]*\]\]/.test(name);
+  if (!isPlaceholder) {
+    return name;
+  }
+  return (email ?? '').trim() || 'Unknown member';
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */
