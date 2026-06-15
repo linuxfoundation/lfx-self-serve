@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_MEETUP_SORT_FIELD,
+  DEFAULT_MEETUPS_PAGE_SIZE,
+  MAX_MEETUPS_PAGE_SIZE,
   MEETUPS_DEFAULT_SNOWFLAKE_SCHEMA,
   MEETUPS_SNOWFLAKE_SCHEMA_PATTERN,
   OCG_MEETUP_BASE_URL,
@@ -36,7 +38,7 @@ export class MeetupsService {
     const { isPast, searchQuery, community, role, status, sortField: rawSortField, pageSize, offset, sortOrder } = options;
     const sortField = rawSortField && VALID_MEETUP_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_MEETUP_SORT_FIELD;
     const normalizedSortOrder: MeetupSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
-    const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
+    const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, MAX_MEETUPS_PAGE_SIZE) : DEFAULT_MEETUPS_PAGE_SIZE;
     const normalizedOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
 
     logger.debug(req, 'get_my_meetups', 'Building meetups query', {

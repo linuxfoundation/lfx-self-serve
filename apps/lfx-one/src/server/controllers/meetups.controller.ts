@@ -50,7 +50,7 @@ export class MeetupsController {
 
   /**
    * GET /api/meetups/filters
-   * Get distinct community and role filter options for My Meetups
+   * Get distinct global community and role filter options for the My Meetups UI
    */
   public async getMeetupFilters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_meetup_filters');

@@ -53,12 +53,12 @@ export interface MyMeetup {
 export type MyMeetupsResponse = OffsetPaginatedResponse<MyMeetup>;
 
 /**
- * Response for distinct meetup filter options
+ * Response for distinct global meetup filter options
  */
 export interface MeetupFilterOptionsResponse {
-  /** Community names available to the current user */
+  /** Community names available in the global meetup filter catalog */
   communities: string[];
-  /** Meetup roles available to the current user */
+  /** Meetup roles available in the global meetup filter catalog */
   roles: string[];
 }
 
