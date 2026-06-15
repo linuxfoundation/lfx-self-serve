@@ -6,6 +6,7 @@ import type {
   ContributionsCommitSortColumn,
   ContributionsDateRange,
   ContributionsSortColumn,
+  ContributionsView,
   OrgContributionCommitRow,
   OrgContributionEmployeeOption,
   OrgContributionProjectOption,
@@ -86,19 +87,22 @@ export class OrgContributionsService {
     const repoSearch = buildRepoSearchFilter(query.search);
     const commitSearch = buildCommitSearchFilter(query.search);
 
+    const repoPagination = viewAwarePagination(query, 'repositories');
+    const commitPagination = viewAwarePagination(query, 'commits');
+
     const [kpiResult, repoResult, commitResult, projectOptions, employeeOptions] = await Promise.all([
       this.fetchKpis(accountId, scope, kpiSearch),
-      this.fetchRepositories(accountId, scope, repoSearch, query),
-      this.fetchCommits(accountId, scope, commitSearch, query),
+      this.fetchRepositories(accountId, scope, repoSearch, query, repoPagination),
+      this.fetchCommits(accountId, scope, commitSearch, query, commitPagination),
       this.fetchProjectOptions(accountId, query.dateRange),
       this.fetchEmployeeOptions(accountId, query.dateRange),
     ]);
 
     const kpis = mapKpis(kpiResult.rows[0]);
-    const repositories = repoResult.rows.map(mapRepoRow);
     const totalRecords = repoResult.rows.length > 0 ? repoResult.rows[0].TOTAL_RECORDS : 0;
-    const commits = commitResult.rows.map(mapCommitRow);
+    const repositories = query.view === 'repositories' ? repoResult.rows.map(mapRepoRow) : [];
     const commitsTotalRecords = commitResult.rows.length > 0 ? commitResult.rows[0].TOTAL_RECORDS : 0;
+    const commits = query.view === 'commits' ? commitResult.rows.map(mapCommitRow) : [];
 
     return {
       accountId,
@@ -133,9 +137,10 @@ export class OrgContributionsService {
     accountId: string,
     scope: ScopeFilters,
     repoSearch: SearchFilter,
-    query: OrgContributionsQuery
+    query: OrgContributionsQuery,
+    pagination: ViewAwarePagination
   ): Promise<{ rows: ContributionsRepoRow[] }> {
-    const offset = (query.page - 1) * query.size;
+    const offset = (pagination.page - 1) * pagination.size;
     const orderBy = repoOrderByColumn(query.sort);
     const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
 
@@ -174,7 +179,7 @@ export class OrgContributionsService {
         COUNT(*) OVER() AS total_records
       FROM repo_agg
       ORDER BY ${orderBy} ${sortDir}, repository_url ASC
-      LIMIT ${query.size} OFFSET ${offset}
+      LIMIT ${pagination.size} OFFSET ${offset}
     `;
     return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, ...scope.binds, ...repoSearch.binds]);
   }
@@ -183,9 +188,10 @@ export class OrgContributionsService {
     accountId: string,
     scope: ScopeFilters,
     commitSearch: SearchFilter,
-    query: OrgContributionsQuery
+    query: OrgContributionsQuery,
+    pagination: ViewAwarePagination
   ): Promise<{ rows: ContributionsCommitRow[] }> {
-    const offset = (query.page - 1) * query.size;
+    const offset = (pagination.page - 1) * pagination.size;
     const orderBy = commitOrderByColumn(query.commitSort);
     const sortDir = query.commitDir === 1 ? 'ASC' : 'DESC';
 
@@ -224,7 +230,7 @@ export class OrgContributionsService {
         COUNT(*) OVER() AS total_records
       FROM commit_rows
       ORDER BY ${orderBy} ${sortDir}, commit_id ASC
-      LIMIT ${query.size} OFFSET ${offset}
+      LIMIT ${pagination.size} OFFSET ${offset}
     `;
     return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds]);
   }
@@ -288,6 +294,19 @@ interface ScopeFilters {
 interface SearchFilter {
   predicate: string;
   binds: string[];
+}
+
+interface ViewAwarePagination {
+  page: number;
+  size: number;
+}
+
+/** Active tab uses client page/size; inactive tab fetches one row at offset 0 only to read COUNT(*) OVER(). */
+function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsView): ViewAwarePagination {
+  if (query.view === tab) {
+    return { page: query.page, size: query.size };
+  }
+  return { page: 1, size: 1 };
 }
 
 function buildScopeFilters(query: OrgContributionsQuery): ScopeFilters {
