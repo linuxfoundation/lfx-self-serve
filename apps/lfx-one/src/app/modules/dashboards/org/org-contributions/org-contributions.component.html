@@ -283,14 +283,18 @@
                     </span>
                   }
                   <span class="flex min-w-0 flex-col items-start">
-                    <button
-                      type="button"
-                      class="truncate bg-transparent p-0 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                      [attr.data-testid]="'org-contributions-committer-' + commit.commitSha"
-                      [attr.aria-label]="'View details for ' + commit.committerName"
-                      (click)="openCommitter(commit.contributorId ?? commit.commitSha)">
-                      {{ commit.committerName }}
-                    </button>
+                    @if (commit.contributorId) {
+                      <button
+                        type="button"
+                        class="truncate bg-transparent p-0 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                        [attr.data-testid]="'org-contributions-committer-' + commit.commitSha"
+                        [attr.aria-label]="'View details for ' + commit.committerName"
+                        (click)="openCommitter(commit.contributorId)">
+                        {{ commit.committerName }}
+                      </button>
+                    } @else {
+                      <span class="truncate text-sm font-medium text-gray-900">{{ commit.committerName }}</span>
+                    }
                     @if (commit.committerTitle) {
                       <span class="truncate text-xs text-gray-500">{{ commit.committerTitle }}</span>
                     }

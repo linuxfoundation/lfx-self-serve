@@ -362,7 +362,10 @@ function projectFilterPredicate(projects: string[], binds: string[]): string {
   for (const slug of projects) {
     binds.push(slug);
   }
-  return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}))`;
+  for (const slug of projects) {
+    binds.push(slug);
+  }
+  return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
 }
 
 function employeeFilterPredicate(employees: string[], binds: string[]): string {
@@ -434,7 +437,7 @@ function mapCommitRow(row: ContributionsCommitRow): OrgContributionCommitRow {
     committerTitle: null,
     username: parseGithubUsername(row.GITHUB_USERNAME),
     source: row.SOURCE ?? 'git',
-    committedTs: toIsoTimestamp(row.ACTIVITY_TS) ?? new Date(0).toISOString(),
+    committedTs: toIsoTimestamp(row.ACTIVITY_TS) ?? '',
     message: row.COMMIT_MESSAGE ?? '',
     commitUrl: row.COMMIT_URL,
   };
