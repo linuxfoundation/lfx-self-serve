@@ -167,6 +167,16 @@ export class ValkeyService implements CachePort {
   }
 }
 
+/**
+ * Optional per-deployment cache-key namespace (e.g. a feature-branch id like `ui-pr-42`) inserted
+ * after the app prefix so deployments sharing one Valkey instance never read or write each other's
+ * keys. Empty in cluster-isolated environments (dev/staging/prod). Sanitized to a safe key segment.
+ */
+export function cacheKeyNamespace(): string {
+  const ns = process.env['VALKEY_KEY_NAMESPACE'];
+  return ns && /^[A-Za-z0-9._-]+$/.test(ns) ? ns : '';
+}
+
 /** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */
 export const valkeyService: ValkeyService = new Proxy({} as ValkeyService, {
   get: (_target, prop: string | symbol, receiver) => {

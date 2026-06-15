@@ -24,7 +24,7 @@ import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { valkeyService } from './valkey.service';
+import { cacheKeyNamespace, valkeyService } from './valkey.service';
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
@@ -90,7 +90,9 @@ export class OrgRoleGrantsService {
   /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
   private static buildCacheKey(username: string): string | null {
     if (!isFilterSafeUsername(username)) return null;
-    return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_ACCESS_NAMESPACE}:${username}`;
+    const ns = cacheKeyNamespace();
+    const prefix = ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+    return `${prefix}:${VALKEY_CACHE.ORG_ACCESS_NAMESPACE}:${username}`;
   }
 
   /** Shared-constant TTL converted from ms to whole seconds for the cache write. */

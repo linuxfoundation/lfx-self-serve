@@ -10,7 +10,7 @@ import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { valkeyService } from './valkey.service';
+import { cacheKeyNamespace, valkeyService } from './valkey.service';
 
 // Resolves an org UUID + foundation slug to the active project_membership context.
 
@@ -126,7 +126,9 @@ export class OrgMembershipResolverService {
     // Fail-closed: an unresolved or non-filter-safe username (one that could corrupt the
     // `:`-delimited key namespace) bypasses the shared cache instead of risking key collisions.
     if (!username || !isFilterSafeUsername(username)) return null;
-    return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${username}:${b2bOrgUid}:${slug.toLowerCase()}`;
+    const ns = cacheKeyNamespace();
+    const prefix = ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+    return `${prefix}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${username}:${b2bOrgUid}:${slug.toLowerCase()}`;
   }
 
   // Performs the actual paginated, FGA-filtered project_membership fetch (the cache fetcher).

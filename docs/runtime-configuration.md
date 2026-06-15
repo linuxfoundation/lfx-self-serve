@@ -163,6 +163,15 @@ async function initializeOpenFeature(): Promise<void> {
 | `DD_RUM_APPLICATION_ID` | DataDog RUM application ID (future) | `app-uuid-here`            |
 | `INTERCOM_APP_ID`       | Intercom Messenger workspace App ID | `mxl90k6y`                 |
 
+### Server-Side Cache Variables
+
+These configure the shared Valkey read-through cache (read by the Express server only; not exposed to the browser):
+
+| Variable               | Description                                                                                                                                                                                                                | Example              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `VALKEY_URL`           | Shared Valkey connection URL (`rediss://` enables TLS). Unset disables caching (direct-fetch fallback).                                                                                                                    | `rediss://host:6379` |
+| `VALKEY_KEY_NAMESPACE` | Optional per-deployment cache-key namespace woven into the key prefix. Set per feature-branch (e.g. `ui-pr-<n>`) so branch deployments sharing one Valkey instance never collide on cache keys. Unset in dev/staging/prod. | `ui-pr-914`          |
+
 ### Local Development
 
 Add to your `.env` file (already gitignored):

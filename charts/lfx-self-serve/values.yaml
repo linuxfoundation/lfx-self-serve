@@ -356,6 +356,11 @@ environment:
   VALKEY_URL:
     value:
 
+  # Optional per-deployment cache-key namespace (e.g. a feature-branch id) so deployments sharing one
+  # Valkey instance never collide on cache keys. Unset in cluster-isolated environments.
+  VALKEY_KEY_NAMESPACE:
+    value:
+
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"
 
