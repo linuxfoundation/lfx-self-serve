@@ -121,13 +121,17 @@ export class OrgRoleGrantsService {
   /**
    * True only when the value is an array of `[stringKey, objectValue]` tuples — the exact shape `new Map(...)`
    * consumes for both Maps here (`resolved` → ResolvedOrgRole objects, `orgDocByUid` → B2bOrgIndexedDoc objects).
-   * Validating the element types (not just arity) rejects corrupt entries like `[[123, null]]` as a miss instead
-   * of rebuilding a Map with non-string uids / null docs that would later surface as an invalid wire shape.
+   * Validating the element types (not just arity) rejects corrupt entries like `[[123, null]]` or array-valued
+   * tuples like `[["uid", []]]` as a miss instead of rebuilding a Map with non-string uids / non-object docs that
+   * would later surface as an invalid wire shape.
    */
   private static isEntryTupleArray(value: unknown): boolean {
     return (
       Array.isArray(value) &&
-      value.every((item) => Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'object' && item[1] !== null)
+      value.every(
+        (item) =>
+          Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'object' && item[1] !== null && !Array.isArray(item[1])
+      )
     );
   }
 

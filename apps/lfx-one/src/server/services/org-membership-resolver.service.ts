@@ -112,10 +112,14 @@ export class OrgMembershipResolverService {
     }
   }
 
-  // Accepts only a clean array of non-null membership objects. A malformed cache entry (nullish or
-  // non-object elements) degrades to a miss + refetch instead of throwing downstream in resolveContext().
+  // Accepts only a clean array of membership objects that each carry a string `uid` (the one guaranteed
+  // field). This rejects malformed elements — null, arrays (`typeof [] === 'object'`), or shapeless `{}` —
+  // so a corrupt/legacy cache entry degrades to a miss + refetch instead of being served as a bogus hit.
   private static isMembershipDocArray(value: unknown): value is ProjectMembershipDoc[] {
-    return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object');
+    return (
+      Array.isArray(value) &&
+      value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el) && typeof (el as ProjectMembershipDoc).uid === 'string')
+    );
   }
 
   // Builds the principal-bound, namespaced, versioned cache key, or null when the caller's identity
