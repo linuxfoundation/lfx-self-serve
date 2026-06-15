@@ -26,14 +26,16 @@
     }
 
     <header class="flex flex-col gap-3">
-      <h1 class="text-3xl font-bold text-gray-900" data-testid="docs-article-title">
-        {{ a.title }}
-      </h1>
-      @if (a.description) {
-        <p class="text-base text-gray-600" data-testid="docs-article-description">
-          {{ a.description }}
-        </p>
-      }
+      <div>
+        <h1 class="font-display text-3xl font-light" data-testid="docs-article-title">
+          {{ a.title }}
+        </h1>
+        @if (a.description) {
+          <p class="mt-1 text-sm text-gray-500" data-testid="docs-article-description">
+            {{ a.description }}
+          </p>
+        }
+      </div>
       @if (a.lastUpdated) {
         <p class="flex items-center gap-1.5 text-xs text-gray-500" data-testid="docs-article-updated">
           <i class="fa-light fa-clock-rotate-left" aria-hidden="true"></i>
