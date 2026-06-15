@@ -151,19 +151,27 @@ ExternalSecret-specific annotations override global ones on key conflicts
 {{- end }}
 
 {{/*
-Validate the staticConfigMaps root value itself is a map (or empty/nil).
-Catches bad-shape inputs like `staticConfigMaps: "foo"` or
-`staticConfigMaps: [a,b]` before any caller iterates with `range` or
-runs `toJson` for the checksum annotation, so failures surface with a
-clear message instead of an opaque template type error from inside a
-range or sprig function.
+Validate the staticConfigMaps root value itself is a map (or nil).
+Catches bad-shape inputs like `staticConfigMaps: "foo"`,
+`staticConfigMaps: [a,b]`, `staticConfigMaps: ""`, or `staticConfigMaps: []`
+before any caller iterates with `range` or runs `toJson` for the checksum
+annotation, so failures surface with a clear message instead of an opaque
+template type error from inside a range or sprig function.
+
+Uses `hasKey` + `kindIs "invalid"` (Helm's "kind" for nil) instead of a
+truthiness gate so empty-but-mistyped values (`""`, `[]`, `0`) still fail
+the type check; only an absent key or an explicit `null` is treated as
+"no static ConfigMaps configured".
 
 Call once at the top of any template that reads .Values.staticConfigMaps:
   {{- include "lfx-self-serve.staticConfigMaps.rootValidate" . }}
 */}}
 {{- define "lfx-self-serve.staticConfigMaps.rootValidate" -}}
-{{- if and .Values.staticConfigMaps (not (kindIs "map" .Values.staticConfigMaps)) -}}
-{{- fail (printf "staticConfigMaps must be a map of <name> -> { mountPath, data } (got %s)" (kindOf .Values.staticConfigMaps)) -}}
+{{- if hasKey .Values "staticConfigMaps" -}}
+{{- $scm := .Values.staticConfigMaps -}}
+{{- if and (not (kindIs "invalid" $scm)) (not (kindIs "map" $scm)) -}}
+{{- fail (printf "staticConfigMaps must be a map of <name> -> { mountPath, data } (got %s)" (kindOf $scm)) -}}
+{{- end -}}
 {{- end -}}
 {{- end }}
 

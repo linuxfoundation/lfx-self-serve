@@ -41,12 +41,32 @@ const EMPTY_LINKEDIN_CONFIG: LinkedInRuntimeConfig = {
   targetingProfiles: [],
 };
 
+// LinkedIn ad-account and organization IDs are numeric (digit-only). Mirrors
+// the LINKEDIN_AD_ACCOUNT_ID env-var check in `getAccountId()` so ConfigMap
+// values get the same shape guarantees as env values.
+const NUMERIC_ID_RE = /^\d+$/;
+const LINKEDIN_ACCOUNT_STATUS_VALUES: ReadonlySet<NonNullable<LinkedInAccount['status']>> = new Set(['ACTIVE', 'BILLING_HOLD']);
+
 function isLinkedInAccount(value: unknown): value is LinkedInAccount {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const v = value as Record<string, unknown>;
-  return typeof v['accountId'] === 'string' && typeof v['label'] === 'string' && typeof v['orgId'] === 'string';
+  if (typeof v['accountId'] !== 'string' || !NUMERIC_ID_RE.test(v['accountId'])) {
+    return false;
+  }
+  if (typeof v['orgId'] !== 'string' || !NUMERIC_ID_RE.test(v['orgId'])) {
+    return false;
+  }
+  if (typeof v['label'] !== 'string') {
+    return false;
+  }
+  // status is optional; if present it must match the documented enum.
+  const rawStatus = v['status'];
+  if (rawStatus !== undefined && !LINKEDIN_ACCOUNT_STATUS_VALUES.has(rawStatus as NonNullable<LinkedInAccount['status']>)) {
+    return false;
+  }
+  return true;
 }
 
 function isLinkedInTargetingProfile(value: unknown): value is LinkedInTargetingProfileConfig {
@@ -75,19 +95,29 @@ function validateLinkedInConfig(parsed: unknown): LinkedInRuntimeConfig {
     throw new TypeError(`LinkedIn config "defaultAccountId" must be a string when present, got ${typeof rawDefaultAccountId}`);
   }
   const defaultAccountId = rawDefaultAccountId ?? '';
+  // Empty string is a documented opt-out (env var takes precedence); only
+  // validate the regex when a value was actually provided.
+  if (defaultAccountId !== '' && !NUMERIC_ID_RE.test(defaultAccountId)) {
+    throw new TypeError('LinkedIn config "defaultAccountId" must be a digit-only string when non-empty (LinkedIn ad account IDs are numeric)');
+  }
 
   const rawDefaultOrgId = p['defaultOrgId'];
   if (rawDefaultOrgId !== undefined && typeof rawDefaultOrgId !== 'string') {
     throw new TypeError(`LinkedIn config "defaultOrgId" must be a string when present, got ${typeof rawDefaultOrgId}`);
   }
   const defaultOrgId = rawDefaultOrgId ?? '';
+  if (defaultOrgId !== '' && !NUMERIC_ID_RE.test(defaultOrgId)) {
+    throw new TypeError('LinkedIn config "defaultOrgId" must be a digit-only string when non-empty (LinkedIn organization IDs are numeric)');
+  }
 
   const rawAccounts = p['accounts'] ?? [];
   if (!Array.isArray(rawAccounts)) {
     throw new TypeError(`LinkedIn config "accounts" must be an array, got ${typeof rawAccounts}`);
   }
   if (!rawAccounts.every(isLinkedInAccount)) {
-    throw new TypeError('LinkedIn config "accounts[]" entries must each have string accountId, label, and orgId');
+    throw new TypeError(
+      'LinkedIn config "accounts[]" entries must each have a digit-only accountId (string), digit-only orgId (string), string label, and (when present) status in {ACTIVE, BILLING_HOLD}'
+    );
   }
 
   const rawExclusions = p['employerExclusions'] ?? [];
@@ -264,6 +294,30 @@ function getOrgId(overrideAccountId?: string): string {
 
 function getAccessToken(): string {
   return getLinkedInEnv('LINKEDIN_ACCESS_TOKEN');
+}
+
+// Mask a LinkedIn vendor identifier for log context: keep the last 4 digits
+// for triage, redact the rest. LinkedIn IDs are typically 8-10 digits, so a
+// 4-digit suffix is short enough to avoid effectively logging the whole ID.
+function maskAccountId(id: string): string {
+  if (id.length <= 4) return '***';
+  return `***${id.slice(-4)}`;
+}
+
+// Resolve a safe label for log metadata. Prefer the human label from the
+// runtime config (already non-sensitive by design); fall back to a masked
+// suffix when the account isn't in the loaded config (e.g. config not yet
+// loaded, or the caller passed an unknown account override). Avoids leaking
+// raw vendor identifiers into logs even on uncommon error paths.
+function describeAccountForLog(accountId: string): string {
+  try {
+    const match = getLinkedInConfig().accounts.find((a) => a.accountId === accountId);
+    if (match) return match.label;
+  } catch {
+    // Config not loadable — fall through to the masked-ID branch so logging
+    // stays best-effort and never throws from inside a logger metadata call.
+  }
+  return maskAccountId(accountId);
 }
 
 // ---------------------------------------------------------------------------
@@ -751,7 +805,12 @@ interface LinkedInCampaignElement {
 }
 
 export async function getLinkedInAnalytics(req: Request | undefined, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
-  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
+  // Derive once so every log line in this function uses the same redacted
+  // identifier. PR description guarantees raw account/org IDs do not appear
+  // in logs after externalization; this preserves that guarantee on the
+  // analytics path.
+  const accountLabel = describeAccountForLog(accountId);
+  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountLabel, days });
   const token = getAccessToken();
   const version = LINKEDIN_API_VERSION;
 
@@ -784,7 +843,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     if (!campaignsResp.ok) {
       const text = await campaignsResp.text().catch(() => '');
       const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
-      logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
+      logger.error(req, 'linkedin_analytics', startTime, err, { accountLabel });
       throw err;
     }
     const campaignsData = (await campaignsResp.json()) as { elements?: LinkedInCampaignElement[] };
@@ -826,7 +885,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
 
   const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
   if (!analyticsResp.ok) {
-    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalytics returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
+    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalytics returned ${analyticsResp.status} — campaign metrics will show zero`, { accountLabel });
   }
   if (analyticsResp.ok) {
     const analyticsData = (await analyticsResp.json()) as {
