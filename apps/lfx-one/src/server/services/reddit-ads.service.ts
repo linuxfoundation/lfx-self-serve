@@ -141,6 +141,25 @@ async function fetchAccountMetrics(accountId: string, startDate: string, endDate
   };
 }
 
+async function fetchCampaignMetrics(accountId: string, campaignId: string, startDate: string, endDate: string): Promise<RedditAccountMetrics> {
+  const reportBody = {
+    data: {
+      starts_at: `${startDate}T00:00:00Z`,
+      ends_at: `${endDate}T00:00:00Z`,
+      fields: ['IMPRESSIONS', 'CLICKS', 'SPEND'],
+    },
+  };
+
+  const resp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}/reports`, reportBody);
+  const m = ((resp.data as { metrics?: { impressions?: number; clicks?: number; spend?: number }[] })?.metrics ?? [])[0];
+
+  return {
+    impressions: m?.impressions ?? 0,
+    clicks: m?.clicks ?? 0,
+    spend: (m?.spend ?? 0) / 1_000_000,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Campaign List
 // ---------------------------------------------------------------------------
@@ -199,17 +218,34 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     };
   }
 
+  const perCampaignResults = await Promise.allSettled(activeCampaigns.map((camp) => fetchCampaignMetrics(accountId, camp.id, startDate, endDate)));
+
+  const perCampaignMetrics = new Map<string, RedditAccountMetrics>();
+  const defaultMetrics: RedditAccountMetrics = { impressions: 0, clicks: 0, spend: 0 };
+  for (let i = 0; i < activeCampaigns.length; i++) {
+    const result = perCampaignResults[i];
+    if (result.status === 'fulfilled') {
+      perCampaignMetrics.set(activeCampaigns[i].id, result.value);
+    } else {
+      logger.warning(req, 'reddit_analytics', 'Per-campaign report fetch failed — metrics will show zero', {
+        campaignId: activeCampaigns[i].id,
+        error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+      });
+      perCampaignMetrics.set(activeCampaigns[i].id, defaultMetrics);
+    }
+  }
+
   let accountMetrics: RedditAccountMetrics = { impressions: 0, clicks: 0, spend: 0 };
   try {
     accountMetrics = await fetchAccountMetrics(accountId, startDate, endDate);
   } catch (err) {
-    logger.warning(req, 'reddit_analytics', 'Reddit report fetch failed — metrics will show zero', {
+    logger.warning(req, 'reddit_analytics', 'Reddit account report fetch failed — totals will show zero', {
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }
 
   const campaignMetrics: RedditCampaignMetrics[] = activeCampaigns.map((camp) => {
-    const metrics = accountMetrics;
+    const metrics = perCampaignMetrics.get(camp.id) ?? defaultMetrics;
     const totalBudget = (camp.goal_value ?? 0) / 1_000_000;
     const dailyBudget = 0;
 
