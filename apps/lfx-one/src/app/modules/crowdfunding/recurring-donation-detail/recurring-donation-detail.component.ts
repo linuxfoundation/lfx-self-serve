@@ -46,6 +46,9 @@ export class RecurringDonationDetailComponent {
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
 
+  // ─── Private Fields ───────────────────────────────────────────────────────
+  private readonly emptyChargeHistoryState = { items: [] as CrowdfundingTransaction[], hasMore: false };
+
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly donation: Signal<RecurringDonation | undefined> = this.initDonation();
   private readonly chargeHistoryState: Signal<{ items: CrowdfundingTransaction[]; hasMore: boolean }> = this.initChargeHistory();
@@ -83,8 +86,6 @@ export class RecurringDonationDetailComponent {
   }
 
   // ─── Private Initializers ─────────────────────────────────────────────────
-  private readonly emptyChargeHistoryState = { items: [] as CrowdfundingTransaction[], hasMore: false };
-
   private initDonation(): Signal<RecurringDonation | undefined> {
     return toSignal(
       this.route.paramMap.pipe(
