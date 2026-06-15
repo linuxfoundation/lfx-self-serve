@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
@@ -40,6 +40,7 @@ import { UserService } from '../../shared/services/user.service';
   imports: [RouterModule, LensSwitcherComponent, DocsSidebarNavComponent],
   templateUrl: './docs-layout.component.html',
   styleUrl: './docs-layout.component.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class DocsLayoutComponent {
   protected readonly userService = inject(UserService);
