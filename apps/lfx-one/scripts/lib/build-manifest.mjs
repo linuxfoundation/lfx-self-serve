@@ -23,19 +23,19 @@ const MANIFEST_SCHEMA_VERSION = 1;
  * the manifest.
  */
 const DOCS_TAXONOMY_ORDER = [
-  'badges',
-  'committees',
   'dashboards',
-  'documents',
-  'events',
-  'mailing-lists',
   'meetings',
+  'events',
+  'committees',
+  'mailing-lists',
+  'votes',
+  'surveys',
+  'documents',
+  'trainings',
+  'badges',
   'profile',
   'settings',
-  'surveys',
-  'trainings',
   'transactions',
-  'votes',
 ];
 
 /**

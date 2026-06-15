@@ -6,7 +6,7 @@
   class="group flex h-full flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-500 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
   [attr.aria-label]="'Browse ' + topic().name + ' documentation, ' + articleCountLabel()"
   data-testid="docs-topic-card">
-  <span class="flex h-[32px] w-[32px] items-center justify-center rounded-[8px] text-gray-900 {{ containerBg() }}">
+  <span class="flex h-[32px] w-[32px] items-center justify-center rounded-[8px] {{ containerClass() }}">
     <i [class]="iconClass()" aria-hidden="true"></i>
   </span>
   <h2 class="text-base font-semibold text-gray-900 group-hover:text-blue-700">

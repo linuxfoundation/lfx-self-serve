@@ -27,23 +27,26 @@ import type { DocsTopic } from '@lfx-one/shared/interfaces';
 export class DocsTopicCardComponent {
   public readonly topic = input.required<DocsTopic>();
 
-  // Per-topic tile visuals: a fa-light icon that fits the topic and a light
-  // palette-color container background. Icons render in gray-900 (set on the
-  // container). Class strings are written in full so Tailwind's JIT detects them.
-  private readonly topicVisuals: Record<string, { icon: string; bg: string }> = {
-    badges: { icon: 'fa-light fa-award', bg: 'bg-amber-100' },
-    committees: { icon: 'fa-light fa-user-group', bg: 'bg-blue-100' },
-    dashboards: { icon: 'fa-light fa-gauge-high', bg: 'bg-violet-100' },
-    documents: { icon: 'fa-light fa-file-lines', bg: 'bg-blue-100' },
-    events: { icon: 'fa-light fa-calendar-star', bg: 'bg-emerald-100' },
-    'mailing-lists': { icon: 'fa-light fa-envelope', bg: 'bg-violet-100' },
-    meetings: { icon: 'fa-light fa-video', bg: 'bg-amber-100' },
-    profile: { icon: 'fa-light fa-id-badge', bg: 'bg-emerald-100' },
-    settings: { icon: 'fa-light fa-gear', bg: 'bg-gray-100' },
-    surveys: { icon: 'fa-light fa-square-poll-vertical', bg: 'bg-amber-100' },
-    trainings: { icon: 'fa-light fa-graduation-cap', bg: 'bg-blue-100' },
-    transactions: { icon: 'fa-light fa-receipt', bg: 'bg-emerald-100' },
-    votes: { icon: 'fa-light fa-check-to-slot', bg: 'bg-violet-100' },
+  // Per-topic tile visuals: a fa-light icon that fits the topic and the icon
+  // container's color classes (background + icon text color). Colors group by
+  // importance — Dashboard uses a gray-900 fill, the primary group bold blue,
+  // and the secondary group bold violet, all with a white icon; the least
+  // prominent group keeps a light-gray tint with a gray-900 icon. Class strings
+  // are written in full so Tailwind's JIT detects them.
+  private readonly topicVisuals: Record<string, { icon: string; container: string }> = {
+    dashboards: { icon: 'fa-light fa-gauge-high', container: 'bg-gray-900 text-white' },
+    meetings: { icon: 'fa-light fa-video', container: 'bg-blue-500 text-white' },
+    events: { icon: 'fa-light fa-calendar-star', container: 'bg-blue-500 text-white' },
+    committees: { icon: 'fa-light fa-user-group', container: 'bg-blue-500 text-white' },
+    'mailing-lists': { icon: 'fa-light fa-envelope', container: 'bg-blue-500 text-white' },
+    votes: { icon: 'fa-light fa-check-to-slot', container: 'bg-blue-500 text-white' },
+    surveys: { icon: 'fa-light fa-square-poll-vertical', container: 'bg-blue-500 text-white' },
+    documents: { icon: 'fa-light fa-file-lines', container: 'bg-blue-500 text-white' },
+    trainings: { icon: 'fa-light fa-graduation-cap', container: 'bg-violet-600 text-white' },
+    badges: { icon: 'fa-light fa-award', container: 'bg-violet-600 text-white' },
+    profile: { icon: 'fa-light fa-id-badge', container: 'bg-gray-100 text-gray-900' },
+    settings: { icon: 'fa-light fa-gear', container: 'bg-gray-100 text-gray-900' },
+    transactions: { icon: 'fa-light fa-receipt', container: 'bg-gray-100 text-gray-900' },
   };
 
   protected readonly articleCountLabel = computed(() => {
@@ -55,5 +58,5 @@ export class DocsTopicCardComponent {
 
   protected readonly iconClass = computed(() => this.topicVisuals[this.topic().slug]?.icon ?? this.topic().icon ?? 'fa-light fa-file-lines');
 
-  protected readonly containerBg = computed(() => this.topicVisuals[this.topic().slug]?.bg ?? 'bg-blue-100');
+  protected readonly containerClass = computed(() => this.topicVisuals[this.topic().slug]?.container ?? 'bg-blue-100 text-gray-900');
 }
