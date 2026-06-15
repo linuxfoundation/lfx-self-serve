@@ -1,5 +1,5 @@
 ---
-title: My Groups
+title: Groups
 description: View, create, and manage project committees (groups) in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
