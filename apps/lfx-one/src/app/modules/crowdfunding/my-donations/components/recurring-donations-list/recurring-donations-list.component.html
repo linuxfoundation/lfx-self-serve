@@ -47,13 +47,11 @@
           <p class="text-sm font-semibold" [class]="entry.donation.status === 'active' ? 'text-gray-900' : 'text-gray-400'">
             ${{ entry.donation.amount }}<span class="text-xs font-normal text-gray-400">/mo</span>
           </p>
-          <p class="text-xs text-gray-400">
-            @if (entry.donation.status === 'active') {
-              Next charge: {{ entry.donation.nextChargeDate }}
-            } @else {
-              Paused since {{ entry.donation.pausedSince }}
-            }
-          </p>
+          @if (entry.donation.status === 'active' && entry.donation.nextChargeDate) {
+            <p class="text-xs text-gray-400">Next charge: {{ entry.donation.nextChargeDate | date: 'MMM d, y' }}</p>
+          } @else if (entry.donation.status !== 'active' && entry.donation.pausedSince) {
+            <p class="text-xs text-gray-400">Paused since {{ entry.donation.pausedSince | date: 'MMM d, y' }}</p>
+          }
         </div>
 
         <!-- Ellipsis menu -->
