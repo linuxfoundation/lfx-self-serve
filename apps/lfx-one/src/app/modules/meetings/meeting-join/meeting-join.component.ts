@@ -881,7 +881,6 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.meeting).pipe(
           filter((meeting) => {
             if (!meeting?.id) return false;
-            if (meeting.visibility === 'public' && !meeting.restricted) return true;
             return this.authenticated();
           }),
           distinctUntilChanged((a, b) => a.id === b.id)
