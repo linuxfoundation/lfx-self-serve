@@ -7,7 +7,6 @@ import { authGuard } from './shared/guards/auth.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
-import { crowdfundingEnabledGuard } from './shared/guards/crowdfunding-enabled.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -340,9 +339,6 @@ export const routes: Routes = [
       {
         path: 'crowdfunding',
         data: { lens: 'me' },
-
-        canMatch: [crowdfundingEnabledGuard],
-
         loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
       },
       {
