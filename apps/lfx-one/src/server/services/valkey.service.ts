@@ -71,6 +71,12 @@ export class ValkeyService implements CachePort {
     try {
       const raw = await this.withTimeout(this.client.get(key));
       if (raw === null) return null;
+      // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
+      // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
+      if (Buffer.byteLength(raw, 'utf8') > VALKEY_CACHE.MAX_VALUE_BYTES) {
+        logger.warning(undefined, 'valkey_get', 'Cached value exceeds max size — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+        return null;
+      }
       const parsed = JSON.parse(raw);
       // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
       if (accept && !accept(parsed)) {
