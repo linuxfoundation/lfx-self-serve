@@ -132,16 +132,19 @@ export class ValkeyService implements CachePort {
   }
 
   /**
-   * Redacts the per-user tail of a cache key for logging. Keys are `${APP_PREFIX}:${NAMESPACE}:${principal}:…`
-   * where the namespace itself may carry an optional `vN` version segment (e.g. `org-membership:v1`). We keep
-   * the non-user prefix — app prefix, namespace, and that optional version — and mask everything from the
-   * principal onward, preserving full namespace/version in logs without leaking usernames.
+   * Redacts the per-user tail of a cache key for logging. Keys are
+   * `${APP_PREFIX}[:${KEY_NAMESPACE}]:${domain}:v${N}:${principal}…` — the optional deployment
+   * namespace segment may or may not be present, but the domain always ends in a `vN` version
+   * segment that immediately precedes the principal. We anchor on that version segment, keeping the
+   * full non-user prefix (app prefix, optional deployment namespace, domain, and version) and masking
+   * everything from the principal onward, so logs preserve the full namespace/version without leaking
+   * usernames regardless of whether the deployment namespace is set.
    */
   private static redactKey(key: string): string {
     const parts = key.split(':');
-    if (parts.length <= 2) return key;
-    const keep = /^v\d+$/.test(parts[2]) ? 3 : 2;
-    return parts.length <= keep ? key : `${parts.slice(0, keep).join(':')}:***`;
+    const versionIdx = parts.findIndex((p) => /^v\d+$/.test(p));
+    if (versionIdx === -1 || versionIdx >= parts.length - 1) return key;
+    return `${parts.slice(0, versionIdx + 1).join(':')}:***`;
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */
