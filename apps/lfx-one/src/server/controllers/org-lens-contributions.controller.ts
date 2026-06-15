@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTRIBUTIONS_DEFAULT_DATE_RANGE, CONTRIBUTIONS_DEFAULT_PAGE_SIZE, CONTRIBUTIONS_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_MAX_PAGE_SIZE,
+  CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
   ContributionsDateRange,
@@ -151,5 +156,11 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 
 function parsePageSize(raw: string | undefined): number {
   const parsed = Number.parseInt(raw ?? '', 10);
-  return CONTRIBUTIONS_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : CONTRIBUTIONS_DEFAULT_PAGE_SIZE;
+  if (CONTRIBUTIONS_PAGE_SIZE_OPTIONS.includes(parsed)) {
+    return parsed;
+  }
+  if (Number.isFinite(parsed) && parsed > 0 && parsed <= CONTRIBUTIONS_MAX_PAGE_SIZE) {
+    return parsed;
+  }
+  return CONTRIBUTIONS_DEFAULT_PAGE_SIZE;
 }

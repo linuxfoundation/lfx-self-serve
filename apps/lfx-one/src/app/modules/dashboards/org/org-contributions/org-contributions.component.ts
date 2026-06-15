@@ -18,6 +18,7 @@ import {
   CONTRIBUTIONS_DATE_RANGE_OPTIONS,
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_COMMITTER_PANEL_PAGE_SIZE,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
 } from '@lfx-one/shared/constants';
@@ -101,6 +102,9 @@ export class OrgContributionsComponent {
   // Committer side panel — contributorId of the committer whose detail drawer is open (null = closed).
   protected readonly selectedContributorId = signal<string | null>(null);
   protected readonly committerTab = signal<CommitterPanelTab>('code');
+  private readonly committerPanelRows = signal<OrgContributionCommitRowVm[]>([]);
+  private readonly committerPanelTotal = signal(0);
+  protected readonly committerPanelLoading = signal(false);
 
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
@@ -166,6 +170,8 @@ export class OrgContributionsComponent {
     combineLatest([toObservable(this.commitSort), toObservable(this.commitDir)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.page.set(1));
+
+    this.initCommitterPanelFetch();
   }
 
   protected onSort(column: ContributionsSortColumn): void {
@@ -314,10 +320,10 @@ export class OrgContributionsComponent {
 
   private initCommitterDetail(): OrgCommitterDetailVm | null {
     const contributorId = this.selectedContributorId();
-    if (!contributorId) {
+    if (!contributorId || this.committerPanelLoading()) {
       return null;
     }
-    const rows = this.commitRows().filter((c) => c.contributorId === contributorId);
+    const rows = this.committerPanelRows();
     if (rows.length === 0) {
       return null;
     }
@@ -334,13 +340,77 @@ export class OrgContributionsComponent {
       avatarUrl: first.committerAvatarUrl,
       initials: first.initials,
       avatarColorClass: first.avatarColorClass,
-      totalCommits: rows.length,
+      totalCommits: this.committerPanelTotal(),
       projects,
       commits: rows,
       events: extras.events,
       training: extras.training,
       governance: extras.governance,
     };
+  }
+
+  /** Contributor-scoped commit fetch for the side panel — not limited to the commits table page. */
+  private initCommitterPanelFetch(): void {
+    const panelScope$ = toObservable(this.query).pipe(
+      map((query) => ({
+        dateRange: query.dateRange,
+        search: query.search,
+        projects: query.projects,
+        commitSort: query.commitSort,
+        commitDir: query.commitDir,
+      })),
+      distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
+    );
+
+    combineLatest([this.orgUid$, toObservable(this.selectedContributorId), panelScope$])
+      .pipe(
+        switchMap(([orgUid, contributorId, scope]) => {
+          if (!orgUid || !contributorId) {
+            this.committerPanelRows.set([]);
+            this.committerPanelTotal.set(0);
+            this.committerPanelLoading.set(false);
+            return of(null);
+          }
+
+          this.committerPanelLoading.set(true);
+          const panelQuery: OrgContributionsQuery = {
+            view: 'commits',
+            dateRange: scope.dateRange,
+            search: scope.search,
+            projects: scope.projects,
+            employees: [contributorId],
+            sort: 'commits',
+            dir: -1,
+            commitSort: scope.commitSort,
+            commitDir: scope.commitDir,
+            page: 1,
+            size: CONTRIBUTIONS_COMMITTER_PANEL_PAGE_SIZE,
+          };
+
+          return this.dataService.getContributions(orgUid, panelQuery).pipe(
+            tap((response) => {
+              this.committerPanelLoading.set(false);
+              if (response.commits.length === 0) {
+                this.committerPanelRows.set([]);
+                this.committerPanelTotal.set(0);
+                this.selectedContributorId.set(null);
+                return;
+              }
+              this.committerPanelRows.set(response.commits.map(decorateCommitFeedRow));
+              this.committerPanelTotal.set(response.commitsTotalRecords);
+            }),
+            catchError(() => {
+              this.committerPanelLoading.set(false);
+              this.committerPanelRows.set([]);
+              this.committerPanelTotal.set(0);
+              this.selectedContributorId.set(null);
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe();
   }
 
   private initCommitSortIconMap(): Record<ContributionsCommitSortColumn, string> {
