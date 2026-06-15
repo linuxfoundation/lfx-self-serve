@@ -4,8 +4,7 @@
 /**
  * Org Selector E2E — smoke set.
  *
- * The automated deliverable is the scenarios below — the remaining scenarios
- * (S4, S6, S7, S8) are covered manually.
+ * The automated coverage is the set of scenarios listed below.
  *
  * Coverage map:
  * - S1: org-selector trigger renders for an authorized user
