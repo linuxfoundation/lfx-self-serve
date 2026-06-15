@@ -352,7 +352,7 @@
 
   <!-- Committer detail side panel -->
   <p-drawer
-    [visible]="selectedContributorId() !== null"
+    [visible]="committerDetail() !== null"
     (visibleChange)="onCommitterPanelVisible($event)"
     position="right"
     [modal]="true"
