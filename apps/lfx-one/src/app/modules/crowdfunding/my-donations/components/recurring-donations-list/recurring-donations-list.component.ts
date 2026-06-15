@@ -18,6 +18,7 @@ export class RecurringDonationsListComponent {
   public readonly donations = input.required<RecurringDonation[]>();
   public readonly cancelledCount = input<number>(0);
 
+  public readonly viewDetail = output<RecurringDonation>();
   public readonly viewCancelled = output<void>();
   public readonly cancelDonation = output<RecurringDonation>();
 
