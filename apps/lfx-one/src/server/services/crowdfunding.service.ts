@@ -268,8 +268,11 @@ export class CrowdfundingService {
       '/v1/me/subscriptions'
     );
 
-    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data.map(mapSubscriptionToRecurringDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    // Exclude canceled subscriptions — the CF backend returns all statuses by default.
+    // Only active, incomplete, and past_due subscriptions represent active recurring commitments.
+    const active = raw.data.filter((s) => s.status !== 'canceled');
+    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total, active: active.length });
+    return { data: active.map(mapSubscriptionToRecurringDonation), total: active.length, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
