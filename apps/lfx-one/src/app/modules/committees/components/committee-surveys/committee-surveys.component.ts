@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
+import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveyService } from '@services/survey.service';
@@ -45,14 +46,7 @@ export class CommitteeSurveysComponent {
 
   // Private initializer functions
   private initCreateSurveyQueryParams(): Signal<Record<string, string>> {
-    return computed(() => {
-      const committee = this.committee();
-      const params: Record<string, string> = { committee_uid: committee.uid };
-      if (committee.project_slug) {
-        params['project'] = committee.project_slug;
-      }
-      return params;
-    });
+    return computed(() => buildCommitteeCreateQueryParams(this.committee()));
   }
 
   private initSurveys(): Signal<Survey[]> {

@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
+import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { VoteService } from '@services/vote.service';
@@ -47,14 +48,7 @@ export class CommitteeVotesComponent {
 
   // Private initializer functions
   private initCreateVoteQueryParams(): Signal<Record<string, string>> {
-    return computed(() => {
-      const committee = this.committee();
-      const params: Record<string, string> = { committee_uid: committee.uid };
-      if (committee.project_slug) {
-        params['project'] = committee.project_slug;
-      }
-      return params;
-    });
+    return computed(() => buildCommitteeCreateQueryParams(this.committee()));
   }
 
   private initVotes(): Signal<Vote[]> {

@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Committee, CommitteeMember } from '../interfaces';
-import { canManageCommitteeMembers, resolveCommitteeMemberPermission } from './committee.utils';
+import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, resolveCommitteeMemberPermission } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
 function committee(overrides: Partial<Committee> = {}): Committee {
@@ -107,6 +107,19 @@ describe('resolveCommitteeMemberPermission', () => {
 
   it('returns member for a null committee', () => {
     expect(resolveCommitteeMemberPermission(null, member())).toEqual({ level: 'member', inherited: false });
+  });
+});
+
+describe('buildCommitteeCreateQueryParams', () => {
+  it('includes the project slug when present', () => {
+    expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9', project_slug: 'my-project' }))).toEqual({
+      committee_uid: 'cmte-9',
+      project: 'my-project',
+    });
+  });
+
+  it('omits the project key when the committee has no project slug', () => {
+    expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9' }))).toEqual({ committee_uid: 'cmte-9' });
   });
 });
 
