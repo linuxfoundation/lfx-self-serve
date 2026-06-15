@@ -39,17 +39,17 @@ export const DOCS_CANONICAL_ORIGIN = 'https://app.lfx.dev';
  * is no longer guaranteed for that topic until the constant is updated.
  */
 export const DOCS_TAXONOMY_ORDER: readonly string[] = [
-  'badges',
-  'committees',
   'dashboards',
-  'documents',
-  'events',
-  'mailing-lists',
   'meetings',
+  'events',
+  'committees',
+  'mailing-lists',
+  'votes',
+  'surveys',
+  'documents',
+  'trainings',
+  'badges',
   'profile',
   'settings',
-  'surveys',
-  'trainings',
   'transactions',
-  'votes',
 ] as const;
