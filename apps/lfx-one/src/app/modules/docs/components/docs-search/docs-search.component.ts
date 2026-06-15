@@ -45,9 +45,12 @@ export class DocsSearchComponent {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly manifest = inject(DocsManifestService);
 
-  // Maps a topic slug to its display name so result chips show the proper
-  // topic label (e.g. 'committees' → 'Groups') rather than the raw slug.
-  private readonly topicNames = new Map(this.manifest.getTopics().map((topic) => [topic.slug, topic.name]));
+  // Maps each topic slug to its sentence-cased display name so result chips show
+  // the proper label (e.g. 'committees' → 'Groups'). A computed record keeps the
+  // template lookup to a plain property access — no method calls in the template.
+  protected readonly topicLabelRecord = computed<Record<string, string | undefined>>(() =>
+    Object.fromEntries(this.manifest.getTopics().map((topic) => [topic.slug, topic.name.charAt(0).toUpperCase() + topic.name.slice(1).toLowerCase()]))
+  );
 
   // When true, the search box fills its container instead of capping at max-w-xl.
   public readonly fullWidth = input(false);
@@ -98,12 +101,6 @@ export class DocsSearchComponent {
         this.activeIndex.set(results.length > 0 ? 0 : -1);
         this.searching.set(false);
       });
-  }
-
-  /** Sentence-cased topic name for the result chip, resolved from the slug. */
-  protected topicLabel(slug: string): string {
-    const name = this.topicNames.get(slug) ?? slug.replace(/-/g, ' ');
-    return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
   }
 
   protected onFocus(): void {
