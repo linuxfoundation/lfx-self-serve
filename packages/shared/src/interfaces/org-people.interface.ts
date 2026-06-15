@@ -76,6 +76,8 @@ export interface OrgAllEmployeeRow {
 export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   initials: string;
   avatarColorClass: string;
+  /** Composite `personKey::avatarUrl` token used to track a broken avatar by URL, so a later refetch with a new URL can render again. Empty string when the row has no `avatarUrl`. */
+  avatarKey: string;
   /** Org Lens access for the current org, or `null` when the employee has no access record. Drives the access cell badge. */
   access: OrgAccessBadgeState | null;
   /** `true` when this row was synthesised from the access roster (no detected activity, no detail to fetch). */

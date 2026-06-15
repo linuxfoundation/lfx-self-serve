@@ -138,6 +138,9 @@ export class OrgPeopleDirectoryService {
             lastName: (seat.last_name ?? '').trim() || null,
             title: seat.job_title?.trim() || null,
           });
+          // Count live seats only for live-only rows; Snowflake rows already carry authoritative seat counts, so
+          // incrementing here would double-count the same seat.
+          if (!existing.sources.includes('snowflake')) this.addSeat(existing, source);
         } else {
           byEmail.set(email, this.rowFromSeat(seat, email, source));
         }
@@ -196,6 +199,16 @@ export class OrgPeopleDirectoryService {
     }
   }
 
+  /** Increment seat counters for a live board/committee seat so the Seats column and governance filter stay consistent with the stat cards. */
+  private addSeat(row: OrgAllEmployeeRow, source: OrgPersonSource): void {
+    row.seatsCount += 1;
+    if (source === 'board') {
+      row.boardSeatsCount += 1;
+    } else if (source === 'committee') {
+      row.committeeSeatsCount += 1;
+    }
+  }
+
   /** Fill only the fields a stored row is missing — never overwrite richer Snowflake data with a live blank. */
   private fill(row: OrgAllEmployeeRow, patch: { firstName?: string | null; lastName?: string | null; title?: string | null; avatarUrl?: string | null }): void {
     if (!row.firstName && patch.firstName) row.firstName = patch.firstName;
@@ -207,7 +220,10 @@ export class OrgPeopleDirectoryService {
   private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource): OrgAllEmployeeRow {
     const firstName = (seat.first_name ?? '').trim() || null;
     const lastName = (seat.last_name ?? '').trim() || null;
-    return this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source);
+    const row = this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source);
+    // The seat that created this live-only row counts as one held seat; further seats fold in via addSeat on the existing branch.
+    this.addSeat(row, source);
+    return row;
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string): OrgAllEmployeeRow {
@@ -263,7 +279,8 @@ export class OrgPeopleDirectoryService {
  * `activeInOss` counts only people with at least one engagement signal (governance / code / event /
  * training) — matching the stored model's Definition-2 meaning — so access-only rows merged in for the
  * roster don't inflate the "Employees Active in Open Source" headline. Governance counts a seat count OR
- * a live board/committee provenance (live-only seats carry zero seatsCount).
+ * a live board/committee provenance — the provenance fallback also catches any seat that arrived without a
+ * resolvable count.
  */
 function computeStats(rows: OrgAllEmployeeRow[]): OrgAllEmployeeStats {
   let activeInOss = 0;

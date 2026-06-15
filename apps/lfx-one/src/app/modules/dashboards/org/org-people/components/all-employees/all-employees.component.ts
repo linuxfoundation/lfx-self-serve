@@ -77,8 +77,11 @@ export class AllEmployeesComponent {
   // Expansion is per-(account, personKey) reset on account change → personKey is unique within an account, so keying by personKey alone is safe.
   protected readonly expansion = signal<Record<string, boolean>>({});
 
-  // personKeys whose avatar image failed to load — render initials instead of a broken image, declaratively (no imperative DOM access in this zoneless component). Reset on account switch via resetAllState.
-  protected readonly failedAvatarKeys = signal<Set<string>>(new Set());
+  // Composite `personKey::avatarUrl` tokens whose avatar image failed to load — render initials instead of a broken
+  // image, declaratively (no imperative DOM access in this zoneless component). Keyed by URL (not personKey alone) so a
+  // later refetch with a new/now-valid URL can render again. A plain object enables template property access (no method
+  // call in the @if gate). Reset on account switch via resetAllState.
+  protected readonly failedAvatarKeys = signal<Record<string, true>>({});
 
   // detail caches are keyed by `${accountId}:${personKey}` so an in-flight response from account A can't pollute account B's view even if the same personKey exists in both. Value types include `| undefined` so indexed access is honest in template @let bindings (tsconfig has noUncheckedIndexedAccess off).
   protected readonly detailMap = signal<Record<string, OrgAllEmployeeDetail | undefined>>({});
@@ -238,13 +241,11 @@ export class AllEmployeesComponent {
     this.personPanel.open(row.name);
   }
 
-  /** Record a broken avatar so the template stops rendering the image and the initials behind it show through. */
-  protected onAvatarError(personKey: string): void {
+  /** Record a broken avatar (by composite `personKey::avatarUrl`) so the template stops rendering the image and the initials behind it show through. */
+  protected onAvatarError(avatarKey: string): void {
     this.failedAvatarKeys.update((keys) => {
-      if (keys.has(personKey)) return keys;
-      const next = new Set(keys);
-      next.add(personKey);
-      return next;
+      if (keys[avatarKey]) return keys;
+      return { ...keys, [avatarKey]: true };
     });
   }
 
@@ -279,6 +280,7 @@ export class AllEmployeesComponent {
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
+      avatarKey: row.avatarUrl ? `${row.personKey}::${row.avatarUrl}` : '',
       // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
       // always present, server-lowercased). Rows without an email can't be joined and render `—`.
       access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
@@ -423,7 +425,7 @@ export class AllEmployeesComponent {
     this.sortDirection.set(-1);
     this.limit.set(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
     this.expansion.set({});
-    this.failedAvatarKeys.set(new Set());
+    this.failedAvatarKeys.set({});
     this.detailMap.set({});
     this.detailLoading.set({});
     this.detailErrorMap.set({});
