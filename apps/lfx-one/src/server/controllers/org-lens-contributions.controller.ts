@@ -48,7 +48,7 @@ export class OrgLensContributionsController {
         size: query.size,
       });
 
-      const response = await this.service.getContributions(req, orgUid, query);
+      const response = await this.service.getContributions(orgUid, query);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

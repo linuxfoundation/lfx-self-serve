@@ -443,12 +443,12 @@
                   </div>
                   <div class="rounded-lg border border-gray-200 bg-white p-4">
                     <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.projects.length | number }}</div>
-                    <div class="mt-1 text-xs text-gray-500">Projects</div>
+                    <div class="mt-1 text-xs text-gray-500">Projects in view</div>
                   </div>
                 </div>
 
                 <div class="flex flex-col gap-2">
-                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Projects</h3>
+                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Projects in view</h3>
                   <div class="flex flex-wrap gap-2">
                     @for (project of detail.projects; track project) {
                       <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
@@ -459,7 +459,7 @@
                 </div>
 
                 <div class="flex flex-col gap-2">
-                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Recent commits</h3>
+                  <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500">Recent commits in view</h3>
                   <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
                     @for (commit of detail.commits; track commit.commitSha) {
                       <li class="flex flex-col gap-1 px-4 py-3">

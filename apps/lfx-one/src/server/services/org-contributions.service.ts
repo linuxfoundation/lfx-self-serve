@@ -14,9 +14,7 @@ import type {
   OrgContributionsQuery,
   OrgContributionsResponse,
 } from '@lfx-one/shared/interfaces';
-import type { Request } from 'express';
 
-import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 const PLATINUM_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_CONTRIBUTIONS';
@@ -78,7 +76,7 @@ export class OrgContributionsService {
   }
 
   /** KPI strip + filter options + server-paginated Repositories table + Commits feed. */
-  public async getContributions(req: Request, accountId: string, query: OrgContributionsQuery): Promise<OrgContributionsResponse> {
+  public async getContributions(accountId: string, query: OrgContributionsQuery): Promise<OrgContributionsResponse> {
     if (!accountId) {
       return emptyResponse(accountId, query.dateRange);
     }
@@ -88,39 +86,31 @@ export class OrgContributionsService {
     const repoSearch = buildRepoSearchFilter(query.search);
     const commitSearch = buildCommitSearchFilter(query.search);
 
-    try {
-      const [kpiResult, repoResult, commitResult, projectOptions, employeeOptions] = await Promise.all([
-        this.fetchKpis(accountId, scope, kpiSearch),
-        this.fetchRepositories(accountId, scope, repoSearch, query),
-        this.fetchCommits(accountId, scope, commitSearch, query),
-        this.fetchProjectOptions(accountId, query.dateRange),
-        this.fetchEmployeeOptions(accountId, query.dateRange),
-      ]);
+    const [kpiResult, repoResult, commitResult, projectOptions, employeeOptions] = await Promise.all([
+      this.fetchKpis(accountId, scope, kpiSearch),
+      this.fetchRepositories(accountId, scope, repoSearch, query),
+      this.fetchCommits(accountId, scope, commitSearch, query),
+      this.fetchProjectOptions(accountId, query.dateRange),
+      this.fetchEmployeeOptions(accountId, query.dateRange),
+    ]);
 
-      const kpis = mapKpis(kpiResult.rows[0]);
-      const repositories = repoResult.rows.map(mapRepoRow);
-      const totalRecords = repoResult.rows.length > 0 ? repoResult.rows[0].TOTAL_RECORDS : 0;
-      const commits = commitResult.rows.map(mapCommitRow);
-      const commitsTotalRecords = commitResult.rows.length > 0 ? commitResult.rows[0].TOTAL_RECORDS : 0;
+    const kpis = mapKpis(kpiResult.rows[0]);
+    const repositories = repoResult.rows.map(mapRepoRow);
+    const totalRecords = repoResult.rows.length > 0 ? repoResult.rows[0].TOTAL_RECORDS : 0;
+    const commits = commitResult.rows.map(mapCommitRow);
+    const commitsTotalRecords = commitResult.rows.length > 0 ? commitResult.rows[0].TOTAL_RECORDS : 0;
 
-      return {
-        accountId,
-        dateRange: query.dateRange,
-        kpis,
-        repositories,
-        commits,
-        projectOptions,
-        employeeOptions,
-        totalRecords,
-        commitsTotalRecords,
-      };
-    } catch (error) {
-      logger.warning(req, 'get_org_lens_contributions', 'Snowflake query failed, returning empty contributions', {
-        error: error instanceof Error ? error.message : String(error),
-        account_id: accountId,
-      });
-      return emptyResponse(accountId, query.dateRange);
-    }
+    return {
+      accountId,
+      dateRange: query.dateRange,
+      kpis,
+      repositories,
+      commits,
+      projectOptions,
+      employeeOptions,
+      totalRecords,
+      commitsTotalRecords,
+    };
   }
 
   private async fetchKpis(accountId: string, scope: ScopeFilters, kpiSearch: SearchFilter): Promise<{ rows: ContributionsKpiRow[] }> {
@@ -356,14 +346,9 @@ function projectFilterPredicate(projects: string[], binds: string[]): string {
     return '';
   }
   const placeholders = projects.map(() => '?').join(', ');
-  for (const slug of projects) {
-    binds.push(slug);
-  }
-  for (const slug of projects) {
-    binds.push(slug);
-  }
-  for (const slug of projects) {
-    binds.push(slug);
+  // project_slug / parent_slug / project_id each get the same binds, in order.
+  for (let i = 0; i < 3; i += 1) {
+    binds.push(...projects);
   }
   return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
 }
