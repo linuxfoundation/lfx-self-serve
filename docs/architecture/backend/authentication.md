@@ -146,7 +146,7 @@ Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.
 
 ### Migration: `sub` → `username`
 
-Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. The first wave landed in [#912](https://github.com/linuxfoundation/lfx-self-serve/pull/912):
+Backend identity references are migrating from the Auth0 `sub` to the LFID `username`. In this repo, the first wave:
 
 - **Front-end (ID token):** DataDog RUM `id`, OpenFeature `targetingKey`, and survey `creator_id` now read `https://sso.linuxfoundation.org/claims/username` (OpenFeature no longer falls back to `sub` — existing LaunchDarkly rules keyed on sub values need updating before deploy).
 - **BFF call sites:** `getEffectiveSub` → `getEffectiveUsername` in changelog, copilot, org-identity, org-navigation, org-lens-access, and org-membership cache keys; `project.service.ts` uses `resolveEmailToUsername` (not `resolveEmailToSub`) for permission and user-info lookups against the plain-LFID `b2b_org_settings` index.
