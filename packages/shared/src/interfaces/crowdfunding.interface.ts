@@ -142,8 +142,8 @@ export interface OSTIFDetail {
   monetizationStrategy?: string;
   currentSecurityStrategy?: string;
   licenseType?: string;
-  totalBudgetCents: number;
-  termsConditions: boolean;
+  totalBudgetCents?: number;
+  termsConditions?: boolean;
 }
 
 export interface InitiativeContact {

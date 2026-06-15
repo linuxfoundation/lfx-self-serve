@@ -127,7 +127,7 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly initiativeInitial = computed(() => this.initiative().name.charAt(0));
   protected readonly isEventType = computed(() => this.initiative().initiativeType === FundType.EVENT);
   protected readonly isSecurityAudit = computed(() => this.initiative().initiativeType === FundType.SECURITY_AUDIT);
-  protected readonly isProjectType = computed(() => this.initiative().initiativeType === ('project' as FundType));
+  protected readonly isProjectType = computed(() => this.initiative().initiativeType === FundType.GENERAL_FUND);
 
   protected get eventStartDateControl(): FormControl { return this.form.controls['eventStartDate'] as FormControl; }
   protected get eventEndDateControl(): FormControl { return this.form.controls['eventEndDate'] as FormControl; }
@@ -163,7 +163,7 @@ export class InitiativeSettingsDrawerComponent {
           monetizationStrategy: init.ostifDetail?.monetizationStrategy ?? '',
           currentSecurityStrategy: init.ostifDetail?.currentSecurityStrategy ?? '',
           licenseType: init.ostifDetail?.licenseType ?? '',
-          totalBudgetCents: init.ostifDetail?.totalBudgetCents ?? null,
+          totalBudgetCents: init.ostifDetail?.totalBudgetCents != null ? init.ostifDetail.totalBudgetCents / 100 : null,
         });
         this.logoUrl.set(init.logoUrl ?? '');
         this.logoUploadError.set(null);
@@ -250,7 +250,7 @@ export class InitiativeSettingsDrawerComponent {
           monetizationStrategy: monetizationStrategy || undefined,
           currentSecurityStrategy: currentSecurityStrategy || undefined,
           licenseType: licenseType || undefined,
-          totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents) : undefined,
+          totalBudgetCents: totalBudgetCents != null ? Math.round(totalBudgetCents * 100) : undefined,
         };
         const contactGs = this.contactGroups();
         if (contactGs.length > 0) {
