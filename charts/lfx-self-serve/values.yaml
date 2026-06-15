@@ -351,11 +351,10 @@ environment:
   SNOWFLAKE_LOCK_STRATEGY:
     value: "memory"
 
-  # Shared Valkey cache connection URL. Use the rediss:// scheme to enable TLS in transit; auth
-  # is optional and, when required, embedded in the URL (e.g. rediss://:<password>@host:6379/0).
-  # Our deployment is SG-gated and uses no auth token. Empty disables caching.
+  # Shared Valkey cache connection URL (rediss:// enables TLS in transit; credentials, if any,
+  # are embedded in the URL). Unset disables caching (direct-fetch fallback).
   VALKEY_URL:
-    value: ""
+    value:
 
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"

@@ -3,7 +3,7 @@
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { ProjectMembershipDoc, QueryServiceResponse, ResolvedMembershipContext } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -123,7 +123,9 @@ export class OrgMembershipResolverService {
   // principal the query-service FGA-filters on downstream, so cache identity == authz identity.
   private static buildCacheKey(req: Request, b2bOrgUid: string, slug: string): string | null {
     const username = getEffectiveUsername(req);
-    if (!username) return null;
+    // Fail-closed: an unresolved or non-filter-safe username (one that could corrupt the
+    // `:`-delimited key namespace) bypasses the shared cache instead of risking key collisions.
+    if (!username || !isFilterSafeUsername(username)) return null;
     return `${VALKEY_CACHE.APP_PREFIX}:${VALKEY_CACHE.ORG_MEMBERSHIP_NAMESPACE}:${username}:${b2bOrgUid}:${slug.toLowerCase()}`;
   }
 

@@ -22,19 +22,13 @@ export class ValkeyService implements CachePort {
       return;
     }
 
-    // Non-blocking: never delays startup/readiness or stalls a request. A rediss:// URL enables TLS.
-    const useTls = url.startsWith('rediss://');
+    // Non-blocking: never delays startup/readiness or stalls a request. A rediss:// URL enables TLS
+    // with full certificate verification — the configured host matches the managed cache's certificate.
     this.client = new Redis(url, {
       lazyConnect: true,
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
       connectTimeout: VALKEY_CACHE.CONNECT_TIMEOUT_MS,
-      // TLS terminates at the managed cache endpoint reached through a Kubernetes ExternalName.
-      // The server certificate is issued for the cloud provider's host (e.g. *.cache.amazonaws.com),
-      // not the in-cluster service name in the URL, so the default hostname check would always fail
-      // and silently leave the cache disabled. We keep full certificate-chain validation (the server
-      // is still authenticated against a trusted CA) and skip only the hostname match.
-      ...(useTls ? { tls: { checkServerIdentity: () => undefined } } : {}),
     });
 
     // Connection-level errors must never crash the process; log and continue (cache stays best-effort).
@@ -153,6 +147,9 @@ export class ValkeyService implements CachePort {
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('valkey_op_timeout')), VALKEY_CACHE.OP_TIMEOUT_MS);
     });
+    // If the timeout wins the race, the underlying op is abandoned; swallow its eventual settlement
+    // so a late rejection from a slow/faulty backend never surfaces as an unhandled rejection.
+    op.catch(() => undefined);
     try {
       return await Promise.race([op, timeout]);
     } finally {

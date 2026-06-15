@@ -1,16 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Generic versioned envelope stored in the cache (`v` = schema version; `cachedAt` informational). */
-export interface CachedEnvelope<T> {
-  /** Schema version; a read seeing a mismatched version treats the entry as a miss. */
-  v: number;
-  /** The cached payload — only data the requesting principal is already authorized to see. */
-  data: T;
-  /** Epoch ms when written (observability/debug only). */
-  cachedAt: number;
-}
-
 /**
  * Reusable cache port implemented by the shared Valkey client. The cache operations themselves are
  * fail-soft: getJson/setJson — and the cache read/write that withCache performs around the fetcher —
