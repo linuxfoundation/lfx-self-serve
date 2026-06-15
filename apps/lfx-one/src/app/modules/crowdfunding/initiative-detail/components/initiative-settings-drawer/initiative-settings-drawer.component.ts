@@ -143,8 +143,10 @@ export class InitiativeSettingsDrawerComponent {
   }
 
   protected async onSave(): Promise<void> {
-    if (this.form.invalid) {
+    const invalidBeneficiary = this.beneficiaryGroups().some((g) => g.invalid);
+    if (this.form.invalid || invalidBeneficiary) {
       this.form.markAllAsTouched();
+      this.beneficiaryGroups().forEach((g) => g.markAllAsTouched());
       return;
     }
 
