@@ -12,6 +12,7 @@ import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
 import { OrgPeopleBoardMembersService } from '../services/org-people-board-members.service';
+import { OrgPeopleDirectoryService } from '../services/org-people-directory.service';
 import { OrgPeopleCommitteeMembersService } from '../services/org-people-committee-members.service';
 import { OrgPeopleContributorsService } from '../services/org-people-contributors.service';
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
@@ -23,6 +24,7 @@ const VALID_CONTRIBUTOR_TIME_RANGES: ReadonlySet<OrgContributorTimeRange> = new 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
   private readonly service: OrgLensPeopleService;
+  private readonly directoryService: OrgPeopleDirectoryService;
   private readonly keyContactsService: OrgPeopleKeyContactsService;
   private readonly traineesService: OrgPeopleTraineesService;
   private readonly eventAttendeesService: OrgPeopleEventAttendeesService;
@@ -32,6 +34,7 @@ export class OrgLensPeopleController {
 
   public constructor() {
     this.service = new OrgLensPeopleService();
+    this.directoryService = new OrgPeopleDirectoryService();
     this.keyContactsService = new OrgPeopleKeyContactsService();
     this.traineesService = new OrgPeopleTraineesService();
     this.eventAttendeesService = new OrgPeopleEventAttendeesService();
@@ -40,20 +43,23 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
+    const live = parseLiveFlag(req);
     const startTime = logger.startOperation(req, 'get_org_lens_people_all', {
       org_uid: orgUid,
+      live,
     });
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_all');
 
-      const response = await this.service.getAllEmployees(orgUid);
+      const response = live ? await this.directoryService.getLive(req, orgUid) : await this.service.getAllEmployees(orgUid);
 
       logger.success(req, 'get_org_lens_people_all', startTime, {
         org_uid: orgUid,
+        live,
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
@@ -358,6 +364,14 @@ export class OrgLensPeopleController {
     }
     return { committeeUid, firstName, lastName, email };
   }
+}
+
+/** Truthy `?live` flag: present with no value, `true`, or `1` enable the merged live directory. Anything else (absent/`false`/`0`) keeps the Snowflake-only path. */
+function parseLiveFlag(req: Request): boolean {
+  const raw = req.query['live'];
+  if (raw === undefined) return false;
+  if (raw === '' || raw === 'true' || raw === '1') return true;
+  return false;
 }
 
 /** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */

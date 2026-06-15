@@ -10,18 +10,19 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { CommitteeMembersService } from '../../../services/committee-members.service';
+import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Spec 027 US4 — reassign a single Membership-Entitlement committee seat to a new holder. */
 @Component({
   selector: 'lfx-edit-committee-role-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule],
+  imports: [FormsModule, InputTextModule, EmployeeAvatarComponent],
   templateUrl: './edit-committee-role-modal.component.html',
 })
 export class EditCommitteeRoleModalComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly dataService = inject(CommitteeMembersService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<EditCommitteeRoleDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
@@ -54,11 +55,11 @@ export class EditCommitteeRoleModalComponent {
 
   public constructor() {
     if (this.orgUid) {
-      this.dataService
+      this.directory
         .getEmployees(this.orgUid)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: (res) => this.employees.set(res.employees ?? []),
+          next: (list) => this.employees.set(list),
           error: () => this.employeeSearchUnavailable.set(true),
         });
     }

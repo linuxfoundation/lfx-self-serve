@@ -27,7 +27,7 @@ export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 export type OrgAllEmployeeTrainingStatus = 'Certified' | 'Enrolled';
 
 /** Sortable column on the All Employees table. */
-export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'commits' | 'events' | 'courses';
+export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'commits' | 'events' | 'courses' | 'access';
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgAllEmployeeSortDirection = 1 | -1;
@@ -37,6 +37,9 @@ export interface OrgAllEmployeeFoundationOption {
   foundationId: string;
   foundationName: string;
 }
+
+/** Provenance for a unified people row: which upstream source(s) contributed it. `snowflake` is the stored roster; the rest are live reads merged in by the `?live` endpoint. */
+export type OrgPersonSource = 'snowflake' | 'board' | 'committee' | 'keyContact' | 'access';
 
 /** Dropdown option for the activity filter (typed value). */
 export interface OrgAllEmployeeActivityOption {
@@ -50,8 +53,16 @@ export interface OrgAllEmployeeRow {
   lfid: string | null;
   cdpMemberId: string | null;
   name: string;
+  /** Given name. Populated directly by live sources; for Snowflake-only rows it is a best-effort split of `name`. */
+  firstName: string | null;
+  /** Family name. Populated directly by live sources; for Snowflake-only rows it is a best-effort split of `name`. */
+  lastName: string | null;
   title: string | null;
   email: string | null;
+  /** Avatar/photo URL (CDP user photo or org-logo fallback); `null` when absent. The UI falls back to initials. */
+  avatarUrl: string | null;
+  /** Which upstream(s) contributed this person. Stored-only rows are `['snowflake']`; `?live` rows may carry several. */
+  sources: OrgPersonSource[];
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
