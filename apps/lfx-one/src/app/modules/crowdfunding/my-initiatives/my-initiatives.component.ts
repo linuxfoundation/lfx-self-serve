@@ -44,7 +44,7 @@ export class MyInitiativesComponent {
   }
 
   protected onLoadMoreInitiatives(): void {
-    if (this.loadingMore()) return;
+    if (this.loadingMore() || !this.initiativesHasMore()) return;
     this.loadingMore.set(true);
     this.initiativesOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
   }

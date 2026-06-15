@@ -222,8 +222,13 @@ export class AccountContextService {
           const firstSeed = this.userOrganizations()[0];
           if (firstSeed) {
             const liveSeed = live.get(firstSeed.accountId) ?? firstSeed;
-            this.selectedAccount.set(liveSeed);
-            this.persistToStorage(liveSeed);
+            const next = {
+              ...liveSeed,
+              uid: firstSeed.uid ?? liveSeed.uid ?? null,
+              parentUid: firstSeed.parentUid ?? liveSeed.parentUid ?? null,
+            };
+            this.selectedAccount.set(next);
+            this.persistToStorage(next);
           }
         }
       });

@@ -26,6 +26,7 @@
   <lfx-recurring-donations-list
     [donations]="recurringDonations()"
     [cancelledCount]="cancelledCount()"
+    (viewDetail)="onViewRecurringDetail($event)"
     (viewCancelled)="onViewCancelled()"
     (cancelDonation)="onCancelDonation($event)" />
 

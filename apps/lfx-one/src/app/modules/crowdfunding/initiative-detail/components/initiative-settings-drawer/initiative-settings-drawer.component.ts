@@ -22,7 +22,7 @@ import {
   DEFAULT_FUND_DISTRIBUTION,
   MAX_LOGO_SIZE_BYTES,
 } from '@lfx-one/shared/constants';
-import { FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { Beneficiary, FundDistributionItem, InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 function formatCompactAmount(amount: number): string {
@@ -68,7 +68,7 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly form: FormGroup = new FormGroup({
     name: new FormControl('', [Validators.required, Validators.maxLength(100)]),
     description: new FormControl('', [Validators.required, Validators.maxLength(500)]),
-    topics: new FormControl<string[]>([], Validators.required),
+    topics: new FormControl<string[]>([], { nonNullable: true }),
     websiteUrl: new FormControl(''),
     goal: new FormControl<number | null>(null, [Validators.min(0)]),
   });
@@ -107,11 +107,12 @@ export class InitiativeSettingsDrawerComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
+        // Unknown topic values are kept intentionally — the topics-dirty gate in onSave() prevents accidental overwrites.
         const existingTopics = init.industry
           ? init.industry
               .split(',')
               .map((v) => v.trim())
-              .filter((v) => CROWDFUNDING_TOPIC_OPTIONS.some((o) => o.value === v))
+              .filter((v) => v && v.toLowerCase() !== 'null') // CF API bug: null tags serialised as the string "null"
           : [];
         this.form.patchValue({
           name: init.name,
@@ -133,7 +134,7 @@ export class InitiativeSettingsDrawerComponent {
             return { ...item };
           })
         );
-        this.beneficiaryGroups.set([]);
+        this.beneficiaryGroups.set((init.beneficiaries ?? []).map((b) => this.makeBeneficiaryGroup(b)));
         this.activeSettingsTab.set('details');
       });
   }
@@ -143,8 +144,10 @@ export class InitiativeSettingsDrawerComponent {
   }
 
   protected async onSave(): Promise<void> {
-    if (this.form.invalid) {
+    const invalidBeneficiary = this.beneficiaryGroups().some((g) => g.invalid);
+    if (this.form.invalid || invalidBeneficiary) {
       this.form.markAllAsTouched();
+      this.beneficiaryGroups().forEach((g) => g.markAllAsTouched());
       return;
     }
 
@@ -162,7 +165,10 @@ export class InitiativeSettingsDrawerComponent {
       const input: UpdateInitiativeInput = {
         name,
         description,
-        industry: topics.join(','),
+        // Only send industry when the user has explicitly changed topics — sending an
+        // empty string clears the backend value, and existing slugs that don't map to
+        // SS options would be lost if we always overwrite.
+        ...(this.form.controls['topics'].dirty ? { industry: topics.join(',') } : {}),
         logoUrl: this.logoUrl(),
         websiteUrl: websiteUrl || undefined,
       };
@@ -194,13 +200,12 @@ export class InitiativeSettingsDrawerComponent {
         }
       }
 
-      const groups = this.beneficiaryGroups();
-      if (groups.length > 0) {
-        input.beneficiaries = groups.map((g) => ({
+      input.beneficiaries = this.beneficiaryGroups()
+        .map((g) => ({
           name: (g.value.name as string) || undefined,
           email: (g.value.email as string) || undefined,
-        }));
-      }
+        }))
+        .filter((b) => b.name || b.email);
 
       const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
 
@@ -283,14 +288,18 @@ export class InitiativeSettingsDrawerComponent {
   }
 
   protected addBeneficiary(): void {
-    const group = new FormGroup({
-      name: new FormControl(''),
-      email: new FormControl('', Validators.email),
-    });
-    this.beneficiaryGroups.update((groups) => [...groups, group]);
+    this.beneficiaryGroups.update((groups) => [...groups, this.makeBeneficiaryGroup()]);
   }
 
   protected removeBeneficiary(index: number): void {
     this.beneficiaryGroups.update((groups) => groups.filter((_, i) => i !== index));
+  }
+
+  private makeBeneficiaryGroup(b?: Beneficiary): FormGroup {
+    // `id` omitted intentionally — CF PATCH is full delete-and-replace, so name + email is the full contract.
+    return new FormGroup({
+      name: new FormControl(b?.name ?? ''),
+      email: new FormControl(b?.email ?? '', Validators.email),
+    });
   }
 }
