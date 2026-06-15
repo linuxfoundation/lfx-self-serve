@@ -110,7 +110,7 @@ async function cfFetchAllPages<T>(req: Request, operation: string, basePath: str
     );
     all.push(...page.data);
     if (all.length >= page.meta.total || page.data.length === 0) break;
-    offset += pageSize;
+    offset += page.data.length;
   }
   return all;
 }
