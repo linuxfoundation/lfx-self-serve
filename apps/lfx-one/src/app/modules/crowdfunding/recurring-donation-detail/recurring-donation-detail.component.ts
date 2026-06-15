@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
-import { concatMap, filter, map, scan, startWith, switchMap } from 'rxjs/operators';
+import { concatMap, filter, map, scan, startWith, switchMap, tap } from 'rxjs/operators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
@@ -16,8 +16,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RecurringDonationInitiativeHeaderComponent } from './components/recurring-donation-initiative-header/recurring-donation-initiative-header.component';
 import { RecurringDonationSubscriptionSummaryComponent } from './components/recurring-donation-subscription-summary/recurring-donation-subscription-summary.component';
 import { RecurringDonationChargeHistoryComponent } from './components/recurring-donation-charge-history/recurring-donation-charge-history.component';
-
-const EMPTY_CHARGE_HISTORY_STATE = { items: [] as CrowdfundingTransaction[], hasMore: false };
 
 @Component({
   selector: 'lfx-recurring-donation-detail',
@@ -44,6 +42,9 @@ export class RecurringDonationDetailComponent {
 
   // ─── Pagination Driver ────────────────────────────────────────────────────
   private readonly loadMore$ = new Subject<void>();
+
+  // ─── Simple WritableSignals ───────────────────────────────────────────────
+  protected readonly isLoading = signal(true);
 
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly donation: Signal<RecurringDonation | undefined> = this.initDonation();
@@ -82,18 +83,27 @@ export class RecurringDonationDetailComponent {
   }
 
   // ─── Private Initializers ─────────────────────────────────────────────────
-  private initDonation(): Signal<RecurringDonation | undefined> {
-    const id = this.route.snapshot.paramMap.get('id') ?? '';
+  private readonly emptyChargeHistoryState = { items: [] as CrowdfundingTransaction[], hasMore: false };
 
-    return toSignal(this.crowdfundingService.getMyRecurringDonations().pipe(map((res: RecurringDonationsResponse) => res.data.find((d) => d.id === id))), {
-      initialValue: undefined,
-    });
+  private initDonation(): Signal<RecurringDonation | undefined> {
+    return toSignal(
+      this.route.paramMap.pipe(
+        map((params) => params.get('id') ?? ''),
+        switchMap((id) =>
+          this.crowdfundingService.getMyRecurringDonations().pipe(
+            map((res: RecurringDonationsResponse) => res.data.find((d) => d.id === id)),
+            tap(() => this.isLoading.set(false))
+          )
+        )
+      ),
+      { initialValue: undefined }
+    );
   }
 
   private initChargeHistory(): Signal<{ items: CrowdfundingTransaction[]; hasMore: boolean }> {
     return toSignal(
       toObservable(this.donation).pipe(
-        filter((d) => d !== undefined),
+        filter((d): d is RecurringDonation => d !== undefined),
         map((d) => d.initiativeSlug),
         switchMap((slug) =>
           this.loadMore$.pipe(
@@ -112,12 +122,12 @@ export class RecurringDonationDetailComponent {
                 items: [...acc.items, ...res.data],
                 hasMore: acc.items.length + res.data.length < res.totalCount,
               }),
-              EMPTY_CHARGE_HISTORY_STATE
+              this.emptyChargeHistoryState
             )
           )
         )
       ),
-      { initialValue: EMPTY_CHARGE_HISTORY_STATE }
+      { initialValue: this.emptyChargeHistoryState }
     );
   }
 }

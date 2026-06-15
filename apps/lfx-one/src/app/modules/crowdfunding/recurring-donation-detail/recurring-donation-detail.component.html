@@ -13,7 +13,9 @@
     styleClass="self-start"
     data-testid="recurring-detail-back-btn" />
 
-  @if (donation(); as d) {
+  @if (isLoading()) {
+    <div class="flex items-center justify-center py-16 text-sm text-gray-400" data-testid="loading-state">Loading…</div>
+  } @else if (donation(); as d) {
     <lfx-recurring-donation-initiative-header [donation]="d" />
 
     <lfx-recurring-donation-subscription-summary [donation]="d" (cancelDonation)="onCancelDonation()" />
