@@ -13,13 +13,7 @@ import type {
 
 import type { Request } from 'express';
 
-import {
-  REDDIT_ACCOUNTS,
-  REDDIT_REPORT_MAX_POLLS,
-  REDDIT_REPORT_POLL_INTERVAL_MS,
-  REDDIT_REQUEST_TIMEOUT_MS,
-  REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS,
-} from '../constants';
+import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -119,75 +113,32 @@ async function redditRequest(method: 'GET' | 'POST', url: string, body?: Record<
 }
 
 // ---------------------------------------------------------------------------
-// Async Report Helpers
+// Report Helpers (v3 sync API)
 // ---------------------------------------------------------------------------
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+interface RedditAccountMetrics {
+  impressions: number;
+  clicks: number;
+  spend: number;
 }
 
-interface RedditReportRow {
-  campaign_id?: string;
-  campaign_name?: string;
-  impressions?: string;
-  clicks?: string;
-  spend?: string;
-  conversions?: string;
-  [key: string]: string | undefined;
-}
-
-function parseCsv(csv: string): RedditReportRow[] {
-  const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const values = line.split(',');
-    const row: RedditReportRow = {};
-    for (let i = 0; i < headers.length; i++) {
-      row[headers[i]] = values[i]?.trim();
-    }
-    return row;
-  });
-}
-
-async function requestAndPollReport(accountId: string, startDate: string, endDate: string): Promise<RedditReportRow[]> {
+async function fetchAccountMetrics(accountId: string, startDate: string, endDate: string): Promise<RedditAccountMetrics> {
   const reportBody = {
-    level: 'campaign',
-    metrics: ['impressions', 'clicks', 'spend', 'conversions'],
-    date_range: { since: startDate, until: endDate },
+    data: {
+      starts_at: `${startDate}T00:00:00Z`,
+      ends_at: `${endDate}T00:00:00Z`,
+      fields: ['IMPRESSIONS', 'CLICKS', 'SPEND'],
+    },
   };
 
-  const createResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/accounts/${accountId}/reports`, reportBody);
-  const reportId = (createResp.data as { id?: string })?.id;
-  if (!reportId) {
-    throw new Error('Reddit report creation returned no report ID');
-  }
+  const resp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/reports`, reportBody);
+  const metrics = ((resp.data as { metrics?: { impressions?: number; clicks?: number; spend?: number }[] })?.metrics ?? [])[0];
 
-  for (let poll = 0; poll < REDDIT_REPORT_MAX_POLLS; poll++) {
-    await sleep(REDDIT_REPORT_POLL_INTERVAL_MS);
-
-    const statusResp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/accounts/${accountId}/reports/${reportId}`);
-    const reportData = statusResp.data as { status?: string; download_url?: string } | undefined;
-    const status = reportData?.status;
-
-    if (status === 'FAILED') {
-      throw new Error(`Reddit report ${reportId} failed`);
-    }
-
-    if (status === 'COMPLETED' && reportData?.download_url) {
-      const csvResp = await fetch(reportData.download_url, {
-        headers: { 'User-Agent': REDDIT_USER_AGENT },
-        signal: AbortSignal.timeout(REDDIT_REQUEST_TIMEOUT_MS),
-      });
-      if (!csvResp.ok) {
-        throw new Error(`Reddit report download failed: ${csvResp.status}`);
-      }
-      const csv = await csvResp.text();
-      return parseCsv(csv);
-    }
-  }
-
-  throw new Error(`Reddit report ${reportId} timed out after ${REDDIT_REPORT_MAX_POLLS} polls`);
+  return {
+    impressions: metrics?.impressions ?? 0,
+    clicks: metrics?.clicks ?? 0,
+    spend: (metrics?.spend ?? 0) / 1_000_000,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,16 +148,17 @@ async function requestAndPollReport(accountId: string, startDate: string, endDat
 interface RedditCampaignElement {
   id: string;
   name: string;
-  status: string;
-  budget_total?: { amount_micros: number };
-  budget_daily?: { amount_micros: number };
+  configured_status: string;
+  effective_status: string;
+  goal_value?: number | null;
+  goal_type?: string | null;
   start_time?: string;
   end_time?: string;
   [key: string]: unknown;
 }
 
 async function fetchCampaigns(accountId: string): Promise<RedditCampaignElement[]> {
-  const resp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/accounts/${accountId}/campaigns`);
+  const resp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`);
   const data = resp.data as { campaigns?: RedditCampaignElement[] } | RedditCampaignElement[] | undefined;
 
   if (Array.isArray(data)) return data;
@@ -233,7 +185,7 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
   const startDate = startDateObj.toISOString().split('T')[0];
 
   const campaigns = await fetchCampaigns(accountId);
-  const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE' || c.status === 'PAUSED');
+  const activeCampaigns = campaigns.filter((c) => c.configured_status === 'ACTIVE' || c.configured_status === 'PAUSED');
 
   if (activeCampaigns.length === 0) {
     logger.success(req, 'reddit_analytics', startTime, { campaigns: 0 });
@@ -247,31 +199,19 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     };
   }
 
-  let reportRows: RedditReportRow[] = [];
+  let accountMetrics: RedditAccountMetrics = { impressions: 0, clicks: 0, spend: 0 };
   try {
-    reportRows = await requestAndPollReport(accountId, startDate, endDate);
+    accountMetrics = await fetchAccountMetrics(accountId, startDate, endDate);
   } catch (err) {
     logger.warning(req, 'reddit_analytics', 'Reddit report fetch failed — metrics will show zero', {
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }
 
-  const metricsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
-  for (const row of reportRows) {
-    const campId = row.campaign_id ?? '';
-    if (!campId) continue;
-    metricsMap.set(campId, {
-      impressions: parseInt(row.impressions ?? '0', 10),
-      clicks: parseInt(row.clicks ?? '0', 10),
-      spend: parseInt(row.spend ?? '0', 10) / 1_000_000,
-      conversions: parseInt(row.conversions ?? '0', 10),
-    });
-  }
-
   const campaignMetrics: RedditCampaignMetrics[] = activeCampaigns.map((camp) => {
-    const metrics = metricsMap.get(camp.id) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
-    const totalBudget = (camp.budget_total?.amount_micros ?? 0) / 1_000_000;
-    const dailyBudget = (camp.budget_daily?.amount_micros ?? 0) / 1_000_000;
+    const metrics = { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
+    const totalBudget = (camp.goal_value ?? 0) / 1_000_000;
+    const dailyBudget = 0;
 
     const schedStart = camp.start_time ? new Date(camp.start_time).getTime() : 0;
     const schedEnd = camp.end_time ? new Date(camp.end_time).getTime() : 0;
@@ -297,7 +237,7 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     return {
       campaignId: camp.id,
       campaignName: camp.name,
-      status: camp.status,
+      status: camp.configured_status,
       totalBudget,
       dailyBudget,
       spend: metrics.spend,
@@ -313,10 +253,10 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
   });
 
   const accountTotals: RedditAccountTotals = {
-    spend: campaignMetrics.reduce((s, c) => s + c.spend, 0),
-    impressions: campaignMetrics.reduce((s, c) => s + c.impressions, 0),
-    clicks: campaignMetrics.reduce((s, c) => s + c.clicks, 0),
-    conversions: campaignMetrics.reduce((s, c) => s + c.conversions, 0),
+    spend: accountMetrics.spend,
+    impressions: accountMetrics.impressions,
+    clicks: accountMetrics.clicks,
+    conversions: 0,
     campaignCount: campaignMetrics.length,
   };
 
@@ -356,45 +296,6 @@ interface RedditCampaignData {
   id?: string;
   name?: string;
   [key: string]: unknown;
-}
-
-interface CampaignLookupResult {
-  id: string;
-  startTime?: string;
-  endTime?: string;
-}
-
-async function findCampaignByName(accountId: string, name: string): Promise<CampaignLookupResult | null> {
-  try {
-    const resp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`);
-    const data = resp.data as { campaigns?: RedditCampaignData[] } | RedditCampaignData[] | undefined;
-    const items = Array.isArray(data) ? data : ((data as { campaigns?: RedditCampaignData[] })?.campaigns ?? []);
-    for (const item of items) {
-      if (item.name === name) {
-        return {
-          id: String(item.id ?? ''),
-          startTime: item['start_time'] as string | undefined,
-          endTime: item['end_time'] as string | undefined,
-        };
-      }
-    }
-  } catch {
-    // Campaign search failed — proceed to create
-  }
-  return null;
-}
-
-async function findAdGroupByName(accountId: string, campaignId: string, name: string): Promise<string | null> {
-  try {
-    const resp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups?campaign_id=${campaignId}`);
-    const groups = (resp.data as { ad_groups?: RedditCampaignData[] })?.ad_groups ?? [];
-    for (const item of groups) {
-      if (item.name === name) return String(item.id ?? '');
-    }
-  } catch {
-    // Ad group search failed — proceed to create
-  }
-  return null;
 }
 
 const GEO_TO_REGION: Record<string, string> = {
@@ -464,106 +365,91 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     steps.push(`Account verification warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 
-  // Step 2: Create or reuse campaign (PAUSED, lifetime budget)
+  // Step 2: Create campaign (PAUSED, lifetime budget)
   const campaignName = buildRedditCampaignName(config);
-  const existingCampaign = await findCampaignByName(accountId, campaignName);
-  let campaignId: string;
-  let campaignStartTime = toIsoTimestamp(config.startDate);
-  let campaignEndTime = toIsoTimestamp(config.endDate);
+  const campaignStartTime = toIsoTimestamp(config.startDate);
+  const campaignEndTime = toIsoTimestamp(config.endDate);
 
-  if (existingCampaign) {
-    campaignId = existingCampaign.id;
-    if (existingCampaign.startTime) campaignStartTime = existingCampaign.startTime;
-    if (existingCampaign.endTime) campaignEndTime = existingCampaign.endTime;
-    steps.push(`Reusing existing campaign: ${campaignId}`);
-  } else {
-    const campaignBody = {
-      data: {
-        name: campaignName,
-        objective: 'CONVERSIONS',
-        configured_status: 'PAUSED',
-        is_campaign_budget_optimization: true,
-        bid_strategy: 'BIDLESS',
-        bid_type: 'CPM',
-        optimization_goal: 'PURCHASE',
-        goal_type: 'LIFETIME_SPEND',
-        goal_value: toMicrodollars(config.budgetUsd),
-        view_through_conversion_type: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
-        start_time: campaignStartTime,
-        end_time: campaignEndTime,
-      },
-    };
+  const campaignBody = {
+    data: {
+      name: campaignName,
+      objective: 'CONVERSIONS',
+      configured_status: 'PAUSED',
+      is_campaign_budget_optimization: true,
+      bid_strategy: 'BIDLESS',
+      bid_type: 'CPM',
+      optimization_goal: 'PURCHASE',
+      goal_type: 'LIFETIME_SPEND',
+      goal_value: toMicrodollars(config.budgetUsd),
+      view_through_conversion_type: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
+      start_time: campaignStartTime,
+      end_time: campaignEndTime,
+    },
+  };
 
-    const campaignResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`, campaignBody);
-    const campData = (campaignResp.data as RedditCampaignData) ?? {};
-    campaignId = String(campData.id ?? '');
-    steps.push(`Campaign created: ${campaignId} (PAUSED, $${config.budgetUsd.toFixed(2)} lifetime)`);
-  }
+  const campaignResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`, campaignBody);
+  const campData = (campaignResp.data as RedditCampaignData) ?? {};
+  const campaignId = String(campData.id ?? '');
+  steps.push(`Campaign created: ${campaignId} (PAUSED, $${config.budgetUsd.toFixed(2)} lifetime)`);
 
-  // Step 3: Create or reuse ad group with targeting
+  // Step 3: Create ad group with targeting
   const geoLabel = config.geoTargets.length > 0 ? config.geoTargets.join('+') : 'Global';
   const adGroupName = `Events | ${config.eventName.replace(/\|/g, '-')} | ${geoLabel} | Intent | Communities + Keywords`;
-  let adGroupId = await findAdGroupByName(accountId, campaignId, adGroupName);
+  const geos = config.geoTargets.length > 0 ? config.geoTargets.map((g) => g.toUpperCase()) : ['US'];
+  const baseTargeting: Record<string, unknown> = {
+    geolocations: geos,
+    locations: ['FEED', 'COMMENTS_PAGE'],
+    platforms: ['ALL'],
+    expand_targeting: true,
+  };
 
-  if (adGroupId) {
-    steps.push(`Reusing existing ad group: ${adGroupId}`);
-  } else {
-    const geos = config.geoTargets.length > 0 ? config.geoTargets.map((g) => g.toUpperCase()) : ['US'];
-    const baseTargeting: Record<string, unknown> = {
-      geolocations: geos,
-      locations: ['FEED', 'COMMENTS_PAGE'],
-      platforms: ['ALL'],
-      expand_targeting: true,
-    };
+  if (config.keywords.length > 0) {
+    baseTargeting['keywords'] = config.keywords;
+  }
 
-    if (config.keywords.length > 0) {
-      baseTargeting['keywords'] = config.keywords;
-    }
+  const communityNames = config.subreddits.map((s) => s.replace(/^r\//, ''));
+  const targetingWithCommunities = communityNames.length > 0 ? { ...baseTargeting, communities: communityNames } : baseTargeting;
 
-    const communityNames = config.subreddits.map((s) => s.replace(/^r\//, ''));
-    const targetingWithCommunities = communityNames.length > 0 ? { ...baseTargeting, communities: communityNames } : baseTargeting;
+  const campaignStartMs = new Date(campaignStartTime).getTime();
+  const nowMs = Date.now();
+  const effectiveStart = campaignStartMs < nowMs ? toRedditTimestamp(new Date(nowMs + 60_000)) : campaignStartTime;
 
-    const campaignStartMs = new Date(campaignStartTime).getTime();
-    const nowMs = Date.now();
-    const effectiveStart = campaignStartMs < nowMs ? toRedditTimestamp(new Date(nowMs + 60_000)) : campaignStartTime;
+  const buildAdGroupBody = (targeting: Record<string, unknown>) => ({
+    data: {
+      name: adGroupName,
+      campaign_id: campaignId,
+      configured_status: 'PAUSED',
+      bid_strategy: 'BIDLESS',
+      bid_type: 'CPM',
+      optimization_goal: 'PURCHASE',
+      targeting,
+      start_time: effectiveStart,
+      end_time: campaignEndTime,
+    },
+  });
 
-    const buildAdGroupBody = (targeting: Record<string, unknown>) => ({
-      data: {
-        name: adGroupName,
-        campaign_id: campaignId,
-        configured_status: 'PAUSED',
-        bid_strategy: 'BIDLESS',
-        bid_type: 'CPM',
-        optimization_goal: 'PURCHASE',
-        targeting,
-        start_time: effectiveStart,
-        end_time: campaignEndTime,
-      },
-    });
-
-    let adGroupResp: RedditApiResponse;
-    let usedCommunities = communityNames.length > 0;
-    try {
-      adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(targetingWithCommunities));
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : '';
-      if (communityNames.length > 0 && errMsg.includes('invalid communities')) {
-        steps.push(`Community targeting failed (invalid subreddits: ${communityNames.join(', ')}), retrying with keywords only`);
-        usedCommunities = false;
-        adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(baseTargeting));
-      } else {
-        throw err;
-      }
-    }
-
-    const agData = (adGroupResp.data as RedditCampaignData) ?? {};
-    adGroupId = String(agData.id ?? '');
-    steps.push(`Ad group created: ${adGroupId} (PAUSED, geo: ${geos.join(', ')})`);
-    if (usedCommunities) {
-      steps.push(`Targeting: ${communityNames.length} communities, ${config.keywords.length} keywords, ${geos.length} geos`);
+  let adGroupResp: RedditApiResponse;
+  let usedCommunities = communityNames.length > 0;
+  try {
+    adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(targetingWithCommunities));
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : '';
+    if (communityNames.length > 0 && errMsg.includes('invalid communities')) {
+      steps.push(`Community targeting failed (invalid subreddits: ${communityNames.join(', ')}), retrying with keywords only`);
+      usedCommunities = false;
+      adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(baseTargeting));
     } else {
-      steps.push(`Targeting: ${config.keywords.length} keywords, ${geos.length} geos (communities skipped — add manually in Reddit Ads Manager)`);
+      throw err;
     }
+  }
+
+  const agData = (adGroupResp.data as RedditCampaignData) ?? {};
+  const adGroupId = String(agData.id ?? '');
+  steps.push(`Ad group created: ${adGroupId} (PAUSED, geo: ${geos.join(', ')})`);
+  if (usedCommunities) {
+    steps.push(`Targeting: ${communityNames.length} communities, ${config.keywords.length} keywords, ${geos.length} geos`);
+  } else {
+    steps.push(`Targeting: ${config.keywords.length} keywords, ${geos.length} geos (communities skipped — add manually in Reddit Ads Manager)`);
   }
 
   // Step 4: Reddit ads require a post_id — log UTM URLs and headlines for manual ad creation

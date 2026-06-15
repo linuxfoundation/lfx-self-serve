@@ -527,13 +527,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   const pageSize = 100;
   let campaignStart = 0;
   while (true) {
-    const campaignParams = new URLSearchParams({
-      q: 'search',
-      search: '(status:(values:List(ACTIVE,PAUSED)))',
-      count: String(pageSize),
-      start: String(campaignStart),
-    });
-    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?${campaignParams.toString()}`;
+    const campaignsUrl = `${LINKEDIN_BASE_URL}/adAccounts/${accountId}/adCampaigns?q=search&search=(status:(values:List(ACTIVE,PAUSED)))&count=${pageSize}&start=${campaignStart}`;
     const campaignsResp = await fetch(campaignsUrl, {
       headers: baseHeaders,
       signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
@@ -566,29 +560,22 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   }
 
   // --- Fetch analytics for all campaigns via account-level filter ---
-  const analyticsParams = new URLSearchParams({
-    q: 'analytics',
-    pivot: 'CAMPAIGN',
-    dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
-    timeGranularity: 'ALL',
-    accounts: `List(urn:li:sponsoredAccount:${accountId})`,
-    fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
-  });
-
-  const analyticsUrl = `${LINKEDIN_BASE_URL}/adAnalytics?${analyticsParams.toString()}`;
+  // The versioned /rest/adAnalytics endpoint rejects RestLi query params; use /v2/adAnalyticsV2 which accepts them.
+  const analyticsUrl = `https://api.linkedin.com/v2/adAnalyticsV2?q=analytics&pivot=CAMPAIGN&dateRange=(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))&timeGranularity=ALL&accounts=List(${encodeURIComponent(`urn:li:sponsoredAccount:${accountId}`)})&fields=impressions,clicks,costInLocalCurrency,externalWebsiteConversions`;
   const analyticsResp = await fetch(analyticsUrl, {
-    headers: baseHeaders,
+    headers: { Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
     signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
   });
 
   const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
   if (!analyticsResp.ok) {
-    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalytics returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
+    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalyticsV2 returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
   }
   if (analyticsResp.ok) {
     const analyticsData = (await analyticsResp.json()) as {
       elements?: {
-        pivotValue?: string;
+        pivotValues?: string[];
+        adEntities?: { value?: { campaign?: string } }[];
         impressions?: number;
         clicks?: number;
         costInLocalCurrency?: string;
@@ -596,8 +583,9 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       }[];
     };
     for (const el of analyticsData.elements ?? []) {
-      if (el.pivotValue) {
-        analyticsMap.set(el.pivotValue, {
+      const campaignUrn = el.adEntities?.[0]?.value?.campaign ?? el.pivotValues?.[0];
+      if (campaignUrn) {
+        analyticsMap.set(campaignUrn, {
           impressions: el.impressions ?? 0,
           clicks: el.clicks ?? 0,
           spend: parseFloat(el.costInLocalCurrency ?? '0'),
@@ -613,22 +601,16 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   const creativeFetchFailed = new Set<string>();
 
   const fetchCreativeForCampaign = async (camp: (typeof campaigns)[number]): Promise<void> => {
-    const creativeParams = new URLSearchParams({
-      q: 'analytics',
-      pivot: 'CREATIVE',
-      dateRange: `(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))`,
-      timeGranularity: 'ALL',
-      campaigns: `List(urn:li:sponsoredCampaign:${camp.id})`,
-      fields: 'impressions,clicks,costInLocalCurrency,externalWebsiteConversions,pivot,pivotValue',
-    });
-    const creativeResp = await fetch(`${LINKEDIN_BASE_URL}/adAnalytics?${creativeParams.toString()}`, {
-      headers: baseHeaders,
+    const creativeUrl = `https://api.linkedin.com/v2/adAnalyticsV2?q=analytics&pivot=CREATIVE&dateRange=(start:(year:${startParts.year},month:${startParts.month},day:${startParts.day}),end:(year:${endParts.year},month:${endParts.month},day:${endParts.day}))&timeGranularity=ALL&campaigns=List(${encodeURIComponent(`urn:li:sponsoredCampaign:${camp.id}`)})&fields=impressions,clicks,costInLocalCurrency,externalWebsiteConversions`;
+    const creativeResp = await fetch(creativeUrl, {
+      headers: { Authorization: `Bearer ${token}`, 'X-RestLi-Protocol-Version': '2.0.0' },
       signal: AbortSignal.timeout(LINKEDIN_REQUEST_TIMEOUT_MS),
     });
     if (creativeResp.ok) {
       const creativeData = (await creativeResp.json()) as {
         elements?: {
-          pivotValue?: string;
+          pivotValues?: string[];
+          adEntities?: { value?: { creative?: string } }[];
           impressions?: number;
           clicks?: number;
           costInLocalCurrency?: string;
@@ -636,9 +618,10 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
         }[];
       };
       const creatives: LinkedInCreativeMetrics[] = (creativeData.elements ?? [])
-        .filter((el) => !!el.pivotValue)
+        .filter((el) => !!(el.adEntities?.[0]?.value?.creative ?? el.pivotValues?.[0]))
         .map((el) => {
-          const creativeId = el.pivotValue!.replace('urn:li:sponsoredCreative:', '');
+          const creativeUrn = el.adEntities?.[0]?.value?.creative ?? el.pivotValues?.[0] ?? '';
+          const creativeId = creativeUrn.replace('urn:li:sponsoredCreative:', '');
           const clicks = el.clicks ?? 0;
           const impressions = el.impressions ?? 0;
           return {
