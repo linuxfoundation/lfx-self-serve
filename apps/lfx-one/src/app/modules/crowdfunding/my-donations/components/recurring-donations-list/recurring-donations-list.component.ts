@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { Component, computed, input, output, Signal, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -9,7 +10,7 @@ import { MenuItem } from 'primeng/api';
 
 @Component({
   selector: 'lfx-recurring-donations-list',
-  imports: [ButtonComponent, MenuComponent],
+  imports: [ButtonComponent, DatePipe, MenuComponent],
   templateUrl: './recurring-donations-list.component.html',
   styleUrl: './recurring-donations-list.component.scss',
 })
