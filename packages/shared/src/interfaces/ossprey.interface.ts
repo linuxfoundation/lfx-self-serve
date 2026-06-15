@@ -3,19 +3,12 @@
 
 export type OsspreyStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive';
 export type OsspreyLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
-export type OsspreyEcosystem = 'npm' | 'maven' | 'pypi' | 'go';
+export type OsspreyEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
 export type OsspreyHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
 export type OspreySeverity = 'critical' | 'high' | 'medium' | 'low';
 export type OspreySortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
 
 // ===== CDP Raw Types =====
-
-export interface CdpOpenVulns {
-  low: number;
-  medium: number;
-  high: number;
-  critical: number;
-}
 
 export interface CdpStewardshipSummary {
   purl: string;
@@ -25,9 +18,9 @@ export interface CdpStewardshipSummary {
   health: number | null;
   impact: number | null;
   maintainerBusFactor: number | null;
-  openVulns: CdpOpenVulns | null;
+  openVulns: number | null;
   stewardship: string;
-  steward: null;
+  stewards: null;
 }
 
 export interface CdpPackagesListResponse {

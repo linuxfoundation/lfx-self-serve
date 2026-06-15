@@ -218,9 +218,8 @@ export class OsspreyServerService {
   }
 
   public mapListItem(item: CdpStewardshipSummary): OsspreyPackage {
-    const vulns = item.openVulns;
-    const vulnCount = vulns ? vulns.low + vulns.medium + vulns.high + vulns.critical : 0;
-    const vulnSeverity = this.worstSeverityFromCounts(vulns);
+    const vulnCount = item.openVulns ?? 0;
+    const vulnSeverity = null;
 
     return {
       id: item.purl,
@@ -334,15 +333,6 @@ export class OsspreyServerService {
     if (hasBuild && hasSigned) return 'Full';
     if (hasBuild || hasSigned) return 'Partial';
     return 'None';
-  }
-
-  private worstSeverityFromCounts(vulns: { low: number; medium: number; high: number; critical: number } | null): OspreySeverity | null {
-    if (!vulns) return null;
-    if (vulns.critical > 0) return 'critical';
-    if (vulns.high > 0) return 'high';
-    if (vulns.medium > 0) return 'medium';
-    if (vulns.low > 0) return 'low';
-    return null;
   }
 
   private getHighestVulnSeverity(advisories: OsspreyAdvisory[]): OspreySeverity | null {

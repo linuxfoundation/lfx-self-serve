@@ -30,6 +30,7 @@ export const OSSPREY_ECOSYSTEM_OPTIONS: Array<{ value: OsspreyEcosystem | ''; la
   { value: 'maven', label: 'Maven' },
   { value: 'pypi', label: 'PyPI' },
   { value: 'go', label: 'Go' },
+  { value: 'cargo', label: 'Cargo' },
 ];
 
 /** Lifecycle options for the OSSPREY filter panel. */
