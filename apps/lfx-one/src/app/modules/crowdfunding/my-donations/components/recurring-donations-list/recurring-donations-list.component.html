@@ -39,7 +39,9 @@
               <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"> Paused </span>
             }
           </div>
-          <p class="text-xs text-gray-400">Started {{ entry.donation.startDate | date: 'MMM d, y' : 'UTC' }} &middot; {{ entry.donation.billingDescription }}</p>
+          <p class="text-xs text-gray-400">
+            Started {{ entry.donation.startDate | date: 'MMM d, y' : 'UTC' }} &middot; {{ entry.donation.billingDescription }}
+          </p>
         </div>
 
         <!-- Amount + next charge -->
