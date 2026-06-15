@@ -260,8 +260,11 @@ export class CrowdfundingService {
 
     const all = await cfFetchAllPages<BackendSubscription>(req, 'getMyRecurringDonations', '/v1/me/subscriptions');
 
-    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: all.length });
-    return { data: all.map(mapSubscriptionToRecurringDonation), total: all.length, pageSize: all.length, offset: 0 };
+    // Exclude canceled subscriptions — the CF backend returns all statuses by default.
+    // Only active, incomplete, and past_due subscriptions represent active recurring commitments.
+    const active = all.filter((s) => s.status !== 'canceled');
+    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: all.length, active: active.length });
+    return { data: active.map(mapSubscriptionToRecurringDonation), total: active.length, pageSize: active.length, offset: 0 };
   }
 
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
