@@ -162,7 +162,10 @@ export class InitiativeSettingsDrawerComponent {
       const input: UpdateInitiativeInput = {
         name,
         description,
-        industry: topics.join(','),
+        // Only send industry when the user has explicitly changed topics — sending an
+        // empty string clears the backend value, and existing slugs that don't map to
+        // SS options would be lost if we always overwrite.
+        ...(this.form.controls['topics'].dirty ? { industry: topics.join(',') } : {}),
         logoUrl: this.logoUrl(),
         websiteUrl: websiteUrl || undefined,
       };
