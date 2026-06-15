@@ -39,7 +39,9 @@
               <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"> Paused </span>
             }
           </div>
-          <p class="text-xs text-gray-400">Started {{ entry.donation.startDate }} &middot; {{ entry.donation.billingDescription }}</p>
+          <p class="text-xs text-gray-400">
+            Started {{ entry.donation.startDate | date: 'MMM d, y' : 'UTC' }} &middot; {{ entry.donation.billingDescription }}
+          </p>
         </div>
 
         <!-- Amount + next charge -->
@@ -47,13 +49,11 @@
           <p class="text-sm font-semibold" [class]="entry.donation.status === 'active' ? 'text-gray-900' : 'text-gray-400'">
             ${{ entry.donation.amount }}<span class="text-xs font-normal text-gray-400">/mo</span>
           </p>
-          <p class="text-xs text-gray-400">
-            @if (entry.donation.status === 'active') {
-              Next charge: {{ entry.donation.nextChargeDate }}
-            } @else {
-              Paused since {{ entry.donation.pausedSince }}
-            }
-          </p>
+          @if (entry.donation.status === 'active' && entry.donation.nextChargeDate) {
+            <p class="text-xs text-gray-400">Next charge: {{ entry.donation.nextChargeDate | date: 'MMM d, y' : 'UTC' }}</p>
+          } @else if (entry.donation.status !== 'active' && entry.donation.pausedSince) {
+            <p class="text-xs text-gray-400">Paused since {{ entry.donation.pausedSince | date: 'MMM d, y' : 'UTC' }}</p>
+          }
         </div>
 
         <!-- Ellipsis menu -->

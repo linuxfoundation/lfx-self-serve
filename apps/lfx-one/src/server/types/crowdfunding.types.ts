@@ -49,6 +49,7 @@ export interface BackendInitiative {
   };
   goals?: BackendGoal[];
   sponsors?: BackendSponsor[];
+  beneficiaries?: BackendBeneficiary[];
   balance?: {
     total_raised_cents: number;
     total_disbursed_cents: number;
@@ -112,12 +113,12 @@ export interface BackendDonationListResponse {
 export interface BackendSubscription {
   id: string;
   initiative_id: string;
-  initiative_name: string;
+  initiative_name?: string;
   initiative_logo_url?: string;
   status: string;
   amount_cents: number;
-  interval: string;
-  start_date: string;
+  frequency: string;
+  created_on: string;
   next_charge_date?: string;
   paused_at?: string;
 }
@@ -130,6 +131,12 @@ export interface BackendSubscriptionListResponse {
 export interface BackendGoalInput {
   name: string;
   amount_cents: number;
+}
+
+export interface BackendBeneficiary {
+  id: string;
+  name?: string;
+  email?: string;
 }
 
 export interface BackendBeneficiaryInput {
