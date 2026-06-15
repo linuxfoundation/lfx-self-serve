@@ -374,6 +374,10 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
   },
   {
+    path: 'meetings/unavailable',
+    loadComponent: () => import('./modules/meetings/meeting-unavailable/meeting-unavailable.component').then((m) => m.MeetingUnavailableComponent),
+  },
+  {
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },

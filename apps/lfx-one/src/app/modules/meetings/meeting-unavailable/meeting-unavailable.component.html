@@ -1,0 +1,61 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="bg-gray-50">
+  <!-- Main Content -->
+  <div class="container mx-auto py-6 px-8">
+    <div class="max-w-4xl mx-auto">
+      <!-- Meeting Unavailable Card -->
+      <lfx-card class="mb-6" data-testid="meeting-unavailable-card">
+        <div class="text-center py-12">
+          <!-- Error Icon -->
+          <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-amber-50 rounded-full flex items-center justify-center">
+              <i class="fa-light fa-triangle-exclamation text-4xl text-amber-400"></i>
+            </div>
+          </div>
+
+          <!-- Error Message -->
+          <h1 class="mb-3" data-testid="error-title">Meeting Temporarily Unavailable</h1>
+
+          <p class="text-gray-600 mb-6 max-w-lg mx-auto" data-testid="error-description">
+            This meeting is temporarily unavailable. Our team is aware of the issue and working to resolve it.
+          </p>
+
+          <!-- Guidance -->
+          <div class="bg-gray-50 rounded-lg p-6 mb-8 text-left max-w-lg mx-auto">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">What you can do:</h3>
+            <ul class="text-sm text-gray-600 flex flex-col gap-2">
+              <li class="flex items-start gap-2">
+                <i class="fa-light fa-circle-dot text-gray-400 mt-1 text-xs"></i>
+                <span>Try again in a few minutes</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <i class="fa-light fa-circle-dot text-gray-400 mt-1 text-xs"></i>
+                <span>If the issue persists, contact support with the meeting URL</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex sm:items-center flex-col sm:flex-row gap-6 justify-center">
+            <lfx-button routerLink="/" class="flex items-center" size="small" data-testid="go-home-button">
+              <i class="fa-light fa-home mr-2"></i>
+              <span>Go to Projects Dashboard</span>
+            </lfx-button>
+
+            <lfx-button
+              lfxOpenIntercom
+              class="flex items-center"
+              data-testid="contact-support-button"
+              icon="fa-light fa-life-ring"
+              label="Contact Support"
+              size="small"
+              severity="secondary">
+            </lfx-button>
+          </div>
+        </div>
+      </lfx-card>
+    </div>
+  </div>
+</div>

@@ -566,7 +566,9 @@ export class MeetingJoinComponent implements OnInit {
                 project: res.project as Partial<Project> | null,
               })),
               catchError((error) => {
-                if ([404, 403, 400].includes(error.status)) {
+                if (error.status === 403) {
+                  this.router.navigate(['/meetings/unavailable']);
+                } else if ([404, 400].includes(error.status)) {
                   this.router.navigate(['/meetings/not-found']);
                 }
                 return EMPTY;
@@ -595,7 +597,9 @@ export class MeetingJoinComponent implements OnInit {
                   })
                 );
               }
-              if ([403, 400].includes(error.status)) {
+              if (error.status === 403) {
+                this.router.navigate(['/meetings/unavailable']);
+              } else if (error.status === 400) {
                 this.router.navigate(['/meetings/not-found']);
               }
               return EMPTY;
