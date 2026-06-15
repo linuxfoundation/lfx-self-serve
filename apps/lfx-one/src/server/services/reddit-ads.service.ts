@@ -208,18 +208,8 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
     });
   }
 
-  const perCampaignMetrics = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
-  for (const camp of activeCampaigns) {
-    try {
-      const campMetrics = await fetchAccountMetrics(accountId, startDate, endDate);
-      perCampaignMetrics.set(camp.id, { impressions: campMetrics.impressions, clicks: campMetrics.clicks, spend: campMetrics.spend, conversions: 0 });
-    } catch {
-      perCampaignMetrics.set(camp.id, { impressions: 0, clicks: 0, spend: 0, conversions: 0 });
-    }
-  }
-
   const campaignMetrics: RedditCampaignMetrics[] = activeCampaigns.map((camp) => {
-    const metrics = perCampaignMetrics.get(camp.id) ?? { impressions: 0, clicks: 0, spend: 0, conversions: 0 };
+    const metrics = accountMetrics;
     const totalBudget = (camp.goal_value ?? 0) / 1_000_000;
     const dailyBudget = 0;
 
@@ -254,7 +244,7 @@ export async function getRedditAnalytics(req: Request, accountId: string, days: 
       impressions: metrics.impressions,
       clicks: metrics.clicks,
       ctr: metrics.impressions > 0 ? (metrics.clicks / metrics.impressions) * 100 : 0,
-      conversions: metrics.conversions,
+      conversions: 0,
       pacingPct,
       pacingLabel,
       startDate: camp.start_time ? new Date(camp.start_time).toISOString().split('T')[0] : startDate,

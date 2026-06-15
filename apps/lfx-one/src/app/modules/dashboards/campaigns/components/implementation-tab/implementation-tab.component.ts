@@ -229,24 +229,9 @@ export class ImplementationTabComponent {
   }
 
   protected submit(): void {
+    if (!this.canSubmit()) return;
+
     const platforms = this.selectedPlatforms();
-    const googleSelected = platforms.includes('google-ads');
-    const linkedInSelected = platforms.includes('linkedin-ads');
-    const redditSelected = platforms.includes('reddit-ads');
-
-    if (!googleSelected && !linkedInSelected && !redditSelected) return;
-
-    const controls = this.campaignForm.controls;
-    const sharedFieldsValid =
-      !!controls.eventName.value?.trim() && !!controls.registrationUrl.value?.trim() && !!controls.startDate.value && !!controls.endDate.value;
-    if (!sharedFieldsValid) return;
-
-    if (googleSelected && !controls.includeSearch.value && !controls.includeDemandGen.value) return;
-    if (googleSelected && this.campaignForm.invalid) return;
-    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
-    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return;
-    if (linkedInSelected && this.linkedInVariants().length === 0) return;
-
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
