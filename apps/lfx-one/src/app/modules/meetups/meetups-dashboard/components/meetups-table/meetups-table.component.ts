@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyMeetupsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
@@ -13,6 +13,7 @@ type MeetupSortField = 'EVENT_NAME' | 'COMMUNITY' | 'STARTS_AT' | 'LOCATION';
   selector: 'lfx-meetups-table',
   imports: [TableComponent, TagComponent],
   templateUrl: './meetups-table.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MeetupsTableComponent {
   public readonly meetupsResponse = input.required<MyMeetupsResponse>();
