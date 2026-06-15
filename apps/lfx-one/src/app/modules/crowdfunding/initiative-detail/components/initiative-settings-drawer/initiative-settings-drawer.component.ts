@@ -129,10 +129,18 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly isSecurityAudit = computed(() => this.initiative().initiativeType === FundType.SECURITY_AUDIT);
   protected readonly isProjectType = computed(() => this.initiative().initiativeType === FundType.GENERAL_FUND);
 
-  protected get eventStartDateControl(): FormControl { return this.form.controls['eventStartDate'] as FormControl; }
-  protected get eventEndDateControl(): FormControl { return this.form.controls['eventEndDate'] as FormControl; }
-  protected get isOnlineControl(): FormControl { return this.form.controls['isOnline'] as FormControl; }
-  protected get totalBudgetCentsControl(): FormControl { return this.form.controls['totalBudgetCents'] as FormControl; }
+  protected get eventStartDateControl(): FormControl {
+    return this.form.controls['eventStartDate'] as FormControl;
+  }
+  protected get eventEndDateControl(): FormControl {
+    return this.form.controls['eventEndDate'] as FormControl;
+  }
+  protected get isOnlineControl(): FormControl {
+    return this.form.controls['isOnline'] as FormControl;
+  }
+  protected get totalBudgetCentsControl(): FormControl {
+    return this.form.controls['totalBudgetCents'] as FormControl;
+  }
 
   public constructor() {
     toObservable(this.visible)
@@ -198,9 +206,24 @@ export class InitiativeSettingsDrawerComponent {
 
     try {
       const {
-        name, description, topics, websiteUrl, cocUrl, goal, ciiProjectId,
-        eventStartDate, eventEndDate, applicationUrl, eventbriteUrl, country, city, isOnline,
-        monetizationStrategy, currentSecurityStrategy, licenseType, totalBudgetCents,
+        name,
+        description,
+        topics,
+        websiteUrl,
+        cocUrl,
+        goal,
+        ciiProjectId,
+        eventStartDate,
+        eventEndDate,
+        applicationUrl,
+        eventbriteUrl,
+        country,
+        city,
+        isOnline,
+        monetizationStrategy,
+        currentSecurityStrategy,
+        licenseType,
+        totalBudgetCents,
       } = this.form.value as {
         name: string;
         description: string;
@@ -404,7 +427,14 @@ export class InitiativeSettingsDrawerComponent {
     return this.contactGroups().map((g) => g.value.contactType as string);
   }
 
-  private makeContactGroup(c: { contactType: string; firstName?: string; lastName?: string; email?: string; phoneNumber?: string; preferredContactMethod?: string }): FormGroup {
+  private makeContactGroup(c: {
+    contactType: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phoneNumber?: string;
+    preferredContactMethod?: string;
+  }): FormGroup {
     return new FormGroup({
       contactType: new FormControl(c.contactType ?? ''),
       firstName: new FormControl(c.firstName ?? ''),
