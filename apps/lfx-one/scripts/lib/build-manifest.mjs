@@ -154,7 +154,7 @@ export function buildDocsManifest({ records }) {
       url: '/docs',
       sourcePath: '',
       topic: '',
-      title: 'LFX Self Serve Documentation',
+      title: 'LFX Documentation',
       description: 'Browse user guides for the LFX Self Serve product.',
       bodyHtml: '',
       headings: [],
@@ -263,7 +263,7 @@ function buildTaxonomyTree(articles, topics) {
   /** @type {import('@lfx-one/shared').DocsTaxonomyNode} */
   const tree = {
     slug: '',
-    title: root?.title ?? 'LFX Self Serve Documentation',
+    title: root?.title ?? 'LFX Documentation',
     url: '/docs',
     children: [],
   };

@@ -146,7 +146,7 @@ export class DocsArticleComponent {
     if (!a) return;
 
     const canonical = `${DOCS_CANONICAL_ORIGIN}${a.url}`;
-    this.title.setTitle(`${a.title} · LFX Self Serve Documentation`);
+    this.title.setTitle(`${a.title} · LFX Documentation`);
     this.meta.updateTag({ name: 'description', content: a.description });
     this.meta.updateTag({ property: 'og:title', content: a.title });
     this.meta.updateTag({ property: 'og:description', content: a.description });
