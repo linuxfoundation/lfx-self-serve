@@ -253,6 +253,6 @@
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">
     <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
-    <lfx-button [label]="isEditing ? 'Update Member' : 'Add Member'" [loading]="submitting()" [disabled]="submitting()" (onClick)="onSubmit()" size="small"></lfx-button>
+    <lfx-button [label]="isEditing ? 'Update Member' : 'Add Member'" [loading]="submitting()" [disabled]="submitting()" type="submit" size="small"></lfx-button>
   </div>
 </form>
