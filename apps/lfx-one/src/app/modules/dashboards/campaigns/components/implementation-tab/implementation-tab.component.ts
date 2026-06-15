@@ -70,8 +70,8 @@ export class ImplementationTabComponent {
     endDate: ['', [Validators.required]],
     includeSearch: [true],
     includeDemandGen: [true],
-    headlines: this.fb.array([this.fb.control('', [Validators.required])]),
-    descriptions: this.fb.array([this.fb.control('', [Validators.required])]),
+    headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
+    descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
   });
 
   // === WritableSignals ===
@@ -165,7 +165,9 @@ export class ImplementationTabComponent {
 
   // === Protected Methods ===
   protected addHeadline(): void {
-    (this.campaignForm.controls.headlines as FormArray).push(this.fb.control('', [Validators.required]));
+    (this.campaignForm.controls.headlines as FormArray).push(
+      this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])
+    );
   }
 
   protected removeHeadline(index: number): void {
@@ -174,7 +176,9 @@ export class ImplementationTabComponent {
   }
 
   protected addDescription(): void {
-    (this.campaignForm.controls.descriptions as FormArray).push(this.fb.control('', [Validators.required]));
+    (this.campaignForm.controls.descriptions as FormArray).push(
+      this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])
+    );
   }
 
   protected removeDescription(index: number): void {
@@ -357,13 +361,13 @@ export class ImplementationTabComponent {
       const headlinesArr = this.campaignForm.controls.headlines as FormArray;
       headlinesArr.clear();
       for (const h of headlines) {
-        headlinesArr.push(this.fb.control(h, [Validators.required]));
+        headlinesArr.push(this.fb.control(h, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)]));
       }
 
       const descriptionsArr = this.campaignForm.controls.descriptions as FormArray;
       descriptionsArr.clear();
       for (const d of descriptions) {
-        descriptionsArr.push(this.fb.control(d, [Validators.required]));
+        descriptionsArr.push(this.fb.control(d, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)]));
       }
     }
 

@@ -531,7 +531,7 @@ export class CampaignProxyService {
     const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
       return;
     }
 
@@ -710,7 +710,7 @@ export class CampaignProxyService {
     const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
       return;
     }
 
