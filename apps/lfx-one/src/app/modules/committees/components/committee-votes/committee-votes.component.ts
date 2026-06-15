@@ -27,8 +27,6 @@ export class CommitteeVotesComponent {
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
 
-  public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
-
   // State
   public loading = signal<boolean>(true);
   public resultsDrawerVisible = model<boolean>(false);
@@ -37,6 +35,7 @@ export class CommitteeVotesComponent {
 
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
+  public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
 
   /** Opens the vote results drawer for the selected vote. */
   public viewVoteResults(voteUid: string): void {

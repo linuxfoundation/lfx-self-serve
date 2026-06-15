@@ -27,8 +27,6 @@ export class CommitteeSurveysComponent {
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
 
-  public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
-
   // State
   public loading = signal<boolean>(true);
   public resultsDrawerVisible = model<boolean>(false);
@@ -37,6 +35,7 @@ export class CommitteeSurveysComponent {
 
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
+  public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
 
   public viewSurveyResults(survey: Survey): void {
     this.selectedSurveyId.set(survey.uid);
