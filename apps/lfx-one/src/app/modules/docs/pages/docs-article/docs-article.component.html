@@ -5,7 +5,7 @@
   <article class="mx-auto flex max-w-[1024px] flex-col gap-6 pt-6" data-testid="docs-article">
     <!-- Sticky top bar: breadcrumb on the left, search on the right -->
     <div
-      class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-gray-200 bg-white py-4"
+      class="sticky top-0 z-20 flex flex-col gap-3 border-b border-gray-200 bg-white py-4 md:flex-row md:items-center md:justify-between md:gap-4"
       data-testid="docs-article-topbar">
       <div class="flex items-center gap-3">
         <button
@@ -35,7 +35,7 @@
           </nav>
         }
       </div>
-      <lfx-docs-search data-testid="docs-article-search" />
+      <lfx-docs-search class="w-full md:w-80" data-testid="docs-article-search" />
     </div>
 
     <header class="flex flex-col gap-3">
