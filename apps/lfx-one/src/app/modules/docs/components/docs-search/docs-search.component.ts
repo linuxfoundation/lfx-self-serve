@@ -9,6 +9,7 @@ import { debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 
 import type { DocsSearchHit } from '@lfx-one/shared/interfaces';
 
+import { DocsManifestService } from '../../services/docs-manifest.service';
 import { DocsSearchService } from '../../services/docs-search.service';
 
 /**
@@ -42,6 +43,11 @@ export class DocsSearchComponent {
   private readonly searchService = inject(DocsSearchService);
   private readonly router = inject(Router);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly manifest = inject(DocsManifestService);
+
+  // Maps a topic slug to its display name so result chips show the proper
+  // topic label (e.g. 'committees' → 'Groups') rather than the raw slug.
+  private readonly topicNames = new Map(this.manifest.getTopics().map((topic) => [topic.slug, topic.name]));
 
   // When true, the search box fills its container instead of capping at max-w-xl.
   public readonly fullWidth = input(false);
@@ -92,6 +98,12 @@ export class DocsSearchComponent {
         this.activeIndex.set(results.length > 0 ? 0 : -1);
         this.searching.set(false);
       });
+  }
+
+  /** Sentence-cased topic name for the result chip, resolved from the slug. */
+  protected topicLabel(slug: string): string {
+    const name = this.topicNames.get(slug) ?? slug.replace(/-/g, ' ');
+    return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
   }
 
   protected onFocus(): void {

@@ -44,8 +44,8 @@
                 <span class="flex items-center gap-2">
                   <span class="font-semibold text-gray-900">{{ hit.title }}</span>
                   @if (hit.topic) {
-                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs uppercase tracking-wide text-gray-600">
-                      {{ hit.topic }}
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                      {{ topicLabel(hit.topic) }}
                     </span>
                   }
                 </span>
