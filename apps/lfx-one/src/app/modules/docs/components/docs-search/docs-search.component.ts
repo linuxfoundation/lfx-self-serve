@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, HostListener, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, HostListener, inject, input, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -42,6 +42,9 @@ export class DocsSearchComponent {
   private readonly searchService = inject(DocsSearchService);
   private readonly router = inject(Router);
   private readonly host = inject(ElementRef<HTMLElement>);
+
+  // When true, the search box fills its container instead of capping at max-w-xl.
+  public readonly fullWidth = input(false);
 
   protected readonly inputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
 
