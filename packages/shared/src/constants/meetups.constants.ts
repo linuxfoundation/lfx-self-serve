@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FilterOption, MeetupFilterOptionsResponse, MeetupStatusFilter, MyMeetupsResponse } from '../interfaces';
+import { FilterOption, MeetupFilterOptionsResponse, MeetupSortField, MeetupSortOrder, MeetupStatusFilter, MyMeetupsResponse } from '../interfaces';
 
 export const DEFAULT_MEETUPS_PAGE_SIZE = 10;
 export const MAX_MEETUPS_PAGE_SIZE = 100;
 
-export const DEFAULT_MEETUP_SORT_FIELD = 'STARTS_AT';
-export const VALID_MEETUP_SORT_FIELDS: ReadonlySet<string> = new Set(['EVENT_NAME', 'COMMUNITY', 'STARTS_AT', 'LOCATION']);
-export const VALID_MEETUP_SORT_ORDERS: readonly string[] = ['ASC', 'DESC'];
-export const VALID_MEETUP_STATUS_VALUES: ReadonlySet<string> = new Set(['registered', 'not-registered']);
+export const DEFAULT_MEETUP_SORT_FIELD: MeetupSortField = 'STARTS_AT';
+export const MEETUPS_DISCOVERABLE_UPCOMING_LIMIT = 50;
+export const VALID_MEETUP_SORT_FIELDS: ReadonlySet<MeetupSortField> = new Set<MeetupSortField>(['EVENT_NAME', 'COMMUNITY', 'STARTS_AT', 'LOCATION']);
+export const VALID_MEETUP_SORT_ORDERS: readonly MeetupSortOrder[] = ['ASC', 'DESC'];
+export const VALID_MEETUP_STATUS_VALUES: ReadonlySet<MeetupStatusFilter> = new Set<MeetupStatusFilter>(['registered', 'not-registered']);
 
 /** Default Snowflake schema for OCG meetup views. */
 export const MEETUPS_DEFAULT_SNOWFLAKE_SCHEMA = 'ANALYTICS.PLATINUM_LFX_ONE';

@@ -1,8 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_MEETUPS_PAGE_SIZE, MAX_MEETUPS_PAGE_SIZE, VALID_MEETUP_SORT_ORDERS, VALID_MEETUP_STATUS_VALUES } from '@lfx-one/shared/constants';
-import { GetMyMeetupsOptions, MeetupSortOrder, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
+import {
+  DEFAULT_MEETUPS_PAGE_SIZE,
+  MAX_MEETUPS_PAGE_SIZE,
+  VALID_MEETUP_SORT_FIELDS,
+  VALID_MEETUP_SORT_ORDERS,
+  VALID_MEETUP_STATUS_VALUES,
+} from '@lfx-one/shared/constants';
+import { GetMyMeetupsOptions, MeetupSortField, MeetupSortOrder, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -80,14 +86,18 @@ export class MeetupsController {
   private parseMeetupsOptions(req: Request): GetMyMeetupsOptions {
     const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_MEETUPS_PAGE_SIZE), 10);
     const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
-    const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase() as MeetupSortOrder;
+    const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC')
+      .trim()
+      .toUpperCase();
+    const rawSortField = req.query['sortField'] ? String(req.query['sortField']).trim() : undefined;
     const rawIsPast = req.query['isPast'];
-    const rawStatus = req.query['status'] ? String(req.query['status']) : undefined;
+    const rawStatus = req.query['status'] ? String(req.query['status']).trim().toLowerCase() : undefined;
 
     const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_MEETUPS_PAGE_SIZE ? rawPageSize : DEFAULT_MEETUPS_PAGE_SIZE;
     const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
-    const sortOrder: MeetupSortOrder = VALID_MEETUP_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
-    const status = rawStatus && VALID_MEETUP_STATUS_VALUES.has(rawStatus) ? (rawStatus as MeetupStatusFilter) : undefined;
+    const sortOrder: MeetupSortOrder = this.isMeetupSortOrder(rawSortOrder) ? rawSortOrder : 'ASC';
+    const sortField = rawSortField && this.isMeetupSortField(rawSortField) ? rawSortField : undefined;
+    const status = rawStatus && this.isMeetupStatusFilter(rawStatus) ? rawStatus : undefined;
 
     let isPast: boolean | undefined;
     if (rawIsPast === 'true') {
@@ -102,10 +112,22 @@ export class MeetupsController {
       community: req.query['community'] ? String(req.query['community']).trim() : undefined,
       role: req.query['role'] ? String(req.query['role']).trim() : undefined,
       status,
-      sortField: req.query['sortField'] ? String(req.query['sortField']) : undefined,
+      sortField,
       pageSize,
       offset,
       sortOrder,
     };
+  }
+
+  private isMeetupSortField(value: string): value is MeetupSortField {
+    return VALID_MEETUP_SORT_FIELDS.has(value as MeetupSortField);
+  }
+
+  private isMeetupSortOrder(value: string): value is MeetupSortOrder {
+    return VALID_MEETUP_SORT_ORDERS.includes(value as MeetupSortOrder);
+  }
+
+  private isMeetupStatusFilter(value: string): value is MeetupStatusFilter {
+    return VALID_MEETUP_STATUS_VALUES.has(value as MeetupStatusFilter);
   }
 }

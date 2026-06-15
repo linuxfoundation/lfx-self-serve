@@ -20,6 +20,18 @@ export type MeetupStatusFilter = 'registered' | 'not-registered';
 export type MeetupSortOrder = 'ASC' | 'DESC';
 
 /**
+ * Valid sort fields for meetup queries
+ */
+export type MeetupSortField = 'EVENT_NAME' | 'COMMUNITY' | 'STARTS_AT' | 'LOCATION';
+
+/**
+ * Sort change event emitted by the meetups table
+ */
+export interface MeetupSortChangeEvent {
+  field: MeetupSortField;
+}
+
+/**
  * Meetup item for the My Meetups dashboard
  */
 export interface MyMeetup {
@@ -71,7 +83,7 @@ export interface GetMyMeetupsParams {
   community?: string;
   role?: string;
   status?: MeetupStatusFilter;
-  sortField?: string;
+  sortField?: MeetupSortField;
   pageSize?: number;
   offset?: number;
   sortOrder?: MeetupSortOrder;
@@ -86,7 +98,7 @@ export interface GetMyMeetupsOptions {
   community?: string;
   role?: string;
   status?: MeetupStatusFilter;
-  sortField?: string;
+  sortField?: MeetupSortField;
   pageSize: number;
   offset: number;
   sortOrder: MeetupSortOrder;

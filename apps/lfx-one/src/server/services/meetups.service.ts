@@ -6,6 +6,7 @@ import {
   DEFAULT_MEETUPS_PAGE_SIZE,
   MAX_MEETUPS_PAGE_SIZE,
   MEETUPS_DEFAULT_SNOWFLAKE_SCHEMA,
+  MEETUPS_DISCOVERABLE_UPCOMING_LIMIT,
   MEETUPS_SNOWFLAKE_SCHEMA_PATTERN,
   OCG_MEETUP_BASE_URL,
   VALID_MEETUP_SORT_FIELDS,
@@ -15,7 +16,9 @@ import {
   MeetupFilterOptionsResponse,
   MeetupFilterRow,
   MeetupRow,
+  MeetupSortField,
   MeetupSortOrder,
+  MeetupStatusFilter,
   MyMeetup,
   MyMeetupsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -117,8 +120,8 @@ export class MeetupsService {
     searchQuery: string | undefined,
     community: string | undefined,
     role: string | undefined,
-    status: string | undefined,
-    sortField: string,
+    status: MeetupStatusFilter | undefined,
+    sortField: MeetupSortField,
     sortOrder: MeetupSortOrder,
     pageSize: number,
     offset: number
@@ -161,7 +164,7 @@ export class MeetupsService {
       discoverable AS (
         SELECT *
         FROM ranked_meetups
-        WHERE UPCOMING_RANK <= 50
+        WHERE UPCOMING_RANK <= ${MEETUPS_DISCOVERABLE_UPCOMING_LIMIT}
           OR ROLES IS NOT NULL
       )
       SELECT
@@ -193,7 +196,7 @@ export class MeetupsService {
     searchQuery: string | undefined,
     community: string | undefined,
     role: string | undefined,
-    sortField: string,
+    sortField: MeetupSortField,
     sortOrder: MeetupSortOrder,
     pageSize: number,
     offset: number

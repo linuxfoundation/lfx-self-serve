@@ -4,10 +4,9 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MyMeetupsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
+import { MeetupSortChangeEvent, MeetupSortField, MeetupSortOrder, MyMeetupsResponse, PageChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 
 type MeetupSortAria = 'ascending' | 'descending' | 'none';
-type MeetupSortField = 'EVENT_NAME' | 'COMMUNITY' | 'STARTS_AT' | 'LOCATION';
 
 @Component({
   selector: 'lfx-meetups-table',
@@ -19,10 +18,10 @@ export class MeetupsTableComponent {
   public readonly meetupsResponse = input.required<MyMeetupsResponse>();
   public readonly isPastMeetups = input<boolean>(false);
   public readonly loading = input<boolean>(false);
-  public readonly sortField = input<string>('STARTS_AT');
-  public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
+  public readonly sortField = input<MeetupSortField>('STARTS_AT');
+  public readonly sortOrder = input<MeetupSortOrder>('ASC');
   public readonly pageChange = output<PageChangeEvent>();
-  public readonly sortChange = output<SortChangeEvent>();
+  public readonly sortChange = output<MeetupSortChangeEvent>();
 
   protected readonly statusSeverityMap: Partial<Record<string, TagSeverity>> = {
     Registered: 'info',
@@ -65,7 +64,7 @@ export class MeetupsTableComponent {
     this.pageChange.emit({ offset: event.first, pageSize: event.rows });
   }
 
-  protected onHeaderClick(field: string): void {
+  protected onHeaderClick(field: MeetupSortField): void {
     this.sortChange.emit({ field });
   }
 

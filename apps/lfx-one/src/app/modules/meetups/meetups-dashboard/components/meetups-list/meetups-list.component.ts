@@ -6,10 +6,18 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetupsService } from '@app/shared/services/meetups.service';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { DEFAULT_MEETUPS_PAGE_SIZE, EMPTY_MY_MEETUPS_RESPONSE } from '@lfx-one/shared/constants';
-import { MeetupStatusFilter, MeetupTabId, MyMeetupsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
+import { DEFAULT_MEETUP_SORT_FIELD, DEFAULT_MEETUPS_PAGE_SIZE, EMPTY_MY_MEETUPS_RESPONSE } from '@lfx-one/shared/constants';
+import {
+  MeetupSortChangeEvent,
+  MeetupSortField,
+  MeetupSortOrder,
+  MeetupStatusFilter,
+  MeetupTabId,
+  MyMeetupsResponse,
+  PageChangeEvent,
+} from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, debounceTime, filter, finalize, of, retry, skip, switchMap, throwError, timer } from 'rxjs';
+import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, retry, skip, switchMap, throwError, timer } from 'rxjs';
 
 import { MeetupsTableComponent } from '../meetups-table/meetups-table.component';
 
@@ -37,10 +45,10 @@ export class MeetupsListComponent {
   protected readonly upcomingMeetupsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_MEETUPS_PAGE_SIZE });
   protected readonly pastMeetupsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_MEETUPS_PAGE_SIZE });
 
-  protected readonly upcomingSortField = signal('STARTS_AT');
-  protected readonly upcomingSortOrder = signal<'ASC' | 'DESC'>('ASC');
-  protected readonly pastSortField = signal('STARTS_AT');
-  protected readonly pastSortOrder = signal<'ASC' | 'DESC'>('DESC');
+  protected readonly upcomingSortField = signal<MeetupSortField>(DEFAULT_MEETUP_SORT_FIELD);
+  protected readonly upcomingSortOrder = signal<MeetupSortOrder>('ASC');
+  protected readonly pastSortField = signal<MeetupSortField>(DEFAULT_MEETUP_SORT_FIELD);
+  protected readonly pastSortOrder = signal<MeetupSortOrder>('DESC');
 
   protected readonly upcomingMeetups: Signal<MyMeetupsResponse> = this.initializeUpcomingMeetups();
   protected readonly pastMeetups: Signal<MyMeetupsResponse> = this.initializePastMeetups();
@@ -80,11 +88,11 @@ export class MeetupsListComponent {
     this.pastMeetupsPage.set(event);
   }
 
-  protected onUpcomingSortChange(event: SortChangeEvent): void {
+  protected onUpcomingSortChange(event: MeetupSortChangeEvent): void {
     this.updateSort(event, this.upcomingSortField, this.upcomingSortOrder, this.upcomingMeetupsPage);
   }
 
-  protected onPastSortChange(event: SortChangeEvent): void {
+  protected onPastSortChange(event: MeetupSortChangeEvent): void {
     this.updateSort(event, this.pastSortField, this.pastSortOrder, this.pastMeetupsPage);
   }
 
@@ -100,9 +108,11 @@ export class MeetupsListComponent {
     isPast: boolean,
     pageSignal: WritableSignal<PageChangeEvent>,
     loadingSignal: WritableSignal<boolean>,
-    sortFieldSignal: WritableSignal<string>,
-    sortOrderSignal: WritableSignal<'ASC' | 'DESC'>
+    sortFieldSignal: WritableSignal<MeetupSortField>,
+    sortOrderSignal: WritableSignal<MeetupSortOrder>
   ): Signal<MyMeetupsResponse> {
+    const tabId: MeetupTabId = isPast ? 'past' : 'upcoming';
+
     return toSignal(
       toObservable(
         computed(() => ({
@@ -118,8 +128,11 @@ export class MeetupsListComponent {
         }))
       ).pipe(
         debounceTime(0),
-        filter(({ activeTab }) => activeTab === (isPast ? 'past' : 'upcoming')),
-        switchMap(({ offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }) => {
+        switchMap(({ activeTab, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }) => {
+          if (activeTab !== tabId) {
+            return EMPTY;
+          }
+
           loadingSignal.set(true);
           return this.meetupsService.getMyMeetups({ isPast, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }).pipe(
             retry({
@@ -127,7 +140,7 @@ export class MeetupsListComponent {
               delay: (error: unknown) => (this.isTransientLoadError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
             }),
             catchError(() => {
-              if (this.activeTab() === (isPast ? 'past' : 'upcoming')) {
+              if (this.activeTab() === tabId) {
                 this.showLoadError();
               }
               return of({ ...EMPTY_MY_MEETUPS_RESPONSE, pageSize, offset });
@@ -141,9 +154,9 @@ export class MeetupsListComponent {
   }
 
   private updateSort(
-    event: SortChangeEvent,
-    sortFieldSignal: WritableSignal<string>,
-    sortOrderSignal: WritableSignal<'ASC' | 'DESC'>,
+    event: MeetupSortChangeEvent,
+    sortFieldSignal: WritableSignal<MeetupSortField>,
+    sortOrderSignal: WritableSignal<MeetupSortOrder>,
     pageSignal: WritableSignal<PageChangeEvent>
   ): void {
     if (sortFieldSignal() === event.field) {
