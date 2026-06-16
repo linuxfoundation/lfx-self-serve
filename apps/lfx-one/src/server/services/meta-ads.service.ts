@@ -152,7 +152,6 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   }
 
   // Step 2: Create campaign (PAUSED)
-  const campaignName = buildMetaCampaignName(config);
   const allGeoCountries = config.geoTargets.length > 0 ? config.geoTargets.map((g) => g.toUpperCase()) : ['US'];
 
   // Countries requiring Universal Ads Declaration or regional compliance — exclude from API targeting,
@@ -168,6 +167,8 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   if (skippedGeos.length > 0) {
     steps.push(`Geo targets skipped (require regional compliance declaration in Meta Ads Manager): ${skippedGeos.join(', ')}`);
   }
+
+  const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
   const campaignResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/campaigns`, {
     name: campaignName,

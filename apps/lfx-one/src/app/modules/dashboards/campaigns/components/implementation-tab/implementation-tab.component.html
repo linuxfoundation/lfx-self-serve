@@ -354,7 +354,7 @@
                 @for (variant of metaVariants(); track $index; let i = $index) {
                   <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
                     <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
-                    <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : 125 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
                     <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline }}</p>
                     @if (variant.description) {
                       <p class="text-xs text-gray-500">{{ variant.description }}</p>
