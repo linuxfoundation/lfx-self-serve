@@ -9,7 +9,7 @@ import { concatMap, filter, map, scan, startWith, switchMap, tap } from 'rxjs/op
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
-import { CrowdfundingTransaction, RecurringDonation, RecurringDonationsResponse } from '@lfx-one/shared/interfaces';
+import { CrowdfundingTransaction, RecurringDonation } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
 import { ButtonComponent } from '@components/button/button.component';
@@ -91,8 +91,8 @@ export class RecurringDonationDetailComponent {
       this.route.paramMap.pipe(
         map((params) => params.get('id') ?? ''),
         switchMap((id) =>
-          this.crowdfundingService.getMyRecurringDonations().pipe(
-            map((res: RecurringDonationsResponse) => res.data.find((d) => d.id === id)),
+          this.crowdfundingService.getRecurringDonationById(id).pipe(
+            map((d) => d ?? undefined),
             tap(() => this.isLoading.set(false))
           )
         )
