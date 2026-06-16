@@ -218,12 +218,25 @@ export class AddMemberDialogComponent {
           this.resolvedOrganizationName = result.name;
           this.form.patchValue({ organization_id: result.id || null, organization: result.name });
         }
-        fanOut(buildCommitteeOrganizationPayload(this.form.getRawValue()));
+        fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
       });
       return;
     }
 
     fanOut(undefined);
+  }
+
+  private organizationFormValue(): {
+    organization: string;
+    organization_url: string;
+    organization_id: string | null;
+  } {
+    const raw = this.form.getRawValue();
+    return {
+      organization: raw.organization ?? '',
+      organization_url: raw.organization_url ?? '',
+      organization_id: raw.organization_id,
+    };
   }
 
   private summarize(results: CommitteeInviteResult[]): void {

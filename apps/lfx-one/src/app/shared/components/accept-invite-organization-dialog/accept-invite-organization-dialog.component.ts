@@ -73,7 +73,12 @@ export class AcceptInviteOrganizationDialogComponent {
     const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : null;
 
     const finish = (): void => {
-      const organization = buildCommitteeOrganizationPayload(this.form.getRawValue());
+      const raw = this.form.getRawValue();
+      const organization = buildCommitteeOrganizationPayload({
+        organization: raw.organization ?? '',
+        organization_url: raw.organization_url ?? '',
+        organization_id: raw.organization_id,
+      });
       if (!organization?.name?.trim()) {
         this.submitting = false;
         return;

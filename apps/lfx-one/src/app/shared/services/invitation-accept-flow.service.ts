@@ -64,6 +64,10 @@ export class InvitationAcceptFlowService {
       } satisfies AcceptInviteOrganizationDialogData,
     });
 
+    if (!ref) {
+      return Promise.resolve(null);
+    }
+
     return new Promise((resolve) => {
       ref.onClose.subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
