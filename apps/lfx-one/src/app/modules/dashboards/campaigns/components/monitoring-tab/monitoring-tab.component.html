@@ -497,7 +497,7 @@
                     </td>
                     <td class="px-4 py-3 text-xs text-gray-500">
                       @if (camp.startDate) {
-                        {{ camp.startDate }} → {{ camp.endDate }}
+                        {{ camp.startDate }} → {{ camp.endDate || 'Ongoing' }}
                       } @else {
                         —
                       }
@@ -643,7 +643,7 @@
                     </td>
                     <td class="px-4 py-3 text-xs text-gray-500">
                       @if (camp.startDate) {
-                        {{ camp.startDate }} → {{ camp.endDate }}
+                        {{ camp.startDate }} → {{ camp.endDate || 'Ongoing' }}
                       } @else {
                         —
                       }
@@ -788,7 +788,7 @@
                     </td>
                     <td class="px-4 py-3 text-xs text-gray-500">
                       @if (camp.startDate) {
-                        {{ camp.startDate }} → {{ camp.endDate }}
+                        {{ camp.startDate }} → {{ camp.endDate || 'Ongoing' }}
                       } @else {
                         —
                       }

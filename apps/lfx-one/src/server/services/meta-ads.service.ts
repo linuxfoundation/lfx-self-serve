@@ -69,7 +69,7 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
 
   const conversions = (insight?.actions ?? [])
     .filter((a) => a.action_type === 'purchase' || a.action_type === 'lead')
-    .reduce((sum, a) => sum + parseInt(a.value, 10), 0);
+    .reduce((sum, a) => sum + (parseInt(a.value, 10) || 0), 0);
 
   const dailyBudget = parseFloat(camp.daily_budget ?? '0') / 100;
   const lifetimeBudget = parseFloat(camp.lifetime_budget ?? '0') / 100;
