@@ -3,7 +3,7 @@
 
 import { LowerCasePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -17,14 +17,16 @@ import {
   MAILING_LIST_VISIBILITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
-import { CommitteeReference, GroupsIOMailingList, ProjectContext } from '@lfx-one/shared/interfaces';
+import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+
+import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
 
@@ -82,13 +84,7 @@ export class MailingListViewComponent {
   public readonly editRoute: Signal<string[]> = this.initEditRoute();
 
   public constructor() {
-    toObservable(this.mailingList)
-      .pipe(
-        filter((ml): ml is GroupsIOMailingList => !!ml?.project_uid && !!ml.project_slug),
-        distinctUntilChanged((a, b) => a.uid === b.uid),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((ml) => this.syncProjectContextFromMailingList(ml));
+    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef);
   }
 
   public refreshData(): void {
@@ -184,16 +180,4 @@ export class MailingListViewComponent {
     });
   }
 
-  private syncProjectContextFromMailingList(ml: GroupsIOMailingList): void {
-    const context: ProjectContext = {
-      uid: ml.project_uid,
-      name: ml.project_name || ml.project_slug,
-      slug: ml.project_slug,
-    };
-    if (this.router.url.startsWith('/foundation/')) {
-      this.projectContextService.setFoundation(context);
-    } else {
-      this.projectContextService.setProject(context);
-    }
-  }
 }
