@@ -58,7 +58,7 @@ const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Builds grouped period options: presets first, then individual months. */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
   const now = new Date();
-  const currentYear = now.getFullYear();
+  const currentYear = now.getUTCFullYear();
   const presets: MarketingImpactPeriodOption[] = [
     { label: `Year to Date (${currentYear})`, value: 'ytd' },
     { label: 'Last 3 months', value: 'last-3' },
@@ -67,9 +67,9 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
 
   const months: MarketingImpactPeriodOption[] = [];
   for (let i = 1; i <= MONTH_COUNT; i++) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
     months.push({ label, value });
   }
 
