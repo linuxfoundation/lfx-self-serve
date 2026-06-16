@@ -122,6 +122,7 @@ export interface CampaignBriefOutput {
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
+  metaCopy?: MetaBriefCopy;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,46 @@ export interface RedditCampaignCreateResult {
   steps: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Meta Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+export interface MetaAdVariant {
+  primaryText: string;
+  headline: string;
+  description?: string;
+}
+
+export interface MetaBriefCopy {
+  variants: MetaAdVariant[];
+  recommendedGeos: string[];
+}
+
+export interface MetaCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  startDate: string;
+  endDate: string;
+  geoTargets: string[];
+  variants: MetaAdVariant[];
+  project?: string;
+}
+
+export interface MetaCampaignCreateResult {
+  platform: 'meta-ads';
+  campaignName: string;
+  campaignId: string;
+  adSetName: string;
+  adSetId: string;
+  adCount: number;
+  metaUrl: string;
+  steps: string[];
+}
+
 export interface CampaignBriefRefineRequest {
   currentCopy: Record<string, unknown>;
   currentKeywords: CampaignKeyword[];
@@ -307,6 +348,7 @@ export interface CampaignCreateRequest {
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
+  metaConfig?: MetaCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {

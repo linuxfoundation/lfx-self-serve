@@ -12,6 +12,7 @@ import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
+  META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { map, startWith, Subscription, take } from 'rxjs';
@@ -28,6 +29,7 @@ import type {
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  MetaAdVariant,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -51,6 +53,7 @@ export class ImplementationTabComponent implements OnInit {
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
+  protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -94,11 +97,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  protected readonly metaVariants = signal<MetaAdVariant[]>([]);
+  protected readonly metaGeoTargets = signal<string[]>([]);
+  protected readonly metaBudgetUsd = signal(500);
+  protected readonly metaLifetimeBudget = signal(false);
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
+  protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -109,7 +117,8 @@ export class ImplementationTabComponent implements OnInit {
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');
     const redditSelected = platforms.includes('reddit-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected) return false;
+    const metaSelected = platforms.includes('meta-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -120,6 +129,8 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    if (metaSelected && this.metaVariants().length === 0) return false;
     return true;
   });
 
@@ -251,6 +262,14 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onMetaBudgetInput(event: Event): void {
+    this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
+  protected onMetaLifetimeBudgetChange(event: Event): void {
+    this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 
@@ -317,6 +336,23 @@ export class ImplementationTabComponent implements OnInit {
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
+              project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
+      ...(platforms.includes('meta-ads')
+        ? {
+            metaConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.metaBudgetUsd(),
+              lifetimeBudget: this.metaLifetimeBudget(),
+              startDate: form.startDate,
+              endDate: form.endDate,
+              geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
+              variants: this.metaVariants(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -414,6 +450,23 @@ export class ImplementationTabComponent implements OnInit {
       this.redditInterests.set(brief.redditCopy.recommendedInterests);
       this.redditKeywords.set(brief.redditCopy.recommendedKeywords);
       this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
+    }
+
+    const metaCopy = brief.structuredCopy?.['meta_ads'] as Record<string, unknown> | undefined;
+    if (metaCopy) {
+      const variants = (metaCopy['variants'] as { primary_text?: string; headline?: string; description?: string }[]) ?? [];
+      this.metaVariants.set(
+        variants.map((v) => ({
+          primaryText: v.primary_text ?? '',
+          headline: v.headline ?? '',
+          description: v.description,
+        }))
+      );
+      this.metaGeoTargets.set((metaCopy['recommended_geos'] as string[]) ?? []);
+    }
+    if (brief.metaCopy) {
+      this.metaVariants.set(brief.metaCopy.variants);
+      this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
     }
 
     this.briefKeywords.set(brief.keywords);

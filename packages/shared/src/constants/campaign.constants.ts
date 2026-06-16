@@ -22,7 +22,7 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
-  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
+  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
@@ -112,6 +112,12 @@ export const LINKEDIN_API_VERSION = '202602';
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
+} as const;
+
+export const META_CHAR_LIMITS = {
+  primaryText: 125,
+  headline: 40,
+  description: 30,
 } as const;
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
