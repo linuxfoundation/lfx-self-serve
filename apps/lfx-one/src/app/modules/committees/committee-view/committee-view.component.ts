@@ -49,6 +49,7 @@ import { DescriptionDialogComponent } from '../components/description-dialog/des
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
@@ -262,6 +263,8 @@ export class CommitteeViewComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
     }
+
+    syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
 
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
@@ -500,6 +503,7 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+
   /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
   private flushDecline(inviteUid: string): void {
     const pending = this.pendingDeclines.get(inviteUid);

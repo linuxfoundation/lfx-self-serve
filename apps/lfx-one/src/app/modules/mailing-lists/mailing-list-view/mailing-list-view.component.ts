@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -21,9 +21,12 @@ import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfa
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+
+import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
 
@@ -49,6 +52,8 @@ export class MailingListViewComponent {
   private readonly router = inject(Router);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Back-navigation label injected from router state at navigation time
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
@@ -77,6 +82,10 @@ export class MailingListViewComponent {
   public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
   public readonly groupsIoUrl: Signal<string | null> = this.initGroupsIoUrl();
   public readonly editRoute: Signal<string[]> = this.initEditRoute();
+
+  public constructor() {
+    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef);
+  }
 
   public refreshData(): void {
     this.refresh.next();
