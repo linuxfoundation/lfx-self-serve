@@ -89,7 +89,7 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 | **`sub`** (Auth0 subject)      | `auth0\|lguerra` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                                             |
 | **`username`** (LFID username) | `lguerra`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username`, `user.preferred_username` |
 
-- **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse it, and never display it as if it were a username. Stripping the connection prefix is misleading: the bare value only coincidentally matches the LFID handle today and is not guaranteed to, so a stripped `sub` is not a substitute for `username`. A few call sites still pass the prefixed `sub` upstream during the migration window — e.g. `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)`.
+- **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse it, and never display it as if it were a username. Stripping the connection prefix is misleading: the bare value only coincidentally matches the LFID handle today and is not guaranteed to, so a stripped `sub` is not a substitute for `username`. One call site still passes the prefixed `sub` — `badges.controller.ts` resolves verified emails via the auth-service using `getEffectiveSub(req)` — but that auth-service lookup also accepts a username or email, so no upstream actually requires the prefixed `sub` today.
 - **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim.
 
 ### ID token vs access token — where the claims actually live
@@ -121,25 +121,24 @@ Object.assign(auth.user, {
 
 ### When to use which
 
-| Use case                                                                                                         | Use          |
-| ---------------------------------------------------------------------------------------------------------------- | ------------ |
-| Calling an upstream microservice / query-service API that keys on the LF login handle                            | **username** |
-| Persisting an author/owner/creator (`creator_id`, role grants, changelog viewer)                                 | **username** |
-| Analytics / observability user identity (DataDog RUM, OpenFeature targeting key)                                 | **username** |
-| Per-caller cache keys for user-scoped data                                                                       | **username** |
-| Resolving verified emails via the auth-service, which still indexes on the prefixed sub (`badges.controller.ts`) | **sub**      |
+| Use case                                                                              | Use          |
+| ------------------------------------------------------------------------------------- | ------------ |
+| Calling an upstream microservice / query-service API that keys on the LF login handle | **username** |
+| Persisting an author/owner/creator (`creator_id`, role grants, changelog viewer)      | **username** |
+| Analytics / observability user identity (DataDog RUM, OpenFeature targeting key)      | **username** |
+| Per-caller cache keys for user-scoped data                                            | **username** |
 
-> **Default to `username`.** `sub` has been phased out of backend identity references — see the migration note below.
+> **Default to `username`.** `sub` has been phased out of backend identity references and no upstream currently requires it — see the migration note below.
 
 ### Server-side helpers (impersonation-aware)
 
 Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.ts`, never directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise.
 
-| Helper                      | Returns                                                            | Status                                                                              |
-| --------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                       |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — only for call sites whose upstream still wants the prefixed sub |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                             |
+| Helper                      | Returns                                                            | Status                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                                                          |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — its lone remaining caller (badges email lookup) passes `sub` incidentally; no upstream requires it |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                                                                |
 
 ### Migration: `sub` → `username`
 
@@ -147,9 +146,10 @@ Backend identity references have migrated from the Auth0 `sub` to the LFID `user
 
 - **Front-end (ID token):** DataDog RUM `id`, OpenFeature `targetingKey`, and survey `creator_id` now read `https://sso.linuxfoundation.org/claims/username` (OpenFeature no longer falls back to `sub` — existing LaunchDarkly rules keyed on sub values need updating before deploy).
 - **BFF call sites:** `getEffectiveSub` → `getEffectiveUsername` in changelog, copilot, org-identity, org-navigation, org-lens-access, and org-membership cache keys; `project.service.ts` uses `resolveEmailToUsername` (not `resolveEmailToSub`) for permission and user-info lookups against the plain-LFID `b2b_org_settings` index.
-- **`getEffectiveSub`** is annotated `@deprecated` in `auth-helper.ts` and remains only where upstream still requires the prefixed sub (e.g. badges email lookup via auth-service).
+- **Upstream matching:** the platform authorization proxy (Heimdall) derives the FGA principal from the access token's username attribute (falling back to `client_id@clients` for M2M), not `sub` — so the Go microservices authorize on the LFID handle.
+- **`getEffectiveSub`** is annotated `@deprecated` in `auth-helper.ts`; its only remaining caller is the badges email lookup, which passes `sub` to the auth-service incidentally (that lookup also accepts a username or email) — a cleanup candidate, not an upstream requirement.
 
-When adding new code, use `username` unless the specific upstream handler still requires the prefixed sub — and if so, note why inline.
+When adding new code, use `username`. No upstream currently requires the prefixed `sub`; if you ever hit one that does, use `getEffectiveSub` and note why inline.
 
 ## 🏗 Server-Side Implementation
 
