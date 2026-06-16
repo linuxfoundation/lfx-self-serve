@@ -115,7 +115,7 @@ import {
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import type { PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -1982,7 +1982,7 @@ export class ProjectService {
       const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // Query 1: Total sessions & page views per domain classification
       // Uses pre-computed _LAST_30_DAYS columns — cannot be month-filtered
@@ -2071,7 +2071,7 @@ export class ProjectService {
       const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // Query 1: KPI card — current CTR fallback from email_ctr_summary
       // Uses pre-computed CTR_LAST_COMPLETED_MONTH — cannot be month-filtered
@@ -2371,7 +2371,7 @@ export class ProjectService {
       const foundationParams = isUmbrella ? [] : [foundationSlug];
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // Block 1: Total impressions, spend, revenue (period range)
       // Uses LAST_TOUCH_REVENUE as the default attribution model across all blocks
@@ -2822,7 +2822,7 @@ export class ProjectService {
       const isUmbrella = foundationSlug === 'tlf';
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       const channelQuery = isUmbrella
         ? `
@@ -3151,7 +3151,7 @@ export class ProjectService {
       const isUmbrella = foundationSlug === 'tlf';
       const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
       const foundationParams = isUmbrella ? [] : [foundationSlug];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // Query 1: KPI cards — total followers, platforms, growth (aggregated)
       // Uses pre-computed columns — cannot be month-filtered
@@ -5084,7 +5084,7 @@ export class ProjectService {
       const isUmbrella = foundationSlug === 'tlf';
       const sovFilter = isUmbrella ? '' : 'WHERE FOUNDATION_SLUG = ?';
       const sovParams = isUmbrella ? [] : [foundationSlug];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // SHARE_OF_VOICE has per-platform rows with raw mention counts and sentiment percentages
       // Uses pre-computed _30D columns — cannot be month-filtered
@@ -5115,7 +5115,6 @@ export class ProjectService {
           AND MONTH_START_DATE < TO_DATE(?)
         GROUP BY MONTH_START_DATE
         ORDER BY MONTH_START_DATE DESC
-        LIMIT 6
       `
         : `
         SELECT MONTH_START_DATE, MENTION_COUNT
@@ -5124,7 +5123,6 @@ export class ProjectService {
           AND MONTH_START_DATE >= TO_DATE(?)
           AND MONTH_START_DATE < TO_DATE(?)
         ORDER BY MONTH_START_DATE DESC
-        LIMIT 6
       `;
 
       // Uses pre-computed _30D columns — cannot be month-filtered
@@ -5283,7 +5281,7 @@ export class ProjectService {
       const isUmbrella = foundationSlug === 'tlf';
       const classificationFilter = classification ? 'AND LF_SUB_DOMAIN_CLASSIFICATION = ?' : '';
       const classificationParams = classification ? [classification] : [];
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       // PIPELINE_SUMMARY uses pre-computed _YTD columns — cannot be month-filtered
       const pipelineQuery = isUmbrella
@@ -5375,7 +5373,6 @@ export class ProjectService {
           ${classificationFilter}
         GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
-        LIMIT 6
       `
         : `
         SELECT CAMPAIGN_MONTH,
@@ -5390,7 +5387,6 @@ export class ProjectService {
           ${classificationFilter}
         GROUP BY CAMPAIGN_MONTH
         ORDER BY CAMPAIGN_MONTH DESC
-        LIMIT 6
       `;
 
       // Per-project per-channel impressions — period range
@@ -6193,7 +6189,7 @@ export class ProjectService {
 
     try {
       const { filterAnd: foundationFilter, params: foundationParams } = buildFoundationFilter(foundationSlug);
-      const resolved = period ?? resolvePeriodRange(new Date().toISOString().slice(0, 7))!;
+      const resolved = period ?? this.defaultPeriodRange();
 
       const perfQuery = `
       WITH top_keywords AS (
@@ -6476,6 +6472,14 @@ export class ProjectService {
     });
 
     return { totalProjectsBySlug, totalMembersBySlug, totalValueBySlug, healthScoresBySlug };
+  }
+
+  private defaultPeriodRange(): ResolvedPeriodRange {
+    const resolved = resolvePeriodRange(getDefaultMarketingImpactMonth());
+    if (!resolved) {
+      throw new ServiceValidationError([{ field: 'period', message: 'Unable to resolve default period range', code: 'INVALID_PERIOD' }]);
+    }
+    return resolved;
   }
 
   private getRangeSuffix(range: string, convention: string = 'standard'): string {
