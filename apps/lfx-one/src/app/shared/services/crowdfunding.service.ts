@@ -74,8 +74,9 @@ export class CrowdfundingService {
   }
 
   public getRecurringDonationById(id: string): Observable<RecurringDonation | null> {
+    if (!id.trim()) return of(null);
     return this.http
-      .get<RecurringDonation>(`/api/crowdfunding/recurring-donations/${encodeURIComponent(id)}`)
+      .get<RecurringDonation>(`/api/crowdfunding/recurring-donations/${encodeURIComponent(id.trim())}`)
       .pipe(catchError(this.handleCfError(null, 'getRecurringDonationById')));
   }
 

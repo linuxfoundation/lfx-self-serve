@@ -287,8 +287,8 @@ export class CrowdfundingService {
     const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
 
     const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
-    if (!raw) {
-      logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId });
+    if (!raw || raw.status === 'canceled') {
+      logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId, status: raw?.status });
       return null;
     }
 
