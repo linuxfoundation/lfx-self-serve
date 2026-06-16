@@ -86,6 +86,12 @@ export class ProjectContextService {
 
   /** Writes ?project= into the URL once after the initial navigation completes, reflecting any cookie-restored selection. */
   private syncUrlAfterInitialNavigation(): void {
+    // Initial navigation may already be done by the time this service is injected — sync immediately so the cookie-restored param isn't skipped.
+    if (this.router.navigated) {
+      this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+      return;
+    }
+
     this.router.events
       .pipe(
         filter((e): e is NavigationEnd => e instanceof NavigationEnd),
@@ -109,7 +115,7 @@ export class ProjectContextService {
       const raw = this.cookieService.get(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<ProjectContext> | null;
-      if (parsed && typeof parsed === 'object' && typeof parsed.uid === 'string' && typeof parsed.slug === 'string') {
+      if (parsed && typeof parsed === 'object' && typeof parsed.uid === 'string' && typeof parsed.name === 'string' && typeof parsed.slug === 'string') {
         return parsed as ProjectContext;
       }
       return null;
