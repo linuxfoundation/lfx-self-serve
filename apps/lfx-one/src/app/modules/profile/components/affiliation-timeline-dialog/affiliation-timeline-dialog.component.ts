@@ -240,9 +240,11 @@ export class AffiliationTimelineDialogComponent {
       }
     }
 
-    // weWindows are final here; precompute the header range label once (it never changes after build).
+    // weWindows are final here. Sort each org's stints chronologically so seeded period rows
+    // (and their windowIndex) are deterministic, then precompute the header range label once.
     const orgs = Array.from(orgMap.values());
     for (const org of orgs) {
+      org.weWindows.sort((a, b) => this.parseWeDate(a.startDate) - this.parseWeDate(b.startDate));
       org.rangeLabel = this.buildRangeLabel(org.weWindows);
     }
     return orgs;
@@ -387,18 +389,31 @@ export class AffiliationTimelineDialogComponent {
     return this.yearOptions.filter((y) => allowedYears.has(parseInt(y.value, 10)));
   }
 
-  // Infer which stint window a period belongs to from the first year the user picks (start, else end).
-  // Assumes stints don't overlap in years; if they did, the earliest matching stint wins.
+  // Infer which stint window a manually-added period belongs to, from the point the user picks
+  // (start, else end). Matches on the month+year timestamp when a month is set, otherwise on the
+  // year span. If the point is ambiguous (matches multiple stints, e.g. two stints sharing a
+  // calendar year), stay unrestricted until the user provides a disambiguating month/year.
   private inferWindowForPeriod(period: AffiliationEditPeriod, windows: AffiliationWorkWindow[], currentYear: number): AffiliationWorkWindow | undefined {
-    const selectedYear = period.startYear || period.endYear;
+    const usingStart = !!period.startYear;
+    const selectedYear = usingStart ? period.startYear : period.endYear;
     if (!selectedYear) {
       return undefined;
     }
+    const selectedMonth = usingStart ? period.startMonth : period.endMonth;
     const yr = parseInt(selectedYear, 10);
-    return windows.find((window) => {
+    const ts = selectedMonth ? this.periodToTimestamp(selectedMonth, selectedYear) : null;
+
+    const matches = windows.filter((window) => {
+      if (ts !== null) {
+        const windowStartTs = this.parseWeDate(window.startDate);
+        const windowEndTs = window.endDate ? this.parseWeDate(window.endDate) : Date.now();
+        return ts >= windowStartTs && ts <= windowEndTs;
+      }
       const { startYear, endYear } = this.windowYearBounds(window, currentYear);
       return yr >= startYear && yr <= endYear;
     });
+
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   private initPeriodErrorsMap(): Signal<Map<string, AffiliationPeriodErrors>> {
