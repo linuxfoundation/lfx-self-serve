@@ -3,6 +3,7 @@
 
 import type {
   CampaignGoalOption,
+  CampaignPlatform,
   CampaignPlatformOption,
   CampaignStatus,
   CampaignTabOption,
@@ -40,12 +41,11 @@ export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**
- * Upper-bound thresholds for each pacing label (percentage of budget spent).
- * A campaign's pacingPct falls into the first bucket whose threshold it does not exceed:
+ * Pacing thresholds (percentage of budget spent).
  *   pacingPct < 50  → underspending
- *   pacingPct < 90  → normal
- *   pacingPct < 100 → constrained
- *   pacingPct ≥ 100 → overspending (130 marks severe overspending)
+ *   pacingPct <= 90 → normal
+ *   pacingPct <= 100 → constrained
+ *   pacingPct > 100 → overspending (130 marks severe)
  */
 export const CAMPAIGN_PACING_THRESHOLDS = {
   underspending: 50,
@@ -54,11 +54,18 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   overspending: 130,
 } as const;
 
-export const PLATFORM_BRAND_COLORS: Record<string, string> = {
+export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> = {
+  'google-ads': '#4285F4',
   'linkedin-ads': '#0077B5',
   'reddit-ads': '#FF4500',
   'meta-ads': '#1877F2',
-} as const;
+  'microsoft-ads': '#00A4EF',
+  'brave-ads': '#FB542B',
+  'feathr': '#6366F1',
+  'twitter-ads': '#000000',
+};
+
+export const PLATFORM_DEFAULT_COLOR = '#6B7280';
 
 export const CAMPAIGN_CHAR_LIMITS = {
   searchHeadline: 30,

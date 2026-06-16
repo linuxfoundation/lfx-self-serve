@@ -80,8 +80,8 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
 
   let pacingLabel: MetaPacingLabel = 'normal';
   if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) pacingLabel = 'underspending';
-  else if (pacingPct >= CAMPAIGN_PACING_THRESHOLDS.constrained) pacingLabel = 'overspending';
-  else if (pacingPct >= CAMPAIGN_PACING_THRESHOLDS.normal) pacingLabel = 'constrained';
+  else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.constrained) pacingLabel = 'overspending';
+  else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.normal) pacingLabel = 'constrained';
 
   return {
     campaignId: camp.id,
@@ -185,6 +185,10 @@ export async function getMetaAnalytics(req: Request, accountId: string, days: nu
   // response.paging.next will be added when account size approaches this limit.
   const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&limit=100`;
   const response = await metaRequest<MetaCampaignsApiResponse>(path);
+
+  if (response.paging?.next) {
+    logger.warning(req, 'meta_analytics', 'Meta API returned pagination; some campaigns may be missing', { accountId });
+  }
 
   const allCampaigns = response.data ?? [];
   const campaigns = allCampaigns.map((c) => buildCampaignMetrics(c, days)).filter((c) => c.impressions > 0 || c.status === 'ACTIVE');

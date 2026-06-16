@@ -3,6 +3,6 @@
 
 export const META_BASE_URL = 'https://graph.facebook.com/v25.0';
 
-export const META_ACCOUNTS: readonly { accountId: string; label: string }[] = [{ accountId: 'act_193556282970417', label: 'LF Core' }] as const;
+export const META_ACCOUNTS: readonly { accountId: string; label: string }[] = [{ accountId: 'act_193556282970417', label: 'LF Core' }];
 
 export const META_REQUEST_TIMEOUT_MS = 30_000;

@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS, PLATFORM_DEFAULT_COLOR } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
 import type {
@@ -455,7 +455,7 @@ export class MonitoringTabComponent implements OnInit {
     return `${value.toFixed(2)}%`;
   }
 
-  protected platformBrandColor(platform: string): string {
-    return PLATFORM_BRAND_COLORS[`${platform}-ads`] ?? '#6B7280';
+  protected platformBrandColor(platform: PlatformType): string {
+    return PLATFORM_BRAND_COLORS[`${platform}-ads`] ?? PLATFORM_DEFAULT_COLOR;
   }
 }
