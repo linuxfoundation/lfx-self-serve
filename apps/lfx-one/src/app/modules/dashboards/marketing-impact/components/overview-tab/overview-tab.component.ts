@@ -82,7 +82,7 @@ export class OverviewTabComponent {
     return computed(() => {
       const data = this.overviewKpiData();
       const isMonth = isPeriodMonth(this.selectedPeriod());
-      const changeSuffix = isMonth ? 'MoM' : 'Period';
+      const changeSuffix: 'MoM' | 'Period' = isMonth ? 'MoM' : 'Period';
       const cards: PerformanceSummaryKpi[] = [];
 
       if (data.revenueImpact) {
@@ -130,7 +130,7 @@ export class OverviewTabComponent {
           icon: 'fa-light fa-globe',
           iconClass: 'bg-violet-100 text-violet-600',
           value: formatNumber(br.totalMonthlySessions),
-          momChange: formatChangePct(momPct, changeSuffix),
+          momChange: formatChangePct(momPct, 'MoM'),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),
           yoyChange: null,
@@ -195,7 +195,7 @@ export class OverviewTabComponent {
       const yoyLabel = priorYear.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
       const name = this.foundationName();
-      const foundation = name ? name : 'all LF projects';
+      const foundation = name || 'all LF projects';
       return `vs. ${momLabel} (MoM) · vs. ${yoyLabel} (YoY) · Linear attribution · ${foundation}`;
     });
   }
