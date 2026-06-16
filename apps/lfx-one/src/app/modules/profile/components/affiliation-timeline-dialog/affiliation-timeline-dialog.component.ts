@@ -265,7 +265,7 @@ export class AffiliationTimelineDialogComponent {
     const startParts = window.startDate ? window.startDate.split(' ') : [];
     const endParts = window.endDate ? window.endDate.split(' ') : [];
     return {
-      id: `period-${Date.now()}-${index}`,
+      id: `period-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
       startMonth: startParts[0] || '',
       startYear: startParts[1] || '',
       endMonth: endParts[0] || '',
@@ -363,6 +363,7 @@ export class AffiliationTimelineDialogComponent {
   }
 
   // Infer which stint window a period belongs to from the first year the user picks (start, else end).
+  // Assumes stints don't overlap in years; if they did, the earliest matching stint wins.
   private inferWindowForPeriod(period: AffiliationEditPeriod, windows: AffiliationWorkWindow[], currentYear: number): AffiliationWorkWindow | undefined {
     const selectedYear = period.startYear || period.endYear;
     if (!selectedYear) {
@@ -396,10 +397,9 @@ export class AffiliationTimelineDialogComponent {
           continue;
         }
         const earliestStart = [...org.weWindows].sort((a, b) => this.parseWeDate(a.startDate) - this.parseWeDate(b.startDate))[0].startDate;
-        const hasOngoing = org.weWindows.some((w) => !w.endDate);
-        const latestEnd = hasOngoing
-          ? 'Present'
-          : [...org.weWindows].sort((a, b) => this.parseWeDate(b.endDate as string) - this.parseWeDate(a.endDate as string))[0].endDate;
+        const endedWindows = org.weWindows.filter((w): w is Required<AffiliationWorkWindow> => !!w.endDate);
+        const ongoing = endedWindows.length < org.weWindows.length;
+        const latestEnd = ongoing ? 'Present' : [...endedWindows].sort((a, b) => this.parseWeDate(b.endDate) - this.parseWeDate(a.endDate))[0].endDate;
         map.set(org.organization, `${earliestStart} – ${latestEnd}`);
       }
       return map;
