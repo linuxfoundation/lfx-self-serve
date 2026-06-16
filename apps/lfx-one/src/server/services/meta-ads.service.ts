@@ -161,11 +161,11 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   const geoCountries = allGeoCountries.filter((g) => !REGULATED_COUNTRIES.has(g));
   const skippedGeos = allGeoCountries.filter((g) => REGULATED_COUNTRIES.has(g));
   if (geoCountries.length === 0) {
-    geoCountries.push('US');
-    steps.push(
-      `All requested geos (${skippedGeos.join(', ')}) require regional compliance — defaulting to US targeting. Add regulated geos manually in Meta Ads Manager.`
+    throw new Error(
+      `Meta campaign skipped: selected geo targets (${skippedGeos.join(', ')}) require manual compliance declaration in Meta Ads Manager. Add at least one non-regulated country or complete the declaration first.`
     );
-  } else if (skippedGeos.length > 0) {
+  }
+  if (skippedGeos.length > 0) {
     steps.push(`Geo targets skipped (require regional compliance declaration in Meta Ads Manager): ${skippedGeos.join(', ')}`);
   }
 
