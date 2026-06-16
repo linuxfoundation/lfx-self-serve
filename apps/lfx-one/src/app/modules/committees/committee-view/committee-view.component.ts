@@ -425,6 +425,7 @@ export class CommitteeViewComponent {
         organization: invite.organization,
         enable_voting: invite.enable_voting,
         business_email_required: invite.business_email_required,
+        inviteRequiresOrganization: requiresOrganization,
       })
       .pipe(take(1))
       .subscribe({

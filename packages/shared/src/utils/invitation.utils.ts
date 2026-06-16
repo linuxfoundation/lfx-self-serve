@@ -3,7 +3,7 @@
 
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constants/pending-action.constants';
 import { PendingActionItem } from '../interfaces/components.interface';
-import { CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
+import type { CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
 
 /** Raw organization form values shared by invite-create and invite-accept dialogs. */
 export interface CommitteeOrganizationFormValue {
@@ -40,12 +40,12 @@ export function invitationRequiresOrganization(flags: {
 export function buildCommitteeOrganizationPayload(
   formValue: Pick<CommitteeOrganizationFormValue, 'organization' | 'organization_url' | 'organization_id'>
 ): CommitteeOrganizationReference | null {
-  if (formValue.organization || formValue.organization_url || formValue.organization_id) {
-    return {
-      id: formValue.organization_id || null,
-      name: formValue.organization || null,
-      website: formValue.organization_url || null,
-    };
+  const name = formValue.organization?.trim() || null;
+  const website = formValue.organization_url?.trim() || null;
+  const id = formValue.organization_id?.trim() || null;
+
+  if (name || website || id) {
+    return { id, name, website };
   }
   return null;
 }

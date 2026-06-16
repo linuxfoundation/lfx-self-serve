@@ -167,7 +167,7 @@ export interface CreateCommitteeInviteRequest {
   invitee_email: string;
   /** Suggested role for the invitee (optional) */
   role?: string | null;
-  /** Suggested organization for the invitee (required when committee has voting or business-email rules) */
+  /** Suggested default organization for the invitee (optional; pre-fills the accept flow when committee has voting or business-email rules) */
   organization?: CommitteeOrganizationReference | null;
 }
 

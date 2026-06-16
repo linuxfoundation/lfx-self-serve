@@ -149,6 +149,28 @@ describe('buildCommitteeOrganizationPayload', () => {
       })
     ).toBeNull();
   });
+
+  it('trims whitespace and treats whitespace-only values as empty', () => {
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: '  Acme Corp  ',
+        organization_url: '  https://acme.example  ',
+        organization_id: '  org-1  ',
+      })
+    ).toEqual({
+      id: 'org-1',
+      name: 'Acme Corp',
+      website: 'https://acme.example',
+    });
+
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: '   ',
+        organization_url: '',
+        organization_id: null,
+      })
+    ).toBeNull();
+  });
 });
 
 describe('buildInvitationSubtext', () => {

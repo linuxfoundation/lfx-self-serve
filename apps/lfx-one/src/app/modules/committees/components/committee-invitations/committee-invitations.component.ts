@@ -85,6 +85,7 @@ export class CommitteeInvitationsComponent {
         organization: invitation.organization,
         enable_voting: invitation.enable_voting,
         business_email_required: invitation.business_email_required,
+        inviteRequiresOrganization: requiresOrganization,
       })
       .pipe(take(1))
       .subscribe({

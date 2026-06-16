@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
@@ -72,7 +72,8 @@ export class AddMemberDialogComponent {
   private resolvedOrganizationName = '';
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
-  public readonly organizationRequired = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
+  /** True when the committee requires organization on accept — shows an optional default org field. */
+  public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
@@ -108,15 +109,7 @@ export class AddMemberDialogComponent {
     }
     return result;
   });
-  public readonly canSubmit = computed(() => {
-    if (this.submitting() || this.categorized().toInvite.length === 0) {
-      return false;
-    }
-    if (this.organizationRequired()) {
-      return !!this.form.get('organization')?.value?.trim();
-    }
-    return true;
-  });
+  public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -132,10 +125,6 @@ export class AddMemberDialogComponent {
   public readonly roleOptions = MEMBER_ROLES;
 
   public constructor() {
-    if (this.committee && committeeRequiresOrganization(this.committee)) {
-      this.form.get('organization')?.setValidators([Validators.required]);
-    }
-
     this.form
       .get('organization')!
       .valueChanges.pipe(takeUntilDestroyed())
@@ -177,13 +166,6 @@ export class AddMemberDialogComponent {
       return;
     }
 
-    if (this.organizationRequired()) {
-      this.form.get('organization')?.markAsTouched();
-      if (!this.form.get('organization')?.valid) {
-        return;
-      }
-    }
-
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
@@ -210,15 +192,26 @@ export class AddMemberDialogComponent {
         });
     };
 
-    if (this.organizationRequired()) {
+    if (this.showOrganizationField()) {
       const orgSearch = this.organizationSearch();
       const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : of(null);
-      resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
-        if (result) {
-          this.resolvedOrganizationName = result.name;
-          this.form.patchValue({ organization_id: result.id || null, organization: result.name });
-        }
-        fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
+      resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (result) => {
+          if (result) {
+            this.resolvedOrganizationName = result.name;
+            this.form.patchValue({ organization_id: result.id || null, organization: result.name });
+          }
+          fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
+        },
+        error: () => {
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Organization lookup failed',
+            detail: 'Could not resolve the organization. Please try again.',
+            life: 6000,
+          });
+        },
       });
       return;
     }

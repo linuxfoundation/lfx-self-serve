@@ -235,7 +235,7 @@ export class PendingActionsComponent {
         inviteUid,
         committeeName: groupName,
         organization: item.inviteOrganization,
-        inviteRequiresOrganization: item.inviteRequiresOrganization,
+        inviteRequiresOrganization: requiresOrganization,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

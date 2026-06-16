@@ -583,21 +583,6 @@ export class CommitteeController {
         return;
       }
 
-      const committee = await this.committeeService.getCommitteeById(req, id);
-      if (committeeRequiresOrganization(committee)) {
-        const orgName = typeof inviteData?.organization?.name === 'string' ? inviteData.organization.name.trim() : '';
-        if (!orgName) {
-          next(
-            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
-              operation: 'create_committee_invite',
-              service: 'committee_controller',
-              path: req.path,
-            })
-          );
-          return;
-        }
-      }
-
       const invite = await this.committeeService.createCommitteeInvite(req, id, { ...inviteData, invitee_email: trimmedEmail });
 
       logger.success(req, 'create_committee_invite', startTime, { committee_id: id, invite_id: invite.uid });
@@ -695,7 +680,23 @@ export class CommitteeController {
         return;
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, req.body as AcceptCommitteeInviteRequest);
+      const acceptData: AcceptCommitteeInviteRequest = req.body ?? {};
+      const committee = await this.committeeService.getCommitteeById(req, id);
+      if (committeeRequiresOrganization(committee)) {
+        const orgName = typeof acceptData.organization?.name === 'string' ? acceptData.organization.name.trim() : '';
+        if (!orgName) {
+          next(
+            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+      }
+
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();
