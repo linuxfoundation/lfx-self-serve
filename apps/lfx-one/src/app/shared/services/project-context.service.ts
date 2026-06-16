@@ -79,20 +79,20 @@ export class ProjectContextService {
   public clearFoundation(): void {
     this.foundationSelection.set(null);
     this.persistSelection(this.foundationStorageKey, null);
-    this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+    this.resyncExistingProjectQueryParam();
   }
 
   public clearProject(): void {
     this.projectSelection.set(null);
     this.persistSelection(this.projectStorageKey, null);
-    this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+    this.resyncExistingProjectQueryParam();
   }
 
   /** Writes ?project= into the URL once after the initial navigation completes, reflecting any cookie-restored selection. */
   private syncUrlAfterInitialNavigation(): void {
     // Initial navigation may already be done by the time this service is injected — sync immediately so the cookie-restored param isn't skipped.
     if (this.router.navigated) {
-      this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+      this.syncRestoredProjectParam();
       return;
     }
 
@@ -102,8 +102,33 @@ export class ProjectContextService {
         take(1)
       )
       .subscribe(() => {
-        this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+        this.syncRestoredProjectParam();
       });
+  }
+
+  /** Reflects the cookie-restored selection into ?project=, but never on entity deep-link URLs (e.g. /project/groups/:id) that intentionally omit it. */
+  private syncRestoredProjectParam(): void {
+    if (this.isEntityDeepLink()) {
+      return;
+    }
+    this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+  }
+
+  /** Updates ?project= only when the URL already carries it — clearing a selection must not inject a slug into deep-link URLs. */
+  private resyncExistingProjectQueryParam(): void {
+    if (!('project' in this.router.parseUrl(this.router.url).queryParams)) {
+      return;
+    }
+    this.syncProjectQueryParam(this.activeContext()?.slug ?? null);
+  }
+
+  /** True when the active route resolves to an entity detail (carries a path param like :id), where injecting ?project= is unwanted. */
+  private isEntityDeepLink(): boolean {
+    let route = this.router.routerState.snapshot.root;
+    while (route.firstChild) {
+      route = route.firstChild;
+    }
+    return Object.keys(route.params).length > 0;
   }
 
   private persistSelection(key: string, context: ProjectContext | null): void {
@@ -122,8 +147,11 @@ export class ProjectContextService {
       if (parsed && typeof parsed === 'object' && typeof parsed.uid === 'string' && typeof parsed.name === 'string' && typeof parsed.slug === 'string') {
         return parsed as ProjectContext;
       }
+      // Drop malformed/legacy cookies so the app self-heals instead of re-parsing bad data every refresh.
+      this.cookieRegistry.delete(key);
       return null;
     } catch {
+      this.cookieRegistry.delete(key);
       return null;
     }
   }
