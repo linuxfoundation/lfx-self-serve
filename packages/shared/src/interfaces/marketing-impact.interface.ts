@@ -9,14 +9,6 @@ import type {
   RevenueImpactResponse,
 } from './analytics-data.interface';
 
-/** Month option for the Marketing Impact page month picker. */
-export interface MarketingImpactMonthOption {
-  /** Display label (e.g., "April 2026") */
-  label: string;
-  /** ISO-style value for API use (e.g., "2026-04") */
-  value: string;
-}
-
 /** Period option for the Marketing Impact date range picker. */
 export interface MarketingImpactPeriodOption {
   label: string;
