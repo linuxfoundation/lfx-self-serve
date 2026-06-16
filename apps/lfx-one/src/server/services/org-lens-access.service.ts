@@ -31,6 +31,11 @@ function isAccessListResponse(value: unknown): boolean {
   );
 }
 
+/** Rejects a corrupt/legacy principals entry whose elements aren't non-null objects (degrades to a miss before the directory merge reads user fields). */
+function isPrincipalArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+}
+
 // Spec 025 — Org Lens Access read/write against member-service settings.
 // Reads via GET /b2b_orgs/{uid}/settings. Writes use the PER-PRINCIPAL endpoints
 // (POST/PUT/DELETE /b2b_orgs/{uid}/settings/users[/{email}]) so member-service mutates a
@@ -87,7 +92,7 @@ export class OrgLensAccessService {
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
       async () => this.mapPrincipals(await this.fetchSettings(req, orgUid)),
-      Array.isArray
+      isPrincipalArray
     );
   }
 

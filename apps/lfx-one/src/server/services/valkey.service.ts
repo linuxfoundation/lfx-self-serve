@@ -197,9 +197,9 @@ export function buildOrgCacheKey(accountId: string, subResource: string): string
   return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
 }
 
-/** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username isn't filter-safe, keeping cache identity aligned with the authz principal. */
+/** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username or org uid isn't filter-safe, keeping cache identity aligned with the authz principal and the `:`-delimited key uncorruptible. */
 export function buildPerUserOrgKey(namespace: string, username: string, orgUid: string): string | null {
-  if (!isFilterSafeUsername(username)) return null;
+  if (!isFilterSafeUsername(username) || !isFilterSafeIdentifier(orgUid)) return null;
   return `${keyPrefix()}:${namespace}:${username}:${orgUid}`;
 }
 

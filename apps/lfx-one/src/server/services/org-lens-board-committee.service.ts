@@ -165,7 +165,7 @@ export class OrgLensBoardCommitteeService {
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
       () => this.fetchOrgSeats(req, orgUid),
-      Array.isArray
+      isOrgSeatArray
     );
   }
 
@@ -356,4 +356,9 @@ export class OrgLensBoardCommitteeService {
           .toUpperCase(),
     };
   }
+}
+
+/** Rejects a corrupt/legacy seat entry whose elements aren't non-null objects (degrades to a miss before seat fields are read). */
+function isOrgSeatArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }

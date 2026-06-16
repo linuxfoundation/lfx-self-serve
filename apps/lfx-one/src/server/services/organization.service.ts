@@ -895,18 +895,20 @@ export class OrganizationService {
 
   /** Resolve Org Lens display context per accountId — one denormalised row per account_id (pre-joined in dbt), each cached per org (identical bytes for every caller, refreshed on the daily batch) and assembled sorted by account name. */
   public async getOrgLensAccountContext(accountIds: string[]): Promise<OrgLensAccountContextResponse[]> {
-    if (accountIds.length === 0) {
+    // Dedupe upfront so duplicate ids don't fan out to duplicate rows (the prior `IN (...)` query collapsed them).
+    const uniqueAccountIds = Array.from(new Set(accountIds));
+    if (uniqueAccountIds.length === 0) {
       return [];
     }
 
     // Each account is an independently-cached Snowflake read; a cursor-driven pool caps cold-cache
     // concurrency so a many-account bootstrap can't exhaust the shared Snowflake connection pool.
-    const perAccount: OrgLensAccountContextResponse[][] = new Array(accountIds.length);
+    const perAccount: OrgLensAccountContextResponse[][] = new Array(uniqueAccountIds.length);
     let cursor = 0;
     const worker = async (): Promise<void> => {
-      while (cursor < accountIds.length) {
+      while (cursor < uniqueAccountIds.length) {
         const index = cursor++;
-        const accountId = accountIds[index];
+        const accountId = uniqueAccountIds[index];
         perAccount[index] = await withOrgCache(
           accountId,
           'account-context',
@@ -917,7 +919,7 @@ export class OrganizationService {
       }
     };
 
-    const poolSize = Math.min(ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, accountIds.length);
+    const poolSize = Math.min(ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, uniqueAccountIds.length);
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
     return perAccount.flat().sort((a, b) => a.accountName.localeCompare(b.accountName));
@@ -927,7 +929,14 @@ export class OrganizationService {
   private static isAccountContextArray(value: unknown): value is OrgLensAccountContextResponse[] {
     return (
       Array.isArray(value) &&
-      value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el) && typeof (el as OrgLensAccountContextResponse).accountId === 'string')
+      value.every(
+        (el) =>
+          el !== null &&
+          typeof el === 'object' &&
+          !Array.isArray(el) &&
+          typeof (el as OrgLensAccountContextResponse).accountId === 'string' &&
+          typeof (el as OrgLensAccountContextResponse).accountName === 'string'
+      )
     );
   }
 
