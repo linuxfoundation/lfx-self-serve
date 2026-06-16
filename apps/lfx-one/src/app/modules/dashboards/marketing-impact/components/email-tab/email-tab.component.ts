@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -73,8 +73,8 @@ export class EmailTabComponent {
       const totalOpens = data.monthlyOpens?.reduce((s, v) => s + v, 0) ?? 0;
       const changePct = data.momChangePercentage;
 
-      const sendsMom = this.computeMomPct(data.monthlySends);
-      const opensMom = this.computeMomPct(data.monthlyOpens);
+      const sendsMom = computeMomPct(data.monthlySends);
+      const opensMom = computeMomPct(data.monthlyOpens);
 
       const sends = data.monthlySends ?? [];
       const opens = data.monthlyOpens ?? [];
@@ -86,7 +86,7 @@ export class EmailTabComponent {
 
       const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : 0;
       const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : 0;
-      const openRateMom = this.computeMomPctFromValues(currentOpenRate, prevOpenRate);
+      const openRateMom = prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
 
       return [
         {
@@ -187,16 +187,5 @@ export class EmailTabComponent {
           })
         );
     });
-  }
-
-  // === Private Helpers ===
-  private computeMomPct(arr: number[] | undefined): number | null {
-    if (!arr || arr.length < 2) return null;
-    return this.computeMomPctFromValues(arr.at(-1) ?? 0, arr.at(-2) ?? 0);
-  }
-
-  private computeMomPctFromValues(current: number, previous: number): number | null {
-    if (previous === 0) return null;
-    return ((current - previous) / previous) * 100;
   }
 }

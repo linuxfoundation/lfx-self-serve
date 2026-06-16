@@ -2804,7 +2804,7 @@ export interface EmailTypeBreakdown {
 export interface EmailCtrResponse {
   currentCtr: number;
   changePercentage: number;
-  momChangePercentage: number;
+  momChangePercentage: number | null;
   trend: 'up' | 'down';
   monthlyData: number[];
   monthlyLabels: string[];

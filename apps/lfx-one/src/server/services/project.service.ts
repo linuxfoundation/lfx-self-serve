@@ -2074,8 +2074,7 @@ export class ProjectService {
       const summaryQuery = `
         SELECT
           PROJECT_NAME,
-          CTR_LAST_COMPLETED_MONTH,
-          CTR_MOM_CHANGE
+          CTR_LAST_COMPLETED_MONTH
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
         WHERE 1=1
           ${foundationFilter}
@@ -2135,10 +2134,7 @@ export class ProjectService {
       `;
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
-        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [
-          ...foundationParams,
-          ...classificationParams,
-        ]),
+        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number }>(summaryQuery, [...foundationParams, ...classificationParams]),
         this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
           monthlyQuery,
           [monthDate, monthDate, ...foundationParams, ...classificationParams]
@@ -2180,7 +2176,7 @@ export class ProjectService {
         return {
           currentCtr: 0,
           changePercentage: 0,
-          momChangePercentage: 0,
+          momChangePercentage: null,
           trend: 'up',
           monthlyData: [],
           monthlyLabels: [],
@@ -2193,14 +2189,12 @@ export class ProjectService {
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
 
-      const monthlyData = monthlyResult.rows.map((row) => Math.round((row.MONTHLY_CTR ?? 0) * 10) / 10);
+      const rawMonthlyCtrs = monthlyResult.rows.map((row) => row.MONTHLY_CTR ?? 0);
+      const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
-      // Source currentCtr from the month-filtered series when available so the KPI
-      // value and MoM comparison always refer to the same month window.
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
       const currentCtr = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1] : summaryCtr;
 
-      // Compute change as current CTR vs 6-month average (more stable than MoM)
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
         const avg = monthlyData.reduce((sum, v) => sum + v, 0) / monthlyData.length;
@@ -2208,12 +2202,13 @@ export class ProjectService {
           changePercentage = Math.round(((currentCtr - avg) / avg) * 1000) / 10;
         }
       }
-      let momChangePercentage = 0;
-      if (monthlyData.length >= 2) {
-        const current = monthlyData[monthlyData.length - 1];
-        const prior = monthlyData[monthlyData.length - 2];
+
+      let momChangePercentage: number | null = null;
+      if (rawMonthlyCtrs.length >= 2) {
+        const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
+        const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
         if (prior > 0) {
-          momChangePercentage = Math.round(((current - prior) / prior) * 1000) / 10;
+          momChangePercentage = ((current - prior) / prior) * 100;
         }
       }
 
@@ -2336,7 +2331,7 @@ export class ProjectService {
       return {
         currentCtr: 0,
         changePercentage: 0,
-        momChangePercentage: 0,
+        momChangePercentage: null,
         trend: 'up',
         monthlyData: [],
         monthlyLabels: [],
