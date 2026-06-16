@@ -261,6 +261,16 @@ function getAccountId(override?: string): string {
 function getOrgId(overrideAccountId?: string): string {
   const envOrgId = process.env['LINKEDIN_ORG_ID'];
   if (envOrgId) {
+    // Mirror the digit-only guard applied to LINKEDIN_AD_ACCOUNT_ID above and to
+    // every orgId field in the runtime config (defaultOrgId, accounts[].orgId).
+    // Without this, a typo or full-URN value (e.g. "urn:li:organization:208777"
+    // or "abc123") slips through and gets interpolated into
+    // `urn:li:organization:${envOrgId}` downstream, producing an invalid URN
+    // that LinkedIn rejects mid-flow with an opaque API error instead of a
+    // clear config-validation error at startup.
+    if (!/^\d+$/.test(envOrgId)) {
+      throw new Error('LINKEDIN_ORG_ID must be a numeric string (LinkedIn organization IDs are digit-only)');
+    }
     logger.debug(undefined, 'linkedin_config', 'Using LinkedIn org from env', { source: 'env' });
     return envOrgId;
   }
@@ -696,17 +706,24 @@ export function buildLinkedInUtmUrl(baseUrl: string, hsToken: string | undefined
  * otherwise only run inside `createCampaign`.
  */
 function validateLinkedInPrerequisites(profile: LinkedInTargetingProfile, adAccountId?: string): void {
-  if (profile === 'custom') {
-    throw new Error('Custom targeting profile is not yet supported — use a named profile (cloud-native, mcp)');
-  }
   // Resolves the org URN for the specific account (or default if none specified).
   // Throws cleanly if no path is configured, or if an account override isn't in
   // the runtime config's accounts[] list.
   getOrgId(adAccountId);
   const config = getLinkedInConfig();
-  if (!config.targetingProfiles.find((p) => p.id === profile)) {
+
+  // 'custom' is treated as an alias for 'cloud-native' inside buildTargetingCriteria()
+  // (see the `if (profile === 'custom')` branch — it pulls cloud-native skills/groups
+  // as the fallback). The brief-generation flow can legitimately emit 'custom' when
+  // the AI doesn't recommend a named profile, so the preflight must validate the
+  // SAME entry the runtime path will read, not hard-fail. Without this alias, a
+  // brief that sets targetingProfile: 'custom' would die at preflight even though
+  // the actual campaign-creation code path supports it.
+  const profileToValidate = profile === 'custom' ? 'cloud-native' : profile;
+  if (!config.targetingProfiles.find((p) => p.id === profileToValidate)) {
+    const missing = profile === 'custom' ? `'cloud-native' (the fallback for 'custom')` : `'${profile}'`;
     throw new Error(
-      `LinkedIn targeting profile "${profile}" not found in runtime config — refusing to start campaign creation to avoid partial LinkedIn artifacts. Check the linkedin-config ConfigMap.`
+      `LinkedIn targeting profile ${missing} not found in runtime config — refusing to start campaign creation to avoid partial LinkedIn artifacts. Check the linkedin-config ConfigMap.`
     );
   }
 }
