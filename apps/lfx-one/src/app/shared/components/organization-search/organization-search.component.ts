@@ -207,8 +207,8 @@ export class OrganizationSearchComponent {
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
-          // Intentionally uses cdpOrg.logo unconditionally — resolveCurrentEntry() takes no
-          // suggestion logo arg and all current callers use resolveToCdpName=true (default).
+          // Uses cdpOrg.logo unconditionally — this method resolves from form values rather
+          // than an autocomplete suggestion, so no suggestion logo is available as a fallback.
           logo: cdpOrg.logo,
           originalName: name || '',
           nameChanged: cdpOrg.name.toLowerCase() !== (name || '').toLowerCase(),
