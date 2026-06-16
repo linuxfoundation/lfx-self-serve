@@ -187,6 +187,9 @@
             }
           </div>
         }
+        <!-- INFO: Future Epic implementation — the Governance tab is hidden (no trigger, and
+             #governance deep links fall back to Key Contacts), so this panel is dormant until
+             the governance feature is built. -->
         @case ('governance') {
           <div role="tabpanel" id="membership-detail-tab-panel-governance" [attr.aria-labelledby]="'membership-detail-tab-trigger-governance'">
             <lfx-empty-state
