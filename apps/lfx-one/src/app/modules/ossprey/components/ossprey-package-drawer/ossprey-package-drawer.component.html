@@ -422,6 +422,7 @@
         @if (canOpenForStewardship()) {
           <lfx-button
             label="Open for stewardship"
+            icon="fa-light fa-lock-open"
             severity="secondary"
             [outlined]="true"
             [loading]="actionLoading()"
@@ -432,6 +433,7 @@
         @if (canCloseAvailability()) {
           <lfx-button
             label="Close availability"
+            icon="fa-light fa-circle-xmark"
             severity="secondary"
             [outlined]="true"
             [disabled]="actionLoading()"
@@ -451,6 +453,7 @@
         @if (canResolveBlocker()) {
           <lfx-button
             label="Resolve blocker"
+            icon="fa-light fa-shield-check"
             severity="secondary"
             [outlined]="true"
             [disabled]="actionLoading()"
@@ -460,6 +463,7 @@
         @if (canResolve()) {
           <lfx-button
             label="Resolve"
+            icon="fa-light fa-circle-check"
             severity="secondary"
             [outlined]="true"
             [disabled]="actionLoading()"
@@ -469,6 +473,7 @@
         @if (canReactivate()) {
           <lfx-button
             label="Reactivate"
+            icon="fa-light fa-rotate-right"
             severity="secondary"
             [outlined]="true"
             [disabled]="actionLoading()"
@@ -488,6 +493,7 @@
         @if (canEscalate()) {
           <lfx-button
             label="Escalate"
+            icon="fa-light fa-triangle-exclamation"
             severity="danger"
             [outlined]="true"
             [disabled]="actionLoading()"

@@ -85,7 +85,12 @@ export class OsspreyPackageDrawerComponent {
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
   protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned' && this.stewardshipId() === null);
-  protected readonly canAssignSteward = computed(() => this.stewardshipId() !== null);
+  // Allow assigning a steward on any package — if no stewardship row exists yet the
+  // confirm handler auto-opens the package first and then chains the assign call.
+  protected readonly canAssignSteward = computed(() => {
+    const status = this.stewardshipStatus();
+    return status !== 'inactive';
+  });
   protected readonly canManageStatus = computed(() => this.stewardshipId() !== null);
   protected readonly canEscalate = computed(() => {
     const status = this.stewardshipStatus();
@@ -202,13 +207,38 @@ export class OsspreyPackageDrawerComponent {
   }
 
   protected onAssignStewardConfirm(body: OsspreyAssignStewardRequest): void {
-    const id = this.stewardshipId();
-    if (id === null || this.actionLoading()) return;
-
+    if (this.actionLoading()) return;
     this.actionLoading.set(true);
+
+    const existingId = this.stewardshipId();
+    if (existingId !== null) {
+      this.osspreyService
+        .assignSteward(existingId, body)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.assignStewardModalVisible.set(false);
+            this.onActionSuccess('Steward assigned successfully.');
+          },
+          error: () => this.onActionError(),
+        });
+      return;
+    }
+
+    // No stewardship row yet — open first, then assign using the returned id.
+    const purl = this.packageData()?.purl ?? this.packageId();
+    if (!purl) {
+      this.onActionError();
+      return;
+    }
+
     this.osspreyService
-      .assignSteward(id, body)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .openStewardship(purl)
+      .pipe(
+        switchMap((res) => this.osspreyService.assignSteward(parseInt(res.stewardship.id, 10), body)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: () => {
           this.assignStewardModalVisible.set(false);
