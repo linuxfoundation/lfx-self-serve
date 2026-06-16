@@ -24,7 +24,7 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
-  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
+  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },

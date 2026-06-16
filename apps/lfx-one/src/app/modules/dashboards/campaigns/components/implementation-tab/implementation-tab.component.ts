@@ -30,6 +30,7 @@ import type {
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
@@ -88,10 +89,17 @@ export class ImplementationTabComponent {
   protected readonly linkedInBudgetUsd = signal(500);
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccountId = signal<string>(LINKEDIN_DEFAULT_ACCOUNT_ID);
+  protected readonly redditVariants = signal<RedditAdVariant[]>([]);
+  protected readonly redditSubreddits = signal<string[]>([]);
+  protected readonly redditInterests = signal<string[]>([]);
+  protected readonly redditKeywords = signal<string[]>([]);
+  protected readonly redditGeoTargets = signal<string[]>([]);
+  protected readonly redditBudgetUsd = signal(500);
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
+  protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
   protected readonly selectedLinkedInAccount = computed(
     () => this.linkedInAccounts.find((a) => a.accountId === this.linkedInAccountId()) ?? this.linkedInAccounts[0]
   );
@@ -100,14 +108,15 @@ export class ImplementationTabComponent {
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');
-    if (!googleSelected && !linkedInSelected) return false;
+    const redditSelected = platforms.includes('reddit-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
     if (!sharedFieldsValid) return false;
 
-    if (googleSelected && this.campaignForm.invalid) return false;
     if (googleSelected && !this.campaignForm.controls.includeSearch.value && !this.campaignForm.controls.includeDemandGen.value) return false;
+    if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -142,6 +151,16 @@ export class ImplementationTabComponent {
       if (!brief) return;
       this.populateFromBrief(brief);
     });
+  }
+
+  // === Public Methods ===
+  public reset(): void {
+    this.jobSubscription?.unsubscribe();
+    this.jobSubscription = null;
+    this.step.set('form');
+    this.creationProgress.set([]);
+    this.results.set([]);
+    this.errors.set([]);
   }
 
   // === Protected Methods ===
@@ -214,23 +233,9 @@ export class ImplementationTabComponent {
   }
 
   protected submit(): void {
+    if (!this.canSubmit()) return;
+
     const platforms = this.selectedPlatforms();
-    const googleSelected = platforms.includes('google-ads');
-    const linkedInSelected = platforms.includes('linkedin-ads');
-
-    if (!googleSelected && !linkedInSelected) return;
-
-    const controls = this.campaignForm.controls;
-    const sharedFieldsValid =
-      !!controls.eventName.value?.trim() && !!controls.registrationUrl.value?.trim() && !!controls.startDate.value && !!controls.endDate.value;
-    if (!sharedFieldsValid) return;
-
-    if (googleSelected && this.campaignForm.invalid) return;
-    if (googleSelected && !controls.includeSearch.value && !controls.includeDemandGen.value) return;
-    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return;
-    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return;
-    if (linkedInSelected && this.linkedInVariants().length === 0) return;
-
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
@@ -278,6 +283,25 @@ export class ImplementationTabComponent {
             },
           }
         : {}),
+      ...(platforms.includes('reddit-ads')
+        ? {
+            redditConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.redditBudgetUsd(),
+              startDate: form.startDate,
+              endDate: form.endDate,
+              geoTargets: this.redditGeoTargets().length > 0 ? this.redditGeoTargets() : [form.countryCode],
+              subreddits: this.redditSubreddits(),
+              interests: this.redditInterests(),
+              keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
+              variants: this.redditVariants(),
+              project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
     };
 
     this.campaignService.createCampaign(request).subscribe({
@@ -308,17 +332,12 @@ export class ImplementationTabComponent {
     });
   }
 
-  protected reset(): void {
-    this.jobSubscription?.unsubscribe();
-    this.jobSubscription = null;
+  // === Private Methods ===
+  private populateFromBrief(brief: CampaignBriefOutput): void {
     this.step.set('form');
     this.creationProgress.set([]);
     this.results.set([]);
     this.errors.set([]);
-  }
-
-  // === Private Methods ===
-  private populateFromBrief(brief: CampaignBriefOutput): void {
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,
@@ -360,6 +379,22 @@ export class ImplementationTabComponent {
         this.linkedInBudgetUsd.set(brief.linkedInCopy.strategy.budgetRecommendation.lifetimeBudgetUsd);
         this.linkedInLifetimeBudget.set(true);
       }
+    }
+
+    const redditCopy = brief.structuredCopy?.['reddit_promoted'] as Record<string, unknown> | undefined;
+    if (redditCopy) {
+      this.redditVariants.set((redditCopy['variants'] as RedditAdVariant[]) ?? []);
+      this.redditSubreddits.set((redditCopy['recommended_subreddits'] as string[]) ?? []);
+      this.redditInterests.set((redditCopy['recommended_interests'] as string[]) ?? []);
+      this.redditKeywords.set((redditCopy['recommended_keywords'] as string[]) ?? []);
+      this.redditGeoTargets.set((redditCopy['recommended_geos'] as string[]) ?? []);
+    }
+    if (brief.redditCopy) {
+      this.redditVariants.set(brief.redditCopy.variants);
+      this.redditSubreddits.set(brief.redditCopy.recommendedSubreddits);
+      this.redditInterests.set(brief.redditCopy.recommendedInterests);
+      this.redditKeywords.set(brief.redditCopy.recommendedKeywords);
+      this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
     }
 
     this.briefKeywords.set(brief.keywords);

@@ -16,12 +16,15 @@ import type {
   LinkedInAccountOption,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
+  RedditAccountOption,
+  RedditMonitorResponse,
+  RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
-type PlatformType = 'google' | 'linkedin';
+type PlatformType = 'google' | 'linkedin' | 'reddit';
 
 const KEYWORD_PAGE_SIZE = 10;
 
@@ -38,6 +41,7 @@ export class MonitoringTabComponent implements OnInit {
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
+  private redditSub: Subscription | null = null;
   private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   protected readonly Math = Math;
@@ -61,6 +65,19 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
+
+  // Reddit
+  protected readonly redditAccountOptions = signal<RedditAccountOption[]>([]);
+  protected readonly selectedRedditAccountKey = signal<string>('');
+  protected readonly redditLoading = signal(false);
+  protected readonly redditData = signal<RedditMonitorResponse | null>(null);
+  protected readonly redditError = signal<string | null>(null);
+  protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
+  protected readonly redditTotals = computed(() => this.redditData()?.accountTotals ?? null);
+  protected readonly redditPulledAt = computed(() => {
+    const pulledAt = this.redditData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
   });
 
@@ -115,6 +132,24 @@ export class MonitoringTabComponent implements OnInit {
           this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
         },
       });
+    this.campaignService
+      .getRedditAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.redditAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
+            this.selectedRedditAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'reddit') {
+              this.fetchRedditData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+        },
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -122,8 +157,11 @@ export class MonitoringTabComponent implements OnInit {
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (this.selectedPlatform() === 'reddit') {
+      this.fetchRedditData();
     } else {
       this.linkedInData.set(null);
+      this.redditData.set(null);
     }
   }
 
@@ -131,6 +169,8 @@ export class MonitoringTabComponent implements OnInit {
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (this.selectedPlatform() === 'reddit') {
+      this.fetchRedditData();
     }
   }
 
@@ -199,6 +239,8 @@ export class MonitoringTabComponent implements OnInit {
     this.selectedPlatform.set(p);
     if (p === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (p === 'reddit') {
+      this.fetchRedditData();
     }
   }
 
@@ -245,6 +287,43 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatLinkedInPct(n: number): string {
     return `${n.toFixed(2)}%`;
+  }
+
+  protected setRedditAccount(key: string): void {
+    this.selectedRedditAccountKey.set(key);
+    this.fetchRedditData();
+  }
+
+  protected onRedditAccountChange(event: Event): void {
+    this.setRedditAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchRedditData(): void {
+    const accountKey = this.selectedRedditAccountKey();
+    if (!accountKey) return;
+    this.redditSub?.unsubscribe();
+    this.redditLoading.set(true);
+    this.redditError.set(null);
+    this.redditSub = this.campaignService
+      .getRedditMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.redditData.set(data);
+          this.redditLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditLoading.set(false);
+        },
+      });
+  }
+
+  protected redditPacingClass(label: RedditPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
   }
 
   protected eventLabel(campaignName: string): string {

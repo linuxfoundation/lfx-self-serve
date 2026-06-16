@@ -24,6 +24,7 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
+  RecurringDonation,
   RecurringDonationsResponse,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -70,6 +71,13 @@ export class CrowdfundingService {
 
   public getMyDonationStats(): Observable<DonationStats> {
     return this.http.get<DonationStats>('/api/crowdfunding/donation-stats').pipe(catchError(this.handleCfError(EMPTY_DONATION_STATS, 'getMyDonationStats')));
+  }
+
+  public getRecurringDonationById(id: string): Observable<RecurringDonation | null> {
+    if (!id.trim()) return of(null);
+    return this.http
+      .get<RecurringDonation>(`/api/crowdfunding/recurring-donations/${encodeURIComponent(id.trim())}`)
+      .pipe(catchError(this.handleCfError(null, 'getRecurringDonationById')));
   }
 
   public getMyRecurringDonations(): Observable<RecurringDonationsResponse> {
