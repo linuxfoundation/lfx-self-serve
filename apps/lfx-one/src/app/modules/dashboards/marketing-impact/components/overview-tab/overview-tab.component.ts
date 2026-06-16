@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -77,6 +77,9 @@ export class OverviewTabComponent {
       if (data.revenueImpact) {
         const ri = data.revenueImpact;
         const yoyPct = ri.changePercentage;
+        const trend = ri.paidMedia?.monthlyTrend ?? [];
+        const revMomPct = computeMomPct(trend.map((m) => m.revenue));
+        const roasMomPct = computeMomPct(trend.map((m) => m.roas));
         cards.push(
           {
             id: 'attributed-revenue',
@@ -84,9 +87,9 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-dollar-sign',
             iconClass: 'bg-green-100 text-green-600',
             value: formatCurrency(ri.revenueAttributed),
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
+            momChange: formatChangePct(revMomPct, 'MoM'),
+            momTrend: trendDirection(revMomPct),
+            momTrendClass: trendColorClass(revMomPct),
             yoyChange: formatChangePct(yoyPct, 'YoY'),
             yoyTrend: trendDirection(yoyPct),
             yoyTrendClass: trendColorClass(yoyPct),
@@ -97,9 +100,9 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-chart-line-up',
             iconClass: 'bg-blue-100 text-blue-600',
             value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
+            momChange: formatChangePct(roasMomPct, 'MoM'),
+            momTrend: trendDirection(roasMomPct),
+            momTrendClass: trendColorClass(roasMomPct),
             yoyChange: null,
             yoyTrend: 'neutral',
             yoyTrendClass: 'text-gray-500',
@@ -127,14 +130,14 @@ export class OverviewTabComponent {
 
       if (data.emailCtr) {
         const ec = data.emailCtr;
-        const momPct = ec.changePercentage;
+        const momPct = ec.momChangePercentage;
         cards.push({
           id: 'email-ctr',
           label: 'Email CTR',
           icon: 'fa-light fa-envelope-open',
           iconClass: 'bg-amber-100 text-amber-600',
           value: `${(ec.currentCtr ?? 0).toFixed(2)}%`,
-          momChange: formatChangePct(momPct, 'vs avg'),
+          momChange: formatChangePct(momPct, 'MoM'),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),
           yoyChange: null,
@@ -172,7 +175,7 @@ export class OverviewTabComponent {
 
       const name = this.foundationName();
       const foundation = name ? name : 'all LF projects';
-      return `Compared to ${momLabel} and ${yoyLabel} · Linear attribution · ${foundation}`;
+      return `vs. ${momLabel} (MoM) · vs. ${yoyLabel} (YoY) · Linear attribution · ${foundation}`;
     });
   }
 }

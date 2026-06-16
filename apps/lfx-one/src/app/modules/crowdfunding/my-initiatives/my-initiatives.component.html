@@ -1,34 +1,38 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-8" data-testid="my-initiatives">
-  <!-- Page header -->
-  <div class="flex items-start justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900 tracking-tight">My Initiatives</h1>
-      <p class="text-sm text-gray-500 mt-1">Fundraising initiatives you manage on LFX Crowdfunding</p>
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-initiatives">
+  <div class="flex flex-col gap-6">
+    <!-- Page header -->
+    <div class="flex items-start justify-between mt-3">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="my-initiatives-title">My Initiatives</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="my-initiatives-description">Fundraising initiatives you manage on LFX Crowdfunding</p>
+      </div>
+      <div class="flex items-center gap-6">
+        <lfx-button
+          label="New Initiative"
+          icon="fa-light fa-arrow-up-right-from-square"
+          iconPos="right"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [href]="crowdfundingUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="new-initiative-button" />
+      </div>
     </div>
-    <a
-      [href]="crowdfundingUrl"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-300 bg-white rounded-md px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap"
-      data-testid="new-initiative-button">
-      New Initiative
-      <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
-    </a>
+
+    <!-- Stats -->
+    <lfx-stat-card-grid [cards]="statCards()" [loading]="!stats()" data-testid="initiatives-me-stats" />
+
+    <!-- Initiatives list with filter pills -->
+    <lfx-initiatives-list
+      [initiatives]="initiatives()"
+      [hasMore]="initiativesHasMore()"
+      [loadingMore]="loadingMore()"
+      (loadMore)="onLoadMoreInitiatives()"
+      (initiativeClick)="onInitiativeClick($event)" />
   </div>
-
-  <!-- Stats bar -->
-  @if (stats(); as loadedStats) {
-    <lfx-initiatives-stats-bar [stats]="loadedStats" />
-  }
-
-  <!-- Initiatives list with filter pills -->
-  <lfx-initiatives-list
-    [initiatives]="initiatives()"
-    [hasMore]="initiativesHasMore()"
-    [loadingMore]="loadingMore()"
-    (loadMore)="onLoadMoreInitiatives()"
-    (initiativeClick)="onInitiativeClick($event)" />
 </div>

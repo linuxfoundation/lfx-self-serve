@@ -18,7 +18,7 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInMonitorResponse,
   RedditAccountOption,
   RedditMonitorResponse,
@@ -71,8 +71,8 @@ export class CampaignService {
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
   }
 
-  public getLinkedInAccounts(): Observable<LinkedInAccountOption[]> {
-    return this.http.get<LinkedInAccountOption[]>('/api/campaigns/linkedin/accounts');
+  public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts');
   }
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {

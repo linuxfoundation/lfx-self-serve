@@ -1,7 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import fs from 'node:fs';
+
 import type {
+  LinkedInAccount,
   LinkedInActionItem,
   LinkedInCampaignCreateRequest,
   LinkedInCampaignCreateResult,
@@ -10,15 +13,210 @@ import type {
   LinkedInGeoTarget,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
+  LinkedInRuntimeConfig,
   LinkedInTargetingProfile,
+  LinkedInTargetingProfileConfig,
 } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_AD_ACCOUNTS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
-import { LINKEDIN_ACCOUNTS, LINKEDIN_EMPLOYER_EXCLUSIONS, LINKEDIN_REQUEST_TIMEOUT_MS, LINKEDIN_TARGETING_PROFILES } from '../constants';
+import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 
 import type { Request } from 'express';
 
 import { logger } from './logger.service';
+
+// ---------------------------------------------------------------------------
+// Runtime config — loaded from a mounted ConfigMap (see lfx-v2-argocd
+// values/global/lfx-self-serve.yaml `staticConfigMaps.linkedin-config`).
+// Vendor-specific identifiers (ad accounts, org IDs, employer exclusion URNs,
+// targeting skill/group URNs) live in the private GitOps repo, not in source.
+// Shape is exported from `@lfx-one/shared/interfaces` so a future admin UI
+// or test harness can introspect the same types.
+// ---------------------------------------------------------------------------
+
+const EMPTY_LINKEDIN_CONFIG: LinkedInRuntimeConfig = {
+  defaultAccountId: '',
+  defaultOrgId: '',
+  accounts: [],
+  employerExclusions: [],
+  targetingProfiles: [],
+};
+
+// LinkedIn ad-account and organization IDs are numeric (digit-only). Mirrors
+// the LINKEDIN_AD_ACCOUNT_ID env-var check in `getAccountId()` so ConfigMap
+// values get the same shape guarantees as env values.
+const NUMERIC_ID_RE = /^\d+$/;
+const LINKEDIN_ACCOUNT_STATUS_VALUES: ReadonlySet<NonNullable<LinkedInAccount['status']>> = new Set(['ACTIVE', 'BILLING_HOLD']);
+
+function isLinkedInAccount(value: unknown): value is LinkedInAccount {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  if (typeof v['accountId'] !== 'string' || !NUMERIC_ID_RE.test(v['accountId'])) {
+    return false;
+  }
+  if (typeof v['orgId'] !== 'string' || !NUMERIC_ID_RE.test(v['orgId'])) {
+    return false;
+  }
+  if (typeof v['label'] !== 'string') {
+    return false;
+  }
+  // status is optional; if present it must match the documented enum.
+  const rawStatus = v['status'];
+  if (rawStatus !== undefined && !LINKEDIN_ACCOUNT_STATUS_VALUES.has(rawStatus as NonNullable<LinkedInAccount['status']>)) {
+    return false;
+  }
+  return true;
+}
+
+function isLinkedInTargetingProfile(value: unknown): value is LinkedInTargetingProfileConfig {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v['id'] === 'string' &&
+    typeof v['label'] === 'string' &&
+    Array.isArray(v['skills']) &&
+    v['skills'].every((s) => typeof s === 'string') &&
+    Array.isArray(v['groups']) &&
+    v['groups'].every((g) => typeof g === 'string')
+  );
+}
+
+function validateLinkedInConfig(parsed: unknown): LinkedInRuntimeConfig {
+  if (!parsed || typeof parsed !== 'object') {
+    throw new TypeError('LinkedIn config root must be a JSON object');
+  }
+  const p = parsed as Record<string, unknown>;
+
+  const rawDefaultAccountId = p['defaultAccountId'];
+  if (rawDefaultAccountId !== undefined && typeof rawDefaultAccountId !== 'string') {
+    throw new TypeError(`LinkedIn config "defaultAccountId" must be a string when present, got ${typeof rawDefaultAccountId}`);
+  }
+  const defaultAccountId = rawDefaultAccountId ?? '';
+  // Empty string is a documented opt-out (env var takes precedence); only
+  // validate the regex when a value was actually provided.
+  if (defaultAccountId !== '' && !NUMERIC_ID_RE.test(defaultAccountId)) {
+    throw new TypeError('LinkedIn config "defaultAccountId" must be a digit-only string when non-empty (LinkedIn ad account IDs are numeric)');
+  }
+
+  const rawDefaultOrgId = p['defaultOrgId'];
+  if (rawDefaultOrgId !== undefined && typeof rawDefaultOrgId !== 'string') {
+    throw new TypeError(`LinkedIn config "defaultOrgId" must be a string when present, got ${typeof rawDefaultOrgId}`);
+  }
+  const defaultOrgId = rawDefaultOrgId ?? '';
+  if (defaultOrgId !== '' && !NUMERIC_ID_RE.test(defaultOrgId)) {
+    throw new TypeError('LinkedIn config "defaultOrgId" must be a digit-only string when non-empty (LinkedIn organization IDs are numeric)');
+  }
+
+  // For each of the three array fields below, mirror the round-4 pattern from
+  // defaultAccountId / defaultOrgId above: absent (undefined) defaults to [], but
+  // an explicit `null` or other non-array value FAILS the type check rather than
+  // being silently coerced to []. Without this, a malformed ConfigMap with
+  // `"accounts": null` would silently load as "no accounts configured" and
+  // surface much later as confusing "no LinkedIn account configured" errors
+  // instead of a clean reason:'malformed' at load time.
+
+  const rawAccounts = p['accounts'];
+  if (rawAccounts !== undefined && !Array.isArray(rawAccounts)) {
+    throw new TypeError(`LinkedIn config "accounts" must be an array when present, got ${rawAccounts === null ? 'null' : typeof rawAccounts}`);
+  }
+  const accountsList = (rawAccounts ?? []) as unknown[];
+  if (!accountsList.every(isLinkedInAccount)) {
+    throw new TypeError(
+      'LinkedIn config "accounts[]" entries must each have a digit-only accountId (string), digit-only orgId (string), string label, and (when present) status in {ACTIVE, BILLING_HOLD}'
+    );
+  }
+
+  const rawExclusions = p['employerExclusions'];
+  if (rawExclusions !== undefined && !Array.isArray(rawExclusions)) {
+    throw new TypeError(`LinkedIn config "employerExclusions" must be an array when present, got ${rawExclusions === null ? 'null' : typeof rawExclusions}`);
+  }
+  const exclusionsList = (rawExclusions ?? []) as unknown[];
+  if (!exclusionsList.every((s) => typeof s === 'string')) {
+    throw new TypeError('LinkedIn config "employerExclusions[]" entries must all be strings');
+  }
+
+  const rawProfiles = p['targetingProfiles'];
+  if (rawProfiles !== undefined && !Array.isArray(rawProfiles)) {
+    throw new TypeError(`LinkedIn config "targetingProfiles" must be an array when present, got ${rawProfiles === null ? 'null' : typeof rawProfiles}`);
+  }
+  const profilesList = (rawProfiles ?? []) as unknown[];
+  if (!profilesList.every(isLinkedInTargetingProfile)) {
+    throw new TypeError('LinkedIn config "targetingProfiles[]" entries must each have string id, label, skills[], groups[]');
+  }
+
+  return {
+    defaultAccountId,
+    defaultOrgId,
+    accounts: accountsList as readonly LinkedInAccount[],
+    employerExclusions: exclusionsList as readonly string[],
+    targetingProfiles: profilesList as readonly LinkedInTargetingProfileConfig[],
+  };
+}
+
+function loadLinkedInConfig(): LinkedInRuntimeConfig {
+  const configPath = process.env['LINKEDIN_CONFIG_PATH'] ?? '/etc/lfx-self-serve/linkedin/linkedin.json';
+  const startTime = Date.now();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(configPath, 'utf8');
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT') {
+      logger.warning(undefined, 'linkedin_config_load', `LinkedIn config file not found at ${configPath} — LinkedIn campaign features will be disabled`, {
+        configPath,
+      });
+    } else {
+      logger.error(undefined, 'linkedin_config_load', startTime, error, {
+        configPath,
+        reason: 'read_failed',
+        message: `Failed to read LinkedIn config from ${configPath} — LinkedIn campaign features will be disabled`,
+      });
+    }
+    return EMPTY_LINKEDIN_CONFIG;
+  }
+
+  try {
+    const config = validateLinkedInConfig(JSON.parse(raw));
+    logger.debug(undefined, 'linkedin_config_load', `Loaded LinkedIn config from ${configPath}`, {
+      accounts: config.accounts.length,
+      profiles: config.targetingProfiles.length,
+    });
+    return config;
+  } catch (error: unknown) {
+    logger.error(undefined, 'linkedin_config_load', startTime, error, {
+      configPath,
+      reason: 'malformed',
+      message: `LinkedIn config at ${configPath} is malformed — LinkedIn campaign features will be disabled`,
+    });
+    return EMPTY_LINKEDIN_CONFIG;
+  }
+}
+
+// Lazy singleton: defer the readFileSync until the first lookup. Importing this
+// module (e.g. in unit tests) no longer triggers a filesystem read or a stray
+// "config not found" warning. Tests that need a different fixture can call
+// `__resetLinkedInConfigForTesting()` after pointing LINKEDIN_CONFIG_PATH at
+// their own file.
+let cachedLinkedInConfig: LinkedInRuntimeConfig | undefined;
+
+export function getLinkedInConfig(): LinkedInRuntimeConfig {
+  if (!cachedLinkedInConfig) {
+    cachedLinkedInConfig = loadLinkedInConfig();
+  }
+  return cachedLinkedInConfig;
+}
+
+/**
+ * Test-only: clear the cached config so the next `getLinkedInConfig()` call
+ * re-reads from disk. Pair with a stubbed `LINKEDIN_CONFIG_PATH` to inject
+ * fixtures. Not exported from the package's public surface.
+ */
+export function __resetLinkedInConfigForTesting(): void {
+  cachedLinkedInConfig = undefined;
+}
 
 // ---------------------------------------------------------------------------
 // LinkedIn Marketing API Constants
@@ -32,6 +230,8 @@ const SENIORITY_EXCLUSIONS = ['urn:li:seniority:1', 'urn:li:seniority:3'];
 
 const SKIP_STATUSES = new Set(['ARCHIVED', 'CANCELED', 'COMPLETED', 'DRAFT', 'REMOVED', 'DELETED']);
 
+const LINKEDIN_REQUEST_TIMEOUT_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Environment
 // ---------------------------------------------------------------------------
@@ -44,23 +244,101 @@ function getLinkedInEnv(key: string): string {
   return value;
 }
 
-function resolveAccountId(override?: string): string {
-  const id = override || getLinkedInEnv('LINKEDIN_AD_ACCOUNT_ID');
-  if (!/^\d+$/.test(id)) {
-    throw new Error(`Invalid LinkedIn account ID: must be numeric, got "${id}"`);
+function getAccountId(override?: string): string {
+  if (override) {
+    const config = getLinkedInConfig();
+    if (!config.accounts.some((a) => a.accountId === override)) {
+      throw new Error('Unsupported LinkedIn ad account ID — not in the runtime config. Check the linkedin-config ConfigMap.');
+    }
+    logger.debug(undefined, 'linkedin_config', 'Using LinkedIn account from request', { source: 'request' });
+    return override;
   }
-  if (override && !LINKEDIN_AD_ACCOUNTS.some((a) => a.accountId === id)) {
-    throw new Error(`Unsupported LinkedIn ad account ID: "${id}"`);
+  const envValue = process.env['LINKEDIN_AD_ACCOUNT_ID'];
+  if (envValue) {
+    if (!/^\d+$/.test(envValue)) {
+      throw new Error('LINKEDIN_AD_ACCOUNT_ID must be a numeric string (LinkedIn ad account IDs are digit-only)');
+    }
+    logger.debug(undefined, 'linkedin_config', 'Using LinkedIn account from env', { source: 'env' });
+    return envValue;
   }
-  return id;
+  const config = getLinkedInConfig();
+  if (config.defaultAccountId) {
+    logger.debug(undefined, 'linkedin_config', 'Using default LinkedIn account', { source: 'config_default' });
+    return config.defaultAccountId;
+  }
+  throw new Error('No LinkedIn ad account configured: set LINKEDIN_AD_ACCOUNT_ID env or provide defaultAccountId in the LinkedIn config file');
 }
 
-function getOrgId(): string {
-  return getLinkedInEnv('LINKEDIN_ORG_ID');
+function getOrgId(overrideAccountId?: string): string {
+  const envOrgId = process.env['LINKEDIN_ORG_ID'];
+  if (envOrgId) {
+    // Mirror the digit-only guard applied to LINKEDIN_AD_ACCOUNT_ID above and to
+    // every orgId field in the runtime config (defaultOrgId, accounts[].orgId).
+    // Without this, a typo or full-URN value (e.g. "urn:li:organization:208777"
+    // or "abc123") slips through and gets interpolated into
+    // `urn:li:organization:${envOrgId}` downstream, producing an invalid URN
+    // that LinkedIn rejects mid-flow with an opaque API error instead of a
+    // clear config-validation error at startup.
+    if (!/^\d+$/.test(envOrgId)) {
+      throw new Error('LINKEDIN_ORG_ID must be a numeric string (LinkedIn organization IDs are digit-only)');
+    }
+    logger.debug(undefined, 'linkedin_config', 'Using LinkedIn org from env', { source: 'env' });
+    return envOrgId;
+  }
+
+  // Auto-resolve org ID from the accounts list when a non-default account is set.
+  // Falling back to defaultOrgId here would silently pair an override account with
+  // the default org's URN — a cross-tenant write that LinkedIn rejects mid-flow
+  // after partial campaign artifacts have already been created. Fail closed.
+  const config = getLinkedInConfig();
+  const accountId = overrideAccountId ?? getAccountId();
+  if (accountId !== config.defaultAccountId) {
+    const match = config.accounts.find((a) => a.accountId === accountId);
+    if (match) {
+      logger.debug(undefined, 'linkedin_config', 'Auto-resolved LinkedIn org for account', {
+        source: 'config_match',
+        accountLabel: match.label,
+      });
+      return match.orgId;
+    }
+    throw new Error(
+      'LinkedIn ad account is not in the configured accounts list and LINKEDIN_ORG_ID is not set — refusing to fall back to default org to avoid cross-tenant pairing. Check the linkedin-config ConfigMap.'
+    );
+  }
+
+  if (config.defaultOrgId) {
+    logger.debug(undefined, 'linkedin_config', 'Using default LinkedIn org', { source: 'config_default' });
+    return config.defaultOrgId;
+  }
+  throw new Error('No LinkedIn org configured: set LINKEDIN_ORG_ID env or provide defaultOrgId in the LinkedIn config file');
 }
 
 function getAccessToken(): string {
   return getLinkedInEnv('LINKEDIN_ACCESS_TOKEN');
+}
+
+// Mask a LinkedIn vendor identifier for log context: keep the last 4 digits
+// for triage, redact the rest. LinkedIn IDs are typically 8-10 digits, so a
+// 4-digit suffix is short enough to avoid effectively logging the whole ID.
+function maskAccountId(id: string): string {
+  if (id.length <= 4) return '***';
+  return `***${id.slice(-4)}`;
+}
+
+// Resolve a safe label for log metadata. Prefer the human label from the
+// runtime config (already non-sensitive by design); fall back to a masked
+// suffix when the account isn't in the loaded config (e.g. config not yet
+// loaded, or the caller passed an unknown account override). Avoids leaking
+// raw vendor identifiers into logs even on uncommon error paths.
+function describeAccountForLog(accountId: string): string {
+  try {
+    const match = getLinkedInConfig().accounts.find((a) => a.accountId === accountId);
+    if (match) return match.label;
+  } catch {
+    // Config not loadable — fall through to the masked-ID branch so logging
+    // stays best-effort and never throws from inside a logger metadata call.
+  }
+  return maskAccountId(accountId);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +465,10 @@ function accountUrn(accountId: string): string {
 }
 
 function resolveOrgId(accountId: string): string {
-  const account = LINKEDIN_AD_ACCOUNTS.find((a) => a.accountId === accountId);
-  if (account) return account.organizationId;
-  return getOrgId();
+  const config = getLinkedInConfig();
+  const match = config.accounts.find((a) => a.accountId === accountId);
+  if (match) return match.orgId;
+  return getOrgId(accountId);
 }
 
 function orgUrn(accountId: string): string {
@@ -365,14 +644,18 @@ export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrn
   let skills: readonly string[] = [];
   let groups: readonly string[] = [];
 
+  const config = getLinkedInConfig();
   if (profile === 'custom') {
-    const cloudNative = LINKEDIN_TARGETING_PROFILES.find((p) => p.id === 'cloud-native');
+    const cloudNative = config.targetingProfiles.find((p) => p.id === 'cloud-native');
     skills = cloudNative?.skills || [];
     groups = cloudNative?.groups || [];
   } else {
-    const profileConfig = LINKEDIN_TARGETING_PROFILES.find((p) => p.id === profile);
-    skills = profileConfig?.skills || [];
-    groups = profileConfig?.groups || [];
+    const profileConfig = config.targetingProfiles.find((p) => p.id === profile);
+    if (!profileConfig) {
+      throw new Error(`LinkedIn targeting profile "${profile}" not found in runtime config — check the linkedin-config ConfigMap`);
+    }
+    skills = profileConfig.skills;
+    groups = profileConfig.groups;
   }
 
   return {
@@ -391,7 +674,7 @@ export function buildTargetingCriteria(profile: LinkedInTargetingProfile, geoUrn
       },
       exclude: {
         or: {
-          'urn:li:adTargetingFacet:employers': [...LINKEDIN_EMPLOYER_EXCLUSIONS],
+          'urn:li:adTargetingFacet:employers': [...config.employerExclusions],
           'urn:li:adTargetingFacet:seniorities': SENIORITY_EXCLUSIONS,
         },
       },
@@ -419,12 +702,54 @@ export function buildLinkedInUtmUrl(baseUrl: string, hsToken: string | undefined
 // Orchestrator — full campaign creation flow
 // ---------------------------------------------------------------------------
 
+/**
+ * Preflight check: probe every runtime-config-dependent helper before we
+ * touch the LinkedIn API. Without this, a config gap — missing targeting
+ * profile, env-override account that isn't in the config's `accounts[]`,
+ * empty `defaultOrgId`, etc. — would only surface in step 3 of
+ * `executeLinkedInCampaignCreation` (`createCampaign` → `buildTargetingCriteria`),
+ * after step 2 has already created a campaign group in LinkedIn. That
+ * leaves an orphan campaign group that has to be cleaned up by hand.
+ *
+ * `verifyAccount()` (step 1) is a GET-only probe that exercises
+ * `getAccountId()` and `getAccessToken()`, so we don't repeat those here.
+ * We focus on the org-resolution and targeting-profile lookups, which
+ * otherwise only run inside `createCampaign`.
+ */
+function validateLinkedInPrerequisites(profile: LinkedInTargetingProfile, adAccountId?: string): void {
+  // Resolves the org URN for the specific account (or default if none specified).
+  // Throws cleanly if no path is configured, or if an account override isn't in
+  // the runtime config's accounts[] list.
+  getOrgId(adAccountId);
+  const config = getLinkedInConfig();
+
+  // 'custom' is treated as an alias for 'cloud-native' inside buildTargetingCriteria()
+  // (see the `if (profile === 'custom')` branch — it pulls cloud-native skills/groups
+  // as the fallback). The brief-generation flow can legitimately emit 'custom' when
+  // the AI doesn't recommend a named profile, so the preflight must validate the
+  // SAME entry the runtime path will read, not hard-fail. Without this alias, a
+  // brief that sets targetingProfile: 'custom' would die at preflight even though
+  // the actual campaign-creation code path supports it.
+  const profileToValidate = profile === 'custom' ? 'cloud-native' : profile;
+  if (!config.targetingProfiles.find((p) => p.id === profileToValidate)) {
+    const missing = profile === 'custom' ? `'cloud-native' (the fallback for 'custom')` : `'${profile}'`;
+    throw new Error(
+      `LinkedIn targeting profile ${missing} not found in runtime config — refusing to start campaign creation to avoid partial LinkedIn artifacts. Check the linkedin-config ConfigMap.`
+    );
+  }
+}
+
 export async function executeLinkedInCampaignCreation(req: Request | undefined, params: LinkedInCampaignCreateRequest): Promise<LinkedInCampaignCreateResult> {
   const steps: string[] = [];
   const startTime = logger.startOperation(req, 'linkedin_campaign_create', { event: params.eventName });
-  const accountId = resolveAccountId(params.adAccountId);
+  const accountId = getAccountId(params.adAccountId);
 
   try {
+    // Validate runtime-config dependencies BEFORE any side-effecting LinkedIn
+    // call, so a missing/malformed ConfigMap can't leave orphan campaign
+    // groups behind in step 2.
+    validateLinkedInPrerequisites(params.targetingProfile, accountId);
+
     const account = await verifyAccount(accountId);
     steps.push(`Verified account: ${account.name} (${account.status})`);
 
@@ -508,7 +833,12 @@ interface LinkedInCampaignElement {
 }
 
 export async function getLinkedInAnalytics(req: Request | undefined, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
-  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountId, days });
+  // Derive once so every log line in this function uses the same redacted
+  // identifier. PR description guarantees raw account/org IDs do not appear
+  // in logs after externalization; this preserves that guarantee on the
+  // analytics path.
+  const accountLabel = describeAccountForLog(accountId);
+  const startTime = logger.startOperation(req, 'linkedin_analytics', { accountLabel, days });
   const token = getAccessToken();
   const version = LINKEDIN_API_VERSION;
 
@@ -535,7 +865,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     if (!campaignsResp.ok) {
       const text = await campaignsResp.text().catch(() => '');
       const err = new Error(`LinkedIn adCampaigns fetch failed: ${campaignsResp.status}: ${text.slice(0, 400)}`);
-      logger.error(req, 'linkedin_analytics', startTime, err, { accountId });
+      logger.error(req, 'linkedin_analytics', startTime, err, { accountLabel });
       throw err;
     }
     const campaignsData = (await campaignsResp.json()) as { elements?: LinkedInCampaignElement[] };
@@ -546,7 +876,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
   }
 
   if (campaigns.length === 0) {
-    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+    const account = getLinkedInConfig().accounts.find((a) => a.accountId === accountId);
     const result: LinkedInMonitorResponse = {
       accountLabel: account?.label ?? accountId,
       pulledAt: new Date().toISOString(),
@@ -569,7 +899,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
 
   const analyticsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number }>();
   if (!analyticsResp.ok) {
-    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalyticsV2 returned ${analyticsResp.status} — campaign metrics will show zero`, { accountId });
+    logger.warning(req, 'linkedin_analytics', `LinkedIn adAnalyticsV2 returned ${analyticsResp.status} — campaign metrics will show zero`, { accountLabel });
   }
   if (analyticsResp.ok) {
     const analyticsData = (await analyticsResp.json()) as {
@@ -777,7 +1107,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaignCount: 0 }
   );
 
-  const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === accountId);
+  const account = getLinkedInConfig().accounts.find((a) => a.accountId === accountId);
   const result: LinkedInMonitorResponse = {
     accountLabel: account?.label ?? accountId,
     pulledAt: new Date().toISOString(),
