@@ -99,6 +99,11 @@ describe('buildInvitationActions', () => {
     const [action] = buildInvitationActions([invitation({ enable_voting: false, business_email_required: false })]);
     expect(action.inviteRequiresOrganization).toBe(false);
   });
+
+  it('sets inviteRequiresOrganization true when committee flags are missing', () => {
+    const [action] = buildInvitationActions([invitation()]);
+    expect(action.inviteRequiresOrganization).toBe(true);
+  });
 });
 
 describe('committeeRequiresOrganization', () => {
@@ -122,6 +127,14 @@ describe('invitationRequiresOrganization', () => {
 
   it('falls back to committee flags when inviteRequiresOrganization is undefined', () => {
     expect(invitationRequiresOrganization({ enable_voting: true })).toBe(true);
+  });
+
+  it('requires organization when committee flags are missing (enrichment outage)', () => {
+    expect(invitationRequiresOrganization({})).toBe(true);
+  });
+
+  it('does not require organization when both flags are explicitly false', () => {
+    expect(invitationRequiresOrganization({ enable_voting: false, business_email_required: false })).toBe(false);
   });
 });
 

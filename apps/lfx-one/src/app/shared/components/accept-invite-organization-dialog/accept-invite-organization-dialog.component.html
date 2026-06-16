@@ -20,7 +20,7 @@
       dataTestId="accept-invite-organization-search"
       (onOrganizationResolved)="onOrgResolved($event)">
     </lfx-organization-search>
-    @if (form.get('organization')?.errors?.['required'] && form.get('organization')?.touched) {
+    @if (form.get('organization')?.errors?.['trimmedRequired'] && form.get('organization')?.touched) {
       <p class="text-xs text-red-600">Organization is required for this group</p>
     }
   </div>

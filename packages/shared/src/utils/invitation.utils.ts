@@ -31,6 +31,10 @@ export function invitationRequiresOrganization(flags: {
   if (flags.inviteRequiresOrganization !== undefined) {
     return flags.inviteRequiresOrganization;
   }
+  const { enable_voting, business_email_required } = flags;
+  if (enable_voting === undefined && business_email_required === undefined) {
+    return true;
+  }
   return committeeRequiresOrganization(flags);
 }
 
@@ -83,7 +87,7 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
     // Build the title and its prefix from the same inputs so the UI can link just the group name
     // without runtime string-splitting (`text` = `${prefix}${committee_name}`).
     const titlePrefix = invitation.inviter_name ? `${invitation.inviter_name} invited you to ` : `You've been invited to `;
-    const inviteRequiresOrganization = committeeRequiresOrganization(invitation);
+    const inviteRequiresOrganization = invitationRequiresOrganization(invitation);
     return {
       type: 'Invitation',
       badge: invitation.project_name || invitation.committee_name,

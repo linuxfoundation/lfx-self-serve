@@ -3,11 +3,12 @@
 
 import { Component, inject, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { CommitteeOrganizationReference, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload } from '@lfx-one/shared/utils';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -34,7 +35,7 @@ export class AcceptInviteOrganizationDialogComponent {
 
   public readonly committeeName = this.config.data?.committeeName ?? 'this group';
   public readonly form = new FormGroup({
-    organization: new FormControl(this.config.data?.organization?.name ?? '', [Validators.required]),
+    organization: new FormControl(this.config.data?.organization?.name ?? '', [trimmedRequired()]),
     organization_url: new FormControl(this.config.data?.organization?.website ?? ''),
     organization_id: new FormControl<string | null>(this.config.data?.organization?.id ?? null),
   });
