@@ -53,8 +53,8 @@
             }
             <div class="flex flex-1 items-center gap-2">
               <span class="text-sm font-medium text-slate-700">{{ org.organization }}</span>
-              @if (org.weStartDate) {
-                <span class="text-xs text-slate-400">({{ org.weStartDate }} – {{ org.weEndDate || 'Present' }})</span>
+              @if (orgRangeLabelMap().get(org.organization); as range) {
+                <span class="text-xs text-slate-400">({{ range }})</span>
               }
             </div>
           </div>
@@ -85,7 +85,7 @@
 
                   <!-- Start Year -->
                   <p-select
-                    [options]="availableYearsMap().get(org.organization) ?? yearOptions"
+                    [options]="availableYearsMap().get(period.id) ?? yearOptions"
                     [ngModel]="period.startYear"
                     (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
                     optionLabel="label"
@@ -117,7 +117,7 @@
 
                     <!-- End Year -->
                     <p-select
-                      [options]="availableYearsMap().get(org.organization) ?? yearOptions"
+                      [options]="availableYearsMap().get(period.id) ?? yearOptions"
                       [ngModel]="period.endYear"
                       (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
                       optionLabel="label"
@@ -156,16 +156,10 @@
                       <span>Start date must be before end date</span>
                     </div>
                   }
-                  @if (errors.startBeforeWeStart) {
-                    <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-before-we-start-' + period.id">
+                  @if (errors.outsideWorkExperience) {
+                    <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-outside-work-experience-' + period.id">
                       <i class="fa-light fa-circle-exclamation"></i>
-                      <span>Start date cannot be before {{ org.weStartDate }}</span>
-                    </div>
-                  }
-                  @if (errors.endAfterWeEnd) {
-                    <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-after-we-end-' + period.id">
-                      <i class="fa-light fa-circle-exclamation"></i>
-                      <span>End date cannot be after {{ org.weEndDate }}</span>
+                      <span>Dates must fall within your work history at {{ org.organization }}</span>
                     </div>
                   }
                 }

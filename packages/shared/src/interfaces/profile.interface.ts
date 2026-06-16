@@ -390,6 +390,18 @@ export interface AffiliationEditPeriod {
   endMonth: string;
   endYear: string;
   isPresent: boolean;
+  // Index into the org's weWindows that this period was seeded from. Scopes the period's
+  // year dropdown to that single stint. Undefined for manually-added / segment-derived periods.
+  windowIndex?: number;
+}
+
+/**
+ * A single work-history stint window (one employment period at an org).
+ * An org can have several when the user worked there across multiple stints.
+ */
+export interface AffiliationWorkWindow {
+  startDate: string; // "Mon YYYY"
+  endDate?: string; // "Mon YYYY"; undefined = present/ongoing
 }
 
 /**
@@ -400,8 +412,9 @@ export interface AffiliationEditOrg {
   organizationLogo?: string;
   enabled: boolean;
   periods: AffiliationEditPeriod[];
-  weStartDate?: string;
-  weEndDate?: string;
+  // One window per work-history stint at this org. Empty = no work-history constraint
+  // (e.g. orgs known only from existing confirmed affiliations, or "Independent").
+  weWindows: AffiliationWorkWindow[];
 }
 
 /**
