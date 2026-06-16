@@ -2190,12 +2190,15 @@ export class ProjectService {
         };
       }
 
-      // Use summary row for KPI card values
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
-      const currentCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
 
       const monthlyData = monthlyResult.rows.map((row) => Math.round((row.MONTHLY_CTR ?? 0) * 10) / 10);
+
+      // Source currentCtr from the month-filtered series when available so the KPI
+      // value and MoM comparison always refer to the same month window.
+      const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
+      const currentCtr = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1] : summaryCtr;
 
       // Compute change as current CTR vs 6-month average (more stable than MoM)
       let changePercentage = 0;

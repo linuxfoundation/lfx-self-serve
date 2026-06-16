@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -78,8 +78,8 @@ export class OverviewTabComponent {
         const ri = data.revenueImpact;
         const yoyPct = ri.changePercentage;
         const trend = ri.paidMedia?.monthlyTrend ?? [];
-        const revMomPct = this.computeMomFromTrend(trend, (m) => m.revenue);
-        const roasMomPct = this.computeMomFromTrend(trend, (m) => m.roas);
+        const revMomPct = computeMomPct(trend.map((m) => m.revenue));
+        const roasMomPct = computeMomPct(trend.map((m) => m.roas));
         cards.push(
           {
             id: 'attributed-revenue',
@@ -177,13 +177,5 @@ export class OverviewTabComponent {
       const foundation = name ? name : 'all LF projects';
       return `vs. ${momLabel} (MoM) · vs. ${yoyLabel} (YoY) · Linear attribution · ${foundation}`;
     });
-  }
-
-  private computeMomFromTrend<T>(trend: T[], extractor: (item: T) => number): number | null {
-    if (trend.length < 2) return null;
-    const current = extractor(trend[trend.length - 1]);
-    const prior = extractor(trend[trend.length - 2]);
-    if (prior === 0) return null;
-    return Math.round(((current - prior) / prior) * 1000) / 10;
   }
 }
