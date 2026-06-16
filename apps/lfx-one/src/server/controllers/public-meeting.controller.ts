@@ -223,6 +223,11 @@ export class PublicMeetingController {
         meeting.organizer = isOrganizer;
       }
 
+      // Strip the Zoom host key for unauthenticated callers (mirrors getMeetingById).
+      if (!isAuthenticated) {
+        delete (meeting as Partial<Meeting>).host_key;
+      }
+
       // For non-full-access users, return only the fields needed for the basic UI
       const meetingResponse = fullAccess
         ? meeting
