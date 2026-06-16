@@ -6477,7 +6477,7 @@ export class ProjectService {
   private defaultPeriodRange(): ResolvedPeriodRange {
     const resolved = resolvePeriodRange(getDefaultMarketingImpactMonth());
     if (!resolved) {
-      throw new ServiceValidationError([{ field: 'period', message: 'Unable to resolve default period range', code: 'INVALID_PERIOD' }]);
+      throw ServiceValidationError.forField('period', 'Unable to resolve default period range');
     }
     return resolved;
   }

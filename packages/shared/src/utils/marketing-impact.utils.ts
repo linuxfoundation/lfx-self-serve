@@ -68,16 +68,16 @@ export function computeMomPct(arr: number[] | undefined): number | null {
 // === Period Utilities ===
 
 const PERIOD_PRESETS = ['ytd', 'last-3', 'last-6'] as const;
-const MONTH_REGEX = /^\d{4}-\d{2}$/;
+const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** Builds grouped period options: presets first, then individual months. */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
   const now = new Date();
   const currentYear = now.getFullYear();
   const presets: MarketingImpactPeriodOption[] = [
-    { label: `Year to Date (${currentYear})`, value: 'ytd', group: 'preset' },
-    { label: 'Last 3 months', value: 'last-3', group: 'preset' },
-    { label: 'Last 6 months', value: 'last-6', group: 'preset' },
+    { label: `Year to Date (${currentYear})`, value: 'ytd' },
+    { label: 'Last 3 months', value: 'last-3' },
+    { label: 'Last 6 months', value: 'last-6' },
   ];
 
   const months: MarketingImpactPeriodOption[] = [];
@@ -85,7 +85,7 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    months.push({ label, value, group: 'month' });
+    months.push({ label, value });
   }
 
   return [...presets, ...months];

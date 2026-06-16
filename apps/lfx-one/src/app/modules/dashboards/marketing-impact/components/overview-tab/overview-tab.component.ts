@@ -5,7 +5,16 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { computeMomPct, formatChangePct, formatCurrency, formatNumber, isPeriodMonth, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import {
+  computeMomPct,
+  formatChangePct,
+  formatCurrency,
+  formatNumber,
+  isPeriodMonth,
+  resolvePeriodRange,
+  trendColorClass,
+  trendDirection,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -72,11 +81,13 @@ export class OverviewTabComponent {
   private initPerformanceSummaryKpis(): Signal<PerformanceSummaryKpi[]> {
     return computed(() => {
       const data = this.overviewKpiData();
+      const isMonth = isPeriodMonth(this.selectedPeriod());
+      const changeSuffix = isMonth ? 'MoM' : 'Period';
       const cards: PerformanceSummaryKpi[] = [];
 
       if (data.revenueImpact) {
         const ri = data.revenueImpact;
-        const yoyPct = ri.changePercentage;
+        const yoyPct = isMonth ? ri.changePercentage : null;
         const trend = ri.paidMedia?.monthlyTrend ?? [];
         const revMomPct = computeMomPct(trend.map((m) => m.revenue));
         const roasMomPct = computeMomPct(trend.map((m) => m.roas));
@@ -87,7 +98,7 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-dollar-sign',
             iconClass: 'bg-green-100 text-green-600',
             value: formatCurrency(ri.revenueAttributed),
-            momChange: formatChangePct(revMomPct, 'MoM'),
+            momChange: formatChangePct(revMomPct, changeSuffix),
             momTrend: trendDirection(revMomPct),
             momTrendClass: trendColorClass(revMomPct),
             yoyChange: formatChangePct(yoyPct, 'YoY'),
@@ -100,7 +111,7 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-chart-line-up',
             iconClass: 'bg-blue-100 text-blue-600',
             value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
-            momChange: formatChangePct(roasMomPct, 'MoM'),
+            momChange: formatChangePct(roasMomPct, changeSuffix),
             momTrend: trendDirection(roasMomPct),
             momTrendClass: trendColorClass(roasMomPct),
             yoyChange: null,
@@ -119,7 +130,7 @@ export class OverviewTabComponent {
           icon: 'fa-light fa-globe',
           iconClass: 'bg-violet-100 text-violet-600',
           value: formatNumber(br.totalMonthlySessions),
-          momChange: formatChangePct(momPct, 'MoM'),
+          momChange: formatChangePct(momPct, changeSuffix),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),
           yoyChange: null,
@@ -137,7 +148,7 @@ export class OverviewTabComponent {
           icon: 'fa-light fa-envelope-open',
           iconClass: 'bg-amber-100 text-amber-600',
           value: `${(ec.currentCtr ?? 0).toFixed(2)}%`,
-          momChange: formatChangePct(momPct, 'MoM'),
+          momChange: formatChangePct(momPct, changeSuffix),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),
           yoyChange: null,
@@ -154,7 +165,10 @@ export class OverviewTabComponent {
   private initSummaryTitle(): Signal<string> {
     return computed(() => {
       const periodValue = this.selectedPeriod();
-      if (!isPeriodMonth(periodValue)) return 'Performance summary';
+      if (!isPeriodMonth(periodValue)) {
+        const resolved = resolvePeriodRange(periodValue);
+        return resolved ? `${resolved.label} performance summary` : 'Performance summary';
+      }
       const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return 'Performance summary';
       const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
@@ -166,8 +180,10 @@ export class OverviewTabComponent {
     return computed(() => {
       const periodValue = this.selectedPeriod();
       if (!isPeriodMonth(periodValue)) {
+        const resolved = resolvePeriodRange(periodValue);
         const name = this.foundationName();
-        return name ? `Linear attribution · ${name}` : '';
+        const foundation = name || 'all LF projects';
+        return resolved ? `${resolved.label} · Linear attribution · ${foundation}` : '';
       }
       const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return '';

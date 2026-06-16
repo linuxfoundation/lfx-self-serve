@@ -21,11 +21,7 @@ export interface MarketingImpactMonthOption {
 export interface MarketingImpactPeriodOption {
   label: string;
   value: string;
-  group: 'preset' | 'month';
 }
-
-/** Valid period preset identifiers. */
-export type MarketingImpactPeriodPreset = 'ytd' | 'last-3' | 'last-6';
 
 /** Resolved date range from a validated period parameter. */
 export interface ResolvedPeriodRange {
