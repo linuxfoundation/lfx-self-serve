@@ -454,7 +454,8 @@ export class ImplementationTabComponent implements OnInit {
 
     const metaCopy = brief.structuredCopy?.['meta_ads'] as Record<string, unknown> | undefined;
     if (metaCopy) {
-      const variants = (metaCopy['variants'] as { primary_text?: string; headline?: string; description?: string }[]) ?? [];
+      const rawVariants = metaCopy['variants'];
+      const variants = Array.isArray(rawVariants) ? (rawVariants as { primary_text?: string; headline?: string; description?: string }[]) : [];
       this.metaVariants.set(
         variants.map((v) => ({
           primaryText: v.primary_text ?? '',
@@ -462,7 +463,8 @@ export class ImplementationTabComponent implements OnInit {
           description: v.description,
         }))
       );
-      this.metaGeoTargets.set((metaCopy['recommended_geos'] as string[]) ?? []);
+      const rawGeos = metaCopy['recommended_geos'];
+      this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
     }
     if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);

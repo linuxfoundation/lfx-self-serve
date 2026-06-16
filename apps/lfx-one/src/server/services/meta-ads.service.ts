@@ -182,7 +182,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
   // Step 3: Create ad set with budget, schedule, and geo targeting
   const budgetCents = Math.round(config.budgetUsd * 100);
-  const adSetName = `${config.eventName} - Conversions`;
+  const adSetName = `${config.eventName} - Traffic`;
 
   const adSetBody: Record<string, unknown> = {
     name: adSetName,
