@@ -27,7 +27,7 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
   toObservable(entitySignal)
     .pipe(
       filter((entity): entity is T & { project_slug: string } => !!entity?.project_uid && !!entity?.project_slug),
-      distinctUntilChanged((a, b) => a.uid === b.uid),
+      distinctUntilChanged((a, b) => a.uid === b.uid && a.project_uid === b.project_uid && a.project_slug === b.project_slug),
       takeUntilDestroyed(destroyRef)
     )
     .subscribe((entity) => {
@@ -36,10 +36,14 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
         name: entity.project_name || entity.foundation_name || entity.project_slug,
         slug: entity.project_slug,
       };
+      // Only write ?project= to the URL if it was already present — mirrors the same
+      // guard in NavigationService.applyDefaultSelection() to prevent injecting a wrong
+      // project slug into entity-specific deep-link URLs (e.g. /project/groups/:id).
+      const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
       if (router.url.startsWith('/foundation/')) {
-        projectContextService.setFoundation(context);
+        projectContextService.setFoundation(context, syncUrl);
       } else {
-        projectContextService.setProject(context);
+        projectContextService.setProject(context, syncUrl);
       }
     });
 }

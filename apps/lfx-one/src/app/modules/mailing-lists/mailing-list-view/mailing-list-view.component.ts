@@ -179,5 +179,4 @@ export class MailingListViewComponent {
       return uid ? ['/mailing-lists', uid, 'edit'] : ['/mailing-lists'];
     });
   }
-
 }
