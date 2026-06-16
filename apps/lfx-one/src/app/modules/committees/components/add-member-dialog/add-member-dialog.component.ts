@@ -89,22 +89,6 @@ export class AddMemberDialogComponent {
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
 
-  public constructor() {
-    if (this.committee && committeeRequiresOrganization(this.committee)) {
-      this.form.get('organization')?.setValidators([Validators.required]);
-    }
-
-    this.form
-      .get('organization')!
-      .valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((name) => {
-        const normalizedName = (name ?? '').trim();
-        if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
-          this.form.patchValue({ organization_id: null }, { emitEvent: false });
-        }
-      });
-  }
-
   public submitting = signal(false);
   public searchLoading = signal(false);
 
@@ -146,6 +130,22 @@ export class AddMemberDialogComponent {
   public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
 
   public readonly roleOptions = MEMBER_ROLES;
+
+  public constructor() {
+    if (this.committee && committeeRequiresOrganization(this.committee)) {
+      this.form.get('organization')?.setValidators([Validators.required]);
+    }
+
+    this.form
+      .get('organization')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((name) => {
+        const normalizedName = (name ?? '').trim();
+        if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
+          this.form.patchValue({ organization_id: null }, { emitEvent: false });
+        }
+      });
+  }
 
   /** Append a searched person's email to the textarea (autofill convenience). */
   public addEmail(user: DecoratedCommitteeSearchResult): void {

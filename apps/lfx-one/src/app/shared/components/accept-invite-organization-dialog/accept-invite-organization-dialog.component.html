@@ -3,13 +3,12 @@
 
 <div class="flex flex-col gap-4" data-testid="accept-invite-organization-dialog">
   <p class="text-sm text-gray-500">
-    Before joining <strong>{{ committeeName }}</strong>, please confirm the organization you represent.
+    Before joining <strong>{{ committeeName }}</strong
+    >, please confirm the organization you represent.
   </p>
 
   <div class="flex flex-col gap-1">
-    <label class="block text-sm font-medium text-gray-700">
-      Organization <span class="text-red-500">*</span>
-    </label>
+    <label class="block text-sm font-medium text-gray-700"> Organization <span class="text-red-500">*</span> </label>
     <lfx-organization-search
       [form]="form"
       nameControl="organization"

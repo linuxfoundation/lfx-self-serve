@@ -126,9 +126,7 @@
   <!-- ── Organization (required for voting / business-email groups) ─────────── -->
   @if (organizationRequired()) {
     <div class="flex flex-col gap-1">
-      <label class="block text-sm font-medium text-gray-700">
-        Organization <span class="text-red-500">*</span>
-      </label>
+      <label class="block text-sm font-medium text-gray-700"> Organization <span class="text-red-500">*</span> </label>
       <lfx-organization-search
         [form]="form"
         nameControl="organization"

@@ -733,20 +733,8 @@ export class CommitteeService {
    * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
    * invitee-authenticated (committee-service enforces principal == invitee_email).
    */
-  public async acceptCommitteeInvite(
-    req: Request,
-    committeeId: string,
-    inviteId: string,
-    body?: AcceptCommitteeInviteRequest
-  ): Promise<void> {
-    await this.microserviceProxy.proxyRequest<void>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeId}/invites/${inviteId}/accept`,
-      'POST',
-      {},
-      body ?? {}
-    );
+  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string, body?: AcceptCommitteeInviteRequest): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST', {}, body ?? {});
 
     logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
       committee_uid: committeeId,

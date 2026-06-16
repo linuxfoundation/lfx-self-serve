@@ -89,9 +89,7 @@ describe('buildInvitationActions', () => {
 
   it('carries organization context and the requires-organization flag for the accept flow', () => {
     const org = { id: 'org-1', name: 'Acme Corp', website: 'https://acme.example' };
-    const [action] = buildInvitationActions([
-      invitation({ organization: org, enable_voting: true, business_email_required: false }),
-    ]);
+    const [action] = buildInvitationActions([invitation({ organization: org, enable_voting: true, business_email_required: false })]);
 
     expect(action.inviteOrganization).toEqual(org);
     expect(action.inviteRequiresOrganization).toBe(true);
