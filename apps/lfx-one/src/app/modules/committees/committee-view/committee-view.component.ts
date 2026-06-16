@@ -47,7 +47,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -262,6 +262,17 @@ export class CommitteeViewComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
     }
+
+    // Sync the project/foundation context to the group's actual owning project when data loads.
+    // applyDefaultSelection() picks the user's default project before this page loads — this
+    // corrects it so the sidebar reflects the group's real project rather than an unrelated one.
+    toObservable(this.committee)
+      .pipe(
+        filter((c): c is Committee => !!c?.project_uid && !!c.project_slug),
+        distinctUntilChanged((a, b) => a.uid === b.uid),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((committee) => this.syncProjectContextFromCommittee(committee));
 
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
@@ -500,6 +511,21 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+
+  private syncProjectContextFromCommittee(committee: Committee): void {
+    if (!committee.project_uid || !committee.project_slug) return;
+    const context: ProjectContext = {
+      uid: committee.project_uid,
+      name: committee.project_name || committee.foundation_name || committee.project_slug,
+      slug: committee.project_slug,
+    };
+    if (committee.is_foundation) {
+      this.projectContextService.setFoundation(context);
+    } else {
+      this.projectContextService.setProject(context);
+    }
+  }
+
   /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
   private flushDecline(inviteUid: string): void {
     const pending = this.pendingDeclines.get(inviteUid);
