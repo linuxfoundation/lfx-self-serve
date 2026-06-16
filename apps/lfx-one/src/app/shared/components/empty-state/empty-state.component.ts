@@ -35,6 +35,10 @@ export class EmptyStateComponent {
   // === Outputs ===
   public readonly ctaClick = output<void>();
 
-  /** Defaults rel to `noopener noreferrer` for `_blank` targets to prevent reverse-tabnabbing. */
-  protected readonly resolvedRel = computed(() => this.ctaRel() ?? (this.ctaTarget() === '_blank' ? 'noopener noreferrer' : undefined));
+  /** Defaults rel to `noopener noreferrer` for `_blank` targets to prevent reverse-tabnabbing. Treats empty/whitespace ctaRel as not provided. */
+  protected readonly resolvedRel = computed(() => {
+    const rel = this.ctaRel()?.trim();
+    if (rel) return rel;
+    return this.ctaTarget() === '_blank' ? 'noopener noreferrer' : undefined;
+  });
 }
