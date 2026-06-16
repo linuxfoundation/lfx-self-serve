@@ -38,7 +38,7 @@
           [outlined]="!ctaGhost()"
           [href]="ctaHref()!"
           [target]="ctaTarget()"
-          [rel]="ctaRel()"></lfx-button>
+          [rel]="resolvedRel()"></lfx-button>
       } @else if (ctaLabel()) {
         <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" [size]="ctaSize()" [text]="ctaGhost()" [outlined]="!ctaGhost()" (onClick)="ctaClick.emit()"></lfx-button>
       }

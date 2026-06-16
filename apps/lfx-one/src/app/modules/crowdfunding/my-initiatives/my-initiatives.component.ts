@@ -72,11 +72,12 @@ export class MyInitiativesComponent {
   private initStatCards(): Signal<StatCardItem[]> {
     return computed<StatCardItem[]>(() => {
       const stats = this.stats();
-      const raisedLabel = stats && stats.monthlyGain > 0 ? `Total Raised · +${formatCurrency(stats.monthlyGain)} this month` : 'Total Raised';
+      const raised = formatCurrency(stats?.totalRaised ?? 0);
+      const raisedValue = stats && stats.monthlyGain > 0 ? `${raised} · +${formatCurrency(stats.monthlyGain)}/mo` : raised;
 
       return [
         { value: stats?.activeCount ?? 0, label: 'Active Initiatives', icon: 'fa-light fa-box-dollar', iconContainerClass: 'bg-blue-100 text-blue-600' },
-        { value: formatCurrency(stats?.totalRaised ?? 0), label: raisedLabel, icon: 'fa-light fa-dollar-sign', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
+        { value: raisedValue, label: 'Total Raised', icon: 'fa-light fa-dollar-sign', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
         { value: stats?.totalSponsors ?? 0, label: 'Total Sponsors', icon: 'fa-light fa-users', iconContainerClass: 'bg-gray-200 text-gray-500' },
       ];
     });

@@ -133,12 +133,12 @@ export class MyDonationsComponent {
   private initStatCards(): Signal<StatCardItem[]> {
     return computed<StatCardItem[]>(() => {
       const stats = this.stats();
-      const recurringLabel = `Active Recurring · ${stats.activeRecurringCount} subscription${stats.activeRecurringCount === 1 ? '' : 's'}`;
+      const recurringValue = `${formatCurrency(stats.activeRecurringAmount)}/mo · ${stats.activeRecurringCount} active`;
 
       return [
         { value: formatCurrency(stats.totalDonated), label: 'Total Donated · All time', icon: 'fa-light fa-hand-holding-heart', iconContainerClass: 'bg-blue-100 text-blue-600' },
         { value: stats.initiativesSupported, label: 'Initiatives Supported', icon: 'fa-light fa-seedling', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
-        { value: `${formatCurrency(stats.activeRecurringAmount)}/mo`, label: recurringLabel, icon: 'fa-light fa-arrows-rotate', iconContainerClass: 'bg-violet-100 text-violet-600' },
+        { value: recurringValue, label: 'Active Recurring', icon: 'fa-light fa-arrows-rotate', iconContainerClass: 'bg-violet-100 text-violet-600' },
       ];
     });
   }

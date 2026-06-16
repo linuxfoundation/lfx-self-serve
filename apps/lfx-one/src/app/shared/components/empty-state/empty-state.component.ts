@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
 
@@ -34,4 +34,7 @@ export class EmptyStateComponent {
 
   // === Outputs ===
   public readonly ctaClick = output<void>();
+
+  /** Defaults rel to `noopener noreferrer` for `_blank` targets to prevent reverse-tabnabbing. */
+  protected readonly resolvedRel = computed(() => this.ctaRel() ?? (this.ctaTarget() === '_blank' ? 'noopener noreferrer' : undefined));
 }
