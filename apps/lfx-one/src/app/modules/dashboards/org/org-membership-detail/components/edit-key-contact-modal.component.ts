@@ -5,7 +5,8 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectorRef, Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import type {
   EditKeyContactDialogData,
@@ -23,13 +24,13 @@ import { take } from 'rxjs';
 @Component({
   selector: 'lfx-edit-key-contact-modal',
   standalone: true,
-  imports: [NgTemplateOutlet, FormsModule, InputTextModule, TooltipModule],
+  imports: [NgTemplateOutlet, FormsModule, InputTextModule, TooltipModule, EmployeeAvatarComponent],
   templateUrl: './edit-key-contact-modal.component.html',
 })
 export class EditKeyContactModalComponent {
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly membershipsService = inject(OrgLensMembershipsService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<EditKeyContactDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
@@ -112,12 +113,12 @@ export class EditKeyContactModalComponent {
 
     // FR-023a: load the org's employee list once when the modal opens; filter client-side as the user types.
     if (this.orgUid) {
-      this.membershipsService
-        .getKeyContactEmployees(this.orgUid)
+      this.directory
+        .getEmployees(this.orgUid)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: (res) => this.employees.set(res.employees ?? []),
-          error: () => this.employeeSearchUnavailable.set(true), // FR-026: manual entry stays usable
+          next: (list) => this.employees.set(list),
+          error: () => this.employeeSearchUnavailable.set(true), // manual entry stays usable
         });
     }
   }

@@ -22,9 +22,12 @@ export class ContributionsService {
 /** Serialize the composed filter/pagination state to URL query params. Empty multi-selects are omitted. */
 function buildQueryParams(query: OrgContributionsQuery): HttpParams {
   let params = new HttpParams()
+    .set('view', query.view)
     .set('range', query.dateRange)
     .set('sort', query.sort)
     .set('dir', query.dir === 1 ? 'asc' : 'desc')
+    .set('commitSort', query.commitSort)
+    .set('commitDir', query.commitDir === 1 ? 'asc' : 'desc')
     .set('page', String(query.page))
     .set('size', String(query.size));
   if (query.search) {

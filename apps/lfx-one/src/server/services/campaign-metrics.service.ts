@@ -12,11 +12,13 @@ import type {
   KeywordMetricsResponse,
   LinkedInMonitorResponse,
   PacingLabel,
+  RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
 import { getLinkedInAnalytics } from './linkedin-ads.service';
+import { getRedditAnalytics } from './reddit-ads.service';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -409,5 +411,16 @@ export class LinkedInMetricsService {
   public async getLinkedInMonitorData(req: Request, accountId: string, days: number): Promise<LinkedInMonitorResponse> {
     logger.debug(req, 'linkedin_monitor', 'Fetching LinkedIn campaign analytics', { accountId, days });
     return getLinkedInAnalytics(req, accountId, days);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CampaignMetricsService — Reddit analytics
+// ---------------------------------------------------------------------------
+
+export class RedditMetricsService {
+  public async getRedditMonitorData(req: Request, accountId: string, days: number): Promise<RedditMonitorResponse> {
+    logger.debug(req, 'reddit_monitor', 'Fetching Reddit campaign analytics', { accountId, days });
+    return getRedditAnalytics(req, accountId, days);
   }
 }

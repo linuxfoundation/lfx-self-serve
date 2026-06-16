@@ -64,9 +64,11 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
   const badge = SOURCE_BADGE[row.source] ?? SOURCE_BADGE.git;
   return {
     commitSha: row.commitSha,
+    contributorId: row.contributorId,
     projectName: row.projectName,
     committerName: row.committerName,
     committerTitle: row.committerTitle,
+    committerAvatarUrl: row.committerAvatarUrl,
     username: row.username,
     source: row.source,
     sourceLabel: badge.label,

@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="bg-white border border-gray-200 rounded-lg p-5" data-testid="initiative-header">
+  <div class="flex items-start gap-4">
+    <!-- Icon -->
+    <div
+      class="flex items-center justify-center w-12 h-12 rounded-lg bg-gray-50 flex-shrink-0 overflow-hidden"
+      aria-hidden="true"
+      data-testid="initiative-icon">
+      @if (donation().icon) {
+        <img [src]="donation().icon" [alt]="donation().name + ' logo'" class="w-full h-full object-contain" />
+      } @else {
+        <i class="fa-light fa-circle-dollar text-2xl text-gray-400"></i>
+      }
+    </div>
+
+    <!-- Details -->
+    <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+      <!-- Eyebrow: fund type -->
+      <span class="text-xs font-semibold flex items-center gap-1 text-gray-400" data-testid="initiative-type-row">
+        <i [class]="fundTypeIcon()" aria-hidden="true"></i>
+        {{ fundTypeLabel() }}
+      </span>
+
+      <!-- Title -->
+      <h1 class="text-base font-bold text-gray-900 leading-snug" data-testid="initiative-title">{{ donation().name }}</h1>
+
+      <!-- Description -->
+      @if (donation().description) {
+        <p class="text-sm text-gray-500" data-testid="initiative-description">{{ donation().description }}</p>
+      }
+
+      <!-- Tags -->
+      @if (donation().tags?.length) {
+        <div class="flex flex-wrap items-center gap-1.5 mt-1" data-testid="initiative-tags">
+          @for (tag of donation().tags; track tag) {
+            <lfx-tag [value]="tag" severity="secondary" [rounded]="true" />
+          }
+        </div>
+      }
+    </div>
+
+    <!-- View Initiative -->
+    @if (donation().initiativeUrl) {
+      <lfx-button
+        label="View Initiative"
+        icon="fa-light fa-arrow-up-right-from-square"
+        iconPos="right"
+        severity="secondary"
+        size="small"
+        [href]="donation().initiativeUrl ?? ''"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="view-initiative-btn" />
+    }
+  </div>
+</div>

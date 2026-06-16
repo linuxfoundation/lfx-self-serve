@@ -18,18 +18,19 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { BoardMembersService } from '../../../services/board-members.service';
+import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Bulk-reassign one person's N Membership-Entitlement board seats; the parent fans out the PUTs. Reuses the committee modal contracts. */
 @Component({
   selector: 'lfx-reassign-board-roles-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, CheckboxModule],
+  imports: [FormsModule, InputTextModule, CheckboxModule, EmployeeAvatarComponent],
   templateUrl: './reassign-board-roles-modal.component.html',
 })
 export class ReassignBoardRolesModalComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly dataService = inject(BoardMembersService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignCommitteeRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
@@ -73,11 +74,11 @@ export class ReassignBoardRolesModalComponent {
 
   public constructor() {
     if (this.orgUid) {
-      this.dataService
+      this.directory
         .getEmployees(this.orgUid)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: (res) => this.employees.set(res.employees ?? []),
+          next: (list) => this.employees.set(list),
           error: () => this.employeeSearchUnavailable.set(true),
         });
     }

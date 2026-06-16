@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, HostListener, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, HostListener, inject, input, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -9,6 +9,7 @@ import { debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 
 import type { DocsSearchHit } from '@lfx-one/shared/interfaces';
 
+import { DocsManifestService } from '../../services/docs-manifest.service';
 import { DocsSearchService } from '../../services/docs-search.service';
 
 /**
@@ -42,6 +43,17 @@ export class DocsSearchComponent {
   private readonly searchService = inject(DocsSearchService);
   private readonly router = inject(Router);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly manifest = inject(DocsManifestService);
+
+  // Maps each topic slug to its sentence-cased display name so result chips show
+  // the proper label (e.g. 'committees' → 'Groups'). A computed record keeps the
+  // template lookup to a plain property access — no method calls in the template.
+  protected readonly topicLabelRecord = computed<Record<string, string | undefined>>(() =>
+    Object.fromEntries(this.manifest.getTopics().map((topic) => [topic.slug, topic.name.charAt(0).toUpperCase() + topic.name.slice(1).toLowerCase()]))
+  );
+
+  // When true, the search box fills its container instead of capping at max-w-xl.
+  public readonly fullWidth = input(false);
 
   protected readonly inputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
 

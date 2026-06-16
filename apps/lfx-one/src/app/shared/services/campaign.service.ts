@@ -20,6 +20,8 @@ import {
   KeywordMetricsResponse,
   LinkedInAccount,
   LinkedInMonitorResponse,
+  RedditAccountOption,
+  RedditMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -75,6 +77,14 @@ export class CampaignService {
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
+  }
+
+  public getRedditAccounts(): Observable<RedditAccountOption[]> {
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts');
+  }
+
+  public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey } });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {

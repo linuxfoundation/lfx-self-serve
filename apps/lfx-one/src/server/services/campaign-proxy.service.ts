@@ -17,12 +17,14 @@ import type {
   CampaignSSEEventType,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
+  RedditCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
+import { executeRedditCampaignCreation } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
 // Google Ads gRPC client (via google-ads-api)
@@ -354,6 +356,24 @@ LINKEDIN COPY RULES:
 - Include event dates and location naturally in at least one variant
 - Headline should drive action: "Register Now", "Secure Your Spot", "Join Us in [City]"`;
 
+const COPY_REDDIT_SECTION = `
+REDDIT PROMOTED POSTS (key: "reddit_promoted"):
+- variants: array of 2-3 ad variations, each containing:
+  - headline: ≤ 300 characters (the post title — must feel native to Reddit, not corporate)
+  - body: ≤ 500 characters (optional body text for text ads — conversational, community-focused)
+- recommended_subreddits: array of 10-15 REAL subreddit names that exist on Reddit (e.g. "kubernetes", "devops", "opensource", "programming", "cloudcomputing", "docker", "homelab", "sysadmin", "linux", "CNCF"). Use lowercase subreddit names WITHOUT the "r/" prefix. Only include subreddits that actually exist and are active. Select based on event topic and target audience.
+- recommended_interests: array of 3-5 Reddit interest categories (e.g. "Technology", "Programming", "Cloud Computing")
+- recommended_keywords: array of 10-15 high-intent keywords related to the event topic (e.g. "kubernetes conference", "cloud native summit", "devops training", "container orchestration"). These are used for Reddit keyword targeting.
+- recommended_geos: array of 2-5 ISO 3166-1 alpha-2 country codes for geo targeting, based on the event location and surrounding high-intent countries. For example, an event in Japan should target ["JP", "KR", "SG", "AU", "IN"]. An event in San Francisco should target ["US", "CA"]. Always include the event's host country first.
+
+REDDIT COPY RULES:
+- Headlines must feel like organic Reddit posts — no marketing jargon, no ALL CAPS
+- Use a conversational, community tone — Reddit users reject overtly corporate messaging
+- Ask questions or share insights rather than making demands
+- Avoid exclamation marks — Reddit culture finds them inauthentic
+- Include event dates and key value props naturally
+- NEVER use em-dashes (—) or en-dashes (–) — use commas or periods`;
+
 const COPY_RULES_SECTION = `
 IMPORTANT RULES:
 1. Dates must come ONLY from the event data provided — never use training-data memory
@@ -365,16 +385,19 @@ IMPORTANT RULES:
 function buildCopySystemPrompt(platforms: string[]): string {
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
+  const includeReddit = platforms.includes('reddit-ads');
 
   let prompt = COPY_SYSTEM_PROMPT_BASE + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
 
   if (includeGoogle) prompt += COPY_GOOGLE_SECTION;
   if (includeLinkedIn) prompt += COPY_LINKEDIN_SECTION;
+  if (includeReddit) prompt += COPY_REDDIT_SECTION;
   prompt += COPY_RULES_SECTION;
 
   const keys: string[] = [];
   if (includeGoogle) keys.push('"google_search"', '"google_display"');
   if (includeLinkedIn) keys.push('"linkedin_sponsored"');
+  if (includeReddit) keys.push('"reddit_promoted"');
   prompt += `\n\nRespond with a JSON object (no markdown fences). Keys: ${keys.join(' and ')}.`;
 
   return prompt;
@@ -505,10 +528,10 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
       return;
     }
 
@@ -684,10 +707,10 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
       return;
     }
 
@@ -845,14 +868,16 @@ export class CampaignProxyService {
       }
     }
 
-    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads'];
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
+    const includeReddit = platforms.includes('reddit-ads');
 
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
+    const redditResults: RedditCampaignCreateResult[] = [];
     const errors: string[] = [];
 
     if (unsupported.length > 0) {
@@ -870,6 +895,14 @@ export class CampaignProxyService {
         promises.push(this.executeLinkedInDispatch(effectiveBody, linkedInResults, errors));
       } else {
         errors.push('LinkedIn Ads was selected but no LinkedIn configuration was provided.');
+      }
+    }
+
+    if (includeReddit) {
+      if (effectiveBody.redditConfig) {
+        promises.push(this.executeRedditDispatch(effectiveBody, redditResults, errors));
+      } else {
+        errors.push('Reddit Ads was selected but no Reddit configuration was provided.');
       }
     }
 
@@ -893,6 +926,17 @@ export class CampaignProxyService {
         adCount: li.creativeCount,
         campaignUrl: li.linkedInUrl,
         steps: li.steps,
+      })),
+      ...redditResults.map((r) => ({
+        platform: 'reddit-ads' as const,
+        type: 'social' as const,
+        campaignName: r.campaignName,
+        campaignId: r.campaignId,
+        adGroupCount: 1,
+        keywordCount: 0,
+        adCount: r.adCount,
+        campaignUrl: r.redditUrl,
+        steps: r.steps,
       })),
     ];
 
@@ -954,6 +998,27 @@ export class CampaignProxyService {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unknown LinkedIn error';
       errors.push(`linkedin-ads: ${msg}`);
+    }
+  }
+
+  private async executeRedditDispatch(body: CampaignCreateRequest, results: RedditCampaignCreateResult[], errors: string[]): Promise<void> {
+    const config = body.redditConfig!;
+    try {
+      const result = await executeRedditCampaignCreation(undefined, {
+        ...config,
+        eventName: config.eventName || body.eventName,
+        eventSlug: config.eventSlug || body.eventSlug,
+        registrationUrl: config.registrationUrl || body.registrationUrl,
+        hsToken: config.hsToken || body.hsToken,
+        startDate: config.startDate || body.startDate,
+        endDate: config.endDate || body.endDate,
+        geoTargets: config.geoTargets?.length ? config.geoTargets : [body.countryCode],
+        project: config.project || body.project,
+      });
+      results.push(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Unknown Reddit error';
+      errors.push(`reddit-ads: ${msg}`);
     }
   }
 
@@ -1216,6 +1281,19 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
     }
   }
 
+  const rd = obj['reddit_promoted'] as Record<string, unknown> | undefined;
+  if (rd) {
+    const variants = rd['variants'] as unknown[] | undefined;
+    if (Array.isArray(variants)) {
+      for (const v of variants) {
+        if (v == null || typeof v !== 'object') continue;
+        const rec = v as Record<string, unknown>;
+        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 300);
+        if (typeof rec['body'] === 'string') rec['body'] = (rec['body'] as string).slice(0, 500);
+      }
+    }
+  }
+
   const platforms = obj['platforms'] as Record<string, unknown> | undefined;
   if (platforms) {
     if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
@@ -1224,6 +1302,7 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
       truncateAdCopy({ google_display: platforms[key] } as Record<string, unknown>);
     }
     if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
+    if (platforms['reddit_promoted']) truncateAdCopy({ reddit_promoted: platforms['reddit_promoted'] } as Record<string, unknown>);
   }
 }
 
@@ -1241,10 +1320,12 @@ function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
+  const includeReddit = platforms.includes('reddit-ads');
 
   const requestedKeys: string[] = [];
   if (includeGoogle) requestedKeys.push('google_search', 'google_display');
   if (includeLinkedIn) requestedKeys.push('linkedin_sponsored');
+  if (includeReddit) requestedKeys.push('reddit_promoted');
 
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
