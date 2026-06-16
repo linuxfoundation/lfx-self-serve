@@ -239,6 +239,7 @@ export class EmailCtrDrawerComponent {
     const defaultValue: EmailCtrResponse = {
       currentCtr: 0,
       changePercentage: 0,
+      momChangePercentage: null,
       trend: 'up',
       monthlyData: [],
       monthlyLabels: [],
