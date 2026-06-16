@@ -23,17 +23,47 @@ import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { withPerUserCache } from './valkey.service';
 
-/** Rejects a corrupt/legacy access-list entry (degrades to a miss). */
-function isAccessListResponse(value: unknown): boolean {
-  const v = value as Partial<OrgAccessListResponse> | null;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Each user row is served straight from cache to the client, so validate its element shape against the wire contract. */
+function isAccessUser(value: unknown): boolean {
+  const u = value as Partial<OrgAccessUser>;
   return (
-    !!v && typeof v.orgUid === 'string' && Array.isArray(v.users) && typeof v.summary === 'object' && v.summary !== null && typeof v.canManage === 'boolean'
+    isObject(value) &&
+    typeof u.email === 'string' &&
+    typeof u.name === 'string' &&
+    typeof u.initials === 'string' &&
+    (u.avatarUrl === null || typeof u.avatarUrl === 'string') &&
+    (u.jobTitle === null || typeof u.jobTitle === 'string') &&
+    (u.role === 'admin' || u.role === 'viewer') &&
+    (u.inviteStatus === 'pending' || u.inviteStatus === 'accepted') &&
+    typeof u.isPending === 'boolean'
   );
 }
 
-/** Rejects a corrupt/legacy principals entry whose elements aren't non-null objects (degrades to a miss before the directory merge reads user fields). */
+function isAccessSummary(value: unknown): boolean {
+  const s = value as Partial<OrgAccessSummary>;
+  return isObject(value) && typeof s.totalUsers === 'number' && typeof s.administrators === 'number' && typeof s.viewers === 'number';
+}
+
+/** Rejects a corrupt/legacy access-list entry (degrades to a miss) by validating every user element and the numeric summary fields against the wire contract. */
+function isAccessListResponse(value: unknown): boolean {
+  const v = value as Partial<OrgAccessListResponse>;
+  return (
+    isObject(value) &&
+    typeof v.orgUid === 'string' &&
+    Array.isArray(v.users) &&
+    v.users.every(isAccessUser) &&
+    isAccessSummary(v.summary) &&
+    typeof v.canManage === 'boolean'
+  );
+}
+
+/** Rejects a corrupt/legacy principals entry whose elements don't match the user wire shape (degrades to a miss before the directory merge reads user fields). */
 function isPrincipalArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+  return Array.isArray(value) && value.every(isAccessUser);
 }
 
 // Spec 025 — Org Lens Access read/write against member-service settings.

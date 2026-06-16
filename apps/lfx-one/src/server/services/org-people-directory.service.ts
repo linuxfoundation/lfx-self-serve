@@ -7,6 +7,7 @@ import type {
   CommitteeServiceOrgSeat,
   KeyContactEmployee,
   OrgAccessUser,
+  OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
   OrgAllEmployeeStats,
   OrgAllEmployeesResponse,
@@ -23,10 +24,62 @@ import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { withPerUserCache } from './valkey.service';
 
-/** Rejects a corrupt/legacy merged-roster entry (degrades to a miss). */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => typeof el === 'string');
+}
+
+/** Every row must match the wire shape: the cached value is replayed straight to the client, so a corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`. */
+function isAllEmployeeRow(value: unknown): boolean {
+  const r = value as Partial<OrgAllEmployeeRow>;
+  return (
+    isObject(value) &&
+    typeof r.personKey === 'string' &&
+    typeof r.name === 'string' &&
+    (r.email === null || typeof r.email === 'string') &&
+    isStringArray(r.sources) &&
+    isStringArray(r.engagedFoundationIds) &&
+    typeof r.seatsCount === 'number' &&
+    typeof r.boardSeatsCount === 'number' &&
+    typeof r.committeeSeatsCount === 'number' &&
+    typeof r.commitsCount === 'number' &&
+    typeof r.eventsCount === 'number' &&
+    typeof r.coursesCount === 'number'
+  );
+}
+
+function isFoundationOption(value: unknown): boolean {
+  const f = value as Partial<OrgAllEmployeeFoundationOption>;
+  return isObject(value) && typeof f.foundationId === 'string' && typeof f.foundationName === 'string';
+}
+
+function isAllEmployeeStats(value: unknown): boolean {
+  const s = value as Partial<OrgAllEmployeeStats>;
+  return (
+    isObject(value) &&
+    typeof s.activeInOss === 'number' &&
+    typeof s.inGovernance === 'number' &&
+    typeof s.codeContributors === 'number' &&
+    typeof s.eventAttendees === 'number' &&
+    typeof s.trainees === 'number'
+  );
+}
+
+/** Rejects a corrupt/legacy merged-roster entry (degrades to a miss) by validating every row, foundation, and stat field against the wire contract. */
 function isAllEmployeesResponse(value: unknown): boolean {
-  const v = value as Partial<OrgAllEmployeesResponse> | null;
-  return !!v && typeof v.accountId === 'string' && Array.isArray(v.rows) && Array.isArray(v.foundations) && typeof v.stats === 'object' && v.stats !== null;
+  const v = value as Partial<OrgAllEmployeesResponse>;
+  return (
+    isObject(value) &&
+    typeof v.accountId === 'string' &&
+    Array.isArray(v.rows) &&
+    v.rows.every(isAllEmployeeRow) &&
+    Array.isArray(v.foundations) &&
+    v.foundations.every(isFoundationOption) &&
+    isAllEmployeeStats(v.stats)
+  );
 }
 
 /**

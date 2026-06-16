@@ -17,10 +17,39 @@ import { getEffectiveUsername } from '../utils/auth-helper';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { withPerUserCache } from './valkey.service';
 
-/** Rejects a corrupt/legacy entry (degrades to a miss) — both wire fields must be present and well-shaped. */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Each assignment is rendered straight from cache, so validate every required string key before accepting. */
+function isKeyContactAssignment(value: unknown): boolean {
+  const a = value as Partial<OrgKeyContactAssignment>;
+  return (
+    isObject(value) &&
+    typeof a.contactUid === 'string' &&
+    typeof a.membershipUid === 'string' &&
+    typeof a.email === 'string' &&
+    typeof a.firstName === 'string' &&
+    typeof a.lastName === 'string' &&
+    typeof a.displayName === 'string' &&
+    (a.title === null || typeof a.title === 'string') &&
+    typeof a.role === 'string' &&
+    typeof a.foundationSlug === 'string' &&
+    (a.foundationName === null || typeof a.foundationName === 'string')
+  );
+}
+
+function isKeyContactsStats(value: unknown): boolean {
+  const s = value as Partial<OrgKeyContactsStats>;
+  return (
+    isObject(value) && typeof s.individualCount === 'number' && typeof s.foundationsCovered === 'number' && typeof s.unfilledRequiredRoleCount === 'number'
+  );
+}
+
+/** Rejects a corrupt/legacy entry (degrades to a miss) by validating every assignment element and the numeric stat fields against the wire contract. */
 function isKeyContactsResponse(value: unknown): boolean {
-  const v = value as Partial<OrgKeyContactsResponse> | null;
-  return !!v && Array.isArray(v.assignments) && typeof v.stats === 'object' && v.stats !== null;
+  const v = value as Partial<OrgKeyContactsResponse>;
+  return isObject(value) && Array.isArray(v.assignments) && v.assignments.every(isKeyContactAssignment) && isKeyContactsStats(v.stats);
 }
 
 /** Org Lens — People → Key Contacts tab. V1 is org-wide and read-only; membership-scoped reads + writes live in OrgLensKeyContactsService (spec 024). */
