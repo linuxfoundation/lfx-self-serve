@@ -1,16 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { catchError, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
+import { MessageService } from 'primeng/api';
 
-import { OsspreyPackage, OsspreyStatus, TagSeverity } from '@lfx-one/shared/interfaces';
+import { OsspreyEscalateRequest, OsspreyPackage, OsspreyStatus, OsspreySteward, OsspreyUpdateStatusRequest, TagSeverity } from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { OsspreyEscalateModalComponent } from '../ossprey-escalate-modal/ossprey-escalate-modal.component';
+import { OsspreyStatusModalComponent } from '../ossprey-status-modal/ossprey-status-modal.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
@@ -25,19 +28,27 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 
 @Component({
   selector: 'lfx-ossprey-package-drawer',
-  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent],
+  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent, OsspreyEscalateModalComponent, OsspreyStatusModalComponent],
   templateUrl: './ossprey-package-drawer.component.html',
 })
 export class OsspreyPackageDrawerComponent {
   private readonly osspreyService = inject(OsspreyService);
+  private readonly messageService = inject(MessageService);
 
   public readonly visible = model(false);
   public readonly packageId = input<string | null>(null);
-  /** Stewardship state from the list row — the CDP detail endpoint doesn't return it. */
+  /** Stewardship state from the list row — used until the detail endpoint's stewardship block loads. */
   public readonly packageStatus = input<OsspreyStatus | null>(null);
+
+  /** Emitted after a successful steward admin action so the dashboard can refresh the list/metrics. */
+  public readonly stewardshipChanged = output<void>();
 
   protected readonly activeTab = signal<DrawerTab>('overview');
   protected readonly detailLoading = signal(false);
+  protected readonly actionLoading = signal(false);
+  protected readonly escalateModalVisible = signal(false);
+  protected readonly statusModalVisible = signal(false);
+  private readonly reloadTrigger = signal(0);
   protected readonly packageData: Signal<OsspreyPackage | null> = this.initPackageData();
 
   protected readonly drawerTabs: { key: DrawerTab; label: string }[] = [
@@ -48,7 +59,17 @@ export class OsspreyPackageDrawerComponent {
     { key: 'history', label: 'History' },
   ];
 
-  protected readonly stewardshipStatus = computed<OsspreyStatus>(() => this.packageStatus() ?? this.packageData()?.status ?? 'unassigned');
+  // Prefer the loaded detail status (fresh after a mutation + reload) over the list-row input, which can be stale.
+  protected readonly stewardshipStatus = computed<OsspreyStatus>(() => this.packageData()?.status ?? this.packageStatus() ?? 'unassigned');
+  protected readonly stewardshipId = computed<number | null>(() => this.packageData()?.stewardshipId ?? null);
+
+  // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
+  protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned' && this.stewardshipId() === null);
+  protected readonly canManageStatus = computed(() => this.stewardshipId() !== null);
+  protected readonly canEscalate = computed(() => {
+    const status = this.stewardshipStatus();
+    return this.stewardshipId() !== null && status !== 'escalated' && status !== 'inactive' && status !== 'unassigned';
+  });
 
   protected readonly formatStatus = formatStatus;
   protected readonly getStatusTagSeverity = getStatusTagSeverity;
@@ -101,17 +122,101 @@ export class OsspreyPackageDrawerComponent {
     return 'secondary';
   }
 
+  /** Display label for assigned stewards. Falls back to the Auth0 sub until the roster endpoint provides names. */
+  protected getStewardLabel(stewards: OsspreySteward[]): string {
+    if (stewards.length === 0) return '—';
+    return stewards.map((s) => s.name ?? s.userId).join(', ');
+  }
+
+  protected openEscalateModal(): void {
+    this.escalateModalVisible.set(true);
+  }
+
+  protected openStatusModal(): void {
+    this.statusModalVisible.set(true);
+  }
+
+  protected onOpenForStewardship(): void {
+    const pkg = this.packageData();
+    const purl = pkg?.purl ?? this.packageId();
+    if (!purl || this.actionLoading()) return;
+
+    this.actionLoading.set(true);
+    this.osspreyService
+      .openStewardship(purl)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.onActionSuccess('Package opened for stewardship.'),
+        error: () => this.onActionError(),
+      });
+  }
+
+  protected onEscalateConfirm(body: OsspreyEscalateRequest): void {
+    const id = this.stewardshipId();
+    if (id === null || this.actionLoading()) return;
+
+    this.actionLoading.set(true);
+    this.osspreyService
+      .escalateStewardship(id, body)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.escalateModalVisible.set(false);
+          this.onActionSuccess('Package escalated.');
+        },
+        error: () => this.onActionError(),
+      });
+  }
+
+  protected onStatusConfirm(body: OsspreyUpdateStatusRequest): void {
+    const id = this.stewardshipId();
+    if (id === null || this.actionLoading()) return;
+
+    this.actionLoading.set(true);
+    this.osspreyService
+      .updateStewardshipStatus(id, body)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.statusModalVisible.set(false);
+          this.onActionSuccess('Stewardship status updated.');
+        },
+        error: () => this.onActionError(),
+      });
+  }
+
+  private onActionSuccess(detail: string): void {
+    this.actionLoading.set(false);
+    this.messageService.add({ severity: 'success', summary: 'Success', detail });
+    this.reloadTrigger.update((n) => n + 1);
+    this.stewardshipChanged.emit();
+  }
+
+  private onActionError(): void {
+    this.actionLoading.set(false);
+    this.messageService.add({ severity: 'error', summary: 'Action failed', detail: 'Something went wrong. Please try again.' });
+  }
+
   private initPackageData(): Signal<OsspreyPackage | null> {
     // Fetch only while the drawer is open for a concrete package; closing the
-    // drawer maps to null instead of refiring the request.
-    const fetchId = computed(() => (this.visible() ? this.packageId() : null));
+    // drawer maps to null. The reload trigger forces a re-fetch after a mutation
+    // even though the package id is unchanged.
+    let lastId: string | null = null;
+    const source = computed(() => ({ id: this.visible() ? this.packageId() : null, reload: this.reloadTrigger() }));
 
     return toSignal(
-      toObservable(fetchId).pipe(
-        distinctUntilChanged(),
-        switchMap((id) => {
-          if (!id) return of(null);
-          this.activeTab.set('overview');
+      toObservable(source).pipe(
+        distinctUntilChanged((a, b) => a.id === b.id && a.reload === b.reload),
+        switchMap(({ id }) => {
+          if (!id) {
+            lastId = null;
+            return of(null);
+          }
+          // Only reset to the overview tab when opening a different package, not on a post-action reload.
+          if (id !== lastId) {
+            this.activeTab.set('overview');
+            lastId = id;
+          }
           this.detailLoading.set(true);
           return this.osspreyService.getPackage(id).pipe(
             catchError(() => of(null)),

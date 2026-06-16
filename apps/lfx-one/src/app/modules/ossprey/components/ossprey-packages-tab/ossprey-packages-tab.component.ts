@@ -11,7 +11,7 @@ import {
   OSSPREY_STATUS_PILLS,
   OSSPREY_VULN_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { OsspreyFilterChip, OsspreyFilterState, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import { OsspreyFilterChip, OsspreyFilterState, OsspreyPackage, OsspreySteward, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -128,10 +128,10 @@ export class OsspreyPackagesTabComponent {
     this.toggleAll.emit({ checked: !this.allSelected() });
   }
 
-  protected getStewardNames(stewardIds: string[]): string {
-    if (stewardIds.length === 0) return '—';
-    if (stewardIds.length === 1) return stewardIds[0];
-    return `${stewardIds.length} stewards`;
+  protected getStewardNames(stewards: OsspreySteward[]): string {
+    if (stewards.length === 0) return '—';
+    if (stewards.length === 1) return stewards[0].name ?? stewards[0].userId;
+    return `${stewards.length} stewards`;
   }
 
   protected onSearchInput(event: Event): void {

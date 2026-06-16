@@ -175,5 +175,6 @@
   [(visible)]="drawerVisible"
   [packageId]="selectedPackageId()"
   [packageStatus]="selectedPackageStatus()"
+  (stewardshipChanged)="onStewardshipChanged()"
   (visibleChange)="!$event && onDrawerClose()">
 </lfx-ossprey-package-drawer>

@@ -326,8 +326,8 @@
           }
         </td>
         <td class="text-xs text-gray-600">
-          @if (pkg.stewardIds.length > 0) {
-            {{ getStewardNames(pkg.stewardIds) }}
+          @if (pkg.stewards.length > 0) {
+            {{ getStewardNames(pkg.stewards) }}
           } @else {
             <span class="text-gray-400 italic">—</span>
           }

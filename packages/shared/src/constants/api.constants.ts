@@ -82,5 +82,9 @@ export const CDP_CONFIG = {
     PACKAGES_LIST: '/v1/packages',
     PACKAGES_METRICS: '/v1/packages/metrics',
     PACKAGE_DETAIL: '/v1/packages/detail',
+    STEWARDSHIPS: '/v1/stewardships',
+    STEWARDSHIP_STEWARD: (id: number) => `/v1/stewardships/${id}/steward`,
+    STEWARDSHIP_ESCALATE: (id: number) => `/v1/stewardships/${id}/escalate`,
+    STEWARDSHIP_STATUS: (id: number) => `/v1/stewardships/${id}/status`,
   },
 } as const;

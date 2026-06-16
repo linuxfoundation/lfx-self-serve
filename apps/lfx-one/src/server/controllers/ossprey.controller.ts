@@ -4,7 +4,18 @@
 import { OsspreyListParams, OsspreyMetrics, OsspreyPackagesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { getStringQueryParam, parseOsspreyStatus, parseOsspreyHealthBand, parseOsspreyVulnFilter, parseOspreySortKey } from '../helpers/validation.helper';
+import {
+  getStringQueryParam,
+  parseAssignStewardBody,
+  parseEscalateBody,
+  parseOpenStewardshipBody,
+  parseOsspreyHealthBand,
+  parseOsspreyStatus,
+  parseOsspreyVulnFilter,
+  parseOspreySortKey,
+  parseStewardshipId,
+  parseUpdateStatusBody,
+} from '../helpers/validation.helper';
 import { OsspreyServerService } from '../services/ossprey.service';
 import { logger } from '../services/logger.service';
 
@@ -77,6 +88,73 @@ export class OsspreyController {
       logger.success(req, 'get_ossprey_package', startTime, { purl });
 
       res.json(pkg);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async openStewardship(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'open_ossprey_stewardship');
+
+    try {
+      const purl = parseOpenStewardshipBody(req, 'open_ossprey_stewardship');
+
+      const data = await this.osspreyService.openStewardship(req, purl);
+
+      logger.success(req, 'open_ossprey_stewardship', startTime, { purl });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async assignSteward(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'assign_ossprey_steward');
+
+    try {
+      const id = parseStewardshipId(req, 'assign_ossprey_steward');
+      const body = parseAssignStewardBody(req, 'assign_ossprey_steward');
+
+      const data = await this.osspreyService.assignSteward(req, id, body);
+
+      logger.success(req, 'assign_ossprey_steward', startTime, { stewardship_id: id, role: body.role });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async escalateStewardship(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'escalate_ossprey_stewardship');
+
+    try {
+      const id = parseStewardshipId(req, 'escalate_ossprey_stewardship');
+      const body = parseEscalateBody(req, 'escalate_ossprey_stewardship');
+
+      const data = await this.osspreyService.escalateStewardship(req, id, body);
+
+      logger.success(req, 'escalate_ossprey_stewardship', startTime, { stewardship_id: id, resolution_path: body.resolutionPath });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async updateStewardshipStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_ossprey_stewardship_status');
+
+    try {
+      const id = parseStewardshipId(req, 'update_ossprey_stewardship_status');
+      const body = parseUpdateStatusBody(req, 'update_ossprey_stewardship_status');
+
+      const data = await this.osspreyService.updateStewardshipStatus(req, id, body);
+
+      logger.success(req, 'update_ossprey_stewardship_status', startTime, { stewardship_id: id, status: body.status });
+
+      res.json(data);
     } catch (error) {
       return next(error);
     }

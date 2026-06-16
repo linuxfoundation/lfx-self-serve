@@ -8,6 +8,26 @@ export type OsspreyHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
 export type OspreySeverity = 'critical' | 'high' | 'medium' | 'low';
 export type OspreySortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
 
+// ===== Steward admin action types =====
+
+/** Steward assignment role (CDP: stewardship_stewards.role). */
+export type OsspreyStewardRole = 'lead' | 'co_steward';
+
+/** Statuses an admin can set directly via the status endpoint (excludes open/escalated, which have dedicated endpoints). */
+export type OsspreyUpdatableStatus = 'assessing' | 'active' | 'needs_attention' | 'blocked' | 'inactive';
+
+/** Reason captured when a stewardship is moved to `inactive` (required by the status endpoint). */
+export type OsspreyInactiveReason = 'quarterly_cadence_missed' | 'stepped_down' | 'no_longer_critical';
+
+/** Resolution path chosen when escalating a stewardship. */
+export type OsspreyEscalationPath =
+  | 'right_of_first_refusal'
+  | 'replace_the_dependency'
+  | 'find_vendor_for_lts'
+  | 'consortium_adopts_maintainership'
+  | 'compensating_controls_monitor'
+  | 'namespace_takeover';
+
 // ===== CDP Raw Types =====
 
 export interface CdpStewardshipSummary {
@@ -106,7 +126,76 @@ export interface CdpPackageDetail {
       signedReleases: unknown | null;
     } | null;
   } | null;
+  stewardship: CdpStewardshipDetail | null;
   history: Record<string, unknown>;
+}
+
+// ===== CDP Stewardship Raw Types =====
+
+/** Steward row as returned in the package detail `stewardship.stewards` array. No display name/avatar yet (see roster endpoint). */
+export interface CdpStewardSummary {
+  id: string;
+  stewardshipId: string;
+  userId: string;
+  role: OsspreyStewardRole;
+  assignedAt: string;
+  assignedBy: string | null;
+}
+
+/** Stewardship block embedded in the CDP package detail response. */
+export interface CdpStewardshipDetail {
+  id: number | null;
+  status: OsspreyStatus;
+  stewards: CdpStewardSummary[] | null;
+  lastActivityAt: string | null;
+}
+
+/** Full stewardship record returned by the mutation endpoints. */
+export interface CdpStewardshipRecord {
+  id: string;
+  packageId: string;
+  status: OsspreyStatus;
+  origin: string;
+  version: number;
+  openedAt: string | null;
+  lastStatusAt: string | null;
+  inactiveReason: OsspreyInactiveReason | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== Steward admin action request/response bodies =====
+
+export interface OsspreyOpenStewardshipRequest {
+  purl: string;
+}
+
+export interface OsspreyAssignStewardRequest {
+  userId: string;
+  role: OsspreyStewardRole;
+  /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
+  moveToAssessing?: boolean;
+}
+
+export interface OsspreyEscalateRequest {
+  resolutionPath: OsspreyEscalationPath;
+  notes?: string;
+}
+
+export interface OsspreyUpdateStatusRequest {
+  status: OsspreyUpdatableStatus;
+  /** Required when `status` is `inactive`. */
+  inactiveReason?: OsspreyInactiveReason;
+  notes?: string;
+}
+
+export interface OsspreyStewardshipResponse {
+  stewardship: CdpStewardshipRecord;
+}
+
+export interface OsspreyAssignStewardResponse {
+  stewardship: CdpStewardshipRecord;
+  stewards: CdpStewardSummary[];
 }
 
 // ===== Frontend Types =====
@@ -142,6 +231,18 @@ export interface OsspreyAssessment {
   monitoring: string[];
 }
 
+/**
+ * Steward shown in the UI. `name`/`avatarUrl` are populated once the assignable-steward
+ * roster endpoint exists; until then only `userId` (Auth0 sub) + `role` are available.
+ */
+export interface OsspreySteward {
+  userId: string;
+  role: OsspreyStewardRole;
+  assignedAt: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
 export interface OsspreyContactGroup {
   name: string;
   type: string;
@@ -165,7 +266,9 @@ export interface OsspreyPackage {
   vulnCount: number;
   vulnSeverity: OspreySeverity | null;
   status: OsspreyStatus;
-  stewardIds: string[];
+  /** Integer stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
+  stewardshipId: number | null;
+  stewards: OsspreySteward[];
   lastActivityLabel: string;
   lastActivityTime: string;
   downloadsLastMonth: string | null;

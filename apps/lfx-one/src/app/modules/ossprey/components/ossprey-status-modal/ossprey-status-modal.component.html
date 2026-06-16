@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-dialog
+  [(visible)]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [style]="{ width: '28rem' }"
+  [dismissableMask]="true"
+  (onShow)="onShow()"
+  header="Update stewardship status"
+  data-testid="ossprey-status-modal">
+  <div class="flex flex-col gap-4">
+    <p class="text-sm text-gray-500">
+      @if (packageName()) {
+        Updating the status of <span class="font-medium text-slate-900">{{ packageName() }}</span
+        >.
+      } @else {
+        Set a new stewardship status.
+      }
+    </p>
+
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-medium text-gray-700">Status</label>
+      <lfx-select
+        [form]="form"
+        control="status"
+        [options]="statusOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select a status"
+        data-testid="ossprey-status-select" />
+    </div>
+
+    @if (requiresInactiveReason()) {
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-700">Reason</label>
+        <lfx-select
+          [form]="form"
+          control="inactiveReason"
+          [options]="inactiveReasonOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Select a reason"
+          data-testid="ossprey-status-inactive-reason" />
+      </div>
+    }
+
+    <div class="flex flex-col gap-1.5">
+      <label for="ossprey-status-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
+      <lfx-textarea [form]="form" control="notes" id="ossprey-status-notes" [rows]="3" placeholder="Context for this change..." />
+    </div>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-2">
+      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="ossprey-status-cancel" />
+      <lfx-button
+        label="Update status"
+        [loading]="loading()"
+        [disabled]="!canSubmit || loading()"
+        (onClick)="onConfirm()"
+        data-testid="ossprey-status-confirm" />
+    </div>
+  </ng-template>
+</p-dialog>

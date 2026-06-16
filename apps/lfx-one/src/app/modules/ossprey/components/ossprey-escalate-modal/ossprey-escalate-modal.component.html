@@ -1,0 +1,61 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-dialog
+  [(visible)]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [style]="{ width: '32rem' }"
+  [dismissableMask]="true"
+  (onShow)="onShow()"
+  header="Escalate package"
+  data-testid="ossprey-escalate-modal">
+  <div class="flex flex-col gap-4">
+    <p class="text-sm text-gray-500">
+      @if (packageName()) {
+        Escalating <span class="font-medium text-slate-900">{{ packageName() }}</span
+        >. Choose a resolution path.
+      } @else {
+        Choose a resolution path for this escalation.
+      }
+    </p>
+
+    <div class="flex flex-col gap-2" role="radiogroup" aria-label="Resolution path">
+      @for (path of escalationPaths; track path.value) {
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="selectedPath() === path.value"
+          (click)="selectPath(path.value)"
+          class="flex flex-col gap-0.5 text-left px-3.5 py-2.5 rounded-lg border transition-colors"
+          [class.border-blue-500]="selectedPath() === path.value"
+          [class.bg-blue-50]="selectedPath() === path.value"
+          [class.border-gray-200]="selectedPath() !== path.value"
+          [class.hover:bg-gray-50]="selectedPath() !== path.value"
+          [attr.data-testid]="'ossprey-escalate-path-' + path.value">
+          <span class="text-sm font-medium text-slate-900">{{ path.title }}</span>
+          <span class="text-xs text-gray-500">{{ path.description }}</span>
+        </button>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="ossprey-escalate-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
+      <lfx-textarea [form]="form" control="notes" id="ossprey-escalate-notes" [rows]="3" placeholder="Context for this escalation..." />
+    </div>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-2">
+      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="ossprey-escalate-cancel" />
+      <lfx-button
+        label="Escalate"
+        severity="danger"
+        [loading]="loading()"
+        [disabled]="!selectedPath() || loading()"
+        (onClick)="onConfirm()"
+        data-testid="ossprey-escalate-confirm" />
+    </div>
+  </ng-template>
+</p-dialog>

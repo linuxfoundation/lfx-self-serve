@@ -297,7 +297,7 @@
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Tier 0 steward</span>
-              <span class="font-medium text-slate-900">{{ pkg.stewardIds.length > 0 ? pkg.stewardIds.join(', ') : '—' }}</span>
+              <span class="font-medium text-slate-900">{{ getStewardLabel(pkg.stewards) }}</span>
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Critical vulnerability flag</span>
@@ -413,11 +413,47 @@
   }
 
   <ng-template #footer>
-    <div class="flex items-center justify-between w-full">
+    <div class="flex items-center justify-between gap-3 w-full">
       <div class="flex flex-col gap-1">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Stewardship status</span>
         <lfx-tag [value]="formatStatus(stewardshipStatus())" [severity]="getStatusTagSeverity(stewardshipStatus())" [rounded]="true" />
       </div>
+      <div class="flex items-center gap-2">
+        @if (canOpenForStewardship()) {
+          <lfx-button
+            label="Open for stewardship"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="actionLoading()"
+            [disabled]="actionLoading()"
+            (onClick)="onOpenForStewardship()"
+            data-testid="ossprey-drawer-open" />
+        }
+        @if (canEscalate()) {
+          <lfx-button
+            label="Escalate"
+            severity="danger"
+            [outlined]="true"
+            [disabled]="actionLoading()"
+            (onClick)="openEscalateModal()"
+            data-testid="ossprey-drawer-escalate" />
+        }
+        @if (canManageStatus()) {
+          <lfx-button label="Update status" [disabled]="actionLoading()" (onClick)="openStatusModal()" data-testid="ossprey-drawer-status" />
+        }
+      </div>
     </div>
   </ng-template>
 </p-drawer>
+
+<lfx-ossprey-escalate-modal
+  [(visible)]="escalateModalVisible"
+  [packageName]="packageData()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onEscalateConfirm($event)" />
+
+<lfx-ossprey-status-modal
+  [(visible)]="statusModalVisible"
+  [packageName]="packageData()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onStatusConfirm($event)" />

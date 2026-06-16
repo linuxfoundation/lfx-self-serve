@@ -32,6 +32,9 @@ export class OsspreyDashboardComponent {
   protected readonly selectedPackages = signal<Set<string>>(new Set());
   protected readonly showBulkActions = computed(() => this.selectedPackages().size > 0);
 
+  // Bumped after a steward admin action to force the package list to re-fetch.
+  private readonly reloadTrigger = signal(0);
+
   protected readonly filters = signal<OsspreyFilterState>({
     search: '',
     tab: 'all',
@@ -87,6 +90,10 @@ export class OsspreyDashboardComponent {
     timer(300)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.selectedPackageId.set(null));
+  }
+
+  protected onStewardshipChanged(): void {
+    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected onFilterChange(partial: Partial<OsspreyFilterState>): void {
@@ -151,11 +158,13 @@ export class OsspreyDashboardComponent {
   }
 
   private initLoadResult() {
+    // Combine filters with the reload trigger so a steward action re-fetches the list even when filters are unchanged.
+    const source = computed(() => ({ f: this.filters(), reload: this.reloadTrigger() }));
     return toSignal<OsspreyLoadResult | undefined>(
-      toObservable(this.filters).pipe(
+      toObservable(source).pipe(
         tap(() => this.tableLoading.set(true)),
         debounceTime(300),
-        switchMap((f) => {
+        switchMap(({ f }) => {
           // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
           // Divergence is intentional for v1 — pagination will align them in a future iteration.
           const params: OsspreyListParams = {

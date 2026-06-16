@@ -7,12 +7,19 @@ import {
   CdpPackageDetail,
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
+  CdpStewardSummary,
   CdpStewardshipSummary,
   OsspreyAdvisory,
+  OsspreyAssignStewardRequest,
+  OsspreyAssignStewardResponse,
+  OsspreyEscalateRequest,
   OsspreyListParams,
   OsspreyMetrics,
   OsspreyPackage,
   OsspreyPackagesResponse,
+  OsspreySteward,
+  OsspreyStewardshipResponse,
+  OsspreyUpdateStatusRequest,
   OspreySeverity,
 } from '@lfx-one/shared/interfaces';
 import { randomUUID } from 'crypto';
@@ -217,6 +224,29 @@ export class OsspreyServerService {
     }
   }
 
+  /**
+   * Open a package for stewardship (creates the stewardship row if absent).
+   * Returns the stewardship record, including the integer `id` used by the other admin actions.
+   */
+  public async openStewardship(req: Request, purl: string): Promise<OsspreyStewardshipResponse> {
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'open_ossprey_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS, { purl });
+  }
+
+  /** Assign (or re-assign) a steward to a stewardship, optionally moving it to `assessing`. */
+  public async assignSteward(req: Request, id: number, body: OsspreyAssignStewardRequest): Promise<OsspreyAssignStewardResponse> {
+    return this.cdpWrite<OsspreyAssignStewardResponse>(req, 'assign_ossprey_steward', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STEWARD(id), body);
+  }
+
+  /** Escalate a stewardship with the chosen resolution path. */
+  public async escalateStewardship(req: Request, id: number, body: OsspreyEscalateRequest): Promise<OsspreyStewardshipResponse> {
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'escalate_ossprey_stewardship', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_ESCALATE(id), body);
+  }
+
+  /** Update a stewardship's status (e.g. assessing/active/needs_attention/blocked/inactive). */
+  public async updateStewardshipStatus(req: Request, id: number, body: OsspreyUpdateStatusRequest): Promise<OsspreyStewardshipResponse> {
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'update_ossprey_stewardship_status', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
+  }
+
   public mapListItem(item: CdpStewardshipSummary): OsspreyPackage {
     const vulnCount = item.openVulns ?? 0;
     const vulnSeverity = null;
@@ -234,7 +264,9 @@ export class OsspreyServerService {
       vulnCount,
       vulnSeverity,
       status: (item.stewardship as OsspreyPackage['status']) || 'unassigned',
-      stewardIds: [],
+      // The list endpoint exposes neither the stewardship id nor the stewards; the detail endpoint does.
+      stewardshipId: null,
+      stewards: [],
       lastActivityLabel: '—',
       lastActivityTime: '',
       downloadsLastMonth: null,
@@ -280,6 +312,7 @@ export class OsspreyServerService {
     const risk = detail.general?.riskSignals;
     const cvd = detail.security?.cvd;
     const integrity = detail.provenance?.supplyChainIntegrity;
+    const stewardship = detail.stewardship;
 
     return {
       id: detail.purl,
@@ -293,8 +326,9 @@ export class OsspreyServerService {
       monthsStale: this.calculateMonthsStale(repo?.lastCommitAt),
       vulnCount: advisories.length,
       vulnSeverity,
-      status: 'unassigned',
-      stewardIds: [],
+      status: stewardship?.status ?? 'unassigned',
+      stewardshipId: stewardship?.id ?? null,
+      stewards: this.mapStewards(stewardship?.stewards ?? null),
       lastActivityLabel: '—',
       lastActivityTime: '',
       downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
@@ -317,6 +351,68 @@ export class OsspreyServerService {
       history: [],
       assessment: null,
     };
+  }
+
+  /**
+   * Shared helper for the stewardship write endpoints: generates a CDP token, issues the
+   * authenticated JSON request, and normalizes failures into MicroserviceError.
+   */
+  private async cdpWrite<T>(req: Request, operation: string, method: 'POST' | 'PUT', endpoint: string, body: unknown): Promise<T> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation,
+          service: 'ossprey_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = `${this.cdpApiUrl}${endpoint}`;
+
+      logger.debug(req, operation, 'Sending stewardship write to CDP', { url, method, request_id: requestId });
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP stewardship request failed: ${response.statusText}`, response.status, 'CDP_STEWARDSHIP_WRITE_ERROR', {
+          operation,
+          service: 'ossprey_service',
+          errorBody: errorText,
+        });
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to perform OSSPREY stewardship action', 502, 'OSSPREY_STEWARDSHIP_ERROR', {
+        operation,
+        service: 'ossprey_service',
+      });
+    }
+  }
+
+  /** Map CDP steward rows to the UI shape. Name/avatar stay null until the roster endpoint exists. */
+  private mapStewards(stewards: CdpStewardSummary[] | null): OsspreySteward[] {
+    if (!stewards) return [];
+    return stewards.map((s) => ({
+      userId: s.userId,
+      role: s.role,
+      assignedAt: s.assignedAt,
+      name: null,
+      avatarUrl: null,
+    }));
   }
 
   private mapConfidenceBand(confidence?: number | null): OsspreyPackage['supplyChainMapping'] {
