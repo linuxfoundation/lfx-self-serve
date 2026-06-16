@@ -12,6 +12,7 @@ import {
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  QueryServiceItem,
   RecurrenceSummary,
   SummaryData,
   TranscriptCue,
@@ -545,6 +546,29 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
     created_at: summary.created_at || raw.summary_created_time || '',
     updated_at: summary.updated_at || raw.summary_last_modified_time || raw.modified_at || '',
   };
+}
+
+function summaryRecency(summary: PastMeetingSummary): number {
+  const ts = summary.updated_at || summary.created_at || '';
+  const parsed = ts ? Date.parse(ts) : NaN;
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function summaryHasContent(summary: PastMeetingSummary): boolean {
+  return !!(summary.summary_data?.edited_content || summary.summary_data?.content);
+}
+
+/** Picks the best summary when multiple v1_past_meeting_summary records share one occurrence (LFXV2-2222). */
+export function selectPrimaryPastMeetingSummary(resources: QueryServiceItem<PastMeetingSummary>[] | undefined | null): PastMeetingSummary | null {
+  if (!resources || resources.length === 0) {
+    return null;
+  }
+
+  const transformed = resources.map((resource) => transformV1SummaryToV2(resource.data));
+  const withContent = transformed.filter(summaryHasContent);
+  const pool = withContent.length > 0 ? withContent : transformed;
+
+  return pool.reduce((best, current) => (summaryRecency(current) > summaryRecency(best) ? current : best));
 }
 
 /**
