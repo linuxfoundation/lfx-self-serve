@@ -1,0 +1,21 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+{{- include "lfx-self-serve.staticConfigMaps.rootValidate" . }}
+{{- range $name, $cfg := .Values.staticConfigMaps }}
+{{- include "lfx-self-serve.staticConfigMaps.validate" (dict "name" $name "cfg" $cfg "root" $) }}
+{{- $cmName := printf "%s-%s" (include "lfx-self-serve.fullname" $) $name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cmName }}
+  labels:
+    {{- include "lfx-self-serve.labels" $ | nindent 4 }}
+  {{- with (include "lfx-self-serve.annotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- toYaml $cfg.data | nindent 2 }}
+{{- end }}

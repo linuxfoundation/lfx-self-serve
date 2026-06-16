@@ -18,16 +18,9 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
-export interface LinkedInAdAccount {
-  accountId: string;
-  label: string;
-  organizationId: string;
-  status: 'ACTIVE' | 'BILLING_HOLD';
-}
-
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored';
+export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -128,6 +121,7 @@ export interface CampaignBriefOutput {
   campaignGoal: CampaignGoal | null;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
+  redditCopy?: RedditBriefCopy;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +162,42 @@ export interface LinkedInBriefCopy {
   strategy?: LinkedInTargetingStrategy;
 }
 
+/**
+ * One ad account / org pairing in the runtime LinkedIn config.
+ *
+ * Values (accountId, orgId, label, status) are loaded server-side from the
+ * mounted ConfigMap and never embedded in the client bundle. The type itself
+ * lives in the shared package because the client consumes it as the response
+ * shape of `GET /api/campaigns/linkedin/accounts` (see CampaignService.
+ * getLinkedInAccounts and the campaigns dashboard tabs).
+ *
+ * `status` is optional to preserve graceful degradation if the ConfigMap
+ * omits it; production ConfigMaps always supply it.
+ */
+export interface LinkedInAccount {
+  accountId: string;
+  label: string;
+  orgId: string;
+  status?: 'ACTIVE' | 'BILLING_HOLD';
+}
+
+/**
+ * Shape of /etc/lfx-self-serve/linkedin/linkedin.json (configurable via the
+ * LINKEDIN_CONFIG_PATH env var). Mounted by the chart's `staticConfigMaps`
+ * hook; populated from the private GitOps repo.
+ */
+export interface LinkedInRuntimeConfig {
+  defaultAccountId: string;
+  defaultOrgId: string;
+  accounts: readonly LinkedInAccount[];
+  employerExclusions: readonly string[];
+  targetingProfiles: readonly LinkedInTargetingProfileConfig[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Creation (Implementation Phase)
+// ---------------------------------------------------------------------------
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -194,6 +224,50 @@ export interface LinkedInCampaignCreateResult {
   campaignId: string;
   creativeCount: number;
   linkedInUrl: string;
+  steps: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Reddit Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+export interface RedditAdVariant {
+  headline: string;
+  body?: string;
+}
+
+export interface RedditBriefCopy {
+  variants: RedditAdVariant[];
+  recommendedSubreddits: string[];
+  recommendedInterests: string[];
+  recommendedKeywords: string[];
+  recommendedGeos: string[];
+}
+
+export interface RedditCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  startDate: string;
+  endDate: string;
+  geoTargets: string[];
+  subreddits: string[];
+  interests: string[];
+  keywords: string[];
+  variants: RedditAdVariant[];
+  project?: string;
+}
+
+export interface RedditCampaignCreateResult {
+  platform: 'reddit-ads';
+  campaignName: string;
+  campaignId: string;
+  adGroupName: string;
+  adGroupId: string;
+  adCount: number;
+  redditUrl: string;
   steps: string[];
 }
 
@@ -232,6 +306,7 @@ export interface CampaignCreateRequest {
   driveFolderUrl?: string;
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
+  redditConfig?: RedditCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {
@@ -544,11 +619,6 @@ export interface LinkedInActionItem {
   action: string;
 }
 
-export interface LinkedInAccountOption {
-  key: string;
-  label: string;
-}
-
 export interface LinkedInMonitorResponse {
   accountLabel: string;
   pulledAt: string;
@@ -556,6 +626,59 @@ export interface LinkedInMonitorResponse {
   campaigns: LinkedInCampaignMetrics[];
   accountTotals: LinkedInAccountTotals;
   actionItems: LinkedInActionItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Reddit Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type RedditPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+export type RedditActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface RedditCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: RedditPacingLabel;
+  startDate: string;
+  endDate: string;
+}
+
+export interface RedditAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface RedditActionItem {
+  priority: RedditActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface RedditAccountOption {
+  key: string;
+  label: string;
+}
+
+export interface RedditMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: RedditCampaignMetrics[];
+  accountTotals: RedditAccountTotals;
+  actionItems: RedditActionItem[];
 }
 
 // ---------------------------------------------------------------------------

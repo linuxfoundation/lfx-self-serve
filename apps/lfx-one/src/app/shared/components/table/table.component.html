@@ -96,8 +96,8 @@
     </ng-template>
   }
 
-  <!-- Header template — hidden when table is empty (emptymessage state) -->
-  @if (headerTemplate && !isEmpty()) {
+  <!-- Header template — hidden when table is empty (emptymessage state), but kept during loading to avoid PrimeNG losing the template reference mid-transition -->
+  @if (headerTemplate && (loading() || !isEmpty())) {
     <ng-template #header>
       <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>
     </ng-template>
@@ -106,7 +106,9 @@
   <!-- Body template: renders skeleton rows when loading, otherwise delegates to consumer's template -->
   @if (bodyTemplate || loading()) {
     <ng-template #body let-rowData let-columns="columns" let-rowIndex="rowIndex">
-      @if (loading() && !loadingBodyTemplate) {
+      @if (loading() && loadingBodyTemplate) {
+        <ng-container *ngTemplateOutlet="loadingBodyTemplate; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }"> </ng-container>
+      } @else if (loading()) {
         <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
           @for (col of rowData.cols; track col.idx) {
             <td>

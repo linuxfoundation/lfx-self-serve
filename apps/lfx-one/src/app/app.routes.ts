@@ -8,10 +8,8 @@ import { executiveDirectorGuard } from './shared/guards/executive-director.guard
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
-
-const loadOrgPlaceholderPage = () =>
-  import('./modules/dashboards/org/components/org-placeholder-page/org-placeholder-page.component').then((m) => m.OrgPlaceholderPageComponent);
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -109,19 +107,25 @@ export const routes: Routes = [
               import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
           },
           {
+            // INFO: Future Epic implementation — the Projects page is hidden; deep links
+            // fall back to the org overview until the org-projects drilldown is built.
             path: 'projects',
-            data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
-            loadComponent: loadOrgPlaceholderPage,
+            redirectTo: 'overview',
+            pathMatch: 'full',
           },
           {
+            // INFO: Future Epic implementation — the ROI page is hidden; deep links fall
+            // back to the org overview until the org ROI feature is built.
             path: 'roi',
-            data: { lens: 'org', title: 'ROI', description: 'Return on investment across your memberships and engagement.', icon: 'fa-light fa-chart-line-up' },
-            loadComponent: loadOrgPlaceholderPage,
+            redirectTo: 'overview',
+            pathMatch: 'full',
           },
           {
+            // INFO: Future Epic implementation — the Governance page is hidden; deep links
+            // fall back to the org overview until the org governance feature is built.
             path: 'governance',
-            data: { lens: 'org', title: 'Governance', description: 'Board seats and governance participation.', icon: 'fa-light fa-layer-group' },
-            loadComponent: loadOrgPlaceholderPage,
+            redirectTo: 'overview',
+            pathMatch: 'full',
           },
           {
             path: 'people',
@@ -154,14 +158,18 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
           },
           {
+            // INFO: Future Epic implementation — the Meetings page is hidden; deep links
+            // fall back to the org overview until the org meetings feature is built.
             path: 'meetings',
-            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
-            loadComponent: loadOrgPlaceholderPage,
+            redirectTo: 'overview',
+            pathMatch: 'full',
           },
           {
+            // INFO: Future Epic implementation — the Groups page is hidden; deep links fall
+            // back to the org overview until the org groups feature is built.
             path: 'groups',
-            data: { lens: 'org', title: 'Groups', description: 'Committees your organization participates in.', icon: 'fa-light fa-users-rectangle' },
-            loadComponent: loadOrgPlaceholderPage,
+            redirectTo: 'overview',
+            pathMatch: 'full',
           },
           {
             path: 'profile',
@@ -336,6 +344,11 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
+        path: 'crowdfunding',
+        data: { lens: 'me' },
+        loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
+      },
+      {
         path: 'me/events',
         redirectTo: 'events',
         pathMatch: 'full',
@@ -344,6 +357,11 @@ export const routes: Routes = [
         path: 'me/badges',
         redirectTo: 'badges',
         pathMatch: 'full',
+      },
+      {
+        path: 'ossprey',
+        canMatch: [osspreyEnabledGuard],
+        loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
       },
     ],
   },

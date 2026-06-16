@@ -10,9 +10,12 @@ import type {
   KeywordActionType,
   KeywordMetrics,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInActionItem,
   LinkedInMonitorResponse,
+  RedditAccountOption,
+  RedditActionItem,
+  RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
@@ -30,6 +33,7 @@ export class OptimizationTabComponent implements OnInit {
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
+  private redditSub: Subscription | null = null;
 
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
 
@@ -73,12 +77,20 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 
   // LinkedIn optimization
-  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly linkedInAccountOptions = signal<LinkedInAccount[]>([]);
   protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInActionItems = computed<LinkedInActionItem[]>(() => this.linkedInData()?.actionItems ?? []);
+
+  // Reddit optimization
+  protected readonly redditAccountOptions = signal<RedditAccountOption[]>([]);
+  protected readonly selectedRedditAccountKey = signal<string>('');
+  protected readonly redditLoading = signal(false);
+  protected readonly redditData = signal<RedditMonitorResponse | null>(null);
+  protected readonly redditError = signal<string | null>(null);
+  protected readonly redditActionItems = computed<RedditActionItem[]>(() => this.redditData()?.actionItems ?? []);
 
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
@@ -92,7 +104,7 @@ export class OptimizationTabComponent implements OnInit {
         next: (accounts) => {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0) {
-            this.selectedLinkedInAccountKey.set(accounts[0].key);
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
             this.fetchLinkedInOptimization();
           }
         },
@@ -101,17 +113,35 @@ export class OptimizationTabComponent implements OnInit {
           this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
         },
       });
+    this.campaignService
+      .getRedditAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.redditAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedRedditAccountKey.set(accounts[0].key);
+            this.fetchRedditOptimization();
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+        },
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
     this.fetchLinkedInOptimization();
+    this.fetchRedditOptimization();
   }
 
   protected refresh(): void {
     this.fetchData();
     this.fetchLinkedInOptimization();
+    this.fetchRedditOptimization();
   }
 
   protected fetchData(): void {
@@ -185,6 +215,43 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected linkedInPriorityClass(p: LinkedInActionItem['priority']): string {
+    if (p === 'HIGH') return 'bg-red-100 text-red-700';
+    if (p === 'MED') return 'bg-amber-100 text-amber-700';
+    return 'bg-blue-100 text-blue-700';
+  }
+
+  protected setRedditAccount(key: string): void {
+    this.selectedRedditAccountKey.set(key);
+    this.fetchRedditOptimization();
+  }
+
+  protected onRedditAccountChange(event: Event): void {
+    this.setRedditAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchRedditOptimization(): void {
+    const accountKey = this.selectedRedditAccountKey();
+    if (!accountKey) return;
+    this.redditSub?.unsubscribe();
+    this.redditLoading.set(true);
+    this.redditError.set(null);
+    this.redditSub = this.campaignService
+      .getRedditMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.redditData.set(data);
+          this.redditLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditLoading.set(false);
+        },
+      });
+  }
+
+  protected redditPriorityClass(p: RedditActionItem['priority']): string {
     if (p === 'HIGH') return 'bg-red-100 text-red-700';
     if (p === 'MED') return 'bg-amber-100 text-amber-700';
     return 'bg-blue-100 text-blue-700';

@@ -108,7 +108,9 @@ export default {
               letterSpacing: '-0.01em',
             },
             h1: { fontSize: '2.25rem', lineHeight: '1.15', marginTop: '0', marginBottom: '1rem' },
-            h2: { fontSize: '1.75rem', lineHeight: '1.2', marginTop: '2rem', marginBottom: '0.75rem' },
+            // Article sections (markdown `##`) render at h4 scale with a 32px top gap — the
+            // semantic <h2> tag is kept (the article title is <h1>) but de-emphasized visually.
+            h2: { fontSize: '1.125rem', lineHeight: '1.4', marginTop: '32px', marginBottom: '12px' },
             h3: { fontSize: '1.375rem', lineHeight: '1.3', marginTop: '1.5rem', marginBottom: '0.5rem' },
             h4: { fontSize: '1.125rem', lineHeight: '1.4', marginTop: '1.25rem', marginBottom: '0.5rem' },
             code: {

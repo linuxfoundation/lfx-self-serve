@@ -69,6 +69,9 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
 
@@ -98,6 +101,9 @@ export * from './sse.interface';
 
 // Copilot interfaces
 export * from './copilot.interface';
+
+// OSSPREY admin dashboard interfaces
+export * from './ossprey.interface';
 
 // Committee application interfaces
 export * from './committee-application.interface';
@@ -225,3 +231,12 @@ export * from './docs.interface';
 
 // Linux.com email alias interfaces
 export * from './linux-email.interface';
+
+// Crowdfunding interfaces
+export * from './crowdfunding.interface';
+
+// Donut chart interfaces
+export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';

@@ -38,8 +38,11 @@
       }
     </div>
 
-    <div class="flex-grow px-5 md:px-8 py-6">
+    <div class="flex-grow px-[32px] pb-[100px]">
       <router-outlet />
     </div>
+
+    <!-- App footer — constrained to the 1024px docs content width -->
+    <lfx-footer class="mx-auto mt-auto w-full max-w-[1024px] p-8" cookie-tracking="true"></lfx-footer>
   </main>
 </div>

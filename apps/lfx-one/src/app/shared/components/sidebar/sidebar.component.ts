@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, Signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
@@ -16,7 +16,6 @@ import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -51,8 +50,8 @@ export class SidebarComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
+  private readonly router = inject(Router);
   private readonly userService = inject(UserService);
-  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
@@ -106,6 +105,39 @@ export class SidebarComponent {
     }))
   );
 
+  // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
+  private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
+    itemsRef: [],
+    overrides: {},
+  });
+
+  protected readonly expandedGroupStates = computed(() => {
+    const items = this.items();
+    const { itemsRef, overrides } = this.expandedGroupOverrides();
+    const effectiveOverrides = itemsRef === items ? overrides : {};
+    const states: Record<string, boolean> = {};
+    // Group expansion is keyed by item.label — group labels must be unique within a single sidebar items tree.
+    const scanForGroups = (candidates: SidebarMenuItem[]) => {
+      for (const item of candidates) {
+        if (item.isGroup) {
+          states[item.label] = item.label in effectiveOverrides ? effectiveOverrides[item.label] : (item.expanded ?? true);
+        } else if (item.isSection && item.items?.length) {
+          scanForGroups(item.items);
+        }
+      }
+    };
+    scanForGroups(items);
+    return states;
+  });
+
+  protected toggleGroup(label: string): void {
+    const items = this.items();
+    const current = this.expandedGroupStates()[label] ?? true;
+    const prev = this.expandedGroupOverrides();
+    const baseOverrides = prev.itemsRef === items ? prev.overrides : {};
+    this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
+  }
+
   protected onItemSelected(item: LensItem): void {
     const context = lensItemToProjectContext(item);
     // Project-only users still see foundations in their project list (NavigationService only filters
@@ -119,18 +151,32 @@ export class SidebarComponent {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
     }
+    // When on an entity detail page (e.g. /project/mailing-lists/:id or /project/groups/:id),
+    // switching project context should land on the new project's dashboard — staying on the
+    // current entity would show data from the wrong project until the user navigates away.
+    this.redirectFromEntityPageIfNeeded(context.slug);
+  }
+
+  private redirectFromEntityPageIfNeeded(projectSlug: string): void {
+    const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
+    // Entity detail pages match /<lens>/<section>/<id> (exactly 3 segments, project or foundation prefix)
+    if (segments.length === 3 && (segments[0] === 'project' || segments[0] === 'foundation')) {
+      // Use activeLens() (updated synchronously by setLens() above) for the destination prefix.
+      // Pass the slug explicitly — router.url lags behind location.replaceState so
+      // queryParamsHandling:'preserve' would carry stale params.
+      const lensPrefix = this.activeLens() === 'foundation' ? 'foundation' : 'project';
+      this.router.navigate([`/${lensPrefix}`, 'overview'], { queryParams: { project: projectSlug } });
+    }
   }
 
   private initEffectiveShowOrgSelector(): Signal<boolean> {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
       if (!this.orgLensFlag()) return false;
-      if (this.orgRoleGrantsService.writerSet().size > 0) return true;
-      if (this.orgRoleGrantsService.auditorSet().size > 0) return true;
-      // Persona-seeds fallback per D-005 — keeps the selector visible for users on
-      // dev sandbox accounts that have a persona-seeded org list but no
+      // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
+      // the selector visible for users on dev sandbox accounts that have a seeded org list but no
       // settings-doc grants in the upstream b2b_org_settings docs.
-      return this.accountContextService.availableAccounts().length > 0;
+      return this.accountContextService.hasOrgSelectorAccess();
     });
   }
 

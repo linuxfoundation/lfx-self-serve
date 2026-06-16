@@ -1,8 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTRIBUTIONS_DEFAULT_DATE_RANGE, CONTRIBUTIONS_DEFAULT_PAGE_SIZE, CONTRIBUTIONS_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
-import type { ContributionsDateRange, ContributionsSortColumn, OrgContributionsQuery } from '@lfx-one/shared/interfaces';
+import {
+  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_MAX_PAGE_SIZE,
+  CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
+} from '@lfx-one/shared/constants';
+import type {
+  ContributionsCommitSortColumn,
+  ContributionsDateRange,
+  ContributionsSortColumn,
+  ContributionsView,
+  OrgContributionsQuery,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -13,6 +24,8 @@ import { OrgContributionsService } from '../services/org-contributions.service';
 
 const VALID_DATE_RANGES: ReadonlySet<ContributionsDateRange> = new Set(['30d', '90d', '12mo', 'all']);
 const VALID_SORT_COLUMNS: ReadonlySet<ContributionsSortColumn> = new Set(['commits', 'firstCommit', 'lastCommit']);
+const VALID_VIEWS: ReadonlySet<ContributionsView> = new Set(['repositories', 'commits']);
+const VALID_COMMIT_SORT_COLUMNS: ReadonlySet<ContributionsCommitSortColumn> = new Set(['project', 'committer', 'username', 'date']);
 
 /** HTTP boundary for the OrgContributionsService (LFXV2-1894) — validation, lifecycle logging, error propagation. */
 export class OrgLensContributionsController {
@@ -32,6 +45,7 @@ export class OrgLensContributionsController {
       const query = parseContributionsQuery(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
+        view: query.view,
         date_range: query.dateRange,
         project_count: query.projects.length,
         employee_count: query.employees.length,
@@ -64,18 +78,45 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
   const rawSort = getStringQueryParam(req, 'sort');
   const sort = parseSortColumn(rawSort, operation);
 
+  const rawCommitSort = getStringQueryParam(req, 'commitSort');
+  const commitSort = parseCommitSortColumn(rawCommitSort, operation);
+
   const dir = getStringQueryParam(req, 'dir') === 'asc' ? 1 : -1;
+  const commitDir = getStringQueryParam(req, 'commitDir') === 'asc' ? 1 : -1;
 
   return {
+    view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',
     projects: parseCsvParam(getStringQueryParam(req, 'projects')),
     employees: parseCsvParam(getStringQueryParam(req, 'employees')),
     sort,
     dir,
+    commitSort,
+    commitDir,
     page: parsePositiveInt(getStringQueryParam(req, 'page'), 1),
     size: parsePageSize(getStringQueryParam(req, 'size')),
   };
+}
+
+function parseView(raw: string | undefined, operation: string): ContributionsView {
+  if (!raw) {
+    return 'repositories';
+  }
+  if (!VALID_VIEWS.has(raw as ContributionsView)) {
+    throw ServiceValidationError.forField('view', `Invalid view value. Allowed: ${[...VALID_VIEWS].join(', ')}`, { operation });
+  }
+  return raw as ContributionsView;
+}
+
+function parseCommitSortColumn(raw: string | undefined, operation: string): ContributionsCommitSortColumn {
+  if (!raw) {
+    return 'date';
+  }
+  if (!VALID_COMMIT_SORT_COLUMNS.has(raw as ContributionsCommitSortColumn)) {
+    throw ServiceValidationError.forField('commitSort', `Invalid commitSort value. Allowed: ${[...VALID_COMMIT_SORT_COLUMNS].join(', ')}`, { operation });
+  }
+  return raw as ContributionsCommitSortColumn;
 }
 
 function parseDateRange(raw: string | undefined, operation: string): ContributionsDateRange {
@@ -115,5 +156,11 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 
 function parsePageSize(raw: string | undefined): number {
   const parsed = Number.parseInt(raw ?? '', 10);
-  return CONTRIBUTIONS_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : CONTRIBUTIONS_DEFAULT_PAGE_SIZE;
+  if (CONTRIBUTIONS_PAGE_SIZE_OPTIONS.includes(parsed)) {
+    return parsed;
+  }
+  if (Number.isFinite(parsed) && parsed > 0 && parsed <= CONTRIBUTIONS_MAX_PAGE_SIZE) {
+    return parsed;
+  }
+  return CONTRIBUTIONS_DEFAULT_PAGE_SIZE;
 }
