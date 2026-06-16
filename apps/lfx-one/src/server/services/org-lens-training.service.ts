@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { CERTIFICATION_PRODUCT_TYPE, MAX_ORG_CERT_EMPLOYEES, MAX_ORG_TRAINING_EMPLOYEES } from '@lfx-one/shared/constants';
+import { CERTIFICATION_PRODUCT_TYPE, MAX_ORG_CERT_EMPLOYEES, MAX_ORG_TRAINING_EMPLOYEES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   GetOrgCertificationsOptions,
   GetOrgTrainingsOptions,
@@ -22,6 +22,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 interface OrgTrainingStatsRow {
   CERTIFIED_EMPLOYEES: number;
@@ -61,13 +62,6 @@ interface OrgRosterEmployeeRow {
   TOTAL_MATCHES: number;
 }
 
-interface OrgRosterEmployeesResult {
-  courseId: string;
-  courseName: string;
-  total: number;
-  data: readonly OrgCertEmployee[];
-}
-
 /** TI catalog dimension scoped to an org's engaged course IDs (avoids full TI catalog scan). */
 const scopedCourseCatalogDimCte = (orgCourseIdsSql: string): string => `
   org_course_ids AS (
@@ -99,49 +93,16 @@ export class OrgLensTrainingService {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
   public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
-    const certSql = `
-      WITH ${scopedCourseCatalogDimCte(`
-        SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
-        WHERE t.ACCOUNT_ID = ?
-          AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
-      `)},
-      scoped AS (
-        SELECT
-          t.PERSON_KEY,
-          t.STATUS,
-          d.PRODUCT_TYPE
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
-        INNER JOIN course_dim d
-          ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
-        WHERE t.ACCOUNT_ID = ?
-          AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
-      )
-      SELECT
-        COUNT(DISTINCT CASE WHEN STATUS = 'Certified' THEN PERSON_KEY END) AS CERTIFIED_EMPLOYEES,
-        COUNT_IF(STATUS = 'Certified')                                     AS CERTIFICATIONS_EARNED,
-        0                                                                  AS EMPLOYEES_IN_TRAINING,
-        0                                                                  AS TRAINING_COURSES_ENROLLED
-      FROM scoped
-    `;
+    const raw = await withOrgCache(
+      accountId,
+      'training-stats',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchTrainingStatsRows(accountId),
+      isTrainingStatsRaw
+    );
 
-    const trainingSql = `
-      SELECT
-        0                                                                                    AS CERTIFIED_EMPLOYEES,
-        0                                                                                    AS CERTIFICATIONS_EARNED,
-        COUNT(DISTINCT CASE WHEN TRAINING_STATUS = 'InProgress' THEN PERSON_KEY END)         AS EMPLOYEES_IN_TRAINING,
-        COUNT(CASE WHEN TRAINING_STATUS = 'InProgress' THEN 1 END)                           AS TRAINING_COURSES_ENROLLED
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES
-      WHERE ACCOUNT_ID = ?
-    `;
-
-    const [certResult, trainingResult] = await Promise.all([
-      this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId, accountId]),
-      this.snowflakeService.execute<OrgTrainingStatsRow>(trainingSql, [accountId]),
-    ]);
-
-    const cert = certResult.rows[0];
-    const training = trainingResult.rows[0];
+    const cert = raw.certRows[0];
+    const training = raw.trainingRows[0];
 
     return {
       certifiedEmployees: cert?.CERTIFIED_EMPLOYEES ?? 0,
@@ -200,17 +161,25 @@ export class OrgLensTrainingService {
       )
     `;
 
-    return this.fetchPagedCourseRows<OrgCertificationRow, OrgCertification>(req, 'get_org_certifications', filteredCte, {
+    const raw = await withOrgCache(
       accountId,
-      searchQuery,
-      level,
-      pageSize,
-      offset,
-      sortField,
-      sortOrder,
-      selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, LOGO_URL, CERTIFIED_COUNT, IN_PROGRESS_COUNT',
-      mapRow: (row) => this.mapRowToOrgCertification(row),
-    });
+      `certifications:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () =>
+        this.fetchPagedCourseRows<OrgCertificationRow>(req, 'get_org_certifications', filteredCte, {
+          accountId,
+          searchQuery,
+          level,
+          pageSize,
+          offset,
+          sortField,
+          sortOrder,
+          selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, LOGO_URL, CERTIFIED_COUNT, IN_PROGRESS_COUNT',
+        }),
+      isPagedCourseRaw
+    );
+
+    return { data: raw.rows.map((row) => this.mapRowToOrgCertification(row)), total: raw.total, pageSize, offset };
   }
 
   public async getOrgTrainings(req: Request, accountId: string, options: GetOrgTrainingsOptions): Promise<OrgTrainingsResponse> {
@@ -258,17 +227,25 @@ export class OrgLensTrainingService {
       )
     `;
 
-    return this.fetchPagedCourseRows<OrgTrainingRow, OrgTraining>(req, 'get_org_trainings', filteredCte, {
+    const raw = await withOrgCache(
       accountId,
-      searchQuery,
-      level,
-      pageSize,
-      offset,
-      sortField,
-      sortOrder,
-      selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, IN_PROGRESS_COUNT, COMPLETED_COUNT',
-      mapRow: (row) => this.mapRowToOrgTraining(row),
-    });
+      `trainings:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () =>
+        this.fetchPagedCourseRows<OrgTrainingRow>(req, 'get_org_trainings', filteredCte, {
+          accountId,
+          searchQuery,
+          level,
+          pageSize,
+          offset,
+          sortField,
+          sortOrder,
+          selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, IN_PROGRESS_COUNT, COMPLETED_COUNT',
+        }),
+      isPagedCourseRaw
+    );
+
+    return { data: raw.rows.map((row) => this.mapRowToOrgTraining(row)), total: raw.total, pageSize, offset };
   }
 
   public async getCertificationEmployees(
@@ -310,16 +287,20 @@ export class OrgLensTrainingService {
       LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
-    const roster = await this.fetchRosterEmployees(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, {
-      courseId,
-    });
+    const rows = await withOrgCache(
+      accountId,
+      `certification-employees:${paramSignature([courseId, status, searchQuery ?? null])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchRosterRows(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, { courseId }),
+      isRosterRowArray
+    );
 
     return {
-      courseId: roster.courseId,
-      certificationName: roster.courseName,
+      courseId,
+      certificationName: rows[0]?.COURSE_NAME ?? '',
       status,
-      total: roster.total,
-      data: roster.data,
+      total: rows[0]?.TOTAL_MATCHES ?? 0,
+      data: mapRosterRows(rows),
     };
   }
 
@@ -358,20 +339,69 @@ export class OrgLensTrainingService {
       LIMIT ${MAX_ORG_TRAINING_EMPLOYEES}
     `;
 
-    const roster = await this.fetchRosterEmployees(req, 'get_training_employees', sql, [accountId, courseId, trainingStatus], searchQuery, {
-      courseId,
-    });
+    const rows = await withOrgCache(
+      accountId,
+      `training-employees:${paramSignature([courseId, status, searchQuery ?? null])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchRosterRows(req, 'get_training_employees', sql, [accountId, courseId, trainingStatus], searchQuery, { courseId }),
+      isRosterRowArray
+    );
 
     return {
-      courseId: roster.courseId,
-      trainingName: roster.courseName,
+      courseId,
+      trainingName: rows[0]?.COURSE_NAME ?? '',
       status,
-      total: roster.total,
-      data: roster.data,
+      total: rows[0]?.TOTAL_MATCHES ?? 0,
+      data: mapRosterRows(rows),
     };
   }
 
-  private async fetchPagedCourseRows<TRow extends { COURSE_ID: string }, TItem>(
+  private async fetchTrainingStatsRows(accountId: string): Promise<{ certRows: OrgTrainingStatsRow[]; trainingRows: OrgTrainingStatsRow[] }> {
+    const certSql = `
+      WITH ${scopedCourseCatalogDimCte(`
+        SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
+        WHERE t.ACCOUNT_ID = ?
+          AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
+      `)},
+      scoped AS (
+        SELECT
+          t.PERSON_KEY,
+          t.STATUS,
+          d.PRODUCT_TYPE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
+        INNER JOIN course_dim d
+          ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
+        WHERE t.ACCOUNT_ID = ?
+          AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
+      )
+      SELECT
+        COUNT(DISTINCT CASE WHEN STATUS = 'Certified' THEN PERSON_KEY END) AS CERTIFIED_EMPLOYEES,
+        COUNT_IF(STATUS = 'Certified')                                     AS CERTIFICATIONS_EARNED,
+        0                                                                  AS EMPLOYEES_IN_TRAINING,
+        0                                                                  AS TRAINING_COURSES_ENROLLED
+      FROM scoped
+    `;
+
+    const trainingSql = `
+      SELECT
+        0                                                                                    AS CERTIFIED_EMPLOYEES,
+        0                                                                                    AS CERTIFICATIONS_EARNED,
+        COUNT(DISTINCT CASE WHEN TRAINING_STATUS = 'InProgress' THEN PERSON_KEY END)         AS EMPLOYEES_IN_TRAINING,
+        COUNT(CASE WHEN TRAINING_STATUS = 'InProgress' THEN 1 END)                           AS TRAINING_COURSES_ENROLLED
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES
+      WHERE ACCOUNT_ID = ?
+    `;
+
+    const [certResult, trainingResult] = await Promise.all([
+      this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId, accountId]),
+      this.snowflakeService.execute<OrgTrainingStatsRow>(trainingSql, [accountId]),
+    ]);
+
+    return { certRows: certResult.rows, trainingRows: trainingResult.rows };
+  }
+
+  private async fetchPagedCourseRows<TRow extends { COURSE_ID: string }>(
     req: Request,
     operation: string,
     filteredCte: string,
@@ -384,10 +414,9 @@ export class OrgLensTrainingService {
       sortField: string;
       sortOrder: 'ASC' | 'DESC';
       selectColumns: string;
-      mapRow: (row: TRow) => TItem;
     }
-  ): Promise<{ data: TItem[]; total: number; pageSize: number; offset: number }> {
-    const { accountId, searchQuery, level, pageSize, offset, sortField, sortOrder, selectColumns, mapRow } = options;
+  ): Promise<{ rows: TRow[]; total: number }> {
+    const { accountId, searchQuery, level, pageSize, offset, sortField, sortOrder, selectColumns } = options;
 
     const countSql = `${filteredCte} SELECT COUNT(*) AS TOTAL_RECORDS FROM filtered`;
     // sortField/sortOrder are validated against allow-lists in the controller before reaching
@@ -410,41 +439,28 @@ export class OrgLensTrainingService {
     ]);
 
     const total = countResult.rows[0]?.TOTAL_RECORDS ?? 0;
-    const data = pageResult.rows.map((row) => mapRow(row));
 
-    logger.debug(req, operation, 'Fetched paged course rows', { count: data.length, total });
+    logger.debug(req, operation, 'Fetched paged course rows', { count: pageResult.rows.length, total });
 
-    return { data, total, pageSize, offset };
+    return { rows: pageResult.rows, total };
   }
 
-  private async fetchRosterEmployees(
+  private async fetchRosterRows(
     req: Request,
     operation: string,
     sql: string,
     binds: string[],
     searchQuery: string | undefined,
     meta: { courseId: string }
-  ): Promise<OrgRosterEmployeesResult> {
+  ): Promise<OrgRosterEmployeeRow[]> {
     const queryBinds = [...binds];
     if (searchQuery) queryBinds.push(`%${searchQuery}%`);
 
     const result = await this.snowflakeService.execute<OrgRosterEmployeeRow>(sql, queryBinds);
-    const courseName = result.rows[0]?.COURSE_NAME ?? '';
-    const total = result.rows[0]?.TOTAL_MATCHES ?? 0;
-    const data: OrgCertEmployee[] = result.rows.map((row) => ({
-      contactId: row.CONTACT_ID,
-      name: row.NAME ?? row.CONTACT_ID,
-      jobTitle: row.JOB_TITLE ?? null,
-    }));
 
-    logger.debug(req, operation, 'Fetched roster employees', { count: data.length, total, course_id: meta.courseId });
+    logger.debug(req, operation, 'Fetched roster employees', { count: result.rows.length, course_id: meta.courseId });
 
-    return {
-      courseId: meta.courseId,
-      courseName,
-      total,
-      data,
-    };
+    return result.rows;
   }
 
   private mapRowToOrgCertification(row: OrgCertificationRow): OrgCertification {
@@ -470,4 +486,31 @@ export class OrgLensTrainingService {
       completedCount: row.COMPLETED_COUNT || 0,
     };
   }
+}
+
+/** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
+function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
+  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+}
+
+function mapRosterRows(rows: readonly OrgRosterEmployeeRow[]): OrgCertEmployee[] {
+  return rows.map((row) => ({
+    contactId: row.CONTACT_ID,
+    name: row.NAME ?? row.CONTACT_ID,
+    jobTitle: row.JOB_TITLE ?? null,
+  }));
+}
+
+function isTrainingStatsRaw(value: unknown): boolean {
+  const v = value as { certRows?: unknown; trainingRows?: unknown } | null;
+  return !!v && Array.isArray(v.certRows) && Array.isArray(v.trainingRows);
+}
+
+function isPagedCourseRaw(value: unknown): boolean {
+  const v = value as { rows?: unknown; total?: unknown } | null;
+  return !!v && Array.isArray(v.rows) && typeof v.total === 'number';
+}
+
+function isRosterRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }

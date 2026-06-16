@@ -18,6 +18,9 @@ export interface CachePort {
   /** Best-effort write with a TTL in seconds. Returns whether it persisted. Never throws. */
   setJson(key: string, value: unknown, ttlSeconds: number): Promise<boolean>;
 
+  /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; faults are swallowed. Never throws. */
+  del(key: string | null): Promise<void>;
+
   /** Read-through helper; `key === null` (or disabled cache) runs `fetcher()` directly (fail-closed); `accept` rejects a malformed cached value as a miss. Cache faults are swallowed, but errors from `fetcher()` propagate to the caller. */
   withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T>;
 }
