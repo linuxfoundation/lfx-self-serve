@@ -4,18 +4,10 @@
 import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { ProjectContext } from '@lfx-one/shared/interfaces';
+import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
 import { distinctUntilChanged, filter } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
-
-interface EntityWithProject {
-  uid: string;
-  project_uid: string;
-  project_slug?: string | null;
-  project_name?: string | null;
-  foundation_name?: string | null;
-}
 
 /**
  * Syncs the active project/foundation context to the owning project of the given
