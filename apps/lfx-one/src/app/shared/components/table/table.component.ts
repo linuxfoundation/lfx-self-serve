@@ -180,9 +180,11 @@ export class TableComponent implements AfterContentInit {
     return total > 0 && total <= this.rows();
   });
 
-  // When loading, swap real data with skeleton placeholder data so PrimeNG renders skeleton rows
+  // When loading, swap real data with skeleton placeholder data so PrimeNG renders skeleton rows.
+  // This applies whether a custom loadingbody template is provided or not — the skeletonRowData
+  // entries carry the delay/col metadata that custom templates rely on.
   protected readonly displayValue: Signal<any[]> = computed(() => {
-    if (this.loading() && !this.loadingBodyTemplate) {
+    if (this.loading()) {
       return this.skeletonRowData();
     }
     return this.value();

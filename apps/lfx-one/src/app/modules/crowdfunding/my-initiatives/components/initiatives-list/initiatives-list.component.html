@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="initiatives-list">
+  <lfx-filter-pills [options]="filterOptions()" [selectedFilter]="activeFilter()" (filterChange)="setFilter($event)" data-testid="initiatives-filter-pills" />
+
+  @if (filteredInitiatives().length > 0) {
+    <lfx-card
+      styleClass="flex flex-col gap-4 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
+      data-testid="initiatives-cards">
+      @for (initiative of filteredInitiatives(); track initiative.id) {
+        <lfx-initiative-card [initiative]="initiative" (cardClick)="onCardClick($event)" />
+      }
+    </lfx-card>
+  } @else {
+    <lfx-empty-state [icon]="emptyIcon()" [title]="emptyTitle()" [subtitle]="emptySubtitle()" data-testid="initiatives-empty-state" />
+  }
+
+  @if (hasMore()) {
+    <div class="flex justify-center pt-3" data-testid="initiatives-list-load-more">
+      <lfx-button label="Load more" severity="secondary" size="small" [loading]="loadingMore()" [disabled]="loadingMore()" (onClick)="onLoadMore()" />
+    </div>
+  }
+</div>

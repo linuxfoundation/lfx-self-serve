@@ -7,7 +7,17 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
-import { ALL_LENSES, COMMITTEE_LABEL, DOCUMENT_LABEL, MAILING_LIST_LABEL, ORG_LENS_ENABLED_FLAG, SURVEY_LABEL, VOTE_LABEL } from '@lfx-one/shared/constants';
+import {
+  ALL_LENSES,
+  COMMITTEE_LABEL,
+  CROWDFUNDING_ENABLED_FLAG,
+  DOCUMENT_LABEL,
+  MAILING_LIST_LABEL,
+  ORG_LENS_ENABLED_FLAG,
+  OSSPREY_ENABLED_FLAG,
+  SURVEY_LABEL,
+  VOTE_LABEL,
+} from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
@@ -45,6 +55,10 @@ export class MainLayoutComponent {
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
+  /** Dark-launch gate; collapses Crowdfunding sub-nav to an external link when off. */
+  private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
+  /** Dark-launch gate for the OSSPREY admin dashboard; hides the Security nav section when off. */
+  private readonly isOsspreyEnabled = this.featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -74,111 +88,159 @@ export class MainLayoutComponent {
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.orgLensItems : this.meLensItems;
+        return this.isOrgLensEnabled() ? this.orgLensItems : this.visibleMeLensItems();
       default:
-        return this.meLensItems;
+        return this.visibleMeLensItems();
     }
   });
 
+  // Me Lens nav with feature-flagged sections stripped (Security/OSSPREY is dark-launched).
+  private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
+    this.isOsspreyEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
+  );
+
   // --- Me Lens Items ---
-  private readonly meLensItems: SidebarMenuItem[] = [
-    {
-      label: 'My Dashboard',
-      icon: 'fa-light fa-grid-2',
-      routerLink: '/',
-    },
-    {
-      label: 'My Engagement',
+  // Computed so both Crowdfunding and Security/OSSPREY nav entries react to their feature flags in real time.
+  private readonly meLensItems = computed((): SidebarMenuItem[] => {
+    const crowdfundingEnabled = this.isCrowdfundingEnabled();
+
+    // Flag OFF: no internal pages exist, so Crowdfunding stays a single external
+    // link inside the My Growth section (its original placement).
+    const crowdfundingLink: SidebarMenuItem = {
+      label: 'Crowdfunding',
+      icon: 'fa-light fa-circle-dollar',
+      url: environment.urls.crowdfunding,
+      target: '_self',
+    };
+
+    // Flag ON: Crowdfunding is promoted to its own top-level section (peer of
+    // My Engagement / My Growth), with its sub-pages as section children.
+    const crowdfundingSection: SidebarMenuItem = {
+      label: 'Crowdfunding',
       isSection: true,
       expanded: true,
       items: [
         {
-          label: 'My Meetings',
-          icon: 'fa-light fa-calendar',
-          routerLink: '/meetings',
+          label: 'My Initiatives',
+          icon: 'fa-light fa-box-dollar',
+          routerLink: '/crowdfunding/initiatives',
         },
         {
-          label: 'My Events',
-          icon: 'fa-light fa-ticket',
-          routerLink: '/events',
-        },
-        {
-          label: 'My ' + COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
-          routerLink: '/groups',
-        },
-        {
-          label: 'My ' + MAILING_LIST_LABEL.plural,
-          icon: 'fa-light fa-envelope',
-          routerLink: '/mailing-lists',
-        },
-        {
-          label: 'My ' + VOTE_LABEL.plural,
-          icon: 'fa-light fa-check-to-slot',
-          routerLink: '/votes',
-        },
-        {
-          label: 'My ' + SURVEY_LABEL.plural,
-          icon: 'fa-light fa-clipboard-list',
-          routerLink: '/surveys',
-        },
-        {
-          label: 'My ' + DOCUMENT_LABEL.plural,
-          icon: 'fa-light fa-folder-open',
-          routerLink: '/documents',
+          label: 'My Donations',
+          icon: 'fa-light fa-hand-heart',
+          routerLink: '/crowdfunding/donations',
         },
       ],
-    },
-    {
-      label: 'My Growth',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Training & Certifications',
-          icon: 'fa-light fa-graduation-cap',
-          routerLink: '/me/training',
-        },
-        {
-          label: 'Mentorships',
-          icon: 'fa-light fa-chalkboard-teacher',
-          url: environment.urls.mentorship,
-        },
-        {
-          label: 'Crowdfunding',
-          icon: 'fa-light fa-circle-dollar',
-          url: environment.urls.crowdfunding,
-        },
-        {
-          label: 'Badges',
-          icon: 'fa-light fa-award',
-          routerLink: '/badges',
-        },
-      ],
-    },
-    {
-      label: 'My Account',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Profile',
-          icon: 'fa-light fa-user',
-          routerLink: '/profile',
-        },
-        {
-          label: 'Settings',
-          icon: 'fa-light fa-gear',
-          routerLink: '/settings',
-        },
-        {
-          label: 'Transactions',
-          icon: 'fa-light fa-receipt',
-          routerLink: '/me/transactions',
-        },
-      ],
-    },
-  ];
+    };
+
+    return [
+      {
+        label: 'My Dashboard',
+        icon: 'fa-light fa-grid-2',
+        routerLink: '/',
+      },
+      {
+        label: 'My Engagement',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'My Meetings',
+            icon: 'fa-light fa-calendar',
+            routerLink: '/meetings',
+          },
+          {
+            label: 'My Events',
+            icon: 'fa-light fa-ticket',
+            routerLink: '/events',
+          },
+          {
+            label: 'My ' + COMMITTEE_LABEL.plural,
+            icon: 'fa-light fa-users-rectangle',
+            routerLink: '/groups',
+          },
+          {
+            label: 'My ' + MAILING_LIST_LABEL.plural,
+            icon: 'fa-light fa-envelope',
+            routerLink: '/mailing-lists',
+          },
+          {
+            label: 'My ' + VOTE_LABEL.plural,
+            icon: 'fa-light fa-check-to-slot',
+            routerLink: '/votes',
+          },
+          {
+            label: 'My ' + SURVEY_LABEL.plural,
+            icon: 'fa-light fa-clipboard-list',
+            routerLink: '/surveys',
+          },
+          {
+            label: 'My ' + DOCUMENT_LABEL.plural,
+            icon: 'fa-light fa-folder-open',
+            routerLink: '/documents',
+          },
+        ],
+      },
+      {
+        label: 'Security',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'OSSPREY Program',
+            icon: 'fa-light fa-shield-halved',
+            routerLink: '/ossprey',
+          },
+        ],
+      },
+      {
+        label: 'My Growth',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'Training & Certifications',
+            icon: 'fa-light fa-graduation-cap',
+            routerLink: '/me/training',
+          },
+          {
+            label: 'Mentorships',
+            icon: 'fa-light fa-chalkboard-teacher',
+            url: environment.urls.mentorship,
+          },
+          ...(crowdfundingEnabled ? [] : [crowdfundingLink]),
+          {
+            label: 'Badges',
+            icon: 'fa-light fa-award',
+            routerLink: '/badges',
+          },
+        ],
+      },
+      ...(crowdfundingEnabled ? [crowdfundingSection] : []),
+      {
+        label: 'My Account',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'Profile',
+            icon: 'fa-light fa-user',
+            routerLink: '/profile',
+          },
+          {
+            label: 'Settings',
+            icon: 'fa-light fa-gear',
+            routerLink: '/settings',
+          },
+          {
+            label: 'Transactions',
+            icon: 'fa-light fa-receipt',
+            routerLink: '/me/transactions',
+          },
+        ],
+      },
+    ];
+  });
 
   // Whether the currently selected foundation has project-level data in Snowflake.
   // Drives the conditional "Projects" sidebar entry — hidden when the foundation has no rows.

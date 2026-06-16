@@ -4,7 +4,8 @@
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import type {
   KeyContactEmployee,
@@ -23,12 +24,12 @@ import { take } from 'rxjs';
 @Component({
   selector: 'lfx-reassign-key-contact-roles-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, CheckboxModule],
+  imports: [FormsModule, InputTextModule, CheckboxModule, EmployeeAvatarComponent],
   templateUrl: './reassign-key-contact-roles-modal.component.html',
 })
 export class ReassignKeyContactRolesModalComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly membershipsService = inject(OrgLensMembershipsService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignKeyContactRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
@@ -67,11 +68,11 @@ export class ReassignKeyContactRolesModalComponent {
 
   public constructor() {
     if (this.orgUid) {
-      this.membershipsService
-        .getKeyContactEmployees(this.orgUid)
+      this.directory
+        .getEmployees(this.orgUid)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: (res) => this.employees.set(res.employees ?? []),
+          next: (list) => this.employees.set(list),
           error: () => this.employeeSearchUnavailable.set(true),
         });
     }

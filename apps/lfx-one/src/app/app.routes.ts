@@ -8,6 +8,7 @@ import { executiveDirectorGuard } from './shared/guards/executive-director.guard
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 
 const loadOrgPlaceholderPage = () =>
@@ -336,6 +337,11 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
+        path: 'crowdfunding',
+        data: { lens: 'me' },
+        loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
+      },
+      {
         path: 'me/events',
         redirectTo: 'events',
         pathMatch: 'full',
@@ -344,6 +350,11 @@ export const routes: Routes = [
         path: 'me/badges',
         redirectTo: 'badges',
         pathMatch: 'full',
+      },
+      {
+        path: 'ossprey',
+        canMatch: [osspreyEnabledGuard],
+        loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
       },
     ],
   },

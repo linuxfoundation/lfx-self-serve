@@ -54,22 +54,26 @@ export class ProjectContextService {
     this.syncUrlAfterInitialNavigation();
   }
 
-  public setFoundation(foundation: ProjectContext): void {
+  public setFoundation(foundation: ProjectContext, syncUrl = true): void {
     if (isSameProjectContext(this.foundationSelection(), foundation)) {
       return;
     }
     this.foundationSelection.set(foundation);
     this.persistSelection(this.foundationStorageKey, foundation);
-    this.syncProjectQueryParam(foundation.slug);
+    if (syncUrl) {
+      this.syncProjectQueryParam(foundation.slug);
+    }
   }
 
-  public setProject(project: ProjectContext): void {
+  public setProject(project: ProjectContext, syncUrl = true): void {
     if (isSameProjectContext(this.projectSelection(), project)) {
       return;
     }
     this.projectSelection.set(project);
     this.persistSelection(this.projectStorageKey, project);
-    this.syncProjectQueryParam(project.slug);
+    if (syncUrl) {
+      this.syncProjectQueryParam(project.slug);
+    }
   }
 
   public clearFoundation(): void {

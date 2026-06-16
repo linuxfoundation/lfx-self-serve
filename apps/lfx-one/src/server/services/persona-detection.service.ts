@@ -435,7 +435,7 @@ export class PersonaDetectionService {
 
           if (orgId && orgName && !seen.has(orgId)) {
             seen.add(orgId);
-            accounts.push({ accountId: orgId, accountName: orgName });
+            accounts.push({ accountId: orgId, accountName: orgName, uid: orgId });
           }
         }
       }

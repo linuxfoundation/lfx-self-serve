@@ -27,9 +27,27 @@
 
       <!-- CTA -->
       @if (ctaLabel() && ctaRoute()) {
-        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" size="small" [routerLink]="ctaRoute()!"></lfx-button>
+        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" [size]="ctaSize()" [routerLink]="ctaRoute()!"></lfx-button>
+      } @else if (ctaLabel() && ctaHref()) {
+        <lfx-button
+          [label]="ctaLabel()!"
+          [icon]="ctaIcon()"
+          severity="primary"
+          [size]="ctaSize()"
+          [text]="ctaGhost()"
+          [outlined]="!ctaGhost()"
+          [href]="ctaHref()!"
+          [target]="ctaTarget()"
+          [rel]="resolvedRel()"></lfx-button>
       } @else if (ctaLabel()) {
-        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" size="small" [outlined]="true" (onClick)="ctaClick.emit()"></lfx-button>
+        <lfx-button
+          [label]="ctaLabel()!"
+          [icon]="ctaIcon()"
+          severity="primary"
+          [size]="ctaSize()"
+          [text]="ctaGhost()"
+          [outlined]="!ctaGhost()"
+          (onClick)="ctaClick.emit()"></lfx-button>
       }
     </div>
   </div>

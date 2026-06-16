@@ -205,7 +205,21 @@
           </ng-template>
         </lfx-table>
       } @else {
-        <lfx-table [value]="commitRows()" [loading]="isLoading()" [paginator]="false" data-testid="org-contributions-commits-table">
+        <lfx-table
+          [value]="commitRows()"
+          [loading]="isLoading()"
+          [lazy]="true"
+          [paginator]="activeTotalRecords() > 0"
+          [rows]="size()"
+          [first]="first()"
+          [totalRecords]="activeTotalRecords()"
+          [rowsPerPageOptions]="pageSizeOptions"
+          [showCurrentPageReport]="true"
+          [showFirstLastIcon]="false"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          paginatorPosition="bottom"
+          (onPage)="onTablePage($event)"
+          data-testid="org-contributions-commits-table">
           <ng-template #header>
             <tr>
               @let cIcons = commitSortIconMap();
@@ -253,21 +267,34 @@
               </td>
               <td>
                 <div class="flex min-w-0 items-center gap-3">
-                  <span
-                    class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                    [class]="commit.avatarColorClass"
-                    aria-hidden="true">
-                    {{ commit.initials }}
-                  </span>
+                  @if (commit.committerAvatarUrl) {
+                    <img
+                      [src]="commit.committerAvatarUrl"
+                      [alt]="commit.committerName + ' avatar'"
+                      loading="lazy"
+                      class="h-9 w-9 shrink-0 rounded-full object-cover"
+                      [attr.data-testid]="'org-contributions-committer-avatar-' + commit.commitSha" />
+                  } @else {
+                    <span
+                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      [class]="commit.avatarColorClass"
+                      aria-hidden="true">
+                      {{ commit.initials }}
+                    </span>
+                  }
                   <span class="flex min-w-0 flex-col items-start">
-                    <button
-                      type="button"
-                      class="truncate bg-transparent p-0 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                      [attr.data-testid]="'org-contributions-committer-' + commit.commitSha"
-                      [attr.aria-label]="'View details for ' + commit.committerName"
-                      (click)="openCommitter(commit.committerName)">
-                      {{ commit.committerName }}
-                    </button>
+                    @if (commit.contributorId) {
+                      <button
+                        type="button"
+                        class="truncate bg-transparent p-0 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                        [attr.data-testid]="'org-contributions-committer-' + commit.commitSha"
+                        [attr.aria-label]="'View details for ' + commit.committerName"
+                        (click)="openCommitter(commit.contributorId)">
+                        {{ commit.committerName }}
+                      </button>
+                    } @else {
+                      <span class="truncate text-sm font-medium text-gray-900">{{ commit.committerName }}</span>
+                    }
                     @if (commit.committerTitle) {
                       <span class="truncate text-xs text-gray-500">{{ commit.committerTitle }}</span>
                     }
@@ -325,22 +352,37 @@
 
   <!-- Committer detail side panel -->
   <p-drawer
-    [visible]="committerDetail() !== null"
+    [visible]="selectedContributorId() !== null"
     (visibleChange)="onCommitterPanelVisible($event)"
     position="right"
     [modal]="true"
     [showCloseIcon]="true"
     styleClass="xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
     data-testid="org-contributions-committer-panel">
-    @if (committerDetail(); as detail) {
+    @if (committerPanelLoading()) {
+      <div class="flex flex-col gap-4 px-1 py-6" data-testid="org-contributions-committer-panel-loading">
+        <div class="h-12 w-12 animate-pulse rounded-full bg-gray-200"></div>
+        <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+      </div>
+    } @else if (committerDetail(); as detail) {
       <ng-template #header>
         <div class="flex min-w-0 items-center gap-3" data-testid="org-contributions-committer-panel-header">
-          <span
-            class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-            [class]="detail.avatarColorClass"
-            aria-hidden="true">
-            {{ detail.initials }}
-          </span>
+          @if (detail.avatarUrl) {
+            <img
+              [src]="detail.avatarUrl"
+              [alt]="detail.name + ' avatar'"
+              loading="lazy"
+              class="h-12 w-12 shrink-0 rounded-full object-cover"
+              data-testid="org-contributions-committer-panel-avatar" />
+          } @else {
+            <span
+              class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+              [class]="detail.avatarColorClass"
+              aria-hidden="true">
+              {{ detail.initials }}
+            </span>
+          }
           <span class="flex min-w-0 flex-col">
             <span class="truncate text-lg font-semibold text-gray-900">{{ detail.name }}</span>
             @if (detail.title) {
@@ -403,7 +445,7 @@
                 <div class="grid grid-cols-2 gap-4">
                   <div class="rounded-lg border border-gray-200 bg-white p-4">
                     <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.totalCommits | number }}</div>
-                    <div class="mt-1 text-xs text-gray-500">Commits in view</div>
+                    <div class="mt-1 text-xs text-gray-500">Commits</div>
                   </div>
                   <div class="rounded-lg border border-gray-200 bg-white p-4">
                     <div class="text-2xl font-semibold leading-none text-gray-900">{{ detail.projects.length | number }}</div>

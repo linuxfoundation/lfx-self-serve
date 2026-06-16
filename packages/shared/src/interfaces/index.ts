@@ -99,6 +99,9 @@ export * from './sse.interface';
 // Copilot interfaces
 export * from './copilot.interface';
 
+// OSSPREY admin dashboard interfaces
+export * from './ossprey.interface';
+
 // Committee application interfaces
 export * from './committee-application.interface';
 
@@ -189,6 +192,13 @@ export * from './org-lens-access.interface';
 export * from './org-people-key-contacts.interface';
 export * from './org-people-key-contacts.internal.interface';
 
+// Org People — Board tab
+export * from './org-people-board-members.interface';
+
+// Org People — Committee tab
+export * from './org-people-committee-members.interface';
+export * from './org-people-committee-members.internal.interface';
+
 // Org People — Trainees tab (LFXV2-1876)
 export * from './org-people-trainees.interface';
 
@@ -218,3 +228,12 @@ export * from './docs.interface';
 
 // Linux.com email alias interfaces
 export * from './linux-email.interface';
+
+// Crowdfunding interfaces
+export * from './crowdfunding.interface';
+
+// Donut chart interfaces
+export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';

@@ -40,7 +40,7 @@ export class DocsNotFoundComponent implements OnInit {
   protected readonly topics: DocsTopic[] = this.docsManifest.getTopics();
 
   public ngOnInit(): void {
-    const title = 'Page not found · LFX Self Serve Documentation';
+    const title = 'Page not found · LFX Documentation';
     const description = 'The documentation page you requested could not be found.';
 
     this.title.setTitle(title);

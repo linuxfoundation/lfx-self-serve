@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT } from '@angular/common';
+import { DatePipe, DOCUMENT, Location } from '@angular/common';
 import { Component, computed, ElementRef, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
@@ -62,6 +62,7 @@ export class DocsArticleComponent {
   private readonly meta = inject(Meta);
   private readonly document = inject(DOCUMENT);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly location = inject(Location);
 
   /** Article resolved by `docsArticleResolver` — guaranteed non-null on a successful navigation. */
   protected readonly article = this.initArticle();
@@ -84,6 +85,11 @@ export class DocsArticleComponent {
     toObservable(this.article)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.applyMetadata());
+  }
+
+  /** Navigates to the previous page in browser history (back button in the top bar). */
+  protected goBack(): void {
+    this.location.back();
   }
 
   @HostListener('click', ['$event'])
@@ -146,7 +152,7 @@ export class DocsArticleComponent {
     if (!a) return;
 
     const canonical = `${DOCS_CANONICAL_ORIGIN}${a.url}`;
-    this.title.setTitle(`${a.title} · LFX Self Serve Documentation`);
+    this.title.setTitle(`${a.title} · LFX Documentation`);
     this.meta.updateTag({ name: 'description', content: a.description });
     this.meta.updateTag({ property: 'og:title', content: a.title });
     this.meta.updateTag({ property: 'og:description', content: a.description });

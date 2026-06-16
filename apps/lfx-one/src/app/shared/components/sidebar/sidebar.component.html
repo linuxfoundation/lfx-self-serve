@@ -84,7 +84,9 @@
       @if (lensLoaded()) {
         <div class="flex flex-col gap-2 items-start px-4 w-full">
           @for (item of itemsWithTestIds(); track item.label) {
-            @if (item.isSection) {
+            @if (item.isGroup) {
+              <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
+            } @else if (item.isSection) {
               <div class="w-full mt-2" [attr.data-testid]="item.testId">
                 <div class="flex items-center gap-2 px-2 py-1.5">
                   <span class="text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{{ item.label }}</span>
@@ -94,7 +96,11 @@
                 @if (item.items?.length) {
                   <div class="flex flex-col gap-1 mt-2">
                     @for (childItem of item.items; track childItem.label) {
-                      <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
+                      @if (childItem.isGroup) {
+                        <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: childItem }"></ng-container>
+                      } @else {
+                        <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
+                      }
                     }
                   </div>
                 }
@@ -165,6 +171,32 @@
     </div>
   </div>
 </aside>
+
+<ng-template #groupItem let-item>
+  <div class="w-full" [attr.data-testid]="item.testId">
+    <button
+      type="button"
+      (click)="toggleGroup(item.label)"
+      class="flex items-center gap-2 px-2 py-2 rounded-lg w-full text-left text-base text-gray-600 font-normal hover:bg-gray-50 transition-colors"
+      [attr.aria-expanded]="expandedGroupStates()[item.label]"
+      [attr.aria-label]="item.label">
+      <div class="nav-item-icon flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="item.icon"></i>
+      </div>
+      <span class="whitespace-nowrap flex-1">{{ item.label }}</span>
+      <i
+        class="fa-light fa-chevron-down text-gray-400 text-xs transition-transform duration-200"
+        [ngClass]="{ 'rotate-180': expandedGroupStates()[item.label] }"></i>
+    </button>
+    @if (expandedGroupStates()[item.label] && item.items?.length) {
+      <div class="flex flex-col gap-1 mt-1 pl-6">
+        @for (childItem of item.items; track childItem.label) {
+          <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
+        }
+      </div>
+    }
+  </div>
+</ng-template>
 
 <ng-template #menuItem let-item>
   @if (item.routerLink) {

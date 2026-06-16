@@ -5,7 +5,8 @@ import { Request, NextFunction } from 'express';
 import { HEALTH_METRICS_RANGES, MONTH_FORMAT_REGEX, VALID_CLASSIFICATIONS, isHealthMetricsRange } from '@lfx-one/shared/constants';
 import { ServiceValidationError } from '../errors';
 
-import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsRange, OsspreyStatus, OsspreyHealthBand, OspreySortKey } from '@lfx-one/shared/interfaces';
+import type { OsspreyListParams } from '@lfx-one/shared/interfaces';
 
 /**
  * Common validation utilities for controllers
@@ -190,6 +191,51 @@ export function getValidatedMonth(req: Request, operation: string): string | und
  * @param options Validation options including operation name
  * @returns true if validation passes, false if validation fails (error sent to next)
  */
+const VALID_OSSPREY_STATUSES = ['all', 'unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'] as const;
+const VALID_OSSPREY_HEALTH_BANDS: readonly OsspreyHealthBand[] = ['healthy', 'fair', 'concerning', 'critical'];
+const VALID_OSSPREY_VULN_FILTERS: readonly NonNullable<OsspreyListParams['vulnFilter']>[] = ['any', 'high', 'critical'];
+const VALID_OSSPREY_SORT_KEYS: readonly OspreySortKey[] = ['risk', 'impact', 'health', 'vulns', 'name'];
+
+/** Returns a validated OsspreyStatus or undefined; throws 400 for unknown values. 'all' is accepted as a no-op and returns undefined. */
+export function parseOsspreyStatus(req: Request): OsspreyStatus | undefined {
+  const raw = getStringQueryParam(req, 'status');
+  if (!raw) return undefined;
+  if (!VALID_OSSPREY_STATUSES.includes(raw as (typeof VALID_OSSPREY_STATUSES)[number])) {
+    throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_OSSPREY_STATUSES.join(', ')}`, {});
+  }
+  return raw === 'all' ? undefined : (raw as OsspreyStatus);
+}
+
+/** Returns a validated OsspreyHealthBand or undefined; throws 400 for unknown values. */
+export function parseOsspreyHealthBand(req: Request): OsspreyHealthBand | undefined {
+  const raw = getStringQueryParam(req, 'healthBand');
+  if (!raw) return undefined;
+  if (!VALID_OSSPREY_HEALTH_BANDS.includes(raw as OsspreyHealthBand)) {
+    throw ServiceValidationError.forField('healthBand', `Invalid healthBand. Allowed: ${VALID_OSSPREY_HEALTH_BANDS.join(', ')}`, {});
+  }
+  return raw as OsspreyHealthBand;
+}
+
+/** Returns a validated vulnFilter or undefined; throws 400 for unknown values. */
+export function parseOsspreyVulnFilter(req: Request): OsspreyListParams['vulnFilter'] {
+  const raw = getStringQueryParam(req, 'vulnFilter');
+  if (!raw) return undefined;
+  if (!VALID_OSSPREY_VULN_FILTERS.includes(raw as NonNullable<OsspreyListParams['vulnFilter']>)) {
+    throw ServiceValidationError.forField('vulnFilter', `Invalid vulnFilter. Allowed: ${VALID_OSSPREY_VULN_FILTERS.join(', ')}`, {});
+  }
+  return raw as OsspreyListParams['vulnFilter'];
+}
+
+/** Returns a validated OspreySortKey or undefined; throws 400 for unknown values. */
+export function parseOspreySortKey(req: Request): OspreySortKey | undefined {
+  const raw = getStringQueryParam(req, 'sortBy');
+  if (!raw) return undefined;
+  if (!VALID_OSSPREY_SORT_KEYS.includes(raw as OspreySortKey)) {
+    throw ServiceValidationError.forField('sortBy', `Invalid sortBy. Allowed: ${VALID_OSSPREY_SORT_KEYS.join(', ')}`, {});
+  }
+  return raw as OspreySortKey;
+}
+
 export function validateRequestBody<T>(body: T | undefined, req: Request, next: NextFunction, options: ValidationOptions): body is T {
   if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
     const validationError = ServiceValidationError.forField('body', 'Request body is required', {
