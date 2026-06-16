@@ -26,9 +26,18 @@
           <div class="flex items-start gap-[18px]">
             <!-- Avatar -->
             <div
-              class="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-[#cad5e2] text-base font-semibold text-white"
+              class="flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#cad5e2] text-base font-semibold text-white"
               data-testid="profile-avatar">
-              {{ initials() }}
+              @if (avatarUrl() && !avatarLoadError()) {
+                <img
+                  [src]="avatarUrl()"
+                  [alt]="displayName()"
+                  (error)="avatarLoadError.set(true)"
+                  class="h-full w-full rounded-full object-cover"
+                  data-testid="profile-avatar-image" />
+              } @else {
+                {{ initials() }}
+              }
             </div>
 
             <!-- 4-Column Grid -->

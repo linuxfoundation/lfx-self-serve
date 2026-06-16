@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -80,8 +80,14 @@ export class ProfileLayoutComponent {
   // Loading state
   public readonly loading = signal<boolean>(true);
 
+  // Tracks failed avatar image loads so we can fall back to initials
+  public readonly avatarLoadError = signal<boolean>(false);
+
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
+
+  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
+  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -121,6 +127,13 @@ export class ProfileLayoutComponent {
   public readonly tabNotifications: Signal<Map<string, boolean>> = this.initTabNotifications();
 
   public constructor() {
+    // Reset the avatar error flag whenever the picture URL changes so a newly-set
+    // (or refreshed) avatar re-attempts to load instead of staying on the initials fallback
+    effect(() => {
+      this.avatarUrl();
+      this.avatarLoadError.set(false);
+    });
+
     // Subscribe to tab selection changes for mobile navigation
     this.tabForm.controls.selectedTab.valueChanges.pipe(takeUntilDestroyed()).subscribe((route) => {
       if (route) {

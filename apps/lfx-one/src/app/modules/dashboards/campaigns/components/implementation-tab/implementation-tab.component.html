@@ -189,12 +189,12 @@
               (change)="onLinkedInAccountChange($event)"
               class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="implementation-linkedin-account">
-              @for (account of linkedInAccounts; track account.accountId) {
+              @for (account of linkedInAccounts(); track account.accountId) {
                 <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
               }
             </select>
             @if (selectedLinkedInAccount()) {
-              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().organizationId }} · Status: {{ selectedLinkedInAccount().status }}</p>
+              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
             }
           </div>
 

@@ -10,7 +10,7 @@ import type {
   KeywordActionType,
   KeywordMetrics,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInActionItem,
   LinkedInMonitorResponse,
   RedditAccountOption,
@@ -77,7 +77,7 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 
   // LinkedIn optimization
-  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly linkedInAccountOptions = signal<LinkedInAccount[]>([]);
   protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
@@ -104,7 +104,7 @@ export class OptimizationTabComponent implements OnInit {
         next: (accounts) => {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0) {
-            this.selectedLinkedInAccountKey.set(accounts[0].key);
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
             this.fetchLinkedInOptimization();
           }
         },
