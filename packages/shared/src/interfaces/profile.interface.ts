@@ -405,6 +405,14 @@ export interface AffiliationWorkWindow {
 }
 
 /**
+ * Validation errors for an editable affiliation period (dialog internal state)
+ */
+export interface AffiliationPeriodErrors {
+  outsideWorkExperience: boolean;
+  startAfterEnd: boolean;
+}
+
+/**
  * Organization edit state for the affiliation timeline dialog
  */
 export interface AffiliationEditOrg {
@@ -415,6 +423,8 @@ export interface AffiliationEditOrg {
   // One window per work-history stint at this org. Empty = no work-history constraint
   // (e.g. orgs known only from existing confirmed affiliations, or "Independent").
   weWindows: AffiliationWorkWindow[];
+  // Compact "earliest start – latest end" summary across all stints, shown in the card header.
+  rangeLabel?: string;
 }
 
 /**

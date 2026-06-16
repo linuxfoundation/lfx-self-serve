@@ -53,7 +53,7 @@
             }
             <div class="flex flex-1 items-center gap-2">
               <span class="text-sm font-medium text-slate-700">{{ org.organization }}</span>
-              @if (orgRangeLabelMap().get(org.organization); as range) {
+              @if (org.rangeLabel; as range) {
                 <span class="text-xs text-slate-400">({{ range }})</span>
               }
             </div>
@@ -66,6 +66,7 @@
 
               @for (period of org.periods; track period.id) {
                 @let isOverlapping = overlappingPeriodIds().has(period.id);
+                @let periodYearOptions = availableYearsMap().get(period.id) ?? yearOptions;
                 <div
                   class="flex items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
@@ -85,7 +86,7 @@
 
                   <!-- Start Year -->
                   <p-select
-                    [options]="availableYearsMap().get(period.id) ?? yearOptions"
+                    [options]="periodYearOptions"
                     [ngModel]="period.startYear"
                     (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
                     optionLabel="label"
@@ -117,7 +118,7 @@
 
                     <!-- End Year -->
                     <p-select
-                      [options]="availableYearsMap().get(period.id) ?? yearOptions"
+                      [options]="periodYearOptions"
                       [ngModel]="period.endYear"
                       (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
                       optionLabel="label"
