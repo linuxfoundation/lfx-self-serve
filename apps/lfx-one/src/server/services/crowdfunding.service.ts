@@ -10,6 +10,7 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
+  RecurringDonation,
   RecurringDonationsResponse,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -280,6 +281,19 @@ export class CrowdfundingService {
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
     return { data: raw.data.map(mapCfDonationToMyDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+  }
+
+  public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {
+    const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
+
+    const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    if (!raw || raw.status === 'canceled') {
+      logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId, status: raw?.status });
+      return null;
+    }
+
+    logger.success(req, 'cf_get_recurring_donation_by_id', startTime, { subscriptionId });
+    return mapSubscriptionToRecurringDonation(raw);
   }
 
   public async cancelSubscription(req: Request, subscriptionId: string): Promise<void> {

@@ -234,3 +234,6 @@ export * from './crowdfunding.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';
