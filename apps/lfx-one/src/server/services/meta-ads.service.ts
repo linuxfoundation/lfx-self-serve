@@ -232,6 +232,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
         },
       });
       const creativeId = creativeResp.id;
+      if (!creativeId) throw new Error('Creative creation returned no ID');
 
       const adResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/ads`, {
         name: `${config.eventName} - Ad ${i + 1}`,
@@ -239,6 +240,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
         creative: { creative_id: creativeId },
         status: 'PAUSED',
       });
+      if (!adResp.id) throw new Error('Ad creation returned no ID');
 
       adCount++;
       steps.push(`Ad ${i + 1} created: ${adResp.id} (creative: ${creativeId}) → ${utmUrl}`);
