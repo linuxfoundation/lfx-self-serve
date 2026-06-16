@@ -3,7 +3,7 @@
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
@@ -51,6 +51,7 @@ export class SidebarComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
+  private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly accountContextService = inject(AccountContextService);
@@ -151,6 +152,18 @@ export class SidebarComponent {
     } else {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
+    }
+    // When on an entity detail page (e.g. /project/mailing-lists/:id or /project/groups/:id),
+    // switching project context should land on the new project's dashboard — staying on the
+    // current entity would show data from the wrong project until the user navigates away.
+    this.redirectFromEntityPageIfNeeded();
+  }
+
+  private redirectFromEntityPageIfNeeded(): void {
+    const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
+    // Entity detail pages match /project/<section>/<id> (exactly 3 segments)
+    if (segments.length === 3 && segments[0] === 'project') {
+      this.router.navigate(['/project', 'overview']);
     }
   }
 
