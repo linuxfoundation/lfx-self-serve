@@ -22,7 +22,7 @@ export class EmptyStateComponent {
   public readonly ctaLabel = input<string | undefined>(undefined);
   public readonly ctaRoute = input<string[] | undefined>(undefined);
   public readonly ctaIcon = input<string | undefined>(undefined);
-  /** External-link CTA target; rendered as an anchor button when set (takes precedence over ctaClick). */
+  /** External-link CTA URL; rendered as an anchor button when set and no ctaRoute is provided (ctaRoute takes precedence). */
   public readonly ctaHref = input<string | undefined>(undefined);
   public readonly ctaTarget = input<string>('_self');
   public readonly ctaRel = input<string | undefined>(undefined);

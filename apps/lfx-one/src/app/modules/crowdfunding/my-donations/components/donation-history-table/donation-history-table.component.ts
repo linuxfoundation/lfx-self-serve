@@ -17,7 +17,7 @@ export class DonationHistoryTableComponent {
   public readonly items = input.required<MyDonation[]>();
   public readonly hasMore = input<boolean>(false);
   public readonly loadingMore = input<boolean>(false);
-  public readonly exploreUrl = input<string>('');
+  public readonly exploreUrl = input.required<string>();
 
   public readonly loadMore = output<void>();
 
