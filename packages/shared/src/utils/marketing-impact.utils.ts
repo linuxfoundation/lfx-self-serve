@@ -21,11 +21,11 @@ export function buildMarketingImpactMonthOptions(): MarketingImpactMonthOption[]
   return options;
 }
 
-/** Returns the default reporting month (previous calendar month). */
+/** Returns the default reporting month (previous calendar month, UTC). */
 export function getDefaultMarketingImpactMonth(): string {
   const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 // === Trend Helpers ===
@@ -109,23 +109,25 @@ export function isPeriodMonth(value: string): boolean {
 /** Resolves a period value to a concrete date range with start/end dates in YYYY-MM-DD format. */
 export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
   const now = new Date();
+  const utcYear = now.getUTCFullYear();
+  const utcMonth = now.getUTCMonth() + 1;
 
   if (isPeriodPreset(period)) {
-    const endDate = firstOfMonth(now.getFullYear(), now.getMonth() + 1);
+    const endDate = firstOfMonth(utcYear, utcMonth + 1);
 
     if (period === 'ytd') {
       return {
         type: 'ytd',
-        startDate: `${now.getFullYear()}-01-01`,
+        startDate: `${utcYear}-01-01`,
         endDate,
-        label: `Year to Date (${now.getFullYear()})`,
+        label: `Year to Date (${utcYear})`,
       };
     }
 
     const months = period === 'last-3' ? 3 : 6;
     return {
       type: 'trailing',
-      startDate: firstOfMonth(now.getFullYear(), now.getMonth() + 1 - months),
+      startDate: firstOfMonth(utcYear, utcMonth + 1 - months),
       endDate,
       label: `Last ${months} months`,
     };
@@ -133,11 +135,11 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
 
   if (isPeriodMonth(period)) {
     const [year, mo] = period.split('-').map(Number);
-    if (year > now.getFullYear() || (year === now.getFullYear() && mo > now.getMonth() + 1)) {
+    if (year > utcYear || (year === utcYear && mo > utcMonth)) {
       return null;
     }
-    const date = new Date(year, mo - 1, 1);
-    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const date = new Date(Date.UTC(year, mo - 1, 1));
+    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     return {
       type: 'month',
       startDate: firstOfMonth(year, mo),
@@ -150,6 +152,6 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
 }
 
 function firstOfMonth(year: number, month: number): string {
-  const d = new Date(year, month - 1, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }

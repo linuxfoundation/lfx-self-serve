@@ -2203,10 +2203,11 @@ export class ProjectService {
       const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
-      const periodSends = monthlyResult.rows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
-      const periodOpens = monthlyResult.rows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
+      const periodRows = monthlyResult.rows.filter((row) => row.PUBLISHED_MONTH_DATE >= resolved.startDate);
+      const periodSends = periodRows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
+      const periodOpens = periodRows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
       const periodCtr = periodSends > 0 ? Math.round(((periodOpens * 100) / periodSends) * 10) / 10 : 0;
-      const currentCtr = monthlyResult.rows.length > 0 ? periodCtr : summaryCtr;
+      const currentCtr = periodRows.length > 0 ? periodCtr : summaryCtr;
 
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
