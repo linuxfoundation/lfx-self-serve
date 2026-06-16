@@ -6,3 +6,6 @@
  * This cookie contains a JSON array of all registered cookie keys.
  */
 export const COOKIE_REGISTRY_KEY = 'lfx-cookie-registry';
+
+/** Default lifetime (in days) for client preference cookies (lens, persona, selected project/foundation). */
+export const COOKIE_DEFAULT_EXPIRY_DAYS = 30;

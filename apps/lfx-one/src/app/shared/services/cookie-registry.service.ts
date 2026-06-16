@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
-import { COOKIE_REGISTRY_KEY } from '@lfx-one/shared/constants';
+import { COOKIE_DEFAULT_EXPIRY_DAYS, COOKIE_REGISTRY_KEY } from '@lfx-one/shared/constants';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 @Injectable({
@@ -10,6 +10,23 @@ import { SsrCookieService } from 'ngx-cookie-service-ssr';
 })
 export class CookieRegistryService {
   private readonly cookieService = inject(SsrCookieService);
+
+  /** Writes a client preference cookie with the standard LFX options and tracks it in the registry. */
+  public set(key: string, value: string, expiresInDays: number = COOKIE_DEFAULT_EXPIRY_DAYS): void {
+    this.cookieService.set(key, value, {
+      expires: expiresInDays,
+      path: '/',
+      sameSite: 'Lax',
+      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+    });
+    this.registerCookie(key);
+  }
+
+  /** Deletes a client preference cookie and drops it from the registry. */
+  public delete(key: string): void {
+    this.cookieService.delete(key, '/');
+    this.unregisterCookie(key);
+  }
 
   public registerCookie(key: string): void {
     const registeredKeys = this.getAllRegisteredCookies();

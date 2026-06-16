@@ -93,13 +93,7 @@ export class LensService {
   }
 
   private persistToCookie(lens: Lens): void {
-    this.cookieService.set(LENS_COOKIE_KEY, lens, {
-      expires: 30,
-      path: '/',
-      sameSite: 'Lax',
-      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
-    });
-    this.cookieRegistry.registerCookie(LENS_COOKIE_KEY);
+    this.cookieRegistry.set(LENS_COOKIE_KEY, lens);
   }
 
   private loadFromCookie(): Lens | null {
