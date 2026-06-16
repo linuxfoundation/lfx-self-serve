@@ -7,6 +7,8 @@ import { TagComponent } from '@components/tag/tag.component';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
 import { RouterLink } from '@angular/router';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -35,6 +37,7 @@ const TOAST_KEY = 'committee-invitations';
 export class CommitteeInvitationsComponent {
   // ── Injections ──────────────────────────────────────────────────────────────
   private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -68,12 +71,27 @@ export class CommitteeInvitationsComponent {
   }
 
   public onAccept(invitation: PendingInvitation): void {
-    this.invitationService.markResolved(invitation.uid);
-    this.invitationService
-      .acceptInvitation(invitation.committee_uid, invitation.uid)
+    const requiresOrganization = invitationRequiresOrganization(invitation);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(invitation.uid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invitation.committee_uid,
+        inviteUid: invitation.uid,
+        committeeName: invitation.committee_name,
+        organization: invitation.organization,
+        enable_voting: invitation.enable_voting,
+        business_email_required: invitation.business_email_required,
+      })
       .pipe(take(1))
       .subscribe({
         next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(invitation.uid);
+          }
           this.invitationService.forgetResolved(invitation.uid);
           this.messageService.add({
             key: TOAST_KEY,
@@ -84,7 +102,9 @@ export class CommitteeInvitationsComponent {
           this.accepted.emit();
         },
         error: () => {
-          this.invitationService.unmarkResolved(invitation.uid);
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(invitation.uid);
+          }
           this.messageService.add({
             key: TOAST_KEY,
             severity: 'error',

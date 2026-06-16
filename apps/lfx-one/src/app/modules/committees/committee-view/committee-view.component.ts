@@ -29,12 +29,14 @@ import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
   findPendingInvitationForCommittee,
+  invitationRequiresOrganization,
   getChatPlatformIcon,
   getChatPlatformLabel,
   getRepoPlatformIcon,
   getRepoPlatformLabel,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -111,6 +113,7 @@ export class CommitteeViewComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -407,22 +410,37 @@ export class CommitteeViewComponent {
   }
 
   public onAcceptInvite(invite: PendingInvitation): void {
-    const committeeName = this.committee()?.name ?? 'this group';
-    // Optimistic: hide the banner everywhere immediately, then commit upstream.
-    this.invitationService.markResolved(invite.uid);
-    this.invitationService
-      .acceptInvitation(invite.committee_uid, invite.uid)
+    const committeeName = this.committee()?.name ?? invite.committee_name ?? 'this group';
+    const requiresOrganization = invitationRequiresOrganization(invite);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(invite.uid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invite.committee_uid,
+        inviteUid: invite.uid,
+        committeeName,
+        organization: invite.organization,
+        enable_voting: invite.enable_voting,
+        business_email_required: invite.business_email_required,
+      })
       .pipe(take(1))
       .subscribe({
         next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(invite.uid);
+          }
           this.invitationService.forgetResolved(invite.uid);
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
-          // Refresh so my_role populates — the banner hides and member-only tabs/CTAs unlock.
           this.refreshCommittee();
           this.membersRefresh.update((v) => v + 1);
         },
         error: () => {
-          this.invitationService.unmarkResolved(invite.uid);
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(invite.uid);
+          }
           this.messageService.add({
             severity: 'error',
             summary: 'Unable to Accept',

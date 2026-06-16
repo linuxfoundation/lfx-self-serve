@@ -123,6 +123,29 @@
     </div>
   </div>
 
+  <!-- ── Organization (required for voting / business-email groups) ─────────── -->
+  @if (organizationRequired()) {
+    <div class="flex flex-col gap-1">
+      <label class="block text-sm font-medium text-gray-700">
+        Organization <span class="text-red-500">*</span>
+      </label>
+      <lfx-organization-search
+        [form]="form"
+        nameControl="organization"
+        domainControl="organization_url"
+        placeholder="Search for organization..."
+        styleClass="w-full"
+        inputStyleClass="text-sm w-full"
+        panelStyleClass="text-sm w-full"
+        dataTestId="add-member-organization-search"
+        (onOrganizationResolved)="onOrgResolved($event)">
+      </lfx-organization-search>
+      @if (form.get('organization')?.errors?.['required'] && form.get('organization')?.touched) {
+        <p class="text-xs text-red-600">Organization is required for this group</p>
+      }
+    </div>
+  }
+
   <!-- ── Suggested role (applies to everyone in this batch) ───────────────────── -->
   <div class="flex flex-col gap-1">
     <label class="block text-sm font-medium text-gray-700">Suggested role <span class="text-gray-400 font-normal">(optional)</span></label>

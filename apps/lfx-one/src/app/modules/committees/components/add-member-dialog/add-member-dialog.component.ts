@@ -3,11 +3,12 @@
 
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
@@ -20,8 +21,10 @@ import {
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
   UserSearchResult,
+  OrganizationResolveResult,
+  CommitteeOrganizationReference,
 } from '@lfx-one/shared/interfaces';
-import { hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
+import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -29,7 +32,7 @@ import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, take, tap, toArray } from 'rxjs';
 
 /**
  * Invite people to a committee by email — single or bulk.
@@ -49,6 +52,7 @@ import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Ob
     UserAvatarColorPipe,
     ButtonComponent,
     InputTextComponent,
+    OrganizationSearchComponent,
     SelectComponent,
     TextareaComponent,
     SkeletonModule,
@@ -64,7 +68,11 @@ export class AddMemberDialogComponent {
   private readonly config = inject(DynamicDialogConfig);
   private readonly destroyRef = inject(DestroyRef);
 
+  private readonly organizationSearch = viewChild(OrganizationSearchComponent);
+  private resolvedOrganizationName = '';
+
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
+  public readonly organizationRequired = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
@@ -75,8 +83,27 @@ export class AddMemberDialogComponent {
   public readonly form = new FormGroup({
     emails: new FormControl<string>('', { nonNullable: true }),
     role: new FormControl<string | null>(null),
+    organization: new FormControl(''),
+    organization_url: new FormControl(''),
+    organization_id: new FormControl<string | null>(null),
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
+
+  public constructor() {
+    if (this.committee && committeeRequiresOrganization(this.committee)) {
+      this.form.get('organization')?.setValidators([Validators.required]);
+    }
+
+    this.form
+      .get('organization')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((name) => {
+        const normalizedName = (name ?? '').trim();
+        if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
+          this.form.patchValue({ organization_id: null }, { emitEvent: false });
+        }
+      });
+  }
 
   public submitting = signal(false);
   public searchLoading = signal(false);
@@ -97,7 +124,15 @@ export class AddMemberDialogComponent {
     }
     return result;
   });
-  public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  public readonly canSubmit = computed(() => {
+    if (this.submitting() || this.categorized().toInvite.length === 0) {
+      return false;
+    }
+    if (this.organizationRequired()) {
+      return !!this.form.get('organization')?.value?.trim();
+    }
+    return true;
+  });
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -126,6 +161,11 @@ export class AddMemberDialogComponent {
     this.searchForm.get('query')!.setValue('');
   }
 
+  public onOrgResolved(result: OrganizationResolveResult): void {
+    this.resolvedOrganizationName = result.name;
+    this.form.patchValue({ organization_id: result.id || null });
+  }
+
   public onCancel(): void {
     this.dialogRef.close(false);
   }
@@ -137,31 +177,53 @@ export class AddMemberDialogComponent {
       return;
     }
 
+    if (this.organizationRequired()) {
+      this.form.get('organization')?.markAsTouched();
+      if (!this.form.get('organization')?.valid) {
+        return;
+      }
+    }
+
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
-    // No bulk endpoint upstream — fan out one create-invite per email with bounded
-    // concurrency, catching per-email so one failure never aborts the rest.
-    from(emails)
-      .pipe(
-        mergeMap(
-          (email): Observable<CommitteeInviteResult> =>
-            this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role }).pipe(
-              map(() => ({ email, success: true })),
-              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
-            ),
-          COMMITTEE_INVITE_CONCURRENCY
-        ),
-        toArray(),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((results) => {
-        this.submitting.set(false);
-        this.summarize(results);
-        if (results.some((r) => r.success)) {
-          this.dialogRef.close(true);
+    const fanOut = (organization: CommitteeOrganizationReference | null | undefined): void => {
+      from(emails)
+        .pipe(
+          mergeMap(
+            (email): Observable<CommitteeInviteResult> =>
+              this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role, organization }).pipe(
+                map(() => ({ email, success: true })),
+                catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
+              ),
+            COMMITTEE_INVITE_CONCURRENCY
+          ),
+          toArray(),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe((results) => {
+          this.submitting.set(false);
+          this.summarize(results);
+          if (results.some((r) => r.success)) {
+            this.dialogRef.close(true);
+          }
+        });
+    };
+
+    if (this.organizationRequired()) {
+      const orgSearch = this.organizationSearch();
+      const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : of(null);
+      resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
+        if (result) {
+          this.resolvedOrganizationName = result.name;
+          this.form.patchValue({ organization_id: result.id || null, organization: result.name });
         }
+        fanOut(buildCommitteeOrganizationPayload(this.form.getRawValue()));
       });
+      return;
+    }
+
+    fanOut(undefined);
   }
 
   private summarize(results: CommitteeInviteResult[]): void {

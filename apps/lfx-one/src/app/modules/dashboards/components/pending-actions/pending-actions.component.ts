@@ -20,6 +20,8 @@ import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -55,6 +57,7 @@ export class PendingActionsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly voteService = inject(VoteService);
   private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -220,12 +223,26 @@ export class PendingActionsComponent {
     if (!inviteUid || !committeeUid) return;
 
     const groupName = item.inviteGroupName ?? item.badge;
-    this.invitationService.markResolved(inviteUid);
-    this.invitationService
-      .acceptInvitation(committeeUid, inviteUid)
+    const requiresOrganization = invitationRequiresOrganization(item);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(inviteUid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid,
+        inviteUid,
+        committeeName: groupName,
+        organization: item.inviteOrganization,
+        inviteRequiresOrganization: item.inviteRequiresOrganization,
+      })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(inviteUid);
+          }
           this.invitationService.forgetResolved(inviteUid);
           this.messageService.add({
             key: 'pending-actions-toast',
@@ -235,7 +252,9 @@ export class PendingActionsComponent {
           });
         },
         error: () => {
-          this.invitationService.unmarkResolved(inviteUid);
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(inviteUid);
+          }
           this.messageService.add({
             key: 'pending-actions-toast',
             severity: 'error',

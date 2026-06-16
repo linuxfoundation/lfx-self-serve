@@ -16,6 +16,7 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
+  AcceptCommitteeInviteRequest,
   MyCommittee,
   PendingInvitation,
   Project,
@@ -671,7 +672,16 @@ export class CommitteeService {
     // Enrich committee context (name, category, project) for the distinct committees once.
     // Best-effort: a failed lookup degrades to a UID fallback rather than dropping the list.
     const committeeUids = Array.from(new Set(pendingInvites.map((invite) => invite.committee_uid).filter(Boolean)));
-    const committeeContext = new Map<string, { committee_name: string; category?: string | null; project_name?: string | null }>();
+    const committeeContext = new Map<
+      string,
+      {
+        committee_name: string;
+        category?: string | null;
+        project_name?: string | null;
+        enable_voting?: boolean;
+        business_email_required?: boolean;
+      }
+    >();
 
     try {
       const committees = await this.getCommitteesByIds(req, committeeUids);
@@ -685,6 +695,8 @@ export class CommitteeService {
             committee_name: committee.name || uid,
             category: committee.category ?? null,
             project_name: projectNameByCommittee.get(uid) || null,
+            enable_voting: committee.enable_voting,
+            business_email_required: committee.business_email_required,
           });
         }
       }
@@ -707,6 +719,9 @@ export class CommitteeService {
         invitee_email: invite.invitee_email,
         status: invite.status,
         created_at: invite.created_at,
+        organization: invite.organization ?? null,
+        enable_voting: context?.enable_voting,
+        business_email_required: context?.business_email_required,
         // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
         // optional fields not in the committee-service contract yet, so JSON drops them rather than
         // sending an explicit null that consumers would have to disambiguate from "set".
@@ -718,8 +733,20 @@ export class CommitteeService {
    * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
    * invitee-authenticated (committee-service enforces principal == invitee_email).
    */
-  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST');
+  public async acceptCommitteeInvite(
+    req: Request,
+    committeeId: string,
+    inviteId: string,
+    body?: AcceptCommitteeInviteRequest
+  ): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/invites/${inviteId}/accept`,
+      'POST',
+      {},
+      body ?? {}
+    );
 
     logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
       committee_uid: committeeId,

@@ -3,7 +3,52 @@
 
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constants/pending-action.constants';
 import { PendingActionItem } from '../interfaces/components.interface';
-import { PendingInvitation } from '../interfaces/committee.interface';
+import { CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
+
+/** Raw organization form values shared by invite-create and invite-accept dialogs. */
+export interface CommitteeOrganizationFormValue {
+  organization: string;
+  organization_url: string;
+  organization_id: string | null;
+}
+
+/**
+ * Returns true when a committee requires organization on invite create/accept.
+ */
+export function committeeRequiresOrganization(flags: { enable_voting?: boolean; business_email_required?: boolean }): boolean {
+  return !!flags.enable_voting || !!flags.business_email_required;
+}
+
+/**
+ * Resolves whether an invitation accept flow must collect organization, preferring a
+ * precomputed dashboard flag when present.
+ */
+export function invitationRequiresOrganization(flags: {
+  enable_voting?: boolean;
+  business_email_required?: boolean;
+  inviteRequiresOrganization?: boolean;
+}): boolean {
+  if (flags.inviteRequiresOrganization !== undefined) {
+    return flags.inviteRequiresOrganization;
+  }
+  return committeeRequiresOrganization(flags);
+}
+
+/**
+ * Maps organization form controls to the committee-service organization payload.
+ */
+export function buildCommitteeOrganizationPayload(
+  formValue: Pick<CommitteeOrganizationFormValue, 'organization' | 'organization_url' | 'organization_id'>
+): CommitteeOrganizationReference | null {
+  if (formValue.organization || formValue.organization_url || formValue.organization_id) {
+    return {
+      id: formValue.organization_id || null,
+      name: formValue.organization || null,
+      website: formValue.organization_url || null,
+    };
+  }
+  return null;
+}
 
 /**
  * Formats an invite expiry (RFC3339) into a short display string (e.g. "Jun 20, 2026"), or null when
@@ -38,6 +83,7 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
     // Build the title and its prefix from the same inputs so the UI can link just the group name
     // without runtime string-splitting (`text` = `${prefix}${committee_name}`).
     const titlePrefix = invitation.inviter_name ? `${invitation.inviter_name} invited you to ` : `You've been invited to `;
+    const inviteRequiresOrganization = committeeRequiresOrganization(invitation);
     return {
       type: 'Invitation',
       badge: invitation.project_name || invitation.committee_name,
@@ -49,6 +95,8 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
       inviteUid: invitation.uid,
       committeeUid: invitation.committee_uid,
       inviteGroupName: invitation.committee_name,
+      inviteOrganization: invitation.organization ?? null,
+      inviteRequiresOrganization,
       ...(expiry ? { date: expiry } : {}),
     };
   });
