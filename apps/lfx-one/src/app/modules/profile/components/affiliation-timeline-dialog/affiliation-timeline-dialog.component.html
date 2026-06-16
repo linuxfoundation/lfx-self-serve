@@ -198,7 +198,7 @@
           label="Save changes"
           severity="primary"
           size="small"
-          [disabled]="hasNoWorkExperience() || hasOverlap() || hasValidationErrors()"
+          [disabled]="hasNoWorkExperience() || hasOverlap() || hasValidationErrors() || hasIncompletePeriods()"
           (onClick)="save()"
           data-testid="timeline-save" />
       </div>

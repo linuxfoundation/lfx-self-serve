@@ -46,6 +46,9 @@ export class AffiliationTimelineDialogComponent {
   public readonly hasNoWorkExperience: Signal<boolean> = computed(() => this.companyOrgs().length === 0);
   public readonly hasUnverifiedWorkExperienceOnly: Signal<boolean> = computed(() => this.workExperience().length > 0 && this.companyOrgs().length === 0);
   public readonly hasValidationErrors: Signal<boolean> = this.initHasValidationErrors();
+  public readonly hasIncompletePeriods: Signal<boolean> = computed(() =>
+    this.organizations().some((org) => org.enabled && !this.areAllPeriodsComplete(org.organization))
+  );
   public readonly availableYearsMap: Signal<Map<string, { label: string; value: string }[]>> = this.initAvailableYearsMap();
   public readonly periodErrorsMap: Signal<Map<string, AffiliationPeriodErrors>> = this.initPeriodErrorsMap();
 
