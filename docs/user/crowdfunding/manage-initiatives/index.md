@@ -29,17 +29,9 @@ The detail page is organized into a header and two tabs.
 ## Edit an initiative
 
 1. Open an initiative from the [View Initiatives](../view-initiatives/) page.
-2. Select **Edit Initiative** to open the settings drawer.
-3. Update fields across the four settings tabs:
-
-| Tab                    | Editable fields                                                                                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Initiative Details** | Name (up to 100 characters), description (up to 500 characters), topics, website URL                                                |
-| **Branding**           | Logo image (PNG, JPEG, GIF, or WebP; maximum 2 MB)                                                                                  |
-| **Beneficiaries**      | Add or remove beneficiaries by name and email                                                                                       |
-| **Funding**            | Funding goal amount; funding distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation |
-
-4. Save your changes.
+1. Select **Edit Initiative** to open the settings drawer.
+1. Update fields across the four settings tabs — Initiative Details (name, description, topics, website URL), Branding (logo image), Beneficiaries (add or remove by name and email), and Funding (goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation).
+1. Save your changes.
 
 ## Archive an initiative
 
