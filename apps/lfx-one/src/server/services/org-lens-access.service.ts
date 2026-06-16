@@ -21,7 +21,7 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
-import { withPerUserCache } from './valkey.service';
+import { invalidatePerUserCache, withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -93,7 +93,8 @@ export class OrgLensAccessService {
    */
   public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
     // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
-    // (compute directly, no read/write). The stale entry from earlier reads ages out within the TTL.
+    // (compute directly, no read/write). The caller's own earlier-read entries are dropped by the write
+    // path's invalidateCallerCaches; any other caller's per-user entry ages out within the TTL.
     if (knownCanManage !== undefined) {
       return this.computeAccessList(req, orgUid, knownCanManage);
     }
@@ -137,6 +138,7 @@ export class OrgLensAccessService {
       ...(cleanName ? { name: cleanName } : {}),
     };
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_MEMBER_SERVICE', `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users`, 'POST', undefined, body);
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
@@ -153,6 +155,7 @@ export class OrgLensAccessService {
       undefined,
       { invited_as: ORG_ACCESS_ROLE_RELATION[role] }
     );
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
@@ -167,11 +170,27 @@ export class OrgLensAccessService {
       `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users/${encodeURIComponent(target)}`,
       'DELETE'
     );
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
 
   // ── base helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Drop the acting caller's own cached access views after a write so their next read (page reload or the
+   * directory `:principals` merge) reflects the mutation immediately rather than serving the pre-write list
+   * for up to the TTL. The write response itself already bypasses the cache; this closes the read-after-write
+   * gap for the caller. Best-effort — a failed delete just leaves the entry to age out within the TTL — and
+   * scoped to the caller, so another admin's per-user entry still ages out on its own.
+   */
+  private async invalidateCallerCaches(req: Request, orgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    await Promise.all([
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`, username, orgUid),
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`, username, orgUid),
+    ]);
+  }
 
   private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
     const [settings, canManage] = await Promise.all([

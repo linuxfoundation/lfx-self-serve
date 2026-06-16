@@ -99,7 +99,7 @@ export class OrgLensEventsService {
         `events:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventListRows(sql, binds),
-        isObjectRowArray
+        isEventRowArray
       );
     } catch (error) {
       logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
@@ -193,7 +193,7 @@ export class OrgLensEventsService {
         `event-attendees:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(sql, binds),
-        isObjectRowArray
+        isContactRowArray
       );
     } catch (error) {
       logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
@@ -250,7 +250,7 @@ export class OrgLensEventsService {
         `event-speakers:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventSpeakerRows(sql, binds),
-        isObjectRowArray
+        isContactRowArray
       );
     } catch (error) {
       logger.warning(req, 'get_event_speakers', 'Snowflake query failed, returning empty speakers', {
@@ -324,6 +324,21 @@ function paramSignature(parts: readonly (string | number | boolean | null)[]): s
   return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
 }
 
+function isObjectRow(el: unknown): el is Record<string, unknown> {
+  return el !== null && typeof el === 'object' && !Array.isArray(el);
+}
+
+/** Summary rows expose no contract key replayed verbatim to the client (every field is read null-safe), so an object shape suffices. */
 function isObjectRowArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+  return Array.isArray(value) && value.every(isObjectRow);
+}
+
+/** Event-list rows reach the client through `mapRowToOrgEvent`, which reads `EVENT_ID` with no fallback — validate the contract key so a poisoned `[{}]` entry degrades to a miss. */
+function isEventRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['EVENT_ID'] === 'string');
+}
+
+/** Attendee/speaker rows map `contactId: row.CONTACT_ID` with no fallback — validate the contract key to the same depth as the people/access guards. */
+function isContactRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['CONTACT_ID'] === 'string');
 }

@@ -922,7 +922,7 @@ export class OrganizationService {
     const poolSize = Math.min(ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, uniqueAccountIds.length);
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
-    return perAccount.flat().sort((a, b) => a.accountName.localeCompare(b.accountName));
+    return perAccount.flat().sort((a, b) => (a.accountName ?? '').localeCompare(b.accountName ?? ''));
   }
 
   // Rejects a corrupt/legacy entry (degrade to a miss). An empty array is a legitimate cacheable result.
