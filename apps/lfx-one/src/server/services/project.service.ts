@@ -2189,7 +2189,12 @@ export class ProjectService {
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
 
-      const rawMonthlyCtrs = monthlyResult.rows.map((row) => row.MONTHLY_CTR ?? 0);
+      // Compute unrounded CTR from raw sends/opens for MoM precision
+      const rawMonthlyCtrs = monthlyResult.rows.map((row) => {
+        const sends = row.TOTAL_SENDS ?? 0;
+        const opens = row.TOTAL_OPENS ?? 0;
+        return sends > 0 ? (opens * 100) / sends : 0;
+      });
       const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
