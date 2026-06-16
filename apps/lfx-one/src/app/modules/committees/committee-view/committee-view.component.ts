@@ -519,7 +519,10 @@ export class CommitteeViewComponent {
       name: committee.project_name || committee.foundation_name || committee.project_slug,
       slug: committee.project_slug,
     };
-    if (committee.is_foundation) {
+    // Mirror projectQueryParamGuard's lens decision: foundation routes set foundation context,
+    // project routes (and everything else) set project context. This ensures the sidebar reflects
+    // the group's owning entity regardless of whether it's technically a foundation or project.
+    if (this.router.url.startsWith('/foundation/')) {
       this.projectContextService.setFoundation(context);
     } else {
       this.projectContextService.setProject(context);
