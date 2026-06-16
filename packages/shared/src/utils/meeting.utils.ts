@@ -549,13 +549,19 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
 }
 
 function summaryRecency(summary: PastMeetingSummary): number {
-  const ts = summary.updated_at || summary.created_at || '';
-  const parsed = ts ? Date.parse(ts) : NaN;
-  return Number.isNaN(parsed) ? 0 : parsed;
+  // Try updated_at first, but fall back to created_at when it's missing or unparsable
+  const updated = summary.updated_at ? Date.parse(summary.updated_at) : NaN;
+  if (!Number.isNaN(updated)) {
+    return updated;
+  }
+  const created = summary.created_at ? Date.parse(summary.created_at) : NaN;
+  return Number.isNaN(created) ? 0 : created;
 }
 
 function summaryHasContent(summary: PastMeetingSummary): boolean {
-  return !!(summary.summary_data?.edited_content || summary.summary_data?.content);
+  const editedContent = summary.summary_data?.edited_content?.trim();
+  const content = summary.summary_data?.content?.trim();
+  return Boolean(editedContent || content);
 }
 
 /** Picks the best summary when multiple v1_past_meeting_summary records share one occurrence (LFXV2-2222). */
