@@ -207,6 +207,8 @@ export class OrganizationSearchComponent {
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
+          // Intentionally uses cdpOrg.logo unconditionally — resolveCurrentEntry() takes no
+          // suggestion logo arg and all current callers use resolveToCdpName=true (default).
           logo: cdpOrg.logo,
           originalName: name || '',
           nameChanged: cdpOrg.name.toLowerCase() !== (name || '').toLowerCase(),
@@ -241,8 +243,9 @@ export class OrganizationSearchComponent {
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
-            // When not resolving to CDP canonical, keep the suggestion's logo so the
-            // displayed logo matches what the user selected rather than the CDP entity's logo.
+            // When not resolving to CDP canonical, prefer the suggestion's non-empty logo so
+            // the displayed logo matches what the user selected rather than the CDP entity's logo.
+            // Empty-string suggestion logos fall back to cdpOrg.logo (same as the =true path).
             logo: this.resolveToCdpName() ? cdpOrg.logo : logo || cdpOrg.logo,
             originalName: name,
             nameChanged: cdpOrg.name.toLowerCase() !== name.toLowerCase(),
