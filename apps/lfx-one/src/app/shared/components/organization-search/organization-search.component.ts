@@ -211,12 +211,6 @@ export class OrganizationSearchComponent {
         this.resolvingOrg.set(false);
         this.onOrganizationResolved.emit(result);
 
-        // Update field text to the resolved name
-        this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-        const nameCtrl = this.nameControl();
-        if (nameCtrl && this.form().get(nameCtrl)) {
-          this.form().get(nameCtrl)?.setValue(cdpOrg.name);
-        }
         return result;
       }),
       catchError(() => {
@@ -246,13 +240,6 @@ export class OrganizationSearchComponent {
           this.resolvedOrg.set(result);
           this.resolvingOrg.set(false);
           this.onOrganizationResolved.emit(result);
-
-          // Update field text to the resolved name
-          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-          const nameControlName = this.nameControl();
-          if (nameControlName && this.form().get(nameControlName)) {
-            this.form().get(nameControlName)?.setValue(cdpOrg.name);
-          }
         },
         error: () => {
           this.resolvedOrg.set(null);
