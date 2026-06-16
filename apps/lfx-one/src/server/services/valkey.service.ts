@@ -139,6 +139,10 @@ export class ValkeyService implements CachePort {
    * full non-user prefix (app prefix, optional deployment namespace, domain, and version) and masking
    * everything from the principal onward, so logs preserve the full namespace/version without leaking
    * usernames regardless of whether the deployment namespace is set.
+   *
+   * Caveat: the anchor matches the first `vN`-shaped segment, so a deployment namespace that is itself
+   * `vN` (e.g. `v5`) anchors early and over-masks the domain. This is harmless — it only reduces log
+   * fidelity, never exposing the principal — so it is not worth special-casing.
    */
   private static redactKey(key: string): string {
     const parts = key.split(':');
