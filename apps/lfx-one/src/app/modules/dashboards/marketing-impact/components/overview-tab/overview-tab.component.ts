@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatCurrency, formatNumber, isPeriodMonth, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -25,7 +25,7 @@ export class OverviewTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
-  public readonly selectedMonth = input<string>('');
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -43,11 +43,11 @@ export class OverviewTabComponent {
   private initOverviewKpiData(): Signal<OverviewKpiData> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
-    const month$ = toObservable(this.selectedMonth);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, focus$, month$]).pipe(
-        switchMap(([slug, focus, month]) => {
+      combineLatest([slug$, focus$, period$]).pipe(
+        switchMap(([slug, focus, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ revenueImpact: null, brandReach: null, emailCtr: null });
@@ -58,10 +58,10 @@ export class OverviewTabComponent {
           return forkJoin({
             revenueImpact: isWebOnly
               ? of(null)
-              : this.analyticsService.getRevenueImpact(slug, classification, month || undefined).pipe(catchError(() => of(null))),
-            // getBrandReach uses pre-computed _30D columns that cannot be month-filtered
+              : this.analyticsService.getRevenueImpact(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            // getBrandReach uses pre-computed _30D columns that cannot be period-filtered
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
-            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, month || undefined).pipe(catchError(() => of(null))),
+            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
@@ -153,8 +153,9 @@ export class OverviewTabComponent {
 
   private initSummaryTitle(): Signal<string> {
     return computed(() => {
-      const monthValue = this.selectedMonth();
-      const [year, month] = monthValue.split('-').map(Number);
+      const periodValue = this.selectedPeriod();
+      if (!isPeriodMonth(periodValue)) return 'Performance summary';
+      const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return 'Performance summary';
       const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
       return `${monthName} performance summary`;
@@ -163,8 +164,12 @@ export class OverviewTabComponent {
 
   private initSummarySubtitle(): Signal<string> {
     return computed(() => {
-      const monthValue = this.selectedMonth();
-      const [year, month] = monthValue.split('-').map(Number);
+      const periodValue = this.selectedPeriod();
+      if (!isPeriodMonth(periodValue)) {
+        const name = this.foundationName();
+        return name ? `Linear attribution · ${name}` : '';
+      }
+      const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return '';
       const date = new Date(Date.UTC(year, month - 1, 1));
       const priorMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
