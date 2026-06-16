@@ -127,8 +127,6 @@ export class OrgMembershipsComponent {
 
   protected readonly discoverState: Signal<OrgMembershipsPageState> = computed(() => this.initDiscoverState());
 
-  // Renew (Expired tab) and Join (Discover tab) both hand off to the Enrollment app,
-  // scoped to a foundation via the `?project=<foundation_slug>` query param.
   private readonly enrollmentBaseUrl = environment.urls.enrollment.replace(/\/+$/, '');
 
   private lastOrgUid: string | null = null;

@@ -33,7 +33,6 @@ export interface OrgActiveMembershipsResponse {
 export interface OrgExpiredMembership {
   foundationId: string;
   foundationName: string;
-  /** Foundation URL slug used to build the enrollment app renew link (?project=<slug>). */
   foundationSlug: string;
   foundationLogo: string | null;
   membershipTier: string;
@@ -51,7 +50,6 @@ export interface OrgExpiredMembershipsResponse {
 export interface OrgDiscoverOpportunity {
   foundationId: string;
   foundationName: string;
-  /** Foundation URL slug used to build the enrollment app join link (?project=<slug>). */
   foundationSlug: string;
   foundationLogo: string | null;
   category: string;
