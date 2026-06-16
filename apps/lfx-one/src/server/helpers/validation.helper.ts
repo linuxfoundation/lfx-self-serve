@@ -3,9 +3,11 @@
 
 import { Request, NextFunction } from 'express';
 import { HEALTH_METRICS_RANGES, MONTH_FORMAT_REGEX, VALID_CLASSIFICATIONS, isHealthMetricsRange } from '@lfx-one/shared/constants';
+import { resolvePeriodRange } from '@lfx-one/shared/utils';
 import { ServiceValidationError } from '../errors';
 
 import type { HealthMetricsRange, OsspreyStatus, OsspreyHealthBand, OspreySortKey } from '@lfx-one/shared/interfaces';
+import type { ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import type { OsspreyListParams } from '@lfx-one/shared/interfaces';
 
 /**
@@ -181,6 +183,28 @@ export function getValidatedMonth(req: Request, operation: string): string | und
   }
 
   return month;
+}
+
+/** Validates an optional `period` query param (YTD preset, trailing preset, or YYYY-MM month). Falls back to `month` param for backward compatibility. Returns a resolved date range or undefined. */
+export function getValidatedPeriod(req: Request, operation: string): ResolvedPeriodRange | undefined {
+  const period = getStringQueryParam(req, 'period');
+  if (!period) {
+    const month = getValidatedMonth(req, operation);
+    if (!month) return undefined;
+    const range = resolvePeriodRange(month);
+    if (!range) {
+      throw ServiceValidationError.forField('month', 'Invalid month value.', { operation });
+    }
+    return range;
+  }
+
+  const range = resolvePeriodRange(period);
+  if (!range) {
+    throw ServiceValidationError.forField('period', 'Invalid period value. Expected "ytd", "last-3", "last-6", or YYYY-MM (e.g. 2026-05).', {
+      operation,
+    });
+  }
+  return range;
 }
 
 /**

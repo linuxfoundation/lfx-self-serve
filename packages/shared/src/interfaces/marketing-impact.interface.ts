@@ -17,6 +17,24 @@ export interface MarketingImpactMonthOption {
   value: string;
 }
 
+/** Period option for the Marketing Impact date range picker. */
+export interface MarketingImpactPeriodOption {
+  label: string;
+  value: string;
+  group: 'preset' | 'month';
+}
+
+/** Valid period preset identifiers. */
+export type MarketingImpactPeriodPreset = 'ytd' | 'last-3' | 'last-6';
+
+/** Resolved date range from a validated period parameter. */
+export interface ResolvedPeriodRange {
+  type: 'month' | 'ytd' | 'trailing';
+  startDate: string;
+  endDate: string;
+  label: string;
+}
+
 /** Tab option for the Marketing Impact section tabs. */
 export interface MarketingImpactTabOption {
   id: MarketingImpactTab;
