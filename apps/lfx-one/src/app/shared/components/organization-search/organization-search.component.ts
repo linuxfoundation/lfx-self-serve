@@ -216,11 +216,7 @@ export class OrganizationSearchComponent {
         this.onOrganizationResolved.emit(result);
 
         if (this.resolveToCdpName()) {
-          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-          const nameCtrl = this.nameControl();
-          if (nameCtrl && this.form().get(nameCtrl)) {
-            this.form().get(nameCtrl)?.setValue(cdpOrg.name);
-          }
+          this.applyCdpName(cdpOrg.name);
         }
 
         return result;
@@ -254,11 +250,7 @@ export class OrganizationSearchComponent {
           this.onOrganizationResolved.emit(result);
 
           if (this.resolveToCdpName()) {
-            this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-            const nameControlName = this.nameControl();
-            if (nameControlName && this.form().get(nameControlName)) {
-              this.form().get(nameControlName)?.setValue(cdpOrg.name);
-            }
+            this.applyCdpName(cdpOrg.name);
           }
         },
         error: () => {
@@ -266,6 +258,14 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
         },
       });
+  }
+
+  private applyCdpName(name: string): void {
+    this.organizationForm.get('organizationSearch')?.setValue(name, { emitEvent: false });
+    const nameControlName = this.nameControl();
+    if (nameControlName && this.form().get(nameControlName)) {
+      this.form().get(nameControlName)?.setValue(name);
+    }
   }
 
   private clearResolveState(): void {
