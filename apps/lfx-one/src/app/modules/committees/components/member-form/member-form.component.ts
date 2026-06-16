@@ -322,10 +322,12 @@ export class MemberFormComponent {
         permission: new FormControl<CommitteePermissionLevel>('member'),
       },
       {
-        validators: [
-          MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
-          MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
-        ],
+        validators: this.committee?.enable_voting
+          ? [
+              MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
+              MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
+            ]
+          : [],
       }
     );
   }

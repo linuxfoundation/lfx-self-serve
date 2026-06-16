@@ -56,6 +56,16 @@ export class OrgLensAccessService {
     return { orgUid, users, summary: this.buildSummary(users), canManage };
   }
 
+  /**
+   * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
+   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Access tab — the directory orchestrator owns its own merge + enrichment.
+   */
+  public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
+    const settings = await this.fetchSettings(req, orgUid);
+    return this.mapPrincipals(settings);
+  }
+
   /** Add Users — invite a NEW principal via the per-principal POST endpoint; returns the refreshed list. */
   public async inviteUser(req: Request, orgUid: string, email: string, role: OrgAccessRole, name?: string | null): Promise<OrgAccessListResponse> {
     // Defense-in-depth UX gate (FR-011): reject non-managers before any write is issued.

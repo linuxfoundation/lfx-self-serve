@@ -157,9 +157,21 @@ export class NavigationService {
 
     state.pendingDefaultSelection.set(false);
 
+    // Only write ?project= to the URL if it was already present — prevents the default
+    // selection from injecting a wrong project slug into entity-specific URLs (e.g.
+    // /project/groups/:id) that a user navigated to without an explicit project context.
+    const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
     const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
     if (existing?.uid && page.items.some((item) => item.uid === existing.uid)) {
+      return;
+    }
+
+    // On entity deep-link pages (no ?project= in URL), preserve any context already set by
+    // syncEntityProjectContext — even if the owning entity's project isn't in this lens's items
+    // (e.g. a foundation-owned entity accessed via the project lens, like a TLF mailing list).
+    if (!syncUrl && existing?.uid) {
       return;
     }
 
@@ -167,9 +179,9 @@ export class NavigationService {
     const defaultItem = this.pickItemByPersonaPriority(page.items, priority);
     const context = lensItemToProjectContext(defaultItem);
     if (lens === 'foundation') {
-      this.projectContextService.setFoundation(context);
+      this.projectContextService.setFoundation(context, syncUrl);
     } else {
-      this.projectContextService.setProject(context);
+      this.projectContextService.setProject(context, syncUrl);
     }
   }
 
