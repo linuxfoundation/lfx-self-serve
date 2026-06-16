@@ -13,10 +13,10 @@ import { ProjectContextService } from '../services/project-context.service';
  * Syncs the active project/foundation context to the owning project of the given
  * entity whenever its data loads or changes. Call once from the component constructor.
  *
- * Mirrors projectQueryParamGuard's lens decision: /foundation/* routes set the
- * foundation context; all other routes (project lens, top-level) set the project
- * context. This prevents the navigation service's default selection from leaving an
- * unrelated project slug active when navigating directly to an entity URL.
+ * Lens decision is URL-prefix based: /foundation/* routes set the foundation context;
+ * all other routes (project lens, top-level) set the project context. This prevents
+ * the navigation service's default selection from leaving an unrelated project slug
+ * active when navigating directly to an entity URL.
  */
 export function syncEntityProjectContext<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,

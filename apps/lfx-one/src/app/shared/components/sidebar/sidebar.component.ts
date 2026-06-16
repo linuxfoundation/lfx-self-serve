@@ -156,14 +156,18 @@ export class SidebarComponent {
     // When on an entity detail page (e.g. /project/mailing-lists/:id or /project/groups/:id),
     // switching project context should land on the new project's dashboard — staying on the
     // current entity would show data from the wrong project until the user navigates away.
-    this.redirectFromEntityPageIfNeeded();
+    this.redirectFromEntityPageIfNeeded(context.slug);
   }
 
-  private redirectFromEntityPageIfNeeded(): void {
+  private redirectFromEntityPageIfNeeded(projectSlug: string): void {
     const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
-    // Entity detail pages match /project/<section>/<id> (exactly 3 segments)
-    if (segments.length === 3 && segments[0] === 'project') {
-      this.router.navigate(['/project', 'overview']);
+    // Entity detail pages match /<lens>/<section>/<id> (exactly 3 segments, project or foundation prefix)
+    if (segments.length === 3 && (segments[0] === 'project' || segments[0] === 'foundation')) {
+      // Use activeLens() (updated synchronously by setLens() above) for the destination prefix.
+      // Pass the slug explicitly — router.url lags behind location.replaceState so
+      // queryParamsHandling:'preserve' would carry stale params.
+      const lensPrefix = this.activeLens() === 'foundation' ? 'foundation' : 'project';
+      this.router.navigate([`/${lensPrefix}`, 'overview'], { queryParams: { project: projectSlug } });
     }
   }
 
