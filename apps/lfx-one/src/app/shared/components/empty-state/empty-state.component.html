@@ -40,7 +40,14 @@
           [target]="ctaTarget()"
           [rel]="resolvedRel()"></lfx-button>
       } @else if (ctaLabel()) {
-        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" [size]="ctaSize()" [text]="ctaGhost()" [outlined]="!ctaGhost()" (onClick)="ctaClick.emit()"></lfx-button>
+        <lfx-button
+          [label]="ctaLabel()!"
+          [icon]="ctaIcon()"
+          severity="primary"
+          [size]="ctaSize()"
+          [text]="ctaGhost()"
+          [outlined]="!ctaGhost()"
+          (onClick)="ctaClick.emit()"></lfx-button>
       }
     </div>
   </div>
