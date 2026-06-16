@@ -40,6 +40,8 @@ export class ProjectSelectorComponent {
 
   protected readonly activeTab = signal<SelectorTab>('all');
   protected readonly selectorTabs: readonly SelectorTab[] = ['all', 'foundations', 'projects'];
+  // Project lens defaults the picker to its matching tab so projects rank first; foundation lens uses 'all' (the only other hybrid case, where users explicitly went to a board context).
+  private readonly defaultTab: Signal<SelectorTab> = computed(() => (this.lens() === 'project' ? 'projects' : 'all'));
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
   protected readonly panelStyleClass: Signal<string> = this.initPanelStyleClass();
@@ -86,11 +88,12 @@ export class ProjectSelectorComponent {
 
   protected onPopoverShow(): void {
     this.isPanelOpen.set(true);
+    this.activeTab.set(this.defaultTab());
   }
 
   protected onPopoverHide(): void {
     this.isPanelOpen.set(false);
-    this.activeTab.set('all');
+    this.activeTab.set(this.defaultTab());
     this.searchControl.setValue('', { emitEvent: false });
     if (this.hybridMode()) {
       this.navigationService.setSearchTerm('foundation', '');
