@@ -241,7 +241,9 @@ export class OrganizationSearchComponent {
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
-            logo: cdpOrg.logo,
+            // When not resolving to CDP canonical, keep the suggestion's logo so the
+            // displayed logo matches what the user selected rather than the CDP entity's logo.
+            logo: this.resolveToCdpName() ? cdpOrg.logo : (logo || cdpOrg.logo),
             originalName: name,
             nameChanged: cdpOrg.name.toLowerCase() !== name.toLowerCase(),
           };
