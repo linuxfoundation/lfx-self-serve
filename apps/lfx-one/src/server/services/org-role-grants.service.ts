@@ -110,7 +110,7 @@ export class OrgRoleGrantsService {
     const entry = value as Partial<AccessAwareOrgsCacheEntry> | null;
     return (
       !!entry &&
-      OrgRoleGrantsService.isEntryTupleArray(entry.resolved) &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.resolved, OrgRoleGrantsService.isResolvedOrgRole) &&
       OrgRoleGrantsService.isEntryTupleArray(entry.orgDocByUid) &&
       typeof entry.username === 'string' &&
       typeof entry.loadedAt === 'string' &&
@@ -123,15 +123,38 @@ export class OrgRoleGrantsService {
    * consumes for both Maps here (`resolved` → ResolvedOrgRole objects, `orgDocByUid` → B2bOrgIndexedDoc objects).
    * Validating the element types (not just arity) rejects corrupt entries like `[[123, null]]` or array-valued
    * tuples like `[["uid", []]]` as a miss instead of rebuilding a Map with non-string uids / non-object docs that
-   * would later surface as an invalid wire shape.
+   * would later surface as an invalid wire shape. An optional `valueGuard` additionally validates the tuple's
+   * value object so a structurally-valid-but-semantically-corrupt value is also rejected as a miss.
    */
-  private static isEntryTupleArray(value: unknown): boolean {
+  private static isEntryTupleArray(value: unknown, valueGuard?: (value: object) => boolean): boolean {
     return (
       Array.isArray(value) &&
       value.every(
         (item) =>
-          Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'object' && item[1] !== null && !Array.isArray(item[1])
+          Array.isArray(item) &&
+          item.length === 2 &&
+          typeof item[0] === 'string' &&
+          typeof item[1] === 'object' &&
+          item[1] !== null &&
+          !Array.isArray(item[1]) &&
+          (!valueGuard || valueGuard(item[1] as object))
       )
+    );
+  }
+
+  /**
+   * Validates a `resolved` tuple value carries a usable role: `roleSource` must be a non-empty string (it is
+   * later branched on with `.startsWith(...)`, so a missing/non-string `roleSource` would turn a cache hit into
+   * a thrown 500 instead of degrading to a miss), and the optional `parentUid`/`parentName` must be strings when
+   * present. A corrupt entry like `["uid", {}]` is therefore rejected as a miss and recomputed.
+   */
+  private static isResolvedOrgRole(value: object): boolean {
+    const role = value as Partial<ResolvedOrgRole>;
+    return (
+      typeof role.roleSource === 'string' &&
+      role.roleSource.length > 0 &&
+      (role.parentUid === undefined || typeof role.parentUid === 'string') &&
+      (role.parentName === undefined || typeof role.parentName === 'string')
     );
   }
 
