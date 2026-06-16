@@ -29,6 +29,10 @@ export class OrganizationSearchComponent {
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
   public disabled = input<boolean>(false);
+  /** When false, the field keeps the user-selected name instead of being overwritten with the
+   *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
+   *  compatibility with forms where canonical normalization is desired. */
+  public resolveToCdpName = input<boolean>(true);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -211,6 +215,14 @@ export class OrganizationSearchComponent {
         this.resolvingOrg.set(false);
         this.onOrganizationResolved.emit(result);
 
+        if (this.resolveToCdpName()) {
+          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
+          const nameCtrl = this.nameControl();
+          if (nameCtrl && this.form().get(nameCtrl)) {
+            this.form().get(nameCtrl)?.setValue(cdpOrg.name);
+          }
+        }
+
         return result;
       }),
       catchError(() => {
@@ -240,6 +252,14 @@ export class OrganizationSearchComponent {
           this.resolvedOrg.set(result);
           this.resolvingOrg.set(false);
           this.onOrganizationResolved.emit(result);
+
+          if (this.resolveToCdpName()) {
+            this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
+            const nameControlName = this.nameControl();
+            if (nameControlName && this.form().get(nameControlName)) {
+              this.form().get(nameControlName)?.setValue(cdpOrg.name);
+            }
+          }
         },
         error: () => {
           this.resolvedOrg.set(null);
