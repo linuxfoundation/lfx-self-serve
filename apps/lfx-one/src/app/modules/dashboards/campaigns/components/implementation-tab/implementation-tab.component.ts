@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,9 +10,7 @@ import {
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
-  LINKEDIN_AD_ACCOUNTS,
   LINKEDIN_CHAR_LIMITS,
-  LINKEDIN_DEFAULT_ACCOUNT_ID,
   LINKEDIN_GEO_RESOLVE_MAP,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
@@ -26,7 +24,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignType,
-  LinkedInAdAccount,
+  LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
@@ -41,7 +39,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
-export class ImplementationTabComponent {
+export class ImplementationTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly fb = inject(FormBuilder);
@@ -53,7 +51,6 @@ export class ImplementationTabComponent {
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
-  protected readonly linkedInAccounts: readonly LinkedInAdAccount[] = LINKEDIN_AD_ACCOUNTS;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -88,7 +85,9 @@ export class ImplementationTabComponent {
   protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
   protected readonly linkedInBudgetUsd = signal(500);
   protected readonly linkedInLifetimeBudget = signal(false);
-  protected readonly linkedInAccountId = signal<string>(LINKEDIN_DEFAULT_ACCOUNT_ID);
+  protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
+  protected readonly linkedInAccountsLoading = signal(false);
+  protected readonly linkedInAccountId = signal<string>('');
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
@@ -100,9 +99,10 @@ export class ImplementationTabComponent {
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
-  protected readonly selectedLinkedInAccount = computed(
-    () => this.linkedInAccounts.find((a) => a.accountId === this.linkedInAccountId()) ?? this.linkedInAccounts[0]
-  );
+  protected readonly selectedLinkedInAccount = computed(() => {
+    const accounts = this.linkedInAccounts();
+    return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
+  });
 
   protected readonly canSubmit = computed(() => {
     const platforms = this.selectedPlatforms();
@@ -151,6 +151,25 @@ export class ImplementationTabComponent {
       if (!brief) return;
       this.populateFromBrief(brief);
     });
+  }
+
+  public ngOnInit(): void {
+    this.linkedInAccountsLoading.set(true);
+    this.campaignService
+      .getLinkedInAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccounts.set(accounts);
+          if (accounts.length > 0 && !this.linkedInAccountId()) {
+            this.linkedInAccountId.set(accounts[0].accountId);
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+        error: () => {
+          this.linkedInAccountsLoading.set(false);
+        },
+      });
   }
 
   // === Public Methods ===
