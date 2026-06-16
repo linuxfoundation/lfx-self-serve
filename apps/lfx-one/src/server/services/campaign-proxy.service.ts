@@ -868,7 +868,7 @@ export class CampaignProxyService {
       }
     }
 
-    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads'];
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');

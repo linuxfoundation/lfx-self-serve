@@ -444,16 +444,30 @@ export class CampaignController {
   }
 
   public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_meta_monitor', {});
+    const rawDays = String(req.query['days'] ?? '30');
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
+    const rawKey = String(req.query['accountKey'] ?? '');
+    const account = rawKey ? META_ACCOUNTS.find((a) => a.accountId === rawKey) : META_ACCOUNTS[0];
+    if (!account) {
+      next(
+        ServiceValidationError.forField('accountKey', 'Invalid Meta account key', {
+          operation: 'meta_monitor',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const accountId = account.accountId;
+    const startTime = logger.startOperation(req, 'meta_monitor', { days, accountKey: rawKey });
 
     try {
-      const days = Math.min(Math.max(parseInt(req.query['days'] as string, 10) || 30, 7), 90);
-      const accountKey = (req.query['accountKey'] as string) || '';
-      const account = accountKey ? (META_ACCOUNTS.find((a) => a.accountId === accountKey) ?? META_ACCOUNTS[0]) : META_ACCOUNTS[0];
-      const data = await this.metaMetricsService.getMonitorData(req, account.accountId, days);
-      logger.success(req, 'get_meta_monitor', startTime, { accountId: account.accountId, days });
+      const data = await this.metaMetricsService.getMonitorData(req, accountId, days);
+      logger.success(req, 'meta_monitor', startTime, { campaigns: data.campaigns.length });
       res.json(data);
     } catch (error) {
+      logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
       next(error);
     }
   }

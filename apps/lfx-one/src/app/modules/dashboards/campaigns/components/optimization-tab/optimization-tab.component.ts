@@ -20,6 +20,7 @@ import type {
   RedditActionItem,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
@@ -38,6 +39,7 @@ export class OptimizationTabComponent implements OnInit {
   private linkedInSub: Subscription | null = null;
   private redditSub: Subscription | null = null;
 
+  protected readonly platformColors = PLATFORM_BRAND_COLORS;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
 
   protected readonly selectedDays = signal<DateRangeOption>(30);

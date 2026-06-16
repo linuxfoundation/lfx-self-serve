@@ -54,6 +54,12 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   overspending: 130,
 } as const;
 
+export const PLATFORM_BRAND_COLORS: Record<string, string> = {
+  'linkedin-ads': '#0077B5',
+  'reddit-ads': '#FF4500',
+  'meta-ads': '#1877F2',
+} as const;
+
 export const CAMPAIGN_CHAR_LIMITS = {
   searchHeadline: 30,
   searchDescription: 90,

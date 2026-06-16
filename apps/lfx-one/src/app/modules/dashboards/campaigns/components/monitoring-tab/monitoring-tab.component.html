@@ -23,9 +23,10 @@
       [attr.aria-pressed]="selectedPlatform() === 'linkedin'"
       [class]="
         selectedPlatform() === 'linkedin'
-          ? 'flex items-center gap-1.5 rounded-md bg-[#0077B5] px-3 py-1.5 text-xs font-medium text-white'
+          ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
+      [style.backgroundColor]="selectedPlatform() === 'linkedin' ? platformBrandColor('linkedin') : null"
       data-testid="platform-linkedin">
       <i class="fa-brands fa-linkedin" aria-hidden="true"></i>
       LinkedIn Ads
@@ -36,9 +37,10 @@
       [attr.aria-pressed]="selectedPlatform() === 'reddit'"
       [class]="
         selectedPlatform() === 'reddit'
-          ? 'flex items-center gap-1.5 rounded-md bg-[#FF4500] px-3 py-1.5 text-xs font-medium text-white'
+          ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
+      [style.backgroundColor]="selectedPlatform() === 'reddit' ? platformBrandColor('reddit') : null"
       data-testid="platform-reddit">
       <i class="fa-brands fa-reddit" aria-hidden="true"></i>
       Reddit Ads
@@ -49,9 +51,10 @@
       [attr.aria-pressed]="selectedPlatform() === 'meta'"
       [class]="
         selectedPlatform() === 'meta'
-          ? 'flex items-center gap-1.5 rounded-md bg-[#1877F2] px-3 py-1.5 text-xs font-medium text-white'
+          ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
+      [style.backgroundColor]="selectedPlatform() === 'meta' ? platformBrandColor('meta') : null"
       data-testid="platform-meta">
       <i class="fa-brands fa-meta" aria-hidden="true"></i>
       Meta Ads

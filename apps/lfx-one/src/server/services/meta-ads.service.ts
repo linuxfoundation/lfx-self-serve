@@ -3,6 +3,7 @@
 
 import type { MetaActionItem, MetaAccountTotals, MetaCampaignMetrics, MetaMonitorResponse, MetaPacingLabel } from '@lfx-one/shared/interfaces';
 
+import { CAMPAIGN_PACING_THRESHOLDS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -16,12 +17,15 @@ async function metaRequest<T>(path: string): Promise<T> {
   const token = process.env['META_ACCESS_TOKEN'] ?? '';
   if (!token) throw new Error('META_ACCESS_TOKEN is not configured');
 
-  const url = `${META_BASE_URL}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+  const url = `${META_BASE_URL}${path}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), META_REQUEST_TIMEOUT_MS);
 
   try {
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
       throw new Error(`Meta API ${resp.status}: ${body.slice(0, 200)}`);
@@ -75,9 +79,9 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
   const pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
 
   let pacingLabel: MetaPacingLabel = 'normal';
-  if (pacingPct < 50) pacingLabel = 'underspending';
-  else if (pacingPct > 100) pacingLabel = 'overspending';
-  else if (pacingPct > 90) pacingLabel = 'constrained';
+  if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) pacingLabel = 'underspending';
+  else if (pacingPct >= CAMPAIGN_PACING_THRESHOLDS.constrained) pacingLabel = 'overspending';
+  else if (pacingPct >= CAMPAIGN_PACING_THRESHOLDS.normal) pacingLabel = 'constrained';
 
   return {
     campaignId: camp.id,
@@ -177,6 +181,8 @@ export async function getMetaAnalytics(req: Request, accountId: string, days: nu
   const insightFields = 'impressions,clicks,spend,ctr,actions';
   const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
 
+  // Fetches up to 100 campaigns per page. LF Core currently has ~55 campaigns; pagination via
+  // response.paging.next will be added when account size approaches this limit.
   const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&limit=100`;
   const response = await metaRequest<MetaCampaignsApiResponse>(path);
 
