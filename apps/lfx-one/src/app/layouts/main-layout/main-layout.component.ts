@@ -492,21 +492,15 @@ export class MainLayoutComponent {
           icon: 'fa-light fa-display',
           routerLink: '/org/memberships',
         },
-        {
-          label: 'Projects',
-          icon: 'fa-light fa-folder',
-          routerLink: '/org/projects',
-        },
-        {
-          label: 'ROI',
-          icon: 'fa-light fa-chart-line-up',
-          routerLink: '/org/roi',
-        },
-        {
-          label: 'Governance',
-          icon: 'fa-light fa-layer-group',
-          routerLink: '/org/governance',
-        },
+        // INFO: Future Epic implementation — the Projects page is hidden until the
+        // org-projects drilldown is built. Restore the entry below to re-enable it.
+        // { label: 'Projects', icon: 'fa-light fa-folder', routerLink: '/org/projects' },
+        // INFO: Future Epic implementation — the ROI page is hidden until the org ROI
+        // feature is built. Restore the entry below to re-enable it.
+        // { label: 'ROI', icon: 'fa-light fa-chart-line-up', routerLink: '/org/roi' },
+        // INFO: Future Epic implementation — the Governance page is hidden until the org
+        // governance feature is built. Restore the entry below to re-enable it.
+        // { label: 'Governance', icon: 'fa-light fa-layer-group', routerLink: '/org/governance' },
       ],
     },
     {
@@ -534,16 +528,12 @@ export class MainLayoutComponent {
           icon: 'fa-light fa-graduation-cap',
           routerLink: '/org/training',
         },
-        {
-          label: 'Meetings',
-          icon: 'fa-light fa-video',
-          routerLink: '/org/meetings',
-        },
-        {
-          label: COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
-          routerLink: '/org/groups',
-        },
+        // INFO: Future Epic implementation — the Meetings page is hidden until the org
+        // meetings feature is built. Restore the entry below to re-enable it.
+        // { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
+        // INFO: Future Epic implementation — the Groups page is hidden until the org
+        // groups feature is built. Restore the entry below to re-enable it.
+        // { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
       ],
     },
     {
