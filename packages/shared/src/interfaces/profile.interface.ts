@@ -410,6 +410,9 @@ export interface AffiliationWorkWindow {
 export interface AffiliationPeriodErrors {
   outsideWorkExperience: boolean;
   startAfterEnd: boolean;
+  // Period has a start but is neither "Present" nor given a complete end date — would otherwise
+  // save as open-ended and bypass the work-history window constraint.
+  incompleteEnd: boolean;
 }
 
 /**

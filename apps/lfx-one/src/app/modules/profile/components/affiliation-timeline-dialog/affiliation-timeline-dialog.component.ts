@@ -308,7 +308,7 @@ export class AffiliationTimelineDialogComponent {
   }
 
   private computePeriodErrors(org: AffiliationEditOrg, period: AffiliationEditPeriod): AffiliationPeriodErrors {
-    const errors = { outsideWorkExperience: false, startAfterEnd: false };
+    const errors = { outsideWorkExperience: false, startAfterEnd: false, incompleteEnd: false };
 
     const hasStart = period.startMonth && period.startYear;
     const hasEnd = !period.isPresent && period.endMonth && period.endYear;
@@ -316,6 +316,10 @@ export class AffiliationTimelineDialogComponent {
     if (!hasStart) {
       return errors;
     }
+
+    // Not "Present" but missing a complete end date: save() would persist this open-ended
+    // (endDate undefined), so flag it to keep Save disabled until an end date or Present is set.
+    errors.incompleteEnd = !period.isPresent && !(period.endMonth && period.endYear);
 
     const startTs = this.periodToTimestamp(period.startMonth, period.startYear);
     const endTs = hasEnd ? this.periodToTimestamp(period.endMonth, period.endYear) : null;
@@ -438,7 +442,7 @@ export class AffiliationTimelineDialogComponent {
       return enabledOrgs.some((org) =>
         org.periods.some((period) => {
           const errors = this.computePeriodErrors(org, period);
-          return errors.outsideWorkExperience || errors.startAfterEnd;
+          return errors.outsideWorkExperience || errors.startAfterEnd || errors.incompleteEnd;
         })
       );
     });
