@@ -121,6 +121,10 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   const startTime = logger.startOperation(req, 'meta_campaign_create', { eventName: config.eventName });
   const steps: string[] = [];
 
+  if (!config.variants || config.variants.length === 0) {
+    throw new Error('At least one ad variant is required for Meta campaign creation');
+  }
+
   if (!Number.isFinite(config.budgetUsd) || config.budgetUsd <= 0) {
     throw new Error('Invalid budget: must be a positive number');
   }
@@ -156,8 +160,12 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   const REGULATED_COUNTRIES = new Set(['SG', 'TW', 'KR']);
   const geoCountries = allGeoCountries.filter((g) => !REGULATED_COUNTRIES.has(g));
   const skippedGeos = allGeoCountries.filter((g) => REGULATED_COUNTRIES.has(g));
-  if (geoCountries.length === 0) geoCountries.push('US');
-  if (skippedGeos.length > 0) {
+  if (geoCountries.length === 0) {
+    geoCountries.push('US');
+    steps.push(
+      `All requested geos (${skippedGeos.join(', ')}) require regional compliance — defaulting to US targeting. Add regulated geos manually in Meta Ads Manager.`
+    );
+  } else if (skippedGeos.length > 0) {
     steps.push(`Geo targets skipped (require regional compliance declaration in Meta Ads Manager): ${skippedGeos.join(', ')}`);
   }
 
