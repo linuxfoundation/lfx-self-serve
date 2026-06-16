@@ -64,7 +64,9 @@ export class OrgMembershipDetailComponent {
     { id: 'key-contacts' as const, label: 'Key Contacts', icon: 'fa-light fa-address-card' },
     { id: 'board' as const, label: 'Board & Committee', icon: 'fa-light fa-users-rectangle' },
     { id: 'docs' as const, label: 'Documentation', icon: 'fa-light fa-file-lines' },
-    { id: 'governance' as const, label: 'Governance', icon: 'fa-light fa-layer-group' },
+    // INFO: Future Epic implementation — the Governance tab is hidden until governance
+    // roles/seats are built. Restore the entry below to re-enable it.
+    // { id: 'governance' as const, label: 'Governance', icon: 'fa-light fa-layer-group' },
   ];
 
   private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid));
@@ -150,7 +152,7 @@ export class OrgMembershipDetailComponent {
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
+    const ids: MembershipDetailTab[] = this.tabs.map((t) => t.id);
     const idx = ids.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
