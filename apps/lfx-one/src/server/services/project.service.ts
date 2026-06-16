@@ -2069,7 +2069,7 @@ export class ProjectService {
       const classificationParams = classification ? [classification] : [];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
 
-      // Query 1: KPI card — current CTR + MoM change from email_ctr_summary
+      // Query 1: KPI card — current CTR fallback from email_ctr_summary
       // Uses pre-computed CTR_LAST_COMPLETED_MONTH — cannot be month-filtered
       const summaryQuery = `
         SELECT
@@ -2088,7 +2088,6 @@ export class ProjectService {
         SELECT
           PUBLISHED_MONTH,
           PUBLISHED_MONTH_DATE,
-          ROUND(SUM(TOTAL_OPENS) * 100.0 / NULLIF(SUM(TOTAL_SENDS), 0), 1) AS MONTHLY_CTR,
           SUM(TOTAL_SENDS) AS TOTAL_SENDS,
           SUM(TOTAL_OPENS) AS TOTAL_OPENS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
@@ -2135,10 +2134,12 @@ export class ProjectService {
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number }>(summaryQuery, [...foundationParams, ...classificationParams]),
-        this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
-          monthlyQuery,
-          [monthDate, monthDate, ...foundationParams, ...classificationParams]
-        ),
+        this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; TOTAL_SENDS: number; TOTAL_OPENS: number }>(monthlyQuery, [
+          monthDate,
+          monthDate,
+          ...foundationParams,
+          ...classificationParams,
+        ]),
         this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [
           ...foundationParams,
           ...classificationParams,
