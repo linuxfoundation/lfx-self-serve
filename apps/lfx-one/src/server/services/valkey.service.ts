@@ -3,6 +3,7 @@
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CachePort } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import Redis from 'ioredis';
 
 import { addShutdownHook } from '../utils/shutdown';
@@ -182,6 +183,47 @@ export class ValkeyService implements CachePort {
  */
 export function cacheKeyNamespace(): string {
   return (process.env['VALKEY_KEY_NAMESPACE'] ?? '').replace(/[^A-Za-z0-9._-]/g, '-');
+}
+
+/** Joins the app prefix with the optional deployment namespace segment, matching the existing adopters. */
+function keyPrefix(): string {
+  const ns = cacheKeyNamespace();
+  return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+}
+
+/** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
+  if (!isFilterSafeIdentifier(accountId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
+}
+
+/** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username isn't filter-safe, keeping cache identity aligned with the authz principal. */
+export function buildPerUserOrgKey(namespace: string, username: string, orgUid: string): string | null {
+  if (!isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${namespace}:${username}:${orgUid}`;
+}
+
+/** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
+export function withOrgCache<T>(
+  accountId: string,
+  subResource: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+}
+
+/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. */
+export function withPerUserCache<T>(
+  namespace: string,
+  username: string,
+  orgUid: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
 }
 
 /** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */

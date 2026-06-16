@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   GetOrgEventsOptions,
   OrgEvent,
@@ -20,6 +21,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Service for org-lens event list endpoints — reads org event footprint from platinum ORG_EVENTS. */
 export class OrgLensEventsService {
@@ -90,9 +92,15 @@ export class OrgLensEventsService {
     const binds: string[] = [accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`);
 
-    let result;
+    let rows: OrgEventRow[];
     try {
-      result = await this.snowflakeService.execute<OrgEventRow>(sql, binds);
+      rows = await withOrgCache(
+        accountId,
+        `events:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchEventListRows(sql, binds),
+        isObjectRowArray
+      );
     } catch (error) {
       logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
         error: error instanceof Error ? error.message : String(error),
@@ -101,8 +109,8 @@ export class OrgLensEventsService {
       return { data: [], total: 0, pageSize, offset };
     }
 
-    const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
-    const data = result.rows.map((row) => this.mapRowToOrgEvent(row));
+    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
+    const data = rows.map((row) => this.mapRowToOrgEvent(row));
 
     logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
 
@@ -122,9 +130,15 @@ export class OrgLensEventsService {
       WHERE oe.ACCOUNT_ID = ?
     `;
 
-    let result;
+    let rows: OrgEventsSummaryRow[];
     try {
-      result = await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, [accountId]);
+      rows = await withOrgCache(
+        accountId,
+        'events-summary',
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchEventsSummaryRows(accountId, sql),
+        isObjectRowArray
+      );
     } catch (error) {
       logger.warning(req, 'get_org_lens_events_summary', 'Snowflake query failed, returning zero counts', {
         error: error instanceof Error ? error.message : String(error),
@@ -133,7 +147,7 @@ export class OrgLensEventsService {
       return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0 };
     }
 
-    const row = result.rows[0];
+    const row = rows[0];
     const summary: OrgEventsSummary = {
       totalEvents: row?.TOTAL_EVENTS ?? 0,
       pastEvents: row?.PAST_EVENTS ?? 0,
@@ -172,9 +186,15 @@ export class OrgLensEventsService {
       binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     }
 
-    let result;
+    let rows: OrgEventAttendeesDrawerRow[];
     try {
-      result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, binds);
+      rows = await withOrgCache(
+        accountId,
+        `event-attendees:${paramSignature([eventId, searchQuery ?? null])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchEventAttendeeRows(sql, binds),
+        isObjectRowArray
+      );
     } catch (error) {
       logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
         error: error instanceof Error ? error.message : String(error),
@@ -184,8 +204,8 @@ export class OrgLensEventsService {
       return { eventId, eventName: '', total: 0, data: [] };
     }
 
-    const eventName = result.rows[0]?.EVENT_NAME ?? '';
-    const data: OrgEventAttendee[] = result.rows.map((row) => ({
+    const eventName = rows[0]?.EVENT_NAME ?? '';
+    const data: OrgEventAttendee[] = rows.map((row) => ({
       contactId: row.CONTACT_ID,
       name: row.NAME ?? row.CONTACT_ID,
       jobTitle: row.JOB_TITLE ?? null,
@@ -223,9 +243,15 @@ export class OrgLensEventsService {
       binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     }
 
-    let result;
+    let rows: OrgEventSpeakersDrawerRow[];
     try {
-      result = await this.snowflakeService.execute<OrgEventSpeakersDrawerRow>(sql, binds);
+      rows = await withOrgCache(
+        accountId,
+        `event-speakers:${paramSignature([eventId, searchQuery ?? null])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchEventSpeakerRows(sql, binds),
+        isObjectRowArray
+      );
     } catch (error) {
       logger.warning(req, 'get_event_speakers', 'Snowflake query failed, returning empty speakers', {
         error: error instanceof Error ? error.message : String(error),
@@ -235,8 +261,8 @@ export class OrgLensEventsService {
       return { eventId, eventName: '', acceptedCount: 0, submittedCount: 0, data: [] };
     }
 
-    const eventName = result.rows[0]?.EVENT_NAME ?? '';
-    const data: OrgEventSpeaker[] = result.rows.map((row) => ({
+    const eventName = rows[0]?.EVENT_NAME ?? '';
+    const data: OrgEventSpeaker[] = rows.map((row) => ({
       contactId: row.CONTACT_ID,
       name: row.NAME ?? row.CONTACT_ID,
       jobTitle: row.JOB_TITLE ?? null,
@@ -249,6 +275,26 @@ export class OrgLensEventsService {
     logger.debug(req, 'get_event_speakers', 'Fetched event speakers', { accepted: acceptedCount, submitted: submittedCount, event_id: eventId });
 
     return { eventId, eventName, acceptedCount, submittedCount, data };
+  }
+
+  private async fetchEventListRows(sql: string, binds: string[]): Promise<OrgEventRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds);
+    return result.rows;
+  }
+
+  private async fetchEventsSummaryRows(accountId: string, sql: string): Promise<OrgEventsSummaryRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, [accountId]);
+    return result.rows;
+  }
+
+  private async fetchEventAttendeeRows(sql: string, binds: string[]): Promise<OrgEventAttendeesDrawerRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, binds);
+    return result.rows;
+  }
+
+  private async fetchEventSpeakerRows(sql: string, binds: string[]): Promise<OrgEventSpeakersDrawerRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventSpeakersDrawerRow>(sql, binds);
+    return result.rows;
   }
 
   private mapRowToOrgEvent(row: OrgEventRow): OrgEvent {
@@ -271,4 +317,13 @@ export class OrgLensEventsService {
       isOrgSponsor: !!row.IS_ORG_SPONSOR,
     };
   }
+}
+
+/** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
+function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
+  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+}
+
+function isObjectRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }

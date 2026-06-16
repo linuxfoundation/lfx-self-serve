@@ -3,7 +3,7 @@
 
 // Generated with [Cursor](https://cursor.com)
 
-import { ORG_ACCESS_ROLE_RELATION } from '@lfx-one/shared/constants';
+import { ORG_ACCESS_ROLE_RELATION, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgSettings,
   MemberServiceOrgUser,
@@ -21,6 +21,15 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
+import { withPerUserCache } from './valkey.service';
+
+/** Rejects a corrupt/legacy access-list entry (degrades to a miss). */
+function isAccessListResponse(value: unknown): boolean {
+  const v = value as Partial<OrgAccessListResponse> | null;
+  return (
+    !!v && typeof v.orgUid === 'string' && Array.isArray(v.users) && typeof v.summary === 'object' && v.summary !== null && typeof v.canManage === 'boolean'
+  );
+}
 
 // Spec 025 — Org Lens Access read/write against member-service settings.
 // Reads via GET /b2b_orgs/{uid}/settings. Writes use the PER-PRINCIPAL endpoints
@@ -48,12 +57,21 @@ export class OrgLensAccessService {
    * role-grants lookup on the post-write refresh.
    */
   public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
-    const [settings, canManage] = await Promise.all([
-      this.fetchSettings(req, orgUid),
-      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
-    ]);
-    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
-    return { orgUid, users, summary: this.buildSummary(users), canManage };
+    // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
+    // (compute directly, no read/write). The stale entry from earlier reads ages out within the TTL.
+    if (knownCanManage !== undefined) {
+      return this.computeAccessList(req, orgUid, knownCanManage);
+    }
+    const username = getEffectiveUsername(req) ?? '';
+    // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeAccessList(req, orgUid, undefined),
+      isAccessListResponse
+    );
   }
 
   /**
@@ -62,8 +80,15 @@ export class OrgLensAccessService {
    * Access tab — the directory orchestrator owns its own merge + enrichment.
    */
   public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
-    const settings = await this.fetchSettings(req, orgUid);
-    return this.mapPrincipals(settings);
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      async () => this.mapPrincipals(await this.fetchSettings(req, orgUid)),
+      Array.isArray
+    );
   }
 
   /** Add Users — invite a NEW principal via the per-principal POST endpoint; returns the refreshed list. */
@@ -112,6 +137,15 @@ export class OrgLensAccessService {
   }
 
   // ── base helpers ─────────────────────────────────────────────────────────────
+
+  private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
+    const [settings, canManage] = await Promise.all([
+      this.fetchSettings(req, orgUid),
+      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
+    ]);
+    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
+    return { orgUid, users, summary: this.buildSummary(users), canManage };
+  }
 
   /** Authoritative settings read (member-service source of record). */
   private async fetchSettings(req: Request, orgUid: string): Promise<MemberServiceB2bOrgSettings> {

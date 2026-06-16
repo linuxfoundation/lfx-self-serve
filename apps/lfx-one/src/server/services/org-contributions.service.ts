@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   ContributionSource,
   ContributionsCommitSortColumn,
@@ -17,6 +18,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 const PLATINUM_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_CONTRIBUTIONS';
 
@@ -90,19 +92,19 @@ export class OrgContributionsService {
     const repoPagination = viewAwarePagination(query, 'repositories');
     const commitPagination = viewAwarePagination(query, 'commits');
 
-    const [kpiResult, repoResult, commitResult, projectOptions, employeeOptions] = await Promise.all([
-      this.fetchKpis(accountId, scope, kpiSearch),
-      this.fetchRepositories(accountId, scope, repoSearch, query, repoPagination),
-      this.fetchCommits(accountId, scope, commitSearch, query, commitPagination),
-      this.fetchProjectOptions(accountId, query.dateRange),
-      this.fetchEmployeeOptions(accountId, query.dateRange),
-    ]);
+    const raw = await withOrgCache(
+      accountId,
+      `contributions:${contributionsSignature(query)}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchContributionsRaw(accountId, query, scope, kpiSearch, repoSearch, commitSearch, repoPagination, commitPagination),
+      isContributionsRaw
+    );
 
-    const kpis = mapKpis(kpiResult.rows[0]);
-    const totalRecords = repoResult.rows.length > 0 ? repoResult.rows[0].TOTAL_RECORDS : 0;
-    const repositories = query.view === 'repositories' ? repoResult.rows.map(mapRepoRow) : [];
-    const commitsTotalRecords = commitResult.rows.length > 0 ? commitResult.rows[0].TOTAL_RECORDS : 0;
-    const commits = query.view === 'commits' ? commitResult.rows.map(mapCommitRow) : [];
+    const kpis = mapKpis(raw.kpiRows[0]);
+    const totalRecords = raw.repoRows.length > 0 ? raw.repoRows[0].TOTAL_RECORDS : 0;
+    const repositories = query.view === 'repositories' ? raw.repoRows.map(mapRepoRow) : [];
+    const commitsTotalRecords = raw.commitRows.length > 0 ? raw.commitRows[0].TOTAL_RECORDS : 0;
+    const commits = query.view === 'commits' ? raw.commitRows.map(mapCommitRow) : [];
 
     return {
       accountId,
@@ -110,10 +112,43 @@ export class OrgContributionsService {
       kpis,
       repositories,
       commits,
-      projectOptions,
-      employeeOptions,
+      projectOptions: raw.projectOptionRows.map(mapProjectOption),
+      employeeOptions: raw.employeeOptionRows.map(mapEmployeeOption),
       totalRecords,
       commitsTotalRecords,
+    };
+  }
+
+  private async fetchContributionsRaw(
+    accountId: string,
+    query: OrgContributionsQuery,
+    scope: ScopeFilters,
+    kpiSearch: SearchFilter,
+    repoSearch: SearchFilter,
+    commitSearch: SearchFilter,
+    repoPagination: ViewAwarePagination,
+    commitPagination: ViewAwarePagination
+  ): Promise<{
+    kpiRows: ContributionsKpiRow[];
+    repoRows: ContributionsRepoRow[];
+    commitRows: ContributionsCommitRow[];
+    projectOptionRows: ContributionsProjectOptionRow[];
+    employeeOptionRows: ContributionsEmployeeOptionRow[];
+  }> {
+    const [kpiResult, repoResult, commitResult, projectResult, employeeResult] = await Promise.all([
+      this.fetchKpis(accountId, scope, kpiSearch),
+      this.fetchRepositories(accountId, scope, repoSearch, query, repoPagination),
+      this.fetchCommits(accountId, scope, commitSearch, query, commitPagination),
+      this.fetchProjectOptionRows(accountId, query.dateRange),
+      this.fetchEmployeeOptionRows(accountId, query.dateRange),
+    ]);
+
+    return {
+      kpiRows: kpiResult.rows,
+      repoRows: repoResult.rows,
+      commitRows: commitResult.rows,
+      projectOptionRows: projectResult.rows,
+      employeeOptionRows: employeeResult.rows,
     };
   }
 
@@ -235,7 +270,7 @@ export class OrgContributionsService {
     return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds]);
   }
 
-  private async fetchProjectOptions(accountId: string, dateRange: ContributionsDateRange): Promise<OrgContributionProjectOption[]> {
+  private async fetchProjectOptionRows(accountId: string, dateRange: ContributionsDateRange): Promise<{ rows: ContributionsProjectOptionRow[] }> {
     const datePredicate = dateRangePredicate(dateRange);
     const sql = `
       SELECT
@@ -251,17 +286,10 @@ export class OrgContributionsService {
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    const result = await this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
-    return result.rows.map((row) => ({
-      slug: row.PROJECT_SLUG ?? row.PROJECT_ID,
-      projectId: row.PROJECT_ID,
-      name: row.PROJECT_NAME ?? row.PROJECT_ID,
-      commits: row.COMMITS ?? 0,
-      parentSlug: row.PARENT_SLUG,
-    }));
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
   }
 
-  private async fetchEmployeeOptions(accountId: string, dateRange: ContributionsDateRange): Promise<OrgContributionEmployeeOption[]> {
+  private async fetchEmployeeOptionRows(accountId: string, dateRange: ContributionsDateRange): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
     const datePredicate = dateRangePredicate(dateRange);
     const sql = `
       SELECT
@@ -275,12 +303,7 @@ export class OrgContributionsService {
       GROUP BY member_id
       ORDER BY commits DESC, member_display_name ASC
     `;
-    const result = await this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
-    return result.rows.map((row) => ({
-      id: row.MEMBER_ID,
-      displayName: row.MEMBER_DISPLAY_NAME ?? row.MEMBER_ID,
-      commits: row.COMMITS ?? 0,
-    }));
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
   }
 }
 
@@ -413,6 +436,54 @@ function mapKpis(row: ContributionsKpiRow | undefined): OrgContributionsKpis {
     repositories: row?.REPOSITORIES ?? 0,
     commits: row?.COMMITS ?? 0,
   };
+}
+
+function mapProjectOption(row: ContributionsProjectOptionRow): OrgContributionProjectOption {
+  return {
+    slug: row.PROJECT_SLUG ?? row.PROJECT_ID,
+    projectId: row.PROJECT_ID,
+    name: row.PROJECT_NAME ?? row.PROJECT_ID,
+    commits: row.COMMITS ?? 0,
+    parentSlug: row.PARENT_SLUG,
+  };
+}
+
+function mapEmployeeOption(row: ContributionsEmployeeOptionRow): OrgContributionEmployeeOption {
+  return {
+    id: row.MEMBER_ID,
+    displayName: row.MEMBER_DISPLAY_NAME ?? row.MEMBER_ID,
+    commits: row.COMMITS ?? 0,
+  };
+}
+
+/** Deterministic, key-safe cache-key suffix covering every query field that changes the SQL (filter arrays sorted so member order never fragments the key); base64url keeps it to `[A-Za-z0-9_-]`. */
+function contributionsSignature(query: OrgContributionsQuery): string {
+  const parts = [
+    query.dateRange,
+    query.view,
+    query.search,
+    query.sort,
+    query.dir,
+    query.commitSort,
+    query.commitDir,
+    query.page,
+    query.size,
+    [...query.projects].sort().join(','),
+    [...query.employees].sort().join(','),
+  ];
+  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+}
+
+function isContributionsRaw(value: unknown): boolean {
+  const v = value as { kpiRows?: unknown; repoRows?: unknown; commitRows?: unknown; projectOptionRows?: unknown; employeeOptionRows?: unknown } | null;
+  return (
+    !!v &&
+    Array.isArray(v.kpiRows) &&
+    Array.isArray(v.repoRows) &&
+    Array.isArray(v.commitRows) &&
+    Array.isArray(v.projectOptionRows) &&
+    Array.isArray(v.employeeOptionRows)
+  );
 }
 
 function mapRepoRow(row: ContributionsRepoRow): OrgContributionRepoRow {

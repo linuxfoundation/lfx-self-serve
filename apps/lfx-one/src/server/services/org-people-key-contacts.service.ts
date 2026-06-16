@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_KEY_CONTACT_REQUIRED_ROLES } from '@lfx-one/shared/constants';
+import { ORG_KEY_CONTACT_REQUIRED_ROLES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   KeyContactIndexedDoc,
   OrgKeyContactAssignment,
@@ -13,7 +13,15 @@ import type {
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { withPerUserCache } from './valkey.service';
+
+/** Rejects a corrupt/legacy entry (degrades to a miss) — both wire fields must be present and well-shaped. */
+function isKeyContactsResponse(value: unknown): boolean {
+  const v = value as Partial<OrgKeyContactsResponse> | null;
+  return !!v && Array.isArray(v.assignments) && typeof v.stats === 'object' && v.stats !== null;
+}
 
 /** Org Lens — People → Key Contacts tab. V1 is org-wide and read-only; membership-scoped reads + writes live in OrgLensKeyContactsService (spec 024). */
 export class OrgPeopleKeyContactsService {
@@ -28,8 +36,20 @@ export class OrgPeopleKeyContactsService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip (FR-004). Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. */
+  /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip. Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. Served through the per-caller shared cache; only successful reads are cached. */
   public async getKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeKeyContacts(req, orgUid),
+      isKeyContactsResponse
+    );
+  }
+
+  private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
     const tags = `b2b_org_uid:${orgUid}`;
     // failOnPartial: true on both fetches — stats are computed off the full active dataset, so a dropped page would silently produce wrong counts and missing-join filters.
     const [contacts, memberships] = await Promise.all([
