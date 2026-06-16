@@ -164,7 +164,13 @@ export interface LinkedInBriefCopy {
 
 /**
  * One ad account / org pairing in the runtime LinkedIn config.
- * Loaded server-side from the mounted ConfigMap; not used in the client bundle.
+ *
+ * Values (accountId, orgId, label, status) are loaded server-side from the
+ * mounted ConfigMap and never embedded in the client bundle. The type itself
+ * lives in the shared package because the client consumes it as the response
+ * shape of `GET /api/campaigns/linkedin/accounts` (see CampaignService.
+ * getLinkedInAccounts and the campaigns dashboard tabs).
+ *
  * `status` is optional to preserve graceful degradation if the ConfigMap
  * omits it; production ConfigMaps always supply it.
  */

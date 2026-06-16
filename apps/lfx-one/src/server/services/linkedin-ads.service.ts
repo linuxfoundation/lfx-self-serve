@@ -110,38 +110,49 @@ function validateLinkedInConfig(parsed: unknown): LinkedInRuntimeConfig {
     throw new TypeError('LinkedIn config "defaultOrgId" must be a digit-only string when non-empty (LinkedIn organization IDs are numeric)');
   }
 
-  const rawAccounts = p['accounts'] ?? [];
-  if (!Array.isArray(rawAccounts)) {
-    throw new TypeError(`LinkedIn config "accounts" must be an array, got ${typeof rawAccounts}`);
+  // For each of the three array fields below, mirror the round-4 pattern from
+  // defaultAccountId / defaultOrgId above: absent (undefined) defaults to [], but
+  // an explicit `null` or other non-array value FAILS the type check rather than
+  // being silently coerced to []. Without this, a malformed ConfigMap with
+  // `"accounts": null` would silently load as "no accounts configured" and
+  // surface much later as confusing "no LinkedIn account configured" errors
+  // instead of a clean reason:'malformed' at load time.
+
+  const rawAccounts = p['accounts'];
+  if (rawAccounts !== undefined && !Array.isArray(rawAccounts)) {
+    throw new TypeError(`LinkedIn config "accounts" must be an array when present, got ${rawAccounts === null ? 'null' : typeof rawAccounts}`);
   }
-  if (!rawAccounts.every(isLinkedInAccount)) {
+  const accountsList = (rawAccounts ?? []) as unknown[];
+  if (!accountsList.every(isLinkedInAccount)) {
     throw new TypeError(
       'LinkedIn config "accounts[]" entries must each have a digit-only accountId (string), digit-only orgId (string), string label, and (when present) status in {ACTIVE, BILLING_HOLD}'
     );
   }
 
-  const rawExclusions = p['employerExclusions'] ?? [];
-  if (!Array.isArray(rawExclusions)) {
-    throw new TypeError(`LinkedIn config "employerExclusions" must be an array, got ${typeof rawExclusions}`);
+  const rawExclusions = p['employerExclusions'];
+  if (rawExclusions !== undefined && !Array.isArray(rawExclusions)) {
+    throw new TypeError(`LinkedIn config "employerExclusions" must be an array when present, got ${rawExclusions === null ? 'null' : typeof rawExclusions}`);
   }
-  if (!rawExclusions.every((s) => typeof s === 'string')) {
+  const exclusionsList = (rawExclusions ?? []) as unknown[];
+  if (!exclusionsList.every((s) => typeof s === 'string')) {
     throw new TypeError('LinkedIn config "employerExclusions[]" entries must all be strings');
   }
 
-  const rawProfiles = p['targetingProfiles'] ?? [];
-  if (!Array.isArray(rawProfiles)) {
-    throw new TypeError(`LinkedIn config "targetingProfiles" must be an array, got ${typeof rawProfiles}`);
+  const rawProfiles = p['targetingProfiles'];
+  if (rawProfiles !== undefined && !Array.isArray(rawProfiles)) {
+    throw new TypeError(`LinkedIn config "targetingProfiles" must be an array when present, got ${rawProfiles === null ? 'null' : typeof rawProfiles}`);
   }
-  if (!rawProfiles.every(isLinkedInTargetingProfile)) {
+  const profilesList = (rawProfiles ?? []) as unknown[];
+  if (!profilesList.every(isLinkedInTargetingProfile)) {
     throw new TypeError('LinkedIn config "targetingProfiles[]" entries must each have string id, label, skills[], groups[]');
   }
 
   return {
     defaultAccountId,
     defaultOrgId,
-    accounts: rawAccounts as readonly LinkedInAccount[],
-    employerExclusions: rawExclusions as readonly string[],
-    targetingProfiles: rawProfiles as readonly LinkedInTargetingProfileConfig[],
+    accounts: accountsList as readonly LinkedInAccount[],
+    employerExclusions: exclusionsList as readonly string[],
+    targetingProfiles: profilesList as readonly LinkedInTargetingProfileConfig[],
   };
 }
 
