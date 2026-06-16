@@ -642,24 +642,7 @@ export class CommitteeService {
    * does not provide them today.
    */
   public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) {
-      return [];
-    }
-
-    // Don't log the invitee email — it's PII and the request is already correlated by req.id and
-    // the authenticated session. The upstream query is still scoped to normalizedEmail.
-    logger.debug(req, 'get_my_pending_invitations', 'Fetching committee invitations for user');
-
-    const invites = await fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee_invite',
-        tags: `invitee_email:${normalizedEmail}`,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-
-    const pendingInvites = invites.filter((invite) => invite.status === 'pending');
+    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
     if (pendingInvites.length === 0) {
       return [];
     }
@@ -712,6 +695,50 @@ export class CommitteeService {
         // sending an explicit null that consumers would have to disambiguate from "set".
       } satisfies PendingInvitation;
     });
+  }
+
+  /**
+   * After LFID invite acceptance, auto-accept pending committee invitations addressed to
+   * {@link invitedEmail}. Callers must verify the session email matches the invite token
+   * email before invoking. {@link resourceUid} (from the LFID invite JWT) disambiguates
+   * when multiple pending invites exist — matched against committee_invite UID first, then
+   * committee UID; if no match and exactly one pending invite remains, that one is accepted.
+   *
+   * Failures are logged and swallowed so LFID acceptance still succeeds — the user can
+   * accept manually from pending-actions / My Groups.
+   */
+  public async acceptPendingCommitteeInvitesAfterLfidAccept(req: Request, params: { invitedEmail: string; resourceUid?: string }): Promise<void> {
+    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
+    if (pendingInvites.length === 0) {
+      logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
+      return;
+    }
+
+    const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
+    if (toAccept.length === 0) {
+      logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
+        pending_count: pendingInvites.length,
+        resource_uid: params.resourceUid,
+      });
+      return;
+    }
+
+    logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
+      accept_count: toAccept.length,
+      resource_uid: params.resourceUid,
+    });
+
+    for (const invite of toAccept) {
+      try {
+        await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
+      } catch (error) {
+        logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
+          committee_uid: invite.committee_uid,
+          invite_uid: invite.uid,
+          err: error,
+        });
+      }
+    }
   }
 
   /**
@@ -1567,5 +1594,51 @@ export class CommitteeService {
       });
       return 0;
     }
+  }
+
+  /**
+   * Returns pending committee_invite resources for {@link email}, without display enrichment.
+   */
+  private async fetchPendingCommitteeInvitesByEmail(req: Request, email: string): Promise<CommitteeInvite[]> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return [];
+    }
+
+    // Don't log the invitee email — it's PII and the request is already correlated by req.id and
+    // the authenticated session. The upstream query is still scoped to normalizedEmail.
+    logger.debug(req, 'get_my_pending_invitations', 'Fetching committee invitations for user');
+
+    const invites = await fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_invite',
+        tags: `invitee_email:${normalizedEmail}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    return invites.filter((invite) => invite.status === 'pending');
+  }
+
+  /**
+   * Narrows pending committee invites using the LFID invite JWT {@link resourceUid} when present.
+   */
+  private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid?: string): CommitteeInvite[] {
+    const trimmedResourceUid = resourceUid?.trim();
+    if (!trimmedResourceUid) {
+      return pending;
+    }
+
+    const byInviteUid = pending.filter((invite) => invite.uid === trimmedResourceUid);
+    if (byInviteUid.length > 0) {
+      return byInviteUid;
+    }
+
+    const byCommitteeUid = pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
+    if (byCommitteeUid.length > 0) {
+      return byCommitteeUid;
+    }
+
+    return pending.length === 1 ? pending : [];
   }
 }
