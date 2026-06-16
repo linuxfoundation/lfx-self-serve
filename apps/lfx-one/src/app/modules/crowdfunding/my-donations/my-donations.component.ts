@@ -144,8 +144,8 @@ export class MyDonationsComponent {
 
       return [
         {
-          value: formatCurrency(stats.totalDonated),
-          label: 'Total Donated · All time',
+          value: `${formatCurrency(stats.totalDonated)} · all time`,
+          label: 'Total Donated',
           icon: 'fa-light fa-hand-holding-heart',
           iconContainerClass: 'bg-blue-100 text-blue-600',
         },
