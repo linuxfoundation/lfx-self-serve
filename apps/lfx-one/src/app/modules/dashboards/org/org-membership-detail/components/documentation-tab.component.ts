@@ -69,6 +69,12 @@ export class DocumentationTabComponent {
   /** Null when org has no active TLF Corporate Membership or cert query degraded (FR-010a). */
   protected readonly certificateTemplate = computed<OrgMembershipCertificateTemplate | null>(() => this.docsData()?.certificateTemplate ?? null);
 
+  // INFO: Future Epic implementation — the Certificate of Membership card is hidden
+  // until the TLF certificate surface is finalized. Flip to `true` to re-enable it.
+  // Typed `boolean` (not the `false` literal) so the gated template branch stays
+  // type-checked and the `cert` alias keeps narrowing away null.
+  protected readonly showCertificateCard: boolean = false;
+
   // 9. Protected methods
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);

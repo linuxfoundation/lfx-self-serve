@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   CommitteeServiceOrgSeat,
   KeyContactEmployee,
   OrgAccessUser,
+  OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
   OrgAllEmployeeStats,
   OrgAllEmployeesResponse,
@@ -21,16 +22,64 @@ import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
+import { withPerUserCache } from './valkey.service';
 
-/** TTL for the merged directory cache. The merge fans out to 4 upstreams (Snowflake + committee + query-service + member-service), so a short window collapses the burst of calls a tab + its pickers make on open without serving stale rosters. */
-const DIRECTORY_CACHE_TTL_MS = 30_000;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
-/** Hard cap on cache entries so the singleton can't grow unbounded across every (org x caller) pair over the server's lifetime; oldest-first eviction mirrors OrgMembershipResolverService. */
-const DIRECTORY_CACHE_MAX_ENTRIES = 2_000;
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => typeof el === 'string');
+}
 
-interface DirectoryCacheEntry {
-  at: number;
-  value: OrgAllEmployeesResponse;
+/** Every row must match the wire shape: the cached value is replayed straight to the client, so a corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`. */
+function isAllEmployeeRow(value: unknown): boolean {
+  const r = value as Partial<OrgAllEmployeeRow>;
+  return (
+    isObject(value) &&
+    typeof r.personKey === 'string' &&
+    typeof r.name === 'string' &&
+    (r.email === null || typeof r.email === 'string') &&
+    isStringArray(r.sources) &&
+    isStringArray(r.engagedFoundationIds) &&
+    typeof r.seatsCount === 'number' &&
+    typeof r.boardSeatsCount === 'number' &&
+    typeof r.committeeSeatsCount === 'number' &&
+    typeof r.commitsCount === 'number' &&
+    typeof r.eventsCount === 'number' &&
+    typeof r.coursesCount === 'number'
+  );
+}
+
+function isFoundationOption(value: unknown): boolean {
+  const f = value as Partial<OrgAllEmployeeFoundationOption>;
+  return isObject(value) && typeof f.foundationId === 'string' && typeof f.foundationName === 'string';
+}
+
+function isAllEmployeeStats(value: unknown): boolean {
+  const s = value as Partial<OrgAllEmployeeStats>;
+  return (
+    isObject(value) &&
+    typeof s.activeInOss === 'number' &&
+    typeof s.inGovernance === 'number' &&
+    typeof s.codeContributors === 'number' &&
+    typeof s.eventAttendees === 'number' &&
+    typeof s.trainees === 'number'
+  );
+}
+
+/** Rejects a corrupt/legacy merged-roster entry (degrades to a miss) by validating every row, foundation, and stat field against the wire contract. */
+function isAllEmployeesResponse(value: unknown): boolean {
+  const v = value as Partial<OrgAllEmployeesResponse>;
+  return (
+    isObject(value) &&
+    typeof v.accountId === 'string' &&
+    Array.isArray(v.rows) &&
+    v.rows.every(isAllEmployeeRow) &&
+    Array.isArray(v.foundations) &&
+    v.foundations.every(isFoundationOption) &&
+    isAllEmployeeStats(v.stats)
+  );
 }
 
 /**
@@ -49,9 +98,6 @@ export class OrgPeopleDirectoryService {
   private readonly keyContactsService: OrgLensKeyContactsService;
   private readonly accessService: OrgLensAccessService;
 
-  // Per-org short-TTL cache for the merged result. In-memory + small, mirroring OrgMembershipResolverService.
-  private readonly cache = new Map<string, DirectoryCacheEntry>();
-
   public constructor() {
     this.peopleService = new OrgLensPeopleService();
     this.boardCommitteeService = new OrgLensBoardCommitteeService();
@@ -59,21 +105,23 @@ export class OrgPeopleDirectoryService {
     this.accessService = new OrgLensAccessService();
   }
 
-  /** Merged stored + live roster for the account. Cached for a short window keyed by account + caller. */
+  /** Merged stored + live roster, served through the per-caller shared cache: the merge folds in request-scoped permission-filtered reads (committee seats, FGA-filtered key contacts, the caller's access view), so keying by caller + org stops one caller's roster from being replayed to another within the TTL. */
   public async getLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
-    // Key by caller too: the merge folds in request-scoped reads (committee seats via the caller's token,
-    // FGA-filtered key contacts, the caller's access view), so a plain accountId key could replay one
-    // caller's permission-filtered roster to a different caller within the TTL.
-    const cacheKey = this.cacheKey(req, accountId);
-    const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.at < DIRECTORY_CACHE_TTL_MS) {
-      return cached.value;
-    }
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
+      username,
+      accountId,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeLive(req, accountId),
+      isAllEmployeesResponse
+    );
+  }
 
+  private async computeLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
-    // because this roster also backs the All Employees tab, which needs the complete set. The short TTL above
-    // plus the caller-side `shareReplay` collapse the burst so the drain runs at most once per org per window
-    // (shared by the tab and every picker), not per keystroke.
+    // because this roster also backs the All Employees tab, which needs the complete set. Each source is
+    // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
     const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
       this.peopleService.getAllEmployees(accountId),
       this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
@@ -89,18 +137,7 @@ export class OrgPeopleDirectoryService {
       });
     }
 
-    const merged = this.merge(req, accountId, base, seats, keyContacts, access);
-    if (!this.cache.has(cacheKey) && this.cache.size >= DIRECTORY_CACHE_MAX_ENTRIES) {
-      const oldest = this.cache.keys().next();
-      if (!oldest.done) this.cache.delete(oldest.value);
-    }
-    this.cache.set(cacheKey, { at: Date.now(), value: merged });
-    return merged;
-  }
-
-  /** Cache key scoped to the org and the caller identity so permission-filtered reads aren't shared across callers. */
-  private cacheKey(req: Request, accountId: string): string {
-    return `${accountId}:${getEffectiveUsername(req) ?? 'anonymous'}`;
+    return this.merge(req, accountId, base, seats, keyContacts, access);
   }
 
   /** Seed the snowflake rows by lowercased email (no-email rows pass through), then fold each live source in. */
