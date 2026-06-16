@@ -304,6 +304,35 @@ export class CrowdfundingController {
     }
   }
 
+  // GET /api/crowdfunding/recurring-donations/:id
+  public async getRecurringDonationById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_recurring_donation_by_id');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_recurring_donation_by_id' });
+      }
+
+      const { id } = req.params;
+      if (!id || !id.trim()) {
+        throw ServiceValidationError.forField('id', 'Subscription id is required', { operation: 'get_recurring_donation_by_id' });
+      }
+
+      const donation = await this.crowdfundingService.getRecurringDonationById(req, id.trim());
+
+      if (!donation) {
+        res.status(404).json({ message: `Recurring donation '${id}' not found` });
+        return;
+      }
+
+      logger.success(req, 'get_recurring_donation_by_id', startTime, { id });
+
+      res.json(donation);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/crowdfunding/initiatives/:slug — fetch a single initiative by slug. */
   public async getInitiativeBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiative_by_slug');
