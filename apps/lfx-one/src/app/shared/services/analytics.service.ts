@@ -863,6 +863,7 @@ export class AnalyticsService {
         return of({
           currentCtr: 0,
           changePercentage: 0,
+          momChangePercentage: 0,
           trend: 'up' as const,
           monthlyData: [],
           monthlyLabels: [],

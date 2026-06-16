@@ -71,7 +71,7 @@ export class EmailTabComponent {
 
       const totalSends = data.monthlySends?.reduce((s, v) => s + v, 0) ?? 0;
       const totalOpens = data.monthlyOpens?.reduce((s, v) => s + v, 0) ?? 0;
-      const changePct = data.changePercentage;
+      const changePct = data.momChangePercentage;
 
       const sendsMom = this.computeMomPct(data.monthlySends);
       const opensMom = this.computeMomPct(data.monthlyOpens);
@@ -137,7 +137,7 @@ export class EmailTabComponent {
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
           value: `${(data.currentCtr ?? 0).toFixed(2)}%`,
-          momChange: formatChangePct(changePct, 'vs avg'),
+          momChange: formatChangePct(changePct, 'MoM'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),
           yoyChange: null,

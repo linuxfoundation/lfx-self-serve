@@ -153,6 +153,7 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
   emailCtr: {
     currentCtr: 0,
     changePercentage: 0,
+    momChangePercentage: 0,
     trend: 'up' as const,
     monthlyData: [],
     monthlyLabels: [],

@@ -2177,7 +2177,17 @@ export class ProjectService {
       ]);
 
       if (summaryResult.rows.length === 0 && monthlyResult.rows.length === 0) {
-        return { currentCtr: 0, changePercentage: 0, trend: 'up', monthlyData: [], monthlyLabels: [], campaignGroups: [], monthlySends: [], monthlyOpens: [] };
+        return {
+          currentCtr: 0,
+          changePercentage: 0,
+          momChangePercentage: 0,
+          trend: 'up',
+          monthlyData: [],
+          monthlyLabels: [],
+          campaignGroups: [],
+          monthlySends: [],
+          monthlyOpens: [],
+        };
       }
 
       // Use summary row for KPI card values
@@ -2195,6 +2205,15 @@ export class ProjectService {
           changePercentage = Math.round(((currentCtr - avg) / avg) * 1000) / 10;
         }
       }
+      let momChangePercentage = 0;
+      if (monthlyData.length >= 2) {
+        const current = monthlyData[monthlyData.length - 1];
+        const prior = monthlyData[monthlyData.length - 2];
+        if (prior > 0) {
+          momChangePercentage = Math.round(((current - prior) / prior) * 1000) / 10;
+        }
+      }
+
       const monthlySends = monthlyResult.rows.map((row) => row.TOTAL_SENDS ?? 0);
       const monthlyOpens = monthlyResult.rows.map((row) => row.TOTAL_OPENS ?? 0);
       const monthlyLabels = monthlyResult.rows.map((row) => {
@@ -2296,6 +2315,7 @@ export class ProjectService {
       return {
         currentCtr,
         changePercentage,
+        momChangePercentage,
         trend: changePercentage >= 0 ? 'up' : 'down',
         monthlyData,
         monthlyLabels,
@@ -2310,7 +2330,17 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         err: error,
       });
-      return { currentCtr: 0, changePercentage: 0, trend: 'up', monthlyData: [], monthlyLabels: [], campaignGroups: [], monthlySends: [], monthlyOpens: [] };
+      return {
+        currentCtr: 0,
+        changePercentage: 0,
+        momChangePercentage: 0,
+        trend: 'up',
+        monthlyData: [],
+        monthlyLabels: [],
+        campaignGroups: [],
+        monthlySends: [],
+        monthlyOpens: [],
+      };
     }
   }
 
