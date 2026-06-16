@@ -128,10 +128,14 @@ export class OsspreyPackagesTabComponent {
     this.toggleAll.emit({ checked: !this.allSelected() });
   }
 
-  protected getStewardNames(stewards: OsspreySteward[]): string {
-    if (stewards.length === 0) return '—';
-    if (stewards.length === 1) return stewards[0].name ?? stewards[0].userId;
-    return `${stewards.length} stewards`;
+  protected getStewardInitials(steward: OsspreySteward): string {
+    if (steward.name) {
+      const parts = steward.name.trim().split(/\s+/);
+      return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+    }
+    // Auth0 sub format: "auth0|abc123" — use first 2 chars after the pipe
+    const sub = steward.userId.split('|')[1] ?? steward.userId;
+    return sub.slice(0, 2).toUpperCase();
   }
 
   protected onSearchInput(event: Event): void {

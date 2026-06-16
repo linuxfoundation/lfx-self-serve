@@ -325,9 +325,28 @@
             <span class="text-gray-400">—</span>
           }
         </td>
-        <td class="text-xs text-gray-600">
+        <td>
           @if (pkg.stewards.length > 0) {
-            {{ getStewardNames(pkg.stewards) }}
+            <div class="flex items-center">
+              @for (steward of pkg.stewards.slice(0, 3); track steward.userId; let i = $index) {
+                <span
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold border-2 border-white flex-shrink-0"
+                  [style.margin-left]="i > 0 ? '-6px' : '0'"
+                  [title]="steward.name ?? steward.userId">
+                  @if (steward.avatarUrl) {
+                    <img [src]="steward.avatarUrl" [alt]="steward.name ?? ''" class="w-full h-full rounded-full object-cover" />
+                  } @else {
+                    {{ getStewardInitials(steward) }}
+                  }
+                </span>
+              }
+              @if (pkg.stewards.length > 3) {
+                <span
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold border-2 border-white flex-shrink-0 -ml-1.5">
+                  +{{ pkg.stewards.length - 3 }}
+                </span>
+              }
+            </div>
           } @else {
             <span class="text-gray-400 italic">—</span>
           }

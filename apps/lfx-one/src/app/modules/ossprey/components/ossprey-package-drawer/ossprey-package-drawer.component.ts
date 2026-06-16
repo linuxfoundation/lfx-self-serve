@@ -8,6 +8,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
 import {
+  OsspreyAssignStewardRequest,
   OsspreyEscalateRequest,
   OsspreyPackage,
   OsspreyStatus,
@@ -20,6 +21,7 @@ import { OsspreyService } from '@shared/services/ossprey.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { OsspreyAssignStewardModalComponent } from '../ossprey-assign-steward-modal/ossprey-assign-steward-modal.component';
 import { OsspreyEscalateModalComponent } from '../ossprey-escalate-modal/ossprey-escalate-modal.component';
 import { OsspreyStatusModalComponent } from '../ossprey-status-modal/ossprey-status-modal.component';
 import {
@@ -36,7 +38,15 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 
 @Component({
   selector: 'lfx-ossprey-package-drawer',
-  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent, OsspreyEscalateModalComponent, OsspreyStatusModalComponent],
+  imports: [
+    DrawerModule,
+    ButtonComponent,
+    EmptyStateComponent,
+    TagComponent,
+    OsspreyAssignStewardModalComponent,
+    OsspreyEscalateModalComponent,
+    OsspreyStatusModalComponent,
+  ],
   templateUrl: './ossprey-package-drawer.component.html',
 })
 export class OsspreyPackageDrawerComponent {
@@ -55,6 +65,7 @@ export class OsspreyPackageDrawerComponent {
   protected readonly activeTab = signal<DrawerTab>('overview');
   protected readonly detailLoading = signal(false);
   protected readonly actionLoading = signal(false);
+  protected readonly assignStewardModalVisible = signal(false);
   protected readonly escalateModalVisible = signal(false);
   protected readonly statusModalVisible = signal(false);
   private readonly reloadTrigger = signal(0);
@@ -74,6 +85,7 @@ export class OsspreyPackageDrawerComponent {
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
   protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned' && this.stewardshipId() === null);
+  protected readonly canAssignSteward = computed(() => this.stewardshipId() !== null);
   protected readonly canManageStatus = computed(() => this.stewardshipId() !== null);
   protected readonly canEscalate = computed(() => {
     const status = this.stewardshipStatus();
@@ -162,6 +174,10 @@ export class OsspreyPackageDrawerComponent {
       });
   }
 
+  protected openAssignStewardModal(): void {
+    this.assignStewardModalVisible.set(true);
+  }
+
   protected openEscalateModal(): void {
     this.escalateModalVisible.set(true);
   }
@@ -181,6 +197,23 @@ export class OsspreyPackageDrawerComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onActionSuccess('Package opened for stewardship.'),
+        error: () => this.onActionError(),
+      });
+  }
+
+  protected onAssignStewardConfirm(body: OsspreyAssignStewardRequest): void {
+    const id = this.stewardshipId();
+    if (id === null || this.actionLoading()) return;
+
+    this.actionLoading.set(true);
+    this.osspreyService
+      .assignSteward(id, body)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.assignStewardModalVisible.set(false);
+          this.onActionSuccess('Steward assigned successfully.');
+        },
         error: () => this.onActionError(),
       });
   }

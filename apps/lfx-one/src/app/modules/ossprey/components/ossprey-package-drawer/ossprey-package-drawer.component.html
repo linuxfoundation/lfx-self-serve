@@ -475,6 +475,16 @@
             (onClick)="openStatusModal()"
             data-testid="ossprey-drawer-reactivate" />
         }
+        @if (canAssignSteward()) {
+          <lfx-button
+            label="Assign steward"
+            icon="fa-light fa-user-plus"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="actionLoading()"
+            (onClick)="openAssignStewardModal()"
+            data-testid="ossprey-drawer-assign-steward" />
+        }
         @if (canEscalate()) {
           <lfx-button
             label="Escalate"
@@ -488,6 +498,12 @@
     </div>
   </ng-template>
 </p-drawer>
+
+<lfx-ossprey-assign-steward-modal
+  [(visible)]="assignStewardModalVisible"
+  [packageName]="packageData()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />
 
 <lfx-ossprey-escalate-modal
   [(visible)]="escalateModalVisible"

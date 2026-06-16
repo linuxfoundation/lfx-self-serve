@@ -104,7 +104,7 @@ export class OsspreyServerService {
 
       const packages = (data.packages ?? []).map((item) => this.mapListItem(item));
 
-      return { packages, total: data.total };
+      return { packages, total: data.total, statusCounts: data.statusCounts };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
 

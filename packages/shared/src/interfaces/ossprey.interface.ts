@@ -47,6 +47,7 @@ export interface CdpPackagesListResponse {
   page: number;
   pageSize: number;
   total: number;
+  statusCounts?: OsspreyStatusCounts;
   filters: Record<string, unknown>;
   sort: { by: string; dir: string };
   packages: CdpStewardshipSummary[];
@@ -55,6 +56,7 @@ export interface CdpPackagesListResponse {
 export interface OsspreyPackagesResponse {
   packages: OsspreyPackage[];
   total?: number | null;
+  statusCounts?: OsspreyStatusCounts;
 }
 
 export interface OsspreyListParams {
@@ -326,6 +328,7 @@ export interface OsspreyLoadResult {
   packages: OsspreyPackage[];
   total: number | null;
   error: boolean;
+  statusCounts: OsspreyStatusCounts | null;
 }
 
 export interface CdpPackagesMetricsResponse {

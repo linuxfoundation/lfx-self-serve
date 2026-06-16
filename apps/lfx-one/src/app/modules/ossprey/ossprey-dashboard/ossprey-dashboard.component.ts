@@ -66,18 +66,10 @@ export class OsspreyDashboardComponent {
   protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
 
   protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
-    const total = this.totalPackages();
-    return {
-      all: total,
-      unassigned: total,
-      open: 0,
-      assessing: 0,
-      active: 0,
-      needs_attention: 0,
-      escalated: 0,
-      blocked: 0,
-      inactive: 0,
-    };
+    const fromApi = this.loadResult()?.statusCounts;
+    if (fromApi) return fromApi;
+    // Fall back to zeros while the first load is in flight.
+    return { all: 0, unassigned: 0, open: 0, assessing: 0, active: 0, needs_attention: 0, escalated: 0, blocked: 0, inactive: 0 };
   });
 
   protected readonly selectedPackageStatus = computed(() => {
@@ -268,8 +260,8 @@ export class OsspreyDashboardComponent {
             unstewardedOnly: f.unstewardedOnly || undefined,
           };
           return this.osspreyService.getPackages(params).pipe(
-            map((res): OsspreyLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false })),
-            catchError(() => of<OsspreyLoadResult>({ packages: [], total: null, error: true }))
+            map((res): OsspreyLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false, statusCounts: res.statusCounts ?? null })),
+            catchError(() => of<OsspreyLoadResult>({ packages: [], total: null, error: true, statusCounts: null }))
           );
         }),
         tap(() => this.tableLoading.set(false))
