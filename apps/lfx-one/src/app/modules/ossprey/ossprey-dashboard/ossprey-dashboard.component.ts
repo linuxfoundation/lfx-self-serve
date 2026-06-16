@@ -12,25 +12,31 @@ import {
   OsspreyPackage,
   OspreySortKey,
   OsspreyStatusCounts,
+  OsspreyEscalateRequest,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer, debounceTime, tap } from 'rxjs';
+import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin } from 'rxjs';
+import { MessageService } from 'primeng/api';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
 import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/ossprey-packages-tab.component';
+import { OsspreyEscalateModalComponent } from '../components/ossprey-escalate-modal/ossprey-escalate-modal.component';
 
 @Component({
   selector: 'lfx-ossprey-dashboard',
-  imports: [OsspreyPackageDrawerComponent, OsspreyPackagesTabComponent],
+  imports: [OsspreyPackageDrawerComponent, OsspreyPackagesTabComponent, OsspreyEscalateModalComponent],
   templateUrl: './ossprey-dashboard.component.html',
 })
 export class OsspreyDashboardComponent {
   private readonly osspreyService = inject(OsspreyService);
+  private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
   protected readonly showBulkActions = computed(() => this.selectedPackages().size > 0);
+  protected readonly bulkEscalateVisible = signal(false);
+  protected readonly bulkActionLoading = signal(false);
 
   // Bumped after a steward admin action to force the package list to re-fetch.
   private readonly reloadTrigger = signal(0);
@@ -124,6 +130,49 @@ export class OsspreyDashboardComponent {
 
   protected clearSelection(): void {
     this.selectedPackages.set(new Set());
+  }
+
+  protected onBulkOpen(): void {
+    const selected = this.selectedPackages();
+    const unassigned = this.packages().filter((p) => selected.has(p.id) && p.status === 'unassigned');
+    if (!unassigned.length || this.bulkActionLoading()) return;
+    this.bulkActionLoading.set(true);
+    forkJoin(unassigned.map((p) => this.osspreyService.openStewardship(p.purl).pipe(catchError(() => of(null))))).subscribe({
+      next: () => {
+        this.bulkActionLoading.set(false);
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: `${unassigned.length} package(s) opened for stewardship.` });
+        this.clearSelection();
+        this.reloadTrigger.update((n) => n + 1);
+      },
+      error: () => {
+        this.bulkActionLoading.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Some packages could not be opened. Please try again.' });
+      },
+    });
+  }
+
+  protected onBulkEscalate(): void {
+    this.bulkEscalateVisible.set(true);
+  }
+
+  protected onBulkEscalateConfirm(body: OsspreyEscalateRequest): void {
+    const selected = this.selectedPackages();
+    const eligible = this.packages().filter((p) => selected.has(p.id) && p.stewardshipId !== null);
+    if (!eligible.length || this.bulkActionLoading()) return;
+    this.bulkEscalateVisible.set(false);
+    this.bulkActionLoading.set(true);
+    forkJoin(eligible.map((p) => this.osspreyService.escalateStewardship(p.stewardshipId!, body).pipe(catchError(() => of(null))))).subscribe({
+      next: () => {
+        this.bulkActionLoading.set(false);
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: `${eligible.length} package(s) escalated.` });
+        this.clearSelection();
+        this.reloadTrigger.update((n) => n + 1);
+      },
+      error: () => {
+        this.bulkActionLoading.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Escalation failed. Please try again.' });
+      },
+    });
   }
 
   protected onSortChange(sort: string): void {

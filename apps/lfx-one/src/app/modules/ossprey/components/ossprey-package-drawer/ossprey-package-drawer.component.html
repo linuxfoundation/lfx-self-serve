@@ -429,6 +429,54 @@
             (onClick)="onOpenForStewardship()"
             data-testid="ossprey-drawer-open" />
         }
+        @if (canCloseAvailability()) {
+          <lfx-button
+            label="Close availability"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="actionLoading()"
+            (onClick)="openStatusModal()"
+            data-testid="ossprey-drawer-close-availability" />
+        }
+        @if (canSpotCheck()) {
+          <lfx-button
+            label="Spot-check"
+            icon="fa-light fa-magnifying-glass"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="actionLoading()"
+            (onClick)="onSpotCheck()"
+            data-testid="ossprey-drawer-spotcheck" />
+        }
+        @if (canResolveBlocker()) {
+          <lfx-button
+            label="Resolve blocker"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="actionLoading()"
+            [disabled]="actionLoading()"
+            (onClick)="onQuickStatusUpdate('assessing')"
+            data-testid="ossprey-drawer-resolve-blocker" />
+        }
+        @if (canResolve()) {
+          <lfx-button
+            label="Resolve"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="actionLoading()"
+            [disabled]="actionLoading()"
+            (onClick)="onQuickStatusUpdate('active')"
+            data-testid="ossprey-drawer-resolve" />
+        }
+        @if (canReactivate()) {
+          <lfx-button
+            label="Reactivate"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="actionLoading()"
+            (onClick)="openStatusModal()"
+            data-testid="ossprey-drawer-reactivate" />
+        }
         @if (canEscalate()) {
           <lfx-button
             label="Escalate"
@@ -437,9 +485,6 @@
             [disabled]="actionLoading()"
             (onClick)="openEscalateModal()"
             data-testid="ossprey-drawer-escalate" />
-        }
-        @if (canManageStatus()) {
-          <lfx-button label="Update status" [disabled]="actionLoading()" (onClick)="openStatusModal()" data-testid="ossprey-drawer-status" />
         }
       </div>
     </div>

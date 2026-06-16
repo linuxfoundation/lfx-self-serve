@@ -7,7 +7,15 @@ import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 
 import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
-import { OsspreyEscalateRequest, OsspreyPackage, OsspreyStatus, OsspreySteward, OsspreyUpdateStatusRequest, TagSeverity } from '@lfx-one/shared/interfaces';
+import {
+  OsspreyEscalateRequest,
+  OsspreyPackage,
+  OsspreyStatus,
+  OsspreySteward,
+  OsspreyUpdateStatusRequest,
+  OsspreyUpdatableStatus,
+  TagSeverity,
+} from '@lfx-one/shared/interfaces';
 import { OsspreyService } from '@shared/services/ossprey.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -70,6 +78,14 @@ export class OsspreyPackageDrawerComponent {
     const status = this.stewardshipStatus();
     return this.stewardshipId() !== null && status !== 'escalated' && status !== 'inactive' && status !== 'unassigned';
   });
+  protected readonly canSpotCheck = computed(() => {
+    const s = this.stewardshipStatus();
+    return ['assessing', 'active', 'needs_attention', 'blocked'].includes(s) && this.stewardshipId() !== null;
+  });
+  protected readonly canResolve = computed(() => this.stewardshipStatus() === 'escalated' && this.stewardshipId() !== null);
+  protected readonly canResolveBlocker = computed(() => this.stewardshipStatus() === 'blocked' && this.stewardshipId() !== null);
+  protected readonly canCloseAvailability = computed(() => this.stewardshipStatus() === 'open' && this.stewardshipId() !== null);
+  protected readonly canReactivate = computed(() => this.stewardshipStatus() === 'inactive' && this.stewardshipId() !== null);
 
   protected readonly formatStatus = formatStatus;
   protected readonly getStatusTagSeverity = getStatusTagSeverity;
@@ -126,6 +142,23 @@ export class OsspreyPackageDrawerComponent {
   protected getStewardLabel(stewards: OsspreySteward[]): string {
     if (stewards.length === 0) return '—';
     return stewards.map((s) => s.name ?? s.userId).join(', ');
+  }
+
+  protected onSpotCheck(): void {
+    this.activeTab.set('assessment');
+  }
+
+  protected onQuickStatusUpdate(status: OsspreyUpdatableStatus): void {
+    const id = this.stewardshipId();
+    if (id === null || this.actionLoading()) return;
+    this.actionLoading.set(true);
+    this.osspreyService
+      .updateStewardshipStatus(id, { status })
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.onActionSuccess(`Status updated to ${status}.`),
+        error: () => this.onActionError(),
+      });
   }
 
   protected openEscalateModal(): void {

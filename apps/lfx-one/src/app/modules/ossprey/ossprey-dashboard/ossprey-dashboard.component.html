@@ -133,8 +133,8 @@
     </lfx-ossprey-packages-tab>
   }
 
-  <!-- Bulk Actions Bar: disabled for v1 — bulk-action BE endpoints not yet available. Re-enable when BE is ready. -->
-  @if (false) {
+  <!-- Bulk Actions Bar -->
+  @if (showBulkActions()) {
     <div
       class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 z-40"
       data-testid="ossprey-bulk-actions-bar">
@@ -150,21 +150,19 @@
       <div class="w-px h-6 bg-gray-300"></div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
-        data-testid="ossprey-bulk-assign">
-        Assign Steward
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        [disabled]="bulkActionLoading()"
+        (click)="onBulkOpen()"
+        data-testid="ossprey-bulk-open">
+        Open for stewardship
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        [disabled]="bulkActionLoading()"
+        (click)="onBulkEscalate()"
         data-testid="ossprey-bulk-escalate">
         Escalate
-      </button>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors"
-        data-testid="ossprey-bulk-assess">
-        Spot-check
       </button>
     </div>
   }
@@ -178,3 +176,6 @@
   (stewardshipChanged)="onStewardshipChanged()"
   (visibleChange)="!$event && onDrawerClose()">
 </lfx-ossprey-package-drawer>
+
+<!-- Bulk Escalate Modal -->
+<lfx-ossprey-escalate-modal [(visible)]="bulkEscalateVisible" [packageName]="null" [loading]="bulkActionLoading()" (confirm)="onBulkEscalateConfirm($event)" />
