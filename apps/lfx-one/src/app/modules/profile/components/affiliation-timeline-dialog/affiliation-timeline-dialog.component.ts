@@ -46,9 +46,7 @@ export class AffiliationTimelineDialogComponent {
   public readonly hasNoWorkExperience: Signal<boolean> = computed(() => this.companyOrgs().length === 0);
   public readonly hasUnverifiedWorkExperienceOnly: Signal<boolean> = computed(() => this.workExperience().length > 0 && this.companyOrgs().length === 0);
   public readonly hasValidationErrors: Signal<boolean> = this.initHasValidationErrors();
-  public readonly hasIncompletePeriods: Signal<boolean> = computed(() =>
-    this.organizations().some((org) => org.enabled && !this.areAllPeriodsComplete(org.organization))
-  );
+  public readonly hasIncompletePeriods: Signal<boolean> = computed(() => this.organizations().some((org) => org.enabled && !this.periodsComplete(org)));
   public readonly availableYearsMap: Signal<Map<string, { label: string; value: string }[]>> = this.initAvailableYearsMap();
   public readonly periodErrorsMap: Signal<Map<string, AffiliationPeriodErrors>> = this.initPeriodErrorsMap();
 
@@ -125,10 +123,7 @@ export class AffiliationTimelineDialogComponent {
 
   public areAllPeriodsComplete(orgName: string): boolean {
     const org = this.organizations().find((o) => o.organization === orgName);
-    if (!org || org.periods.length === 0) {
-      return false;
-    }
-    return org.periods.every((p) => p.startMonth && p.startYear && (p.isPresent || (p.endMonth && p.endYear)));
+    return !!org && this.periodsComplete(org);
   }
 
   public save(): void {
@@ -173,6 +168,11 @@ export class AffiliationTimelineDialogComponent {
 
   public cancel(): void {
     this.ref.close(null);
+  }
+
+  // Every period has a start (month + year) and either is "Present" or has a complete end.
+  private periodsComplete(org: AffiliationEditOrg): boolean {
+    return org.periods.length > 0 && org.periods.every((p) => p.startMonth && p.startYear && (p.isPresent || (p.endMonth && p.endYear)));
   }
 
   private buildInitialState(): AffiliationEditOrg[] {
