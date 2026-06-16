@@ -41,6 +41,7 @@ interface RawMembershipRow {
 interface RawExpiredRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string | null;
   FOUNDATION_LOGO_URL: string | null;
   MEMBERSHIP_TIER_DISPLAY_NAME: string;
   TIER_START_DATE: string | null;
@@ -52,6 +53,7 @@ interface RawExpiredRow {
 interface RawDiscoverRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string | null;
   FOUNDATION_LOGO_URL: string | null;
   PROJECT_TYPE: string | null;
   SUGGESTED_TIER: string | null;
@@ -135,6 +137,7 @@ export class OrgLensMembershipsService {
       SELECT
         FOUNDATION_ID,
         FOUNDATION_NAME,
+        FOUNDATION_SLUG,
         FOUNDATION_LOGO_URL,
         MEMBERSHIP_TIER_DISPLAY_NAME,
         TIER_START_DATE,
@@ -155,6 +158,7 @@ export class OrgLensMembershipsService {
     let memberships: OrgExpiredMembership[] = result.rows.map((raw) => ({
       foundationId: raw.FOUNDATION_ID,
       foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
       foundationLogo: raw.FOUNDATION_LOGO_URL,
       membershipTier: raw.MEMBERSHIP_TIER_DISPLAY_NAME,
       tierStartDate: this.formatDate(raw.TIER_START_DATE),
@@ -176,6 +180,7 @@ export class OrgLensMembershipsService {
       SELECT
         FOUNDATION_ID,
         FOUNDATION_NAME,
+        FOUNDATION_SLUG,
         FOUNDATION_LOGO_URL,
         PROJECT_TYPE,
         SUGGESTED_TIER,
@@ -196,6 +201,7 @@ export class OrgLensMembershipsService {
     const opportunities: OrgDiscoverOpportunity[] = result.rows.map((raw) => ({
       foundationId: raw.FOUNDATION_ID,
       foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
       foundationLogo: raw.FOUNDATION_LOGO_URL,
       category: raw.PROJECT_TYPE ?? '',
       suggestedTier: raw.SUGGESTED_TIER ?? '',

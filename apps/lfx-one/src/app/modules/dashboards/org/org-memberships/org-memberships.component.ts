@@ -27,6 +27,7 @@ import type {
   DiscoverOpportunityRow,
 } from '@lfx-one/shared/interfaces';
 import { foundationInitials, foundationLogoSquareClasses } from '../components/org-overview-foundations-and-projects/helpers/foundation-logo.helper';
+import { environment } from '@environments/environment';
 
 @Component({
   selector: 'lfx-org-memberships',
@@ -126,8 +127,9 @@ export class OrgMembershipsComponent {
 
   protected readonly discoverState: Signal<OrgMembershipsPageState> = computed(() => this.initDiscoverState());
 
-  private readonly renewBaseUrl = computed(() => this.initRenewBaseUrl());
-  private readonly joinBaseUrl = computed(() => this.initJoinBaseUrl());
+  // Renew (Expired tab) and Join (Discover tab) both hand off to the Enrollment app,
+  // scoped to a foundation via the `?project=<foundation_slug>` query param.
+  private readonly enrollmentBaseUrl = environment.urls.enrollment.replace(/\/+$/, '');
 
   private lastOrgUid: string | null = null;
 
@@ -182,14 +184,9 @@ export class OrgMembershipsComponent {
 
   // --- Private init methods for multi-line computed() (component-organization convention) ---
 
-  private initRenewBaseUrl(): string {
-    const slug = encodeURIComponent(this.accountContext.selectedAccount()?.accountSlug ?? '');
-    return `https://myorg.lfx.dev/${slug}/project/project-group-membership`;
-  }
-
-  private initJoinBaseUrl(): string {
-    const slug = encodeURIComponent(this.accountContext.selectedAccount()?.accountSlug ?? '');
-    return `https://myorg.lfx.dev/${slug}/project`;
+  private buildEnrollmentUrl(foundationSlug: string): string {
+    if (!foundationSlug) return this.enrollmentBaseUrl;
+    return `${this.enrollmentBaseUrl}?project=${encodeURIComponent(foundationSlug)}`;
   }
 
   private initTierOptions(): OrgDropdownOption[] {
@@ -216,7 +213,6 @@ export class OrgMembershipsComponent {
   private initExpiredMemberships(): ExpiredMembershipRow[] {
     const data = this.expiredData();
     if (!data) return [];
-    const baseUrl = this.renewBaseUrl();
     let rows = data.memberships;
     const search = this.expiredSearchTerm().toLowerCase();
     if (search) {
@@ -229,7 +225,7 @@ export class OrgMembershipsComponent {
       expirationDateFormatted: this.formatDateFull(m.expirationDate),
       tierStartFormatted: this.formatDateFull(m.tierStartDate),
       tierEndFormatted: this.formatDateFull(m.tierEndDate),
-      renewUrl: `${baseUrl}/${encodeURIComponent(m.foundationId)}`,
+      renewUrl: this.buildEnrollmentUrl(m.foundationSlug),
     }));
   }
 
@@ -243,12 +239,11 @@ export class OrgMembershipsComponent {
   private initDiscoverOpportunities(): DiscoverOpportunityRow[] {
     const data = this.discoverData();
     if (!data) return [];
-    const baseUrl = this.joinBaseUrl();
     return data.opportunities.map((o) => ({
       ...o,
       initials: foundationInitials(o.foundationName),
       logoClasses: foundationLogoSquareClasses(o.foundationId),
-      joinUrl: `${baseUrl}/${encodeURIComponent(o.foundationId)}/membership`,
+      joinUrl: this.buildEnrollmentUrl(o.foundationSlug),
     }));
   }
 
