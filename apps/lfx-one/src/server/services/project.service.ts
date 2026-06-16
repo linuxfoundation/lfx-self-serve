@@ -2139,7 +2139,7 @@ export class ProjectService {
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number }>(summaryQuery, [...foundationParams, ...classificationParams]),
         this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; TOTAL_SENDS: number; TOTAL_OPENS: number }>(monthlyQuery, [
-          resolved.startDate,
+          this.trendStartDate(resolved),
           resolved.endDate,
           ...foundationParams,
           ...classificationParams,
@@ -2203,7 +2203,10 @@ export class ProjectService {
       const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
-      const currentCtr = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1] : summaryCtr;
+      const periodSends = monthlyResult.rows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
+      const periodOpens = monthlyResult.rows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
+      const periodCtr = periodSends > 0 ? Math.round(((periodOpens * 100) / periodSends) * 10) / 10 : 0;
+      const currentCtr = monthlyResult.rows.length > 0 ? periodCtr : summaryCtr;
 
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
@@ -2481,13 +2484,13 @@ export class ProjectService {
           ...classificationParams,
         ]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, [
-          resolved.startDate,
+          this.trendStartDate(resolved),
           resolved.endDate,
           ...foundationParams,
           ...classificationParams,
         ]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [
-          resolved.startDate,
+          this.trendStartDate(resolved),
           resolved.endDate,
           ...foundationParams,
           ...classificationParams,
@@ -2569,9 +2572,10 @@ export class ProjectService {
       const totalReach = impressionsResult.rows[0]?.TOTAL_IMPRESSIONS ?? 0;
       const totalSpend = impressionsResult.rows[0]?.TOTAL_SPEND ?? 0;
       const totalRevenue = impressionsResult.rows[0]?.TOTAL_REVENUE ?? 0;
-      const currentRoas = roasKpiResult.rows[0]?.ROAS ?? 0;
+      const periodRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+      const currentRoas = roasKpiResult.rows[0]?.ROAS ?? periodRoas;
       const previousRoas = roasKpiResult.rows[1]?.ROAS ?? 0;
-      const roas = currentRoas;
+      const roas = periodRoas;
       const roasMomPct = previousRoas > 0 ? ((currentRoas - previousRoas) / previousRoas) * 100 : 0;
 
       if (monthlyImpressionsResult.rows.length === 0) {
@@ -5148,7 +5152,10 @@ export class ProjectService {
       const positiveMentionsQuery = `
         SELECT TITLE, BODY, AUTHOR, AUTHOR_PROFILE_LINK, SOURCE_PLATFORM, SOCIAL_NETWORK, SENTIMENT, URL, MENTION_TS
         FROM ANALYTICS.PLATINUM_LFX_ONE.BRAND_HEALTH_MENTIONS
-        WHERE SENTIMENT = 'positive' ${mentionsFilter}
+        WHERE SENTIMENT = 'positive'
+          AND MENTION_TS >= TO_DATE(?)
+          AND MENTION_TS < TO_DATE(?)
+          ${mentionsFilter}
         ORDER BY RELEVANCE_SCORE DESC, MENTION_TS DESC
         LIMIT 10
       `;
@@ -5156,7 +5163,10 @@ export class ProjectService {
       const negativeMentionsQuery = `
         SELECT TITLE, BODY, AUTHOR, AUTHOR_PROFILE_LINK, SOURCE_PLATFORM, SOCIAL_NETWORK, SENTIMENT, URL, MENTION_TS
         FROM ANALYTICS.PLATINUM_LFX_ONE.BRAND_HEALTH_MENTIONS
-        WHERE SENTIMENT = 'negative' ${mentionsFilter}
+        WHERE SENTIMENT = 'negative'
+          AND MENTION_TS >= TO_DATE(?)
+          AND MENTION_TS < TO_DATE(?)
+          ${mentionsFilter}
         ORDER BY RELEVANCE_SCORE DESC, MENTION_TS DESC
         LIMIT 10
       `;
@@ -5186,14 +5196,21 @@ export class ProjectService {
         this.snowflakeService.execute<{
           MONTH_START_DATE: string;
           MENTION_COUNT: number;
-        }>(monthlyTrendQuery, isUmbrella ? [resolved.startDate, resolved.endDate] : [foundationSlug, resolved.startDate, resolved.endDate]),
+        }>(
+          monthlyTrendQuery,
+          isUmbrella ? [this.trendStartDate(resolved), resolved.endDate] : [foundationSlug, this.trendStartDate(resolved), resolved.endDate]
+        ),
         this.snowflakeService.execute<{
           PROJECT_NAME: string;
           MENTION_COUNT_30D: number;
           PROJECT_RANK?: number;
         }>(topProjectsQuery, sovParams),
-        includeMentions ? this.snowflakeService.execute<MentionRow>(positiveMentionsQuery, mentionsParams) : Promise.resolve(emptyMentionRows),
-        includeMentions ? this.snowflakeService.execute<MentionRow>(negativeMentionsQuery, mentionsParams) : Promise.resolve(emptyMentionRows),
+        includeMentions
+          ? this.snowflakeService.execute<MentionRow>(positiveMentionsQuery, [resolved.startDate, resolved.endDate, ...mentionsParams])
+          : Promise.resolve(emptyMentionRows),
+        includeMentions
+          ? this.snowflakeService.execute<MentionRow>(negativeMentionsQuery, [resolved.startDate, resolved.endDate, ...mentionsParams])
+          : Promise.resolve(emptyMentionRows),
       ]);
 
       if (summaryResult.rows.length === 0) {
@@ -5510,8 +5527,8 @@ export class ProjectService {
           }>(
             monthlyTrendQuery,
             isUmbrella
-              ? [resolved.startDate, resolved.endDate, ...classificationParams]
-              : [foundationSlug, resolved.startDate, resolved.endDate, ...classificationParams]
+              ? [this.trendStartDate(resolved), resolved.endDate, ...classificationParams]
+              : [foundationSlug, this.trendStartDate(resolved), resolved.endDate, ...classificationParams]
           ),
           this.snowflakeService.execute<{
             PROJECT_NAME: string;
@@ -6472,6 +6489,13 @@ export class ProjectService {
     });
 
     return { totalProjectsBySlug, totalMembersBySlug, totalValueBySlug, healthScoresBySlug };
+  }
+
+  private trendStartDate(resolved: ResolvedPeriodRange): string {
+    if (resolved.type !== 'month') return resolved.startDate;
+    const [year, month] = resolved.startDate.split('-').map(Number);
+    const d = new Date(year, month - 1 - 1, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   }
 
   private defaultPeriodRange(): ResolvedPeriodRange {
