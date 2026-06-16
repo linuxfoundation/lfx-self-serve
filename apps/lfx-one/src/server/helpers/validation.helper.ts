@@ -176,8 +176,8 @@ export function getValidatedMonth(req: Request, operation: string): string | und
 
   const [year, mo] = month.split('-').map(Number);
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
   if (year > currentYear || (year === currentYear && mo > currentMonth)) {
     throw ServiceValidationError.forField('month', 'Month cannot be in the future.', { operation });
   }

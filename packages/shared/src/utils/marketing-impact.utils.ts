@@ -98,7 +98,7 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
   const utcMonth = now.getUTCMonth() + 1;
 
   if (isPeriodPreset(period)) {
-    const endDate = firstOfMonth(utcYear, utcMonth + 1);
+    const endDate = firstOfMonth(utcYear, utcMonth);
 
     if (period === 'ytd') {
       return {
@@ -112,7 +112,7 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
     const months = period === 'last-3' ? 3 : 6;
     return {
       type: 'trailing',
-      startDate: firstOfMonth(utcYear, utcMonth + 1 - months),
+      startDate: firstOfMonth(utcYear, utcMonth - months),
       endDate,
       label: `Last ${months} months`,
     };
