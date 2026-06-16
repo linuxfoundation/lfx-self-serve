@@ -30,7 +30,7 @@
         optionLabel="label"
         optionValue="value"
         placeholder="Select a status"
-        data-testid="ossprey-status-select" />
+        dataTest="ossprey-status-select" />
     </div>
 
     @if (requiresInactiveReason()) {
@@ -43,13 +43,19 @@
           optionLabel="label"
           optionValue="value"
           placeholder="Select a reason"
-          data-testid="ossprey-status-inactive-reason" />
+          dataTest="ossprey-status-inactive-reason" />
       </div>
     }
 
     <div class="flex flex-col gap-1.5">
       <label for="ossprey-status-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
-      <lfx-textarea [form]="form" control="notes" id="ossprey-status-notes" [rows]="3" placeholder="Context for this change..." />
+      <lfx-textarea
+        [form]="form"
+        control="notes"
+        id="ossprey-status-notes"
+        dataTest="ossprey-status-notes"
+        [rows]="3"
+        placeholder="Context for this change..." />
     </div>
   </div>
 

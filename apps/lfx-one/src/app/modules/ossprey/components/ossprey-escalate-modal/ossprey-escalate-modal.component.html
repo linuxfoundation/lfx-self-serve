@@ -42,7 +42,13 @@
 
     <div class="flex flex-col gap-1.5">
       <label for="ossprey-escalate-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
-      <lfx-textarea [form]="form" control="notes" id="ossprey-escalate-notes" [rows]="3" placeholder="Context for this escalation..." />
+      <lfx-textarea
+        [form]="form"
+        control="notes"
+        id="ossprey-escalate-notes"
+        dataTest="ossprey-escalate-notes"
+        [rows]="3"
+        placeholder="Context for this escalation..." />
     </div>
   </div>
 
