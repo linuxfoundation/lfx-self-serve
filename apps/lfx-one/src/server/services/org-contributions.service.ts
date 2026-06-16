@@ -478,7 +478,7 @@ function isContributionsRaw(value: unknown): boolean {
   const v = value as { kpiRows?: unknown; repoRows?: unknown; commitRows?: unknown; projectOptionRows?: unknown; employeeOptionRows?: unknown } | null;
   return (
     !!v &&
-    isRowArray(v.kpiRows) &&
+    isRowArray(v.kpiRows, 'PROJECTS_WITH_ACTIVITY', 'REPOSITORIES', 'COMMITS') &&
     isRowArray(v.repoRows, 'REPOSITORY_URL') &&
     isRowArray(v.commitRows, 'COMMIT_ID') &&
     isRowArray(v.projectOptionRows, 'PROJECT_ID') &&
@@ -486,13 +486,15 @@ function isContributionsRaw(value: unknown): boolean {
   );
 }
 
-/** Array guard that also samples a representative element so a corrupt/legacy row object degrades to a cache miss: the element must be a non-null object and, when a contract key is given, must carry it. */
-function isRowArray(value: unknown, requiredKey?: string): boolean {
-  if (!Array.isArray(value)) return false;
-  if (value.length === 0) return true;
-  const first = value[0];
-  if (first === null || typeof first !== 'object' || Array.isArray(first)) return false;
-  return requiredKey === undefined || requiredKey in (first as Record<string, unknown>);
+/** Array guard that validates every element so a single corrupt/legacy row degrades the whole entry to a cache miss: each element must be a non-null object carrying all required contract keys. */
+function isRowArray(value: unknown, ...requiredKeys: string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((row) => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+      return requiredKeys.every((key) => key in (row as Record<string, unknown>));
+    })
+  );
 }
 
 function mapRepoRow(row: ContributionsRepoRow): OrgContributionRepoRow {
