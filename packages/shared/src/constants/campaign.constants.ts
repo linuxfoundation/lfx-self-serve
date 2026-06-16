@@ -54,6 +54,7 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   overspending: 130,
 } as const;
 
+/** Official vendor brand colors — external to the LFX design system (not in lfxColors). */
 export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> = {
   'google-ads': '#4285F4',
   'linkedin-ads': '#0077B5',
@@ -61,7 +62,7 @@ export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> =
   'meta-ads': '#1877F2',
   'microsoft-ads': '#00A4EF',
   'brave-ads': '#FB542B',
-  'feathr': '#6366F1',
+  feathr: '#6366F1',
   'twitter-ads': '#000000',
 };
 

@@ -11,6 +11,7 @@ import { CampaignService } from '@services/campaign.service';
 import type {
   CampaignMetrics,
   CampaignMonitorResponse,
+  CampaignPlatform,
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
@@ -456,6 +457,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected platformBrandColor(platform: PlatformType): string {
-    return PLATFORM_BRAND_COLORS[`${platform}-ads`] ?? PLATFORM_DEFAULT_COLOR;
+    const key = `${platform}-ads` as CampaignPlatform;
+    return PLATFORM_BRAND_COLORS[key] ?? PLATFORM_DEFAULT_COLOR;
   }
 }
