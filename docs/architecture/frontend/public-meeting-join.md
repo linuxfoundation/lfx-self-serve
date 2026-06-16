@@ -19,15 +19,15 @@ Key files:
 
 ### Current behavior
 
-| Viewer | Meeting type | What they see |
-|---|---|---|
-| Anonymous | Public, non-restricted | Full title, time, recurrence, agenda; guest-join form |
-| Anonymous | Private or restricted (valid password) | Full title, time, recurrence, agenda; guest-join form |
-| Anonymous | Private or restricted (missing/wrong password) | `→ /meetings/not-found` |
-| Anonymous | Any | No attachments, no members list |
-| Authenticated (any) | Any upcoming | Full content; attachments if organizer/invited/member |
-| Authenticated (organizer or invited) | Any upcoming | Members drawer enabled |
-| Any | Past meeting | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
+| Viewer                               | Meeting type                                   | What they see                                                                |
+| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| Anonymous                            | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous                            | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous                            | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
+| Anonymous                            | Any                                            | No attachments, no members list                                              |
+| Authenticated (any)                  | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
+| Authenticated (organizer or invited) | Any upcoming                                   | Members drawer enabled                                                       |
+| Any                                  | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
 
 ### Attachment gating
 
@@ -133,30 +133,24 @@ Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 
 
 Key signals and their gating:
 
-| Signal | Type | Gate |
-|---|---|---|
-| `meeting` | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain |
-| `authenticated` | `WritableSignal<boolean>` | set from `UserService` |
-| `password` | `WritableSignal<string\|null>` | set from URL `?password` query param |
-| `attachments` | `Signal<MeetingAttachment[]>` | `initializeAttachments` — only fetches when `authenticated()` |
-| `materialFiles` | `Signal<MeetingAttachment[]>` | filtered from `attachments` |
-| `registrants` | `Signal<MeetingRegistrant[]>` | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited) && !isPastMeeting` |
-| `fetchedJoinUrl` | `Signal<string\|undefined>` | `initializeFetchedJoinUrl` — triggers on guest form submission |
+| Signal           | Type                            | Gate                                                                                           |
+| ---------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `meeting`        | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                       |
+| `authenticated`  | `WritableSignal<boolean>`       | set from `UserService`                                                                         |
+| `password`       | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                           |
+| `attachments`    | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                  |
+| `materialFiles`  | `Signal<MeetingAttachment[]>`   | filtered from `attachments`                                                                    |
+| `registrants`    | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited) && !isPastMeeting` |
+| `fetchedJoinUrl` | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                 |
 
 **Template structure:**
 
 ```html
 <lfx-header>
-@if (meeting()) {
-  badge row (Private / Ended / meeting-type / recurrence)
-  copy-link button
-  content row (title, context chips, date/time, occurrence nav)
-  join section:
-    @if (authenticated()) { signed-in branch }
-    @else { signed-out branch: Sign In CTA + OR + guest-join form }
-  agenda + materials section (gated: !(isPastMeeting && !fullAccess))
-  registrants drawer
-}
+  @if (meeting()) { badge row (Private / Ended / meeting-type / recurrence) copy-link button content row (title, context chips, date/time, occurrence nav) join
+  section: @if (authenticated()) { signed-in branch } @else { signed-out branch: Sign In CTA + OR + guest-join form } agenda + materials section (gated:
+  !(isPastMeeting && !fullAccess)) registrants drawer }</lfx-header
+>
 ```
 
 ---
