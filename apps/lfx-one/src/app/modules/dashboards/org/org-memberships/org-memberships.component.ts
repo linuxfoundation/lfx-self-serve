@@ -182,11 +182,6 @@ export class OrgMembershipsComponent {
 
   // --- Private init methods for multi-line computed() (component-organization convention) ---
 
-  private buildEnrollmentUrl(foundationSlug: string): string {
-    if (!foundationSlug) return this.enrollmentBaseUrl;
-    return `${this.enrollmentBaseUrl}?project=${encodeURIComponent(foundationSlug)}`;
-  }
-
   private initTierOptions(): OrgDropdownOption[] {
     return [{ label: 'All Membership Levels', value: '' }, ...this.allTiers().map((t) => ({ label: t, value: t }))];
   }
@@ -268,6 +263,11 @@ export class OrgMembershipsComponent {
     } catch {
       return dateString;
     }
+  }
+
+  private buildEnrollmentUrl(foundationSlug: string): string {
+    if (!foundationSlug) return this.enrollmentBaseUrl;
+    return `${this.enrollmentBaseUrl}?project=${encodeURIComponent(foundationSlug)}`;
   }
 
   // --- Private fetch methods ---
