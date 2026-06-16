@@ -137,18 +137,37 @@ export class OsspreyDashboardComponent {
     const unassigned = this.packages().filter((p) => selected.has(p.id) && p.status === 'unassigned');
     if (!unassigned.length || this.bulkActionLoading()) return;
     this.bulkActionLoading.set(true);
-    forkJoin(unassigned.map((p) => this.osspreyService.openStewardship(p.purl).pipe(catchError(() => of(null))))).subscribe({
-      next: () => {
-        this.bulkActionLoading.set(false);
-        this.messageService.add({ severity: 'success', summary: 'Success', detail: `${unassigned.length} package(s) opened for stewardship.` });
-        this.clearSelection();
-        this.reloadTrigger.update((n) => n + 1);
-      },
-      error: () => {
-        this.bulkActionLoading.set(false);
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Some packages could not be opened. Please try again.' });
-      },
-    });
+    forkJoin(
+      unassigned.map((p) =>
+        this.osspreyService.openStewardship(p.purl).pipe(
+          map(() => true),
+          catchError(() => of(false))
+        )
+      )
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          const succeeded = results.filter(Boolean).length;
+          const failed = results.length - succeeded;
+          this.bulkActionLoading.set(false);
+          if (succeeded > 0) {
+            this.messageService.add({
+              severity: failed > 0 ? 'warn' : 'success',
+              summary: failed > 0 ? 'Partial success' : 'Success',
+              detail: failed > 0 ? `${succeeded} opened, ${failed} failed.` : `${succeeded} package(s) opened for stewardship.`,
+            });
+            this.clearSelection();
+            this.reloadTrigger.update((n) => n + 1);
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No packages could be opened. Please try again.' });
+          }
+        },
+        error: () => {
+          this.bulkActionLoading.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Some packages could not be opened. Please try again.' });
+        },
+      });
   }
 
   protected onBulkEscalate(): void {
@@ -161,18 +180,37 @@ export class OsspreyDashboardComponent {
     if (!eligible.length || this.bulkActionLoading()) return;
     this.bulkEscalateVisible.set(false);
     this.bulkActionLoading.set(true);
-    forkJoin(eligible.map((p) => this.osspreyService.escalateStewardship(p.stewardshipId!, body).pipe(catchError(() => of(null))))).subscribe({
-      next: () => {
-        this.bulkActionLoading.set(false);
-        this.messageService.add({ severity: 'success', summary: 'Success', detail: `${eligible.length} package(s) escalated.` });
-        this.clearSelection();
-        this.reloadTrigger.update((n) => n + 1);
-      },
-      error: () => {
-        this.bulkActionLoading.set(false);
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Escalation failed. Please try again.' });
-      },
-    });
+    forkJoin(
+      eligible.map((p) =>
+        this.osspreyService.escalateStewardship(p.stewardshipId!, body).pipe(
+          map(() => true),
+          catchError(() => of(false))
+        )
+      )
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          const succeeded = results.filter(Boolean).length;
+          const failed = results.length - succeeded;
+          this.bulkActionLoading.set(false);
+          if (succeeded > 0) {
+            this.messageService.add({
+              severity: failed > 0 ? 'warn' : 'success',
+              summary: failed > 0 ? 'Partial success' : 'Success',
+              detail: failed > 0 ? `${succeeded} escalated, ${failed} failed.` : `${succeeded} package(s) escalated.`,
+            });
+            this.clearSelection();
+            this.reloadTrigger.update((n) => n + 1);
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No packages could be escalated. Please try again.' });
+          }
+        },
+        error: () => {
+          this.bulkActionLoading.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Escalation failed. Please try again.' });
+        },
+      });
   }
 
   protected onSortChange(sort: string): void {

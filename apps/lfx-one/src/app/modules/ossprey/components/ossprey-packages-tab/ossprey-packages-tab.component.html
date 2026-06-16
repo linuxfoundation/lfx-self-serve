@@ -177,7 +177,7 @@
   <lfx-table [value]="filteredPackages()" [loading]="loading()" [rowHover]="true" size="small" data-testid="ossprey-packages-table">
     <ng-template #header>
       <tr>
-        <th class="w-9 hidden">
+        <th class="w-9">
           <span
             [class]="
               allSelected()
@@ -209,7 +209,7 @@
     </ng-template>
     <ng-template #loadingbody let-rowData>
       <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
-        <td class="hidden"></td>
+        <td></td>
         <td>
           <div class="flex flex-col gap-1.5">
             <div class="lfx-skeleton-bar w-48"></div>
@@ -233,7 +233,7 @@
     </ng-template>
     <ng-template #body let-pkg>
       <tr (click)="packageClick.emit(pkg.id)" class="cursor-pointer">
-        <td class="hidden" (click)="$event.stopPropagation()">
+        <td (click)="$event.stopPropagation()">
           <span
             [class]="
               isPackageSelected(pkg.id)

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, output, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, model, output, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
@@ -42,6 +42,7 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 export class OsspreyPackageDrawerComponent {
   private readonly osspreyService = inject(OsspreyService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly visible = model(false);
   public readonly packageId = input<string | null>(null);
@@ -154,7 +155,7 @@ export class OsspreyPackageDrawerComponent {
     this.actionLoading.set(true);
     this.osspreyService
       .updateStewardshipStatus(id, { status })
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onActionSuccess(`Status updated to ${status}.`),
         error: () => this.onActionError(),
@@ -177,7 +178,7 @@ export class OsspreyPackageDrawerComponent {
     this.actionLoading.set(true);
     this.osspreyService
       .openStewardship(purl)
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onActionSuccess('Package opened for stewardship.'),
         error: () => this.onActionError(),
@@ -191,7 +192,7 @@ export class OsspreyPackageDrawerComponent {
     this.actionLoading.set(true);
     this.osspreyService
       .escalateStewardship(id, body)
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.escalateModalVisible.set(false);
@@ -208,7 +209,7 @@ export class OsspreyPackageDrawerComponent {
     this.actionLoading.set(true);
     this.osspreyService
       .updateStewardshipStatus(id, body)
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.statusModalVisible.set(false);

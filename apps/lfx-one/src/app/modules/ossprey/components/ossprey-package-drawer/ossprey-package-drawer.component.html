@@ -453,7 +453,6 @@
             label="Resolve blocker"
             severity="secondary"
             [outlined]="true"
-            [loading]="actionLoading()"
             [disabled]="actionLoading()"
             (onClick)="onQuickStatusUpdate('assessing')"
             data-testid="ossprey-drawer-resolve-blocker" />
@@ -463,7 +462,6 @@
             label="Resolve"
             severity="secondary"
             [outlined]="true"
-            [loading]="actionLoading()"
             [disabled]="actionLoading()"
             (onClick)="onQuickStatusUpdate('active')"
             data-testid="ossprey-drawer-resolve" />
