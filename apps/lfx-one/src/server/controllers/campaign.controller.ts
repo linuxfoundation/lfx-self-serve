@@ -11,9 +11,9 @@ import type {
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
 
-import { REDDIT_ACCOUNTS } from '../constants';
+import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
-import { CampaignMetricsService, LinkedInMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
+import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
@@ -25,6 +25,7 @@ export class CampaignController {
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
   private readonly redditMetricsService = new RedditMetricsService();
+  private readonly metaMetricsService = new MetaMetricsService();
   private readonly activeStreams = new Set<Response>();
 
   public constructor() {
@@ -433,6 +434,30 @@ export class CampaignController {
       res.json(data);
     } catch (error) {
       logger.error(req, 'reddit_monitor', startTime, error, { days, accountKey: rawKey });
+      next(error);
+    }
+  }
+
+  public getMetaAccounts(_req: Request, res: Response): void {
+    const accounts = META_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
+    res.json(accounts);
+  }
+
+  public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meta_monitor', {});
+
+    try {
+      const days = Math.min(Math.max(parseInt(req.query['days'] as string, 10) || 30, 7), 90);
+      const accountKey = (req.query['accountKey'] as string) || '';
+      const account = META_ACCOUNTS.find((a) => a.accountId === accountKey);
+      if (!account) {
+        res.status(400).json({ error: `Unknown Meta account: ${accountKey}` });
+        return;
+      }
+      const data = await this.metaMetricsService.getMonitorData(req, account.accountId, days);
+      logger.success(req, 'get_meta_monitor', startTime, { accountId: account.accountId, days });
+      res.json(data);
+    } catch (error) {
       next(error);
     }
   }

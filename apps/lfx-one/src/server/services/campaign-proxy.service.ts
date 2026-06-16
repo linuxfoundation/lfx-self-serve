@@ -528,10 +528,10 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
@@ -707,10 +707,10 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
@@ -868,7 +868,7 @@ export class CampaignProxyService {
       }
     }
 
-    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
