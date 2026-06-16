@@ -449,11 +449,7 @@ export class CampaignController {
     try {
       const days = Math.min(Math.max(parseInt(req.query['days'] as string, 10) || 30, 7), 90);
       const accountKey = (req.query['accountKey'] as string) || '';
-      const account = META_ACCOUNTS.find((a) => a.accountId === accountKey);
-      if (!account) {
-        res.status(400).json({ error: `Unknown Meta account: ${accountKey}` });
-        return;
-      }
+      const account = accountKey ? META_ACCOUNTS.find((a) => a.accountId === accountKey) ?? META_ACCOUNTS[0] : META_ACCOUNTS[0];
       const data = await this.metaMetricsService.getMonitorData(req, account.accountId, days);
       logger.success(req, 'get_meta_monitor', startTime, { accountId: account.accountId, days });
       res.json(data);
