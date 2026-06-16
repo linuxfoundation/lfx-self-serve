@@ -2069,13 +2069,12 @@ export class ProjectService {
       const classificationParams = classification ? [classification] : [];
       const monthDate = month ? `${month}-01` : new Date().toISOString().slice(0, 10);
 
-      // Query 1: KPI card — current CTR + MoM change from email_ctr_summary
+      // Query 1: KPI card — current CTR fallback from email_ctr_summary
       // Uses pre-computed CTR_LAST_COMPLETED_MONTH — cannot be month-filtered
       const summaryQuery = `
         SELECT
           PROJECT_NAME,
-          CTR_LAST_COMPLETED_MONTH,
-          CTR_MOM_CHANGE
+          CTR_LAST_COMPLETED_MONTH
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
         WHERE 1=1
           ${foundationFilter}
@@ -2089,7 +2088,6 @@ export class ProjectService {
         SELECT
           PUBLISHED_MONTH,
           PUBLISHED_MONTH_DATE,
-          ROUND(SUM(TOTAL_OPENS) * 100.0 / NULLIF(SUM(TOTAL_SENDS), 0), 1) AS MONTHLY_CTR,
           SUM(TOTAL_SENDS) AS TOTAL_SENDS,
           SUM(TOTAL_OPENS) AS TOTAL_OPENS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
@@ -2135,14 +2133,13 @@ export class ProjectService {
       `;
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
-        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [
+        this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number }>(summaryQuery, [...foundationParams, ...classificationParams]),
+        this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; TOTAL_SENDS: number; TOTAL_OPENS: number }>(monthlyQuery, [
+          monthDate,
+          monthDate,
           ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
-          monthlyQuery,
-          [monthDate, monthDate, ...foundationParams, ...classificationParams]
-        ),
         this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [
           ...foundationParams,
           ...classificationParams,
@@ -2177,17 +2174,33 @@ export class ProjectService {
       ]);
 
       if (summaryResult.rows.length === 0 && monthlyResult.rows.length === 0) {
-        return { currentCtr: 0, changePercentage: 0, trend: 'up', monthlyData: [], monthlyLabels: [], campaignGroups: [], monthlySends: [], monthlyOpens: [] };
+        return {
+          currentCtr: 0,
+          changePercentage: 0,
+          momChangePercentage: null,
+          trend: 'up',
+          monthlyData: [],
+          monthlyLabels: [],
+          campaignGroups: [],
+          monthlySends: [],
+          monthlyOpens: [],
+        };
       }
 
-      // Use summary row for KPI card values
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
-      const currentCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
 
-      const monthlyData = monthlyResult.rows.map((row) => Math.round((row.MONTHLY_CTR ?? 0) * 10) / 10);
+      // Compute unrounded CTR from raw sends/opens for MoM precision
+      const rawMonthlyCtrs = monthlyResult.rows.map((row) => {
+        const sends = row.TOTAL_SENDS ?? 0;
+        const opens = row.TOTAL_OPENS ?? 0;
+        return sends > 0 ? (opens * 100) / sends : 0;
+      });
+      const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
-      // Compute change as current CTR vs 6-month average (more stable than MoM)
+      const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
+      const currentCtr = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1] : summaryCtr;
+
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
         const avg = monthlyData.reduce((sum, v) => sum + v, 0) / monthlyData.length;
@@ -2195,6 +2208,16 @@ export class ProjectService {
           changePercentage = Math.round(((currentCtr - avg) / avg) * 1000) / 10;
         }
       }
+
+      let momChangePercentage: number | null = null;
+      if (rawMonthlyCtrs.length >= 2) {
+        const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
+        const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
+        if (prior > 0) {
+          momChangePercentage = ((current - prior) / prior) * 100;
+        }
+      }
+
       const monthlySends = monthlyResult.rows.map((row) => row.TOTAL_SENDS ?? 0);
       const monthlyOpens = monthlyResult.rows.map((row) => row.TOTAL_OPENS ?? 0);
       const monthlyLabels = monthlyResult.rows.map((row) => {
@@ -2296,6 +2319,7 @@ export class ProjectService {
       return {
         currentCtr,
         changePercentage,
+        momChangePercentage,
         trend: changePercentage >= 0 ? 'up' : 'down',
         monthlyData,
         monthlyLabels,
@@ -2310,7 +2334,17 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         err: error,
       });
-      return { currentCtr: 0, changePercentage: 0, trend: 'up', monthlyData: [], monthlyLabels: [], campaignGroups: [], monthlySends: [], monthlyOpens: [] };
+      return {
+        currentCtr: 0,
+        changePercentage: 0,
+        momChangePercentage: null,
+        trend: 'up',
+        monthlyData: [],
+        monthlyLabels: [],
+        campaignGroups: [],
+        monthlySends: [],
+        monthlyOpens: [],
+      };
     }
   }
 

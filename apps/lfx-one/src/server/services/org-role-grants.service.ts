@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  ORG_ACCESS_AWARE_CACHE_MAX_ENTRIES,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
+  VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
+  AccessAwareOrgsCacheEntry,
   AccessAwareOrgsResult,
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
@@ -23,11 +24,14 @@ import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { cacheKeyNamespace, valkeyService } from './valkey.service';
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
-  /** Process-wide short-TTL memo of the access-aware universe keyed by username. Avoids recomputing the full settings/details/cascading fan-out on every debounced typeahead request. */
-  private static readonly accessCache = new Map<string, { value: AccessAwareOrgsResult; expiresAt: number }>();
+  // Per-process coalescing of concurrent identical reads, keyed by the username-bound cache key, so a
+  // burst of cache misses for the same caller computes the fan-out once instead of thundering-herding
+  // the upstream. The authoritative cross-instance cache remains the shared Valkey store.
+  private static readonly accessInFlight = new Map<string, Promise<AccessAwareOrgsResult>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -35,21 +39,46 @@ export class OrgRoleGrantsService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Spec 022 — single source of truth for the caller's access-aware org universe; mirrors `01-my-orgs-by-access.ipynb` per data-model.md D-001…D-005. Memoized per username for `ORG_ACCESS_AWARE_CACHE_TTL_MS` so repeated typeahead requests filter in-memory; only successful resolutions are cached. */
+  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
   public async getAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
-    const cached = OrgRoleGrantsService.accessCache.get(username);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value;
+    // Username is the caller's own identity (the "what can I see" principal), so keying by it is
+    // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
+    const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
+
+    if (cacheKey) {
+      // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
+      const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
+      if (cached) {
+        return OrgRoleGrantsService.deserializeAccessResult(cached);
+      }
     }
 
-    const result = await this.computeAccessAwareOrgs(req, username);
-
-    // Cache only successful, filter-safe resolutions. Never cache upstream failures (they retry next
-    // request) or unsafe usernames (avoids attacker-varied keys growing the map).
-    if (!result.upstreamFailed && isFilterSafeUsername(username)) {
-      OrgRoleGrantsService.cacheAccessResult(username, result);
+    // No cache key (non-filter-safe username) → compute directly, no coalescing.
+    if (!cacheKey) {
+      return this.computeAccessAwareOrgs(req, username);
     }
-    return result;
+
+    // Coalesce concurrent misses for the same username.
+    const inFlight = OrgRoleGrantsService.accessInFlight.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const promise = (async () => {
+      const result = await this.computeAccessAwareOrgs(req, username);
+      // Cache only successful resolutions; never cache upstream failures (they retry next request).
+      if (!result.upstreamFailed) {
+        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+      }
+      return result;
+    })();
+
+    OrgRoleGrantsService.accessInFlight.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      OrgRoleGrantsService.accessInFlight.delete(cacheKey);
+    }
   }
 
   /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
@@ -58,19 +87,97 @@ export class OrgRoleGrantsService {
     return this.toRoleGrantsResponse(resolved, username, loadedAt);
   }
 
-  /** Inserts into the per-username memo, pruning expired entries and evicting the oldest (insertion order) when over the cap. */
-  private static cacheAccessResult(username: string, value: AccessAwareOrgsResult): void {
-    const cache = OrgRoleGrantsService.accessCache;
-    const now = Date.now();
-    for (const [key, entry] of cache) {
-      if (entry.expiresAt <= now) cache.delete(key);
-    }
-    while (cache.size >= ORG_ACCESS_AWARE_CACHE_MAX_ENTRIES) {
-      const oldest = cache.keys().next();
-      if (oldest.done) break;
-      cache.delete(oldest.value);
-    }
-    cache.set(username, { value, expiresAt: now + ORG_ACCESS_AWARE_CACHE_TTL_MS });
+  /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
+  private static buildCacheKey(username: string): string | null {
+    if (!isFilterSafeUsername(username)) return null;
+    const ns = cacheKeyNamespace();
+    const prefix = ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+    return `${prefix}:${VALKEY_CACHE.ORG_ACCESS_NAMESPACE}:${username}`;
+  }
+
+  /** Shared-constant TTL converted from ms to whole seconds for the cache write. */
+  private static cacheTtlSeconds(): number {
+    return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
+  }
+
+  /**
+   * Rejects a corrupt/legacy/partial cached entry (so deserialize never throws and the response contract
+   * holds): both Maps must be present as arrays of `[key, value]` tuples, and the fields later surfaced on
+   * the wire (`loadedAt`, `upstreamFailed`, `username`) must have their expected types — otherwise degrade
+   * to a miss + recompute.
+   */
+  private static isValidCacheEntry(value: unknown): boolean {
+    const entry = value as Partial<AccessAwareOrgsCacheEntry> | null;
+    return (
+      !!entry &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.resolved, OrgRoleGrantsService.isResolvedOrgRole) &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.orgDocByUid) &&
+      typeof entry.username === 'string' &&
+      typeof entry.loadedAt === 'string' &&
+      typeof entry.upstreamFailed === 'boolean'
+    );
+  }
+
+  /**
+   * True only when the value is an array of `[stringKey, objectValue]` tuples — the exact shape `new Map(...)`
+   * consumes for both Maps here (`resolved` → ResolvedOrgRole objects, `orgDocByUid` → B2bOrgIndexedDoc objects).
+   * Validating the element types (not just arity) rejects corrupt entries like `[[123, null]]` or array-valued
+   * tuples like `[["uid", []]]` as a miss instead of rebuilding a Map with non-string uids / non-object docs that
+   * would later surface as an invalid wire shape. An optional `valueGuard` additionally validates the tuple's
+   * value object so a structurally-valid-but-semantically-corrupt value is also rejected as a miss.
+   */
+  private static isEntryTupleArray(value: unknown, valueGuard?: (value: object) => boolean): boolean {
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (item) =>
+          Array.isArray(item) &&
+          item.length === 2 &&
+          typeof item[0] === 'string' &&
+          typeof item[1] === 'object' &&
+          item[1] !== null &&
+          !Array.isArray(item[1]) &&
+          (!valueGuard || valueGuard(item[1] as object))
+      )
+    );
+  }
+
+  /**
+   * Validates a `resolved` tuple value carries a usable role: `roleSource` must be a non-empty string (it is
+   * later branched on with `.startsWith(...)`, so a missing/non-string `roleSource` would turn a cache hit into
+   * a thrown 500 instead of degrading to a miss), and the optional `parentUid`/`parentName` must be strings when
+   * present. A corrupt entry like `["uid", {}]` is therefore rejected as a miss and recomputed.
+   */
+  private static isResolvedOrgRole(value: object): boolean {
+    const role = value as Partial<ResolvedOrgRole>;
+    return (
+      typeof role.roleSource === 'string' &&
+      role.roleSource.length > 0 &&
+      (role.parentUid === undefined || typeof role.parentUid === 'string') &&
+      (role.parentName === undefined || typeof role.parentName === 'string')
+    );
+  }
+
+  /** Maps → ordered entry arrays for JSON storage (insertion order preserved). */
+  private static serializeAccessResult(result: AccessAwareOrgsResult): AccessAwareOrgsCacheEntry {
+    return {
+      resolved: [...result.resolved],
+      orgDocByUid: [...result.orgDocByUid],
+      upstreamFailed: result.upstreamFailed,
+      loadedAt: result.loadedAt,
+      username: result.username,
+    };
+  }
+
+  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). */
+  private static deserializeAccessResult(entry: AccessAwareOrgsCacheEntry): AccessAwareOrgsResult {
+    return {
+      resolved: new Map(entry.resolved),
+      orgDocByUid: new Map(entry.orgDocByUid),
+      upstreamFailed: entry.upstreamFailed,
+      loadedAt: entry.loadedAt,
+      username: entry.username,
+    };
   }
 
   private async computeAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
