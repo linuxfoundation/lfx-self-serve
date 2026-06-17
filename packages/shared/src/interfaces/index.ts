@@ -211,6 +211,9 @@ export * from './org-people-event-attendees.interface';
 // Org People — Contributors tab (LFXV2-1874)
 export * from './org-people-contributors.interface';
 
+// Shared person-detail drawer (LFXV2-2195)
+export * from './person-detail-drawer.interface';
+
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
 

@@ -68,8 +68,10 @@ export interface OrgContributionEmployeeOption {
 /** One row in the org-wide Commits activity feed — a flat list of recent commits across all active repos. */
 export interface OrgContributionCommitRow {
   commitSha: string;
-  /** Stable Crowd.dev member UUID — panel grouping key (replaces committerName collision risk). */
+  /** Stable Crowd.dev member UUID — employee filter key. */
   contributorId: string | null;
+  /** Org Lens person identity for the shared detail drawer (DP2) — COALESCE(LFID-mapped user_id, 'cdp:'||member_id). */
+  personKey: string | null;
   projectName: string;
   committerName: string;
   /** Contributor avatar URL (member_logo from warehouse). Initials are the client fallback when null. */
@@ -165,56 +167,6 @@ export interface ContributionsFilterOption {
   sublabel: string;
 }
 
-/** Tabs in the committer side panel — mirrors the LFX person-profile panel. */
-export type CommitterPanelTab = 'events' | 'training' | 'code' | 'governance';
-
-/** Demo event-participation item shown in the committer panel's Events tab. */
-export interface OrgCommitterEventItem {
-  name: string;
-  /** ISO date of the event. */
-  date: string;
-  /** Participation role, e.g. Attendee / Speaker. */
-  role: string;
-}
-
-/** Demo training/certification item shown in the committer panel's Training tab. */
-export interface OrgCommitterTrainingItem {
-  course: string;
-  /** Completion status, e.g. Completed / In Progress. */
-  status: string;
-}
-
-/** Demo governance item (board / committee seat) shown in the committer panel's Governance tab. */
-export interface OrgCommitterGovernanceItem {
-  role: string;
-  body: string;
-}
-
-/** Committer side-panel view-model — derived client-side from the loaded Commits feed. */
-export interface OrgCommitterDetailVm {
-  name: string;
-  title: string | null;
-  username: string | null;
-  source: ContributionSource;
-  sourceIconClass: string;
-  /** External user-profile URL for the handle, or null when the source has no public profile. */
-  profileUrl: string | null;
-  /** Contributor avatar URL when available from the warehouse. */
-  avatarUrl: string | null;
-  initials: string;
-  avatarColorClass: string;
-  /** Commit count across the rows currently in the feed. */
-  totalCommits: number;
-  /** Distinct project names the committer has commits in. */
-  projects: string[];
-  /** The committer's commit rows (already decorated + sorted). */
-  commits: OrgContributionCommitRowVm[];
-  /** Demo cross-engagement sections (Events / Training / Governance) — populated client-side for the scaffold. */
-  events: OrgCommitterEventItem[];
-  training: OrgCommitterTrainingItem[];
-  governance: OrgCommitterGovernanceItem[];
-}
-
 /** Active content tab — drives tab-aware KPI search semantics and which table `page`/`size` paginate. */
 export type ContributionsView = 'repositories' | 'commits';
 
@@ -225,6 +177,8 @@ export type ContributionsCommitSortColumn = 'project' | 'committer' | 'username'
 export interface OrgContributionCommitRowVm {
   commitSha: string;
   contributorId: string | null;
+  /** Org Lens person identity — drives `PersonDetailDrawerService.open`. */
+  personKey: string | null;
   projectName: string;
   committerName: string;
   committerTitle: string | null;
