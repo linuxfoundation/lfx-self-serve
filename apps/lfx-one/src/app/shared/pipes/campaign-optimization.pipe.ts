@@ -3,11 +3,11 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
-import type { CampaignMetrics, MetaPacingLabel } from '@lfx-one/shared/interfaces';
+import type { ActionPriority, CampaignMetrics, MetaPacingLabel } from '@lfx-one/shared/interfaces';
 
 @Pipe({ name: 'priorityClass' })
 export class PriorityClassPipe implements PipeTransform {
-  public transform(priority: 'HIGH' | 'MED' | 'LOW'): string {
+  public transform(priority: ActionPriority): string {
     switch (priority) {
       case 'HIGH':
         return 'bg-red-100 text-red-700';

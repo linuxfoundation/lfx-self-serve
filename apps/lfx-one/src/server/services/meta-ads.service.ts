@@ -13,7 +13,7 @@ import { logger } from './logger.service';
 // Meta Graph API helpers
 // ---------------------------------------------------------------------------
 
-async function metaRequest<T>(path: string): Promise<T> {
+async function metaRequest<T>(req: Request | undefined, path: string): Promise<T> {
   const token = process.env['META_ACCESS_TOKEN'] ?? '';
   if (!token) throw new Error('META_ACCESS_TOKEN is not configured');
 
@@ -28,7 +28,7 @@ async function metaRequest<T>(path: string): Promise<T> {
     });
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
-      logger.warning(undefined, 'meta_api_error', `Meta API GET ${path} → ${resp.status}: ${body.slice(0, 400)}`, { path, status: resp.status });
+      logger.warning(req, 'meta_api_error', `Meta API GET ${path} → ${resp.status}: ${body.slice(0, 400)}`, { path, status: resp.status });
       throw new Error(`Meta API request failed (${resp.status}). Check server logs for details.`);
     }
     return (await resp.json()) as T;
@@ -197,7 +197,7 @@ export async function getMetaAnalytics(req: Request, accountId: string, days: nu
 
   const statusFilter = encodeURIComponent('["ACTIVE","PAUSED"]');
   const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&effective_status=${statusFilter}&limit=100`;
-  const response = await metaRequest<MetaCampaignsApiResponse>(path);
+  const response = await metaRequest<MetaCampaignsApiResponse>(req, path);
 
   if (response.paging?.next) {
     logger.warning(req, 'meta_analytics', 'Meta API returned pagination; some campaigns may be missing', { accountId });
