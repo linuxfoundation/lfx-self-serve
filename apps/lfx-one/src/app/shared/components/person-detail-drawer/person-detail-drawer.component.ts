@@ -64,6 +64,11 @@ export class PersonDetailDrawerComponent {
     if (supplied) {
       return supplied;
     }
+    // detail() (toSignal) keeps the previous person's value while a new fetch is in flight, so
+    // return [] when loading/errored — otherwise the template skips its skeleton and shows stale seats.
+    if (this.drawer.loading() || this.drawer.error()) {
+      return [];
+    }
     const detail = this.drawer.detail();
     if (!detail) {
       return [];

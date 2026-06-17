@@ -315,6 +315,11 @@ test.describe('Org People → Board tab', () => {
   test('clicking a board member name opens the person-detail drawer on Governance from table seats (no fetch)', async ({ page }) => {
     await stubAccountContext(page);
     await stubBoardMembers(page);
+    let personDetailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/*/detail', (route) => {
+      personDetailCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected person-detail fetch' });
+    });
 
     await gotoBoardTab(page);
     await page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}-name`).click();
@@ -335,5 +340,6 @@ test.describe('Org People → Board tab', () => {
 
     // The name click stopped propagation, so the row did not also expand.
     await expect(page.getByTestId(`org-people-board-expanded-${KENSUKE_EMAIL}`)).toHaveCount(0);
+    expect(personDetailCalls).toBe(0);
   });
 });
