@@ -51,7 +51,7 @@ export class AkritesOverviewTabComponent {
   protected readonly criticalCoverage = computed(() => {
     const m = this.metrics();
     if (!m || !m.criticalPackages) return 0;
-    const covered = m.criticalPackages - m.unassignedCritical;
+    const covered = Math.max(0, m.criticalPackages - m.unassignedCritical);
     return Math.round((covered / m.criticalPackages) * 100);
   });
 
@@ -140,7 +140,8 @@ export class AkritesOverviewTabComponent {
     this.akritesService
       .getActivityFeed(1, 50)
       .pipe(
-        catchError(() => {
+        catchError((err) => {
+          console.warn('[AKRITES] activity feed fetch failed', err);
           this.activityError.set(true);
           return of<AkritesActivityResponse>({ rows: [], total: 0, page: 1, pageSize: 50 });
         }),

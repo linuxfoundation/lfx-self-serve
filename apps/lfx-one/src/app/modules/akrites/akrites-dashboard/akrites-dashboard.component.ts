@@ -14,7 +14,7 @@ import {
   AkritesStatusCounts,
   AkritesEscalateRequest,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin, take } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
@@ -82,6 +82,10 @@ export class AkritesDashboardComponent {
   });
 
   protected setActiveTab(tab: AkritesDashboardTab): void {
+    if (tab === 'overview') {
+      this.selectedPackageId.set(null);
+      this.drawerVisible.set(false);
+    }
     this.activeTab.set(tab);
   }
 
@@ -147,13 +151,9 @@ export class AkritesDashboardComponent {
 
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
+    this.selectedPackageId.set(null);
     // Bump so the activity feed and package list reflect any changes made in the drawer.
     this.reloadTrigger.update((n) => n + 1);
-    timer(300)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        if (!this.drawerVisible()) this.selectedPackageId.set(null);
-      });
   }
 
   protected onStewardshipChanged(): void {
