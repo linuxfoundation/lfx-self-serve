@@ -42,8 +42,10 @@ export class AkritesController {
     try {
       const pageRaw = getStringQueryParam(req, 'page');
       const pageSizeRaw = getStringQueryParam(req, 'pageSize');
-      const page = pageRaw ? Math.max(1, parseInt(pageRaw, 10)) : 1;
-      const pageSize = pageSizeRaw ? Math.min(100, Math.max(1, parseInt(pageSizeRaw, 10))) : 25;
+      const parsedPage = pageRaw ? Number(pageRaw) : NaN;
+      const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
+      const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 25;
 
       const data: AkritesActivityResponse = await this.akritesService.getActivityFeed(req, page, pageSize);
 

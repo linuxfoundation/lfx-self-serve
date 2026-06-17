@@ -137,6 +137,8 @@ export class AkritesOverviewTabComponent {
   }
 
   private loadActivity(): void {
+    this.activityLoading.set(true);
+    this.activityError.set(false);
     this.akritesService
       .getActivityFeed(1, 50)
       .pipe(

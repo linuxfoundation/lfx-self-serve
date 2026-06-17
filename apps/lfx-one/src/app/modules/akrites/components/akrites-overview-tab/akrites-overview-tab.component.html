@@ -57,6 +57,11 @@
                   class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer transition-colors"
                   [style]="getAccentStyle(row.stewardshipStatus)"
                   (click)="onActivityRowClick(row)"
+                  role="button"
+                  tabindex="0"
+                  [attr.aria-label]="'Open package details for ' + row.packageName"
+                  (keydown.enter)="onActivityRowClick(row)"
+                  (keydown.space)="$event.preventDefault(); onActivityRowClick(row)"
                   data-testid="akrites-activity-row">
                   <!-- Activity icon -->
                   <div class="w-10 h-10 rounded-[11px] bg-gray-100 border border-gray-200 text-slate-700 flex items-center justify-center flex-shrink-0">
