@@ -5,7 +5,7 @@ import type { MetaCampaignCreateRequest, MetaCampaignCreateResult } from '@lfx-o
 
 import type { Request } from 'express';
 
-import { META_ACCOUNTS, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
+import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
 import { logger } from './logger.service';
 
 // ---------------------------------------------------------------------------
@@ -135,8 +135,6 @@ interface MetaCreateResponse {
 // Campaign Creation
 // ---------------------------------------------------------------------------
 
-const META_ADS_MANAGER_URL = 'https://adsmanager.facebook.com';
-
 export async function executeMetaCampaignCreation(req: Request | undefined, config: MetaCampaignCreateRequest): Promise<MetaCampaignCreateResult> {
   const startTime = logger.startOperation(req, 'meta_campaign_create', { eventName: config.eventName });
   const steps: string[] = [];
@@ -169,8 +167,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   try {
     await metaRequest<Record<string, unknown>>('GET', `/${accountId}?fields=name,account_status`);
     steps.push(`Account verified: ${account.label} (${accountId})`);
-  } catch (err) {
-    logger.warning(req, 'meta_account_verify', 'Account verification failed', { error: err instanceof Error ? err.message : 'Unknown error' });
+  } catch {
     steps.push('Account verification warning — check server logs for details');
   }
 
@@ -268,8 +265,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
       adCount++;
       steps.push(`Ad ${i + 1} created: ${adResp.id} (creative: ${creativeId}) → ${utmUrl}`);
-    } catch (err) {
-      logger.warning(req, 'meta_ad_create', `Ad variant ${i + 1} creation failed`, { error: err instanceof Error ? err.message : 'Unknown error' });
+    } catch {
       steps.push(`Ad ${i + 1} failed — check server logs for details`);
     }
   }

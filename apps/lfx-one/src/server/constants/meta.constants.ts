@@ -15,3 +15,5 @@ export const META_ACCOUNTS: readonly { accountId: string; label: string; pageId:
 ] as const;
 
 export const META_REQUEST_TIMEOUT_MS = 30_000;
+
+export const META_ADS_MANAGER_URL = 'https://adsmanager.facebook.com';

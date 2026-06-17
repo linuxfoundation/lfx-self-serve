@@ -465,8 +465,7 @@ export class ImplementationTabComponent implements OnInit {
       );
       const rawGeos = metaCopy['recommended_geos'];
       this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
-    }
-    if (brief.metaCopy) {
+    } else if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);
       this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
     }
