@@ -73,6 +73,7 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
     .filter((a) => a.action_type && CONVERSION_TYPES.has(a.action_type))
     .reduce((sum, a) => sum + (parseInt(a.value, 10) || 0), 0);
 
+  // Meta Graph API returns budgets in cents; convert to dollars
   const dailyBudget = parseFloat(camp.daily_budget ?? '0') / 100;
   const lifetimeBudget = parseFloat(camp.lifetime_budget ?? '0') / 100;
   const totalBudget = lifetimeBudget > 0 ? lifetimeBudget : dailyBudget * days;
@@ -197,6 +198,7 @@ export async function getMetaAnalytics(req: Request, accountId: string, days: nu
   const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
 
   const statusFilter = encodeURIComponent('["ACTIVE","PAUSED"]');
+  // accountId is pre-validated against the META_ACCOUNTS allowlist by the controller
   const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&effective_status=${statusFilter}&limit=100`;
   const response = await metaRequest<MetaCampaignsApiResponse>(req, path);
 
