@@ -5,7 +5,12 @@ import type { Lens, LensOption, NavLens } from '../interfaces';
 
 export const LENS_COOKIE_KEY = 'lfx-active-lens';
 
+/** Last foundation/project lens viewed — persists the merged 'Projects' entry's return target for hybrid personas. */
+export const NAV_LENS_COOKIE_KEY = 'lfx-nav-lens';
+
 export const DEFAULT_LENS: Lens = 'me';
+
+export const DEFAULT_NAV_LENS: NavLens = 'project';
 
 export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
   me: '/',

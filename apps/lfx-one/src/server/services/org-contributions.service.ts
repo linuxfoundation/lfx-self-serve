@@ -45,6 +45,7 @@ interface ContributionsRepoRow {
 interface ContributionsCommitRow {
   COMMIT_ID: string;
   MEMBER_ID: string | null;
+  PERSON_KEY: string | null;
   PROJECT_NAME: string | null;
   MEMBER_DISPLAY_NAME: string | null;
   MEMBER_LOGO: string | null;
@@ -235,6 +236,7 @@ export class OrgContributionsService {
         SELECT
           commit_id,
           member_id,
+          person_key,
           project_name,
           member_display_name,
           member_logo,
@@ -254,6 +256,7 @@ export class OrgContributionsService {
       SELECT
         commit_id,
         member_id,
+        person_key,
         project_name,
         member_display_name,
         member_logo,
@@ -514,9 +517,12 @@ function mapRepoRow(row: ContributionsRepoRow): OrgContributionRepoRow {
 }
 
 function mapCommitRow(row: ContributionsCommitRow): OrgContributionCommitRow {
+  // Prefer warehouse person_key (matches detail endpoint); cdp: fallback only when column is null.
+  const personKey = row.PERSON_KEY ?? (row.MEMBER_ID ? `cdp:${row.MEMBER_ID}` : null);
   return {
     commitSha: row.COMMIT_ID,
     contributorId: row.MEMBER_ID,
+    personKey,
     projectName: row.PROJECT_NAME ?? '—',
     committerName: row.MEMBER_DISPLAY_NAME ?? 'Unknown',
     committerAvatarUrl: row.MEMBER_LOGO,
