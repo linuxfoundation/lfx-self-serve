@@ -42,8 +42,8 @@ export class CommitteeInvitationsComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   // ── Outputs ───────────────────────────────────────────────────────────────
-  /** Emitted after an invite is accepted so the parent can refresh My Committees. */
-  public readonly accepted = output<void>();
+  /** Emitted with the accepted group's UID so the parent can refresh My Committees. */
+  public readonly accepted = output<string>();
 
   // Dedicated toast key exposed to the template.
   protected readonly toastKey = TOAST_KEY;
@@ -100,7 +100,7 @@ export class CommitteeInvitationsComponent {
             summary: `You've joined ${invitation.committee_name}`,
             life: 3000,
           });
-          this.accepted.emit();
+          this.accepted.emit(invitation.committee_uid);
         },
         error: () => {
           if (!requiresOrganization) {

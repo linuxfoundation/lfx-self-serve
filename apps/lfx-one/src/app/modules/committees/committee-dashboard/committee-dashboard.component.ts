@@ -18,7 +18,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take, tap, timer } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
@@ -177,6 +177,31 @@ export class CommitteeDashboardComponent {
   public reloadMyCommittees(): void {
     this.myCommitteesLoading.set(true);
     this.refresh.update((v) => v + 1);
+  }
+
+  /**
+   * Refreshes My Groups after accepting an invitation. The membership query index can lag the
+   * upstream accept write, so poll until the accepted committee surfaces in the list.
+   */
+  public reloadMyCommitteesAfterAccept(committeeUid: string): void {
+    this.reloadMyCommittees();
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        switchMap(() => this.committeeService.getMyCommittees()),
+        filter((committees) => committees.some((committee) => committee.uid === committeeUid)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => this.reloadMyCommittees(),
+        complete: () => {
+          if (!this.myCommittees().some((committee) => committee.uid === committeeUid)) {
+            this.reloadMyCommittees();
+          }
+        },
+      });
   }
 
   public openCreateDialog(): void {

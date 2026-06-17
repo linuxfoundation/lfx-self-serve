@@ -49,7 +49,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -296,6 +296,36 @@ export class CommitteeViewComponent {
     this.refreshCommittee();
   }
 
+  /**
+   * Refreshes committee + members after join/accept. The membership query index can lag
+   * the upstream write, so poll until `my_role` surfaces before giving up.
+   */
+  private refreshCommitteeAfterMembershipChange(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+    this.refreshMembers();
+
+    if (!committeeId) {
+      return;
+    }
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        switchMap(() => this.committeeService.getCommittee(committeeId)),
+        filter((committee) => !!committee.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => this.refreshMembers(),
+        complete: () => {
+          if (!this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
   public onMembersRefreshed(): void {
     this.refreshMembers();
   }
@@ -370,8 +400,7 @@ export class CommitteeViewComponent {
         .subscribe({
           next: () => {
             this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-            this.refreshCommittee();
-            this.membersRefresh.update((v) => v + 1);
+            this.refreshCommitteeAfterMembershipChange();
           },
           error: (err: HttpErrorResponse) => {
             const detail = this.getJoinErrorMessage(err, committee.name);
@@ -435,8 +464,7 @@ export class CommitteeViewComponent {
           }
           this.invitationService.forgetResolved(invite.uid);
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
-          this.refreshCommittee();
-          this.membersRefresh.update((v) => v + 1);
+          this.refreshCommitteeAfterMembershipChange();
         },
         error: () => {
           if (!requiresOrganization) {
