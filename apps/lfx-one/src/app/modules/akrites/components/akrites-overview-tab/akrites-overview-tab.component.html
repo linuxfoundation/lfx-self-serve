@@ -1,0 +1,281 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- KPI Metrics Strip -->
+@if (metricsLoading()) {
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-6 animate-pulse" data-testid="akrites-overview-kpi-skeleton">
+    @for (i of [1, 2, 3, 4, 5, 6, 7]; track i) {
+      <div class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gray-100 flex-shrink-0"></div>
+          <div class="h-3 w-20 rounded bg-gray-100"></div>
+        </div>
+        <div class="h-7 w-14 rounded bg-gray-100"></div>
+      </div>
+    }
+  </div>
+} @else {
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-6" data-testid="akrites-overview-kpi-strip">
+    <!-- Total packages -->
+    <div class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1" data-testid="akrites-kpi-total-packages">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-box text-sm" aria-hidden="true"></i>
+        </span>
+        Total packages
+      </div>
+      <div class="font-display font-light text-2xl text-slate-900 leading-none tabular-nums">{{ metrics()?.totalPackages ?? 0 }}</div>
+    </div>
+
+    <!-- Critical packages -->
+    <div class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1" data-testid="akrites-kpi-critical-packages">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-shield-exclamation text-sm" aria-hidden="true"></i>
+        </span>
+        Critical packages
+      </div>
+      <div class="font-display font-light text-2xl text-slate-900 leading-none tabular-nums">{{ metrics()?.criticalPackages ?? 0 }}</div>
+    </div>
+
+    <!-- Coverage % -->
+    <div class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1" data-testid="akrites-kpi-coverage">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-chart-pie text-sm" aria-hidden="true"></i>
+        </span>
+        Coverage
+      </div>
+      <div class="font-display font-light text-2xl text-slate-900 leading-none tabular-nums">{{ metrics()?.coveragePercent ?? 0 | number: '1.1-1' }}%</div>
+    </div>
+
+    <!-- Active stewards -->
+    <div class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1" data-testid="akrites-kpi-active-stewards">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-users text-sm" aria-hidden="true"></i>
+        </span>
+        Active stewards
+      </div>
+      <div class="font-display font-light text-2xl text-slate-900 leading-none tabular-nums">{{ metrics()?.activeStewards ?? 0 }}</div>
+    </div>
+
+    <!-- Unassigned (critical) -->
+    <button
+      type="button"
+      class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1 text-left hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer"
+      (click)="onKpiClick({ tab: 'unassigned' })"
+      data-testid="akrites-kpi-unassigned-critical">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-user-xmark text-sm" aria-hidden="true"></i>
+        </span>
+        Unassigned
+        <i class="fa-light fa-chevron-right text-gray-300 text-xs ml-auto" aria-hidden="true"></i>
+      </div>
+      <div class="font-display font-light text-2xl text-slate-900 leading-none tabular-nums">{{ metrics()?.unassignedCritical ?? 0 }}</div>
+    </button>
+
+    <!-- Needs attention -->
+    <button
+      type="button"
+      class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1 text-left hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer"
+      (click)="onKpiClick({ tab: 'needs_attention' })"
+      data-testid="akrites-kpi-needs-attention">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-binoculars text-sm" aria-hidden="true"></i>
+        </span>
+        Needs attention
+        <i class="fa-light fa-chevron-right text-gray-300 text-xs ml-auto" aria-hidden="true"></i>
+      </div>
+      <div class="font-display font-light text-2xl text-amber-600 leading-none tabular-nums">{{ metrics()?.needsAttention ?? 0 }}</div>
+    </button>
+
+    <!-- Escalated -->
+    <button
+      type="button"
+      class="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-1 text-left hover:border-red-300 hover:shadow-sm transition-all cursor-pointer"
+      (click)="onKpiClick({ tab: 'escalated' })"
+      data-testid="akrites-kpi-escalated">
+      <div class="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1">
+        <span class="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-arrow-up text-sm" aria-hidden="true"></i>
+        </span>
+        Escalated
+        <i class="fa-light fa-chevron-right text-gray-300 text-xs ml-auto" aria-hidden="true"></i>
+      </div>
+      <div class="font-display font-light text-2xl text-red-600 leading-none tabular-nums">{{ metrics()?.escalated ?? 0 }}</div>
+    </button>
+  </div>
+}
+
+<!-- Overview grid: activity feed + sidebar -->
+<div class="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-8 items-start">
+  <!-- Activity Feed -->
+  <div>
+    <h2 class="text-sm font-semibold text-slate-900 mb-4" data-testid="akrites-activity-feed-heading">Recent activity</h2>
+
+    @if (activityLoading()) {
+      <div class="bg-white border border-gray-200 rounded-xl overflow-hidden animate-pulse" data-testid="akrites-activity-skeleton">
+        @for (i of [1, 2, 3, 4, 5]; track i) {
+          <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0">
+            <div class="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0"></div>
+            <div class="flex-1 flex flex-col gap-2">
+              <div class="h-3 w-3/4 rounded bg-gray-100"></div>
+              <div class="h-3 w-1/2 rounded bg-gray-100"></div>
+            </div>
+          </div>
+        }
+      </div>
+    } @else if (activityError()) {
+      <div class="flex flex-col items-center justify-center gap-2 py-12 bg-white border border-gray-200 rounded-xl" data-testid="akrites-activity-error">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-gray-300" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">Could not load activity feed.</p>
+      </div>
+    } @else if (dayGroups().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-2 py-12 bg-white border border-gray-200 rounded-xl" data-testid="akrites-activity-empty">
+        <i class="fa-light fa-inbox text-2xl text-gray-300" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">No activity yet.</p>
+      </div>
+    } @else {
+      <div data-testid="akrites-activity-feed">
+        @for (group of dayGroups(); track group.label) {
+          <div class="mb-5" [attr.data-testid]="'akrites-activity-group-' + group.label">
+            <!-- Day label -->
+            <div class="flex items-center gap-3 mb-3">
+              <span class="text-sm font-medium text-gray-400">{{ group.label }}</span>
+              <div class="flex-1 h-px bg-gray-200"></div>
+            </div>
+            <!-- Activity list -->
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              @for (row of group.rows; track row.id) {
+                <div
+                  class="flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                  data-testid="akrites-activity-row">
+                  <!-- Icon -->
+                  <div class="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 text-slate-700 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light {{ getActivityIcon(row.activityType) }} text-base" aria-hidden="true"></i>
+                  </div>
+                  <!-- Main content -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                      <span class="font-semibold text-slate-900 truncate">{{ row.packageName }}</span>
+                      <span class="text-gray-300">·</span>
+                      <span class="inline-flex items-center gap-1">
+                        <span class="inline-block w-2 h-2 rounded-full {{ getStatusColor(row.stewardshipStatus) }}"></span>
+                        {{ row.stewardshipStatus | titlecase }}
+                      </span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-0.5">
+                      {{ row.content || formatActivityLabel(row.activityType) }}
+                    </div>
+                  </div>
+                  <!-- Time -->
+                  <div class="text-xs text-gray-400 flex-shrink-0">{{ formatRelativeTime(row.createdAt) }}</div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Sidebar: Coverage summary -->
+  <div class="sticky top-8 flex flex-col gap-4" data-testid="akrites-overview-sidebar">
+    <!-- Coverage hero card -->
+    <div class="bg-slate-900 text-white rounded-xl p-5" data-testid="akrites-coverage-hero">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Coverage</div>
+      @if (metricsLoading()) {
+        <div class="h-12 w-20 rounded bg-slate-700 animate-pulse mb-3"></div>
+      } @else {
+        <div class="text-5xl font-light leading-none mb-2">{{ metrics()?.coveragePercent ?? 0 | number: '1.1-1' }}%</div>
+        <div class="text-xs text-slate-400 mb-4">
+          of critical packages under active stewardship
+          @if (metrics()?.coverageTrend !== null && metrics()?.coverageTrend !== undefined) {
+            <span class="ml-2 font-semibold" [class]="(metrics()?.coverageTrend ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'">
+              {{ (metrics()?.coverageTrend ?? 0) >= 0 ? '+' : '' }}{{ metrics()?.coverageTrend | number: '1.1-1' }}%
+            </span>
+          }
+        </div>
+      }
+
+      <!-- Total coverage bar -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs text-slate-400 mb-1">
+          <span>Total coverage</span>
+          <span class="font-semibold text-white">{{ metrics()?.coveragePercent ?? 0 | number: '1.1-1' }}%</span>
+        </div>
+        <div class="h-2 rounded-full bg-white/20 overflow-hidden">
+          <div class="h-full rounded-full bg-emerald-400 transition-all duration-500" [style.width.%]="coveragePercent()"></div>
+        </div>
+      </div>
+
+      <!-- Critical coverage bar -->
+      <div>
+        <div class="flex justify-between text-xs text-slate-400 mb-1">
+          <span>Critical coverage</span>
+          <span class="font-semibold text-white">{{ criticalCoverage() }}%</span>
+        </div>
+        <div class="h-2 rounded-full bg-white/20 overflow-hidden">
+          <div class="h-full rounded-full bg-blue-400 transition-all duration-500" [style.width.%]="criticalCoverage()"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick stat rows -->
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="akrites-overview-stats">
+      <!-- Unassigned -->
+      <button
+        type="button"
+        class="flex items-center gap-3 px-4 py-3 w-full text-left border-b border-gray-100 hover:bg-gray-50 transition-colors"
+        (click)="onKpiClick({ tab: 'unassigned' })"
+        data-testid="akrites-sidebar-unassigned">
+        <div class="w-7 h-7 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-user-xmark text-xs" aria-hidden="true"></i>
+        </div>
+        <span class="flex-1 text-sm text-slate-700">Unassigned critical</span>
+        <span class="text-base font-medium text-slate-900 tabular-nums">{{ metrics()?.unassignedCritical ?? 0 }}</span>
+        <i class="fa-light fa-chevron-right text-gray-400 text-xs" aria-hidden="true"></i>
+      </button>
+
+      <!-- Needs attention -->
+      <button
+        type="button"
+        class="flex items-center gap-3 px-4 py-3 w-full text-left border-b border-gray-100 hover:bg-gray-50 transition-colors"
+        (click)="onKpiClick({ tab: 'needs_attention' })"
+        data-testid="akrites-sidebar-needs-attention">
+        <div class="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-binoculars text-xs" aria-hidden="true"></i>
+        </div>
+        <span class="flex-1 text-sm text-slate-700">Needs attention</span>
+        <span class="text-base font-medium text-amber-600 tabular-nums">{{ metrics()?.needsAttention ?? 0 }}</span>
+        <i class="fa-light fa-chevron-right text-gray-400 text-xs" aria-hidden="true"></i>
+      </button>
+
+      <!-- Escalated -->
+      <button
+        type="button"
+        class="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-50 transition-colors"
+        (click)="onKpiClick({ tab: 'escalated' })"
+        data-testid="akrites-sidebar-escalated">
+        <div class="w-7 h-7 rounded-full bg-red-100 text-red-500 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-arrow-up text-xs" aria-hidden="true"></i>
+        </div>
+        <span class="flex-1 text-sm text-slate-700">Escalated</span>
+        <span class="text-base font-medium text-red-600 tabular-nums">{{ metrics()?.escalated ?? 0 }}</span>
+        <i class="fa-light fa-chevron-right text-gray-400 text-xs" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <!-- Active stewards chip -->
+    <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3" data-testid="akrites-sidebar-stewards">
+      <div class="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+        <i class="fa-light fa-users text-xs" aria-hidden="true"></i>
+      </div>
+      <span class="flex-1 text-sm text-slate-700">Active stewards</span>
+      <span class="text-base font-medium text-slate-900 tabular-nums">{{ metrics()?.activeStewards ?? 0 }}</span>
+    </div>
+  </div>
+</div>

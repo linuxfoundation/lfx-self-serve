@@ -20,10 +20,13 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
+import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
+
+export type AkritesDashboardTab = 'overview' | 'packages';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
-  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent],
+  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent],
   templateUrl: './akrites-dashboard.component.html',
 })
 export class AkritesDashboardComponent {
@@ -31,6 +34,7 @@ export class AkritesDashboardComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly activeTab = signal<AkritesDashboardTab>('overview');
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
@@ -58,12 +62,11 @@ export class AkritesDashboardComponent {
   private readonly metricsResult = this.initMetrics();
 
   protected readonly tableLoading = signal(true);
+  protected readonly metricsLoading = signal(true);
   protected readonly initialLoading = computed(() => this.loadResult() === undefined);
   protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
   protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
-  protected readonly totalPackages = computed(() => this.metricsResult()?.totalPackages ?? 0);
-
-  protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
+  protected readonly metrics = computed<AkritesMetrics | undefined>(() => this.metricsResult());
 
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
@@ -77,6 +80,15 @@ export class AkritesDashboardComponent {
     if (!id) return null;
     return this.packages().find((p) => p.id === id)?.status ?? null;
   });
+
+  protected setActiveTab(tab: AkritesDashboardTab): void {
+    this.activeTab.set(tab);
+  }
+
+  protected onOverviewNavigate(filter: Partial<AkritesFilterState>): void {
+    this.onFilterChange(filter);
+    this.activeTab.set('packages');
+  }
 
   protected onPackageClick(id: string): void {
     this.selectedPackageId.set(id);
@@ -243,8 +255,10 @@ export class AkritesDashboardComponent {
   private initMetrics() {
     return toSignal<AkritesMetrics | undefined>(
       this.akritesService.getMetrics().pipe(
+        tap(() => this.metricsLoading.set(false)),
         catchError((err) => {
-          console.warn('[AKRITES] metrics fetch failed — KPI strip will show zeros', err);
+          console.warn('[AKRITES] metrics fetch failed — overview KPIs will show zeros', err);
+          this.metricsLoading.set(false);
           return of(undefined);
         })
       )
