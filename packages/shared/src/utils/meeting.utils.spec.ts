@@ -200,4 +200,30 @@ describe('selectPrimaryPastMeetingSummary', () => {
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('content-no-ts');
   });
+
+  it('treats whitespace-only content as empty and prefers a genuinely content-bearing record', () => {
+    const resources = [
+      summaryResource('whitespace-first', { uid: 'whitespace-first', content: '   ' }),
+      summaryResource('real-content', { uid: 'real-content', content: 'Actual summary text' }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('real-content');
+  });
+
+  it('falls back to created_at for recency when updated_at is absent', () => {
+    const resources = [
+      summaryResource('older-created', {
+        uid: 'older-created',
+        content: 'Older summary',
+        created_at: '2026-01-01T10:00:00Z',
+      }),
+      summaryResource('newer-created', {
+        uid: 'newer-created',
+        content: 'Newer summary',
+        created_at: '2026-03-01T10:00:00Z',
+      }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
 });
