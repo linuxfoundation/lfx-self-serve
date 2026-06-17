@@ -68,14 +68,25 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
   const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
 
   const conversions = (insight?.actions ?? [])
-    .filter((a) => a.action_type === 'purchase' || a.action_type === 'lead')
+    .filter((a) => a.action_type.includes('purchase') || a.action_type.includes('lead'))
     .reduce((sum, a) => sum + (parseInt(a.value, 10) || 0), 0);
 
   const dailyBudget = parseFloat(camp.daily_budget ?? '0') / 100;
   const lifetimeBudget = parseFloat(camp.lifetime_budget ?? '0') / 100;
   const totalBudget = lifetimeBudget > 0 ? lifetimeBudget : dailyBudget * days;
 
-  const expectedSpend = dailyBudget > 0 ? dailyBudget * days : totalBudget;
+  let expectedSpend: number;
+  if (dailyBudget > 0) {
+    expectedSpend = dailyBudget * days;
+  } else {
+    const now = Date.now();
+    const schedStart = camp.start_time ? new Date(camp.start_time).getTime() : now;
+    const schedEnd = camp.stop_time ? new Date(camp.stop_time).getTime() : now;
+    const flightEnd = schedEnd || now;
+    const totalFlightDays = Math.max(1, Math.ceil((flightEnd - schedStart) / 86_400_000));
+    const elapsedDays = Math.max(1, Math.ceil((now - schedStart) / 86_400_000));
+    expectedSpend = (totalBudget / totalFlightDays) * Math.min(elapsedDays, totalFlightDays);
+  }
   const pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
 
   let pacingLabel: MetaPacingLabel = 'normal';
@@ -181,9 +192,8 @@ export async function getMetaAnalytics(req: Request, accountId: string, days: nu
   const insightFields = 'impressions,clicks,spend,ctr,actions';
   const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
 
-  // Fetches up to 100 campaigns per page. LF Core currently has ~55 campaigns; pagination via
-  // response.paging.next will be added when account size approaches this limit.
-  const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&limit=100`;
+  const statusFilter = encodeURIComponent('["ACTIVE","PAUSED"]');
+  const path = `/${accountId}/campaigns?fields=${fields},insights.fields(${insightFields}).time_range(${timeRange})&effective_status=${statusFilter}&limit=100`;
   const response = await metaRequest<MetaCampaignsApiResponse>(path);
 
   if (response.paging?.next) {
