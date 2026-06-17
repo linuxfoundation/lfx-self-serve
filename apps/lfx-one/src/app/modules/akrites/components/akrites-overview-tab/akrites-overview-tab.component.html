@@ -185,7 +185,7 @@
       <div class="w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0" style="background: #e2e8f0; color: #62748e">
         <i class="fa-light fa-user-slash text-[15px]" aria-hidden="true"></i>
       </div>
-      <span class="flex-1 text-[15px] text-slate-900 text-left">Unassigned</span>
+      <span class="flex-1 text-[13px] text-slate-900 text-left">Unassigned</span>
       <span class="text-[16px] font-medium text-slate-900 tabular-nums">{{ metrics()?.unassignedCritical ?? 0 | number }}</span>
       <i class="fa-light fa-chevron-right text-gray-400 text-[18px]" aria-hidden="true"></i>
     </button>
@@ -198,7 +198,7 @@
       <div class="w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0" style="background: #f59e0b; color: #fff">
         <i class="fa-light fa-binoculars text-[15px]" aria-hidden="true"></i>
       </div>
-      <span class="flex-1 text-[15px] text-slate-900 text-left">Needs attention</span>
+      <span class="flex-1 text-[13px] text-slate-900 text-left">Needs attention</span>
       <span class="text-[16px] font-medium tabular-nums" style="color: #f97316">{{ metrics()?.needsAttention ?? 0 | number }}</span>
       <i class="fa-light fa-chevron-right text-gray-400 text-[18px]" aria-hidden="true"></i>
     </button>
@@ -211,7 +211,7 @@
       <div class="w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0" style="background: #e5484d; color: #fff">
         <i class="fa-light fa-arrow-up text-[15px]" aria-hidden="true"></i>
       </div>
-      <span class="flex-1 text-[15px] text-slate-900 text-left">Escalated</span>
+      <span class="flex-1 text-[13px] text-slate-900 text-left">Escalated</span>
       <span class="text-[16px] font-medium tabular-nums" style="color: #e5484d">{{ metrics()?.escalated ?? 0 | number }}</span>
       <i class="fa-light fa-chevron-right text-gray-400 text-[18px]" aria-hidden="true"></i>
     </button>
