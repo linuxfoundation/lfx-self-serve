@@ -34,6 +34,7 @@
         <div class="flex flex-col gap-0" role="table" aria-label="Web activity by domain" data-testid="web-activity-table">
           <!-- Table header -->
           <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="w-6"></span>
             <span class="w-44 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">DOMAIN</span>
             <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SESSIONS</span>
             <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PAGE VIEWS</span>
@@ -41,9 +42,24 @@
             <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SESSION SHARE</span>
           </div>
 
-          <!-- Rows -->
+          <!-- Domain group rows -->
           @for (row of domainRows(); track row.domain) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'web-activity-row-' + row.domain">
+            @let isExpanded = expandedDomains().has(row.domain);
+            <!-- Parent row -->
+            <div
+              class="flex cursor-pointer items-center gap-3 border-b border-gray-100 py-2.5 hover:bg-gray-50"
+              role="row"
+              tabindex="0"
+              [attr.data-testid]="'web-activity-row-' + row.domain"
+              [attr.aria-expanded]="row.domains.length > 0 ? isExpanded : undefined"
+              (click)="row.domains.length > 0 && toggleDomainExpand(row.domain)"
+              (keydown.enter)="row.domains.length > 0 && toggleDomainExpand(row.domain)"
+              (keydown.space)="row.domains.length > 0 && toggleDomainExpand(row.domain); $event.preventDefault()">
+              <span class="flex w-6 items-center justify-center">
+                @if (row.domains.length > 0) {
+                  <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform duration-200" [class.rotate-90]="isExpanded"></i>
+                }
+              </span>
               <span class="w-44 truncate text-xs font-medium text-gray-700" role="cell">{{ row.domain }}</span>
               <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.sessions }}</span>
               <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.pageViews }}</span>
@@ -55,6 +71,28 @@
                 <span class="w-10 text-right text-[11px] text-gray-500">{{ row.sessionShareFormatted }}</span>
               </div>
             </div>
+
+            <!-- Expanded child domain rows -->
+            @if (isExpanded) {
+              @for (detail of row.domains; track detail.host) {
+                <div
+                  class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2"
+                  role="row"
+                  [attr.data-testid]="'web-activity-detail-' + detail.host">
+                  <span class="w-6"></span>
+                  <span class="w-44 truncate pl-4 text-xs text-gray-500" role="cell">{{ detail.host }}</span>
+                  <span class="w-24 text-right text-xs text-gray-600" role="cell">{{ detail.sessions }}</span>
+                  <span class="w-24 text-right text-xs text-gray-600" role="cell">{{ detail.pageViews }}</span>
+                  <span class="w-24 text-right text-xs text-gray-400" role="cell"> {{ detail.newUsers }} / {{ detail.returningUsers }} </span>
+                  <div class="flex flex-1 items-center gap-2" role="cell">
+                    <div class="h-1.5 flex-1 rounded-full bg-gray-100">
+                      <div class="h-1.5 rounded-full bg-blue-300" [style.width.%]="detail.sessionShare"></div>
+                    </div>
+                    <span class="w-10 text-right text-[10px] text-gray-400">{{ detail.sessionShareFormatted }}</span>
+                  </div>
+                </div>
+              }
+            }
           }
         </div>
       } @else {
