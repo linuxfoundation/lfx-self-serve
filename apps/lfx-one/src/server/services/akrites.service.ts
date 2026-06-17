@@ -212,10 +212,7 @@ export class AkritesServerService {
         });
       }
 
-      const [detail, activityRows] = await Promise.all([
-        response.json() as Promise<CdpPackageDetail>,
-        this.fetchActivityForPackage(req, token, purl),
-      ]);
+      const [detail, activityRows] = await Promise.all([response.json() as Promise<CdpPackageDetail>, this.fetchActivityForPackage(req, token, purl)]);
 
       logger.debug(req, 'get_akrites_package', 'Fetched package detail from CDP', { purl });
 
@@ -279,7 +276,7 @@ export class AkritesServerService {
         name: null,
         avatarUrl: null,
       })),
-      lastActivityLabel: item.lastActivity ? (item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type)) : '—',
+      lastActivityLabel: item.lastActivity ? item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type) : '—',
       lastActivityTime: item.lastActivity ? this.formatRelativeTime(item.lastActivity.at) : '',
       downloadsLastMonth: null,
       dependentPackages: null,
@@ -509,8 +506,14 @@ export class AkritesServerService {
     return rows.map((row) => ({
       label: row.content || this.formatActivityLabel(row.activityType),
       timeAgo: this.formatRelativeTime(row.createdAt),
-      type: row.stewardshipStatus === 'escalated' || row.stewardshipStatus === 'blocked' || row.stewardshipStatus === 'inactive' ? ('danger' as const) : row.stewardshipStatus === 'active' ? ('success' as const) : undefined,
+      type: this.getActivityDotType(row.stewardshipStatus),
     }));
+  }
+
+  private getActivityDotType(status: string): 'danger' | 'success' | undefined {
+    if (status === 'escalated' || status === 'blocked' || status === 'inactive') return 'danger';
+    if (status === 'active') return 'success';
+    return undefined;
   }
 
   private formatRelativeTime(isoDate?: string | null): string {
