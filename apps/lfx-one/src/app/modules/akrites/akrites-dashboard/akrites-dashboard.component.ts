@@ -42,8 +42,8 @@ export class AkritesDashboardComponent {
   protected readonly bulkEscalateVisible = signal(false);
   protected readonly bulkActionLoading = signal(false);
 
-  // Bumped after a steward admin action to force the package list to re-fetch.
-  private readonly reloadTrigger = signal(0);
+  // Bumped after a steward admin action to force the package list and activity feed to re-fetch.
+  protected readonly reloadTrigger = signal(0);
 
   protected readonly filters = signal<AkritesFilterState>({
     search: '',
@@ -147,6 +147,8 @@ export class AkritesDashboardComponent {
 
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
+    // Bump so the activity feed and package list reflect any changes made in the drawer.
+    this.reloadTrigger.update((n) => n + 1);
     timer(300)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {

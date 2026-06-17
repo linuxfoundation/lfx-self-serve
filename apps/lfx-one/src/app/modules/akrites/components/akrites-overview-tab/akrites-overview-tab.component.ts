@@ -2,17 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, TitleCasePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AkritesActivityResponse, AkritesActivityRow, AkritesFilterState, AkritesMetrics } from '@lfx-one/shared/interfaces';
 import { catchError, of } from 'rxjs';
 import { AkritesService } from '@shared/services/akrites.service';
 import { formatActivityType } from '../../akrites.utils';
 
+export interface AkritesActivityRowVM extends AkritesActivityRow {
+  relativeTime: string;
+}
+
 export interface AkritesActivityDayGroup {
   label: string;
   isToday: boolean;
-  rows: AkritesActivityRow[];
+  rows: AkritesActivityRowVM[];
 }
 
 @Component({
@@ -20,12 +24,13 @@ export interface AkritesActivityDayGroup {
   imports: [DecimalPipe, TitleCasePipe],
   templateUrl: './akrites-overview-tab.component.html',
 })
-export class AkritesOverviewTabComponent implements OnInit {
+export class AkritesOverviewTabComponent {
   private readonly akritesService = inject(AkritesService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly metrics = input<AkritesMetrics | undefined>(undefined);
   public readonly metricsLoading = input<boolean>(false);
+  public readonly reloadTrigger = input<number>(0);
 
   public readonly navigateToPackages = output<Partial<AkritesFilterState>>();
   public readonly openPackageDrawer = output<string>(); // emits packagePurl
@@ -35,7 +40,12 @@ export class AkritesOverviewTabComponent implements OnInit {
   protected readonly activityError = signal(false);
   protected readonly activityRows = signal<AkritesActivityRow[]>([]);
 
-  protected readonly dayGroups = computed<AkritesActivityDayGroup[]>(() => this.groupByDay(this.activityRows()));
+  // Pre-compute relativeTime in the signal so the template never calls Date.now() directly
+  // (which causes ExpressionChangedAfterChecked on minute boundaries).
+  protected readonly dayGroups = computed<AkritesActivityDayGroup[]>(() => {
+    const now = Date.now();
+    return this.groupByDay(this.activityRows(), now);
+  });
 
   protected readonly coveragePercent = computed(() => this.metrics()?.coveragePercent ?? 0);
   protected readonly criticalCoverage = computed(() => {
@@ -45,9 +55,12 @@ export class AkritesOverviewTabComponent implements OnInit {
     return Math.round((covered / m.criticalPackages) * 100);
   });
 
-  public ngOnInit(): void {
+  // Field initializer — runs in injection context. Loads activity on init (trigger = 0)
+  // and reloads whenever the dashboard bumps reloadTrigger after a stewardship action.
+  private readonly _activityReloader = effect(() => {
+    void this.reloadTrigger(); // tracked
     this.loadActivity();
-  }
+  });
 
   protected onKpiClick(filter: Partial<AkritesFilterState>): void {
     this.navigateToPackages.emit(filter);
@@ -59,7 +72,6 @@ export class AkritesOverviewTabComponent implements OnInit {
 
   protected onActionButtonClick(row: AkritesActivityRow, variant: 'default' | 'blue' | 'red'): void {
     if (variant === 'red') {
-      // Escalation resolve — trigger direct status update
       this.resolveEscalation.emit(row.packagePurl);
     } else {
       this.openPackageDrawer.emit(row.packagePurl);
@@ -124,18 +136,6 @@ export class AkritesOverviewTabComponent implements OnInit {
     return actions[type] ?? null;
   }
 
-  protected formatRelativeTime(isoDate: string): string {
-    const ms = Date.now() - new Date(isoDate).getTime();
-    if (Number.isNaN(ms)) return '';
-    const minutes = Math.floor(ms / 60_000);
-    if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
-    const hours = Math.floor(ms / 3_600_000);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(ms / 86_400_000);
-    if (days < 60) return `${days}d ago`;
-    return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-
   private loadActivity(): void {
     this.akritesService
       .getActivityFeed(1, 50)
@@ -166,13 +166,25 @@ export class AkritesOverviewTabComponent implements OnInit {
     return colors[status] ?? '#62748e';
   }
 
-  private groupByDay(rows: AkritesActivityRow[]): AkritesActivityDayGroup[] {
+  private computeRelativeTime(isoDate: string, now: number): string {
+    const ms = now - new Date(isoDate).getTime();
+    if (Number.isNaN(ms)) return '';
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(ms / 86_400_000);
+    if (days < 60) return `${days}d ago`;
+    return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  private groupByDay(rows: AkritesActivityRow[], now: number): AkritesActivityDayGroup[] {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
     const dateOpts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' };
 
-    const groups = new Map<string, { rows: AkritesActivityRow[]; isToday: boolean }>();
+    const groups = new Map<string, { rows: AkritesActivityRowVM[]; isToday: boolean }>();
     const order: string[] = [];
 
     for (const row of rows) {
@@ -193,7 +205,7 @@ export class AkritesOverviewTabComponent implements OnInit {
         groups.set(label, { rows: [], isToday });
         order.push(label);
       }
-      groups.get(label)!.rows.push(row);
+      groups.get(label)!.rows.push({ ...row, relativeTime: this.computeRelativeTime(row.createdAt, now) });
     }
 
     return order.map((label) => {

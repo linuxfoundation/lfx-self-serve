@@ -79,7 +79,7 @@
                     <!-- Activity description -->
                     <div class="text-[14px] text-gray-500 mt-1">
                       <b class="text-slate-900 font-semibold">{{ formatActivityLabel(row.activityType) }}</b>
-                      &nbsp;·&nbsp;{{ formatRelativeTime(row.createdAt) }}
+                      &nbsp;·&nbsp;{{ row.relativeTime }}
                       @if (row.actorName) {
                         &nbsp;·&nbsp;by {{ row.actorName }}
                       }

@@ -38,6 +38,7 @@
     <lfx-akrites-overview-tab
       [metrics]="metrics()"
       [metricsLoading]="metricsLoading()"
+      [reloadTrigger]="reloadTrigger()"
       (navigateToPackages)="onOverviewNavigate($event)"
       (openPackageDrawer)="onOverviewPackageClick($event)"
       (resolveEscalation)="onOverviewResolveEscalation($event)"
