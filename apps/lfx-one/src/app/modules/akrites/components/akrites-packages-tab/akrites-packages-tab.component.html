@@ -319,7 +319,8 @@
               [value]="pkg.vulnCount + (pkg.vulnSeverity ? ' ' + pkg.vulnSeverity : '')"
               [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)"
               [rounded]="true"
-              [dot]="true" />
+              [dot]="true"
+              styleClass="whitespace-nowrap" />
           } @else {
             <span class="text-gray-400">—</span>
           }
