@@ -49,7 +49,7 @@ export class InitiativeDetailHeaderComponent {
         {
           label: 'Activate Initiative',
           icon: 'fa-solid fa-circle-check',
-          description: 'Make this initiative publicly visible and accept donations again.',
+          description: 'Re-submit this initiative for review. Once approved, it will be publicly visible and accept donations again.',
           command: () => this.confirmActivate(),
         },
       ];
