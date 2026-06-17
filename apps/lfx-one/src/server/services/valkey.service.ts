@@ -3,6 +3,7 @@
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CachePort } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import Redis from 'ioredis';
 
 import { addShutdownHook } from '../utils/shutdown';
@@ -100,6 +101,16 @@ export class ValkeyService implements CachePort {
     }
   }
 
+  /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault just leaves the entry to age out via TTL. Never throws. */
+  public async del(key: string | null): Promise<void> {
+    if (key === null || !this.client) return;
+    try {
+      await this.withTimeout(this.client.del(key));
+    } catch (err) {
+      logger.warning(undefined, 'valkey_del', 'Cache delete failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
+    }
+  }
+
   public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
@@ -182,6 +193,52 @@ export class ValkeyService implements CachePort {
  */
 export function cacheKeyNamespace(): string {
   return (process.env['VALKEY_KEY_NAMESPACE'] ?? '').replace(/[^A-Za-z0-9._-]/g, '-');
+}
+
+/** Joins the app prefix with the optional deployment namespace segment, matching the existing adopters. */
+function keyPrefix(): string {
+  const ns = cacheKeyNamespace();
+  return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+}
+
+/** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
+  if (!isFilterSafeIdentifier(accountId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
+}
+
+/** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username or org uid isn't filter-safe, keeping cache identity aligned with the authz principal and the `:`-delimited key uncorruptible. */
+export function buildPerUserOrgKey(namespace: string, username: string, orgUid: string): string | null {
+  if (!isFilterSafeUsername(username) || !isFilterSafeIdentifier(orgUid)) return null;
+  return `${keyPrefix()}:${namespace}:${username}:${orgUid}`;
+}
+
+/** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
+export function withOrgCache<T>(
+  accountId: string,
+  subResource: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+}
+
+/** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */
+export function invalidatePerUserCache(namespace: string, username: string, orgUid: string): Promise<void> {
+  return valkeyService.del(buildPerUserOrgKey(namespace, username, orgUid));
+}
+
+/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. */
+export function withPerUserCache<T>(
+  namespace: string,
+  username: string,
+  orgUid: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
 }
 
 /** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */

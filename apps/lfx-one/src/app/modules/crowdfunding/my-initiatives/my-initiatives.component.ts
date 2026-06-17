@@ -26,7 +26,7 @@ export class MyInitiativesComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
 
   // ─── Public Fields ─────────────────────────────────────────────────────────
-  protected readonly crowdfundingUrl = environment.urls.crowdfunding;
+  protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}?fundraise=true`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly loadingMore = signal(false);

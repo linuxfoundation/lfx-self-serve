@@ -9,8 +9,10 @@ import {
   OrgInvolvementMaintainersMonthlyResponse,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 const formatMonthLabel = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
@@ -83,6 +85,71 @@ export class OrgInvolvementService {
    * an empty state instead of treating the call as an error.
    */
   public async getFoundationCoverage(accountId: string): Promise<OrgFoundationCoverageResponse> {
+    return withOrgCache(
+      accountId,
+      'coverage',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchFoundationCoverage(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    return withOrgCache(
+      accountId,
+      'contributors',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchContributorsMonthly(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+    return withOrgCache(
+      accountId,
+      'maintainers',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchMaintainersMonthly(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
+    return withOrgCache(
+      accountId,
+      'events',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchEventAttendanceMonthly(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
+    return withOrgCache(
+      accountId,
+      'certs',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchCertifiedEmployeesMonthly(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
+    return withOrgCache(
+      accountId,
+      'training',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchTrainingEnrollments(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  // Rejects a corrupt/legacy entry (degrade to a miss); every response in this service carries `accountId`.
+  private static hasAccountId(value: unknown): boolean {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) && typeof (value as { accountId?: unknown }).accountId === 'string';
+  }
+
+  private async fetchFoundationCoverage(accountId: string): Promise<OrgFoundationCoverageResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -112,7 +179,7 @@ export class OrgInvolvementService {
     };
   }
 
-  public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+  private async fetchContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -140,7 +207,7 @@ export class OrgInvolvementService {
     };
   }
 
-  public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+  private async fetchMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -173,7 +240,7 @@ export class OrgInvolvementService {
     };
   }
 
-  public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
+  private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -217,7 +284,7 @@ export class OrgInvolvementService {
     };
   }
 
-  public async getCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
+  private async fetchCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -248,7 +315,7 @@ export class OrgInvolvementService {
     };
   }
 
-  public async getTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
+  private async fetchTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   EventAttendeeEventOptionRow,
   EventAttendeeFoundationOptionRow,
@@ -17,6 +17,7 @@ import { normalizeToUrl } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Event Attendees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and expanded event-grain sub-table client-side. */
 export class OrgPeopleEventAttendeesService {
@@ -32,12 +33,13 @@ export class OrgPeopleEventAttendeesService {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
-    const [attendeeRows, detailRows, foundationRows, eventRows] = await Promise.all([
-      this.fetchAttendeeRows(accountId),
-      this.fetchDetailRows(accountId),
-      this.fetchFoundationOptions(accountId),
-      this.fetchEventOptions(accountId),
-    ]);
+    const { attendeeRows, detailRows, foundationRows, eventRows } = await withOrgCache(
+      accountId,
+      'people-event-attendees',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchEventAttendeesRaw(accountId),
+      isEventAttendeesRaw
+    );
 
     const attendees: OrgEventAttendeeRow[] = attendeeRows.map((row) => ({
       personKey: row.PERSON_KEY,
@@ -82,6 +84,21 @@ export class OrgPeopleEventAttendeesService {
       foundationOptions,
       eventOptions,
     };
+  }
+
+  private async fetchEventAttendeesRaw(accountId: string): Promise<{
+    attendeeRows: OrgPeopleAllEventAttendeeRow[];
+    detailRows: OrgPeopleEventRow[];
+    foundationRows: EventAttendeeFoundationOptionRow[];
+    eventRows: EventAttendeeEventOptionRow[];
+  }> {
+    const [attendeeRows, detailRows, foundationRows, eventRows] = await Promise.all([
+      this.fetchAttendeeRows(accountId),
+      this.fetchDetailRows(accountId),
+      this.fetchFoundationOptions(accountId),
+      this.fetchEventOptions(accountId),
+    ]);
+    return { attendeeRows, detailRows, foundationRows, eventRows };
   }
 
   private async fetchAttendeeRows(accountId: string): Promise<OrgPeopleAllEventAttendeeRow[]> {
@@ -152,4 +169,9 @@ export class OrgPeopleEventAttendeesService {
     const result = await this.snowflakeService.execute<EventAttendeeEventOptionRow>(query, [accountId]);
     return result.rows;
   }
+}
+
+function isEventAttendeesRaw(value: unknown): boolean {
+  const v = value as { attendeeRows?: unknown; detailRows?: unknown; foundationRows?: unknown; eventRows?: unknown } | null;
+  return !!v && Array.isArray(v.attendeeRows) && Array.isArray(v.detailRows) && Array.isArray(v.foundationRows) && Array.isArray(v.eventRows);
 }
