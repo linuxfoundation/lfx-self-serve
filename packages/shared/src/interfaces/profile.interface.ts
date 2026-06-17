@@ -478,6 +478,16 @@ export interface CdpResolveResponse {
 }
 
 /**
+ * Request body for creating a new member in CDP
+ * @description Used when a resolve call succeeds but yields no member ID, so a member
+ * is created seeded with the user's identities (e.g. their LFID).
+ */
+export interface CdpCreateMemberRequest {
+  displayName: string;
+  identities: CdpCreateIdentityRequest[];
+}
+
+/**
  * CDP identity type — distinguishes whether the identity's value is an email
  * address or a platform username/handle. Returned by the CDP identities API
  * and required on create.

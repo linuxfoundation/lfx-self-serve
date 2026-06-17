@@ -5,6 +5,7 @@ import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import { isEmailShape } from '@lfx-one/shared/utils';
 import {
   CdpCreateIdentityRequest,
+  CdpCreateMemberRequest,
   CdpIdentity,
   CdpIdentityRaw,
   CdpOrganization,
@@ -20,6 +21,7 @@ import { Request } from 'express';
 
 import { CDP_PLATFORM_ICONS } from '@lfx-one/shared/constants';
 import { MicroserviceError } from '../errors';
+import { getEffectiveName } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 /**
@@ -164,6 +166,61 @@ export class CdpService {
       const errorText = await response.text();
       throw new MicroserviceError(`CDP member resolve failed: ${response.statusText}`, response.status, 'CDP_RESOLVE_ERROR', {
         operation: 'resolve_cdp_member',
+        service: 'cdp_service',
+        errorBody: errorText,
+      });
+    }
+
+    const data = (await response.json()) as CdpResolveResponse;
+    if (data.memberId) {
+      return data.memberId;
+    }
+
+    // CDP responded OK but has no member for this user yet — create one seeded with
+    // the user's LFID identity so subsequent identity/work/affiliation calls have a target.
+    const lfid = lfids[0];
+    const displayName = (req && getEffectiveName(req)) || lfid;
+    const seedIdentity: CdpCreateIdentityRequest = {
+      value: lfid,
+      platform: 'lfid',
+      type: 'username',
+      source: 'lfxOne',
+      verified: true,
+      verifiedBy: lfid,
+    };
+
+    logger.info(req, 'resolve_cdp_member', 'No CDP member resolved; creating new member', { lfid, request_id: requestId });
+
+    return this.createMember(req, displayName, [seedIdentity]);
+  }
+
+  /**
+   * Create a new CDP member seeded with the given identities
+   */
+  public async createMember(req: Request | undefined, displayName: string, identities: CdpCreateIdentityRequest[]): Promise<string> {
+    const token = await this.generateToken(req);
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.CREATE_MEMBER}`;
+    const requestId = randomUUID();
+
+    logger.debug(req, 'create_cdp_member', 'Creating CDP member', { display_name: displayName, identity_count: identities.length, request_id: requestId });
+
+    const body: CdpCreateMemberRequest = { displayName, identities };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-LFX-Request-ID': requestId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new MicroserviceError(`CDP member create failed: ${response.statusText}`, response.status, 'CDP_MEMBER_CREATE_ERROR', {
+        operation: 'create_cdp_member',
         service: 'cdp_service',
         errorBody: errorText,
       });
