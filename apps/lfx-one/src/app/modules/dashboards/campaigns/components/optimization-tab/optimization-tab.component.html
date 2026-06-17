@@ -504,7 +504,7 @@
   }
 
   <!-- Meta Optimization -->
-  @if (metaAccountOptions().length > 0) {
+  @if (metaAccountOptions().length > 0 || metaError()) {
     <div class="mt-2 flex flex-col gap-3" data-testid="meta-optimization">
       <div class="flex items-center justify-between">
         <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-800">
