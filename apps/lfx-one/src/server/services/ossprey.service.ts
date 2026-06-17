@@ -229,22 +229,22 @@ export class OsspreyServerService {
    * Returns the stewardship record, including the integer `id` used by the other admin actions.
    */
   public async openStewardship(req: Request, purl: string): Promise<OsspreyStewardshipResponse> {
-    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'open_ossprey_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS, { purl });
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'open_ossprey_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, { purl });
   }
 
   /** Assign (or re-assign) a steward to a stewardship, optionally moving it to `assessing`. */
   public async assignSteward(req: Request, id: number, body: OsspreyAssignStewardRequest): Promise<OsspreyAssignStewardResponse> {
-    return this.cdpWrite<OsspreyAssignStewardResponse>(req, 'assign_ossprey_steward', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STEWARD(id), body);
+    return this.cdpWrite<OsspreyAssignStewardResponse>(req, 'assign_ossprey_steward', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_ASSIGN(id), body);
   }
 
   /** Escalate a stewardship with the chosen resolution path. */
   public async escalateStewardship(req: Request, id: number, body: OsspreyEscalateRequest): Promise<OsspreyStewardshipResponse> {
-    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'escalate_ossprey_stewardship', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_ESCALATE(id), body);
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'escalate_ossprey_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_ESCALATE(id), body);
   }
 
   /** Update a stewardship's status (e.g. assessing/active/needs_attention/blocked/inactive). */
   public async updateStewardshipStatus(req: Request, id: number, body: OsspreyUpdateStatusRequest): Promise<OsspreyStewardshipResponse> {
-    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'update_ossprey_stewardship_status', 'PUT', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
+    return this.cdpWrite<OsspreyStewardshipResponse>(req, 'update_ossprey_stewardship_status', 'PATCH', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
   }
 
   public mapListItem(item: CdpStewardshipSummary): OsspreyPackage {
@@ -357,7 +357,7 @@ export class OsspreyServerService {
    * Shared helper for the stewardship write endpoints: generates a CDP token, issues the
    * authenticated JSON request, and normalizes failures into MicroserviceError.
    */
-  private async cdpWrite<T>(req: Request, operation: string, method: 'POST' | 'PUT', endpoint: string, body: unknown): Promise<T> {
+  private async cdpWrite<T>(req: Request, operation: string, method: 'POST' | 'PUT' | 'PATCH', endpoint: string, body: unknown): Promise<T> {
     const requestId = randomUUID();
 
     try {
