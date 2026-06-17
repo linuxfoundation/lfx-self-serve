@@ -696,6 +696,23 @@ export class CommitteeService {
       const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
       const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
 
+      // business_email_required is a settings-only field not present in the query-service
+      // committee index (which only stores CommitteeBase). Fetch settings in parallel so the
+      // invitationRequiresOrganization guard is accurate for business-email-only committees.
+      // Best-effort: a failed settings fetch leaves business_email_required undefined, which
+      // invitationRequiresOrganization treats as fail-closed when enable_voting is also undefined.
+      const settingsByUid = new Map<string, boolean | undefined>();
+      await Promise.all(
+        committeeUids.map(async (uid) => {
+          try {
+            const settings = await this.getCommitteeSettings(req, uid);
+            settingsByUid.set(uid, settings.business_email_required);
+          } catch {
+            // best-effort — leave undefined; fail-closed path in invitationRequiresOrganization applies
+          }
+        })
+      );
+
       for (const uid of committeeUids) {
         const committee = committees.get(uid);
         if (committee) {
@@ -704,7 +721,7 @@ export class CommitteeService {
             category: committee.category ?? null,
             project_name: projectNameByCommittee.get(uid) || null,
             enable_voting: committee.enable_voting,
-            business_email_required: committee.business_email_required,
+            business_email_required: settingsByUid.get(uid),
           });
         }
       }
