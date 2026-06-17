@@ -4,19 +4,20 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { FormBuilder } from '@angular/forms';
 import {
-  OSSPREY_ECOSYSTEM_OPTIONS,
-  OSSPREY_HEALTH_OPTIONS,
-  OSSPREY_LIFECYCLE_OPTIONS,
-  OSSPREY_SORT_OPTIONS,
-  OSSPREY_STATUS_PILLS,
-  OSSPREY_VULN_OPTIONS,
+  AKRITES_ECOSYSTEM_OPTIONS,
+  AKRITES_HEALTH_OPTIONS,
+  AKRITES_LIFECYCLE_OPTIONS,
+  AKRITES_SORT_OPTIONS,
+  AKRITES_STATUS_PILLS,
+  AKRITES_VULN_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { OsspreyFilterChip, OsspreyFilterState, OsspreyPackage, OsspreyStatusCounts } from '@lfx-one/shared/interfaces';
+import { AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { StewardInitialsPipe } from '../../pipes/steward-initials.pipe';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
@@ -25,20 +26,20 @@ import {
   getLifecycleLabel,
   getLifecycleTagSeverity,
   getStatusTagSeverity,
-} from '../../ossprey.utils';
+} from '../../akrites.utils';
 
 @Component({
-  selector: 'lfx-ossprey-packages-tab',
-  imports: [ButtonComponent, CheckboxComponent, SelectComponent, TableComponent, TagComponent],
-  templateUrl: './ossprey-packages-tab.component.html',
+  selector: 'lfx-akrites-packages-tab',
+  imports: [ButtonComponent, CheckboxComponent, SelectComponent, StewardInitialsPipe, TableComponent, TagComponent],
+  templateUrl: './akrites-packages-tab.component.html',
 })
-export class OsspreyPackagesTabComponent {
+export class AkritesPackagesTabComponent {
   private readonly formBuilder = inject(FormBuilder);
 
-  public readonly packages = input<OsspreyPackage[]>([]);
-  public readonly filteredPackages = input<OsspreyPackage[]>([]);
+  public readonly packages = input<AkritesPackage[]>([]);
+  public readonly filteredPackages = input<AkritesPackage[]>([]);
   public readonly loading = input<boolean>(false);
-  public readonly statusCounts = input<OsspreyStatusCounts>({
+  public readonly statusCounts = input<AkritesStatusCounts>({
     all: 0,
     unassigned: 0,
     open: 0,
@@ -49,7 +50,7 @@ export class OsspreyPackagesTabComponent {
     blocked: 0,
     inactive: 0,
   });
-  public readonly filters = input<OsspreyFilterState>({
+  public readonly filters = input<AkritesFilterState>({
     search: '',
     tab: 'all',
     sort: 'risk',
@@ -63,7 +64,7 @@ export class OsspreyPackagesTabComponent {
   });
   public readonly selectedPackages = input<Set<string>>(new Set());
 
-  public readonly filterChange = output<Partial<OsspreyFilterState>>();
+  public readonly filterChange = output<Partial<AkritesFilterState>>();
   public readonly sortChange = output<string>();
   public readonly packageClick = output<string>();
   public readonly togglePackage = output<{ id: string; event: Event }>();
@@ -73,12 +74,12 @@ export class OsspreyPackagesTabComponent {
   protected readonly sortMenuOpen = signal(false);
   protected readonly filterPanelOpen = signal(false);
 
-  protected readonly statusPills = OSSPREY_STATUS_PILLS;
-  protected readonly sortOptions = OSSPREY_SORT_OPTIONS;
-  protected readonly ecosystemOptions = OSSPREY_ECOSYSTEM_OPTIONS;
-  protected readonly lifecycleOptions = OSSPREY_LIFECYCLE_OPTIONS;
-  protected readonly healthOptions = OSSPREY_HEALTH_OPTIONS;
-  protected readonly vulnOptions = OSSPREY_VULN_OPTIONS;
+  protected readonly statusPills = AKRITES_STATUS_PILLS;
+  protected readonly sortOptions = AKRITES_SORT_OPTIONS;
+  protected readonly ecosystemOptions = AKRITES_ECOSYSTEM_OPTIONS;
+  protected readonly lifecycleOptions = AKRITES_LIFECYCLE_OPTIONS;
+  protected readonly healthOptions = AKRITES_HEALTH_OPTIONS;
+  protected readonly vulnOptions = AKRITES_VULN_OPTIONS;
 
   // Draft filter state — synced from filters() when the panel opens, committed on Apply.
   protected readonly filterForm = this.formBuilder.nonNullable.group({
@@ -93,9 +94,9 @@ export class OsspreyPackagesTabComponent {
 
   protected readonly sortLabel = computed(() => this.sortOptions.find((option) => option.value === this.filters().sort)?.label ?? 'Risk priority');
 
-  protected readonly activeFilterChips = computed<OsspreyFilterChip[]>(() => {
+  protected readonly activeFilterChips = computed<AkritesFilterChip[]>(() => {
     const f = this.filters();
-    const chips: OsspreyFilterChip[] = [];
+    const chips: AkritesFilterChip[] = [];
     if (f.ecosystem) chips.push({ label: `Ecosystem: ${f.ecosystem}`, clear: { ecosystem: '' } });
     if (f.lifecycle) chips.push({ label: `Lifecycle: ${f.lifecycle}`, clear: { lifecycle: '' } });
     if (f.healthBand) chips.push({ label: `Health: ${f.healthBand}`, clear: { healthBand: '' } });
@@ -128,17 +129,11 @@ export class OsspreyPackagesTabComponent {
     this.toggleAll.emit({ checked: !this.allSelected() });
   }
 
-  protected getStewardNames(stewardIds: string[]): string {
-    if (stewardIds.length === 0) return '—';
-    if (stewardIds.length === 1) return stewardIds[0];
-    return `${stewardIds.length} stewards`;
-  }
-
   protected onSearchInput(event: Event): void {
     this.filterChange.emit({ search: (event.target as HTMLInputElement).value });
   }
 
-  protected onChipRemove(clear: Partial<OsspreyFilterState>): void {
+  protected onChipRemove(clear: Partial<AkritesFilterState>): void {
     this.filterChange.emit(clear);
     this.filterForm.patchValue(clear as Parameters<typeof this.filterForm.patchValue>[0]);
   }
@@ -169,10 +164,10 @@ export class OsspreyPackagesTabComponent {
   protected applyFilters(): void {
     const value = this.filterForm.getRawValue();
     this.filterChange.emit({
-      ecosystem: value.ecosystem as OsspreyFilterState['ecosystem'],
-      lifecycle: value.lifecycle as OsspreyFilterState['lifecycle'],
-      healthBand: value.healthBand as OsspreyFilterState['healthBand'],
-      vulnFilter: value.vulnFilter as OsspreyFilterState['vulnFilter'],
+      ecosystem: value.ecosystem as AkritesFilterState['ecosystem'],
+      lifecycle: value.lifecycle as AkritesFilterState['lifecycle'],
+      healthBand: value.healthBand as AkritesFilterState['healthBand'],
+      vulnFilter: value.vulnFilter as AkritesFilterState['vulnFilter'],
       busFactor1Only: value.busFactor1Only,
       staleOnly: value.staleOnly,
       unstewardedOnly: value.unstewardedOnly,

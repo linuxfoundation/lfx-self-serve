@@ -12,6 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import {
   EMPTY_ORG_PEOPLE_BOARD_MEMBERS_RESPONSE,
   isVotingStatus,
@@ -41,6 +42,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 
+import { toDrawerGovernanceSeats } from '../../helpers/governance-seats.helper';
 import { BoardMembersService } from '../../services/board-members.service';
 import { EditBoardRoleModalComponent } from './components/edit-board-role-modal.component';
 import { ReassignBoardRolesModalComponent } from './components/reassign-board-roles-modal.component';
@@ -62,6 +64,7 @@ export class BoardMembersComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ORG_PEOPLE_BOARD_STAT_LABELS;
@@ -149,6 +152,19 @@ export class BoardMembersComponent {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     this.toggleExpansion(email);
+  }
+
+  // Open the drawer on Governance from already-loaded seats (Board rows have no personKey).
+  protected onPersonClick(group: BoardMemberPersonGroupVm, event: Event): void {
+    event.stopPropagation();
+    this.drawer.open({
+      name: group.displayName,
+      title: group.jobTitle,
+      initials: group.initials,
+      avatarColorClass: 'bg-purple-500',
+      defaultTab: 'governance',
+      governanceSeats: toDrawerGovernanceSeats(group.assignments),
+    });
   }
 
   protected retry(): void {

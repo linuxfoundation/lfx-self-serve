@@ -1,0 +1,84 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, inject, input, model, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { DestroyRef } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { DialogModule } from 'primeng/dialog';
+
+import { AKRITES_INACTIVE_REASON_OPTIONS, AKRITES_UPDATABLE_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import { AkritesInactiveReason, AkritesUpdatableStatus, AkritesUpdateStatusRequest } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
+import { SelectComponent } from '@components/select/select.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+
+@Component({
+  selector: 'lfx-akrites-status-modal',
+  imports: [DialogModule, ReactiveFormsModule, ButtonComponent, SelectComponent, TextareaComponent],
+  templateUrl: './akrites-status-modal.component.html',
+})
+export class AkritesStatusModalComponent {
+  private readonly formBuilder = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
+
+  public readonly visible = model(false);
+  public readonly packageName = input<string | null>(null);
+  public readonly loading = input(false);
+
+  public readonly confirm = output<AkritesUpdateStatusRequest>();
+
+  protected readonly statusOptions = AKRITES_UPDATABLE_STATUS_OPTIONS;
+  protected readonly inactiveReasonOptions = AKRITES_INACTIVE_REASON_OPTIONS;
+
+  protected readonly selectedStatus = signal<AkritesUpdatableStatus | null>(null);
+  protected readonly selectedInactiveReason = signal<string>('');
+  protected readonly requiresInactiveReason = computed(() => this.selectedStatus() === 'inactive');
+  protected readonly canSubmit = computed(() => {
+    const status = this.selectedStatus();
+    if (!status) return false;
+    if (status === 'inactive' && !this.selectedInactiveReason()) return false;
+    return true;
+  });
+
+  protected readonly form = this.formBuilder.nonNullable.group({
+    status: '' as AkritesUpdatableStatus | '',
+    inactiveReason: '' as AkritesInactiveReason | '',
+    notes: '',
+  });
+
+  public constructor() {
+    // Keep the conditional inactiveReason field in sync with the chosen status.
+    this.form.controls.status.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((status) => {
+      this.selectedStatus.set(status || null);
+      if (status !== 'inactive') {
+        this.form.controls.inactiveReason.setValue('');
+        this.selectedInactiveReason.set('');
+      }
+    });
+    this.form.controls.inactiveReason.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((reason) => {
+      this.selectedInactiveReason.set(reason ?? '');
+    });
+  }
+
+  protected onCancel(): void {
+    this.visible.set(false);
+  }
+
+  protected onConfirm(): void {
+    const { status, inactiveReason, notes } = this.form.getRawValue();
+    if (!status) return;
+    if (status === 'inactive' && !inactiveReason) return;
+    this.confirm.emit({
+      status,
+      inactiveReason: status === 'inactive' ? (inactiveReason as AkritesInactiveReason) : undefined,
+      notes: notes.trim() || undefined,
+    });
+  }
+
+  protected onShow(): void {
+    this.selectedStatus.set(null);
+    this.selectedInactiveReason.set('');
+    this.form.reset({ status: '', inactiveReason: '', notes: '' });
+  }
+}

@@ -45,7 +45,8 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
     await expect(page.getByTestId('membership-detail-tab-key-contacts')).toBeVisible();
     await expect(page.getByTestId('membership-detail-tab-board')).toBeVisible();
     await expect(page.getByTestId('membership-detail-tab-docs')).toBeVisible();
-    await expect(page.getByTestId('membership-detail-tab-governance')).toBeVisible();
+    // INFO: Future Epic implementation — the Governance tab is hidden.
+    await expect(page.getByTestId('membership-detail-tab-governance')).toHaveCount(0);
     await expect(page.getByTestId('membership-detail-key-contacts-card')).toBeVisible();
     await expect(page.getByTestId('membership-detail-key-contacts-table')).toBeVisible();
   });
@@ -74,9 +75,6 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
 
     await page.getByTestId('membership-detail-tab-docs').click();
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    await page.getByTestId('membership-detail-tab-governance').click();
-    await expect(page.getByTestId('membership-detail-governance-empty-state')).toBeVisible();
   });
 
   test('URL fragment ↔ tab sync — direct goto activates correct tab (spec 016 round 7)', async ({ page }) => {
@@ -85,10 +83,12 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Direct goto with #governance activates Governance
+    // INFO: Future Epic implementation — #governance is hidden, so a direct goto falls back
+    // to the default Key Contacts tab instead of the (removed) Governance empty page.
     await page.goto('/org/memberships/sample-foundation#governance', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('membership-detail-governance-empty-state')).toBeVisible();
+    await expect(page.getByTestId('membership-detail-governance-empty-state')).toHaveCount(0);
+    await expect(page.getByTestId('membership-detail-key-contacts-card')).toBeVisible();
   });
 
   test('opens the Replace modal with the full testid surface (single-contact)', async ({ page }) => {
