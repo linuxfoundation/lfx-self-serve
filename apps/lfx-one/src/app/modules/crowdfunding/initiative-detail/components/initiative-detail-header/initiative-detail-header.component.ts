@@ -49,7 +49,7 @@ export class InitiativeDetailHeaderComponent {
         {
           label: 'Activate Initiative',
           icon: 'fa-solid fa-circle-check',
-          description: 'Re-submit this initiative for review. Once approved, it will be publicly visible and accept donations again.',
+          description: 'Make this initiative publicly visible and allow it to accept donations again.',
           command: () => this.confirmActivate(),
         },
       ];
@@ -84,12 +84,12 @@ export class InitiativeDetailHeaderComponent {
     this.confirmationService.confirm({
       key: 'initiative-status',
       header: 'Activate Initiative',
-      message: 'Are you sure you want to re-submit this initiative for review? Once approved, it will be publicly visible and accept donations again.',
+      message: 'Are you sure you want to activate this initiative? It will be publicly visible and accept donations again.',
       acceptLabel: 'Activate',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.statusChange.emit('submitted'),
+      accept: () => this.statusChange.emit('published'),
     });
   }
 
