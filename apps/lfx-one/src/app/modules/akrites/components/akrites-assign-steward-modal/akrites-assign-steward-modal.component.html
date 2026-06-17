@@ -62,23 +62,21 @@
     </div>
 
     <!-- Move to assessing -->
-    <label class="flex items-start gap-2.5 cursor-pointer" data-testid="akrites-assign-move-assessing">
-      <span
-        class="mt-0.5 inline-flex w-4 h-4 items-center justify-center rounded border flex-shrink-0 transition-colors"
-        [class.bg-blue-500]="form.controls.moveToAssessing.value"
-        [class.border-blue-500]="form.controls.moveToAssessing.value"
-        [class.bg-white]="!form.controls.moveToAssessing.value"
-        [class.border-gray-300]="!form.controls.moveToAssessing.value"
-        (click)="form.controls.moveToAssessing.setValue(!form.controls.moveToAssessing.value)"
-        (keydown.enter)="form.controls.moveToAssessing.setValue(!form.controls.moveToAssessing.value)"
-        (keydown.space)="form.controls.moveToAssessing.setValue(!form.controls.moveToAssessing.value); $event.preventDefault()"
-        role="checkbox"
-        tabindex="0"
-        [attr.aria-checked]="form.controls.moveToAssessing.value">
-        @if (form.controls.moveToAssessing.value) {
-          <i class="fa-light fa-check text-white text-[10px]" aria-hidden="true"></i>
-        }
-      </span>
+    <label class="flex items-start gap-2.5 cursor-pointer" for="akrites-assign-move-assessing" data-testid="akrites-assign-move-assessing">
+      <div class="relative mt-0.5 flex-shrink-0">
+        <input type="checkbox" id="akrites-assign-move-assessing" [formControl]="form.controls.moveToAssessing" class="sr-only peer" />
+        <span
+          class="inline-flex w-4 h-4 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-1"
+          [class.bg-blue-500]="form.controls.moveToAssessing.value"
+          [class.border-blue-500]="form.controls.moveToAssessing.value"
+          [class.bg-white]="!form.controls.moveToAssessing.value"
+          [class.border-gray-300]="!form.controls.moveToAssessing.value"
+          aria-hidden="true">
+          @if (form.controls.moveToAssessing.value) {
+            <i class="fa-light fa-check text-white text-[10px]" aria-hidden="true"></i>
+          }
+        </span>
+      </div>
       <span class="flex flex-col">
         <span class="text-sm text-slate-900">Move to Assessing</span>
         <span class="text-xs text-gray-500">Atomically transition the stewardship to the Assessing status after assignment.</span>

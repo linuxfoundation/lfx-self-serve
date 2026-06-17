@@ -129,7 +129,11 @@ export class AkritesDashboardComponent {
   protected onBulkOpen(): void {
     const selected = this.selectedPackages();
     const unassigned = this.packages().filter((p) => selected.has(p.id) && p.status === 'unassigned');
-    if (!unassigned.length || this.bulkActionLoading()) return;
+    if (this.bulkActionLoading()) return;
+    if (!unassigned.length) {
+      this.messageService.add({ severity: 'info', summary: 'No eligible packages', detail: 'All selected packages are already stewarded.' });
+      return;
+    }
     this.bulkActionLoading.set(true);
     forkJoin(
       unassigned.map((p) =>
@@ -171,7 +175,16 @@ export class AkritesDashboardComponent {
   protected onBulkEscalateConfirm(body: AkritesEscalateRequest): void {
     const selected = this.selectedPackages();
     const eligible = this.packages().filter((p) => selected.has(p.id) && p.stewardshipId !== null);
-    if (!eligible.length || this.bulkActionLoading()) return;
+    if (this.bulkActionLoading()) return;
+    if (!eligible.length) {
+      this.bulkEscalateVisible.set(false);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'No eligible packages',
+        detail: 'None of the selected packages have an active stewardship record.',
+      });
+      return;
+    }
     this.bulkEscalateVisible.set(false);
     this.bulkActionLoading.set(true);
     forkJoin(
