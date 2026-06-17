@@ -8,7 +8,7 @@ import { executiveDirectorGuard } from './shared/guards/executive-director.guard
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
-import { osspreyEnabledGuard } from './shared/guards/ossprey-enabled.guard';
+import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 
 const loadOrgPlaceholderPage = () =>
@@ -358,8 +358,8 @@ export const routes: Routes = [
       },
       {
         path: 'akrites',
-        canMatch: [osspreyEnabledGuard],
-        loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
+        canMatch: [akritesEnabledGuard],
+        loadChildren: () => import('./modules/akrites/akrites.routes').then((m) => m.AKRITES_ROUTES),
       },
     ],
   },

@@ -5,31 +5,31 @@ import { Component, inject, input, model, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 
-import { OsspreyAssignStewardRequest, OsspreyStewardRole } from '@lfx-one/shared/interfaces';
+import { AkritesAssignStewardRequest, AkritesStewardRole } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 interface RoleOption {
-  value: OsspreyStewardRole;
+  value: AkritesStewardRole;
   label: string;
   description: string;
 }
 
 @Component({
-  selector: 'lfx-ossprey-assign-steward-modal',
+  selector: 'lfx-akrites-assign-steward-modal',
   imports: [DialogModule, ReactiveFormsModule, ButtonComponent, InputTextComponent],
-  templateUrl: './ossprey-assign-steward-modal.component.html',
+  templateUrl: './akrites-assign-steward-modal.component.html',
 })
-export class OsspreyAssignStewardModalComponent {
+export class AkritesAssignStewardModalComponent {
   private readonly formBuilder = inject(FormBuilder);
 
   public readonly visible = model(false);
   public readonly packageName = input<string | null>(null);
   public readonly loading = input(false);
 
-  public readonly confirm = output<OsspreyAssignStewardRequest>();
+  public readonly confirm = output<AkritesAssignStewardRequest>();
 
-  protected readonly selectedRole = signal<OsspreyStewardRole>('lead');
+  protected readonly selectedRole = signal<AkritesStewardRole>('lead');
 
   protected readonly roleOptions: RoleOption[] = [
     { value: 'lead', label: 'Lead steward', description: 'Primary owner — drives the security assessment and remediation.' },
@@ -41,7 +41,7 @@ export class OsspreyAssignStewardModalComponent {
     moveToAssessing: false,
   });
 
-  protected selectRole(role: OsspreyStewardRole): void {
+  protected selectRole(role: AkritesStewardRole): void {
     this.selectedRole.set(role);
   }
 

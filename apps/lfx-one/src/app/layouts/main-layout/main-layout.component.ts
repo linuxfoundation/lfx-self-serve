@@ -14,7 +14,7 @@ import {
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
   ORG_LENS_ENABLED_FLAG,
-  OSSPREY_ENABLED_FLAG,
+  AKRITES_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -57,8 +57,8 @@ export class MainLayoutComponent {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate; collapses Crowdfunding sub-nav to an external link when off. */
   private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
-  /** Dark-launch gate for the OSSPREY admin dashboard; hides the Security nav section when off. */
-  private readonly isOsspreyEnabled = this.featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
+  private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -94,13 +94,13 @@ export class MainLayoutComponent {
     }
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/OSSPREY is dark-launched).
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
-    this.isOsspreyEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
+    this.isAkritesEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
   );
 
   // --- Me Lens Items ---
-  // Computed so both Crowdfunding and Security/OSSPREY nav entries react to their feature flags in real time.
+  // Computed so both Crowdfunding and Security/Akrites nav entries react to their feature flags in real time.
   private readonly meLensItems = computed((): SidebarMenuItem[] => {
     const crowdfundingItem: SidebarMenuItem = this.isCrowdfundingEnabled()
       ? {

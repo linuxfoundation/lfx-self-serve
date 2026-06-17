@@ -10,7 +10,7 @@
   [dismissableMask]="true"
   (onShow)="onShow()"
   header="Assign steward"
-  data-testid="ossprey-assign-steward-modal">
+  data-testid="akrites-assign-steward-modal">
   <div class="flex flex-col gap-4">
     @if (packageName()) {
       <p class="text-sm text-gray-500">
@@ -44,14 +44,14 @@
 
     <!-- User ID field — placeholder until the steward roster endpoint ships -->
     <div class="flex flex-col gap-1.5">
-      <label for="ossprey-assign-userid" class="text-sm font-medium text-gray-700">User ID</label>
+      <label for="akrites-assign-userid" class="text-sm font-medium text-gray-700">User ID</label>
       <lfx-input-text
         [form]="form"
         control="userId"
-        id="ossprey-assign-userid"
+        id="akrites-assign-userid"
         placeholder="Enter Auth0 user ID (e.g. auth0|abc123)"
         size="small"
-        dataTest="ossprey-assign-userid" />
+        dataTest="akrites-assign-userid" />
       @if (form.controls.userId.touched && form.controls.userId.errors?.['required']) {
         <p class="text-xs text-red-600">User ID is required.</p>
       }
@@ -62,7 +62,7 @@
     </div>
 
     <!-- Move to assessing -->
-    <label class="flex items-start gap-2.5 cursor-pointer" data-testid="ossprey-assign-move-assessing">
+    <label class="flex items-start gap-2.5 cursor-pointer" data-testid="akrites-assign-move-assessing">
       <span
         class="mt-0.5 inline-flex w-4 h-4 items-center justify-center rounded border flex-shrink-0 transition-colors"
         [class.bg-blue-500]="form.controls.moveToAssessing.value"
@@ -88,13 +88,13 @@
 
   <ng-template #footer>
     <div class="flex items-center justify-end gap-2">
-      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="ossprey-assign-cancel" />
+      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="akrites-assign-cancel" />
       <lfx-button
         label="Assign steward"
         [loading]="loading()"
         [disabled]="form.invalid || loading()"
         (onClick)="onConfirm()"
-        data-testid="ossprey-assign-confirm" />
+        data-testid="akrites-assign-confirm" />
     </div>
   </ng-template>
 </p-dialog>

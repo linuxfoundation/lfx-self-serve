@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OsspreyHealthBand, OsspreyLifecycle, OsspreyStatus, OspreySeverity, TagSeverity } from '@lfx-one/shared/interfaces';
+import { AkritesHealthBand, AkritesLifecycle, AkritesStatus, AkritesSeverity, TagSeverity } from '@lfx-one/shared/interfaces';
 
-export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
-  const map: Record<OsspreyStatus, TagSeverity> = {
+export function getStatusTagSeverity(status: AkritesStatus): TagSeverity {
+  const map: Record<AkritesStatus, TagSeverity> = {
     unassigned: 'secondary',
     open: 'info',
     assessing: 'info',
@@ -17,9 +17,9 @@ export function getStatusTagSeverity(status: OsspreyStatus): TagSeverity {
   return map[status] ?? 'secondary';
 }
 
-export function getLifecycleTagSeverity(lifecycle: OsspreyLifecycle | null): TagSeverity {
+export function getLifecycleTagSeverity(lifecycle: AkritesLifecycle | null): TagSeverity {
   if (!lifecycle) return 'secondary';
-  const map: Record<OsspreyLifecycle, TagSeverity> = {
+  const map: Record<AkritesLifecycle, TagSeverity> = {
     active: 'success',
     stable: 'info',
     declining: 'warn',
@@ -36,9 +36,9 @@ export function getHealthTagSeverity(score: number | null): TagSeverity {
   return 'danger';
 }
 
-export function getAdvisoryTagSeverity(severity: OspreySeverity | null): TagSeverity {
+export function getAdvisoryTagSeverity(severity: AkritesSeverity | null): TagSeverity {
   if (!severity) return 'secondary';
-  const map: Record<OspreySeverity, TagSeverity> = {
+  const map: Record<AkritesSeverity, TagSeverity> = {
     critical: 'danger',
     high: 'danger',
     medium: 'warn',
@@ -53,7 +53,7 @@ export function formatStatus(status: string): string {
 
 // Band thresholds mirror the design spec (design/LFX-OSSPREY-Admin-Dashboard.html):
 // healthy ≥70, fair ≥50, concerning ≥30, otherwise critical.
-function getHealthBand(score: number): OsspreyHealthBand {
+function getHealthBand(score: number): AkritesHealthBand {
   if (score >= 70) return 'healthy';
   if (score >= 50) return 'fair';
   if (score >= 30) return 'concerning';
@@ -65,7 +65,7 @@ export function getHealthLabel(score: number): string {
   return band.charAt(0).toUpperCase() + band.slice(1);
 }
 
-export function getLifecycleLabel(lifecycle: OsspreyLifecycle | null): string {
+export function getLifecycleLabel(lifecycle: AkritesLifecycle | null): string {
   if (!lifecycle) return 'Unknown';
   return lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1);
 }

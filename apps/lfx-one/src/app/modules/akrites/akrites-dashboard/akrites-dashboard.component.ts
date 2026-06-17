@@ -5,29 +5,29 @@ import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import {
-  OsspreyFilterState,
-  OsspreyListParams,
-  OsspreyLoadResult,
-  OsspreyMetrics,
-  OsspreyPackage,
-  OspreySortKey,
-  OsspreyStatusCounts,
-  OsspreyEscalateRequest,
+  AkritesFilterState,
+  AkritesListParams,
+  AkritesLoadResult,
+  AkritesMetrics,
+  AkritesPackage,
+  AkritesSortKey,
+  AkritesStatusCounts,
+  AkritesEscalateRequest,
 } from '@lfx-one/shared/interfaces';
 import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin } from 'rxjs';
 import { MessageService } from 'primeng/api';
-import { OsspreyService } from '@shared/services/ossprey.service';
-import { OsspreyPackageDrawerComponent } from '../components/ossprey-package-drawer/ossprey-package-drawer.component';
-import { OsspreyPackagesTabComponent } from '../components/ossprey-packages-tab/ossprey-packages-tab.component';
-import { OsspreyEscalateModalComponent } from '../components/ossprey-escalate-modal/ossprey-escalate-modal.component';
+import { AkritesService } from '@shared/services/akrites.service';
+import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
+import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
+import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
 
 @Component({
-  selector: 'lfx-ossprey-dashboard',
-  imports: [OsspreyPackageDrawerComponent, OsspreyPackagesTabComponent, OsspreyEscalateModalComponent],
-  templateUrl: './ossprey-dashboard.component.html',
+  selector: 'lfx-akrites-dashboard',
+  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent],
+  templateUrl: './akrites-dashboard.component.html',
 })
-export class OsspreyDashboardComponent {
-  private readonly osspreyService = inject(OsspreyService);
+export class AkritesDashboardComponent {
+  private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -41,7 +41,7 @@ export class OsspreyDashboardComponent {
   // Bumped after a steward admin action to force the package list to re-fetch.
   private readonly reloadTrigger = signal(0);
 
-  protected readonly filters = signal<OsspreyFilterState>({
+  protected readonly filters = signal<AkritesFilterState>({
     search: '',
     tab: 'all',
     sort: 'risk',
@@ -60,12 +60,12 @@ export class OsspreyDashboardComponent {
   protected readonly tableLoading = signal(true);
   protected readonly initialLoading = computed(() => this.loadResult() === undefined);
   protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
-  protected readonly packages = computed<OsspreyPackage[]>(() => this.loadResult()?.packages ?? []);
+  protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
   protected readonly totalPackages = computed(() => this.metricsResult()?.totalPackages ?? 0);
 
   protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
 
-  protected readonly statusCounts = computed<OsspreyStatusCounts>(() => {
+  protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
     if (fromApi) return fromApi;
     // Fall back to zeros while the first load is in flight.
@@ -94,7 +94,7 @@ export class OsspreyDashboardComponent {
     this.reloadTrigger.update((n) => n + 1);
   }
 
-  protected onFilterChange(partial: Partial<OsspreyFilterState>): void {
+  protected onFilterChange(partial: Partial<AkritesFilterState>): void {
     this.filters.update((current) => ({ ...current, ...partial }));
   }
 
@@ -131,7 +131,7 @@ export class OsspreyDashboardComponent {
     this.bulkActionLoading.set(true);
     forkJoin(
       unassigned.map((p) =>
-        this.osspreyService.openStewardship(p.purl).pipe(
+        this.akritesService.openStewardship(p.purl).pipe(
           map(() => true),
           catchError(() => of(false))
         )
@@ -166,7 +166,7 @@ export class OsspreyDashboardComponent {
     this.bulkEscalateVisible.set(true);
   }
 
-  protected onBulkEscalateConfirm(body: OsspreyEscalateRequest): void {
+  protected onBulkEscalateConfirm(body: AkritesEscalateRequest): void {
     const selected = this.selectedPackages();
     const eligible = this.packages().filter((p) => selected.has(p.id) && p.stewardshipId !== null);
     if (!eligible.length || this.bulkActionLoading()) return;
@@ -174,7 +174,7 @@ export class OsspreyDashboardComponent {
     this.bulkActionLoading.set(true);
     forkJoin(
       eligible.map((p) =>
-        this.osspreyService.escalateStewardship(p.stewardshipId!, body).pipe(
+        this.akritesService.escalateStewardship(p.stewardshipId!, body).pipe(
           map(() => true),
           catchError(() => of(false))
         )
@@ -206,7 +206,7 @@ export class OsspreyDashboardComponent {
   }
 
   protected onSortChange(sort: string): void {
-    this.filters.update((current) => ({ ...current, sort: sort as OspreySortKey }));
+    this.filters.update((current) => ({ ...current, sort: sort as AkritesSortKey }));
   }
 
   protected onClearFilters(): void {
@@ -226,10 +226,10 @@ export class OsspreyDashboardComponent {
   }
 
   private initMetrics() {
-    return toSignal<OsspreyMetrics | undefined>(
-      this.osspreyService.getMetrics().pipe(
+    return toSignal<AkritesMetrics | undefined>(
+      this.akritesService.getMetrics().pipe(
         catchError((err) => {
-          console.warn('[OSSPREY] metrics fetch failed — KPI strip will show zeros', err);
+          console.warn('[AKRITES] metrics fetch failed — KPI strip will show zeros', err);
           return of(undefined);
         })
       )
@@ -239,14 +239,14 @@ export class OsspreyDashboardComponent {
   private initLoadResult() {
     // Combine filters with the reload trigger so a steward action re-fetches the list even when filters are unchanged.
     const source = computed(() => ({ f: this.filters(), reload: this.reloadTrigger() }));
-    return toSignal<OsspreyLoadResult | undefined>(
+    return toSignal<AkritesLoadResult | undefined>(
       toObservable(source).pipe(
         tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap(({ f }) => {
           // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
           // Divergence is intentional for v1 — pagination will align them in a future iteration.
-          const params: OsspreyListParams = {
+          const params: AkritesListParams = {
             pageSize: CDP_CONFIG.MAX_PAGE_SIZE,
             sortBy: f.sort,
             search: f.search || undefined,
@@ -259,9 +259,9 @@ export class OsspreyDashboardComponent {
             staleOnly: f.staleOnly || undefined,
             unstewardedOnly: f.unstewardedOnly || undefined,
           };
-          return this.osspreyService.getPackages(params).pipe(
-            map((res): OsspreyLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false, statusCounts: res.statusCounts ?? null })),
-            catchError(() => of<OsspreyLoadResult>({ packages: [], total: null, error: true, statusCounts: null }))
+          return this.akritesService.getPackages(params).pipe(
+            map((res): AkritesLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false, statusCounts: res.statusCounts ?? null })),
+            catchError(() => of<AkritesLoadResult>({ packages: [], total: null, error: true, statusCounts: null }))
           );
         }),
         tap(() => this.tableLoading.set(false))

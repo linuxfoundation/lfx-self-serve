@@ -1,26 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export type OsspreyStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive';
-export type OsspreyLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
-export type OsspreyEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
-export type OsspreyHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
-export type OspreySeverity = 'critical' | 'high' | 'medium' | 'low';
-export type OspreySortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
+export type AkritesStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive';
+export type AkritesLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
+export type AkritesEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
+export type AkritesHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
+export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type AkritesSortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
 
 // ===== Steward admin action types =====
 
 /** Steward assignment role (CDP: stewardship_stewards.role). */
-export type OsspreyStewardRole = 'lead' | 'co_steward';
+export type AkritesStewardRole = 'lead' | 'co_steward';
 
 /** Statuses an admin can set directly via the status endpoint (excludes open/escalated, which have dedicated endpoints). */
-export type OsspreyUpdatableStatus = 'assessing' | 'active' | 'needs_attention' | 'blocked' | 'inactive';
+export type AkritesUpdatableStatus = 'assessing' | 'active' | 'needs_attention' | 'blocked' | 'inactive';
 
 /** Reason captured when a stewardship is moved to `inactive` (required by the status endpoint). */
-export type OsspreyInactiveReason = 'quarterly_cadence_missed' | 'stepped_down' | 'no_longer_critical';
+export type AkritesInactiveReason = 'quarterly_cadence_missed' | 'stepped_down' | 'no_longer_critical';
 
 /** Resolution path chosen when escalating a stewardship. */
-export type OsspreyEscalationPath =
+export type AkritesEscalationPath =
   | 'right_of_first_refusal'
   | 'replace_the_dependency'
   | 'find_vendor_for_lts'
@@ -34,49 +34,53 @@ export interface CdpStewardshipSummary {
   purl: string;
   name: string;
   ecosystem: string;
-  lifecycle: string | null;
-  health: number | null;
-  impact: number | null;
-  maintainerBusFactor: number | null;
+  criticalityScore: string | null;
+  stewardshipId: string | null;
+  stewardshipStatus: string | null;
   openVulns: number | null;
-  stewardship: string;
-  stewards: null;
+  maxVulnSeverity: string | null;
+  maintainerCount: number | null;
+  scorecardScore: string | number | null;
+  healthBand: string | null;
+  latestReleaseAt: string | null;
+  lastActivity: { type: string; content: string; at: string } | null;
+  stewards: { userId: string; role: string; assignedAt: string }[];
 }
 
 export interface CdpPackagesListResponse {
   page: number;
   pageSize: number;
   total: number;
-  statusCounts?: OsspreyStatusCounts;
+  statusCounts?: AkritesStatusCounts;
   filters: Record<string, unknown>;
   sort: { by: string; dir: string };
-  packages: CdpStewardshipSummary[];
+  rows: CdpStewardshipSummary[];
 }
 
-export interface OsspreyPackagesResponse {
-  packages: OsspreyPackage[];
+export interface AkritesPackagesResponse {
+  packages: AkritesPackage[];
   total?: number | null;
-  statusCounts?: OsspreyStatusCounts;
+  statusCounts?: AkritesStatusCounts;
 }
 
-export interface OsspreyListParams {
+export interface AkritesListParams {
   page?: number;
   pageSize?: number;
   ecosystem?: string;
   lifecycle?: string;
-  status?: OsspreyStatus | 'all';
-  healthBand?: OsspreyHealthBand;
+  status?: AkritesStatus | 'all';
+  healthBand?: AkritesHealthBand;
   vulnFilter?: 'critical' | 'high' | 'any';
   busFactor1Only?: boolean;
   staleOnly?: boolean;
   unstewardedOnly?: boolean;
-  sortBy?: OspreySortKey;
+  sortBy?: AkritesSortKey;
   search?: string;
 }
 
 export interface CdpAdvisory {
   osvId: string;
-  severity: OspreySeverity;
+  severity: AkritesSeverity;
   resolution: string | null;
 }
 
@@ -139,7 +143,7 @@ export interface CdpStewardSummary {
   id: string;
   stewardshipId: string;
   userId: string;
-  role: OsspreyStewardRole;
+  role: AkritesStewardRole;
   assignedAt: string;
   assignedBy: string | null;
 }
@@ -147,7 +151,7 @@ export interface CdpStewardSummary {
 /** Stewardship block embedded in the CDP package detail response. */
 export interface CdpStewardshipDetail {
   id: number | null;
-  status: OsspreyStatus;
+  status: AkritesStatus;
   stewards: CdpStewardSummary[] | null;
   lastActivityAt: string | null;
 }
@@ -156,55 +160,55 @@ export interface CdpStewardshipDetail {
 export interface CdpStewardshipRecord {
   id: string;
   packageId: string;
-  status: OsspreyStatus;
+  status: AkritesStatus;
   origin: string;
   version: number;
   openedAt: string | null;
   lastStatusAt: string | null;
-  inactiveReason: OsspreyInactiveReason | null;
+  inactiveReason: AkritesInactiveReason | null;
   createdAt: string;
   updatedAt: string;
 }
 
 // ===== Steward admin action request/response bodies =====
 
-export interface OsspreyOpenStewardshipRequest {
+export interface AkritesOpenStewardshipRequest {
   purl: string;
 }
 
-export interface OsspreyAssignStewardRequest {
+export interface AkritesAssignStewardRequest {
   userId: string;
-  role: OsspreyStewardRole;
+  role: AkritesStewardRole;
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
   moveToAssessing?: boolean;
 }
 
-export interface OsspreyEscalateRequest {
-  resolutionPath: OsspreyEscalationPath;
+export interface AkritesEscalateRequest {
+  resolutionPath: AkritesEscalationPath;
   notes?: string;
 }
 
-export interface OsspreyUpdateStatusRequest {
-  status: OsspreyUpdatableStatus;
+export interface AkritesUpdateStatusRequest {
+  status: AkritesUpdatableStatus;
   /** Required when `status` is `inactive`. */
-  inactiveReason?: OsspreyInactiveReason;
+  inactiveReason?: AkritesInactiveReason;
   notes?: string;
 }
 
-export interface OsspreyStewardshipResponse {
+export interface AkritesStewardshipResponse {
   stewardship: CdpStewardshipRecord;
 }
 
-export interface OsspreyAssignStewardResponse {
+export interface AkritesAssignStewardResponse {
   stewardship: CdpStewardshipRecord;
   stewards: CdpStewardSummary[];
 }
 
 // ===== Frontend Types =====
 
-export interface OsspreyAdvisory {
+export interface AkritesAdvisory {
   id: string;
-  severity: OspreySeverity;
+  severity: AkritesSeverity;
   description: string;
   state: 'Open' | 'Patched';
   cvss?: number | null;
@@ -216,19 +220,19 @@ export interface OsspreyAdvisory {
   } | null;
 }
 
-export interface OsspreyHistoryEntry {
+export interface AkritesHistoryEntry {
   label: string;
   timeAgo: string;
   type?: 'danger' | 'success';
 }
 
-export interface OsspreyAssessment {
+export interface AkritesAssessment {
   posture: string;
   reviewed: boolean;
   flagged: boolean;
   flagNote?: string;
   draft?: boolean;
-  findings: Array<[string, OspreySeverity | 'low', string]>;
+  findings: Array<[string, AkritesSeverity | 'low', string]>;
   remediation: string[];
   monitoring: string[];
 }
@@ -237,15 +241,15 @@ export interface OsspreyAssessment {
  * Steward shown in the UI. `name`/`avatarUrl` are populated once the assignable-steward
  * roster endpoint exists; until then only `userId` (Auth0 sub) + `role` are available.
  */
-export interface OsspreySteward {
+export interface AkritesSteward {
   userId: string;
-  role: OsspreyStewardRole;
+  role: AkritesStewardRole;
   assignedAt: string;
   name: string | null;
   avatarUrl: string | null;
 }
 
-export interface OsspreyContactGroup {
+export interface AkritesContactGroup {
   name: string;
   type: string;
   count: number;
@@ -255,22 +259,22 @@ export interface OsspreyContactGroup {
   hasSecurityMd: boolean;
 }
 
-export interface OsspreyPackage {
+export interface AkritesPackage {
   id: string;
   name: string;
   purl: string;
-  ecosystem: OsspreyEcosystem;
-  lifecycle: OsspreyLifecycle | null;
+  ecosystem: AkritesEcosystem;
+  lifecycle: AkritesLifecycle | null;
   healthScore: number | null;
   impactScore: number | null;
   busFactor: number | null;
   monthsStale: number | null;
   vulnCount: number;
-  vulnSeverity: OspreySeverity | null;
-  status: OsspreyStatus;
+  vulnSeverity: AkritesSeverity | null;
+  status: AkritesStatus;
   /** Integer stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
   stewardshipId: number | null;
-  stewards: OsspreySteward[];
+  stewards: AkritesSteward[];
   lastActivityLabel: string;
   lastActivityTime: string;
   downloadsLastMonth: string | null;
@@ -287,27 +291,27 @@ export interface OsspreyPackage {
   criticalVulnFlag: boolean | null;
   hasSecurityMd: boolean | null;
   ecosystemReach: string | null;
-  contactGroup: OsspreyContactGroup | null;
+  contactGroup: AkritesContactGroup | null;
   healthBreakdown: string[];
-  assessment: OsspreyAssessment | null;
-  advisories: OsspreyAdvisory[];
-  history: OsspreyHistoryEntry[];
+  assessment: AkritesAssessment | null;
+  advisories: AkritesAdvisory[];
+  history: AkritesHistoryEntry[];
 }
 
-export interface OsspreyFilterState {
+export interface AkritesFilterState {
   search: string;
-  tab: OsspreyStatus | 'all';
-  sort: OspreySortKey;
-  ecosystem: OsspreyEcosystem | '';
-  lifecycle: OsspreyLifecycle | '';
-  healthBand: OsspreyHealthBand | '';
+  tab: AkritesStatus | 'all';
+  sort: AkritesSortKey;
+  ecosystem: AkritesEcosystem | '';
+  lifecycle: AkritesLifecycle | '';
+  healthBand: AkritesHealthBand | '';
   vulnFilter: 'critical' | 'high' | 'any' | '';
   busFactor1Only: boolean;
   staleOnly: boolean;
   unstewardedOnly: boolean;
 }
 
-export interface OsspreyStatusCounts {
+export interface AkritesStatusCounts {
   all: number;
   unassigned: number;
   open: number;
@@ -319,16 +323,16 @@ export interface OsspreyStatusCounts {
   inactive: number;
 }
 
-export interface OsspreyFilterChip {
+export interface AkritesFilterChip {
   label: string;
-  clear: Partial<OsspreyFilterState>;
+  clear: Partial<AkritesFilterState>;
 }
 
-export interface OsspreyLoadResult {
-  packages: OsspreyPackage[];
+export interface AkritesLoadResult {
+  packages: AkritesPackage[];
   total: number | null;
   error: boolean;
-  statusCounts: OsspreyStatusCounts | null;
+  statusCounts: AkritesStatusCounts | null;
 }
 
 export interface CdpPackagesMetricsResponse {
@@ -336,7 +340,7 @@ export interface CdpPackagesMetricsResponse {
   criticalPackages: number;
 }
 
-export interface OsspreyMetrics {
+export interface AkritesMetrics {
   totalPackages: number;
   criticalPackages: number;
 }

@@ -5,13 +5,13 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { CanMatchFn, Router } from '@angular/router';
-import { OSSPREY_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { AKRITES_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
-/** CanMatch guard gating the OSSPREY admin dashboard behind the `ossprey-enabled` flag; SSR defers to browser, browser waits for provider READY and fails closed. */
-export const osspreyEnabledGuard: CanMatchFn = async () => {
+/** CanMatch guard gating the Akrites admin dashboard behind the `akrites-enabled` flag; SSR defers to browser, browser waits for provider READY and fails closed. */
+export const akritesEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
 
   // On the server LaunchDarkly is unavailable — let the route match and let the
@@ -37,5 +37,5 @@ export const osspreyEnabledGuard: CanMatchFn = async () => {
     }
   }
 
-  return featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false)() ? true : router.parseUrl('/');
+  return featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false)() ? true : router.parseUrl('/');
 };

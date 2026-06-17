@@ -7,18 +7,18 @@ import { DestroyRef } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 
-import { OSSPREY_INACTIVE_REASON_OPTIONS, OSSPREY_UPDATABLE_STATUS_OPTIONS } from '@lfx-one/shared/constants';
-import { OsspreyInactiveReason, OsspreyUpdatableStatus, OsspreyUpdateStatusRequest } from '@lfx-one/shared/interfaces';
+import { AKRITES_INACTIVE_REASON_OPTIONS, AKRITES_UPDATABLE_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import { AkritesInactiveReason, AkritesUpdatableStatus, AkritesUpdateStatusRequest } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 
 @Component({
-  selector: 'lfx-ossprey-status-modal',
+  selector: 'lfx-akrites-status-modal',
   imports: [DialogModule, ReactiveFormsModule, ButtonComponent, SelectComponent, TextareaComponent],
-  templateUrl: './ossprey-status-modal.component.html',
+  templateUrl: './akrites-status-modal.component.html',
 })
-export class OsspreyStatusModalComponent {
+export class AkritesStatusModalComponent {
   private readonly formBuilder = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -26,17 +26,17 @@ export class OsspreyStatusModalComponent {
   public readonly packageName = input<string | null>(null);
   public readonly loading = input(false);
 
-  public readonly confirm = output<OsspreyUpdateStatusRequest>();
+  public readonly confirm = output<AkritesUpdateStatusRequest>();
 
-  protected readonly statusOptions = OSSPREY_UPDATABLE_STATUS_OPTIONS;
-  protected readonly inactiveReasonOptions = OSSPREY_INACTIVE_REASON_OPTIONS;
+  protected readonly statusOptions = AKRITES_UPDATABLE_STATUS_OPTIONS;
+  protected readonly inactiveReasonOptions = AKRITES_INACTIVE_REASON_OPTIONS;
 
-  protected readonly selectedStatus = signal<OsspreyUpdatableStatus | null>(null);
+  protected readonly selectedStatus = signal<AkritesUpdatableStatus | null>(null);
   protected readonly requiresInactiveReason = computed(() => this.selectedStatus() === 'inactive');
 
   protected readonly form = this.formBuilder.nonNullable.group({
-    status: '' as OsspreyUpdatableStatus | '',
-    inactiveReason: '' as OsspreyInactiveReason | '',
+    status: '' as AkritesUpdatableStatus | '',
+    inactiveReason: '' as AkritesInactiveReason | '',
     notes: '',
   });
 
@@ -67,7 +67,7 @@ export class OsspreyStatusModalComponent {
     if (status === 'inactive' && !inactiveReason) return;
     this.confirm.emit({
       status,
-      inactiveReason: status === 'inactive' ? (inactiveReason as OsspreyInactiveReason) : undefined,
+      inactiveReason: status === 'inactive' ? (inactiveReason as AkritesInactiveReason) : undefined,
       notes: notes.trim() || undefined,
     });
   }

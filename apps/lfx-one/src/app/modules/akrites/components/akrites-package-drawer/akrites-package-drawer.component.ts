@@ -8,22 +8,22 @@ import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
 import {
-  OsspreyAssignStewardRequest,
-  OsspreyEscalateRequest,
-  OsspreyPackage,
-  OsspreyStatus,
-  OsspreySteward,
-  OsspreyUpdateStatusRequest,
-  OsspreyUpdatableStatus,
+  AkritesAssignStewardRequest,
+  AkritesEscalateRequest,
+  AkritesPackage,
+  AkritesStatus,
+  AkritesSteward,
+  AkritesUpdateStatusRequest,
+  AkritesUpdatableStatus,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
-import { OsspreyService } from '@shared/services/ossprey.service';
+import { AkritesService } from '@shared/services/akrites.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { OsspreyAssignStewardModalComponent } from '../ossprey-assign-steward-modal/ossprey-assign-steward-modal.component';
-import { OsspreyEscalateModalComponent } from '../ossprey-escalate-modal/ossprey-escalate-modal.component';
-import { OsspreyStatusModalComponent } from '../ossprey-status-modal/ossprey-status-modal.component';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
+import { AkritesEscalateModalComponent } from '../akrites-escalate-modal/akrites-escalate-modal.component';
+import { AkritesStatusModalComponent } from '../akrites-status-modal/akrites-status-modal.component';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
@@ -32,32 +32,32 @@ import {
   getLifecycleLabel,
   getLifecycleTagSeverity,
   getStatusTagSeverity,
-} from '../../ossprey.utils';
+} from '../../akrites.utils';
 
 type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'history';
 
 @Component({
-  selector: 'lfx-ossprey-package-drawer',
+  selector: 'lfx-akrites-package-drawer',
   imports: [
     DrawerModule,
     ButtonComponent,
     EmptyStateComponent,
     TagComponent,
-    OsspreyAssignStewardModalComponent,
-    OsspreyEscalateModalComponent,
-    OsspreyStatusModalComponent,
+    AkritesAssignStewardModalComponent,
+    AkritesEscalateModalComponent,
+    AkritesStatusModalComponent,
   ],
-  templateUrl: './ossprey-package-drawer.component.html',
+  templateUrl: './akrites-package-drawer.component.html',
 })
-export class OsspreyPackageDrawerComponent {
-  private readonly osspreyService = inject(OsspreyService);
+export class AkritesPackageDrawerComponent {
+  private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly visible = model(false);
   public readonly packageId = input<string | null>(null);
   /** Stewardship state from the list row — used until the detail endpoint's stewardship block loads. */
-  public readonly packageStatus = input<OsspreyStatus | null>(null);
+  public readonly packageStatus = input<AkritesStatus | null>(null);
 
   /** Emitted after a successful steward admin action so the dashboard can refresh the list/metrics. */
   public readonly stewardshipChanged = output<void>();
@@ -69,7 +69,7 @@ export class OsspreyPackageDrawerComponent {
   protected readonly escalateModalVisible = signal(false);
   protected readonly statusModalVisible = signal(false);
   private readonly reloadTrigger = signal(0);
-  protected readonly packageData: Signal<OsspreyPackage | null> = this.initPackageData();
+  protected readonly packageData: Signal<AkritesPackage | null> = this.initPackageData();
 
   protected readonly drawerTabs: { key: DrawerTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -80,7 +80,7 @@ export class OsspreyPackageDrawerComponent {
   ];
 
   // Prefer the loaded detail status (fresh after a mutation + reload) over the list-row input, which can be stale.
-  protected readonly stewardshipStatus = computed<OsspreyStatus>(() => this.packageData()?.status ?? this.packageStatus() ?? 'unassigned');
+  protected readonly stewardshipStatus = computed<AkritesStatus>(() => this.packageData()?.status ?? this.packageStatus() ?? 'unassigned');
   protected readonly stewardshipId = computed<number | null>(() => this.packageData()?.stewardshipId ?? null);
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
@@ -139,7 +139,7 @@ export class OsspreyPackageDrawerComponent {
     return `${base} bg-blue-500`;
   }
 
-  protected getHealthBreakdownSlot(pkg: OsspreyPackage, index: number): string {
+  protected getHealthBreakdownSlot(pkg: AkritesPackage, index: number): string {
     // healthBreakdown is positional (maintainer / security / development) and
     // empty when CDP returns no health score at all.
     return pkg.healthBreakdown[index] || '—';
@@ -149,7 +149,7 @@ export class OsspreyPackageDrawerComponent {
     return monthsStale !== null && monthsStale >= 18;
   }
 
-  protected getMappingTagSeverity(mapping: OsspreyPackage['supplyChainMapping']): TagSeverity {
+  protected getMappingTagSeverity(mapping: AkritesPackage['supplyChainMapping']): TagSeverity {
     if (mapping === 'High') return 'success';
     if (mapping === 'Medium') return 'warn';
     if (mapping === 'Low') return 'danger';
@@ -157,7 +157,7 @@ export class OsspreyPackageDrawerComponent {
   }
 
   /** Display label for assigned stewards. Falls back to the Auth0 sub until the roster endpoint provides names. */
-  protected getStewardLabel(stewards: OsspreySteward[]): string {
+  protected getStewardLabel(stewards: AkritesSteward[]): string {
     if (stewards.length === 0) return '—';
     return stewards.map((s) => s.name ?? s.userId).join(', ');
   }
@@ -166,11 +166,11 @@ export class OsspreyPackageDrawerComponent {
     this.activeTab.set('assessment');
   }
 
-  protected onQuickStatusUpdate(status: OsspreyUpdatableStatus): void {
+  protected onQuickStatusUpdate(status: AkritesUpdatableStatus): void {
     const id = this.stewardshipId();
     if (id === null || this.actionLoading()) return;
     this.actionLoading.set(true);
-    this.osspreyService
+    this.akritesService
       .updateStewardshipStatus(id, { status })
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -197,7 +197,7 @@ export class OsspreyPackageDrawerComponent {
     if (!purl || this.actionLoading()) return;
 
     this.actionLoading.set(true);
-    this.osspreyService
+    this.akritesService
       .openStewardship(purl)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -206,13 +206,13 @@ export class OsspreyPackageDrawerComponent {
       });
   }
 
-  protected onAssignStewardConfirm(body: OsspreyAssignStewardRequest): void {
+  protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     if (this.actionLoading()) return;
     this.actionLoading.set(true);
 
     const existingId = this.stewardshipId();
     if (existingId !== null) {
-      this.osspreyService
+      this.akritesService
         .assignSteward(existingId, body)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
@@ -232,10 +232,10 @@ export class OsspreyPackageDrawerComponent {
       return;
     }
 
-    this.osspreyService
+    this.akritesService
       .openStewardship(purl)
       .pipe(
-        switchMap((res) => this.osspreyService.assignSteward(parseInt(res.stewardship.id, 10), body)),
+        switchMap((res) => this.akritesService.assignSteward(parseInt(res.stewardship.id, 10), body)),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -248,12 +248,12 @@ export class OsspreyPackageDrawerComponent {
       });
   }
 
-  protected onEscalateConfirm(body: OsspreyEscalateRequest): void {
+  protected onEscalateConfirm(body: AkritesEscalateRequest): void {
     const id = this.stewardshipId();
     if (id === null || this.actionLoading()) return;
 
     this.actionLoading.set(true);
-    this.osspreyService
+    this.akritesService
       .escalateStewardship(id, body)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -265,12 +265,12 @@ export class OsspreyPackageDrawerComponent {
       });
   }
 
-  protected onStatusConfirm(body: OsspreyUpdateStatusRequest): void {
+  protected onStatusConfirm(body: AkritesUpdateStatusRequest): void {
     const id = this.stewardshipId();
     if (id === null || this.actionLoading()) return;
 
     this.actionLoading.set(true);
-    this.osspreyService
+    this.akritesService
       .updateStewardshipStatus(id, body)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -294,7 +294,7 @@ export class OsspreyPackageDrawerComponent {
     this.messageService.add({ severity: 'error', summary: 'Action failed', detail: 'Something went wrong. Please try again.' });
   }
 
-  private initPackageData(): Signal<OsspreyPackage | null> {
+  private initPackageData(): Signal<AkritesPackage | null> {
     // Fetch only while the drawer is open for a concrete package; closing the
     // drawer maps to null. The reload trigger forces a re-fetch after a mutation
     // even though the package id is unchanged.
@@ -315,7 +315,7 @@ export class OsspreyPackageDrawerComponent {
             lastId = id;
           }
           this.detailLoading.set(true);
-          return this.osspreyService.getPackage(id).pipe(
+          return this.akritesService.getPackage(id).pipe(
             catchError(() => of(null)),
             finalize(() => this.detailLoading.set(false))
           );

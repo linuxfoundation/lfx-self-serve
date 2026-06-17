@@ -10,7 +10,7 @@
   [dismissableMask]="true"
   (onShow)="onShow()"
   header="Escalate package"
-  data-testid="ossprey-escalate-modal">
+  data-testid="akrites-escalate-modal">
   <div class="flex flex-col gap-4">
     <p class="text-sm text-gray-500">
       @if (packageName()) {
@@ -41,12 +41,12 @@
     </div>
 
     <div class="flex flex-col gap-1.5">
-      <label for="ossprey-escalate-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
+      <label for="akrites-escalate-notes" class="text-sm font-medium text-gray-700">Note (optional)</label>
       <lfx-textarea
         [form]="form"
         control="notes"
-        id="ossprey-escalate-notes"
-        dataTest="ossprey-escalate-notes"
+        id="akrites-escalate-notes"
+        dataTest="akrites-escalate-notes"
         [rows]="3"
         placeholder="Context for this escalation..." />
     </div>
@@ -54,14 +54,14 @@
 
   <ng-template #footer>
     <div class="flex items-center justify-end gap-2">
-      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="ossprey-escalate-cancel" />
+      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="akrites-escalate-cancel" />
       <lfx-button
         label="Escalate"
         severity="danger"
         [loading]="loading()"
         [disabled]="!selectedPath() || loading()"
         (onClick)="onConfirm()"
-        data-testid="ossprey-escalate-confirm" />
+        data-testid="akrites-escalate-confirm" />
     </div>
   </ng-template>
 </p-dialog>

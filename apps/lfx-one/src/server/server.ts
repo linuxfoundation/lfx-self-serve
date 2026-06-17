@@ -54,7 +54,7 @@ import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
-import osspreyRouter from './routes/ossprey.route';
+import akritesRouter from './routes/akrites.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -246,9 +246,9 @@ app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
-// Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (osspreyEnabledGuard).
+// Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
-app.use('/api/akrites', osspreyRouter);
+app.use('/api/akrites', akritesRouter);
 // Redirect old /api/ossprey/* paths to /api/akrites/* for backwards compatibility.
 app.use('/api/ossprey', (req, res) => {
   res.redirect(301, `/api/akrites${req.url}`);

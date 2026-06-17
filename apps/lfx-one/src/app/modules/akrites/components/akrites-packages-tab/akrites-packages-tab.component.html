@@ -12,7 +12,7 @@
       placeholder="Search package, purl, steward, or contact…"
       class="outline-none text-sm bg-transparent flex-1"
       aria-label="Search packages"
-      data-testid="ossprey-search" />
+      data-testid="akrites-search" />
   </div>
 
   <!-- Status pills + sort/filter toolbar -->
@@ -47,7 +47,7 @@
           type="button"
           class="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
           (click)="toggleSortMenu()"
-          data-testid="ossprey-sort-button">
+          data-testid="akrites-sort-button">
           <i class="fa-light fa-arrow-down-wide-short" aria-hidden="true"></i>
           Sort: <span>{{ sortLabel() }}</span>
           <i class="fa-light fa-chevron-down text-xs" aria-hidden="true"></i>
@@ -75,7 +75,7 @@
           type="button"
           class="inline-flex items-center gap-2 h-9 px-3.5 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           (click)="toggleFilterPanel()"
-          data-testid="ossprey-filter-button">
+          data-testid="akrites-filter-button">
           <i class="fa-light fa-filter" aria-hidden="true"></i>
           Filter
           @if (activeFilterChips().length > 0) {
@@ -97,7 +97,7 @@
                   [options]="ecosystemOptions"
                   size="small"
                   styleClass="w-full"
-                  dataTest="ossprey-filter-ecosystem" />
+                  dataTest="akrites-filter-ecosystem" />
               </div>
 
               <!-- Lifecycle -->
@@ -109,7 +109,7 @@
                   [options]="lifecycleOptions"
                   size="small"
                   styleClass="w-full"
-                  dataTest="ossprey-filter-lifecycle" />
+                  dataTest="akrites-filter-lifecycle" />
               </div>
 
               <!-- Health -->
@@ -121,13 +121,13 @@
                   [options]="healthOptions"
                   size="small"
                   styleClass="w-full"
-                  dataTest="ossprey-filter-health" />
+                  dataTest="akrites-filter-health" />
               </div>
 
               <!-- Open vulnerabilities -->
               <div class="flex flex-col gap-2 px-4 py-3 border-b border-gray-100">
                 <span class="text-sm font-semibold text-slate-900">Open vulnerabilities</span>
-                <lfx-select [form]="filterForm" control="vulnFilter" [options]="vulnOptions" size="small" styleClass="w-full" dataTest="ossprey-filter-vulns" />
+                <lfx-select [form]="filterForm" control="vulnFilter" [options]="vulnOptions" size="small" styleClass="w-full" dataTest="akrites-filter-vulns" />
               </div>
 
               <!-- Coverage gaps -->
@@ -150,7 +150,7 @@
 
   <!-- Active filter chips -->
   @if (activeFilterChips().length > 0) {
-    <div class="flex flex-wrap items-center gap-2" data-testid="ossprey-filter-chips">
+    <div class="flex flex-wrap items-center gap-2" data-testid="akrites-filter-chips">
       @for (chip of activeFilterChips(); track chip.label) {
         <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium">
           {{ chip.label }}
@@ -167,14 +167,14 @@
         type="button"
         class="text-xs font-medium text-gray-500 underline hover:text-slate-900 px-1.5 py-1"
         (click)="clearFilters.emit()"
-        data-testid="ossprey-clear-filters">
+        data-testid="akrites-clear-filters">
         Clear filters
       </button>
     </div>
   }
 
   <!-- Package table -->
-  <lfx-table [value]="filteredPackages()" [loading]="loading()" [rowHover]="true" size="small" data-testid="ossprey-packages-table">
+  <lfx-table [value]="filteredPackages()" [loading]="loading()" [rowHover]="true" size="small" data-testid="akrites-packages-table">
     <ng-template #header>
       <tr>
         <th class="w-9">
