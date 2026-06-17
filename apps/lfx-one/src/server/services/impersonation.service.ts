@@ -5,6 +5,7 @@ import {
   ACCOUNT_COOKIE_KEY,
   LENS_COOKIE_KEY,
   NATS_CONFIG,
+  NAV_LENS_COOKIE_KEY,
   PERSONA_COOKIE_KEY,
   SELECTED_FOUNDATION_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
@@ -163,9 +164,10 @@ export class ImpersonationService {
       delete req.appSession['impersonationPersonaContext'];
     }
 
-    // Clear impersonator's persona/lens/account/project/foundation cookies so the impersonated session re-detects cleanly on reload.
+    // Clear impersonator's persona/lens/nav-lens/account/project/foundation cookies so the impersonated session re-detects cleanly on reload.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+    res.clearCookie(NAV_LENS_COOKIE_KEY, { path: '/' });
     res.clearCookie(ACCOUNT_COOKIE_KEY, { path: '/' });
     res.clearCookie(SELECTED_FOUNDATION_COOKIE_KEY, { path: '/' });
     res.clearCookie(SELECTED_PROJECT_COOKIE_KEY, { path: '/' });
@@ -180,9 +182,10 @@ export class ImpersonationService {
   }
 
   public stopImpersonation(req: Request, res: Response): void {
-    // Always clear persona/lens/account/project/foundation cookies even when session is missing — stale cookies on the client must be reset.
+    // Always clear persona/lens/nav-lens/account/project/foundation cookies even when session is missing — stale cookies on the client must be reset.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+    res.clearCookie(NAV_LENS_COOKIE_KEY, { path: '/' });
     res.clearCookie(ACCOUNT_COOKIE_KEY, { path: '/' });
     res.clearCookie(SELECTED_FOUNDATION_COOKIE_KEY, { path: '/' });
     res.clearCookie(SELECTED_PROJECT_COOKIE_KEY, { path: '/' });
