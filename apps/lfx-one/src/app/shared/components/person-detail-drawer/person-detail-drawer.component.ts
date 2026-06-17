@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, type Signal } from '@angular/core';
+import { Component, computed, inject, OnDestroy, PLATFORM_ID, type Signal } from '@angular/core';
 import type { OrgAllEmployeeCommitteeMembership, PersonDrawerTab } from '@lfx-one/shared/interfaces';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -13,7 +13,7 @@ import { DrawerModule } from 'primeng/drawer';
   imports: [DatePipe, DecimalPipe, DrawerModule],
   templateUrl: './person-detail-drawer.component.html',
 })
-export class PersonDetailDrawerComponent {
+export class PersonDetailDrawerComponent implements OnDestroy {
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly drawer = inject(PersonDetailDrawerService);
 
@@ -26,6 +26,10 @@ export class PersonDetailDrawerComponent {
 
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
+
+  public ngOnDestroy(): void {
+    this.drawer.close();
+  }
 
   protected onVisibleChange(visible: boolean): void {
     if (!visible) {

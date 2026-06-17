@@ -148,11 +148,6 @@ export class KeyContactsComponent {
     this.toggleExpansion(email);
   }
 
-  protected onPersonClick(_group: OrgKeyContactPersonGroupVm, event: Event): void {
-    // Key Contacts have no personKey yet — no drawer; stopPropagation only.
-    event.stopPropagation();
-  }
-
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);
   }
