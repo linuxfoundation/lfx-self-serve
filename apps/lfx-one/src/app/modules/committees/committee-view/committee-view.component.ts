@@ -296,36 +296,6 @@ export class CommitteeViewComponent {
     this.refreshCommittee();
   }
 
-  /**
-   * Refreshes committee + members after join/accept. The membership query index can lag
-   * the upstream write, so poll until `my_role` surfaces before giving up.
-   */
-  private refreshCommitteeAfterMembershipChange(): void {
-    const committeeId = this.committee()?.uid ?? this.committeeId();
-    this.refreshMembers();
-
-    if (!committeeId) {
-      return;
-    }
-
-    timer(400, 400)
-      .pipe(
-        take(6),
-        switchMap(() => this.committeeService.getCommittee(committeeId)),
-        filter((committee) => !!committee.my_role),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
-        next: () => this.refreshMembers(),
-        complete: () => {
-          if (!this.committee()?.my_role) {
-            this.refreshMembers();
-          }
-        },
-      });
-  }
-
   public onMembersRefreshed(): void {
     this.refreshMembers();
   }
@@ -550,6 +520,36 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+
+  /**
+   * Refreshes committee + members after join/accept. The membership query index can lag
+   * the upstream write, so poll until `my_role` surfaces before giving up.
+   */
+  private refreshCommitteeAfterMembershipChange(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+    this.refreshMembers();
+
+    if (!committeeId) {
+      return;
+    }
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        switchMap(() => this.committeeService.getCommittee(committeeId)),
+        filter((committee) => !!committee.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => this.refreshMembers(),
+        complete: () => {
+          if (!this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
 
   /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
   private flushDecline(inviteUid: string): void {
