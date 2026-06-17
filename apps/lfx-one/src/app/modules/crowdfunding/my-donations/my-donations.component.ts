@@ -43,7 +43,7 @@ export class MyDonationsComponent {
   private readonly messageService = inject(MessageService);
 
   // ─── Public Fields ────────────────────────────────────────────────────────
-  protected readonly crowdfundingUrl = environment.urls.crowdfunding;
+  protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}initiatives`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   // TODO: derive from API response once cancelled-recurring concept is implemented
