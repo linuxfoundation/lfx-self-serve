@@ -51,7 +51,7 @@ export function formatStatus(status: string): string {
   return status.replace(/_/g, ' ');
 }
 
-// Band thresholds mirror the design spec (design/LFX-OSSPREY-Admin-Dashboard.html):
+// Band thresholds mirror the design spec (design/LFX-AKRITES-Admin-Dashboard.html):
 // healthy ≥70, fair ≥50, concerning ≥30, otherwise critical.
 function getHealthBand(score: number): AkritesHealthBand {
   if (score >= 70) return 'healthy';

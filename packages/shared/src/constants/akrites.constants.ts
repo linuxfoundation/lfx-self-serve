@@ -77,7 +77,7 @@ export const AKRITES_STEWARD_ROLE_OPTIONS: Array<{ value: AkritesStewardRole; la
 
 /**
  * Escalation resolution paths shown as selectable cards in the escalate modal.
- * Titles + descriptions mirror the design (design/LFX-OSSPREY-Admin-Dashboard.html).
+ * Titles + descriptions mirror the design (design/LFX-AKRITES-Admin-Dashboard.html).
  */
 export const AKRITES_ESCALATION_PATHS: Array<{ value: AkritesEscalationPath; title: string; description: string }> = [
   { value: 'right_of_first_refusal', title: 'Right of first refusal', description: 'Give the project a clear opportunity to act before any external action.' },
