@@ -18,7 +18,22 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take, tap, timer } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  exhaustMap,
+  filter,
+  finalize,
+  map,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
@@ -191,7 +206,7 @@ export class CommitteeDashboardComponent {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() => this.committeeService.getMyCommittees().pipe(catchError(() => of([] as MyCommittee[])))),
+        exhaustMap(() => this.committeeService.getMyCommittees().pipe(catchError(() => of([] as MyCommittee[])))),
         filter((committees) => committees.some((committee) => committee.uid === committeeUid)),
         take(1),
         takeUntilDestroyed(this.destroyRef)

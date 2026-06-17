@@ -203,15 +203,6 @@ export class AddMemberDialogComponent {
           }
           fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
         },
-        error: () => {
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Organization lookup failed',
-            detail: 'Could not resolve the organization. Please try again.',
-            life: 6000,
-          });
-        },
       });
       return;
     }

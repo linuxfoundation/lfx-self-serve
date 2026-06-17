@@ -246,7 +246,15 @@ export class CommitteeService {
   public async getCommitteeById(
     req: Request,
     committeeId: string,
-    options: { includeMembership?: boolean; includeProjectMetadata?: boolean; includeInheritedPermissions?: boolean } = {}
+    options: {
+      includeMembership?: boolean;
+      includeProjectMetadata?: boolean;
+      includeInheritedPermissions?: boolean;
+      /** When true, a settings-service failure throws instead of silently returning {}. Use on
+       *  write paths (e.g. accept invite) where an unknown business_email_required must not
+       *  be treated as false (fail-closed). */
+      throwOnSettingsError?: boolean;
+    } = {}
   ): Promise<Committee> {
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
@@ -261,7 +269,7 @@ export class CommitteeService {
     // Fetch settings, optional caller membership, access, and optional inherited
     // (parent-project) permissions in parallel.
     const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
-      this.getCommitteeSettings(req, committeeId),
+      this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
@@ -1408,16 +1416,21 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches committee settings by ID
-   * @returns Committee settings or empty object if not found/error
+   * Fetches committee settings by ID.
+   * By default returns {} on error so callers that display settings can degrade gracefully.
+   * Pass { throwOnError: true } on write paths where an unknown setting must not silently
+   * default to false (e.g. accept-invite org enforcement).
    */
-  private async getCommitteeSettings(req: Request, committeeId: string): Promise<CommitteeSettingsData> {
+  private async getCommitteeSettings(req: Request, committeeId: string, options: { throwOnError?: boolean } = {}): Promise<CommitteeSettingsData> {
     try {
       const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET');
 
       return settings || {};
-    } catch {
-      logger.debug(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
+    } catch (error) {
+      if (options.throwOnError) {
+        throw error;
+      }
+      logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });
       return {};

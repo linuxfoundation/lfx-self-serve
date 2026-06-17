@@ -691,10 +691,16 @@ export class CommitteeController {
         return;
       }
 
-      const acceptData: AcceptCommitteeInviteRequest = { ...(req.body as AcceptCommitteeInviteRequest) };
-      const committee = await this.committeeService.getCommitteeById(req, id);
+      // Fetch with throwOnSettingsError so a settings-service outage fails the accept
+      // (returns 503) rather than silently treating business_email_required as false.
+      const committee = await this.committeeService.getCommitteeById(req, id, { throwOnSettingsError: true });
+
+      // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
+      const acceptData: AcceptCommitteeInviteRequest = {};
+
       if (committeeRequiresOrganization(committee)) {
-        const orgName = typeof acceptData.organization?.name === 'string' ? acceptData.organization.name.trim() : '';
+        const body = req.body as AcceptCommitteeInviteRequest;
+        const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
         if (!orgName) {
           next(
             ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
@@ -705,7 +711,7 @@ export class CommitteeController {
           );
           return;
         }
-        acceptData.organization = { ...(acceptData.organization ?? {}), name: orgName };
+        acceptData.organization = { ...(body.organization ?? {}), name: orgName };
       }
 
       await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);

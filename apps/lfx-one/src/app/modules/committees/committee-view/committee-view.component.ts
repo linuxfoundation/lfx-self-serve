@@ -49,7 +49,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
+import { catchError, combineLatest, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -426,7 +426,7 @@ export class CommitteeViewComponent {
         business_email_required: invite.business_email_required,
         inviteRequiresOrganization: requiresOrganization,
       })
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           if (requiresOrganization) {
@@ -538,7 +538,7 @@ export class CommitteeViewComponent {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
         filter((committee) => !!committee?.my_role),
         take(1),
         takeUntilDestroyed(this.destroyRef)

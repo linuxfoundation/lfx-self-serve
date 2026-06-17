@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, Component, DestroyRef, inject, output, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
@@ -87,7 +88,7 @@ export class CommitteeInvitationsComponent {
         business_email_required: invitation.business_email_required,
         inviteRequiresOrganization: requiresOrganization,
       })
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           if (requiresOrganization) {
