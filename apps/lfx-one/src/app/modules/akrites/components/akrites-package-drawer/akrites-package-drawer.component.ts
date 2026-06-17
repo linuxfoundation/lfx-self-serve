@@ -75,7 +75,7 @@ export class AkritesPackageDrawerComponent {
   protected readonly stewardshipId = computed<number | null>(() => this.packageData()?.stewardshipId ?? null);
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
-  protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned' && this.stewardshipId() === null);
+  protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned');
   // Allow assigning a steward on any package — if no stewardship row exists yet the
   // confirm handler auto-opens the package first and then chains the assign call.
   protected readonly canAssignSteward = computed(() => {

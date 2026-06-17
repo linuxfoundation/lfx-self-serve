@@ -82,6 +82,7 @@ export const CDP_CONFIG = {
     PACKAGES_LIST: '/v1/akrites/packages',
     PACKAGES_METRICS: '/v1/akrites/metrics',
     PACKAGE_DETAIL: '/v1/akrites/packages/detail',
+    ACTIVITY: '/v1/akrites/activity',
     STEWARDSHIPS_OPEN: '/v1/akrites/stewardships/open',
     STEWARDSHIP_ASSIGN: (id: number) => `/v1/akrites/stewardships/${id}/assign`,
     STEWARDSHIP_ESCALATE: (id: number) => `/v1/akrites/stewardships/${id}/escalate`,

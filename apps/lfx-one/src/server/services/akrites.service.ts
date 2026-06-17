@@ -3,6 +3,8 @@
 
 import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import {
+  CdpActivityResponse,
+  CdpActivityRow,
   CdpAdvisory,
   CdpPackageDetail,
   CdpPackagesListResponse,
@@ -13,6 +15,7 @@ import {
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
+  AkritesHistoryEntry,
   AkritesListParams,
   AkritesMetrics,
   AkritesPackage,
@@ -209,11 +212,14 @@ export class AkritesServerService {
         });
       }
 
-      const detail = (await response.json()) as CdpPackageDetail;
+      const [detail, activityRows] = await Promise.all([
+        response.json() as Promise<CdpPackageDetail>,
+        this.fetchActivityForPackage(req, token, purl),
+      ]);
 
       logger.debug(req, 'get_akrites_package', 'Fetched package detail from CDP', { purl });
 
-      return this.mapPackageDetail(detail);
+      return this.mapPackageDetail(detail, activityRows);
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) return null;
       if (error instanceof MicroserviceError) throw error;
@@ -273,8 +279,8 @@ export class AkritesServerService {
         name: null,
         avatarUrl: null,
       })),
-      lastActivityLabel: item.lastActivity ? item.lastActivity.type : '—',
-      lastActivityTime: item.lastActivity ? item.lastActivity.at : '',
+      lastActivityLabel: item.lastActivity ? (item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type)) : '—',
+      lastActivityTime: item.lastActivity ? this.formatRelativeTime(item.lastActivity.at) : '',
       downloadsLastMonth: null,
       dependentPackages: null,
       dependentRepos: null,
@@ -297,7 +303,7 @@ export class AkritesServerService {
     };
   }
 
-  private mapPackageDetail(detail: CdpPackageDetail): AkritesPackage {
+  private mapPackageDetail(detail: CdpPackageDetail, activityRows: CdpActivityRow[] = []): AkritesPackage {
     const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
@@ -354,7 +360,7 @@ export class AkritesServerService {
       contactGroup: null,
       healthBreakdown,
       advisories,
-      history: [],
+      history: this.mapActivityRows(activityRows),
       assessment: null,
     };
   }
@@ -451,7 +457,7 @@ export class AkritesServerService {
       id: adv.osvId,
       severity: adv.severity,
       description: adv.resolution ?? adv.osvId,
-      state: 'Open' as const,
+      state: adv.resolution != null ? ('Patched' as const) : ('Open' as const),
       cvss: null,
       publishedAt: null,
       affectedVersionRange: null,
@@ -480,5 +486,63 @@ export class AkritesServerService {
 
   private stripProtocol(url?: string | null): string | null {
     return url ? url.replace(/^https?:\/\//, '') : null;
+  }
+
+  private async fetchActivityForPackage(req: Request, token: string, purl: string): Promise<CdpActivityRow[]> {
+    try {
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.ACTIVITY}`);
+      url.searchParams.set('pageSize', '100');
+      const response = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) return [];
+      const data = (await response.json()) as CdpActivityResponse;
+      return (data.rows ?? []).filter((r) => r.packagePurl === purl);
+    } catch {
+      logger.warning(req, 'fetch_activity', 'Failed to fetch activity feed, skipping', { purl });
+      return [];
+    }
+  }
+
+  private mapActivityRows(rows: CdpActivityRow[]): AkritesHistoryEntry[] {
+    return rows.map((row) => ({
+      label: row.content || this.formatActivityLabel(row.activityType),
+      timeAgo: this.formatRelativeTime(row.createdAt),
+      type: row.stewardshipStatus === 'escalated' || row.stewardshipStatus === 'blocked' || row.stewardshipStatus === 'inactive' ? ('danger' as const) : row.stewardshipStatus === 'active' ? ('success' as const) : undefined,
+    }));
+  }
+
+  private formatRelativeTime(isoDate?: string | null): string {
+    if (!isoDate) return '';
+    const ms = Date.now() - new Date(isoDate).getTime();
+    if (Number.isNaN(ms)) return '';
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(ms / 86_400_000);
+    if (days < 60) return `${days}d ago`;
+    return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  private formatActivityLabel(type: string): string {
+    const labels: Record<string, string> = {
+      escalation: 'Escalated',
+      state_changed: 'Status changed',
+      steward_assigned: 'Steward assigned',
+      steward_removed: 'Steward removed',
+      stewardship_opened: 'Opened for stewardship',
+      package_synced: 'Package synced',
+      advisory_detected: 'New security advisory detected',
+      advisory_resolved: 'Security advisory resolved',
+      status_inactive: 'Marked inactive',
+      quarterly_update: 'Quarterly status update posted',
+      remediation_logged: 'Remediation progress logged',
+      assessment_started: 'Security assessment started',
+      blocker_resolved: 'Blocker resolved',
+      reactivated: 'Reactivated',
+    };
+    return labels[type] ?? type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }

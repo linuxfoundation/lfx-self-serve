@@ -37,6 +37,27 @@ export interface AkritesRoleOption {
 
 // ===== CDP Raw Types =====
 
+export interface CdpActivityRow {
+  id: string;
+  stewardshipId: string;
+  packagePurl: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorType: string;
+  activityType: string;
+  content: string | null;
+  metadata: Record<string, unknown> | null;
+  stewardshipStatus: string;
+  createdAt: string;
+}
+
+export interface CdpActivityResponse {
+  rows: CdpActivityRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface CdpStewardshipSummary {
   purl: string;
   name: string;
