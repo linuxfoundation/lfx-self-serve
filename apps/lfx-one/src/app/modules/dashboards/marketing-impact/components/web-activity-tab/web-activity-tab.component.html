@@ -47,14 +47,15 @@
             @let isExpanded = expandedDomains().has(row.domain);
             <!-- Parent row -->
             <div
-              class="flex cursor-pointer items-center gap-3 border-b border-gray-100 py-2.5 hover:bg-gray-50"
+              class="flex items-center gap-3 border-b border-gray-100 py-2.5 hover:bg-gray-50"
               role="row"
-              tabindex="0"
+              [class.cursor-pointer]="row.domains.length > 0"
+              [attr.tabindex]="row.domains.length > 0 ? 0 : null"
               [attr.data-testid]="'web-activity-row-' + row.domain"
-              [attr.aria-expanded]="row.domains.length > 0 ? isExpanded : undefined"
+              [attr.aria-expanded]="row.domains.length > 0 ? isExpanded : null"
               (click)="row.domains.length > 0 && toggleDomainExpand(row.domain)"
               (keydown.enter)="row.domains.length > 0 && toggleDomainExpand(row.domain)"
-              (keydown.space)="row.domains.length > 0 && toggleDomainExpand(row.domain); $event.preventDefault()">
+              (keydown.space)="$event.preventDefault(); row.domains.length > 0 && toggleDomainExpand(row.domain)">
               <span class="flex w-6 items-center justify-center">
                 @if (row.domains.length > 0) {
                   <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform duration-200" [class.rotate-90]="isExpanded"></i>
