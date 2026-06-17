@@ -39,10 +39,30 @@ async function metaRequest<T>(method: 'GET' | 'POST', path: string, body?: Recor
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`Meta API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`);
+    logger.warning(undefined, 'meta_api_error', `Meta API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`, { method, path, status: resp.status });
+    throw new Error(`Meta API request failed (${resp.status}). Check server logs for details.`);
   }
 
   return (await resp.json()) as T;
+}
+
+function validateRegistrationUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Registration URL is not a valid URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Registration URL must use HTTPS');
+  }
+}
+
+const GEO_CODE_RE = /^[A-Z]{2}$/;
+
+function validateGeoTargets(geoTargets: string[]): string[] {
+  const valid = geoTargets.map((g) => g.trim().toUpperCase()).filter((g) => GEO_CODE_RE.test(g));
+  return valid.length > 0 ? valid : ['US'];
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +145,8 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     throw new Error('At least one ad variant is required for Meta campaign creation');
   }
 
+  validateRegistrationUrl(config.registrationUrl);
+
   if (!Number.isFinite(config.budgetUsd) || config.budgetUsd <= 0) {
     throw new Error('Invalid budget: must be a positive number');
   }
@@ -148,11 +170,12 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     await metaRequest<Record<string, unknown>>('GET', `/${accountId}?fields=name,account_status`);
     steps.push(`Account verified: ${account.label} (${accountId})`);
   } catch (err) {
-    steps.push(`Account verification warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    logger.warning(req, 'meta_account_verify', 'Account verification failed', { error: err instanceof Error ? err.message : 'Unknown error' });
+    steps.push('Account verification warning — check server logs for details');
   }
 
   // Step 2: Create campaign (PAUSED)
-  const allGeoCountries = config.geoTargets.length > 0 ? config.geoTargets.map((g) => g.toUpperCase()) : ['US'];
+  const allGeoCountries = validateGeoTargets(config.geoTargets ?? []);
 
   // Countries requiring Universal Ads Declaration or regional compliance — exclude from API targeting,
   // users can add them manually in Meta Ads Manager after completing the declaration.
@@ -246,7 +269,8 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
       adCount++;
       steps.push(`Ad ${i + 1} created: ${adResp.id} (creative: ${creativeId}) → ${utmUrl}`);
     } catch (err) {
-      steps.push(`Ad ${i + 1} failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      logger.warning(req, 'meta_ad_create', `Ad variant ${i + 1} creation failed`, { error: err instanceof Error ? err.message : 'Unknown error' });
+      steps.push(`Ad ${i + 1} failed — check server logs for details`);
     }
   }
 
