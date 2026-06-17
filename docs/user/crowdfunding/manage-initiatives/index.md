@@ -17,7 +17,7 @@ The detail page is organized into a header and two tabs.
 
 **Header** shows:
 
-- Initiative name and fund type (General Fund, Security Audit, Mentorship, or Event)
+- Initiative name and fund type — see [Fund types](#fund-types) below
 - Description and industry tags
 - Initiative logo or fund-type icon
 - Current status badge
@@ -56,6 +56,15 @@ Activating an initiative changes its status back to Published. The initiative be
 The initiative moves to the **Active** group in the initiatives list.
 
 > **Note:** The **More** menu is only available for Published or Archived initiatives. Initiatives with a Pending or Submitted status do not have status-change actions available.
+
+## Fund types
+
+Each initiative has a fund type that describes its purpose:
+
+- **General Fund** — supports the project's general development and operating expenses
+- **Security Audit** — funds a third-party security review or penetration test of the project's code
+- **Mentorship** — funds a mentorship program that trains new contributors to the project
+- **Event** — funds a conference, summit, or community event organized around the project
 
 ## Related
 

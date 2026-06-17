@@ -39,6 +39,15 @@ Each filter pill shows the count of initiatives in that group. The list supports
 4. Select a status filter pill (**Active**, **Pending**, or **Archived**) to narrow the list.
 5. Select an initiative card to open its detail page.
 
+## Fund types
+
+Each initiative has a fund type that describes its purpose:
+
+- **General Fund** — supports the project's general development and operating expenses
+- **Security Audit** — funds a third-party security review or penetration test of the project's code
+- **Mentorship** — funds a mentorship program that trains new contributors to the project
+- **Event** — funds a conference, summit, or community event organized around the project
+
 ## Related
 
 - [Manage Initiatives](../manage-initiatives/) — edit settings, archive, or activate an initiative from its detail page

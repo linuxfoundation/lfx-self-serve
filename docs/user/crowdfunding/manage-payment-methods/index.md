@@ -24,13 +24,15 @@ The new card appears in your payment methods list and can be used for future don
 
 ## Delete a payment method
 
+> **Before deleting:** If a recurring donation is using this card, it will fail on the next billing cycle. Update the payment method on that subscription before removing the card — see [Manage Recurring Donations](../manage-recurring-donations/).
+
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
 3. Scroll to the **Payment Methods** section at the bottom of the page.
 4. Select **Delete** next to the card you want to remove.
 5. Confirm the deletion.
 
-The card is removed from your account. Any active recurring donations that use this card may need to be updated.
+The card is removed from your account.
 
 ## Related
 
