@@ -145,6 +145,17 @@ export interface SentimentBar {
   negativeLabel: string;
 }
 
+/** View-model row for an individual domain inside a classification group. */
+export interface WebActivityDomainDetailRow {
+  host: string;
+  sessions: string;
+  pageViews: string;
+  newUsers: string;
+  returningUsers: string;
+  sessionShare: number;
+  sessionShareFormatted: string;
+}
+
 /** View-model row for the web activity domain table. */
 export interface WebActivityDomainRow {
   domain: string;
@@ -153,6 +164,7 @@ export interface WebActivityDomainRow {
   pagesPerSession: string;
   sessionShare: number;
   sessionShareFormatted: string;
+  domains: WebActivityDomainDetailRow[];
 }
 
 /** View-model row for the platform performance table. */

@@ -10,7 +10,7 @@ import {
   CROWDFUNDING_FUND_TYPE_LABELS,
 } from '@lfx-one/shared/constants';
 import { InitiativeBase } from '@lfx-one/shared/interfaces';
-import { formatCurrency } from '@lfx-one/shared/utils';
+import { formatCurrency, stripHtml } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 
 @Component({
@@ -30,6 +30,7 @@ export class InitiativeCardComponent {
 
   protected readonly progressPercent = this.initProgressPercent();
 
+  protected readonly description = computed(() => stripHtml(this.initiative().description));
   protected readonly isClickable = computed(() => this.initiative().status !== 'declined');
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
 

@@ -4,10 +4,10 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
 
-export const OSSPREY_ROUTES: Routes = [
+export const AKRITES_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./ossprey-dashboard/ossprey-dashboard.component').then((m) => m.OsspreyDashboardComponent),
+    loadComponent: () => import('./akrites-dashboard/akrites-dashboard.component').then((m) => m.AkritesDashboardComponent),
     canActivate: [authGuard],
   },
 ];

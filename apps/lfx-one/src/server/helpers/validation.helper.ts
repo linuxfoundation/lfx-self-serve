@@ -2,13 +2,33 @@
 // SPDX-License-Identifier: MIT
 
 import { Request, NextFunction } from 'express';
-import { HEALTH_METRICS_RANGES, MONTH_FORMAT_REGEX, VALID_CLASSIFICATIONS, isHealthMetricsRange } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_RANGES,
+  MONTH_FORMAT_REGEX,
+  AKRITES_ESCALATION_PATHS,
+  AKRITES_INACTIVE_REASON_OPTIONS,
+  AKRITES_STEWARD_ROLE_OPTIONS,
+  VALID_CLASSIFICATIONS,
+  isHealthMetricsRange,
+} from '@lfx-one/shared/constants';
 import { resolvePeriodRange } from '@lfx-one/shared/utils';
 import { ServiceValidationError } from '../errors';
 
-import type { HealthMetricsRange, OsspreyStatus, OsspreyHealthBand, OspreySortKey } from '@lfx-one/shared/interfaces';
-import type { ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
-import type { OsspreyListParams } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsRange,
+  AkritesAssignStewardRequest,
+  AkritesEscalateRequest,
+  AkritesEscalationPath,
+  AkritesHealthBand,
+  AkritesInactiveReason,
+  AkritesListParams,
+  AkritesStatus,
+  AkritesStewardRole,
+  AkritesUpdatableStatus,
+  AkritesUpdateStatusRequest,
+  AkritesSortKey,
+  ResolvedPeriodRange,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Common validation utilities for controllers
@@ -215,49 +235,135 @@ export function getValidatedPeriod(req: Request, operation: string): ResolvedPer
  * @param options Validation options including operation name
  * @returns true if validation passes, false if validation fails (error sent to next)
  */
-const VALID_OSSPREY_STATUSES = ['all', 'unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'] as const;
-const VALID_OSSPREY_HEALTH_BANDS: readonly OsspreyHealthBand[] = ['healthy', 'fair', 'concerning', 'critical'];
-const VALID_OSSPREY_VULN_FILTERS: readonly NonNullable<OsspreyListParams['vulnFilter']>[] = ['any', 'high', 'critical'];
-const VALID_OSSPREY_SORT_KEYS: readonly OspreySortKey[] = ['risk', 'impact', 'health', 'vulns', 'name'];
+const VALID_AKRITES_STATUSES = ['all', 'unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'] as const;
+const VALID_AKRITES_HEALTH_BANDS: readonly AkritesHealthBand[] = ['healthy', 'fair', 'concerning', 'critical'];
+const VALID_AKRITES_VULN_FILTERS: readonly NonNullable<AkritesListParams['vulnFilter']>[] = ['any', 'high', 'critical'];
+const VALID_AKRITES_SORT_KEYS: readonly AkritesSortKey[] = ['risk', 'impact', 'health', 'vulns', 'name'];
 
-/** Returns a validated OsspreyStatus or undefined; throws 400 for unknown values. 'all' is accepted as a no-op and returns undefined. */
-export function parseOsspreyStatus(req: Request): OsspreyStatus | undefined {
+/** Returns a validated AkritesStatus or undefined; throws 400 for unknown values. 'all' is accepted as a no-op and returns undefined. */
+export function parseAkritesStatus(req: Request): AkritesStatus | undefined {
   const raw = getStringQueryParam(req, 'status');
   if (!raw) return undefined;
-  if (!VALID_OSSPREY_STATUSES.includes(raw as (typeof VALID_OSSPREY_STATUSES)[number])) {
-    throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_OSSPREY_STATUSES.join(', ')}`, {});
+  if (!VALID_AKRITES_STATUSES.includes(raw as (typeof VALID_AKRITES_STATUSES)[number])) {
+    throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_AKRITES_STATUSES.join(', ')}`, {});
   }
-  return raw === 'all' ? undefined : (raw as OsspreyStatus);
+  return raw === 'all' ? undefined : (raw as AkritesStatus);
 }
 
-/** Returns a validated OsspreyHealthBand or undefined; throws 400 for unknown values. */
-export function parseOsspreyHealthBand(req: Request): OsspreyHealthBand | undefined {
+/** Returns a validated AkritesHealthBand or undefined; throws 400 for unknown values. */
+export function parseAkritesHealthBand(req: Request): AkritesHealthBand | undefined {
   const raw = getStringQueryParam(req, 'healthBand');
   if (!raw) return undefined;
-  if (!VALID_OSSPREY_HEALTH_BANDS.includes(raw as OsspreyHealthBand)) {
-    throw ServiceValidationError.forField('healthBand', `Invalid healthBand. Allowed: ${VALID_OSSPREY_HEALTH_BANDS.join(', ')}`, {});
+  if (!VALID_AKRITES_HEALTH_BANDS.includes(raw as AkritesHealthBand)) {
+    throw ServiceValidationError.forField('healthBand', `Invalid healthBand. Allowed: ${VALID_AKRITES_HEALTH_BANDS.join(', ')}`, {});
   }
-  return raw as OsspreyHealthBand;
+  return raw as AkritesHealthBand;
 }
 
 /** Returns a validated vulnFilter or undefined; throws 400 for unknown values. */
-export function parseOsspreyVulnFilter(req: Request): OsspreyListParams['vulnFilter'] {
+export function parseAkritesVulnFilter(req: Request): AkritesListParams['vulnFilter'] {
   const raw = getStringQueryParam(req, 'vulnFilter');
   if (!raw) return undefined;
-  if (!VALID_OSSPREY_VULN_FILTERS.includes(raw as NonNullable<OsspreyListParams['vulnFilter']>)) {
-    throw ServiceValidationError.forField('vulnFilter', `Invalid vulnFilter. Allowed: ${VALID_OSSPREY_VULN_FILTERS.join(', ')}`, {});
+  if (!VALID_AKRITES_VULN_FILTERS.includes(raw as NonNullable<AkritesListParams['vulnFilter']>)) {
+    throw ServiceValidationError.forField('vulnFilter', `Invalid vulnFilter. Allowed: ${VALID_AKRITES_VULN_FILTERS.join(', ')}`, {});
   }
-  return raw as OsspreyListParams['vulnFilter'];
+  return raw as AkritesListParams['vulnFilter'];
 }
 
-/** Returns a validated OspreySortKey or undefined; throws 400 for unknown values. */
-export function parseOspreySortKey(req: Request): OspreySortKey | undefined {
+/** Returns a validated AkritesSortKey or undefined; throws 400 for unknown values. */
+export function parseAkritesSortKey(req: Request): AkritesSortKey | undefined {
   const raw = getStringQueryParam(req, 'sortBy');
   if (!raw) return undefined;
-  if (!VALID_OSSPREY_SORT_KEYS.includes(raw as OspreySortKey)) {
-    throw ServiceValidationError.forField('sortBy', `Invalid sortBy. Allowed: ${VALID_OSSPREY_SORT_KEYS.join(', ')}`, {});
+  if (!VALID_AKRITES_SORT_KEYS.includes(raw as AkritesSortKey)) {
+    throw ServiceValidationError.forField('sortBy', `Invalid sortBy. Allowed: ${VALID_AKRITES_SORT_KEYS.join(', ')}`, {});
   }
-  return raw as OspreySortKey;
+  return raw as AkritesSortKey;
+}
+
+const VALID_AKRITES_STEWARD_ROLES: readonly AkritesStewardRole[] = AKRITES_STEWARD_ROLE_OPTIONS.map((o) => o.value);
+const VALID_AKRITES_ESCALATION_PATHS: readonly AkritesEscalationPath[] = AKRITES_ESCALATION_PATHS.map((o) => o.value);
+const VALID_AKRITES_INACTIVE_REASONS: readonly AkritesInactiveReason[] = AKRITES_INACTIVE_REASON_OPTIONS.map((o) => o.value);
+const VALID_AKRITES_UPDATABLE_STATUSES: readonly AkritesUpdatableStatus[] = ['assessing', 'active', 'needs_attention', 'blocked', 'inactive'];
+
+/** Parses and validates the `:id` route param as a positive integer stewardship id; throws 400 otherwise. */
+export function parseStewardshipId(req: Request, operation: string): number {
+  const raw = req.params['id'];
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw ServiceValidationError.forField('id', 'Stewardship id must be a positive integer', { operation });
+  }
+  return id;
+}
+
+/** Validates the open-stewardship body and returns the normalized purl; throws 400 otherwise. */
+export function parseOpenStewardshipBody(req: Request, operation: string): string {
+  const purl = (req.body as { purl?: unknown })?.purl;
+  if (typeof purl !== 'string' || purl.trim() === '' || !purl.trim().startsWith('pkg:')) {
+    throw ServiceValidationError.forField('purl', 'purl is required and must start with "pkg:"', { operation });
+  }
+  return purl.trim();
+}
+
+/** Validates the assign-steward body; throws 400 for missing/invalid fields. */
+export function parseAssignStewardBody(req: Request, operation: string): AkritesAssignStewardRequest {
+  const body = (req.body ?? {}) as { userId?: unknown; role?: unknown; moveToAssessing?: unknown };
+
+  if (typeof body.userId !== 'string' || body.userId.trim() === '') {
+    throw ServiceValidationError.forField('userId', 'userId is required', { operation });
+  }
+  if (typeof body.role !== 'string' || !VALID_AKRITES_STEWARD_ROLES.includes(body.role as AkritesStewardRole)) {
+    throw ServiceValidationError.forField('role', `Invalid role. Allowed: ${VALID_AKRITES_STEWARD_ROLES.join(', ')}`, { operation });
+  }
+  if (body.moveToAssessing !== undefined && typeof body.moveToAssessing !== 'boolean') {
+    throw ServiceValidationError.forField('moveToAssessing', 'moveToAssessing must be a boolean', { operation });
+  }
+
+  return {
+    userId: body.userId.trim(),
+    role: body.role as AkritesStewardRole,
+    moveToAssessing: body.moveToAssessing as boolean | undefined,
+  };
+}
+
+/** Validates the escalate body; throws 400 for missing/invalid fields. */
+export function parseEscalateBody(req: Request, operation: string): AkritesEscalateRequest {
+  const body = (req.body ?? {}) as { resolutionPath?: unknown; notes?: unknown };
+
+  if (typeof body.resolutionPath !== 'string' || !VALID_AKRITES_ESCALATION_PATHS.includes(body.resolutionPath as AkritesEscalationPath)) {
+    throw ServiceValidationError.forField('resolutionPath', `Invalid resolutionPath. Allowed: ${VALID_AKRITES_ESCALATION_PATHS.join(', ')}`, { operation });
+  }
+  if (body.notes !== undefined && (typeof body.notes !== 'string' || body.notes.trim() === '')) {
+    throw ServiceValidationError.forField('notes', 'notes must be a non-empty string when provided', { operation });
+  }
+
+  return {
+    resolutionPath: body.resolutionPath as AkritesEscalationPath,
+    notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
+  };
+}
+
+/** Validates the update-status body; requires inactiveReason when status is `inactive`. Throws 400 otherwise. */
+export function parseUpdateStatusBody(req: Request, operation: string): AkritesUpdateStatusRequest {
+  const body = (req.body ?? {}) as { status?: unknown; inactiveReason?: unknown; notes?: unknown };
+
+  if (typeof body.status !== 'string' || !VALID_AKRITES_UPDATABLE_STATUSES.includes(body.status as AkritesUpdatableStatus)) {
+    throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_AKRITES_UPDATABLE_STATUSES.join(', ')}`, { operation });
+  }
+  if (
+    body.inactiveReason !== undefined &&
+    (typeof body.inactiveReason !== 'string' || !VALID_AKRITES_INACTIVE_REASONS.includes(body.inactiveReason as AkritesInactiveReason))
+  ) {
+    throw ServiceValidationError.forField('inactiveReason', `Invalid inactiveReason. Allowed: ${VALID_AKRITES_INACTIVE_REASONS.join(', ')}`, { operation });
+  }
+  if (body.status === 'inactive' && body.inactiveReason === undefined) {
+    throw ServiceValidationError.forField('inactiveReason', 'inactiveReason is required when status is inactive', { operation });
+  }
+
+  return {
+    status: body.status as AkritesUpdatableStatus,
+    inactiveReason: body.inactiveReason as AkritesInactiveReason | undefined,
+    notes: typeof body.notes === 'string' && body.notes.trim() !== '' ? body.notes.trim() : undefined,
+  };
 }
 
 export function validateRequestBody<T>(body: T | undefined, req: Request, next: NextFunction, options: ValidationOptions): body is T {

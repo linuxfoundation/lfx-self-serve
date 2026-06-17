@@ -6,6 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core'
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { DEFAULT_PEOPLE_TAB_ID, PEOPLE_TABS, VALID_PEOPLE_TAB_IDS } from '@lfx-one/shared/constants';
 import { AccountContextService } from '@services/account-context.service';
 
@@ -32,6 +33,7 @@ import { TraineesComponent } from './components/trainees/trainees.component';
     EventAttendeesComponent,
     ContributorsComponent,
     OrgLensAccessComponent,
+    PersonDetailDrawerComponent,
   ],
   templateUrl: './org-people.component.html',
 })
