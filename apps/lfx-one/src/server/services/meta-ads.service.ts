@@ -214,7 +214,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     targeting: {
       geo_locations: { countries: geoCountries },
-      publisher_platforms: ['facebook', 'instagram'],
+      publisher_platforms: ['facebook'],
     },
     start_time: `${config.startDate}T00:00:00+0000`,
     end_time: `${config.endDate}T23:59:59+0000`,
