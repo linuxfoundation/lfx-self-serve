@@ -58,7 +58,10 @@
               (keydown.space)="$event.preventDefault(); row.domains.length > 0 && toggleDomainExpand(row.domain)">
               <span class="flex w-6 items-center justify-center">
                 @if (row.domains.length > 0) {
-                  <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform duration-200" [class.rotate-90]="isExpanded"></i>
+                  <i
+                    class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform duration-200"
+                    [class.rotate-90]="isExpanded"
+                    aria-hidden="true"></i>
                 }
               </span>
               <span class="w-44 truncate text-xs font-medium text-gray-700" role="cell">{{ row.domain }}</span>
