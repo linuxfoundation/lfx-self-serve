@@ -92,7 +92,7 @@
                   </div>
 
                   <!-- Action button -->
-                  @if (getActivityAction(row.activityType); as action) {
+                  @if (getActivityAction(row.activityType, row.stewardshipStatus); as action) {
                     <button
                       type="button"
                       class="flex-shrink-0 h-8 px-3.5 rounded-full border text-[12.5px] font-medium transition-colors"

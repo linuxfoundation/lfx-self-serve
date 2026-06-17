@@ -122,18 +122,22 @@ export class AkritesOverviewTabComponent {
     return `color:${this.getStatusHex(status)}`;
   }
 
-  protected getActivityAction(type: string): { label: string; variant: 'default' | 'blue' | 'red' } | null {
-    const actions: Record<string, { label: string; variant: 'default' | 'blue' | 'red' }> = {
-      escalation: { label: 'Resolve', variant: 'red' },
-      steward_removed: { label: 'Assign steward', variant: 'blue' },
-      stewardship_opened: { label: 'Assign steward', variant: 'blue' },
-      advisory_detected: { label: 'Triage advisory', variant: 'default' },
-      quarterly_update: { label: 'View update', variant: 'default' },
-      remediation_logged: { label: 'Review progress', variant: 'default' },
-      assessment_started: { label: 'Spot-check', variant: 'default' },
-      status_inactive: { label: 'Reassign', variant: 'blue' },
+  protected getActivityAction(type: string, status: string): { label: string; variant: 'default' | 'blue' | 'red' } | null {
+    // Each action is only relevant when the package is in a matching current status.
+    // Showing a stale action (e.g. Resolve on an already-active package) is misleading.
+    const rules: Record<string, { label: string; variant: 'default' | 'blue' | 'red'; validStatuses: string[] }> = {
+      escalation: { label: 'Resolve', variant: 'red', validStatuses: ['escalated'] },
+      steward_removed: { label: 'Assign steward', variant: 'blue', validStatuses: ['unassigned'] },
+      stewardship_opened: { label: 'Assign steward', variant: 'blue', validStatuses: ['unassigned'] },
+      advisory_detected: { label: 'Triage advisory', variant: 'default', validStatuses: ['needs_attention'] },
+      quarterly_update: { label: 'View update', variant: 'default', validStatuses: ['active'] },
+      remediation_logged: { label: 'Review progress', variant: 'default', validStatuses: ['assessing', 'active'] },
+      assessment_started: { label: 'Spot-check', variant: 'default', validStatuses: ['assessing'] },
+      status_inactive: { label: 'Reassign', variant: 'blue', validStatuses: ['inactive'] },
     };
-    return actions[type] ?? null;
+    const rule = rules[type];
+    if (!rule || !rule.validStatuses.includes(status)) return null;
+    return { label: rule.label, variant: rule.variant };
   }
 
   private loadActivity(): void {
