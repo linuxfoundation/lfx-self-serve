@@ -206,17 +206,22 @@ export class ProfileLayoutComponent {
       return;
     }
 
+    // The dialog builds metadata with `key: undefined` for empty fields; those keys are omitted
+    // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
+    // optimistic view would clear fields that were never actually persisted as cleared.
+    const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
+
     const mergedProfile: CombinedProfile = {
       ...this.combinedProfile,
       user: {
         ...this.combinedProfile.user,
         // user.first_name / last_name are derived from given_name / family_name server-side
-        first_name: metadata.given_name ?? this.combinedProfile.user.first_name,
-        last_name: metadata.family_name ?? this.combinedProfile.user.last_name,
+        first_name: definedMetadata.given_name ?? this.combinedProfile.user.first_name,
+        last_name: definedMetadata.family_name ?? this.combinedProfile.user.last_name,
       },
       profile: {
         ...this.combinedProfile.profile,
-        ...metadata,
+        ...definedMetadata,
       },
     };
 
@@ -265,6 +270,9 @@ export class ProfileLayoutComponent {
 
     this.userService.updateUserProfile(updateData).subscribe({
       next: () => {
+        // Same optimistic update as the dialog-close path, so Flow C saves don't show stale
+        // data against the eventually-consistent profile GET.
+        this.applyOptimisticProfileUpdate(userMetadata);
         this.messageService.add({
           severity: 'success',
           summary: 'Success',

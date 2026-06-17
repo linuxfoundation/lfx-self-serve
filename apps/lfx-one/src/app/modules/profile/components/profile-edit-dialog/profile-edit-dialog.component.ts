@@ -87,9 +87,9 @@ export class ProfileEditDialogComponent {
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
     job_title: ['', [Validators.maxLength(100)]],
-    // Organization is now selected from work-history orgs (a constrained list), so the
-    // free-text 100-char limit no longer applies — org names can legitimately be longer.
-    organization: [''],
+    // Organization is selected from work-history orgs (a constrained list); the only remaining
+    // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
+    organization: ['', [Validators.maxLength(200)]],
   });
 
   public constructor() {
@@ -139,12 +139,10 @@ export class ProfileEditDialogComponent {
         takeUntilDestroyed(),
         finalize(() => this.loadingWorkExperiences.set(false))
       )
-      .subscribe({
-        next: (experiences) => this.workExperiences.set(experiences),
-        // Non-fatal: leave the list empty. Any currently-saved organization still shows
-        // as a selectable option via organizationOptions().
-        error: () => this.workExperiences.set([]),
-      });
+      // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
+      // so a dedicated error handler here would be unreachable. A currently-saved organization
+      // still shows as a selectable option via organizationOptions() when the list is empty.
+      .subscribe((experiences) => this.workExperiences.set(experiences));
   }
 
   public onSubmit(): void {
@@ -255,7 +253,9 @@ export class ProfileEditDialogComponent {
       phone_number: profile.profile?.phone_number || '',
       t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
       job_title: profile.profile?.job_title || '',
-      organization: profile.profile?.organization || '',
+      // Trim so the form value matches the trimmed option values — otherwise a legacy saved
+      // org with stray whitespace would fail to match any option and render an empty selection.
+      organization: (profile.profile?.organization || '').trim(),
     });
 
     this.selectedCountrySignal.set(countryValue);
@@ -287,10 +287,9 @@ export class ProfileEditDialogComponent {
       // work-history entry (e.g. the entry was deleted). value matches the form control value
       // (patched from the saved metadata) so it stays selected; once the user picks another org
       // it won't be re-added to the list.
-      const savedOrgRaw = this.combinedProfile.profile?.organization ?? '';
-      const savedOrg = savedOrgRaw.trim();
+      const savedOrg = (this.combinedProfile.profile?.organization ?? '').trim();
       if (savedOrg && !seen.has(savedOrg.toLowerCase())) {
-        options.unshift({ label: savedOrg, value: savedOrgRaw });
+        options.unshift({ label: savedOrg, value: savedOrg });
       }
 
       return options;

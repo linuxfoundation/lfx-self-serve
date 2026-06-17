@@ -72,7 +72,11 @@
             </lfx-input-text>
           </div>
           <div>
-            <label for="edit-organization" class="block text-sm text-slate-900 mb-2">Organization</label>
+            <label
+              [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'edit-organization' : 'edit-organization-readonly'"
+              class="block text-sm text-slate-900 mb-2">
+              Organization
+            </label>
             @if (hasOrganizationOptions() || loadingWorkExperiences()) {
               <lfx-select
                 size="small"
@@ -92,10 +96,10 @@
                 size="small"
                 [form]="profileForm"
                 control="organization"
-                id="edit-organization"
+                id="edit-organization-readonly"
                 [options]="[]"
                 placeholder="No work experience added"
-                [readonly]="true"
+                [disabled]="true"
                 styleClass="w-full"
                 data-testid="profile-edit-dialog-organization">
               </lfx-select>
