@@ -8,8 +8,9 @@ import { AkritesSteward } from '@lfx-one/shared/interfaces';
 @Pipe({ name: 'stewardInitials', pure: true })
 export class StewardInitialsPipe implements PipeTransform {
   public transform(steward: AkritesSteward): string {
-    if (steward.name) {
-      const parts = steward.name.trim().split(/\s+/);
+    const trimmedName = steward.name?.trim();
+    if (trimmedName) {
+      const parts = trimmedName.split(/\s+/);
       return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() : parts[0].slice(0, 2).toUpperCase();
     }
     // Auth0 sub format: "auth0|abc123" — use first 2 chars after the pipe
