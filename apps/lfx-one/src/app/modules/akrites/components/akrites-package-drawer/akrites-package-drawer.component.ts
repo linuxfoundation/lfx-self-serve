@@ -21,7 +21,6 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 import { AkritesEscalateModalComponent } from '../akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesStatusModalComponent } from '../akrites-status-modal/akrites-status-modal.component';
 import {
@@ -38,15 +37,7 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 
 @Component({
   selector: 'lfx-akrites-package-drawer',
-  imports: [
-    DrawerModule,
-    ButtonComponent,
-    EmptyStateComponent,
-    TagComponent,
-    AkritesAssignStewardModalComponent,
-    AkritesEscalateModalComponent,
-    AkritesStatusModalComponent,
-  ],
+  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent, AkritesEscalateModalComponent, AkritesStatusModalComponent],
   templateUrl: './akrites-package-drawer.component.html',
 })
 export class AkritesPackageDrawerComponent {
