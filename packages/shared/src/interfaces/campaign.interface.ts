@@ -312,6 +312,60 @@ export interface MetaCampaignCreateResult {
   steps: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Meta Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+
+export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface MetaCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: MetaPacingLabel;
+  startDate: string;
+  endDate: string;
+}
+
+export interface MetaAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface MetaActionItem {
+  priority: MetaActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface MetaAccountOption {
+  key: string;
+  label: string;
+}
+
+export interface MetaMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: MetaCampaignMetrics[];
+  accountTotals: MetaAccountTotals;
+  actionItems: MetaActionItem[];
+}
+
 export interface CampaignBriefRefineRequest {
   currentCopy: Record<string, unknown>;
   currentKeywords: CampaignKeyword[];
