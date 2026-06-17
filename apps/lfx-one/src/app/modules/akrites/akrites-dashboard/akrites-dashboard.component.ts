@@ -14,7 +14,7 @@ import {
   AkritesStatusCounts,
   AkritesEscalateRequest,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin } from 'rxjs';
+import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin, take } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
@@ -94,11 +94,23 @@ export class AkritesDashboardComponent {
     const pkg = this.packages().find((p) => p.purl === purl);
     if (pkg) {
       this.onPackageClick(pkg.id);
-    } else {
-      // Package outside current page — navigate to packages tab with purl as search
-      this.onFilterChange({ search: purl });
-      this.activeTab.set('packages');
+      return;
     }
+    // Package not in loaded list — fetch by PURL so we can open the drawer directly
+    this.akritesService
+      .getPackage(purl)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (fetched) => {
+          if (fetched) {
+            this.onPackageClick(fetched.id);
+          }
+        },
+        error: () => {
+          this.onFilterChange({ search: purl });
+          this.activeTab.set('packages');
+        },
+      });
   }
 
   protected onPackageClick(id: string): void {

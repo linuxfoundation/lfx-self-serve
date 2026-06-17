@@ -96,7 +96,7 @@
                         'border-blue-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-400': action.variant === 'blue',
                         'border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-400': action.variant === 'red',
                       }"
-                      (click)="onActionButtonClick(row, action.variant); $event.stopPropagation()">
+                      (click)="$event.stopPropagation(); onActionButtonClick(row, action.variant)">
                       {{ action.label }}
                     </button>
                   }
