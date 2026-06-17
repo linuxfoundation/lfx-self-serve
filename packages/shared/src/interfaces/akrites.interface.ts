@@ -28,6 +28,13 @@ export type AkritesEscalationPath =
   | 'compensating_controls_monitor'
   | 'namespace_takeover';
 
+/** Role option displayed in the assign-steward modal picker. */
+export interface AkritesRoleOption {
+  value: AkritesStewardRole;
+  label: string;
+  description: string;
+}
+
 // ===== CDP Raw Types =====
 
 export interface CdpStewardshipSummary {

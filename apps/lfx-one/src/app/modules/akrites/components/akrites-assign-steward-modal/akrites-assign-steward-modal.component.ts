@@ -5,15 +5,9 @@ import { Component, inject, input, model, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 
-import { AkritesAssignStewardRequest, AkritesStewardRole } from '@lfx-one/shared/interfaces';
+import { AkritesAssignStewardRequest, AkritesRoleOption, AkritesStewardRole } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-
-interface RoleOption {
-  value: AkritesStewardRole;
-  label: string;
-  description: string;
-}
 
 @Component({
   selector: 'lfx-akrites-assign-steward-modal',
@@ -31,7 +25,7 @@ export class AkritesAssignStewardModalComponent {
 
   protected readonly selectedRole = signal<AkritesStewardRole>('lead');
 
-  protected readonly roleOptions: RoleOption[] = [
+  protected readonly roleOptions: AkritesRoleOption[] = [
     { value: 'lead', label: 'Lead steward', description: 'Primary owner — drives the security assessment and remediation.' },
     { value: 'co_steward', label: 'Co-steward', description: 'Supporting role — assists the lead but shares responsibility.' },
   ];
