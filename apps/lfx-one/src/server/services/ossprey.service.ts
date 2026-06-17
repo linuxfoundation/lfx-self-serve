@@ -357,7 +357,7 @@ export class OsspreyServerService {
    * Shared helper for the stewardship write endpoints: generates a CDP token, issues the
    * authenticated JSON request, and normalizes failures into MicroserviceError.
    */
-  private async cdpWrite<T>(req: Request, operation: string, method: 'POST' | 'PUT' | 'PATCH', endpoint: string, body: unknown): Promise<T> {
+  private async cdpWrite<T>(req: Request, operation: string, method: 'POST' | 'PATCH', endpoint: string, body: unknown): Promise<T> {
     const requestId = randomUUID();
 
     try {
