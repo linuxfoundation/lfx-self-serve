@@ -28,7 +28,8 @@ async function metaRequest<T>(path: string): Promise<T> {
     });
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
-      throw new Error(`Meta API ${resp.status}: ${body.slice(0, 200)}`);
+      logger.warning(undefined, 'meta_api_error', `Meta API GET ${path} → ${resp.status}: ${body.slice(0, 400)}`, { path, status: resp.status });
+      throw new Error(`Meta API request failed (${resp.status}). Check server logs for details.`);
     }
     return (await resp.json()) as T;
   } finally {

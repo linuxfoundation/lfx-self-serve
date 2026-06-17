@@ -13,7 +13,7 @@
           ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
-      [style.backgroundColor]="selectedPlatform() === 'google' ? platformBrandColor('google') : null"
+      [style.backgroundColor]="selectedPlatform() === 'google' ? platformColors['google-ads'] : null"
       data-testid="platform-google">
       <i class="fa-brands fa-google" aria-hidden="true"></i>
       Google Ads
@@ -27,7 +27,7 @@
           ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
-      [style.backgroundColor]="selectedPlatform() === 'linkedin' ? platformBrandColor('linkedin') : null"
+      [style.backgroundColor]="selectedPlatform() === 'linkedin' ? platformColors['linkedin-ads'] : null"
       data-testid="platform-linkedin">
       <i class="fa-brands fa-linkedin" aria-hidden="true"></i>
       LinkedIn Ads
@@ -41,7 +41,7 @@
           ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
-      [style.backgroundColor]="selectedPlatform() === 'reddit' ? platformBrandColor('reddit') : null"
+      [style.backgroundColor]="selectedPlatform() === 'reddit' ? platformColors['reddit-ads'] : null"
       data-testid="platform-reddit">
       <i class="fa-brands fa-reddit" aria-hidden="true"></i>
       Reddit Ads
@@ -55,7 +55,7 @@
           ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
           : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
       "
-      [style.backgroundColor]="selectedPlatform() === 'meta' ? platformBrandColor('meta') : null"
+      [style.backgroundColor]="selectedPlatform() === 'meta' ? platformColors['meta-ads'] : null"
       data-testid="platform-meta">
       <i class="fa-brands fa-meta" aria-hidden="true"></i>
       Meta Ads
@@ -723,35 +723,37 @@
           <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
         </div>
       } @else if (metaData()) {
-        <!-- KPI Strip -->
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="meta-kpi-strip">
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <p class="text-xs font-medium text-gray-500">Impressions</p>
-            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(metaTotals()!.impressions) }}</p>
+        @if (metaTotals(); as totals) {
+          <!-- KPI Strip -->
+          <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="meta-kpi-strip">
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              <p class="text-xs font-medium text-gray-500">Impressions</p>
+              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(totals.impressions) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              <p class="text-xs font-medium text-gray-500">Clicks</p>
+              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(totals.clicks) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              <p class="text-xs font-medium text-gray-500">CTR</p>
+              <p class="text-lg font-semibold text-gray-900">
+                @if (totals.impressions > 0) {
+                  {{ formatPct((totals.clicks / totals.impressions) * 100) }}
+                } @else {
+                  —
+                }
+              </p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              <p class="text-xs font-medium text-gray-500">Spend</p>
+              <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(totals.spend) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              <p class="text-xs font-medium text-gray-500">Conversions</p>
+              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(totals.conversions) }}</p>
+            </div>
           </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <p class="text-xs font-medium text-gray-500">Clicks</p>
-            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(metaTotals()!.clicks) }}</p>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <p class="text-xs font-medium text-gray-500">CTR</p>
-            <p class="text-lg font-semibold text-gray-900">
-              @if (metaTotals()!.impressions > 0) {
-                {{ formatPct((metaTotals()!.clicks / metaTotals()!.impressions) * 100) }}
-              } @else {
-                —
-              }
-            </p>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <p class="text-xs font-medium text-gray-500">Spend</p>
-            <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(metaTotals()!.spend) }}</p>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <p class="text-xs font-medium text-gray-500">Conversions</p>
-            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(metaTotals()!.conversions) }}</p>
-          </div>
-        </div>
+        }
 
         <!-- Campaign Table -->
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="meta-campaign-table">
@@ -799,7 +801,7 @@
                     </td>
                     <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatCurrency(camp.spend) }}</td>
                     <td class="px-4 py-3 text-right">
-                      <span [class]="'text-xs font-medium ' + metaPacingClass(camp.pacingLabel)">
+                      <span [class]="'text-xs font-medium ' + (camp.pacingLabel | metaPacingClass)">
                         {{ camp.pacingPct.toFixed(0) }}% {{ camp.pacingLabel }}
                       </span>
                     </td>

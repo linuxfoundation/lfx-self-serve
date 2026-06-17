@@ -5,13 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS, PLATFORM_DEFAULT_COLOR } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
 import type {
   CampaignMetrics,
   CampaignMonitorResponse,
-  CampaignPlatform,
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
@@ -19,12 +18,12 @@ import type {
   LinkedInPacingLabel,
   MetaAccountOption,
   MetaMonitorResponse,
-  MetaPacingLabel,
   RedditAccountOption,
   RedditMonitorResponse,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
+import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
@@ -34,7 +33,7 @@ const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent],
+  imports: [AudienceDemographicsComponent, MetaPacingClassPipe],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -49,6 +48,7 @@ export class MonitoringTabComponent implements OnInit {
   private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   protected readonly Math = Math;
+  protected readonly platformColors = PLATFORM_BRAND_COLORS;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
   protected readonly keywordPageSize = KEYWORD_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
@@ -400,12 +400,6 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
-  protected metaPacingClass(label: MetaPacingLabel): string {
-    if (label === 'underspending') return 'text-red-600';
-    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
-    return 'text-green-600';
-  }
-
   protected eventLabel(campaignName: string): string {
     return parseCampaignName(campaignName).baseName || campaignName;
   }
@@ -454,10 +448,5 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatPct(value: number): string {
     return `${value.toFixed(2)}%`;
-  }
-
-  protected platformBrandColor(platform: PlatformType): string {
-    const key = `${platform}-ads` as CampaignPlatform;
-    return PLATFORM_BRAND_COLORS[key] ?? PLATFORM_DEFAULT_COLOR;
   }
 }

@@ -541,7 +541,7 @@
         <div class="flex flex-col gap-2" data-testid="meta-action-items">
           @for (item of metaActionItems(); track item.campaignName + item.issue) {
             <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3" data-testid="meta-action-item">
-              <span [class]="'mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ' + metaPriorityClass(item.priority)">
+              <span [class]="'mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ' + (item.priority | priorityClass)">
                 {{ item.priority }}
               </span>
               <div class="min-w-0 flex-1">

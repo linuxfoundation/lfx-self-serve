@@ -3,11 +3,11 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
-import type { CampaignActionItem, CampaignMetrics } from '@lfx-one/shared/interfaces';
+import type { CampaignMetrics, MetaPacingLabel } from '@lfx-one/shared/interfaces';
 
 @Pipe({ name: 'priorityClass' })
 export class PriorityClassPipe implements PipeTransform {
-  public transform(priority: CampaignActionItem['priority']): string {
+  public transform(priority: 'HIGH' | 'MED' | 'LOW'): string {
     switch (priority) {
       case 'HIGH':
         return 'bg-red-100 text-red-700';
@@ -58,5 +58,14 @@ export class AdsCurrencyPipe implements PipeTransform {
 export class AdsPctPipe implements PipeTransform {
   public transform(value: number): string {
     return `${value.toFixed(2)}%`;
+  }
+}
+
+@Pipe({ name: 'metaPacingClass' })
+export class MetaPacingClassPipe implements PipeTransform {
+  public transform(label: MetaPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
   }
 }
