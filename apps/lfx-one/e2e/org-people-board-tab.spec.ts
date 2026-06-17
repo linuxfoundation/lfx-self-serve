@@ -310,4 +310,30 @@ test.describe('Org People → Board tab', () => {
     // Masaki holds 2 foundations — the max — so descending sort floats them to the top.
     await expect(firstRow).toHaveAttribute('data-testid', `org-people-board-row-${MASAKI_EMAIL}`);
   });
+
+  // Board rows have no personKey — drawer opens on Governance from table seats only.
+  test('clicking a board member name opens the person-detail drawer on Governance from table seats (no fetch)', async ({ page }) => {
+    await stubAccountContext(page);
+    await stubBoardMembers(page);
+
+    await gotoBoardTab(page);
+    await page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}-name`).click();
+
+    // Drawer opens with the row's header and lands on the Governance tab.
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Kensuke Hanaoka');
+    await expect(page.getByTestId('person-detail-drawer-tab-governance')).toHaveAttribute('aria-selected', 'true');
+
+    // Governance renders the seat from the table (real data, not a demo pool): Board pill + foundation · committee.
+    const drawer = page.getByTestId('person-detail-drawer');
+    await expect(drawer).toContainText('Board');
+    await expect(drawer).toContainText('Automotive Grade Linux · Steering Committee');
+
+    // Events needs the personKey-keyed fetch the board opener can't supply → not-available state.
+    await page.getByTestId('person-detail-drawer-tab-events').click();
+    await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
+
+    // The name click stopped propagation, so the row did not also expand.
+    await expect(page.getByTestId(`org-people-board-expanded-${KENSUKE_EMAIL}`)).toHaveCount(0);
+  });
 });

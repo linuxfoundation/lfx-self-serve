@@ -1,0 +1,218 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Shared person-detail drawer (LFXV2-2195) -->
+<p-drawer
+  [visible]="drawer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="true"
+  styleClass="xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
+  data-testid="person-detail-drawer">
+  @if (drawer.activeContext(); as context) {
+    <ng-template #header>
+      <div class="flex min-w-0 items-center gap-3" data-testid="person-detail-drawer-header">
+        @if (context.avatarUrl) {
+          <img
+            [src]="context.avatarUrl"
+            [alt]="context.name + ' avatar'"
+            loading="lazy"
+            class="h-12 w-12 shrink-0 rounded-full object-cover"
+            data-testid="person-detail-drawer-avatar" />
+        } @else {
+          <span
+            class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+            [class]="context.avatarColorClass ?? 'bg-gray-400'"
+            aria-hidden="true">
+            {{ context.initials }}
+          </span>
+        }
+        <span class="flex min-w-0 flex-col">
+          <span class="truncate text-lg font-semibold text-gray-900">{{ context.name }}</span>
+          @if (context.title) {
+            <span class="truncate text-sm text-gray-500">{{ context.title }}</span>
+          }
+        </span>
+      </div>
+    </ng-template>
+
+    @if (context.username || context.profileUrl) {
+      <div class="mb-5 flex flex-wrap items-center gap-4 text-sm">
+        <span class="inline-flex items-center gap-1.5">
+          @if (context.sourceIconClass) {
+            <i class="text-gray-700" [class]="context.sourceIconClass" aria-hidden="true"></i>
+          }
+          @if (context.username && context.profileUrl) {
+            <a class="text-blue-600 hover:text-blue-700 hover:underline" [href]="context.profileUrl" target="_blank" rel="noopener noreferrer">{{
+              '@' + context.username
+            }}</a>
+          } @else if (context.username) {
+            <span class="text-gray-700">{{ '@' + context.username }}</span>
+          }
+        </span>
+      </div>
+    }
+
+    <!-- Section tabs -->
+    <div
+      class="flex items-center gap-1 overflow-x-auto border-b border-gray-200"
+      role="tablist"
+      aria-label="Person detail sections"
+      (keydown)="onTabKeydown($event)">
+      @for (tab of tabs; track tab.id) {
+        @let isActive = drawer.activeTab() === tab.id;
+        <button
+          type="button"
+          role="tab"
+          [id]="'person-detail-drawer-tab-' + tab.id"
+          aria-controls="person-detail-drawer-tabpanel"
+          class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors"
+          [attr.aria-selected]="isActive"
+          [attr.tabindex]="isActive ? 0 : -1"
+          [attr.data-testid]="'person-detail-drawer-tab-' + tab.id"
+          [class.border-blue-600]="isActive"
+          [class.text-blue-600]="isActive"
+          [class.border-transparent]="!isActive"
+          [class.text-gray-500]="!isActive"
+          [class.hover:text-gray-700]="!isActive"
+          (click)="drawer.setTab(tab.id)">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <div
+      class="mt-5"
+      role="tabpanel"
+      id="person-detail-drawer-tabpanel"
+      tabindex="0"
+      [attr.aria-labelledby]="'person-detail-drawer-tab-' + drawer.activeTab()">
+      @if (drawer.activeTab() === 'governance') {
+        <!-- Governance renders from the opener's supplied seats (Board/Committee tabs) with no personKey
+             fetch; only show the fetch's loading/error when nothing has been supplied yet. -->
+        @if (drawer.loading() && governanceSeats().length === 0) {
+          <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-loading">
+            <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+          </div>
+        } @else if (drawer.error() && governanceSeats().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-error">Couldn't load this person's details. Please try again.</p>
+        } @else if (governanceSeats().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-governance-empty">No governance roles recorded.</p>
+        } @else {
+          <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+            @for (seat of governanceSeats(); track $index) {
+              <li class="flex flex-col gap-0.5 px-4 py-3">
+                <span class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-gray-900">{{ seat.committeeRole }}</span>
+                  <span
+                    class="whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    [class.border-amber-200]="seat.isBoard"
+                    [class.bg-amber-50]="seat.isBoard"
+                    [class.text-amber-700]="seat.isBoard"
+                    [class.border-gray-200]="!seat.isBoard"
+                    [class.bg-gray-50]="!seat.isBoard"
+                    [class.text-gray-600]="!seat.isBoard"
+                    >{{ seat.isBoard ? 'Board' : 'Committee' }}</span
+                  >
+                </span>
+                <span class="text-xs text-gray-500">{{ seat.foundationName ? seat.foundationName + ' · ' + seat.committeeName : seat.committeeName }}</span>
+              </li>
+            }
+          </ul>
+        }
+      } @else if (drawer.loading()) {
+        <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-loading">
+          <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+        </div>
+      } @else if (drawer.error()) {
+        <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-error">Couldn't load this person's details. Please try again.</p>
+      } @else if (drawer.detail(); as detail) {
+        @switch (drawer.activeTab()) {
+          @case ('events') {
+            @if (detail.events.length === 0) {
+              <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-events-empty">No event participation recorded.</p>
+            } @else {
+              <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                @for (event of detail.events; track event.eventId) {
+                  <li class="flex items-center justify-between gap-3 px-4 py-3">
+                    <div class="flex min-w-0 flex-col">
+                      <span class="truncate text-sm font-medium text-gray-900">{{ event.eventName }}</span>
+                      <span class="text-xs text-gray-500">{{ event.isSpeaker ? 'Speaker' : 'Attendee' }}{{ event.foundationName ? ' · ' + event.foundationName : '' }}</span>
+                    </div>
+                    @if (event.lastEventEndDate) {
+                      <span class="whitespace-nowrap text-xs text-gray-500">{{ event.lastEventEndDate | date: 'mediumDate' }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+          }
+          @case ('training') {
+            @if (detail.training.length === 0) {
+              <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-training-empty">No training or certifications recorded.</p>
+            } @else {
+              <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                @for (course of detail.training; track course.courseId) {
+                  <li class="flex items-center justify-between gap-3 px-4 py-3">
+                    <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ course.courseName }}</span>
+                    <span class="whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">{{
+                      course.status
+                    }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          }
+          @case ('code') {
+            @if (detail.code.length === 0) {
+              <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-code-empty">No code contributions recorded.</p>
+            } @else {
+              <div class="flex flex-col gap-5">
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="rounded-lg border border-gray-200 bg-white p-4">
+                    <div class="text-2xl font-semibold leading-none text-gray-900">{{ codeTotals().commits | number }}</div>
+                    <div class="mt-1 text-xs text-gray-500">Commits</div>
+                  </div>
+                  <div class="rounded-lg border border-gray-200 bg-white p-4">
+                    <div class="text-2xl font-semibold leading-none text-gray-900">{{ codeTotals().projects | number }}</div>
+                    <div class="mt-1 text-xs text-gray-500">Projects</div>
+                  </div>
+                </div>
+
+                <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+                  @for (project of detail.code; track project.projectId) {
+                    <li class="flex items-center justify-between gap-3 px-4 py-3">
+                      <div class="flex min-w-0 flex-col">
+                        <span class="flex items-center gap-2">
+                          <span class="truncate text-sm font-medium text-gray-900">{{ project.projectName }}</span>
+                          @if (project.isMaintainer) {
+                            <span class="whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+                              >Maintainer</span
+                            >
+                          }
+                        </span>
+                        @if (project.lastActivityDate) {
+                          <span class="text-xs text-gray-500">Last activity {{ project.lastActivityDate | date: 'mediumDate' }}</span>
+                        }
+                      </div>
+                      <span class="whitespace-nowrap text-sm text-gray-700">{{ project.totalCommits | number }} commits</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+          }
+        }
+      } @else {
+        <!-- Events/Training/Code need the personKey-keyed detail fetch; Board/Committee openers carry no
+             personKey, so only their Governance tab (rendered above from supplied seats) has data. -->
+        <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-detail-unavailable">
+          Detailed activity isn't available for this person.
+        </p>
+      }
+    </div>
+  }
+</p-drawer>
