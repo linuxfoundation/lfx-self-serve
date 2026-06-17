@@ -75,19 +75,21 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
   const lifetimeBudget = parseFloat(camp.lifetime_budget ?? '0') / 100;
   const totalBudget = lifetimeBudget > 0 ? lifetimeBudget : dailyBudget * days;
 
-  let expectedSpend: number;
-  if (dailyBudget > 0) {
-    expectedSpend = dailyBudget * days;
-  } else {
-    const now = Date.now();
-    const schedStart = camp.start_time ? new Date(camp.start_time).getTime() : now;
-    const schedEnd = camp.stop_time ? new Date(camp.stop_time).getTime() : now;
+  const schedStart = camp.start_time ? new Date(camp.start_time).getTime() : 0;
+  const schedEnd = camp.stop_time ? new Date(camp.stop_time).getTime() : 0;
+  const now = Date.now();
+
+  let pacingPct = 0;
+  if (totalBudget > 0 && schedStart > 0) {
     const flightEnd = schedEnd || now;
     const totalFlightDays = Math.max(1, Math.ceil((flightEnd - schedStart) / 86_400_000));
     const elapsedDays = Math.max(1, Math.ceil((now - schedStart) / 86_400_000));
-    expectedSpend = (totalBudget / totalFlightDays) * Math.min(elapsedDays, totalFlightDays);
+    const expectedSpend = (totalBudget / totalFlightDays) * Math.min(elapsedDays, totalFlightDays);
+    pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
+  } else if (dailyBudget > 0) {
+    const expectedSpend = dailyBudget * days;
+    pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
   }
-  const pacingPct = expectedSpend > 0 ? Math.round((spend / expectedSpend) * 100) : 0;
 
   let pacingLabel: MetaPacingLabel = 'normal';
   if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) pacingLabel = 'underspending';

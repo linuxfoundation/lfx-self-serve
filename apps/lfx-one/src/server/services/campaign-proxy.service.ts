@@ -868,7 +868,7 @@ export class CampaignProxyService {
       }
     }
 
-    // meta-ads: brief generation supported (for copy planning) but automated creation not yet wired
+    // meta-ads: automated campaign creation not yet wired — monitor-only for now
     const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
