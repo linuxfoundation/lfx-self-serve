@@ -116,7 +116,7 @@ export class ProjectContextService {
       expires: 30,
       path: '/',
       sameSite: 'Lax',
-      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+      secure: process.env['NODE_ENV'] === 'production',
     });
     this.cookieRegistry.registerCookie(key);
   }

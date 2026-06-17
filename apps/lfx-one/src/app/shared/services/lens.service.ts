@@ -107,7 +107,7 @@ export class LensService {
       expires: 30,
       path: '/',
       sameSite: 'Lax',
-      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+      secure: process.env['NODE_ENV'] === 'production',
     });
     this.cookieRegistry.registerCookie(LENS_COOKIE_KEY);
   }
@@ -129,7 +129,7 @@ export class LensService {
       expires: 30,
       path: '/',
       sameSite: 'Lax',
-      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+      secure: process.env['NODE_ENV'] === 'production',
     });
     this.cookieRegistry.registerCookie(NAV_LENS_COOKIE_KEY);
   }
