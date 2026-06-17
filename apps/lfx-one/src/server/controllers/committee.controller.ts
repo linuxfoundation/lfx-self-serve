@@ -711,7 +711,11 @@ export class CommitteeController {
           );
           return;
         }
-        acceptData.organization = { ...(body.organization ?? {}), name: orgName };
+        acceptData.organization = {
+          name: orgName,
+          id: body.organization?.id ?? null,
+          website: body.organization?.website ?? null,
+        };
       }
 
       await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
