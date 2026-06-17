@@ -68,8 +68,9 @@ function buildCampaignMetrics(camp: MetaCampaignRow, days: number): MetaCampaign
   const spend = parseFloat(insight?.spend ?? '0');
   const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
 
+  const CONVERSION_TYPES = new Set(['omni_purchase', 'omni_lead']);
   const conversions = (insight?.actions ?? [])
-    .filter((a) => a.action_type.includes('purchase') || a.action_type.includes('lead'))
+    .filter((a) => a.action_type && CONVERSION_TYPES.has(a.action_type))
     .reduce((sum, a) => sum + (parseInt(a.value, 10) || 0), 0);
 
   const dailyBudget = parseFloat(camp.daily_budget ?? '0') / 100;
