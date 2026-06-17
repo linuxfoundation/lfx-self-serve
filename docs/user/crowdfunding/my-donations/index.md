@@ -20,7 +20,7 @@ The My Donations page shows all contributions you have made to crowdfunding init
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Crowdfunding → My Donations** from the left navigation sidebar (route: `/crowdfunding/donations`).
+Go to [app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations) or select **Crowdfunding → My Donations** from the left navigation sidebar.
 
 ## Sub-pages
 

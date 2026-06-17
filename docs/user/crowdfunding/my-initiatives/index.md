@@ -19,7 +19,7 @@ The My Initiatives page lists all crowdfunding initiatives you have created, gro
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Crowdfunding → My Initiatives** from the left navigation sidebar (route: `/crowdfunding/initiatives`).
+Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives) or select **Crowdfunding → My Initiatives** from the left navigation sidebar.
 
 ## Sub-pages
 

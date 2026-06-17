@@ -25,7 +25,7 @@ All authenticated users can access the Crowdfunding section. **My Initiatives** 
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **My Initiatives** (route: `/crowdfunding/initiatives`) and **My Donations** (route: `/crowdfunding/donations`).
+Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **My Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **My Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
 
 ## Key concepts
 
