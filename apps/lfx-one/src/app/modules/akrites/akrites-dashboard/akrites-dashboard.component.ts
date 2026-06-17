@@ -90,6 +90,33 @@ export class AkritesDashboardComponent {
     this.activeTab.set('packages');
   }
 
+  protected onOverviewResolveEscalation(purl: string): void {
+    this.akritesService
+      .getPackage(purl)
+      .pipe(
+        take(1),
+        switchMap((pkg) => {
+          if (!pkg || pkg.status !== 'escalated' || pkg.stewardshipId === null) {
+            // Already resolved or not escalated — open drawer to show current state
+            if (pkg) this.onPackageClick(pkg.id);
+            return of(null);
+          }
+          return this.akritesService.updateStewardshipStatus(pkg.stewardshipId, { status: 'active' });
+        }),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not resolve escalation. Please try again.' });
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        if (result !== null) {
+          this.messageService.add({ severity: 'success', summary: 'Resolved', detail: 'Escalation resolved — package is now active.' });
+          this.reloadTrigger.update((n) => n + 1);
+        }
+      });
+  }
+
   protected onOverviewPackageClick(purl: string): void {
     const pkg = this.packages().find((p) => p.purl === purl);
     if (pkg) {

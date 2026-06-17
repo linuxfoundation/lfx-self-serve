@@ -29,6 +29,7 @@ export class AkritesOverviewTabComponent implements OnInit {
 
   public readonly navigateToPackages = output<Partial<AkritesFilterState>>();
   public readonly openPackageDrawer = output<string>(); // emits packagePurl
+  public readonly resolveEscalation = output<string>(); // emits packagePurl for direct resolve
 
   protected readonly activityLoading = signal(true);
   protected readonly activityError = signal(false);
@@ -58,11 +59,8 @@ export class AkritesOverviewTabComponent implements OnInit {
 
   protected onActionButtonClick(row: AkritesActivityRow, variant: 'default' | 'blue' | 'red'): void {
     if (variant === 'red') {
-      // Escalation resolve — open drawer; escalate action is in the drawer
-      this.openPackageDrawer.emit(row.packagePurl);
-    } else if (variant === 'blue') {
-      // Assign steward — open drawer
-      this.openPackageDrawer.emit(row.packagePurl);
+      // Escalation resolve — trigger direct status update
+      this.resolveEscalation.emit(row.packagePurl);
     } else {
       this.openPackageDrawer.emit(row.packagePurl);
     }
