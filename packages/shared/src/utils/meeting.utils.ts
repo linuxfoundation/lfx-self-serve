@@ -572,9 +572,13 @@ export function selectPrimaryPastMeetingSummary(resources: QueryServiceItem<Past
 
   const transformed = resources.map((resource) => transformV1SummaryToV2(resource.data));
   const withContent = transformed.filter(summaryHasContent);
-  const pool = withContent.length > 0 ? withContent : transformed;
 
-  return pool.reduce((best, current) => (summaryRecency(current) > summaryRecency(best) ? current : best));
+  // No content-bearing record: preserve input (query-service UID) order — legacy resources[0] behavior.
+  if (withContent.length === 0) {
+    return transformed[0];
+  }
+
+  return withContent.reduce((best, current) => (summaryRecency(current) > summaryRecency(best) ? current : best));
 }
 
 /**

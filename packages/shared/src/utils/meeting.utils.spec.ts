@@ -182,8 +182,11 @@ describe('selectPrimaryPastMeetingSummary', () => {
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer');
   });
 
-  it('falls back to the first record when all summaries are empty', () => {
-    const resources = [summaryResource('first', { uid: 'first', content: '' }), summaryResource('second', { uid: 'second', content: '' })];
+  it('falls back to the first record when all summaries are empty, even with differing timestamps', () => {
+    const resources = [
+      summaryResource('first', { uid: 'first', content: '', updated_at: '2026-01-01T10:00:00Z' }),
+      summaryResource('second', { uid: 'second', content: '', updated_at: '2026-06-01T10:00:00Z' }),
+    ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('first');
   });
