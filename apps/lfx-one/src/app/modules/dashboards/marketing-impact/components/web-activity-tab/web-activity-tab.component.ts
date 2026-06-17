@@ -148,7 +148,7 @@ export class WebActivityTabComponent {
         .map((d): WebActivityDomainRow => {
           const share = totalSessions > 0 ? (d.totalSessions / totalSessions) * 100 : 0;
           const domainDetails: WebActivityDomainDetailRow[] = (d.domains ?? []).map((detail) => {
-            const detailShare = totalSessions > 0 ? (detail.sessions / totalSessions) * 100 : 0;
+            const detailShare = d.totalSessions > 0 ? (detail.sessions / d.totalSessions) * 100 : 0;
             return {
               host: detail.host,
               sessions: formatNumber(detail.sessions),
