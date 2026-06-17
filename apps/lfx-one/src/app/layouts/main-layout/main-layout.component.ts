@@ -182,9 +182,9 @@ export class MainLayoutComponent {
         expanded: true,
         items: [
           {
-            label: 'OSSPREY Program',
+            label: 'Akrites Program',
             icon: 'fa-light fa-shield-halved',
-            routerLink: '/ossprey',
+            routerLink: '/akrites',
           },
         ],
       },

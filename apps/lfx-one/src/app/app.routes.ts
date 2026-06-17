@@ -353,6 +353,11 @@ export const routes: Routes = [
       },
       {
         path: 'ossprey',
+        redirectTo: 'akrites',
+        pathMatch: 'prefix',
+      },
+      {
+        path: 'akrites',
         canMatch: [osspreyEnabledGuard],
         loadChildren: () => import('./modules/ossprey/ossprey.routes').then((m) => m.OSSPREY_ROUTES),
       },

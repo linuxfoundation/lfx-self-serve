@@ -38,15 +38,15 @@ export class OsspreyService {
       if (params.unstewardedOnly) httpParams = httpParams.set('unstewardedOnly', 'true');
       if (params.sortBy) httpParams = httpParams.set('sortBy', params.sortBy);
     }
-    return this.http.get<OsspreyPackagesResponse>('/api/ossprey/packages', { params: httpParams });
+    return this.http.get<OsspreyPackagesResponse>('/api/akrites/packages', { params: httpParams });
   }
 
   public getMetrics(): Observable<OsspreyMetrics> {
-    return this.http.get<OsspreyMetrics>('/api/ossprey/packages/metrics');
+    return this.http.get<OsspreyMetrics>('/api/akrites/packages/metrics');
   }
 
   public getPackage(purl: string): Observable<OsspreyPackage | null> {
-    return this.http.get<OsspreyPackage>(`/api/ossprey/packages/${encodeURIComponent(purl)}`).pipe(
+    return this.http.get<OsspreyPackage>(`/api/akrites/packages/${encodeURIComponent(purl)}`).pipe(
       catchError((err) => {
         if (err.status === 404) return of(null);
         throw err;
@@ -56,18 +56,18 @@ export class OsspreyService {
 
   /** Open a package for stewardship; the response carries the integer stewardship id. */
   public openStewardship(purl: string): Observable<OsspreyStewardshipResponse> {
-    return this.http.post<OsspreyStewardshipResponse>('/api/ossprey/stewardships', { purl }).pipe(take(1));
+    return this.http.post<OsspreyStewardshipResponse>('/api/akrites/stewardships', { purl }).pipe(take(1));
   }
 
   public assignSteward(stewardshipId: number, body: OsspreyAssignStewardRequest): Observable<OsspreyAssignStewardResponse> {
-    return this.http.put<OsspreyAssignStewardResponse>(`/api/ossprey/stewardships/${stewardshipId}/steward`, body).pipe(take(1));
+    return this.http.put<OsspreyAssignStewardResponse>(`/api/akrites/stewardships/${stewardshipId}/steward`, body).pipe(take(1));
   }
 
   public escalateStewardship(stewardshipId: number, body: OsspreyEscalateRequest): Observable<OsspreyStewardshipResponse> {
-    return this.http.put<OsspreyStewardshipResponse>(`/api/ossprey/stewardships/${stewardshipId}/escalate`, body).pipe(take(1));
+    return this.http.put<OsspreyStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/escalate`, body).pipe(take(1));
   }
 
   public updateStewardshipStatus(stewardshipId: number, body: OsspreyUpdateStatusRequest): Observable<OsspreyStewardshipResponse> {
-    return this.http.put<OsspreyStewardshipResponse>(`/api/ossprey/stewardships/${stewardshipId}/status`, body).pipe(take(1));
+    return this.http.put<OsspreyStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/status`, body).pipe(take(1));
   }
 }
