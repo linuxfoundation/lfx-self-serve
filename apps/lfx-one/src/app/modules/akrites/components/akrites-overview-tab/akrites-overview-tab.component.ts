@@ -28,6 +28,7 @@ export class AkritesOverviewTabComponent implements OnInit {
   public readonly metricsLoading = input<boolean>(false);
 
   public readonly navigateToPackages = output<Partial<AkritesFilterState>>();
+  public readonly openPackageDrawer = output<string>(); // emits packagePurl
 
   protected readonly activityLoading = signal(true);
   protected readonly activityError = signal(false);
@@ -49,6 +50,22 @@ export class AkritesOverviewTabComponent implements OnInit {
 
   protected onKpiClick(filter: Partial<AkritesFilterState>): void {
     this.navigateToPackages.emit(filter);
+  }
+
+  protected onActivityRowClick(row: AkritesActivityRow): void {
+    this.openPackageDrawer.emit(row.packagePurl);
+  }
+
+  protected onActionButtonClick(row: AkritesActivityRow, variant: 'default' | 'blue' | 'red'): void {
+    if (variant === 'red') {
+      // Escalation resolve — open drawer; escalate action is in the drawer
+      this.openPackageDrawer.emit(row.packagePurl);
+    } else if (variant === 'blue') {
+      // Assign steward — open drawer
+      this.openPackageDrawer.emit(row.packagePurl);
+    } else {
+      this.openPackageDrawer.emit(row.packagePurl);
+    }
   }
 
   protected formatActivityLabel(type: string): string {

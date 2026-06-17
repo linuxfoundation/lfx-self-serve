@@ -56,6 +56,7 @@
                 <div
                   class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer transition-colors"
                   [style]="getAccentStyle(row.stewardshipStatus)"
+                  (click)="onActivityRowClick(row)"
                   data-testid="akrites-activity-row">
                   <!-- Activity icon -->
                   <div class="w-10 h-10 rounded-[11px] bg-gray-100 border border-gray-200 text-slate-700 flex items-center justify-center flex-shrink-0">
@@ -95,7 +96,7 @@
                         'border-blue-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-400': action.variant === 'blue',
                         'border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-400': action.variant === 'red',
                       }"
-                      (click)="$event.stopPropagation()">
+                      (click)="onActionButtonClick(row, action.variant); $event.stopPropagation()">
                       {{ action.label }}
                     </button>
                   }

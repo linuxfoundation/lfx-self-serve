@@ -90,6 +90,17 @@ export class AkritesDashboardComponent {
     this.activeTab.set('packages');
   }
 
+  protected onOverviewPackageClick(purl: string): void {
+    const pkg = this.packages().find((p) => p.purl === purl);
+    if (pkg) {
+      this.onPackageClick(pkg.id);
+    } else {
+      // Package outside current page — navigate to packages tab with purl as search
+      this.onFilterChange({ search: purl });
+      this.activeTab.set('packages');
+    }
+  }
+
   protected onPackageClick(id: string): void {
     this.selectedPackageId.set(id);
     this.drawerVisible.set(true);
