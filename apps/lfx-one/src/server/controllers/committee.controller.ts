@@ -713,8 +713,8 @@ export class CommitteeController {
         }
         acceptData.organization = {
           name: orgName,
-          id: body.organization?.id ?? null,
-          website: body.organization?.website ?? null,
+          id: typeof body.organization?.id === 'string' ? body.organization.id.trim() || null : null,
+          website: typeof body.organization?.website === 'string' ? body.organization.website.trim() || null : null,
         };
       }
 
