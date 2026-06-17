@@ -130,7 +130,7 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
-    if (metaSelected && this.metaVariants().length === 0) return false;
+    if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     return true;
   });
 

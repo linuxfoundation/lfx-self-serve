@@ -143,6 +143,11 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     throw new Error('At least one ad variant is required for Meta campaign creation');
   }
 
+  const validVariants = config.variants.filter((v) => v.primaryText.trim() && v.headline.trim());
+  if (validVariants.length === 0) {
+    throw new Error('At least one variant must have non-empty primary text and headline');
+  }
+
   validateRegistrationUrl(config.registrationUrl);
 
   if (!Number.isFinite(config.budgetUsd) || config.budgetUsd <= 0) {
@@ -234,8 +239,8 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
   // Step 4: Create ad creative + ad for each variant
   let adCount = 0;
-  for (let i = 0; i < config.variants.length; i++) {
-    const variant = config.variants[i];
+  for (let i = 0; i < validVariants.length; i++) {
+    const variant = validVariants[i];
     const utmUrl = buildMetaUtmUrl(config, i);
 
     try {

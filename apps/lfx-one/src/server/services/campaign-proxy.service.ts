@@ -379,9 +379,9 @@ REDDIT COPY RULES:
 const COPY_META_SECTION = `
 META ADS (key: "meta_ads"):
 - variants: array of 2-3 ad variations, each containing:
-  - primary_text: ≤ 125 characters (the main ad body — concise, benefit-focused)
-  - headline: ≤ 40 characters (appears below the image — clear CTA)
-  - description: ≤ 30 characters (optional secondary text below headline)
+  - primary_text: ≤ ${META_CHAR_LIMITS.primaryText} characters (the main ad body — concise, benefit-focused)
+  - headline: ≤ ${META_CHAR_LIMITS.headline} characters (appears below the image — clear CTA)
+  - description: ≤ ${META_CHAR_LIMITS.description} characters (optional secondary text below headline)
 - recommended_geos: array of 2-5 ISO 3166-1 alpha-2 country codes for geo targeting, based on the event location and surrounding high-intent countries.
 
 META COPY RULES:
