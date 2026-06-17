@@ -270,15 +270,15 @@ export class ProfileLayoutComponent {
 
     this.userService.updateUserProfile(updateData).subscribe({
       next: () => {
-        // Same optimistic update as the dialog-close path, so Flow C saves don't show stale
-        // data against the eventually-consistent profile GET.
+        // Optimistic update only — same as the dialog-close path. We intentionally do NOT
+        // refresh here: the profile GET is eventually consistent, so an immediate refetch could
+        // overwrite combinedProfile with the pre-save body and reintroduce stale-on-reopen.
         this.applyOptimisticProfileUpdate(userMetadata);
         this.messageService.add({
           severity: 'success',
           summary: 'Success',
           detail: 'Profile updated successfully!',
         });
-        this.refreshProfile$.next();
       },
       error: () => {
         this.messageService.add({
