@@ -55,7 +55,7 @@
               @for (row of group.rows; track row.id) {
                 <div
                   class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer transition-colors"
-                  [style]="getAccentStyle(row.stewardshipStatus)"
+                  [style]="row.accentStyle"
                   (click)="onActivityRowClick(row)"
                   role="button"
                   tabindex="0"
@@ -65,7 +65,7 @@
                   data-testid="akrites-activity-row">
                   <!-- Activity icon -->
                   <div class="w-10 h-10 rounded-[11px] bg-gray-100 border border-gray-200 text-slate-700 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light {{ getActivityIcon(row.activityType) }} text-[18px]" aria-hidden="true"></i>
+                    <i class="fa-light {{ row.activityIcon }} text-[18px]" aria-hidden="true"></i>
                   </div>
 
                   <!-- Main content -->
@@ -76,14 +76,14 @@
                       <span class="text-slate-900 underline underline-offset-2 cursor-pointer hover:text-blue-600 transition-colors">
                         {{ row.packageName }}
                       </span>
-                      <span class="flex items-center gap-1" [style]="getStatusLabelStyle(row.stewardshipStatus)">
-                        <span class="w-2 h-2 rounded-full flex-shrink-0" [style]="getStatusDotStyle(row.stewardshipStatus)"></span>
-                        {{ formatStatus(row.stewardshipStatus) | titlecase }}
+                      <span class="flex items-center gap-1" [style]="row.statusLabelStyle">
+                        <span class="w-2 h-2 rounded-full flex-shrink-0" [style]="row.statusDotStyle"></span>
+                        {{ row.formattedStatus | titlecase }}
                       </span>
                     </div>
                     <!-- Activity description -->
                     <div class="text-[14px] text-gray-500 mt-1">
-                      <b class="text-slate-900 font-semibold">{{ formatActivityLabel(row.activityType) }}</b>
+                      <b class="text-slate-900 font-semibold">{{ row.formattedActivityLabel }}</b>
                       &nbsp;·&nbsp;{{ row.relativeTime }}
                       @if (row.actorName) {
                         &nbsp;·&nbsp;by {{ row.actorName }}
@@ -92,7 +92,7 @@
                   </div>
 
                   <!-- Action button -->
-                  @if (getActivityAction(row.activityType, row.stewardshipStatus); as action) {
+                  @if (row.action; as action) {
                     <button
                       type="button"
                       class="flex-shrink-0 h-8 px-3.5 rounded-full border text-[12.5px] font-medium transition-colors"

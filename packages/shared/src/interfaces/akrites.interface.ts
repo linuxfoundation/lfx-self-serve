@@ -407,3 +407,22 @@ export interface AkritesActivityResponse {
   page: number;
   pageSize: number;
 }
+
+export interface AkritesActivityRowVM extends AkritesActivityRow {
+  relativeTime: string;
+  accentStyle: string;
+  statusDotStyle: string;
+  statusLabelStyle: string;
+  activityIcon: string;
+  formattedStatus: string;
+  formattedActivityLabel: string;
+  action: { label: string; variant: 'default' | 'blue' | 'red' } | null;
+}
+
+export interface AkritesActivityDayGroup {
+  label: string;
+  isToday: boolean;
+  rows: AkritesActivityRowVM[];
+}
+
+export type AkritesDashboardTab = 'overview' | 'packages';

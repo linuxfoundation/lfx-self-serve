@@ -13,6 +13,7 @@ import {
   AkritesSortKey,
   AkritesStatusCounts,
   AkritesEscalateRequest,
+  AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
 import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take } from 'rxjs';
 import { MessageService } from 'primeng/api';
@@ -21,8 +22,6 @@ import { AkritesPackageDrawerComponent } from '../components/akrites-package-dra
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
-
-export type AkritesDashboardTab = 'overview' | 'packages';
 
 @Component({
   selector: 'lfx-akrites-dashboard',

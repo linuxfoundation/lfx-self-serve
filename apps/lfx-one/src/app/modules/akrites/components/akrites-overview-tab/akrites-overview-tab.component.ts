@@ -2,22 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, TitleCasePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AkritesActivityResponse, AkritesActivityRow, AkritesFilterState, AkritesMetrics } from '@lfx-one/shared/interfaces';
-import { catchError, of } from 'rxjs';
+import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import {
+  AkritesActivityDayGroup,
+  AkritesActivityResponse,
+  AkritesActivityRow,
+  AkritesActivityRowVM,
+  AkritesFilterState,
+  AkritesMetrics,
+} from '@lfx-one/shared/interfaces';
+import { catchError, of, switchMap, tap } from 'rxjs';
 import { AkritesService } from '@shared/services/akrites.service';
 import { formatActivityType } from '../../akrites.utils';
-
-export interface AkritesActivityRowVM extends AkritesActivityRow {
-  relativeTime: string;
-}
-
-export interface AkritesActivityDayGroup {
-  label: string;
-  isToday: boolean;
-  rows: AkritesActivityRowVM[];
-}
 
 @Component({
   selector: 'lfx-akrites-overview-tab',
@@ -38,13 +35,31 @@ export class AkritesOverviewTabComponent {
 
   protected readonly activityLoading = signal(true);
   protected readonly activityError = signal(false);
-  protected readonly activityRows = signal<AkritesActivityRow[]>([]);
 
-  // Pre-compute relativeTime in the signal so the template never calls Date.now() directly
-  // (which causes ExpressionChangedAfterChecked on minute boundaries).
+  // Reactive data flow: when reloadTrigger changes, fetch activity and map to VM objects
+  protected readonly activityRows = toSignal(
+    toObservable(this.reloadTrigger).pipe(
+      switchMap(() => {
+        this.activityLoading.set(true);
+        this.activityError.set(false);
+        return this.akritesService.getActivityFeed(1, 50).pipe(
+          catchError((err) => {
+            console.warn('[AKRITES] activity feed fetch failed', err);
+            this.activityError.set(true);
+            return of<AkritesActivityResponse>({ rows: [], total: 0, page: 1, pageSize: 50 });
+          }),
+          tap(() => this.activityLoading.set(false))
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ),
+    { initialValue: { rows: [], total: 0, page: 1, pageSize: 50 } as AkritesActivityResponse }
+  );
+
+  // Pre-compute all display properties (styles, labels, actions) so template only reads from row object
   protected readonly dayGroups = computed<AkritesActivityDayGroup[]>(() => {
     const now = Date.now();
-    return this.groupByDay(this.activityRows(), now);
+    return this.groupByDay(this.activityRows().rows, now);
   });
 
   protected readonly coveragePercent = computed(() => this.metrics()?.coveragePercent ?? 0);
@@ -53,13 +68,6 @@ export class AkritesOverviewTabComponent {
     if (!m || !m.criticalPackages) return 0;
     const covered = Math.max(0, m.criticalPackages - m.unassignedCritical);
     return Math.round((covered / m.criticalPackages) * 100);
-  });
-
-  // Field initializer — runs in injection context. Loads activity on init (trigger = 0)
-  // and reloads whenever the dashboard bumps reloadTrigger after a stewardship action.
-  private readonly _activityReloader = effect(() => {
-    void this.reloadTrigger(); // tracked
-    this.loadActivity();
   });
 
   protected onKpiClick(filter: Partial<AkritesFilterState>): void {
@@ -76,14 +84,6 @@ export class AkritesOverviewTabComponent {
     } else {
       this.openPackageDrawer.emit(row.packagePurl);
     }
-  }
-
-  protected formatActivityLabel(type: string): string {
-    return formatActivityType(type);
-  }
-
-  protected formatStatus(status: string): string {
-    return status.replace(/_/g, ' ');
   }
 
   protected getActivityIcon(type: string): string {
@@ -140,25 +140,6 @@ export class AkritesOverviewTabComponent {
     return { label: rule.label, variant: rule.variant };
   }
 
-  private loadActivity(): void {
-    this.activityLoading.set(true);
-    this.activityError.set(false);
-    this.akritesService
-      .getActivityFeed(1, 50)
-      .pipe(
-        catchError((err) => {
-          console.warn('[AKRITES] activity feed fetch failed', err);
-          this.activityError.set(true);
-          return of<AkritesActivityResponse>({ rows: [], total: 0, page: 1, pageSize: 50 });
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((res) => {
-        this.activityRows.set(res.rows ?? []);
-        this.activityLoading.set(false);
-      });
-  }
-
   private getStatusHex(status: string): string {
     const colors: Record<string, string> = {
       unassigned: '#62748e',
@@ -205,14 +186,27 @@ export class AkritesOverviewTabComponent {
       } else if (this.isSameDay(d, yesterday)) {
         label = `Yesterday · ${d.toLocaleDateString('en-US', dateOpts)}`;
       } else {
-        label = 'Earlier this week';
+        label = d.toLocaleDateString('en-US', dateOpts);
       }
 
       if (!groups.has(label)) {
         groups.set(label, { rows: [], isToday });
         order.push(label);
       }
-      groups.get(label)!.rows.push({ ...row, relativeTime: this.computeRelativeTime(row.createdAt, now) });
+
+      // Pre-compute all display properties: styles, icons, labels, actions
+      const vm: AkritesActivityRowVM = {
+        ...row,
+        relativeTime: this.computeRelativeTime(row.createdAt, now),
+        accentStyle: this.getAccentStyle(row.stewardshipStatus),
+        statusDotStyle: this.getStatusDotStyle(row.stewardshipStatus),
+        statusLabelStyle: this.getStatusLabelStyle(row.stewardshipStatus),
+        activityIcon: this.getActivityIcon(row.activityType),
+        formattedStatus: row.stewardshipStatus.replace(/_/g, ' '),
+        formattedActivityLabel: formatActivityType(row.activityType),
+        action: this.getActivityAction(row.activityType, row.stewardshipStatus),
+      };
+      groups.get(label)!.rows.push(vm);
     }
 
     return order.map((label) => {
