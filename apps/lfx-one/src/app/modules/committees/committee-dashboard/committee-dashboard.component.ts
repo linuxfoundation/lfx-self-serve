@@ -189,13 +189,18 @@ export class CommitteeDashboardComponent {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() => this.committeeService.getMyCommittees()),
+        switchMap(() => this.committeeService.getMyCommittees().pipe(catchError(() => of([] as MyCommittee[])))),
         filter((committees) => committees.some((committee) => committee.uid === committeeUid)),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: () => this.reloadMyCommittees(),
+        error: () => {
+          if (!this.myCommittees().some((committee) => committee.uid === committeeUid)) {
+            this.reloadMyCommittees();
+          }
+        },
         complete: () => {
           if (!this.myCommittees().some((committee) => committee.uid === committeeUid)) {
             this.reloadMyCommittees();

@@ -23,6 +23,7 @@ export interface AcceptInviteOrganizationDialogResult {
 
 @Component({
   selector: 'lfx-accept-invite-organization-dialog',
+  standalone: true,
   imports: [ReactiveFormsModule, ButtonComponent, OrganizationSearchComponent],
   templateUrl: './accept-invite-organization-dialog.component.html',
 })

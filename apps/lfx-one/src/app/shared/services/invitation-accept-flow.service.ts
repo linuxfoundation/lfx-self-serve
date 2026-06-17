@@ -11,7 +11,7 @@ import { CommitteeOrganizationReference } from '@lfx-one/shared/interfaces';
 import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, from, switchMap } from 'rxjs';
+import { EMPTY, Observable, from, switchMap, take } from 'rxjs';
 
 /** Context needed to accept a committee invitation from any surface. */
 export interface InvitationAcceptContext {
@@ -69,7 +69,7 @@ export class InvitationAcceptFlowService {
     }
 
     return new Promise((resolve) => {
-      ref.onClose.subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
+      ref.onClose.pipe(take(1)).subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
   }
 }

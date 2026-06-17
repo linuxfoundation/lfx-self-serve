@@ -536,13 +536,18 @@ export class CommitteeViewComponent {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() => this.committeeService.getCommittee(committeeId)),
-        filter((committee) => !!committee.my_role),
+        switchMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
+        filter((committee) => !!committee?.my_role),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: () => this.refreshMembers(),
+        error: () => {
+          if (!this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
         complete: () => {
           if (!this.committee()?.my_role) {
             this.refreshMembers();
