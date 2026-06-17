@@ -49,7 +49,7 @@ export class LensService {
     if (!allowed.includes(lens)) {
       return;
     }
-    if (lens === 'foundation' || lens === 'project') {
+    if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
       this.navLensSelection.set(lens);
       this.persistNavLensToCookie(lens);
     }
