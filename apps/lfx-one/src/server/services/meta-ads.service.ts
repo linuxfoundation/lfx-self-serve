@@ -18,7 +18,7 @@ function getMetaAccessToken(): string {
   return token;
 }
 
-async function metaRequest<T>(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
+async function metaRequest<T>(req: Request | undefined, method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
   const token = getMetaAccessToken();
   const url = `${META_BASE_URL}${path}`;
 
@@ -39,7 +39,7 @@ async function metaRequest<T>(method: 'GET' | 'POST', path: string, body?: Recor
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    logger.warning(undefined, 'meta_api_error', `Meta API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`, { method, path, status: resp.status });
+    logger.warning(req, 'meta_api_error', `Meta API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`, { method, path, status: resp.status });
     throw new Error(`Meta API request failed (${resp.status}). Check server logs for details.`);
   }
 
@@ -170,7 +170,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
   // Step 1: Verify account access
   try {
-    await metaRequest<Record<string, unknown>>('GET', `/${accountId}?fields=name,account_status`);
+    await metaRequest<Record<string, unknown>>(req, 'GET', `/${accountId}?fields=name,account_status`);
     steps.push(`Account verified: ${account.label} (${accountId})`);
   } catch {
     steps.push('Account verification warning — check server logs for details');
@@ -195,7 +195,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
-  const campaignResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/campaigns`, {
+  const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
     name: campaignName,
     objective: 'OUTCOME_TRAFFIC',
     status: 'PAUSED',
@@ -231,7 +231,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     adSetBody['daily_budget'] = budgetCents;
   }
 
-  const adSetResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/adsets`, adSetBody);
+  const adSetResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/adsets`, adSetBody);
   const adSetId = adSetResp.id;
   if (!adSetId) throw new Error('Meta ad set creation succeeded but returned no ad set ID');
   const budgetLabel = config.lifetimeBudget ? 'lifetime' : 'daily';
@@ -244,7 +244,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     const utmUrl = buildMetaUtmUrl(config, i);
 
     try {
-      const creativeResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/adcreatives`, {
+      const creativeResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/adcreatives`, {
         name: `${config.eventName} - Variant ${i + 1}`,
         object_story_spec: {
           page_id: account.pageId,
@@ -260,7 +260,7 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
       const creativeId = creativeResp.id;
       if (!creativeId) throw new Error('Creative creation returned no ID');
 
-      const adResp = await metaRequest<MetaCreateResponse>('POST', `/${accountId}/ads`, {
+      const adResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/ads`, {
         name: `${config.eventName} - Ad ${i + 1}`,
         adset_id: adSetId,
         creative: { creative_id: creativeId },
