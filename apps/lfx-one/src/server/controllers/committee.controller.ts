@@ -680,7 +680,18 @@ export class CommitteeController {
         return;
       }
 
-      const acceptData: AcceptCommitteeInviteRequest = req.body ?? {};
+      if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const acceptData: AcceptCommitteeInviteRequest = { ...(req.body as AcceptCommitteeInviteRequest) };
       const committee = await this.committeeService.getCommitteeById(req, id);
       if (committeeRequiresOrganization(committee)) {
         const orgName = typeof acceptData.organization?.name === 'string' ? acceptData.organization.name.trim() : '';

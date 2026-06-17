@@ -186,6 +186,8 @@ export class CommitteeDashboardComponent {
   public reloadMyCommitteesAfterAccept(committeeUid: string): void {
     this.reloadMyCommittees();
 
+    let pollSucceeded = false;
+
     timer(400, 400)
       .pipe(
         take(6),
@@ -195,14 +197,17 @@ export class CommitteeDashboardComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: () => this.reloadMyCommittees(),
+        next: () => {
+          pollSucceeded = true;
+          this.reloadMyCommittees();
+        },
         error: () => {
-          if (!this.myCommittees().some((committee) => committee.uid === committeeUid)) {
+          if (!pollSucceeded && !this.myCommittees().some((committee) => committee.uid === committeeUid)) {
             this.reloadMyCommittees();
           }
         },
         complete: () => {
-          if (!this.myCommittees().some((committee) => committee.uid === committeeUid)) {
+          if (!pollSucceeded && !this.myCommittees().some((committee) => committee.uid === committeeUid)) {
             this.reloadMyCommittees();
           }
         },

@@ -533,6 +533,8 @@ export class CommitteeViewComponent {
       return;
     }
 
+    let pollSucceeded = false;
+
     timer(400, 400)
       .pipe(
         take(6),
@@ -542,14 +544,17 @@ export class CommitteeViewComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: () => this.refreshMembers(),
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
         error: () => {
-          if (!this.committee()?.my_role) {
+          if (!pollSucceeded && !this.committee()?.my_role) {
             this.refreshMembers();
           }
         },
         complete: () => {
-          if (!this.committee()?.my_role) {
+          if (!pollSucceeded && !this.committee()?.my_role) {
             this.refreshMembers();
           }
         },
