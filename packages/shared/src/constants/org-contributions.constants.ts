@@ -29,14 +29,23 @@ export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
 /** Page-size selector options on the Repositories pagination footer. */
 export const CONTRIBUTIONS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] as const;
 
-/** Default empty filter/pagination state — Commits desc, page 1. */
+/** Server-accepted page-size ceiling (committer panel fetches use this; not exposed in the table footer). */
+export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
+
+/** Committer side-panel fetch — all commits for one contributor within the active filter scope. */
+export const CONTRIBUTIONS_COMMITTER_PANEL_PAGE_SIZE = CONTRIBUTIONS_MAX_PAGE_SIZE;
+
+/** Default empty filter/pagination state — Repositories tab, Commits desc, page 1. */
 export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
+  view: 'repositories',
   dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   search: '',
   projects: [],
   employees: [],
   sort: 'commits',
   dir: -1,
+  commitSort: 'date',
+  commitDir: -1,
   page: 1,
   size: CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
 };
@@ -58,4 +67,5 @@ export const EMPTY_ORG_CONTRIBUTIONS_RESPONSE: OrgContributionsResponse = {
   projectOptions: [],
   employeeOptions: [],
   totalRecords: 0,
+  commitsTotalRecords: 0,
 };

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, viewChild } from '@angular/core';
+import { Component, computed, inject, input, output, viewChild } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -16,14 +16,18 @@ import {
 } from '@lfx-one/shared/constants';
 import { CrowdfundingInitiativeStatus, InitiativeDetail, InitiativeMenuItem, TabOption } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
 @Component({
   selector: 'lfx-initiative-detail-header',
-  imports: [AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent],
+  imports: [AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent, ConfirmDialogModule],
   templateUrl: './initiative-detail-header.component.html',
   styleUrl: './initiative-detail-header.component.scss',
 })
 export class InitiativeDetailHeaderComponent {
+  private readonly confirmationService = inject(ConfirmationService);
+
   public readonly initiative = input.required<InitiativeDetail>();
   public readonly activeTab = input.required<string>();
   public readonly tabChange = output<string>();
@@ -45,8 +49,8 @@ export class InitiativeDetailHeaderComponent {
         {
           label: 'Activate Initiative',
           icon: 'fa-solid fa-circle-check',
-          description: 'Make this initiative publicly visible and accept donations again.',
-          command: () => this.statusChange.emit('published'),
+          description: 'Re-submit this initiative for review. Once approved, it will be publicly visible and accept donations again.',
+          command: () => this.confirmActivate(),
         },
       ];
     }
@@ -55,7 +59,7 @@ export class InitiativeDetailHeaderComponent {
         label: 'Archive Initiative',
         icon: 'fa-solid fa-box-archive',
         description: 'Hide this initiative from public view. No new donations will be accepted while archived.',
-        command: () => this.statusChange.emit('hidden'),
+        command: () => this.confirmArchive(),
       },
     ];
   });
@@ -74,5 +78,31 @@ export class InitiativeDetailHeaderComponent {
 
   protected onMoreClick(event: Event): void {
     this.moreMenu()?.toggle(event);
+  }
+
+  private confirmActivate(): void {
+    this.confirmationService.confirm({
+      key: 'initiative-status',
+      header: 'Activate Initiative',
+      message: 'Are you sure you want to re-submit this initiative for review? Once approved, it will be publicly visible and accept donations again.',
+      acceptLabel: 'Activate',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.statusChange.emit('submitted'),
+    });
+  }
+
+  private confirmArchive(): void {
+    this.confirmationService.confirm({
+      key: 'initiative-status',
+      header: 'Archive Initiative',
+      message: 'Are you sure you want to archive this initiative? It will be hidden from public view and no new donations will be accepted while archived.',
+      acceptLabel: 'Archive',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.statusChange.emit('hidden'),
+    });
   }
 }

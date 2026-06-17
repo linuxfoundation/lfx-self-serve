@@ -6,7 +6,6 @@ import type {
   CampaignPlatformOption,
   CampaignStatus,
   CampaignTabOption,
-  LinkedInAdAccount,
   LinkedInGeoTarget,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
@@ -24,7 +23,7 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
-  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
+  { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
@@ -115,16 +114,11 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-export const LINKEDIN_AD_ACCOUNTS: readonly LinkedInAdAccount[] = [
-  { accountId: '538170226', label: 'The Linux Foundation', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '509430019', label: 'LF Events', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263296', label: 'CNCF', organizationId: '12893459', status: 'ACTIVE' },
-  { accountId: '510263297', label: 'LF Networking', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263298', label: 'LF AI & Data', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263299', label: 'LF Energy', organizationId: '208777', status: 'ACTIVE' },
-] as const;
-
-export const LINKEDIN_DEFAULT_ACCOUNT_ID = '538170226';
+// NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
+// targeting profile URN lists are loaded at runtime from a mounted ConfigMap
+// (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
+// They are kept out of source control entirely so vendor IDs never ship in the
+// client bundle or the public chart repo.
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },

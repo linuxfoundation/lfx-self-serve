@@ -69,6 +69,9 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
 
@@ -234,3 +237,6 @@ export * from './crowdfunding.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';

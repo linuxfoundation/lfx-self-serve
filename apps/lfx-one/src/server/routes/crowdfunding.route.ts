@@ -16,6 +16,7 @@ router.post('/payment-method', (req, res, next) => crowdfundingController.saveMy
 router.get('/payment-method', (req, res, next) => crowdfundingController.getMyPaymentMethod(req, res, next));
 router.delete('/payment-method', (req, res, next) => crowdfundingController.deleteMyPaymentMethod(req, res, next));
 router.get('/donation-stats', (req, res, next) => crowdfundingController.getMyDonationStats(req, res, next));
+router.get('/recurring-donations/:id', (req, res, next) => crowdfundingController.getRecurringDonationById(req, res, next));
 router.get('/recurring-donations', (req, res, next) => crowdfundingController.getMyRecurringDonations(req, res, next));
 router.get('/my-donations', (req, res, next) => crowdfundingController.getMyDonations(req, res, next));
 router.post('/presigned-url', (req, res, next) => crowdfundingController.getPresignedUrl(req, res, next));

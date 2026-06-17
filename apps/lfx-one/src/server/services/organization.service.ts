@@ -42,12 +42,14 @@ import {
   TrainingEnrollmentDailyRow,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
+import { ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Raw row shape for ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT — server-only, mirrors Snowflake column names. */
 interface OrgLensAccountContextRow {
@@ -891,13 +893,55 @@ export class OrganizationService {
     return { programs };
   }
 
-  /** Resolve Org Lens display context for the given accountIds — one denormalised row per account_id, pre-joined in dbt. */
+  /** Resolve Org Lens display context per accountId — one denormalised row per account_id (pre-joined in dbt), each cached per org (identical bytes for every caller, refreshed on the daily batch) and assembled sorted by account name. */
   public async getOrgLensAccountContext(accountIds: string[]): Promise<OrgLensAccountContextResponse[]> {
-    if (accountIds.length === 0) {
+    // Dedupe upfront so duplicate ids don't fan out to duplicate rows (the prior `IN (...)` query collapsed them).
+    const uniqueAccountIds = Array.from(new Set(accountIds));
+    if (uniqueAccountIds.length === 0) {
       return [];
     }
 
-    const placeholders = accountIds.map(() => '?').join(',');
+    // Each account is an independently-cached Snowflake read; a cursor-driven pool caps cold-cache
+    // concurrency so a many-account bootstrap can't exhaust the shared Snowflake connection pool.
+    const perAccount: OrgLensAccountContextResponse[][] = new Array(uniqueAccountIds.length);
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < uniqueAccountIds.length) {
+        const index = cursor++;
+        const accountId = uniqueAccountIds[index];
+        perAccount[index] = await withOrgCache(
+          accountId,
+          'account-context',
+          VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+          () => this.fetchOrgLensAccountContext(accountId),
+          OrganizationService.isAccountContextArray
+        );
+      }
+    };
+
+    const poolSize = Math.min(ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, uniqueAccountIds.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+    return perAccount.flat().sort((a, b) => (a.accountName ?? '').localeCompare(b.accountName ?? ''));
+  }
+
+  // Rejects a corrupt/legacy entry (degrade to a miss). An empty array is a legitimate cacheable result.
+  private static isAccountContextArray(value: unknown): value is OrgLensAccountContextResponse[] {
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (el) =>
+          el !== null &&
+          typeof el === 'object' &&
+          !Array.isArray(el) &&
+          typeof (el as OrgLensAccountContextResponse).accountId === 'string' &&
+          typeof (el as OrgLensAccountContextResponse).accountName === 'string'
+      )
+    );
+  }
+
+  // Per-account Snowflake read (0 or 1 rows) — the cache fetcher behind getOrgLensAccountContext.
+  private async fetchOrgLensAccountContext(accountId: string): Promise<OrgLensAccountContextResponse[]> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -915,11 +959,10 @@ export class OrganizationService {
         MEMBERSHIP_TIER_DISPLAY_NAME,
         MEMBERSHIP_TIER_CLASS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
-      WHERE ACCOUNT_ID IN (${placeholders})
-      ORDER BY ACCOUNT_NAME
+      WHERE ACCOUNT_ID = ?
     `;
 
-    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, accountIds);
+    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [accountId]);
 
     return result.rows.map((row) => ({
       accountId: row.ACCOUNT_ID,

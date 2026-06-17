@@ -22,14 +22,14 @@
         data-testid="marketing-impact-export-pdf" />
       <lfx-select
         [form]="headerForm"
-        control="month"
-        [options]="monthOptions"
+        control="period"
+        [options]="periodOptions"
         optionLabel="label"
         optionValue="value"
-        placeholder="Select month"
-        ariaLabel="Select reporting month"
+        placeholder="Select period"
+        ariaLabel="Select reporting period"
         styleClass="w-[180px]"
-        data-testid="marketing-impact-month-picker" />
+        data-testid="marketing-impact-period-picker" />
     </div>
   </div>
 
@@ -75,49 +75,49 @@
       @if (selectedTab() === 'overview') {
         <lfx-overview-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-overview-tab" />
       } @else if (selectedTab() === 'attribution') {
         <lfx-attribution-section
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-attribution-tab" />
       } @else if (selectedTab() === 'performance-marketing') {
         <lfx-performance-marketing-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-performance-marketing-tab" />
       } @else if (selectedTab() === 'email') {
         <lfx-email-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-email-tab" />
       } @else if (selectedTab() === 'web-activity') {
         <lfx-web-activity-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-web-activity-tab" />
       } @else if (selectedTab() === 'social-accounts') {
         <lfx-social-accounts-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-social-accounts-tab" />
       } @else if (selectedTab() === 'social-listening') {
         <lfx-social-listening-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-social-listening-tab" />

@@ -3,11 +3,14 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { environment } from '@environments/environment';
-import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
+import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS } from '@lfx-one/shared/constants';
+import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
-import { DonationsStatsBarComponent } from './components/donations-stats-bar/donations-stats-bar.component';
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { RecurringDonationsListComponent } from './components/recurring-donations-list/recurring-donations-list.component';
@@ -20,19 +23,27 @@ const EMPTY_RECURRING: RecurringDonation[] = [];
 
 @Component({
   selector: 'lfx-my-donations',
-  imports: [DonationsStatsBarComponent, RecurringDonationsListComponent, DonationHistoryTableComponent, PaymentMethodsComponent, ConfirmDialogModule],
+  imports: [
+    ButtonComponent,
+    StatCardGridComponent,
+    RecurringDonationsListComponent,
+    DonationHistoryTableComponent,
+    PaymentMethodsComponent,
+    ConfirmDialogModule,
+  ],
   providers: [ConfirmationService],
   templateUrl: './my-donations.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MyDonationsComponent {
   // ─── Private Injections ───────────────────────────────────────────────────
+  private readonly router = inject(Router);
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
 
   // ─── Public Fields ────────────────────────────────────────────────────────
-  protected readonly crowdfundingUrl = environment.urls.crowdfunding;
+  protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}initiatives`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   // TODO: derive from API response once cancelled-recurring concept is implemented
@@ -46,6 +57,7 @@ export class MyDonationsComponent {
 
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly stats: Signal<DonationStats> = this.initStats();
+  protected readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
   protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initRecurringDonations();
   private readonly paymentMethod: Signal<PaymentMethod | null> = this.initPaymentMethod();
   protected readonly paymentMethods = computed(() => (this.paymentMethod() ? [this.paymentMethod()!] : []));
@@ -58,6 +70,10 @@ export class MyDonationsComponent {
     if (this.loadingMore()) return;
     this.loadingMore.set(true);
     this.donationHistoryOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
+  }
+
+  protected onViewRecurringDetail(donation: RecurringDonation): void {
+    void this.router.navigate(['/crowdfunding/donations/recurring', donation.id]);
   }
 
   protected onViewCancelled(): void {
@@ -119,6 +135,29 @@ export class MyDonationsComponent {
 
   private initStats(): Signal<DonationStats> {
     return toSignal(this.crowdfundingService.getMyDonationStats(), { initialValue: EMPTY_DONATION_STATS });
+  }
+
+  private initStatCards(): Signal<StatCardItem[]> {
+    return computed<StatCardItem[]>(() => {
+      const stats = this.stats();
+      const recurringValue = `${formatCurrency(stats.activeRecurringAmount)}/mo · ${stats.activeRecurringCount} active`;
+
+      return [
+        {
+          value: `${formatCurrency(stats.totalDonated)} · all time`,
+          label: 'Total Donated',
+          icon: 'fa-light fa-hand-holding-heart',
+          iconContainerClass: 'bg-blue-100 text-blue-600',
+        },
+        {
+          value: stats.initiativesSupported,
+          label: 'Initiatives Supported',
+          icon: 'fa-light fa-seedling',
+          iconContainerClass: 'bg-emerald-100 text-emerald-600',
+        },
+        { value: recurringValue, label: 'Active Recurring', icon: 'fa-light fa-arrows-rotate', iconContainerClass: 'bg-violet-100 text-violet-600' },
+      ];
+    });
   }
 
   private initRecurringDonations(): Signal<RecurringDonation[]> {

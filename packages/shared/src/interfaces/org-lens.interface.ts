@@ -118,12 +118,3 @@ export interface OrgLensFoundationsSectionState {
   status: OrgLensFoundationsSectionStatus;
   data: OrgLensFoundationsAndProjectsResponse | null;
 }
-
-/** Route data for `/org/*` placeholders — drives the shared placeholder header + empty-state copy. */
-export interface OrgPlaceholderRouteData {
-  title?: string;
-  description?: string;
-  icon?: string;
-  /** When true, shows a development notice banner above the page header. */
-  showDevelopmentNotice?: boolean;
-}

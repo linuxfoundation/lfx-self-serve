@@ -139,7 +139,9 @@ export const MEMBERSHIP_AGREEMENT_CSV_HEADERS = [
   'Download URL',
 ] as const;
 
-export const TAB_FRAGMENTS: readonly MembershipDetailTab[] = ['key-contacts', 'board', 'docs', 'governance'] as const;
+// INFO: Future Epic implementation — 'governance' is intentionally omitted so a #governance
+// deep link falls back to the default tab while the Governance tab is hidden.
+export const TAB_FRAGMENTS: readonly MembershipDetailTab[] = ['key-contacts', 'board', 'docs'] as const;
 export const DEFAULT_TAB: MembershipDetailTab = 'key-contacts';
 
 // Also accepts 'board-committee' → 'board' and 'documentation' → 'docs' aliases.

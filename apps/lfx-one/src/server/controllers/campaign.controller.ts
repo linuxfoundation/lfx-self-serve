@@ -11,10 +11,11 @@ import type {
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_ACCOUNTS } from '../constants';
+import { REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
-import { CampaignMetricsService, LinkedInMetricsService } from '../services/campaign-metrics.service';
+import { CampaignMetricsService, LinkedInMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
+import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -23,6 +24,7 @@ export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
+  private readonly redditMetricsService = new RedditMetricsService();
   private readonly activeStreams = new Set<Response>();
 
   public constructor() {
@@ -313,8 +315,13 @@ export class CampaignController {
   }
 
   public getLinkedInAccounts(_req: Request, res: Response): void {
-    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
-    res.json(accounts);
+    const config = getLinkedInConfig();
+    // Return default account first so clients defaulting to accounts[0] honour the configured default.
+    const sorted = [
+      ...config.accounts.filter((a) => a.accountId === config.defaultAccountId),
+      ...config.accounts.filter((a) => a.accountId !== config.defaultAccountId),
+    ];
+    res.json(sorted);
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -322,7 +329,8 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
-    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawKey) ?? LINKEDIN_ACCOUNTS[0];
+    const config = getLinkedInConfig();
+    const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {
@@ -391,6 +399,40 @@ export class CampaignController {
       logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
       res.json(result);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  public getRedditAccounts(_req: Request, res: Response): void {
+    const accounts = REDDIT_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
+    res.json(accounts);
+  }
+
+  public async getRedditMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const rawDays = String(req.query['days'] ?? '30');
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
+    const rawKey = String(req.query['accountKey'] ?? '');
+    const account = rawKey ? REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) : REDDIT_ACCOUNTS[0];
+    if (!account) {
+      next(
+        ServiceValidationError.forField('accountKey', 'Invalid Reddit account key', {
+          operation: 'reddit_monitor',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const accountId = account.accountId;
+    const startTime = logger.startOperation(req, 'reddit_monitor', { days, accountKey: rawKey });
+
+    try {
+      const data = await this.redditMetricsService.getRedditMonitorData(req, accountId, days);
+      logger.success(req, 'reddit_monitor', startTime, { campaigns: data.campaigns.length });
+      res.json(data);
+    } catch (error) {
+      logger.error(req, 'reddit_monitor', startTime, error, { days, accountKey: rawKey });
       next(error);
     }
   }

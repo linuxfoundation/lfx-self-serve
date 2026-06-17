@@ -4,7 +4,7 @@
 @if (mobile()) {
   <div class="flex items-center gap-1 px-3 py-2" data-testid="lens-switcher-mobile">
     @for (lens of lenses(); track lens.id) {
-      @let isActive = activeLensId() === lens.id;
+      @let isActive = !isDocsActive() && activeLensId() === lens.id;
       <button
         type="button"
         (click)="setLens(lens.id)"
@@ -73,7 +73,7 @@
     <!-- Lens Buttons -->
     <div class="flex flex-col items-center gap-3 flex-1">
       @for (lens of lenses(); track lens.id) {
-        @let isActive = activeLensId() === lens.id;
+        @let isActive = !isDocsActive() && activeLensId() === lens.id;
         <button
           type="button"
           (click)="setLens(lens.id)"
@@ -121,7 +121,7 @@
             'bg-blue-500': isDocsActive(),
             'group-hover:bg-white/10': !isDocsActive(),
           }">
-          <i class="fa-light fa-book text-xl"></i>
+          <i [ngClass]="isDocsActive() ? 'fa-solid fa-book' : 'fa-light fa-book'" class="text-xl"></i>
         </div>
       </a>
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_TRAINEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
@@ -15,6 +15,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Trainees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
 export class OrgPeopleTraineesService {
@@ -30,12 +31,13 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE };
     }
 
-    const [traineeRows, detailRows, foundationRows, courseRows] = await Promise.all([
-      this.fetchTraineeRows(accountId),
-      this.fetchDetailRows(accountId),
-      this.fetchFoundationOptions(accountId),
-      this.fetchCourseOptions(accountId),
-    ]);
+    const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCache(
+      accountId,
+      'people-trainees',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchTraineesRaw(accountId),
+      isTraineesRaw
+    );
 
     const trainees: OrgTraineeRow[] = traineeRows.map((row) => ({
       personKey: row.PERSON_KEY,
@@ -84,6 +86,21 @@ export class OrgPeopleTraineesService {
       foundationOptions,
       courseOptions,
     };
+  }
+
+  private async fetchTraineesRaw(accountId: string): Promise<{
+    traineeRows: OrgPeopleAllTraineeRow[];
+    detailRows: OrgPeopleTrainingRow[];
+    foundationRows: TraineeFoundationOptionRow[];
+    courseRows: TraineeCourseOptionRow[];
+  }> {
+    const [traineeRows, detailRows, foundationRows, courseRows] = await Promise.all([
+      this.fetchTraineeRows(accountId),
+      this.fetchDetailRows(accountId),
+      this.fetchFoundationOptions(accountId),
+      this.fetchCourseOptions(accountId),
+    ]);
+    return { traineeRows, detailRows, foundationRows, courseRows };
   }
 
   private async fetchTraineeRows(accountId: string): Promise<OrgPeopleAllTraineeRow[]> {
@@ -147,6 +164,11 @@ export class OrgPeopleTraineesService {
     const result = await this.snowflakeService.execute<TraineeCourseOptionRow>(query, [accountId]);
     return result.rows;
   }
+}
+
+function isTraineesRaw(value: unknown): boolean {
+  const v = value as { traineeRows?: unknown; detailRows?: unknown; foundationRows?: unknown; courseRows?: unknown } | null;
+  return !!v && Array.isArray(v.traineeRows) && Array.isArray(v.detailRows) && Array.isArray(v.foundationRows) && Array.isArray(v.courseRows);
 }
 
 /** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */
