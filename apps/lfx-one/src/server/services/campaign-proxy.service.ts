@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL } from '@lfx-one/shared/constants';
+import { AI_MODEL, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import type {
   BulkKeywordActionRequest,
@@ -1362,9 +1362,9 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
       for (const v of variants) {
         if (v == null || typeof v !== 'object') continue;
         const rec = v as Record<string, unknown>;
-        if (typeof rec['primary_text'] === 'string') rec['primary_text'] = (rec['primary_text'] as string).slice(0, 125);
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 40);
-        if (typeof rec['description'] === 'string') rec['description'] = (rec['description'] as string).slice(0, 30);
+        if (typeof rec['primary_text'] === 'string') rec['primary_text'] = (rec['primary_text'] as string).slice(0, META_CHAR_LIMITS.primaryText);
+        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, META_CHAR_LIMITS.headline);
+        if (typeof rec['description'] === 'string') rec['description'] = (rec['description'] as string).slice(0, META_CHAR_LIMITS.description);
       }
     }
   }
