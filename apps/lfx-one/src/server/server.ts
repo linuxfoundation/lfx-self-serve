@@ -251,7 +251,7 @@ app.use('/api/invite', inviteRouter);
 app.use('/api/akrites', akritesRouter);
 // Redirect old /api/ossprey/* paths to /api/akrites/* for backwards compatibility.
 app.use('/api/ossprey', (req, res) => {
-  res.redirect(301, `/api/akrites${req.url}`);
+  res.redirect(308, `/api/akrites${req.url}`);
 });
 
 app.use('/api/*', apiErrorHandler);

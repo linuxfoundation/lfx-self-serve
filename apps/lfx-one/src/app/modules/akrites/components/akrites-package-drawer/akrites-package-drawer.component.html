@@ -85,7 +85,12 @@
   } @else if (packageData(); as pkg) {
     <!-- ===== OVERVIEW TAB ===== -->
     @if (activeTab() === 'overview') {
-      <div class="flex flex-col gap-4" data-testid="akrites-drawer-overview">
+      <div
+        id="akrites-drawer-panel-overview"
+        role="tabpanel"
+        aria-labelledby="akrites-drawer-tab-overview"
+        class="flex flex-col gap-4"
+        data-testid="akrites-drawer-overview">
         <!-- Health score breakdown -->
         <div class="border border-gray-200 rounded-xl overflow-hidden">
           <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900 px-4 pt-3.5 pb-2">Health score breakdown</h3>
@@ -95,7 +100,7 @@
               @if (pkg.healthScore !== null) {
                 <span class="flex items-center gap-2">
                   <span class="font-medium text-slate-900">{{ pkg.healthScore }}/100</span>
-                  <lfx-tag [value]="getHealthLabel(pkg.healthScore)" [severity]="getHealthTagSeverity(pkg.healthScore)" [rounded]="true" [dot]="true" />
+                  <lfx-tag [value]="healthLabel()" [severity]="healthTagSeverity()" [rounded]="true" [dot]="true" />
                 </span>
               } @else {
                 <span class="text-gray-400">—</span>
@@ -103,15 +108,15 @@
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Maintainer health</span>
-              <span class="font-medium text-slate-900">{{ getHealthBreakdownSlot(pkg, 0) }}</span>
+              <span class="font-medium text-slate-900">{{ healthBreakdown()[0] }}</span>
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Security & supply chain</span>
-              <span class="font-medium text-slate-900">{{ getHealthBreakdownSlot(pkg, 1) }}</span>
+              <span class="font-medium text-slate-900">{{ healthBreakdown()[1] }}</span>
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Development activity</span>
-              <span class="font-medium text-slate-900">{{ getHealthBreakdownSlot(pkg, 2) }}</span>
+              <span class="font-medium text-slate-900">{{ healthBreakdown()[2] }}</span>
             </div>
           </div>
         </div>
@@ -153,7 +158,7 @@
           <div class="flex flex-col divide-y divide-gray-100">
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Lifecycle stage</span>
-              <lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" />
+              <lfx-tag [value]="lifecycleLabel()" [severity]="lifecycleTagSeverity()" [rounded]="true" [dot]="true" />
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Maintainer bus factor</span>
@@ -199,11 +204,16 @@
 
     <!-- ===== ASSESSMENT TAB ===== -->
     @if (activeTab() === 'assessment') {
-      <div class="flex flex-col gap-4" data-testid="akrites-drawer-assessment">
+      <div
+        id="akrites-drawer-panel-assessment"
+        role="tabpanel"
+        aria-labelledby="akrites-drawer-tab-assessment"
+        class="flex flex-col gap-4"
+        data-testid="akrites-drawer-assessment">
         <div class="border border-dashed border-gray-300 bg-gray-50 rounded-xl p-4">
           <div class="font-semibold text-sm text-slate-900">No assessment yet</div>
           <div class="text-xs text-gray-500 mt-1">
-            This package is {{ formatStatus(stewardshipStatus()) }}. Assign or open it so a steward can perform the initial security assessment.
+            This package is {{ formattedStatus() }}. Assign or open it so a steward can perform the initial security assessment.
           </div>
         </div>
       </div>
@@ -211,7 +221,12 @@
 
     <!-- ===== SECURITY TAB ===== -->
     @if (activeTab() === 'security') {
-      <div class="flex flex-col gap-4" data-testid="akrites-drawer-security">
+      <div
+        id="akrites-drawer-panel-security"
+        role="tabpanel"
+        aria-labelledby="akrites-drawer-tab-security"
+        class="flex flex-col gap-4"
+        data-testid="akrites-drawer-security">
         <!-- Security contact -->
         <div class="border border-gray-200 rounded-xl overflow-hidden">
           <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900 px-4 pt-3.5 pb-2">Security contact</h3>
@@ -248,7 +263,7 @@
           <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900 px-4 pt-3.5 pb-2">Advisories (OSV / GHSA)</h3>
           @if (pkg.advisories.length > 0) {
             <div class="flex flex-col divide-y divide-gray-100">
-              @for (adv of pkg.advisories; track adv.id) {
+              @for (adv of enrichedAdvisories(); track adv.id) {
                 <div class="flex items-start justify-between gap-3 px-4 py-3">
                   <div class="min-w-0">
                     <div class="font-mono text-xs font-semibold text-slate-900">{{ adv.id }}</div>
@@ -256,7 +271,7 @@
                       {{ adv.description }} — <span class="font-semibold text-gray-700">{{ adv.state }}</span>
                     </div>
                   </div>
-                  <lfx-tag [value]="adv.severity" [severity]="getAdvisoryTagSeverity(adv.severity)" [rounded]="true" />
+                  <lfx-tag [value]="adv.severity" [severity]="adv.tagSeverity" [rounded]="true" />
                 </div>
               }
             </div>
@@ -297,7 +312,7 @@
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Tier 0 steward</span>
-              <span class="font-medium text-slate-900">{{ getStewardLabel(pkg.stewards) }}</span>
+              <span class="font-medium text-slate-900">{{ stewardLabel() }}</span>
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Critical vulnerability flag</span>
@@ -319,14 +334,19 @@
 
     <!-- ===== PROVENANCE TAB ===== -->
     @if (activeTab() === 'provenance') {
-      <div class="flex flex-col gap-4" data-testid="akrites-drawer-provenance">
+      <div
+        id="akrites-drawer-panel-provenance"
+        role="tabpanel"
+        aria-labelledby="akrites-drawer-tab-provenance"
+        class="flex flex-col gap-4"
+        data-testid="akrites-drawer-provenance">
         <!-- Repository mapping -->
         <div class="border border-gray-200 rounded-xl overflow-hidden">
           <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900 px-4 pt-3.5 pb-2">Repository mapping</h3>
           <div class="flex flex-col divide-y divide-gray-100">
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Declared repo</span>
-              @if (getSafeRepoUrl(pkg.repoUrl); as safeUrl) {
+              @if (safeRepoUrl(); as safeUrl) {
                 <a [href]="safeUrl" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline truncate">{{ pkg.repoUrl }}</a>
               } @else {
                 <span class="text-gray-400">—</span>
@@ -335,7 +355,7 @@
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Mapping confidence</span>
               @if (pkg.supplyChainMapping) {
-                <lfx-tag [value]="pkg.supplyChainMapping" [severity]="getMappingTagSeverity(pkg.supplyChainMapping)" [rounded]="true" />
+                <lfx-tag [value]="pkg.supplyChainMapping" [severity]="mappingTagSeverity()" [rounded]="true" />
               } @else {
                 <span class="text-gray-400">—</span>
               }
@@ -384,12 +404,17 @@
 
     <!-- ===== HISTORY TAB ===== -->
     @if (activeTab() === 'history') {
-      <div class="flex flex-col gap-4" data-testid="akrites-drawer-history">
-        @if (pkg.history.length > 0) {
+      <div
+        id="akrites-drawer-panel-history"
+        role="tabpanel"
+        aria-labelledby="akrites-drawer-tab-history"
+        class="flex flex-col gap-4"
+        data-testid="akrites-drawer-history">
+        @if (enrichedHistory().length > 0) {
           <div class="relative flex flex-col gap-3.5 pl-5 before:absolute before:left-1 before:top-1 before:bottom-1 before:w-0.5 before:bg-gray-200">
-            @for (entry of pkg.history; track entry.label + '|' + entry.timeAgo + '|' + (entry.type ?? '')) {
+            @for (entry of enrichedHistory(); track entry.label + '|' + entry.timeAgo + '|' + (entry.type ?? '')) {
               <div class="relative">
-                <span [class]="getHistoryDotClass(entry.type)"></span>
+                <span [class]="entry.dotClass"></span>
                 <div class="text-sm text-gray-700">{{ entry.label }}</div>
                 <div class="text-xs text-gray-400 mt-0.5">{{ entry.timeAgo }}</div>
               </div>
@@ -416,7 +441,7 @@
     <div class="flex items-center justify-between gap-3 w-full">
       <div class="flex flex-col gap-1">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Stewardship status</span>
-        <lfx-tag [value]="formatStatus(stewardshipStatus())" [severity]="getStatusTagSeverity(stewardshipStatus())" [rounded]="true" />
+        <lfx-tag [value]="formattedStatus()" [severity]="statusTagSeverity()" [rounded]="true" />
       </div>
       <div class="flex items-center gap-2">
         @if (canOpenForStewardship()) {

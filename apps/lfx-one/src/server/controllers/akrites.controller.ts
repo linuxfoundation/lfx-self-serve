@@ -42,9 +42,17 @@ export class AkritesController {
     try {
       const pageRaw = getStringQueryParam(req, 'page');
       const pageSizeRaw = getStringQueryParam(req, 'pageSize');
+      const pageNum = pageRaw ? Number(pageRaw) : undefined;
+      const pageSizeNum = pageSizeRaw ? Number(pageSizeRaw) : undefined;
+      if (pageNum !== undefined && (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 10_000)) {
+        return next(new Error('Invalid page parameter'));
+      }
+      if (pageSizeNum !== undefined && (!Number.isInteger(pageSizeNum) || pageSizeNum < 1 || pageSizeNum > 500)) {
+        return next(new Error('Invalid pageSize parameter'));
+      }
       const params: AkritesListParams = {
-        page: pageRaw ? Number(pageRaw) : undefined,
-        pageSize: pageSizeRaw ? Number(pageSizeRaw) : undefined,
+        page: pageNum,
+        pageSize: pageSizeNum,
         search: getStringQueryParam(req, 'search'),
         ecosystem: getStringQueryParam(req, 'ecosystem'),
         lifecycle: getStringQueryParam(req, 'lifecycle'),

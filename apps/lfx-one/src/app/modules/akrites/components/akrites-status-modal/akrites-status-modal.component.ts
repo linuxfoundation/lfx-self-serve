@@ -32,7 +32,14 @@ export class AkritesStatusModalComponent {
   protected readonly inactiveReasonOptions = AKRITES_INACTIVE_REASON_OPTIONS;
 
   protected readonly selectedStatus = signal<AkritesUpdatableStatus | null>(null);
+  protected readonly selectedInactiveReason = signal<string>('');
   protected readonly requiresInactiveReason = computed(() => this.selectedStatus() === 'inactive');
+  protected readonly canSubmit = computed(() => {
+    const status = this.selectedStatus();
+    if (!status) return false;
+    if (status === 'inactive' && !this.selectedInactiveReason()) return false;
+    return true;
+  });
 
   protected readonly form = this.formBuilder.nonNullable.group({
     status: '' as AkritesUpdatableStatus | '',
@@ -46,19 +53,16 @@ export class AkritesStatusModalComponent {
       this.selectedStatus.set(status || null);
       if (status !== 'inactive') {
         this.form.controls.inactiveReason.setValue('');
+        this.selectedInactiveReason.set('');
       }
+    });
+    this.form.controls.inactiveReason.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((reason) => {
+      this.selectedInactiveReason.set(reason ?? '');
     });
   }
 
   protected onCancel(): void {
     this.visible.set(false);
-  }
-
-  protected get canSubmit(): boolean {
-    const { status, inactiveReason } = this.form.getRawValue();
-    if (!status) return false;
-    if (status === 'inactive' && !inactiveReason) return false;
-    return true;
   }
 
   protected onConfirm(): void {
@@ -74,6 +78,7 @@ export class AkritesStatusModalComponent {
 
   protected onShow(): void {
     this.selectedStatus.set(null);
+    this.selectedInactiveReason.set('');
     this.form.reset({ status: '', inactiveReason: '', notes: '' });
   }
 }

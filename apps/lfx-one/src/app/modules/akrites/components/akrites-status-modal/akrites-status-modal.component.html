@@ -65,7 +65,7 @@
       <lfx-button
         label="Update status"
         [loading]="loading()"
-        [disabled]="!canSubmit || loading()"
+        [disabled]="!canSubmit() || loading()"
         (onClick)="onConfirm()"
         data-testid="akrites-status-confirm" />
     </div>

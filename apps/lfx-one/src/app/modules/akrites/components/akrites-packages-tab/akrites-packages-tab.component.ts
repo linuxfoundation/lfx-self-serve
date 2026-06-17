@@ -11,12 +11,13 @@ import {
   AKRITES_STATUS_PILLS,
   AKRITES_VULN_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesSteward, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { StewardInitialsPipe } from '../../pipes/steward-initials.pipe';
 import {
   formatStatus,
   getAdvisoryTagSeverity,
@@ -29,7 +30,7 @@ import {
 
 @Component({
   selector: 'lfx-akrites-packages-tab',
-  imports: [ButtonComponent, CheckboxComponent, SelectComponent, TableComponent, TagComponent],
+  imports: [ButtonComponent, CheckboxComponent, SelectComponent, StewardInitialsPipe, TableComponent, TagComponent],
   templateUrl: './akrites-packages-tab.component.html',
 })
 export class AkritesPackagesTabComponent {
@@ -126,16 +127,6 @@ export class AkritesPackagesTabComponent {
 
   protected onToggleAllClick(): void {
     this.toggleAll.emit({ checked: !this.allSelected() });
-  }
-
-  protected getStewardInitials(steward: AkritesSteward): string {
-    if (steward.name) {
-      const parts = steward.name.trim().split(/\s+/);
-      return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() : parts[0].slice(0, 2).toUpperCase();
-    }
-    // Auth0 sub format: "auth0|abc123" — use first 2 chars after the pipe
-    const sub = steward.userId.split('|')[1] ?? steward.userId;
-    return sub.slice(0, 2).toUpperCase();
   }
 
   protected onSearchInput(event: Event): void {

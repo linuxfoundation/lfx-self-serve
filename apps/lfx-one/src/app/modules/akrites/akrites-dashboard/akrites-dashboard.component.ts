@@ -87,7 +87,9 @@ export class AkritesDashboardComponent {
     this.drawerVisible.set(false);
     timer(300)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.selectedPackageId.set(null));
+      .subscribe(() => {
+        if (!this.drawerVisible()) this.selectedPackageId.set(null);
+      });
   }
 
   protected onStewardshipChanged(): void {

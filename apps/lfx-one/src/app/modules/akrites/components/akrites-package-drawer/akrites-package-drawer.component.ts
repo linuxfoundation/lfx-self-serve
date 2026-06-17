@@ -96,13 +96,26 @@ export class AkritesPackageDrawerComponent {
   protected readonly canCloseAvailability = computed(() => this.stewardshipStatus() === 'open' && this.stewardshipId() !== null);
   protected readonly canReactivate = computed(() => this.stewardshipStatus() === 'inactive' && this.stewardshipId() !== null);
 
-  protected readonly formatStatus = formatStatus;
-  protected readonly getStatusTagSeverity = getStatusTagSeverity;
-  protected readonly getLifecycleLabel = getLifecycleLabel;
-  protected readonly getLifecycleTagSeverity = getLifecycleTagSeverity;
-  protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
-  protected readonly getHealthLabel = getHealthLabel;
-  protected readonly getHealthTagSeverity = getHealthTagSeverity;
+  protected readonly formattedStatus = computed(() => formatStatus(this.stewardshipStatus()));
+  protected readonly statusTagSeverity = computed(() => getStatusTagSeverity(this.stewardshipStatus()));
+  protected readonly healthLabel = computed(() => {
+    const score = this.packageData()?.healthScore;
+    return score != null ? getHealthLabel(score) : '—';
+  });
+  protected readonly healthTagSeverity = computed(() => getHealthTagSeverity(this.packageData()?.healthScore ?? null));
+  protected readonly healthBreakdown = computed(() => {
+    const pkg = this.packageData();
+    return [pkg?.healthBreakdown[0] || '—', pkg?.healthBreakdown[1] || '—', pkg?.healthBreakdown[2] || '—'];
+  });
+  protected readonly lifecycleLabel = computed(() => getLifecycleLabel(this.packageData()?.lifecycle ?? null));
+  protected readonly lifecycleTagSeverity = computed(() => getLifecycleTagSeverity(this.packageData()?.lifecycle ?? null));
+  protected readonly safeRepoUrl = computed(() => this.getSafeRepoUrl(this.packageData()?.repoUrl ?? null));
+  protected readonly mappingTagSeverity = computed(() => this.getMappingTagSeverity(this.packageData()?.supplyChainMapping ?? null));
+  protected readonly stewardLabel = computed(() => this.getStewardLabel(this.packageData()?.stewards ?? []));
+  protected readonly enrichedAdvisories = computed(() =>
+    (this.packageData()?.advisories ?? []).map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))
+  );
+  protected readonly enrichedHistory = computed(() => (this.packageData()?.history ?? []).map((e) => ({ ...e, dotClass: this.getHistoryDotClass(e.type) })));
 
   protected onTabChange(tab: DrawerTab): void {
     this.activeTab.set(tab);
