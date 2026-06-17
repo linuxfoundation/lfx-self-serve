@@ -11,6 +11,7 @@ import { formatActivityType } from '../../akrites.utils';
 
 export interface AkritesActivityDayGroup {
   label: string;
+  isToday: boolean;
   rows: AkritesActivityRow[];
 }
 
@@ -54,6 +55,10 @@ export class AkritesOverviewTabComponent implements OnInit {
     return formatActivityType(type);
   }
 
+  protected formatStatus(status: string): string {
+    return status.replace(/_/g, ' ');
+  }
+
   protected getActivityIcon(type: string): string {
     const icons: Record<string, string> = {
       escalation: 'fa-arrow-up',
@@ -74,18 +79,34 @@ export class AkritesOverviewTabComponent implements OnInit {
     return icons[type] ?? 'fa-circle-dot';
   }
 
-  protected getStatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      escalated: 'bg-red-500',
-      blocked: 'bg-red-400',
-      needs_attention: 'bg-amber-500',
-      active: 'bg-emerald-500',
-      assessing: 'bg-blue-400',
-      open: 'bg-blue-300',
-      unassigned: 'bg-gray-300',
-      inactive: 'bg-gray-400',
+  protected getAccentStyle(status: string): string {
+    const accentStatuses = ['open', 'escalated', 'needs_attention', 'blocked'];
+    if (!accentStatuses.includes(status)) return '';
+    return `box-shadow: inset 3px 0 0 ${this.getStatusHex(status)}`;
+  }
+
+  protected getStatusDotStyle(status: string): string {
+    const outline = ['inactive', 'blocked'];
+    const color = this.getStatusHex(status);
+    return outline.includes(status) ? `background:#fff;border:1.5px solid ${color}` : `background:${color}`;
+  }
+
+  protected getStatusLabelStyle(status: string): string {
+    return `color:${this.getStatusHex(status)}`;
+  }
+
+  protected getActivityAction(type: string): { label: string; variant: 'default' | 'blue' | 'red' } | null {
+    const actions: Record<string, { label: string; variant: 'default' | 'blue' | 'red' }> = {
+      escalation: { label: 'Resolve', variant: 'red' },
+      steward_removed: { label: 'Assign steward', variant: 'blue' },
+      stewardship_opened: { label: 'Assign steward', variant: 'blue' },
+      advisory_detected: { label: 'Triage advisory', variant: 'default' },
+      quarterly_update: { label: 'View update', variant: 'default' },
+      remediation_logged: { label: 'Review progress', variant: 'default' },
+      assessment_started: { label: 'Spot-check', variant: 'default' },
+      status_inactive: { label: 'Reassign', variant: 'blue' },
     };
-    return colors[status] ?? 'bg-gray-300';
+    return actions[type] ?? null;
   }
 
   protected formatRelativeTime(isoDate: string): string {
@@ -116,27 +137,54 @@ export class AkritesOverviewTabComponent implements OnInit {
       });
   }
 
+  private getStatusHex(status: string): string {
+    const colors: Record<string, string> = {
+      unassigned: '#62748e',
+      open: '#009aff',
+      assessing: '#7c3aed',
+      active: '#22c55e',
+      needs_attention: '#f97316',
+      escalated: '#e5484d',
+      blocked: '#e5484d',
+      inactive: '#90a1b9',
+    };
+    return colors[status] ?? '#62748e';
+  }
+
   private groupByDay(rows: AkritesActivityRow[]): AkritesActivityDayGroup[] {
-    const groups = new Map<string, AkritesActivityRow[]>();
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
+    const dateOpts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' };
+
+    const groups = new Map<string, { rows: AkritesActivityRow[]; isToday: boolean }>();
+    const order: string[] = [];
 
     for (const row of rows) {
       const d = new Date(row.createdAt);
       let label: string;
+      let isToday = false;
+
       if (this.isSameDay(d, today)) {
-        label = 'Today';
+        label = `Today · ${d.toLocaleDateString('en-US', dateOpts)}`;
+        isToday = true;
       } else if (this.isSameDay(d, yesterday)) {
-        label = 'Yesterday';
+        label = `Yesterday · ${d.toLocaleDateString('en-US', dateOpts)}`;
       } else {
-        label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        label = 'Earlier this week';
       }
-      if (!groups.has(label)) groups.set(label, []);
-      groups.get(label)!.push(row);
+
+      if (!groups.has(label)) {
+        groups.set(label, { rows: [], isToday });
+        order.push(label);
+      }
+      groups.get(label)!.rows.push(row);
     }
 
-    return Array.from(groups.entries()).map(([label, groupRows]) => ({ label, rows: groupRows }));
+    return order.map((label) => {
+      const g = groups.get(label)!;
+      return { label, isToday: g.isToday, rows: g.rows };
+    });
   }
 
   private isSameDay(a: Date, b: Date): boolean {
