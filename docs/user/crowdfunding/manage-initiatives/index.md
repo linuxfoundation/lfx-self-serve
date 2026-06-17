@@ -9,6 +9,8 @@ last_updated: 2026-06-16
 intercom_collection: Crowdfunding
 ---
 
+These steps apply to users who have created crowdfunding initiatives. If you have not created any initiatives, this section does not apply to your account.
+
 Select an initiative from the [View Initiatives](../view-initiatives/) page to open its detail page. From the detail page you can review financials, edit initiative settings, and change the initiative's status.
 
 ## Initiative detail page
@@ -35,7 +37,7 @@ The detail page is organized into a header and two tabs.
 
 ## Archive an initiative
 
-Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting donations.
+Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting new donations. Existing recurring donors are not automatically notified and their subscriptions are not cancelled — they will need to cancel their recurring donations manually. See [Manage Recurring Donations](../manage-recurring-donations/) for how donors can cancel a subscription.
 
 1. Open a **Published** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
@@ -65,6 +67,17 @@ Each initiative has a fund type that describes its purpose:
 - **Security Audit** — funds a third-party security review or penetration test of the project's code
 - **Mentorship** — funds a mentorship program that trains new contributors to the project
 - **Event** — funds a conference, summit, or community event organized around the project
+
+## Frequently asked
+
+**What happens to recurring donors when I archive an initiative?**
+Archiving an initiative stops the initiative from accepting new donations, but it does not automatically cancel the recurring subscriptions of existing donors. Donors who have an active recurring donation to the initiative will continue to be charged until they cancel their subscriptions manually.
+
+**Can I reactivate an archived initiative?**
+Yes. An archived initiative can be reactivated at any time by selecting **Activate Initiative** from the **More** menu (⋯). The initiative will return to Published status and resume accepting donations.
+
+**Why can't I see the More menu on my initiative?**
+The **More** menu for archiving and activating is only available for initiatives with a Published or Archived (Hidden) status. Initiatives that are Pending or Submitted are still under review and cannot be manually archived or activated until the review is complete.
 
 ## Related
 

@@ -29,8 +29,15 @@ Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sideb
 
 ## Key concepts
 
-- **Initiative**: A fundraising campaign for an open-source project. Initiatives have a type (General Fund, Security Audit, Mentorship, or Event) and a status (Active, Pending, or Archived).
-- **Recurring donation**: A monthly subscription that automatically charges a saved payment method each billing cycle.
+- **Initiative**: A fundraising campaign for an open-source project. Initiatives have a type (General Fund, Security Audit, Mentorship, or Event) and a status that determines their visibility and whether they accept donations.
+- **Initiative status**: Initiatives move through the following statuses:
+  - **Published** (shown under the Active filter) — the initiative is live and accepting donations
+  - **Pending** — the initiative has been created and is awaiting review before going live
+  - **Submitted** — the initiative has been submitted for final approval; still under review
+  - **Hidden** (shown under the Archived filter) — the initiative has been archived and no longer accepts donations
+  - **Declined** (shown under the Archived filter) — the initiative was not approved during review
+- **Recurring donation**: A monthly subscription that automatically charges a saved payment method each billing cycle. A recurring donation subscription can be Active or Paused.
+- **Paused recurring donation**: A recurring donation subscription that is temporarily on hold. No charges are processed while a subscription is paused.
 - **One-time donation**: A single charge made to an initiative without a recurring subscription.
 - **Payment method**: A saved credit or debit card used to process donations.
 
