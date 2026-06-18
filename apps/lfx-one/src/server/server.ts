@@ -65,6 +65,7 @@ import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
+  dotenv.config({ path: resolve(process.cwd(), '../.cdp-token.env'), override: true });
 }
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
