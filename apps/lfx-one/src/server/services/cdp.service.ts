@@ -205,7 +205,11 @@ export class CdpService {
     const requestId = randomUUID();
 
     // Do not log display_name — it's the user's full name (PII). Log only non-identifying fields.
-    logger.debug(req, 'create_cdp_member', 'Creating CDP member', { has_display_name: !!displayName, identity_count: identities.length, request_id: requestId });
+    logger.debug(req, 'create_cdp_member', 'Creating CDP member', {
+      has_display_name: !!displayName,
+      identity_count: identities.length,
+      request_id: requestId,
+    });
 
     const body: CdpCreateMemberRequest = { displayName, identities };
 
