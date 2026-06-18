@@ -11,7 +11,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { PendingInvitation } from '../interfaces/committee.interface';
-import { buildInvitationActions, buildInvitationSubtext, findPendingInvitationForCommittee, formatInviteExpiry } from './invitation.utils';
+import {
+  buildCommitteeOrganizationPayload,
+  buildInvitationActions,
+  buildInvitationSubtext,
+  committeeRequiresOrganization,
+  findPendingInvitationForCommittee,
+  formatInviteExpiry,
+  invitationRequiresOrganization,
+} from './invitation.utils';
 
 /** Minimal invitation builder — only the fields the helpers read. */
 function invitation(overrides: Partial<PendingInvitation> = {}): PendingInvitation {
@@ -77,6 +85,104 @@ describe('buildInvitationActions', () => {
   it('maps each invitation in order', () => {
     const actions = buildInvitationActions([invitation({ uid: 'a' }), invitation({ uid: 'b' })]);
     expect(actions.map((a) => a.inviteUid)).toEqual(['a', 'b']);
+  });
+
+  it('carries organization context and the requires-organization flag for the accept flow', () => {
+    const org = { id: 'org-1', name: 'Acme Corp', website: 'https://acme.example' };
+    const [action] = buildInvitationActions([invitation({ organization: org, enable_voting: true, business_email_required: false })]);
+
+    expect(action.inviteOrganization).toEqual(org);
+    expect(action.inviteRequiresOrganization).toBe(true);
+  });
+
+  it('sets inviteRequiresOrganization false when neither voting nor business-email rules apply', () => {
+    const [action] = buildInvitationActions([invitation({ enable_voting: false, business_email_required: false })]);
+    expect(action.inviteRequiresOrganization).toBe(false);
+  });
+
+  it('sets inviteRequiresOrganization true when committee flags are missing', () => {
+    const [action] = buildInvitationActions([invitation()]);
+    expect(action.inviteRequiresOrganization).toBe(true);
+  });
+});
+
+describe('committeeRequiresOrganization', () => {
+  it('returns true when voting is enabled', () => {
+    expect(committeeRequiresOrganization({ enable_voting: true })).toBe(true);
+  });
+
+  it('returns true when business email is required', () => {
+    expect(committeeRequiresOrganization({ business_email_required: true })).toBe(true);
+  });
+
+  it('returns false when neither flag is set', () => {
+    expect(committeeRequiresOrganization({ enable_voting: false, business_email_required: false })).toBe(false);
+  });
+});
+
+describe('invitationRequiresOrganization', () => {
+  it('prefers the precomputed inviteRequiresOrganization flag when set', () => {
+    expect(invitationRequiresOrganization({ inviteRequiresOrganization: false, enable_voting: true })).toBe(false);
+  });
+
+  it('falls back to committee flags when inviteRequiresOrganization is undefined', () => {
+    expect(invitationRequiresOrganization({ enable_voting: true })).toBe(true);
+  });
+
+  it('requires organization when committee flags are missing (enrichment outage)', () => {
+    expect(invitationRequiresOrganization({})).toBe(true);
+  });
+
+  it('does not require organization when both flags are explicitly false', () => {
+    expect(invitationRequiresOrganization({ enable_voting: false, business_email_required: false })).toBe(false);
+  });
+});
+
+describe('buildCommitteeOrganizationPayload', () => {
+  it('maps form values to the committee-service organization shape', () => {
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: 'Acme Corp',
+        organization_url: 'https://acme.example',
+        organization_id: 'org-1',
+      })
+    ).toEqual({
+      id: 'org-1',
+      name: 'Acme Corp',
+      website: 'https://acme.example',
+    });
+  });
+
+  it('returns null when all form fields are empty', () => {
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: '',
+        organization_url: '',
+        organization_id: null,
+      })
+    ).toBeNull();
+  });
+
+  it('trims whitespace and treats whitespace-only values as empty', () => {
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: '  Acme Corp  ',
+        organization_url: '  https://acme.example  ',
+        organization_id: '  org-1  ',
+      })
+    ).toEqual({
+      id: 'org-1',
+      name: 'Acme Corp',
+      website: 'https://acme.example',
+    });
+
+    expect(
+      buildCommitteeOrganizationPayload({
+        organization: '   ',
+        organization_url: '',
+        organization_id: null,
+      })
+    ).toBeNull();
   });
 });
 

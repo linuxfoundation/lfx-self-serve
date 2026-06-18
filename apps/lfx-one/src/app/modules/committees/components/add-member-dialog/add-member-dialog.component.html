@@ -89,53 +89,74 @@
     }
   </div>
 
-  <!-- ── Email addresses ──────────────────────────────────────────────────────── -->
-  <div class="flex flex-col gap-2">
-    <label class="block text-sm font-medium text-gray-700">Email addresses</label>
-    <lfx-textarea
-      [form]="form"
-      control="emails"
-      [rows]="5"
-      placeholder="name@example.com, another@example.com — or one address per line"
-      styleClass="w-full"
-      dataTest="add-member-emails"></lfx-textarea>
+  <!-- ── Email addresses, organization, and role ─────────────────────────────── -->
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-2">
+      <label class="block text-sm font-medium text-gray-700">Email addresses</label>
+      <lfx-textarea
+        [form]="form"
+        control="emails"
+        [rows]="5"
+        placeholder="name@example.com, another@example.com — or one address per line"
+        styleClass="w-full"
+        dataTest="add-member-emails"></lfx-textarea>
 
-    <div class="flex flex-col gap-1 text-xs" data-testid="add-member-preview">
-      @if (categorized().toInvite.length > 0) {
-        <span class="text-emerald-600 font-medium">
-          <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
-        </span>
-      }
-      @if (categorized().alreadyMembers.length > 0) {
-        <span class="text-gray-400">{{ categorized().alreadyMembers.length }} already in the group — will be skipped</span>
-      }
-      @if (categorized().alreadyInvited.length > 0) {
-        <span class="text-gray-400">{{ categorized().alreadyInvited.length }} already invited — will be skipped</span>
-      }
-      @if (parsed().duplicates.length > 0) {
-        <span class="text-gray-400">{{ parsed().duplicates.length }} duplicate(s) removed</span>
-      }
-      @if (parsed().invalid.length > 0) {
-        <span class="text-amber-600">
-          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ invalidSummary() }}
-        </span>
-      }
+      <div class="flex flex-col gap-1 text-xs" data-testid="add-member-preview">
+        @if (categorized().toInvite.length > 0) {
+          <span class="text-emerald-600 font-medium">
+            <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
+          </span>
+        }
+        @if (categorized().alreadyMembers.length > 0) {
+          <span class="text-gray-400">{{ categorized().alreadyMembers.length }} already in the group — will be skipped</span>
+        }
+        @if (categorized().alreadyInvited.length > 0) {
+          <span class="text-gray-400">{{ categorized().alreadyInvited.length }} already invited — will be skipped</span>
+        }
+        @if (parsed().duplicates.length > 0) {
+          <span class="text-gray-400">{{ parsed().duplicates.length }} duplicate(s) removed</span>
+        }
+        @if (parsed().invalid.length > 0) {
+          <span class="text-amber-600">
+            <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ parsed().invalid.length }} not valid: {{ invalidSummary() }}
+          </span>
+        }
+      </div>
     </div>
-  </div>
 
-  <!-- ── Suggested role (applies to everyone in this batch) ───────────────────── -->
-  <div class="flex flex-col gap-1">
-    <label class="block text-sm font-medium text-gray-700">Suggested role <span class="text-gray-400 font-normal">(optional)</span></label>
-    <lfx-select
-      [form]="form"
-      control="role"
-      [options]="roleOptions"
-      placeholder="Select role"
-      size="small"
-      [showClear]="true"
-      styleClass="w-full"
-      appendTo="body"
-      data-testid="add-member-role"></lfx-select>
+    @if (showOrganizationField()) {
+      <div class="flex w-full flex-col gap-2">
+        <label class="block text-sm font-medium text-gray-700">Organization <span class="text-gray-400 font-normal">(optional)</span></label>
+        <p class="text-xs text-gray-500">
+          Invitees must confirm their organization when accepting. Optionally set a suggested default here — it pre-fills the accept flow but is not required.
+        </p>
+        <lfx-organization-search
+          [form]="form"
+          nameControl="organization"
+          domainControl="organization_url"
+          placeholder="Search for organization..."
+          styleClass="w-full"
+          inputStyleClass="text-sm w-full"
+          panelStyleClass="text-sm w-full"
+          dataTestId="add-member-organization-search"
+          (onOrganizationResolved)="onOrgResolved($event)">
+        </lfx-organization-search>
+      </div>
+    }
+
+    <div class="flex flex-col gap-2">
+      <label class="block text-sm font-medium text-gray-700">Suggested role <span class="text-gray-400 font-normal">(optional)</span></label>
+      <lfx-select
+        [form]="form"
+        control="role"
+        [options]="roleOptions"
+        placeholder="Select role"
+        size="small"
+        [showClear]="true"
+        styleClass="w-full"
+        appendTo="body"
+        data-testid="add-member-role"></lfx-select>
+    </div>
   </div>
 
   <!-- ── Footer ───────────────────────────────────────────────────────────────── -->

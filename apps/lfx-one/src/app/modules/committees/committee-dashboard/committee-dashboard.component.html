@@ -86,7 +86,7 @@
       <!-- My Groups Table (Me lens) -->
       @if (isMeLens()) {
         <!-- Pending invitations — distinct section above the active groups table; renders nothing when empty -->
-        <lfx-committee-invitations (accepted)="reloadMyCommittees()" data-testid="committees-me-invitations" />
+        <lfx-committee-invitations (accepted)="reloadMyCommitteesAfterAccept($event)" data-testid="committees-me-invitations" />
 
         @if (myCommitteesLoading()) {
           <lfx-card styleClass="[&_.p-card-body]:!px-5">
