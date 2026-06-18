@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AkritesListParams, AkritesMetrics, AkritesPackagesResponse } from '@lfx-one/shared/interfaces';
+import { AkritesActivityResponse, AkritesListParams, AkritesMetrics, AkritesPackagesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -29,6 +29,27 @@ export class AkritesController {
       const data: AkritesMetrics = await this.akritesService.getMetrics(req);
 
       logger.success(req, 'get_akrites_metrics', startTime);
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getActivityFeed(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_akrites_activity');
+
+    try {
+      const pageRaw = getStringQueryParam(req, 'page');
+      const pageSizeRaw = getStringQueryParam(req, 'pageSize');
+      const parsedPage = pageRaw ? Number(pageRaw) : NaN;
+      const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
+      const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 25;
+
+      const data: AkritesActivityResponse = await this.akritesService.getActivityFeed(req, page, pageSize);
+
+      logger.success(req, 'get_akrites_activity', startTime, { row_count: data.rows?.length ?? 0 });
 
       res.json(data);
     } catch (error) {
