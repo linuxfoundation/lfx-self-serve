@@ -265,7 +265,7 @@ async function extractCrowdfundingToken(req: Request): Promise<void> {
     return;
   }
 
-  if (req.appSession?.crowdfundingRefreshToken) {
+  if (crowdfundingAuthService.isConfigured() && req.appSession?.crowdfundingRefreshToken) {
     const refreshed = await crowdfundingAuthService.tryRefreshToken(req);
     if (refreshed && req.appSession?.crowdfundingToken) {
       req.crowdfundingToken = req.appSession.crowdfundingToken;
