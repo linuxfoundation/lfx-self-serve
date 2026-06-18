@@ -2,10 +2,31 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-5 px-1" data-testid="add-member-dialog">
-  <p class="text-sm text-gray-500">
-    Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile, so you don't need to enter
-    their details. They appear as "Pending" until they accept.
-  </p>
+  <div class="flex flex-col gap-2">
+    <label class="block text-sm font-medium text-gray-700">How should they join?</label>
+    <lfx-select-button
+      [form]="form"
+      control="actionMode"
+      [options]="actionModeOptions"
+      optionLabel="label"
+      optionValue="value"
+      size="small"
+      [unselectable]="false"
+      styleClass="w-full"
+      data-testid="add-member-action-mode"></lfx-select-button>
+  </div>
+
+  @if (actionMode() === 'invite') {
+    <p class="text-sm text-gray-500">
+      Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile, so you don't need to enter
+      their details. They appear as "Pending" until they accept.
+    </p>
+  } @else {
+    <p class="text-sm text-gray-500">
+      Add people directly to the group roster — one or many at once. No invitation is sent; they appear as active members immediately. Use search to pre-fill
+      profile details when available.
+    </p>
+  }
 
   <!-- ── Find existing people (typeahead autofill, optional) ──────────────────── -->
   <div class="flex flex-col gap-2">
@@ -85,7 +106,7 @@
     }
 
     @if (!searchLoading() && searchResults().length === 0 && queryValue().length >= 2) {
-      <p class="text-xs text-gray-400">No matches for "{{ queryValue() }}". You can still invite them by typing their email below.</p>
+      <p class="text-xs text-gray-400">No matches for "{{ queryValue() }}". You can still add them by typing their email below.</p>
     }
   </div>
 
@@ -102,9 +123,15 @@
 
     <div class="flex flex-col gap-1 text-xs" data-testid="add-member-preview">
       @if (categorized().toInvite.length > 0) {
-        <span class="text-emerald-600 font-medium">
-          <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
-        </span>
+        @if (actionMode() === 'invite') {
+          <span class="text-emerald-600 font-medium">
+            <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
+          </span>
+        } @else {
+          <span class="text-emerald-600 font-medium">
+            <i class="fa-light fa-user-plus" aria-hidden="true"></i> {{ categorized().toInvite.length }} to add
+          </span>
+        }
       }
       @if (categorized().alreadyMembers.length > 0) {
         <span class="text-gray-400">{{ categorized().alreadyMembers.length }} already in the group — will be skipped</span>
@@ -151,8 +178,8 @@
       data-testid="add-member-cancel"></lfx-button>
 
     <lfx-button
-      label="Send Invites"
-      icon="fa-light fa-paper-plane"
+      [label]="submitLabel()"
+      [icon]="submitIcon()"
       [loading]="submitting()"
       [disabled]="!canSubmit() || submitting()"
       (onClick)="onSubmit()"

@@ -8,15 +8,19 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
+import { ADD_MEMBER_ACTION_OPTIONS, COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
+import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
+  AddMemberActionMode,
   CategorizedCommitteeEmails,
   Committee,
   CommitteeInvite,
   CommitteeInviteResult,
   CommitteeMember,
+  CreateCommitteeMemberRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
   UserSearchResult,
@@ -32,13 +36,11 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, tap, toArray } from 'rxjs';
 
 /**
- * Invite people to a committee by email — single or bulk.
+ * Add people to a committee by email — single or bulk.
  *
- * The committee/registrant search corpus is not the LF identity directory, so this
- * flow does not try to match every person to an existing account. Anyone is added by
- * inviting their email (invite-and-forget); the invitee completes their own profile on
- * accept, and an LFID is reconciled then. The typeahead is a convenience for finding
- * people already known to v2 and appending their email — never a gate.
+ * Writers choose between adding directly to the roster (`createCommitteeMember`) or
+ * sending a pending invite (`createCommitteeInvite`). The typeahead appends known
+ * emails from search; it is never a gate.
  */
 @Component({
   selector: 'lfx-add-member-dialog',
@@ -49,6 +51,7 @@ import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Ob
     UserAvatarColorPipe,
     ButtonComponent,
     InputTextComponent,
+    SelectButtonComponent,
     SelectComponent,
     TextareaComponent,
     SkeletonModule,
@@ -72,7 +75,11 @@ export class AddMemberDialogComponent {
     ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
   );
 
+  /** Search hits keyed by normalized email — used to enrich direct-add payloads. */
+  private readonly emailProfiles = signal<Map<string, UserSearchResult>>(new Map());
+
   public readonly form = new FormGroup({
+    actionMode: new FormControl<AddMemberActionMode>('add_directly', { nonNullable: true }),
     emails: new FormControl<string>('', { nonNullable: true }),
     role: new FormControl<string | null>(null),
   });
@@ -81,7 +88,12 @@ export class AddMemberDialogComponent {
   public submitting = signal(false);
   public searchLoading = signal(false);
 
+  public readonly actionModeOptions = [...ADD_MEMBER_ACTION_OPTIONS];
+
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  public readonly actionMode = toSignal(this.form.get('actionMode')!.valueChanges.pipe(startWith(this.form.get('actionMode')!.value)), {
+    initialValue: 'add_directly' as AddMemberActionMode,
+  });
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
@@ -98,8 +110,15 @@ export class AddMemberDialogComponent {
     return result;
   });
   public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
-  /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
+  public readonly submitLabel = computed(() => {
+    const count = this.categorized().toInvite.length;
+    if (this.actionMode() === 'invite') {
+      return count === 1 ? 'Send Invite' : 'Send Invites';
+    }
+    return count === 1 ? 'Add Member' : 'Add Members';
+  });
+  public readonly submitIcon = computed(() => (this.actionMode() === 'invite' ? 'fa-light fa-paper-plane' : 'fa-light fa-user-plus'));
 
   public readonly queryValue = toSignal(
     this.searchForm.get('query')!.valueChanges.pipe(
@@ -121,6 +140,11 @@ export class AddMemberDialogComponent {
     if (!email) {
       return;
     }
+    const normalized = email.toLowerCase();
+    const profiles = new Map(this.emailProfiles());
+    profiles.set(normalized, user);
+    this.emailProfiles.set(profiles);
+
     const current = this.form.get('emails')!.value.trim();
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
     this.searchForm.get('query')!.setValue('');
@@ -137,11 +161,18 @@ export class AddMemberDialogComponent {
       return;
     }
 
+    if (this.actionMode() === 'invite') {
+      this.submitInvites(committeeId, emails);
+      return;
+    }
+
+    this.submitDirectAdds(committeeId, emails);
+  }
+
+  private submitInvites(committeeId: string, emails: string[]): void {
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
-    // No bulk endpoint upstream — fan out one create-invite per email with bounded
-    // concurrency, catching per-email so one failure never aborts the rest.
     from(emails)
       .pipe(
         mergeMap(
@@ -157,14 +188,52 @@ export class AddMemberDialogComponent {
       )
       .subscribe((results) => {
         this.submitting.set(false);
-        this.summarize(results);
+        this.summarizeInviteResults(results);
         if (results.some((r) => r.success)) {
           this.dialogRef.close(true);
         }
       });
   }
 
-  private summarize(results: CommitteeInviteResult[]): void {
+  private submitDirectAdds(committeeId: string, emails: string[]): void {
+    this.submitting.set(true);
+    const role = this.form.get('role')!.value || null;
+
+    from(emails)
+      .pipe(
+        mergeMap(
+          (email): Observable<CommitteeInviteResult> =>
+            this.committeeService.createCommitteeMember(committeeId, this.buildMemberRequest(email, role)).pipe(
+              map(() => ({ email, success: true })),
+              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.addFailureReason(err) }))
+            ),
+          COMMITTEE_INVITE_CONCURRENCY
+        ),
+        toArray(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((results) => {
+        this.submitting.set(false);
+        this.summarizeAddResults(results);
+        if (results.some((r) => r.success)) {
+          this.dialogRef.close(true);
+        }
+      });
+  }
+
+  private buildMemberRequest(email: string, role: string | null): CreateCommitteeMemberRequest {
+    const profile = this.emailProfiles().get(email);
+    return {
+      email,
+      username: profile?.username ?? null,
+      first_name: profile?.first_name ?? null,
+      last_name: profile?.last_name ?? null,
+      job_title: profile?.job_title ?? null,
+      role: role ? { name: role as CommitteeMemberRole, start_date: null, end_date: null } : null,
+    };
+  }
+
+  private summarizeInviteResults(results: CommitteeInviteResult[]): void {
     const succeeded = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
 
@@ -195,12 +264,51 @@ export class AddMemberDialogComponent {
     });
   }
 
+  private summarizeAddResults(results: CommitteeInviteResult[]): void {
+    const succeeded = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
+
+    if (failed.length === 0) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Members Added',
+        detail: succeeded.length === 1 ? `Added ${succeeded[0].email} to the group.` : `Added ${succeeded.length} people to the group.`,
+      });
+      return;
+    }
+
+    if (succeeded.length === 0) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Unable to Add Members',
+        detail: failed.length === 1 ? `Could not add ${failed[0].email}: ${failed[0].reason}.` : `None of the ${failed.length} members could be added.`,
+        life: 6000,
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Some Members Not Added',
+      detail: `Added ${succeeded.length} of ${results.length}. Could not add: ${failed.map((f) => f.email).join(', ')}.`,
+      life: 8000,
+    });
+  }
+
   private inviteFailureReason(err: HttpErrorResponse): string {
     if (err.status === 409) {
       return 'already invited or a member';
     }
     const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
     return upstream ?? 'invite failed';
+  }
+
+  private addFailureReason(err: HttpErrorResponse): string {
+    if (err.status === 409) {
+      return 'already a member';
+    }
+    const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
+    return upstream ?? 'add failed';
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
@@ -217,7 +325,6 @@ export class AddMemberDialogComponent {
           this.searchLoading.set(true);
           const trimmed = q.trim();
           return this.searchService.searchUsers(trimmed, 'committee_member').pipe(
-            // Re-rank so name matches surface first and incidental email/alias matches are demoted (LFXV2-2058).
             map((users) => rankUserSearchResults(users, trimmed)),
             tap(() => this.searchLoading.set(false)),
             catchError(() => {
