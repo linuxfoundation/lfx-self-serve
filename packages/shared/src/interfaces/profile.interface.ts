@@ -472,9 +472,22 @@ export interface CdpResolveRequest {
 
 /**
  * CDP member resolve response
+ * @description `memberId` is absent when CDP has no member for the requested
+ * LFID/emails — a successful (200) resolve can legitimately yield no member.
  */
 export interface CdpResolveResponse {
-  memberId: string;
+  memberId?: string;
+}
+
+/**
+ * Request body for creating a new member in CDP
+ * @description Used when a resolve call finds no existing member — either a 404
+ * ("Member not found") or a successful response with no member ID — so a member is
+ * created seeded with the user's identities (e.g. their LFID).
+ */
+export interface CdpCreateMemberRequest {
+  displayName: string;
+  identities: CdpCreateIdentityRequest[];
 }
 
 /**
