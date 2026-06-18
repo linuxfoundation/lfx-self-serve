@@ -699,16 +699,21 @@ export class CommitteeService {
       // business_email_required is a settings-only field not present in the query-service
       // committee index (which only stores CommitteeBase). Fetch settings in parallel so the
       // invitationRequiresOrganization guard is accurate for business-email-only committees.
-      // Best-effort: a failed settings fetch leaves business_email_required undefined, which
-      // invitationRequiresOrganization treats as fail-closed when enable_voting is also undefined.
+      // throwOnError: true so a transient outage throws and is caught below, where we fail
+      // closed (true) rather than leaving business_email_required undefined — enable_voting
+      // is always defined from the index, so the both-undefined guard in
+      // invitationRequiresOrganization never fires here; without this, a settings outage
+      // would silently skip the org dialog and cause a server 400 on accept.
       const settingsByUid = new Map<string, boolean | undefined>();
       await Promise.all(
         committeeUids.map(async (uid) => {
           try {
-            const settings = await this.getCommitteeSettings(req, uid);
+            const settings = await this.getCommitteeSettings(req, uid, { throwOnError: true });
             settingsByUid.set(uid, settings.business_email_required);
           } catch {
-            // best-effort — leave undefined; fail-closed path in invitationRequiresOrganization applies
+            // Settings unavailable — fail closed: assume org is required so the dialog
+            // appears and the server's authoritative check can decide.
+            settingsByUid.set(uid, true);
           }
         })
       );
