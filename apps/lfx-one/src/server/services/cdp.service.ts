@@ -197,56 +197,6 @@ export class CdpService {
   }
 
   /**
-   * Create a new CDP member seeded with the given identities
-   */
-  public async createMember(req: Request | undefined, displayName: string, identities: CdpCreateIdentityRequest[]): Promise<string> {
-    const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.CREATE_MEMBER}`;
-    const requestId = randomUUID();
-
-    // Do not log displayName — it's the user's full name (PII). Log only non-identifying fields.
-    logger.debug(req, 'create_cdp_member', 'Creating CDP member', {
-      has_display_name: !!displayName,
-      identity_count: identities.length,
-      request_id: requestId,
-    });
-
-    const body: CdpCreateMemberRequest = { displayName, identities };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'X-LFX-Request-ID': requestId,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new MicroserviceError(`CDP member create failed: ${response.statusText}`, response.status, 'CDP_MEMBER_CREATE_ERROR', {
-        operation: 'create_cdp_member',
-        service: 'cdp_service',
-        errorBody: errorText,
-      });
-    }
-
-    const data = (await response.json()) as CdpResolveResponse;
-    if (!data.memberId) {
-      // A 2xx with no member ID would silently reintroduce the empty-reads bug
-      // this flow exists to prevent — fail loudly instead.
-      throw new MicroserviceError('CDP member create returned no member ID', 502, 'CDP_MEMBER_CREATE_ERROR', {
-        operation: 'create_cdp_member',
-        service: 'cdp_service',
-      });
-    }
-
-    return data.memberId;
-  }
-
-  /**
    * Get identities for a CDP member
    */
   public async getMemberIdentities(req: Request | undefined, memberId: string): Promise<CdpIdentityRaw[]> {
@@ -905,6 +855,58 @@ export class CdpService {
     const created = await this.createOrganization(req, name, domain, undefined, logo);
     logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain });
     return created;
+  }
+
+  /**
+   * Create a new CDP member seeded with the given identities.
+   * Private: member creation is an internal step of resolveMember(), which owns the
+   * resolve-or-create invariant; there is no standalone create-member use case.
+   */
+  private async createMember(req: Request | undefined, displayName: string, identities: CdpCreateIdentityRequest[]): Promise<string> {
+    const token = await this.generateToken(req);
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.CREATE_MEMBER}`;
+    const requestId = randomUUID();
+
+    // Do not log displayName — it's the user's full name (PII). Log only non-identifying fields.
+    logger.debug(req, 'create_cdp_member', 'Creating CDP member', {
+      has_display_name: !!displayName,
+      identity_count: identities.length,
+      request_id: requestId,
+    });
+
+    const body: CdpCreateMemberRequest = { displayName, identities };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-LFX-Request-ID': requestId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new MicroserviceError(`CDP member create failed: ${response.statusText}`, response.status, 'CDP_MEMBER_CREATE_ERROR', {
+        operation: 'create_cdp_member',
+        service: 'cdp_service',
+        errorBody: errorText,
+      });
+    }
+
+    const data = (await response.json()) as CdpResolveResponse;
+    if (!data.memberId) {
+      // A 2xx with no member ID would silently reintroduce the empty-reads bug
+      // this flow exists to prevent — fail loudly instead.
+      throw new MicroserviceError('CDP member create returned no member ID', 502, 'CDP_MEMBER_CREATE_ERROR', {
+        operation: 'create_cdp_member',
+        service: 'cdp_service',
+      });
+    }
+
+    return data.memberId;
   }
 
   /**
