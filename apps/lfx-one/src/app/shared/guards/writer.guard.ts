@@ -69,9 +69,14 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
   return projectService.getProject(slug, false).pipe(
     map((project) => {
-      const isWriter = project?.writer === true;
+      // null means the fetch failed (404/5xx/network) — redirect silently rather than
+      // showing a misleading "Access Denied" toast for an availability issue.
+      if (project === null) {
+        return deniedUrl;
+      }
+      const isWriter = project.writer === true;
       // meeting_coordinator can create meetings but not other write features
-      const isMeetingCoordinator = writeFeature === 'meetings' && project?.meetingCoordinator === true;
+      const isMeetingCoordinator = writeFeature === 'meetings' && project.meetingCoordinator === true;
       if (!isWriter && !isMeetingCoordinator) {
         messageService.add({
           severity: 'warn',

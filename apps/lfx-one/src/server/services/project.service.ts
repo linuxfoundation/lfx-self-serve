@@ -300,10 +300,21 @@ export class ProjectService {
     }
 
     if (access) {
-      const [writerProject, isMeetingCoordinator] = await Promise.all([
-        this.accessCheckService.addAccessToResource(req, project, 'project'),
-        this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' }),
-      ]);
+      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
+      // Skip meeting_coordinator check when already a writer — the guard allows writer OR
+      // meeting_coordinator, so the extra round trip can't change the outcome.
+      if (writerProject.writer) {
+        return { ...writerProject, meetingCoordinator: false };
+      }
+      const isMeetingCoordinator = await this.accessCheckService
+        .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
+        .catch((error) => {
+          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, defaulting to false', {
+            project_uid: project.uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return false;
+        });
       return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
     }
 
