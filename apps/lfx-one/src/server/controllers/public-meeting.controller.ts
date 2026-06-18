@@ -161,6 +161,10 @@ export class PublicMeetingController {
           try {
             const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
             if (registrantsByEmail.length > 0) {
+              logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
+                meeting_id: id,
+                email: userEmail,
+              });
               meeting.invited = true;
               delete (meeting as Partial<Meeting>).host_key;
               res.json({
