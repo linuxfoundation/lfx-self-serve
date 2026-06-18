@@ -896,9 +896,9 @@ export class CdpService {
 
   /**
    * Resolve an LFID/emails to a CDP member ID via CDP's resolve endpoint.
-   * Returns undefined when CDP has no member for the request — CDP signals this with a
-   * 404 (NOT_FOUND / "Member not found"), which we treat as "no member" rather than an
-   * upstream failure. Any other non-2xx status throws.
+   * Returns undefined when CDP has no member for the request — either a 404
+   * (NOT_FOUND / "Member not found") or a 2xx response with no `memberId`. Both are
+   * treated as "no member" rather than an upstream failure. Any other non-2xx throws.
    */
   private async resolveMemberId(req: Request | undefined, lfids: string[], emails?: string[]): Promise<string | undefined> {
     const token = await this.generateToken(req);
@@ -924,14 +924,14 @@ export class CdpService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
       // CDP returns 404 (NOT_FOUND / "Member not found") when no member matches the
-      // LFID/emails — treat as "no member" so resolveMember creates one. Other statuses
-      // are genuine upstream failures.
+      // LFID/emails — treat as "no member" so resolveMember creates one. This is an
+      // expected path, so skip reading the body here. Other statuses are genuine failures.
       if (response.status === 404) {
         logger.debug(req, 'resolve_cdp_member', 'No CDP member found; will create', { lfids, request_id: requestId });
         return undefined;
       }
+      const errorText = await response.text();
       throw new MicroserviceError(`CDP member resolve failed: ${response.statusText}`, response.status, 'CDP_RESOLVE_ERROR', {
         operation: 'resolve_cdp_member',
         service: 'cdp_service',

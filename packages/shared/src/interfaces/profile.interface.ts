@@ -481,8 +481,9 @@ export interface CdpResolveResponse {
 
 /**
  * Request body for creating a new member in CDP
- * @description Used when a resolve call succeeds but yields no member ID, so a member
- * is created seeded with the user's identities (e.g. their LFID).
+ * @description Used when a resolve call finds no existing member — either a 404
+ * ("Member not found") or a successful response with no member ID — so a member is
+ * created seeded with the user's identities (e.g. their LFID).
  */
 export interface CdpCreateMemberRequest {
   displayName: string;
