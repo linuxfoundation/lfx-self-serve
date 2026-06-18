@@ -1,52 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, inject, input, output, signal, computed } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AkritesScatterPoint, AkritesStatus, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { AKRITES_STATUS_COLORS, AKRITES_STATUS_LABELS, AKRITES_STATUS_ORDER, AKRITES_EMPTY_STATUS_COUNTS } from '@lfx-one/shared/constants';
 import { CheckboxComponent } from '@shared/components/checkbox/checkbox.component';
 
-const STATUS_COLORS: Record<AkritesStatus, { bg: string; border: string }> = {
-  unassigned: { bg: '#62748e', border: '#fff' },
-  open: { bg: '#009aff', border: '#fff' },
-  assessing: { bg: '#7c3aed', border: '#fff' },
-  active: { bg: '#22c55e', border: '#fff' },
-  needs_attention: { bg: '#f97316', border: '#fff' },
-  escalated: { bg: '#e5484d', border: '#fff' },
-  blocked: { bg: 'transparent', border: '#e5484d' },
-  inactive: { bg: 'transparent', border: '#90a1b9' },
-};
+export interface AkritesScatterPointVM extends AkritesScatterPoint {
+  /** Pre-computed left position percentage. */
+  left: string;
+  /** Pre-computed top position percentage. */
+  top: string;
+  /** Pre-computed background color. */
+  bg: string;
+  /** Pre-computed border color. */
+  borderColor: string;
+  /** Pre-computed health label. */
+  healthLabel: string;
+  /** Pre-computed status label. */
+  statusLabel: string;
+}
 
-const STATUS_LABELS: Record<AkritesStatus, string> = {
-  unassigned: 'Unassigned',
-  needs_attention: 'Needs attention',
-  escalated: 'Escalated',
-  blocked: 'Blocked',
-  inactive: 'Inactive',
-  open: 'Open',
-  assessing: 'Assessing',
-  active: 'Active',
-};
-
-const STATUS_ORDER: AkritesStatus[] = ['unassigned', 'needs_attention', 'escalated', 'blocked', 'inactive', 'open', 'assessing', 'active'];
-
-const EMPTY_STATUS_COUNTS: AkritesStatusCounts = {
-  all: 0,
-  unassigned: 0,
-  open: 0,
-  assessing: 0,
-  active: 0,
-  needs_attention: 0,
-  escalated: 0,
-  blocked: 0,
-  inactive: 0,
-};
+export interface AkritesLegendItemVM {
+  status: AkritesStatus;
+  bg: string;
+  borderColor: string;
+  label: string;
+  count: number;
+}
 
 @Component({
   selector: 'lfx-akrites-risk-matrix-tab',
   imports: [CheckboxComponent, ReactiveFormsModule],
   templateUrl: './akrites-risk-matrix-tab.component.html',
+  styleUrl: './akrites-risk-matrix-tab.component.scss',
 })
 export class AkritesRiskMatrixTabComponent {
   private readonly fb = inject(FormBuilder);
@@ -54,21 +43,48 @@ export class AkritesRiskMatrixTabComponent {
 
   public readonly points = input<AkritesScatterPoint[]>([]);
   public readonly loading = input(false);
-  public readonly statusCounts = input<AkritesStatusCounts>(EMPTY_STATUS_COUNTS);
+  public readonly statusCounts = input<AkritesStatusCounts>(AKRITES_EMPTY_STATUS_COUNTS);
   public readonly packageClick = output<string>();
   public readonly filterChange = output<AkritesStatus[]>();
 
-  protected readonly statusOrder = STATUS_ORDER;
+  protected readonly statusOrder = AKRITES_STATUS_ORDER;
 
-  protected readonly statusFilterForm: FormGroup = this.fb.group(Object.fromEntries(STATUS_ORDER.map((s) => [s, true])));
+  protected readonly statusFilterForm: FormGroup = this.fb.group(Object.fromEntries(AKRITES_STATUS_ORDER.map((s) => [s, true])));
 
-  protected readonly checkedCount = signal(STATUS_ORDER.length);
+  protected readonly checkedCount = signal(AKRITES_STATUS_ORDER.length);
+
+  // Pre-compute scatter point view models with all position/color/label calculations
+  protected readonly pointVMs = computed(() =>
+    this.points().map((p) => ({
+      ...p,
+      left: `${6 + (p.healthScore ?? 50) * 0.88}%`,
+      top: `${6 + (100 - (p.impactScore ?? 50)) * 0.88}%`,
+      bg: AKRITES_STATUS_COLORS[p.status].bg,
+      borderColor: AKRITES_STATUS_COLORS[p.status].border,
+      healthLabel: this.computeHealthLabel(p.healthScore),
+      statusLabel: AKRITES_STATUS_LABELS[p.status],
+    }))
+  );
+
+  // Pre-compute legend items with all color and label calculations
+  protected readonly legendItems = computed(() =>
+    AKRITES_STATUS_ORDER.map((status) => {
+      const c = AKRITES_STATUS_COLORS[status];
+      return {
+        status,
+        bg: c.bg,
+        borderColor: c.bg === 'transparent' ? c.border : c.bg,
+        label: AKRITES_STATUS_LABELS[status],
+        count: this.statusCounts()[status] ?? 0,
+      };
+    })
+  );
 
   public constructor() {
     this.statusFilterForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((values) => {
-      const visible = STATUS_ORDER.filter((s) => !!values[s]);
+      const visible = AKRITES_STATUS_ORDER.filter((s) => !!values[s]);
       this.checkedCount.set(visible.length);
-      this.filterChange.emit(visible.length > 0 ? visible : [...STATUS_ORDER]);
+      this.filterChange.emit(visible.length > 0 ? visible : [...AKRITES_STATUS_ORDER]);
     });
   }
 
@@ -80,36 +96,7 @@ export class AkritesRiskMatrixTabComponent {
     return this.statusCounts()[status] ?? 0;
   }
 
-  protected dotLeft(healthScore: number | null): string {
-    return `${6 + (healthScore ?? 50) * 0.88}%`;
-  }
-
-  protected dotTop(impactScore: number | null): string {
-    return `${6 + (100 - (impactScore ?? 50)) * 0.88}%`;
-  }
-
-  protected dotBg(status: AkritesStatus): string {
-    return STATUS_COLORS[status].bg;
-  }
-
-  protected dotBorderColor(status: AkritesStatus): string {
-    return STATUS_COLORS[status].border;
-  }
-
-  protected legendDotBg(status: AkritesStatus): string {
-    return STATUS_COLORS[status].bg;
-  }
-
-  protected legendDotBorderColor(status: AkritesStatus): string {
-    const c = STATUS_COLORS[status];
-    return c.bg === 'transparent' ? c.border : c.bg;
-  }
-
-  protected statusLabel(status: AkritesStatus): string {
-    return STATUS_LABELS[status];
-  }
-
-  protected getHealthLabel(score: number | null): string {
+  private computeHealthLabel(score: number | null): string {
     if (score === null) return '—';
     if (score >= 70) return 'Healthy';
     if (score >= 50) return 'Fair';

@@ -350,15 +350,22 @@ export class AkritesServerService {
 
       const data = (await response.json()) as CdpScatterResponse;
 
-      const points = (data.points ?? []).map((p) => ({
-        purl: p.purl,
-        name: p.name,
-        impactScore: p.criticalityScore ?? null,
-        healthScore: p.healthScore ?? null,
-        status: ((p.stewardshipStatus as AkritesStatus) || 'unassigned') as AkritesStatus,
-        stewardshipId: p.stewardshipId ? parseInt(p.stewardshipId, 10) : null,
-        openVulns: p.openVulns ?? 0,
-      }));
+      const validStatuses: AkritesStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
+      const points = (data.points ?? []).map((p) => {
+        const status = validStatuses.includes(p.stewardshipStatus as AkritesStatus) ? (p.stewardshipStatus as AkritesStatus) : 'unassigned';
+        const parsed = p.stewardshipId ? Number.parseInt(p.stewardshipId, 10) : null;
+        const stewardshipId = parsed !== null && !Number.isNaN(parsed) ? parsed : null;
+
+        return {
+          purl: p.purl,
+          name: p.name,
+          impactScore: p.criticalityScore ?? null,
+          healthScore: p.healthScore ?? null,
+          status,
+          stewardshipId,
+          openVulns: p.openVulns ?? 0,
+        };
+      });
 
       logger.debug(req, 'get_akrites_scatter', 'Fetched scatter data from CDP', { point_count: points.length });
 

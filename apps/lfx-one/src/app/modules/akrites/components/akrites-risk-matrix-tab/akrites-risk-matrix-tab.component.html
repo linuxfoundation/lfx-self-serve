@@ -10,33 +10,14 @@
         <div class="absolute top-0 left-0 right-0 h-0.5 z-20 overflow-hidden" data-testid="risk-matrix-loading-bar">
           <div class="h-full bg-blue-500" style="width: 40%; animation: risk-matrix-slide 1.4s ease-in-out infinite alternate"></div>
         </div>
-        <style>
-          @keyframes risk-matrix-slide {
-            from {
-              transform: translateX(-100%);
-            }
-            to {
-              transform: translateX(350%);
-            }
-          }
-        </style>
       }
 
       <!-- Danger zone: top-left quadrant (high impact, poor health) -->
-      <div
-        class="absolute pointer-events-none rounded-tl-xl"
-        style="
-          left: 0;
-          top: 0;
-          width: 50%;
-          height: 50%;
-          background: repeating-linear-gradient(45deg, rgba(229, 72, 77, 0.09) 0, rgba(229, 72, 77, 0.09) 6px, transparent 6px, transparent 12px);
-        "
-        aria-hidden="true"></div>
+      <div class="absolute pointer-events-none rounded-tl-xl danger-zone-background" style="left: 0; top: 0; width: 50%; height: 50%" aria-hidden="true"></div>
 
       <!-- Quadrant dividers -->
-      <div class="absolute top-0 bottom-0 pointer-events-none" style="left: 50%; border-left: 1px dashed #e2e8f0" aria-hidden="true"></div>
-      <div class="absolute left-0 right-0 pointer-events-none" style="top: 50%; border-top: 1px dashed #e2e8f0" aria-hidden="true"></div>
+      <div class="absolute top-0 bottom-0 pointer-events-none quadrant-divider-vertical" style="left: 50%" aria-hidden="true"></div>
+      <div class="absolute left-0 right-0 pointer-events-none quadrant-divider-horizontal" style="top: 50%" aria-hidden="true"></div>
 
       <!-- Quadrant labels -->
       <div class="absolute text-xs font-semibold uppercase tracking-wide text-red-500 p-3 leading-tight max-w-[48%]" style="top: 0; left: 0" aria-hidden="true">
@@ -62,29 +43,29 @@
       </div>
 
       <!-- Data points — all backend-filtered, no local filter -->
-      @for (point of points(); track point.purl) {
-        <div
-          class="group absolute rounded-full border-2 cursor-pointer shadow-sm hover:z-40"
+      @for (point of pointVMs(); track point.purl) {
+        <button
+          type="button"
+          class="group absolute rounded-full border-2 cursor-pointer shadow-sm hover:z-40 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           style="width: 18px; height: 18px; transform: translate(-50%, -50%)"
-          [style.left]="dotLeft(point.healthScore)"
-          [style.top]="dotTop(point.impactScore)"
-          [style.background-color]="dotBg(point.status)"
-          [style.border-color]="dotBorderColor(point.status)"
+          [style.left]="point.left"
+          [style.top]="point.top"
+          [style.background-color]="point.bg"
+          [style.border-color]="point.borderColor"
+          [attr.aria-label]="'Open package ' + point.name"
           (click)="packageClick.emit(point.purl)"
           data-testid="risk-matrix-dot">
           <!-- Hover tooltip -->
           <div
-            class="invisible group-hover:visible absolute z-50 pointer-events-none rounded-xl shadow-xl"
-            style="bottom: 160%; left: 50%; transform: translateX(-50%); width: 210px; background: #0f172a; padding: 9px 11px"
+            class="invisible group-hover:visible absolute z-50 pointer-events-none rounded-xl shadow-xl tooltip-background"
+            style="bottom: 160%; left: 50%; transform: translateX(-50%); width: 210px; padding: 9px 11px"
             role="tooltip">
             <div class="text-white font-semibold text-xs mb-1 truncate">{{ point.name }}</div>
-            <div class="text-slate-400 text-xs">
-              Impact {{ point.impactScore ?? '—' }} · Health {{ point.healthScore ?? '—' }} ({{ getHealthLabel(point.healthScore) }})
-            </div>
-            <div class="text-slate-400 text-xs">{{ statusLabel(point.status) }}</div>
+            <div class="text-slate-400 text-xs">Impact {{ point.impactScore ?? '—' }} · Health {{ point.healthScore ?? '—' }} ({{ point.healthLabel }})</div>
+            <div class="text-slate-400 text-xs">{{ point.statusLabel }}</div>
             <div class="text-slate-400 text-xs">{{ point.openVulns ? point.openVulns + ' open advisory' : 'No open advisories' }}</div>
           </div>
-        </div>
+        </button>
       }
 
       @if (points().length === 0 && !loading()) {
@@ -102,16 +83,13 @@
   <!-- Legend / status filter -->
   <div class="w-44 flex-shrink-0 pt-1" data-testid="risk-matrix-legend">
     <div class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Status</div>
-    @for (status of statusOrder; track status) {
-      <div class="flex items-center gap-2 py-1.5 select-none" [attr.data-testid]="'risk-matrix-legend-' + status">
-        <lfx-checkbox [form]="statusFilterForm" [control]="status" />
-        <label [for]="status" class="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
-          <span
-            class="w-3.5 h-3.5 rounded-full flex-shrink-0 border-2"
-            [style.background-color]="legendDotBg(status)"
-            [style.border-color]="legendDotBorderColor(status)"></span>
-          <span class="text-sm text-gray-700 flex-1 truncate">{{ statusLabel(status) }}</span>
-          <span class="text-sm text-gray-400 flex-shrink-0 tabular-nums">{{ statusCount(status) }}</span>
+    @for (item of legendItems(); track item.status) {
+      <div class="flex items-center gap-2 py-1.5 select-none" [attr.data-testid]="'risk-matrix-legend-' + item.status">
+        <lfx-checkbox [form]="statusFilterForm" [control]="item.status" />
+        <label [for]="item.status" class="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
+          <span class="w-3.5 h-3.5 rounded-full flex-shrink-0 border-2" [style.background-color]="item.bg" [style.border-color]="item.borderColor"></span>
+          <span class="text-sm text-gray-700 flex-1 truncate">{{ item.label }}</span>
+          <span class="text-sm text-gray-400 flex-shrink-0 tabular-nums">{{ item.count }}</span>
         </label>
       </div>
     }
