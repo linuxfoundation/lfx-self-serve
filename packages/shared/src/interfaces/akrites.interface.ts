@@ -366,9 +366,94 @@ export interface AkritesLoadResult {
 export interface CdpPackagesMetricsResponse {
   totalPackages: number;
   criticalPackages: number;
+  coveragePercent: number;
+  coverageTrend: number | null;
+  activeStewards: number;
+  unassignedCritical: number;
+  needsAttention: number;
+  escalated: number;
 }
 
 export interface AkritesMetrics {
   totalPackages: number;
   criticalPackages: number;
+  coveragePercent: number;
+  coverageTrend: number | null;
+  activeStewards: number;
+  unassignedCritical: number;
+  needsAttention: number;
+  escalated: number;
+}
+
+export interface AkritesActivityRow {
+  id: string;
+  stewardshipId: string;
+  packagePurl: string;
+  packageName: string;
+  packageEcosystem: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorType: string;
+  activityType: string;
+  content: string | null;
+  metadata: Record<string, unknown> | null;
+  stewardshipStatus: string;
+  createdAt: string;
+}
+
+export interface AkritesActivityResponse {
+  rows: AkritesActivityRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AkritesActivityRowVM extends AkritesActivityRow {
+  relativeTime: string;
+  accentStyle: string;
+  statusDotStyle: string;
+  statusLabelStyle: string;
+  activityIcon: string;
+  formattedStatus: string;
+  formattedActivityLabel: string;
+  action: { label: string; variant: 'default' | 'blue' | 'red' } | null;
+}
+
+export interface AkritesActivityDayGroup {
+  label: string;
+  isToday: boolean;
+  rows: AkritesActivityRowVM[];
+}
+
+export type AkritesDashboardTab = 'overview' | 'packages' | 'triage';
+
+// ===== Triage Board =====
+
+export type AkritesTriageStatus = Extract<AkritesStatus, 'unassigned' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive'>;
+
+export interface AkritesTriageBoardColumnConfig {
+  status: AkritesTriageStatus;
+  label: string;
+  /** Hex color for the column icon circle and gradient tint. */
+  color: string;
+  /** Pre-computed FontAwesome class string bound directly in the template. */
+  iconClass: string;
+  actionLabel: string;
+  actionVariant: 'blue' | 'red' | 'default';
+  /** Pre-computed Tailwind class string for the action button. */
+  actionButtonClass: string;
+}
+
+/** `AkritesPackage` extended with pre-computed display values to avoid method calls in bindings. */
+export interface AkritesTriagePackageVM extends AkritesPackage {
+  healthColor: string;
+  healthLabel: string;
+  vulnColor: string;
+}
+
+export interface AkritesTriageColumnState {
+  packages: AkritesTriagePackageVM[];
+  total: number;
+  loading: boolean;
+  error: boolean;
 }

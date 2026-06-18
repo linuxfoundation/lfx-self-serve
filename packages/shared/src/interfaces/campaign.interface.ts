@@ -122,6 +122,7 @@ export interface CampaignBriefOutput {
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
+  metaCopy?: MetaBriefCopy;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,100 @@ export interface RedditCampaignCreateResult {
   steps: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Meta Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+export interface MetaAdVariant {
+  primaryText: string;
+  headline: string;
+  description?: string;
+}
+
+export interface MetaBriefCopy {
+  variants: MetaAdVariant[];
+  recommendedGeos: string[];
+}
+
+export interface MetaCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  startDate: string;
+  endDate: string;
+  geoTargets: string[];
+  variants: MetaAdVariant[];
+  project?: string;
+}
+
+export interface MetaCampaignCreateResult {
+  platform: 'meta-ads';
+  campaignName: string;
+  campaignId: string;
+  adSetName: string;
+  adSetId: string;
+  adCount: number;
+  metaUrl: string;
+  steps: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Meta Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+
+export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface MetaCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: MetaPacingLabel;
+  startDate: string;
+  endDate: string;
+}
+
+export interface MetaAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface MetaActionItem {
+  priority: MetaActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface MetaAccountOption {
+  key: string;
+  label: string;
+}
+
+export interface MetaMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: MetaCampaignMetrics[];
+  accountTotals: MetaAccountTotals;
+  actionItems: MetaActionItem[];
+}
+
 export interface CampaignBriefRefineRequest {
   currentCopy: Record<string, unknown>;
   currentKeywords: CampaignKeyword[];
@@ -307,6 +402,7 @@ export interface CampaignCreateRequest {
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
+  metaConfig?: MetaCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {

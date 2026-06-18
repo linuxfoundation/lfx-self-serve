@@ -134,6 +134,7 @@ export class CrowdfundingService {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
           this.redirectToCfAuth();
+          return EMPTY; // navigating away — don't emit fallback so loading state persists
         }
         return of(fallback);
       }

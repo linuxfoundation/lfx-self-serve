@@ -1,56 +1,58 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-donations">
-  <div class="flex flex-col gap-6">
-    <!-- Page header -->
-    <div class="flex items-start justify-between mt-3" data-testid="my-donations-header">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="my-donations-title">My Donations</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="my-donations-description">Your giving history across LFX Crowdfunding initiatives</p>
+@if (isLoading()) {
+  <lfx-route-loading data-testid="my-donations-loading" />
+} @else {
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-donations">
+    <div class="flex flex-col gap-6">
+      <!-- Page header -->
+      <div class="flex items-start justify-between mt-3" data-testid="my-donations-header">
+        <div>
+          <h1 class="font-display font-light text-2xl" data-testid="my-donations-title">My Donations</h1>
+          <p class="mt-1 text-sm text-gray-500" data-testid="my-donations-description">Your giving history across LFX Crowdfunding initiatives</p>
+        </div>
+        <div class="flex items-center gap-6">
+          <lfx-button
+            label="Explore Initiatives"
+            icon="fa-light fa-arrow-up-right-from-square"
+            iconPos="right"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [href]="crowdfundingUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="explore-initiatives-btn" />
+        </div>
       </div>
-      <div class="flex items-center gap-6">
-        <lfx-button
-          label="Explore Initiatives"
-          icon="fa-light fa-arrow-up-right-from-square"
-          iconPos="right"
-          severity="secondary"
-          [outlined]="true"
-          size="small"
-          [href]="crowdfundingUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="explore-initiatives-btn" />
+
+      <!-- Stats -->
+      <lfx-stat-card-grid [cards]="statCards()" data-testid="donations-me-stats" />
+
+      <!-- Recurring donations (hidden only when there are no active and no cancelled subscriptions) -->
+      @if (recurringDonations().length > 0 || cancelledCount() > 0) {
+        <lfx-recurring-donations-list
+          [donations]="recurringDonations()"
+          (viewDetail)="onViewRecurringDetail($event)"
+          (cancelDonation)="onCancelDonation($event)" />
+      }
+
+      <!-- Donation history -->
+      <div class="flex flex-col gap-3" data-testid="donation-history-section">
+        <h2 class="text-sm font-bold text-gray-900">Donation History</h2>
+        <lfx-donation-history-table
+          [items]="donationHistory()"
+          [hasMore]="donationHistoryHasMore()"
+          [loadingMore]="loadingMore()"
+          [exploreUrl]="crowdfundingUrl"
+          (loadMore)="onLoadMoreDonations()" />
       </div>
+
+      <!-- Payment methods -->
+      <lfx-payment-methods [methods]="paymentMethods()" (removeCard)="onRemoveCard($event)" (cardAdded)="onCardAdded()" />
     </div>
-
-    <!-- Stats -->
-    <lfx-stat-card-grid [cards]="statCards()" data-testid="donations-me-stats" />
-
-    <!-- Recurring donations (hidden only when there are no active and no cancelled subscriptions) -->
-    @if (recurringDonations().length > 0 || cancelledCount() > 0) {
-      <lfx-recurring-donations-list
-        [donations]="recurringDonations()"
-        [cancelledCount]="cancelledCount()"
-        (viewDetail)="onViewRecurringDetail($event)"
-        (viewCancelled)="onViewCancelled()"
-        (cancelDonation)="onCancelDonation($event)" />
-    }
-
-    <!-- Donation history -->
-    <div class="flex flex-col gap-3" data-testid="donation-history-section">
-      <h2 class="text-sm font-bold text-gray-900">Donation History</h2>
-      <lfx-donation-history-table
-        [items]="donationHistory()"
-        [hasMore]="donationHistoryHasMore()"
-        [loadingMore]="loadingMore()"
-        [exploreUrl]="crowdfundingUrl"
-        (loadMore)="onLoadMoreDonations()" />
-    </div>
-
-    <!-- Payment methods -->
-    <lfx-payment-methods [methods]="paymentMethods()" (removeCard)="onRemoveCard($event)" (cardAdded)="onCardAdded()" />
   </div>
-</div>
+}
 
 <p-confirmDialog />
