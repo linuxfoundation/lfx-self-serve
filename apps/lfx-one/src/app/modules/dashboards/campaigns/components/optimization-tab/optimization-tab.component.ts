@@ -13,10 +13,14 @@ import type {
   LinkedInAccount,
   LinkedInActionItem,
   LinkedInMonitorResponse,
+  MetaAccountOption,
+  MetaActionItem,
+  MetaMonitorResponse,
   RedditAccountOption,
   RedditActionItem,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
@@ -35,6 +39,7 @@ export class OptimizationTabComponent implements OnInit {
   private linkedInSub: Subscription | null = null;
   private redditSub: Subscription | null = null;
 
+  protected readonly platformColors = PLATFORM_BRAND_COLORS;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
 
   protected readonly selectedDays = signal<DateRangeOption>(30);
@@ -92,6 +97,15 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly redditError = signal<string | null>(null);
   protected readonly redditActionItems = computed<RedditActionItem[]>(() => this.redditData()?.actionItems ?? []);
 
+  // Meta optimization
+  private metaSub: Subscription | null = null;
+  protected readonly metaAccountOptions = signal<MetaAccountOption[]>([]);
+  protected readonly selectedMetaAccountKey = signal<string>('');
+  protected readonly metaLoading = signal(false);
+  protected readonly metaData = signal<MetaMonitorResponse | null>(null);
+  protected readonly metaError = signal<string | null>(null);
+  protected readonly metaActionItems = computed<MetaActionItem[]>(() => this.metaData()?.actionItems ?? []);
+
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
 
@@ -129,6 +143,22 @@ export class OptimizationTabComponent implements OnInit {
           this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
         },
       });
+    this.campaignService
+      .getMetaAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.metaAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedMetaAccountKey.set(accounts[0].key);
+            this.fetchMetaOptimization();
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+        },
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -136,12 +166,14 @@ export class OptimizationTabComponent implements OnInit {
     this.fetchData();
     this.fetchLinkedInOptimization();
     this.fetchRedditOptimization();
+    this.fetchMetaOptimization();
   }
 
   protected refresh(): void {
     this.fetchData();
     this.fetchLinkedInOptimization();
     this.fetchRedditOptimization();
+    this.fetchMetaOptimization();
   }
 
   protected fetchData(): void {
@@ -255,6 +287,37 @@ export class OptimizationTabComponent implements OnInit {
     if (p === 'HIGH') return 'bg-red-100 text-red-700';
     if (p === 'MED') return 'bg-amber-100 text-amber-700';
     return 'bg-blue-100 text-blue-700';
+  }
+
+  protected setMetaAccount(key: string): void {
+    this.selectedMetaAccountKey.set(key);
+    this.fetchMetaOptimization();
+  }
+
+  protected onMetaAccountChange(event: Event): void {
+    this.setMetaAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchMetaOptimization(): void {
+    const accountKey = this.selectedMetaAccountKey();
+    if (!accountKey) return;
+    this.metaSub?.unsubscribe();
+    this.metaLoading.set(true);
+    this.metaError.set(null);
+    this.metaSub = this.campaignService
+      .getMetaMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.metaData.set(data);
+          this.metaLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta data');
+          this.metaLoading.set(false);
+        },
+      });
   }
 
   protected executeKeywordAction(kw: KeywordMetrics, action: KeywordActionType): void {

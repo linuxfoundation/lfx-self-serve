@@ -5,11 +5,13 @@ import { Location } from '@angular/common';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
+import { SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { isBoardScopedPersona, ProjectContext } from '@lfx-one/shared/interfaces';
 import { isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
+import { CookieRegistryService } from './cookie-registry.service';
 import { LensService } from './lens.service';
 import { PersonaService } from './persona.service';
 import { ProjectService } from './project.service';
@@ -19,14 +21,15 @@ import { ProjectService } from './project.service';
 })
 export class ProjectContextService {
   private readonly cookieService = inject(SsrCookieService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly lensService = inject(LensService);
   private readonly location = inject(Location);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
 
-  private readonly foundationStorageKey = 'lfx-selected-foundation';
-  private readonly projectStorageKey = 'lfx-selected-project';
+  private readonly foundationStorageKey = SELECTED_FOUNDATION_COOKIE_KEY;
+  private readonly projectStorageKey = SELECTED_PROJECT_COOKIE_KEY;
 
   private readonly foundationSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
   private readonly projectSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
@@ -45,9 +48,9 @@ export class ProjectContextService {
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
 
   public constructor() {
-    // Clean up legacy cookies from the previous cookie-hydrated design.
-    this.cookieService.delete(this.foundationStorageKey, '/');
-    this.cookieService.delete(this.projectStorageKey, '/');
+    // Restore the prior selection so the active context survives a refresh regardless of lens.
+    this.foundationSelection.set(this.loadFromCookie(this.foundationStorageKey));
+    this.projectSelection.set(this.loadFromCookie(this.projectStorageKey));
   }
 
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
@@ -55,6 +58,7 @@ export class ProjectContextService {
       return;
     }
     this.foundationSelection.set(foundation);
+    this.persistToCookie(this.foundationStorageKey, foundation);
     if (syncUrl) {
       this.syncProjectQueryParam(foundation.slug);
     }
@@ -65,6 +69,7 @@ export class ProjectContextService {
       return;
     }
     this.projectSelection.set(project);
+    this.persistToCookie(this.projectStorageKey, project);
     if (syncUrl) {
       this.syncProjectQueryParam(project.slug);
     }
@@ -72,11 +77,13 @@ export class ProjectContextService {
 
   public clearFoundation(): void {
     this.foundationSelection.set(null);
+    this.persistToCookie(this.foundationStorageKey, null);
     this.syncProjectQueryParam(null);
   }
 
   public clearProject(): void {
     this.projectSelection.set(null);
+    this.persistToCookie(this.projectStorageKey, null);
     this.syncProjectQueryParam(null);
   }
 
@@ -97,6 +104,37 @@ export class ProjectContextService {
       urlTree.queryParams['project'] = slug;
     }
     this.location.replaceState(this.router.serializeUrl(urlTree));
+  }
+
+  private persistToCookie(key: string, context: ProjectContext | null): void {
+    if (context === null) {
+      this.cookieService.delete(key, '/');
+      this.cookieRegistry.unregisterCookie(key);
+      return;
+    }
+    this.cookieService.set(key, JSON.stringify(context), {
+      expires: 30,
+      path: '/',
+      sameSite: 'Lax',
+      secure: process.env['NODE_ENV'] === 'production',
+    });
+    this.cookieRegistry.registerCookie(key);
+  }
+
+  private loadFromCookie(key: string): ProjectContext | null {
+    try {
+      const stored = this.cookieService.get(key);
+      if (!stored) {
+        return null;
+      }
+      const parsed = JSON.parse(stored) as Partial<ProjectContext>;
+      if (typeof parsed?.uid === 'string' && typeof parsed?.slug === 'string' && typeof parsed?.name === 'string') {
+        return parsed as ProjectContext;
+      }
+    } catch {
+      /* invalid cookie data */
+    }
+    return null;
   }
 
   private initActiveContext(): Signal<ProjectContext | null> {

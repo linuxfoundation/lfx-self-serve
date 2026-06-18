@@ -113,6 +113,7 @@ import {
   UniqueContributorsWeeklyRow,
   UploadProjectDocumentRequest,
   WebActivitiesSummaryResponse,
+  WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
 import type { PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
@@ -2014,7 +2015,23 @@ export class ProjectService {
         ORDER BY ACTIVITY_DATE ASC
       `;
 
-      const [summaryResult, dailyResult] = await Promise.all([
+      // Query 3: Per-domain detail within each classification group
+      const domainDetailQuery = `
+        SELECT
+          LF_SUB_DOMAIN_CLASSIFICATION,
+          FIRST_PAGE_URL_HOST,
+          TOTAL_SESSIONS_LAST_30_DAYS AS SESSIONS,
+          TOTAL_PAGE_VIEWS_LAST_30_DAYS AS PAGE_VIEWS,
+          TOTAL_NEW_USERS_LAST_30_DAYS AS NEW_USERS,
+          TOTAL_RETURNING_USERS_LAST_30_DAYS AS RETURNING_USERS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_BY_DOMAIN
+        WHERE 1=1
+          ${foundationFilter}
+          ${classificationFilter}
+        ORDER BY LF_SUB_DOMAIN_CLASSIFICATION, SESSIONS DESC
+      `;
+
+      const [summaryResult, dailyResult, domainDetailResult] = await Promise.all([
         this.snowflakeService.execute<{ LF_SUB_DOMAIN_CLASSIFICATION: string; TOTAL_SESSIONS: number; TOTAL_PAGE_VIEWS: number }>(summaryQuery, [
           ...foundationParams,
           ...classificationParams,
@@ -2024,12 +2041,35 @@ export class ProjectService {
           resolved.endDate,
           ...foundationParams,
         ]),
+        this.snowflakeService.execute<{
+          LF_SUB_DOMAIN_CLASSIFICATION: string;
+          FIRST_PAGE_URL_HOST: string;
+          SESSIONS: number;
+          PAGE_VIEWS: number;
+          NEW_USERS: number;
+          RETURNING_USERS: number;
+        }>(domainDetailQuery, [...foundationParams, ...classificationParams]),
       ]);
+
+      const domainsByGroup = new Map<string, WebActivityDomainDetail[]>();
+      for (const row of domainDetailResult.rows) {
+        const group = row.LF_SUB_DOMAIN_CLASSIFICATION || 'Other';
+        const details = domainsByGroup.get(group) ?? [];
+        details.push({
+          host: row.FIRST_PAGE_URL_HOST,
+          sessions: row.SESSIONS ?? 0,
+          pageViews: row.PAGE_VIEWS ?? 0,
+          newUsers: row.NEW_USERS ?? 0,
+          returningUsers: row.RETURNING_USERS ?? 0,
+        });
+        domainsByGroup.set(group, details);
+      }
 
       const domainGroups = summaryResult.rows.map((row) => ({
         domainGroup: row.LF_SUB_DOMAIN_CLASSIFICATION || 'Other',
         totalSessions: row.TOTAL_SESSIONS ?? 0,
         totalPageViews: row.TOTAL_PAGE_VIEWS ?? 0,
+        domains: domainsByGroup.get(row.LF_SUB_DOMAIN_CLASSIFICATION || 'Other') ?? [],
       }));
 
       const totalSessions = domainGroups.reduce((sum, g) => sum + g.totalSessions, 0);
