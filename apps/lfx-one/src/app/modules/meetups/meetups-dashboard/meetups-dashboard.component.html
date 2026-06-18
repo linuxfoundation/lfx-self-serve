@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="meetups-dashboard">
+  <div class="flex flex-col gap-6">
+    <!-- Page Header -->
+    <div class="flex items-start justify-between mt-3">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="meetups-page-title">My Meetups</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="meetups-description">
+          Discover upcoming meetups and review the ones you have joined across communities.
+        </p>
+      </div>
+    </div>
+
+    <!-- Meetups Card: tabs + search + list all in one -->
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="meetups-main-card">
+      <!-- Tab Pills Bar -->
+      <lfx-card-tabs-bar [options]="tabOptions" [selectedFilter]="activeTab()" (filterChange)="onActiveTabChange($event)" data-testid="meetups-tab-pills" />
+
+      <!-- Search and Filters (hidden on true empty state - no data and no active filters) -->
+      @if (showFiltersBar()) {
+        <div class="px-5 pt-4 pb-3">
+          <lfx-meetups-top-bar
+            [showStatusFilter]="showStatusFilter()"
+            [searchQuery]="selectedSearchQuery()"
+            [community]="selectedCommunity()"
+            [role]="selectedRole()"
+            [status]="selectedStatus()"
+            [statusOptions]="statusOptions"
+            (searchQueryChange)="onSearchQueryChange($event)"
+            (communityChange)="onCommunityChange($event)"
+            (roleChange)="onRoleChange($event)"
+            (statusChange)="onStatusChange($event)" />
+        </div>
+      }
+
+      <!-- Meetups List -->
+      <div class="px-5 pb-5">
+        <lfx-meetups-list
+          [activeTab]="activeTab()"
+          [community]="selectedCommunity()"
+          [searchQuery]="selectedSearchQuery()"
+          [role]="selectedRole()"
+          [status]="selectedStatus()"
+          (resetFilters)="resetFilters()" />
+      </div>
+    </lfx-card>
+  </div>
+</div>
