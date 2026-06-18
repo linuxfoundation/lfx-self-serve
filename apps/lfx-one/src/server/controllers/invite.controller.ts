@@ -166,7 +166,7 @@ export class InviteController {
     }
 
     if (invitedEmail !== sessionEmail) {
-      logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — session email does not match LFID invite token email', {
+      logger.info(req, 'accept_invite', 'Skipping committee invite auto-accept — session email does not match LFID invite token email', {
         invite_uid: payload.invite_uid,
       });
       return;

@@ -781,7 +781,7 @@ export class CommitteeService {
         let requiresOrganization = true;
 
         try {
-          const committee = await this.getCommitteeById(req, invite.committee_uid);
+          const committee = await this.getCommitteeById(req, invite.committee_uid, { throwOnSettingsError: true });
           requiresOrganization = committeeRequiresOrganization({
             enable_voting: committee.enable_voting,
             business_email_required: committee.business_email_required,
