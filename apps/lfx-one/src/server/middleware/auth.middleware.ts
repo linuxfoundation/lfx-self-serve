@@ -5,9 +5,12 @@ import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenE
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
 import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
+
+const crowdfundingAuthService = new CrowdfundingAuthService();
 
 // OIDC middleware already provides req.oidc with authentication context
 
@@ -249,15 +252,25 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
 }
 
 /**
- * Loads the LFX Crowdfunding API token from the session onto req.crowdfundingToken.
- * The token is obtained via the authorization_code flow in CrowdfundingAuthService
- * and stored in the session by the /crowdfunding/callback handler.
+ * Loads the LFX Crowdfunding API token onto req.crowdfundingToken.
+ * If the session token is valid, uses it directly. If it is expired or absent but a
+ * refresh token is stored, attempts a silent refresh before falling through — avoiding
+ * the auth-code redirect round-trip on token expiry.
  */
-function extractCrowdfundingToken(req: Request): void {
+async function extractCrowdfundingToken(req: Request): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
     req.crowdfundingToken = req.appSession.crowdfundingToken;
     logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
+    return;
+  }
+
+  if (crowdfundingAuthService.isConfigured() && req.appSession?.crowdfundingRefreshToken) {
+    const refreshed = await crowdfundingAuthService.tryRefreshToken(req);
+    if (refreshed && req.appSession?.crowdfundingToken) {
+      req.crowdfundingToken = req.appSession.crowdfundingToken;
+      logger.debug(req, 'crowdfunding_token', 'Crowdfunding token silently refreshed');
+    }
   }
 }
 
@@ -476,7 +489,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       // 4. Silently fetch secondary tokens when the user is authenticated
       if (hasToken) {
         await extractApiGatewayToken(req);
-        extractCrowdfundingToken(req);
+        await extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making

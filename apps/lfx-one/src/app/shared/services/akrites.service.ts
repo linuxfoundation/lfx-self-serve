@@ -5,6 +5,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of, catchError, take } from 'rxjs';
 import {
+  AkritesActivityResponse,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
@@ -43,6 +44,11 @@ export class AkritesService {
 
   public getMetrics(): Observable<AkritesMetrics> {
     return this.http.get<AkritesMetrics>('/api/akrites/packages/metrics');
+  }
+
+  public getActivityFeed(page = 1, pageSize = 25): Observable<AkritesActivityResponse> {
+    const params = new HttpParams().set('page', String(page)).set('pageSize', String(pageSize));
+    return this.http.get<AkritesActivityResponse>('/api/akrites/activity', { params });
   }
 
   public getPackage(purl: string): Observable<AkritesPackage | null> {

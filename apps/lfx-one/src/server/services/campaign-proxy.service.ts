@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL } from '@lfx-one/shared/constants';
+import { AI_MODEL, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import type {
   BulkKeywordActionRequest,
@@ -17,6 +17,7 @@ import type {
   CampaignSSEEventType,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
+  MetaCampaignCreateResult,
   RedditCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -24,6 +25,7 @@ import type { Request } from 'express';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
+import { executeMetaCampaignCreation } from './meta-ads.service';
 import { executeRedditCampaignCreation } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
@@ -374,6 +376,20 @@ REDDIT COPY RULES:
 - Include event dates and key value props naturally
 - NEVER use em-dashes (—) or en-dashes (–) — use commas or periods`;
 
+const COPY_META_SECTION = `
+META ADS (key: "meta_ads"):
+- variants: array of 2-3 ad variations, each containing:
+  - primary_text: ≤ ${META_CHAR_LIMITS.primaryText} characters (the main ad body — concise, benefit-focused)
+  - headline: ≤ ${META_CHAR_LIMITS.headline} characters (appears below the image — clear CTA)
+  - description: ≤ ${META_CHAR_LIMITS.description} characters (optional secondary text below headline)
+- recommended_geos: array of 2-5 ISO 3166-1 alpha-2 country codes for geo targeting, based on the event location and surrounding high-intent countries.
+
+META COPY RULES:
+- Primary text must be punchy and benefit-driven — Facebook/Instagram users scroll fast
+- Headlines should drive action: "Register Now", "Save Your Spot", "Learn More"
+- NEVER use em-dashes (—) or en-dashes (–) — use commas or periods
+- Include event dates naturally in at least one variant's primary text`;
+
 const COPY_RULES_SECTION = `
 IMPORTANT RULES:
 1. Dates must come ONLY from the event data provided — never use training-data memory
@@ -386,18 +402,21 @@ function buildCopySystemPrompt(platforms: string[]): string {
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
   const includeReddit = platforms.includes('reddit-ads');
+  const includeMeta = platforms.includes('meta-ads');
 
   let prompt = COPY_SYSTEM_PROMPT_BASE + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
 
   if (includeGoogle) prompt += COPY_GOOGLE_SECTION;
   if (includeLinkedIn) prompt += COPY_LINKEDIN_SECTION;
   if (includeReddit) prompt += COPY_REDDIT_SECTION;
+  if (includeMeta) prompt += COPY_META_SECTION;
   prompt += COPY_RULES_SECTION;
 
   const keys: string[] = [];
   if (includeGoogle) keys.push('"google_search"', '"google_display"');
   if (includeLinkedIn) keys.push('"linkedin_sponsored"');
   if (includeReddit) keys.push('"reddit_promoted"');
+  if (includeMeta) keys.push('"meta_ads"');
   prompt += `\n\nRespond with a JSON object (no markdown fences). Keys: ${keys.join(' and ')}.`;
 
   return prompt;
@@ -528,10 +547,10 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
@@ -707,10 +726,10 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads']);
+    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
@@ -868,16 +887,18 @@ export class CampaignProxyService {
       }
     }
 
-    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads'];
+    const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
     const includeGoogle = platforms.includes('google-ads');
     const includeLinkedIn = platforms.includes('linkedin-ads');
     const includeReddit = platforms.includes('reddit-ads');
+    const includeMeta = platforms.includes('meta-ads');
 
     const results: CampaignCreateResult[] = [];
     const linkedInResults: LinkedInCampaignCreateResult[] = [];
     const redditResults: RedditCampaignCreateResult[] = [];
+    const metaResults: MetaCampaignCreateResult[] = [];
     const errors: string[] = [];
 
     if (unsupported.length > 0) {
@@ -903,6 +924,14 @@ export class CampaignProxyService {
         promises.push(this.executeRedditDispatch(effectiveBody, redditResults, errors));
       } else {
         errors.push('Reddit Ads was selected but no Reddit configuration was provided.');
+      }
+    }
+
+    if (includeMeta) {
+      if (effectiveBody.metaConfig) {
+        promises.push(this.executeMetaDispatch(effectiveBody, metaResults, errors));
+      } else {
+        errors.push('Meta Ads was selected but no Meta configuration was provided.');
       }
     }
 
@@ -937,6 +966,17 @@ export class CampaignProxyService {
         adCount: r.adCount,
         campaignUrl: r.redditUrl,
         steps: r.steps,
+      })),
+      ...metaResults.map((m) => ({
+        platform: 'meta-ads' as const,
+        type: 'social' as const,
+        campaignName: m.campaignName,
+        campaignId: m.campaignId,
+        adGroupCount: 1,
+        keywordCount: 0,
+        adCount: m.adCount,
+        campaignUrl: m.metaUrl,
+        steps: m.steps,
       })),
     ];
 
@@ -1019,6 +1059,27 @@ export class CampaignProxyService {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unknown Reddit error';
       errors.push(`reddit-ads: ${msg}`);
+    }
+  }
+
+  private async executeMetaDispatch(body: CampaignCreateRequest, results: MetaCampaignCreateResult[], errors: string[]): Promise<void> {
+    const config = body.metaConfig!;
+    try {
+      const result = await executeMetaCampaignCreation(undefined, {
+        ...config,
+        eventName: config.eventName || body.eventName,
+        eventSlug: config.eventSlug || body.eventSlug,
+        registrationUrl: config.registrationUrl || body.registrationUrl,
+        hsToken: config.hsToken || body.hsToken,
+        startDate: config.startDate || body.startDate,
+        endDate: config.endDate || body.endDate,
+        geoTargets: config.geoTargets?.length ? config.geoTargets : [body.countryCode],
+        project: config.project || body.project,
+      });
+      results.push(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Unknown Meta error';
+      errors.push(`meta-ads: ${msg}`);
     }
   }
 
@@ -1294,6 +1355,20 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
     }
   }
 
+  const ma = obj['meta_ads'] as Record<string, unknown> | undefined;
+  if (ma) {
+    const variants = ma['variants'] as unknown[] | undefined;
+    if (Array.isArray(variants)) {
+      for (const v of variants) {
+        if (v == null || typeof v !== 'object') continue;
+        const rec = v as Record<string, unknown>;
+        if (typeof rec['primary_text'] === 'string') rec['primary_text'] = (rec['primary_text'] as string).slice(0, META_CHAR_LIMITS.primaryText);
+        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, META_CHAR_LIMITS.headline);
+        if (typeof rec['description'] === 'string') rec['description'] = (rec['description'] as string).slice(0, META_CHAR_LIMITS.description);
+      }
+    }
+  }
+
   const platforms = obj['platforms'] as Record<string, unknown> | undefined;
   if (platforms) {
     if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
@@ -1303,6 +1378,7 @@ function truncateAdCopy(obj: Record<string, unknown>): void {
     }
     if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
     if (platforms['reddit_promoted']) truncateAdCopy({ reddit_promoted: platforms['reddit_promoted'] } as Record<string, unknown>);
+    if (platforms['meta_ads']) truncateAdCopy({ meta_ads: platforms['meta_ads'] } as Record<string, unknown>);
   }
 }
 
@@ -1321,11 +1397,13 @@ function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
   const includeReddit = platforms.includes('reddit-ads');
+  const includeMeta = platforms.includes('meta-ads');
 
   const requestedKeys: string[] = [];
   if (includeGoogle) requestedKeys.push('google_search', 'google_display');
   if (includeLinkedIn) requestedKeys.push('linkedin_sponsored');
   if (includeReddit) requestedKeys.push('reddit_promoted');
+  if (includeMeta) requestedKeys.push('meta_ads');
 
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
@@ -1414,10 +1492,14 @@ function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');
+  const hasReddit = platforms.includes('reddit-ads');
+  const hasMeta = platforms.includes('meta-ads');
 
   const keyInstructions: string[] = [];
   if (hasGoogle) keyInstructions.push('"google_search" and "google_display"');
   if (hasLinkedIn) keyInstructions.push('"linkedin_sponsored"');
+  if (hasReddit) keyInstructions.push('"reddit_promoted"');
+  if (hasMeta) keyInstructions.push('"meta_ads"');
   const keyList = keyInstructions.join(', ');
 
   return `I have existing ad copy that needs refinement based on user feedback.

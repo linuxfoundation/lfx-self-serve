@@ -11,6 +11,7 @@ import {
   CdpPackagesMetricsResponse,
   CdpStewardSummary,
   CdpStewardshipSummary,
+  AkritesActivityResponse,
   AkritesAdvisory,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
@@ -159,12 +160,66 @@ export class AkritesServerService {
       return {
         totalPackages: data.totalPackages ?? 0,
         criticalPackages: data.criticalPackages ?? 0,
+        coveragePercent: data.coveragePercent ?? 0,
+        coverageTrend: data.coverageTrend ?? null,
+        activeStewards: data.activeStewards ?? 0,
+        unassignedCritical: data.unassignedCritical ?? 0,
+        needsAttention: data.needsAttention ?? 0,
+        escalated: data.escalated ?? 0,
       };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
 
       throw new MicroserviceError('Failed to fetch Akrites metrics', 502, 'AKRITES_METRICS_ERROR', {
         operation: 'get_akrites_metrics',
+        service: 'akrites_service',
+      });
+    }
+  }
+
+  public async getActivityFeed(req: Request, page: number, pageSize: number): Promise<AkritesActivityResponse> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_akrites_activity',
+          service: 'akrites_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.ACTIVITY}`);
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('pageSize', String(pageSize));
+
+      logger.debug(req, 'get_akrites_activity', 'Fetching activity feed from CDP', {
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP activity feed request failed: ${response.statusText}`, response.status, 'CDP_ACTIVITY_ERROR', {
+          operation: 'get_akrites_activity',
+          service: 'akrites_service',
+          errorBody: errorText,
+        });
+      }
+
+      return (await response.json()) as AkritesActivityResponse;
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch Akrites activity feed', 502, 'AKRITES_ACTIVITY_ERROR', {
+        operation: 'get_akrites_activity',
         service: 'akrites_service',
       });
     }
