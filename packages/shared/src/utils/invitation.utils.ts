@@ -6,6 +6,13 @@ import { PendingActionItem } from '../interfaces/components.interface';
 import { PendingInvitation } from '../interfaces/committee.interface';
 
 /**
+ * Returns true when a committee requires organization on invite create/accept.
+ */
+export function committeeRequiresOrganization(flags: { enable_voting?: boolean; business_email_required?: boolean }): boolean {
+  return !!flags.enable_voting || !!flags.business_email_required;
+}
+
+/**
  * Formats an invite expiry (RFC3339) into a short display string (e.g. "Jun 20, 2026"), or null when
  * the value is missing or not a parseable date. Guarding the parse keeps a malformed upstream
  * timestamp from surfacing "Invalid Date" in the UI — callers fall back to no-expiry copy on null.

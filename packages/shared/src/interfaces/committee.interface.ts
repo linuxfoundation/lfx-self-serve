@@ -42,6 +42,19 @@ export interface BehavioralClassDisplayConfig {
 // ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
 
 /**
+ * Organization reference carried on committee invites and member records.
+ * Mirrors the committee-service organization object: `id`, `name`, and `website`.
+ */
+export interface CommitteeOrganizationReference {
+  /** CDP organization ID */
+  id?: string | null;
+  /** Organization display name */
+  name?: string | null;
+  /** Organization website URL */
+  website?: string | null;
+}
+
+/**
  * How users can join this group.
  *  - open:        Anyone can self-join; no approval required.
  *  - invite_only: Members / admins send invite links; invitee clicks to accept.
@@ -80,6 +93,8 @@ export interface CommitteeInvite {
   status: CommitteeInviteStatus;
   /** Creation timestamp (RFC3339) */
   created_at: string;
+  /** Suggested organization for the invitee (optional) */
+  organization?: CommitteeOrganizationReference | null;
 }
 
 /**
@@ -146,6 +161,14 @@ export interface CreateCommitteeInviteRequest {
   invitee_email: string;
   /** Suggested role for the invitee (optional) */
   role?: string | null;
+}
+
+/**
+ * Payload for accepting a committee invite (committee-service accept-invite).
+ */
+export interface AcceptCommitteeInviteRequest {
+  /** Organization the invitee confirms on acceptance */
+  organization?: CommitteeOrganizationReference | null;
 }
 
 /**

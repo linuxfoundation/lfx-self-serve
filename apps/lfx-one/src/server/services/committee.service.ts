@@ -3,6 +3,7 @@
 
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
+  AcceptCommitteeInviteRequest,
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
@@ -24,6 +25,7 @@ import {
   QueryServiceResponse,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
+import { committeeRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -730,7 +732,31 @@ export class CommitteeService {
 
     for (const invite of toAccept) {
       try {
-        await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
+        let enableVoting: boolean | undefined;
+        let businessEmailRequired: boolean | undefined;
+
+        try {
+          const committee = await this.getCommitteeById(req, invite.committee_uid);
+          enableVoting = committee.enable_voting;
+          businessEmailRequired = committee.business_email_required;
+        } catch {
+          // Cannot fetch committee — leave both undefined so committeeRequiresOrganization
+          // treats the committee as org-required (fail-closed).
+        }
+
+        if (committeeRequiresOrganization({ enable_voting: enableVoting, business_email_required: businessEmailRequired })) {
+          const orgName = invite.organization?.name?.trim();
+          if (!orgName) {
+            logger.warning(req, 'accept_invite', 'Skipping auto-accept — committee requires organization but invite has none; user must accept manually', {
+              committee_uid: invite.committee_uid,
+              invite_uid: invite.uid,
+            });
+            continue;
+          }
+          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: invite.organization });
+        } else {
+          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
+        }
       } catch (error) {
         logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
           committee_uid: invite.committee_uid,
@@ -745,8 +771,8 @@ export class CommitteeService {
    * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
    * invitee-authenticated (committee-service enforces principal == invitee_email).
    */
-  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST');
+  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string, body?: AcceptCommitteeInviteRequest): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST', {}, body ?? {});
 
     logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
       committee_uid: committeeId,
