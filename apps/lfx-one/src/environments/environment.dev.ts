@@ -21,7 +21,7 @@ export const environment = {
   },
   datadog: {
     site: 'datadoghq.com',
-    service: 'lfx-one',
-    env: 'dev',
+    service: 'lfx-self-serve',
+    env: 'development',
   },
 };
