@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
+import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS, EMPTY_RECURRING_DONATION_LIST } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
@@ -17,13 +18,14 @@ import { RecurringDonationsListComponent } from './components/recurring-donation
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
-import { map, scan, switchMap, tap } from 'rxjs/operators';
+import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-my-donations',
   imports: [
     ButtonComponent,
     StatCardGridComponent,
+    RouteLoadingComponent,
     RecurringDonationsListComponent,
     DonationHistoryTableComponent,
     PaymentMethodsComponent,
@@ -44,6 +46,9 @@ export class MyDonationsComponent {
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}initiatives`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
+  // TODO: derive from API response once cancelled-recurring concept is implemented
+  protected readonly cancelledCount = signal(0);
+  protected readonly isLoading = signal(true);
   protected readonly loadingMore = signal(false);
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
@@ -165,9 +170,11 @@ export class MyDonationsComponent {
   private initDonationHistory(): Signal<MyDonationsResponse> {
     return toSignal(
       toObservable(this.donationHistoryOffset).pipe(
-        switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
+        switchMap((offset) =>
+          this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(finalize(() => this.loadingMore.set(false)))
+        ),
         scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS),
-        tap(() => this.loadingMore.set(false))
+        tap(() => this.isLoading.set(false))
       ),
       { initialValue: EMPTY_MY_DONATIONS }
     );
