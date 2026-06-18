@@ -10,12 +10,13 @@ import {
   AkritesLoadResult,
   AkritesMetrics,
   AkritesPackage,
+  AkritesScatterPoint,
   AkritesSortKey,
   AkritesStatusCounts,
   AkritesEscalateRequest,
   AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
@@ -23,10 +24,18 @@ import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
 import { AkritesTriageTabComponent } from '../components/akrites-triage-tab/akrites-triage-tab.component';
+import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix-tab/akrites-risk-matrix-tab.component';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
-  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent, AkritesTriageTabComponent],
+  imports: [
+    AkritesPackageDrawerComponent,
+    AkritesPackagesTabComponent,
+    AkritesEscalateModalComponent,
+    AkritesOverviewTabComponent,
+    AkritesTriageTabComponent,
+    AkritesRiskMatrixTabComponent,
+  ],
   templateUrl: './akrites-dashboard.component.html',
 })
 export class AkritesDashboardComponent {
@@ -60,13 +69,16 @@ export class AkritesDashboardComponent {
 
   private readonly loadResult = this.initLoadResult();
   private readonly metricsResult = this.initMetrics();
+  private readonly scatterResult = this.initScatterResult();
 
   protected readonly tableLoading = signal(true);
   protected readonly metricsLoading = signal(true);
+  protected readonly scatterLoading = signal(false);
   protected readonly initialLoading = computed(() => this.loadResult() === undefined);
   protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
   protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
   protected readonly metrics = computed<AkritesMetrics | undefined>(() => this.metricsResult());
+  protected readonly scatterPoints = computed<AkritesScatterPoint[]>(() => this.scatterResult() ?? []);
 
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
@@ -313,6 +325,26 @@ export class AkritesDashboardComponent {
           this.metricsLoading.set(false);
           return of(undefined);
         })
+      )
+    );
+  }
+
+  private initScatterResult() {
+    const source = computed(() => ({ tab: this.activeTab(), reload: this.reloadTrigger() }));
+    return toSignal(
+      toObservable(source).pipe(
+        filter(({ tab }) => tab === 'risk-matrix'),
+        tap(() => this.scatterLoading.set(true)),
+        switchMap(() =>
+          this.akritesService.getScatterData().pipe(
+            map((res): AkritesScatterPoint[] => res.points),
+            catchError((err) => {
+              console.warn('[AKRITES] scatter fetch failed', err);
+              return of<AkritesScatterPoint[]>([]);
+            }),
+            tap(() => this.scatterLoading.set(false))
+          )
+        )
       )
     );
   }

@@ -1,0 +1,122 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (loading()) {
+  <div class="flex items-center justify-center" style="height: 560px" data-testid="risk-matrix-loading">
+    <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+  </div>
+} @else {
+  <div class="flex gap-10 items-start" data-testid="akrites-risk-matrix-tab">
+    <!-- Scatter matrix -->
+    <div class="flex-1 min-w-0">
+      <div class="relative border border-gray-200 rounded-xl bg-white" style="height: 560px" data-testid="risk-matrix-canvas">
+        <!-- Danger zone: top-left quadrant (high impact, poor health) -->
+        <div
+          class="absolute pointer-events-none rounded-tl-xl"
+          style="
+            left: 0;
+            top: 0;
+            width: 50%;
+            height: 50%;
+            background: repeating-linear-gradient(45deg, rgba(229, 72, 77, 0.09) 0, rgba(229, 72, 77, 0.09) 6px, transparent 6px, transparent 12px);
+          "
+          aria-hidden="true"></div>
+
+        <!-- Quadrant dividers -->
+        <div class="absolute top-0 bottom-0 pointer-events-none" style="left: 50%; border-left: 1px dashed #e2e8f0" aria-hidden="true"></div>
+        <div class="absolute left-0 right-0 pointer-events-none" style="top: 50%; border-top: 1px dashed #e2e8f0" aria-hidden="true"></div>
+
+        <!-- Quadrant labels -->
+        <div
+          class="absolute text-xs font-semibold uppercase tracking-wide text-red-500 p-3 leading-tight max-w-[48%]"
+          style="top: 0; left: 0"
+          aria-hidden="true">
+          High impact · poor health
+        </div>
+        <div
+          class="absolute text-xs font-semibold uppercase tracking-wide text-gray-400 p-3 leading-tight text-right max-w-[48%]"
+          style="top: 0; right: 0"
+          aria-hidden="true">
+          High impact · healthy
+        </div>
+        <div
+          class="absolute text-xs font-semibold uppercase tracking-wide text-gray-400 p-3 leading-tight max-w-[48%]"
+          style="bottom: 0; left: 0"
+          aria-hidden="true">
+          Lower impact · poor health
+        </div>
+        <div
+          class="absolute text-xs font-semibold uppercase tracking-wide text-gray-400 p-3 leading-tight text-right max-w-[48%]"
+          style="bottom: 0; right: 0"
+          aria-hidden="true">
+          Lower impact · healthy
+        </div>
+
+        <!-- Data points -->
+        @for (point of visiblePoints(); track point.purl) {
+          <div
+            class="group absolute rounded-full border-2 cursor-pointer shadow-sm hover:z-40"
+            style="width: 18px; height: 18px; transform: translate(-50%, -50%)"
+            [style.left]="dotLeft(point.healthScore)"
+            [style.top]="dotTop(point.impactScore)"
+            [style.background-color]="dotBg(point.status)"
+            [style.border-color]="dotBorderColor(point.status)"
+            (click)="packageClick.emit(point.purl)"
+            data-testid="risk-matrix-dot">
+            <!-- Hover tooltip -->
+            <div
+              class="invisible group-hover:visible absolute z-50 pointer-events-none rounded-xl shadow-xl"
+              style="bottom: 160%; left: 50%; transform: translateX(-50%); width: 210px; background: #0f172a; padding: 9px 11px"
+              role="tooltip">
+              <div class="text-white font-semibold text-xs mb-1 truncate">{{ point.name }}</div>
+              <div class="text-slate-400 text-xs">
+                Impact {{ point.impactScore ?? '—' }} · Health {{ point.healthScore ?? '—' }} ({{ getHealthLabel(point.healthScore) }})
+              </div>
+              <div class="text-slate-400 text-xs">{{ statusLabel(point.status) }}</div>
+              <div class="text-slate-400 text-xs">{{ point.openVulns ? point.openVulns + ' open advisory' : 'No open advisories' }}</div>
+            </div>
+          </div>
+        }
+
+        <!-- Empty state when all statuses filtered out -->
+        @if (points().length > 0 && visiblePoints().length === 0) {
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <p class="text-sm text-gray-400">All statuses hidden — use the legend to show packages.</p>
+          </div>
+        }
+
+        @if (points().length === 0) {
+          <div class="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <i class="fa-light fa-chart-scatter-bubble text-2xl text-gray-300" aria-hidden="true"></i>
+            <p class="text-sm text-gray-400">No packages to display.</p>
+          </div>
+        }
+      </div>
+
+      <!-- X-axis label -->
+      <div class="text-center text-xs text-gray-500 mt-1.5">Health score →</div>
+    </div>
+
+    <!-- Legend / status filter -->
+    <div class="w-44 flex-shrink-0 pt-1" data-testid="risk-matrix-legend">
+      <div class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Status</div>
+      @for (status of statusOrder; track status) {
+        @if ((statusCounts().get(status) ?? 0) > 0) {
+          <label class="flex items-center gap-2.5 py-1.5 cursor-pointer select-none" [attr.data-testid]="'risk-matrix-legend-' + status">
+            <input
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+              [checked]="isStatusVisible(status)"
+              (change)="toggleStatus(status)" />
+            <span
+              class="w-3.5 h-3.5 rounded-full flex-shrink-0 border-2"
+              [style.background-color]="legendDotBg(status)"
+              [style.border-color]="legendDotBorderColor(status)"></span>
+            <span class="text-sm text-gray-700 flex-1">{{ statusLabel(status) }}</span>
+            <span class="text-sm text-gray-400">{{ statusCounts().get(status) ?? 0 }}</span>
+          </label>
+        }
+      }
+    </div>
+  </div>
+}

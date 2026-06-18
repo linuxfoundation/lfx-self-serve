@@ -80,6 +80,7 @@ export const CDP_CONFIG = {
     MEMBER_PROJECT_AFFILIATION: (memberId: string, projectId: string) => `/v1/members/${memberId}/project-affiliations/${projectId}`,
     ORGANIZATIONS: '/v1/organizations',
     PACKAGES_LIST: '/v1/akrites/packages',
+    PACKAGES_SCATTER: '/v1/akrites/packages/scatter',
     PACKAGES_METRICS: '/v1/akrites/metrics',
     PACKAGE_DETAIL: '/v1/akrites/packages/detail',
     ACTIVITY: '/v1/akrites/activity',

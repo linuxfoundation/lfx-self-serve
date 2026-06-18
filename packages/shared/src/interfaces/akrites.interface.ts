@@ -425,7 +425,7 @@ export interface AkritesActivityDayGroup {
   rows: AkritesActivityRowVM[];
 }
 
-export type AkritesDashboardTab = 'overview' | 'packages' | 'triage';
+export type AkritesDashboardTab = 'overview' | 'packages' | 'triage' | 'risk-matrix';
 
 // ===== Triage Board =====
 
@@ -456,4 +456,36 @@ export interface AkritesTriageColumnState {
   total: number;
   loading: boolean;
   error: boolean;
+}
+
+// ===== Scatter / Risk Matrix =====
+
+export interface CdpScatterPoint {
+  purl: string;
+  name: string;
+  criticalityScore: number | null;
+  healthScore: number | null;
+  stewardshipStatus: string | null;
+  stewardshipId: string | null;
+  openVulns: number | null;
+}
+
+export interface CdpScatterResponse {
+  points: CdpScatterPoint[];
+  total: number;
+}
+
+export interface AkritesScatterPoint {
+  purl: string;
+  name: string;
+  impactScore: number | null;
+  healthScore: number | null;
+  status: AkritesStatus;
+  stewardshipId: number | null;
+  openVulns: number;
+}
+
+export interface AkritesScatterResponse {
+  points: AkritesScatterPoint[];
+  total: number;
 }

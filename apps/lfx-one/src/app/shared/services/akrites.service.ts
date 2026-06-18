@@ -13,6 +13,7 @@ import {
   AkritesMetrics,
   AkritesPackage,
   AkritesPackagesResponse,
+  AkritesScatterResponse,
   AkritesStewardshipResponse,
   AkritesUpdateStatusRequest,
 } from '@lfx-one/shared/interfaces';
@@ -44,6 +45,10 @@ export class AkritesService {
 
   public getMetrics(): Observable<AkritesMetrics> {
     return this.http.get<AkritesMetrics>('/api/akrites/packages/metrics');
+  }
+
+  public getScatterData(): Observable<AkritesScatterResponse> {
+    return this.http.get<AkritesScatterResponse>('/api/akrites/packages/scatter');
   }
 
   public getActivityFeed(page = 1, pageSize = 25): Observable<AkritesActivityResponse> {
