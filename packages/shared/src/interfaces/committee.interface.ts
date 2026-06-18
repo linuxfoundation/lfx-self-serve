@@ -209,14 +209,6 @@ export interface InvitationAcceptContext {
 }
 
 /**
- * Payload for accepting a committee invite (committee-service accept-invite).
- */
-export interface AcceptCommitteeInviteRequest {
-  /** Organization the invitee confirms on acceptance */
-  organization?: CommitteeOrganizationReference | null;
-}
-
-/**
  * Per-email outcome of one create-invite call within a bulk-invite batch.
  *
  * The committee-service exposes no bulk endpoint, so the client fans out one
