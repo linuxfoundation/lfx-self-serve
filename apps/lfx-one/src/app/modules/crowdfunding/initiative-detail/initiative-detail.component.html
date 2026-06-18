@@ -12,7 +12,9 @@
     styleClass="self-start"
     data-testid="initiative-detail-back-btn" />
 
-  @if (initiative(); as detail) {
+  @if (isLoading()) {
+    <lfx-route-loading data-testid="initiative-detail-loading" />
+  } @else if (initiative(); as detail) {
     <lfx-initiative-detail-header
       [initiative]="detail"
       [activeTab]="activeTab()"

@@ -16,10 +16,8 @@ import { MenuItem } from 'primeng/api';
 })
 export class RecurringDonationsListComponent {
   public readonly donations = input.required<RecurringDonation[]>();
-  public readonly cancelledCount = input<number>(0);
 
   public readonly viewDetail = output<RecurringDonation>();
-  public readonly viewCancelled = output<void>();
   public readonly cancelDonation = output<RecurringDonation>();
 
   private readonly menus = viewChildren<MenuComponent>(MenuComponent);
@@ -36,6 +34,12 @@ export class RecurringDonationsListComponent {
     this.menus()[index]?.toggle(event);
   }
 
+  protected menuIndexFor(donationIndex: number): number {
+    return this.donationsWithMenuItems()
+      .slice(0, donationIndex)
+      .filter((e) => e.menuItems.length > 0).length;
+  }
+
   private initDonationsWithMenuItems(): Signal<{ donation: RecurringDonation; menuItems: MenuItem[] }[]> {
     return computed(() =>
       this.donations().map((donation) => ({
@@ -46,6 +50,7 @@ export class RecurringDonationsListComponent {
   }
 
   private buildMenuItems(donation: RecurringDonation): MenuItem[] {
+    if (donation.status === 'canceled') return [];
     return [{ label: 'Cancel', icon: 'fa-solid fa-xmark', styleClass: 'text-red-600', command: () => this.cancelDonation.emit(donation) }];
   }
 }

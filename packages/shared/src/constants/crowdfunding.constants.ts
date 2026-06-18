@@ -10,6 +10,7 @@ import {
   FundDistributionItem,
   InitiativesResponse,
   MyDonationsResponse,
+  RecurringDonation,
   RecurringDonationsResponse,
   TopicOption,
 } from '../interfaces/crowdfunding.interface';
@@ -92,6 +93,7 @@ export const EMPTY_RECURRING_DONATIONS: RecurringDonationsResponse = {
   pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,
   offset: 0,
 };
+export const EMPTY_RECURRING_DONATION_LIST: RecurringDonation[] = [];
 export const EMPTY_DONATION_STATS: DonationStats = {
   totalDonated: 0,
   initiativesSupported: 0,

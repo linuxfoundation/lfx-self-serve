@@ -230,7 +230,7 @@ export interface DonationStats {
   activeRecurringCount: number;
 }
 
-export type RecurringDonationStatus = 'active' | 'paused';
+export type RecurringDonationStatus = 'active' | 'paused' | 'canceled';
 export type DonationKind = 'one-time' | 'monthly';
 
 export interface RecurringDonation {
