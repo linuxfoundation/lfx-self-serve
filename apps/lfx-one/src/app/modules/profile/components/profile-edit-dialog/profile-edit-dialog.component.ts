@@ -142,7 +142,10 @@ export class ProfileEditDialogComponent {
       // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
       // so a dedicated error handler here would be unreachable. A currently-saved organization
       // still shows as a selectable option via organizationOptions() when the list is empty.
-      .subscribe((experiences) => this.workExperiences.set(experiences));
+      .subscribe((experiences) => {
+        this.workExperiences.set(experiences);
+        this.syncOrganizationControl();
+      });
   }
 
   public onSubmit(): void {
@@ -263,6 +266,36 @@ export class ProfileEditDialogComponent {
 
   private initVerifiedEmails(): Signal<UserEmail[]> {
     return computed(() => this.emails().filter((e) => e.verified));
+  }
+
+  /**
+   * Once work-history options are known, align the organization control to them:
+   * - if there are options, enable the control and reconcile the saved value's casing to the
+   *   matching option (the saved value may differ only in case, which would otherwise leave the
+   *   select with no matching option and render blank);
+   * - if there are none, disable the control via the reactive form (rather than a [disabled]
+   *   attribute, which warns when combined with formControlName).
+   */
+  private syncOrganizationControl(): void {
+    const control = this.profileForm.get('organization');
+    if (!control) {
+      return;
+    }
+
+    if (!this.hasOrganizationOptions()) {
+      control.disable({ emitEvent: false });
+      return;
+    }
+
+    control.enable({ emitEvent: false });
+
+    const current = control.value;
+    if (current) {
+      const match = this.organizationOptions().find((option) => option.value.toLowerCase() === current.toLowerCase());
+      if (match && match.value !== current) {
+        control.setValue(match.value, { emitEvent: false });
+      }
+    }
   }
 
   private initOrganizationOptions(): Signal<{ label: string; value: string }[]> {

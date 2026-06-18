@@ -96,9 +96,8 @@
                 [form]="profileForm"
                 control="organization"
                 id="edit-organization-readonly"
-                [options]="[]"
+                [options]="organizationOptions()"
                 placeholder="No work experience added"
-                [disabled]="true"
                 styleClass="w-full"
                 data-testid="profile-edit-dialog-organization">
               </lfx-select>

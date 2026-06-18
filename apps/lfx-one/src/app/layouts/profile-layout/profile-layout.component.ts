@@ -203,6 +203,10 @@ export class ProfileLayoutComponent {
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
     if (!this.combinedProfile) {
+      // No base profile to merge into yet (e.g. Flow C cold load, where the save resolves before
+      // the initial profile GET populates combinedProfile). Fall back to a refetch so the UI still
+      // reflects the change — there's nothing cached to clobber in this case.
+      this.refreshProfile$.next();
       return;
     }
 
