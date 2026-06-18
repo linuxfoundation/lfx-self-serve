@@ -34,6 +34,10 @@ export class RecurringDonationsListComponent {
     this.menus()[index]?.toggle(event);
   }
 
+  protected menuIndexFor(donationIndex: number): number {
+    return this.donationsWithMenuItems().slice(0, donationIndex).filter((e) => e.menuItems.length > 0).length;
+  }
+
   private initDonationsWithMenuItems(): Signal<{ donation: RecurringDonation; menuItems: MenuItem[] }[]> {
     return computed(() =>
       this.donations().map((donation) => ({

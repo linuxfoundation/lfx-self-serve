@@ -8,7 +8,7 @@ import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse, StatCardItem } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS } from '@lfx-one/shared/constants';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS, EMPTY_RECURRING_DONATION_LIST } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
@@ -18,8 +18,6 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
 import { map, scan, switchMap, tap } from 'rxjs/operators';
-
-const EMPTY_RECURRING: RecurringDonation[] = [];
 
 @Component({
   selector: 'lfx-my-donations',
@@ -160,7 +158,7 @@ export class MyDonationsComponent {
         switchMap(() => this.crowdfundingService.getMyRecurringDonations()),
         map((res: RecurringDonationsResponse) => res.data)
       ),
-      { initialValue: EMPTY_RECURRING }
+      { initialValue: EMPTY_RECURRING_DONATION_LIST }
     );
   }
 
