@@ -53,7 +53,7 @@
           </p>
           @if (entry.donation.status === 'active' && entry.donation.nextChargeDate) {
             <p class="text-xs text-gray-400">Next charge: {{ entry.donation.nextChargeDate | date: 'MMM d, y' : 'UTC' }}</p>
-          } @else if (entry.donation.status !== 'active' && entry.donation.pausedSince) {
+          } @else if (entry.donation.status === 'paused' && entry.donation.pausedSince) {
             <p class="text-xs text-gray-400">Paused since {{ entry.donation.pausedSince | date: 'MMM d, y' : 'UTC' }}</p>
           }
         </div>
