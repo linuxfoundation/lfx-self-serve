@@ -34,92 +34,97 @@
   <div class="flex gap-3.5 overflow-x-auto pb-2" data-testid="akrites-triage-board">
     @for (col of TRIAGE_COLUMNS; track col.status) {
       @let state = getColumnState(col.status);
-      @if (state.total > 0 || state.error) {
-        <div
-          class="flex-1 min-w-[240px] max-w-[320px] border border-gray-200 rounded-[14px] p-3 flex flex-col gap-2.5"
-          [style.background]="'linear-gradient(180deg, ' + col.color + '12 0%, #fff 38%)'"
-          [attr.data-testid]="'akrites-triage-col-' + col.status">
-          <!-- Column header -->
-          <div class="flex items-center justify-between py-1 px-0.5 pb-1.5">
-            <span class="flex items-center gap-2.5 text-[13.5px] font-semibold text-slate-900">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-white flex-shrink-0" [style.background]="col.color">
-                <i [class]="getColumnIconClass(col.iconName)" aria-hidden="true"></i>
-              </span>
-              {{ col.label }}
+      <div
+        class="flex-1 min-w-[240px] max-w-[320px] border border-gray-200 rounded-[14px] p-3 flex flex-col gap-2.5"
+        [style.background]="'linear-gradient(180deg, ' + col.color + '12 0%, #fff 38%)'"
+        [attr.data-testid]="'akrites-triage-col-' + col.status">
+        <!-- Column header -->
+        <div class="flex items-center justify-between py-1 px-0.5 pb-1.5">
+          <span class="flex items-center gap-2.5 text-[13.5px] font-semibold text-slate-900">
+            <span class="w-6 h-6 rounded-full flex items-center justify-center text-white flex-shrink-0" [style.background]="col.color">
+              <i [class]="getColumnIconClass(col.iconName)" aria-hidden="true"></i>
             </span>
-            <span class="text-[11px] font-bold text-gray-400">{{ state.total }}</span>
+            {{ col.label }}
+          </span>
+          <span class="text-[11px] font-bold text-gray-400">{{ state.total }}</span>
+        </div>
+
+        <!-- Error state -->
+        @if (state.error) {
+          <div class="flex flex-col items-center py-6 text-center" data-testid="akrites-triage-col-error">
+            <i class="fa-light fa-triangle-exclamation text-lg text-gray-400 mb-1" aria-hidden="true"></i>
+            <p class="text-xs text-gray-500">Failed to load</p>
           </div>
+        }
 
-          <!-- Error state -->
-          @if (state.error) {
-            <div class="flex flex-col items-center py-6 text-center" data-testid="akrites-triage-col-error">
-              <i class="fa-light fa-triangle-exclamation text-lg text-gray-400 mb-1" aria-hidden="true"></i>
-              <p class="text-xs text-gray-500">Failed to load</p>
-            </div>
-          }
+        <!-- Empty state -->
+        @if (!state.error && state.total === 0) {
+          <div class="flex flex-col items-center justify-center py-8 text-center" [attr.data-testid]="'akrites-triage-col-empty-' + col.status">
+            <i class="fa-light fa-circle-check text-xl text-gray-300 mb-1.5" aria-hidden="true"></i>
+            <p class="text-[11px] text-gray-400">No packages</p>
+          </div>
+        }
 
-          <!-- Package cards -->
-          @for (pkg of state.packages; track pkg.id) {
-            <div
-              class="bg-white border border-gray-200 rounded-[11px] p-[11px] cursor-pointer transition-all duration-100 hover:border-gray-300 hover:shadow-[0_3px_10px_rgba(2,39,65,0.08)]"
-              (click)="onCardClick(pkg)"
-              [attr.data-testid]="'akrites-triage-card-' + pkg.id">
-              <!-- Name + purl -->
-              <div class="text-[13px] font-semibold text-slate-900 truncate">{{ pkg.name }}</div>
-              <div class="text-[10.5px] text-gray-400 font-mono mt-px truncate">{{ pkg.purl }}</div>
+        <!-- Package cards -->
+        @for (pkg of state.packages; track pkg.id) {
+          <div
+            class="bg-white border border-gray-200 rounded-[11px] p-[11px] cursor-pointer transition-all duration-100 hover:border-gray-300 hover:shadow-[0_3px_10px_rgba(2,39,65,0.08)]"
+            (click)="onCardClick(pkg)"
+            [attr.data-testid]="'akrites-triage-card-' + pkg.id">
+            <!-- Name + purl -->
+            <div class="text-[13px] font-semibold text-slate-900 truncate">{{ pkg.name }}</div>
+            <div class="text-[10.5px] text-gray-400 font-mono mt-px truncate">{{ pkg.purl }}</div>
 
-              <!-- Chips -->
-              <div class="flex flex-wrap gap-1.5 mt-2.5">
-                @if (pkg.healthScore !== null) {
-                  <span
-                    class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
-                    <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background]="getHealthColor(pkg.healthScore)"></span>
-                    {{ pkg.healthScore | number: '1.0-0' }} {{ getHealthLabel(pkg.healthScore) }}
-                  </span>
-                }
-                @if (pkg.impactScore !== null) {
-                  <span
-                    class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
-                    Impact {{ pkg.impactScore | number: '1.0-0' }}
-                  </span>
-                }
+            <!-- Chips -->
+            <div class="flex flex-wrap gap-1.5 mt-2.5">
+              @if (pkg.healthScore !== null) {
                 <span
                   class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
-                  <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background]="getVulnColor(pkg.vulnCount, pkg.vulnSeverity)"></span>
-                  @if (pkg.vulnCount > 0 && pkg.vulnSeverity) {
-                    {{ pkg.vulnCount }} {{ pkg.vulnSeverity | titlecase }}
-                  } @else {
-                    {{ pkg.vulnCount }} vulns
-                  }
+                  <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background]="getHealthColor(pkg.healthScore)"></span>
+                  {{ pkg.healthScore | number: '1.0-0' }} {{ getHealthLabel(pkg.healthScore) }}
                 </span>
-              </div>
-
-              <!-- Steward -->
-              @if (pkg.stewards.length > 0) {
-                <div class="flex items-center gap-2 mt-2.5 text-[11px] text-gray-500">
-                  <i class="fa-light fa-user text-xs text-gray-400 flex-shrink-0" aria-hidden="true"></i>
-                  @if (pkg.stewards[0].name) {
-                    <span class="truncate">{{ pkg.stewards[0].name }}</span>
-                  } @else {
-                    <span class="text-gray-400">Steward assigned</span>
-                  }
-                </div>
               }
-
-              <!-- Action button -->
-              <div class="mt-[18px]">
-                <button
-                  type="button"
-                  [class]="getActionButtonClass(col.actionVariant)"
-                  (click)="onAction($event, pkg, col)"
-                  [attr.data-testid]="'akrites-triage-action-' + pkg.id">
-                  {{ col.actionLabel }}
-                </button>
-              </div>
+              @if (pkg.impactScore !== null) {
+                <span
+                  class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
+                  Impact {{ pkg.impactScore | number: '1.0-0' }}
+                </span>
+              }
+              <span class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
+                <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background]="getVulnColor(pkg.vulnCount, pkg.vulnSeverity)"></span>
+                @if (pkg.vulnCount > 0 && pkg.vulnSeverity) {
+                  {{ pkg.vulnCount }} {{ pkg.vulnSeverity | titlecase }}
+                } @else {
+                  {{ pkg.vulnCount }} vulns
+                }
+              </span>
             </div>
-          }
-        </div>
-      }
+
+            <!-- Steward -->
+            @if (pkg.stewards.length > 0) {
+              <div class="flex items-center gap-2 mt-2.5 text-[11px] text-gray-500">
+                <i class="fa-light fa-user text-xs text-gray-400 flex-shrink-0" aria-hidden="true"></i>
+                @if (pkg.stewards[0].name) {
+                  <span class="truncate">{{ pkg.stewards[0].name }}</span>
+                } @else {
+                  <span class="text-gray-400">Steward assigned</span>
+                }
+              </div>
+            }
+
+            <!-- Action button -->
+            <div class="mt-[18px]">
+              <button
+                type="button"
+                [class]="getActionButtonClass(col.actionVariant)"
+                (click)="onAction($event, pkg, col)"
+                [attr.data-testid]="'akrites-triage-action-' + pkg.id">
+                {{ col.actionLabel }}
+              </button>
+            </div>
+          </div>
+        }
+      </div>
     }
   </div>
 
