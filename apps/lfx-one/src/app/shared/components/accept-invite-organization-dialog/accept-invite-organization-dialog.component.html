@@ -33,14 +33,14 @@
     [outlined]="true"
     size="small"
     (onClick)="onCancel()"
-    [disabled]="submitting"
+    [disabled]="submitting()"
     data-testid="accept-invite-organization-cancel"></lfx-button>
   <lfx-button
     label="Join Group"
     severity="info"
     size="small"
-    [loading]="submitting"
-    [disabled]="submitting"
+    [loading]="submitting()"
+    [disabled]="submitting()"
     (onClick)="onConfirm()"
     data-testid="accept-invite-organization-confirm"></lfx-button>
 </div>

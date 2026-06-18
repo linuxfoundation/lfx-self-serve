@@ -3,14 +3,7 @@
 
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constants/pending-action.constants';
 import { PendingActionItem } from '../interfaces/components.interface';
-import type { CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
-
-/** Raw organization form values shared by invite-create and invite-accept dialogs. */
-export interface CommitteeOrganizationFormValue {
-  organization: string;
-  organization_url: string;
-  organization_id: string | null;
-}
+import type { CommitteeOrganizationFormValue, CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
 
 /**
  * Returns true when a committee requires organization on invite create/accept.

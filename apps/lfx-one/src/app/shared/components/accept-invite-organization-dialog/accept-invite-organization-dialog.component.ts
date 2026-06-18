@@ -1,25 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, viewChild } from '@angular/core';
+import { Component, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
-import { CommitteeOrganizationReference, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
+import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
-
-export interface AcceptInviteOrganizationDialogData {
-  committeeName: string;
-  organization?: CommitteeOrganizationReference | null;
-}
-
-export interface AcceptInviteOrganizationDialogResult {
-  organization: CommitteeOrganizationReference;
-}
 
 @Component({
   selector: 'lfx-accept-invite-organization-dialog',
@@ -41,7 +32,7 @@ export class AcceptInviteOrganizationDialogComponent {
     organization_id: new FormControl<string | null>(this.config.data?.organization?.id ?? null),
   });
 
-  public submitting = false;
+  public readonly submitting = signal(false);
 
   public constructor() {
     this.form
@@ -70,7 +61,7 @@ export class AcceptInviteOrganizationDialogComponent {
       return;
     }
 
-    this.submitting = true;
+    this.submitting.set(true);
     const orgSearch = this.organizationSearch();
     const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : null;
 
@@ -82,7 +73,7 @@ export class AcceptInviteOrganizationDialogComponent {
         organization_id: raw.organization_id,
       });
       if (!organization?.name?.trim()) {
-        this.submitting = false;
+        this.submitting.set(false);
         return;
       }
       this.dialogRef.close({ organization } satisfies AcceptInviteOrganizationDialogResult);
@@ -98,7 +89,7 @@ export class AcceptInviteOrganizationDialogComponent {
           finish();
         },
         error: () => {
-          this.submitting = false;
+          this.submitting.set(false);
         },
       });
       return;

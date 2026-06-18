@@ -2,27 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
-import {
-  AcceptInviteOrganizationDialogComponent,
-  AcceptInviteOrganizationDialogData,
-  AcceptInviteOrganizationDialogResult,
-} from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
-import { CommitteeOrganizationReference } from '@lfx-one/shared/interfaces';
+import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
+import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, InvitationAcceptContext } from '@lfx-one/shared/interfaces';
 import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, Observable, from, switchMap, take } from 'rxjs';
-
-/** Context needed to accept a committee invitation from any surface. */
-export interface InvitationAcceptContext {
-  committeeUid: string;
-  inviteUid: string;
-  committeeName: string;
-  organization?: CommitteeOrganizationReference | null;
-  enable_voting?: boolean;
-  business_email_required?: boolean;
-  inviteRequiresOrganization?: boolean;
-}
 
 @Injectable({
   providedIn: 'root',

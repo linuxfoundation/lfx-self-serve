@@ -179,6 +179,35 @@ export interface AcceptCommitteeInviteRequest {
   organization?: CommitteeOrganizationReference | null;
 }
 
+/** Raw organization form values shared by invite-create and invite-accept dialogs. */
+export interface CommitteeOrganizationFormValue {
+  organization: string;
+  organization_url: string;
+  organization_id: string | null;
+}
+
+/** Data passed into the accept-invite organization dialog. */
+export interface AcceptInviteOrganizationDialogData {
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Result returned by the accept-invite organization dialog on confirm. */
+export interface AcceptInviteOrganizationDialogResult {
+  organization: CommitteeOrganizationReference;
+}
+
+/** Context needed to accept a committee invitation from any surface. */
+export interface InvitationAcceptContext {
+  committeeUid: string;
+  inviteUid: string;
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+  enable_voting?: boolean;
+  business_email_required?: boolean;
+  inviteRequiresOrganization?: boolean;
+}
+
 /**
  * Per-email outcome of one create-invite call within a bulk-invite batch.
  *
