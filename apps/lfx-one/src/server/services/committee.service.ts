@@ -17,7 +17,6 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
-  AcceptCommitteeInviteRequest,
   MyCommittee,
   PendingInvitation,
   Project,
@@ -777,19 +776,24 @@ export class CommitteeService {
 
     for (const invite of toAccept) {
       try {
-        let enableVoting: boolean | undefined;
-        let businessEmailRequired: boolean | undefined;
+        // Default to true (org required) so a fetch failure is fail-closed — we skip rather
+        // than auto-accept when we cannot determine the committee's requirements.
+        let requiresOrganization = true;
 
         try {
           const committee = await this.getCommitteeById(req, invite.committee_uid);
-          enableVoting = committee.enable_voting;
-          businessEmailRequired = committee.business_email_required;
+          requiresOrganization = committeeRequiresOrganization({
+            enable_voting: committee.enable_voting,
+            business_email_required: committee.business_email_required,
+          });
         } catch {
-          // Cannot fetch committee — leave both undefined so committeeRequiresOrganization
-          // treats the committee as org-required (fail-closed).
+          logger.warning(req, 'accept_invite', 'Unable to fetch committee settings; treating as org-required (fail-closed)', {
+            committee_uid: invite.committee_uid,
+            invite_uid: invite.uid,
+          });
         }
 
-        if (committeeRequiresOrganization({ enable_voting: enableVoting, business_email_required: businessEmailRequired })) {
+        if (requiresOrganization) {
           const orgName = invite.organization?.name?.trim();
           if (!orgName) {
             logger.warning(req, 'accept_invite', 'Skipping auto-accept — committee requires organization but invite has none; user must accept manually', {
