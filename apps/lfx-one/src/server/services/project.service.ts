@@ -299,9 +299,12 @@ export class ProjectService {
       });
     }
 
-    // Add writer access field to the project
     if (access) {
-      return await this.accessCheckService.addAccessToResource(req, project, 'project');
+      const [writerProject, isMeetingCoordinator] = await Promise.all([
+        this.accessCheckService.addAccessToResource(req, project, 'project'),
+        this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' }),
+      ]);
+      return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
     }
 
     return project;

@@ -11,6 +11,8 @@ export interface Project {
   name: string;
   /** Response-only — write access for the current user. */
   writer?: boolean;
+  /** Response-only — true when the user holds the meeting_coordinator role on this project. */
+  meetingCoordinator?: boolean;
   public: boolean;
   parent_uid: string;
   stage: ProjectStage | string;

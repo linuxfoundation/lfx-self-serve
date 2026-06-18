@@ -22,8 +22,13 @@ const WRITE_FEATURE_MESSAGES: Record<string, string> = {
  * Protects create/edit/admin routes that require project write permission.
  *
  * Fast path: ED persona is synchronously allowed (cookie-seeded, no HTTP round-trip).
- * Slow path: fetches the project and checks `project.writer` — set server-side by the
- * FGA-driven authorization check; covers explicit writer grants and owner-equivalent roles.
+ * Slow path: fetches the project and evaluates write permission server-side via the
+ * FGA-driven authorization check. Two fields drive the decision:
+ *
+ * - `project.writer` — covers project owner, project writer, and inherited parent-project writers.
+ * - `project.meetingCoordinator` — covers the meeting_coordinator role, which is granted the
+ *   ability to create meetings but not other write features (votes, surveys, mailing lists,
+ *   committees). Only routes with `data.writeFeature === 'meetings'` accept this role.
  *
  * Slug resolution: prefers the `?project=` query param (authoritative for the navigation
  * target, works before the lens has synced) then falls back to the active context's slug.
@@ -66,7 +71,10 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
   return projectService.getProject(slug, false).pipe(
     map((project) => {
-      if (project?.writer !== true) {
+      const isWriter = project?.writer === true;
+      // meeting_coordinator can create meetings but not other write features
+      const isMeetingCoordinator = writeFeature === 'meetings' && project?.meetingCoordinator === true;
+      if (!isWriter && !isMeetingCoordinator) {
         messageService.add({
           severity: 'warn',
           summary: 'Access Denied',
