@@ -680,8 +680,8 @@ export class CommitteeController {
         return;
       }
 
-      // Reject bodies that are explicitly present but not a plain object (e.g. arrays, strings).
-      // An absent body (undefined) is allowed — non-org-required accepts send no body at all.
+      // Reject bodies that are not a plain object (e.g. null, arrays, primitives).
+      // The client always sends at least {} — this guard catches malformed bodies only.
       if (req.body !== undefined && (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))) {
         next(
           ServiceValidationError.forField('body', 'Request body must be a JSON object', {

@@ -32,18 +32,17 @@ export class AcceptInviteOrganizationDialogComponent {
     organization_id: new FormControl<string | null>(this.config.data?.organization?.id ?? null),
   });
 
+  protected readonly organizationControl = this.form.get('organization') as FormControl;
+
   public readonly submitting = signal(false);
 
   public constructor() {
-    this.form
-      .get('organization')!
-      .valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((name) => {
-        const normalizedName = (name ?? '').trim();
-        if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
-          this.form.patchValue({ organization_id: null }, { emitEvent: false });
-        }
-      });
+    this.organizationControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((name) => {
+      const normalizedName = (name ?? '').trim();
+      if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
+        this.form.patchValue({ organization_id: null }, { emitEvent: false });
+      }
+    });
   }
 
   public onOrgResolved(result: OrganizationResolveResult): void {
@@ -56,7 +55,7 @@ export class AcceptInviteOrganizationDialogComponent {
   }
 
   public onConfirm(): void {
-    this.form.get('organization')?.markAsTouched();
+    this.organizationControl.markAsTouched();
     if (!this.form.valid) {
       return;
     }
