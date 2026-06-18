@@ -170,7 +170,9 @@ export class MyDonationsComponent {
   private initDonationHistory(): Signal<MyDonationsResponse> {
     return toSignal(
       toObservable(this.donationHistoryOffset).pipe(
-        switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(defaultIfEmpty(EMPTY_MY_DONATIONS))),
+        switchMap((offset) =>
+          this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(defaultIfEmpty(EMPTY_MY_DONATIONS))
+        ),
         scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS),
         tap(() => {
           this.isLoading.set(false);
