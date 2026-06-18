@@ -1,74 +1,78 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="organization-search-container">
+<div class="organization-search-container w-full">
   @if (!manualMode()) {
-    <div class="flex items-center gap-2">
+    <div class="flex w-full items-center gap-2">
       @if (resolvedOrg(); as resolved) {
         @if (resolved.logo) {
           <img [src]="resolved.logo" [alt]="resolved.name" class="h-8 w-8 shrink-0 rounded" data-testid="org-search-resolved-logo" />
         }
       }
-      <lfx-autocomplete
-        [form]="organizationForm"
-        control="organizationSearch"
-        [placeholder]="placeholder()"
-        [suggestions]="suggestions()"
-        [styleClass]="styleClass()"
-        [inputStyleClass]="inputStyleClass()"
-        [panelStyleClass]="panelStyleClass()"
-        [dataTestId]="dataTestId()"
-        optionLabel="name"
-        optionValue="name"
-        appendTo="body"
-        (completeMethod)="onSearchComplete($event)"
-        (onSelect)="onOrganizationSelected($event)"
-        (onClear)="onSearchClear()">
-        <!-- Item template: show name + domain -->
-        <ng-template #item let-org>
-          <div class="flex flex-col gap-0.5" data-testid="org-search-item">
-            <span class="text-sm font-medium">{{ org.name }}</span>
-            @if (org.domain) {
-              <span class="text-2xs text-slate-400">{{ org.domain }}</span>
-            }
-          </div>
-        </ng-template>
-
-        <!-- Empty template -->
-        <ng-template #empty>
-          <div class="p-3 text-center">
-            <p class="text-sm text-gray-600">No organizations found</p>
-          </div>
-        </ng-template>
-
-        <!-- Footer template: "I want to create" button -->
-        @if (searchTerm()) {
-          <ng-template #footer>
-            <div class="border-t border-slate-100 p-2">
-              <button
-                type="button"
-                class="w-full rounded px-3 py-2 text-left text-sm text-primary hover:bg-slate-50"
-                (click)="switchToManualMode()"
-                data-testid="org-search-create-btn">
-                I want to create '<strong>{{ searchTerm() }}</strong
-                >'
-              </button>
+      <div class="min-w-0 flex-1">
+        <lfx-autocomplete
+          [form]="organizationForm"
+          control="organizationSearch"
+          [placeholder]="placeholder()"
+          [suggestions]="suggestions()"
+          [styleClass]="styleClass()"
+          [inputStyleClass]="inputStyleClass()"
+          [panelStyleClass]="panelStyleClass()"
+          [dataTestId]="dataTestId()"
+          optionLabel="name"
+          optionValue="name"
+          appendTo="body"
+          (completeMethod)="onSearchComplete($event)"
+          (onSelect)="onOrganizationSelected($event)"
+          (onClear)="onSearchClear()">
+          <!-- Item template: show name + domain -->
+          <ng-template #item let-org>
+            <div class="flex flex-col gap-0.5" data-testid="org-search-item">
+              <span class="text-sm font-medium">{{ org.name }}</span>
+              @if (org.domain) {
+                <span class="text-2xs text-slate-400">{{ org.domain }}</span>
+              }
             </div>
           </ng-template>
-        }
-      </lfx-autocomplete>
+
+          <!-- Empty template -->
+          <ng-template #empty>
+            <div class="p-3 text-center">
+              <p class="text-sm text-gray-600">No organizations found</p>
+            </div>
+          </ng-template>
+
+          <!-- Footer template: "I want to create" button -->
+          @if (searchTerm()) {
+            <ng-template #footer>
+              <div class="border-t border-slate-100 p-2">
+                <button
+                  type="button"
+                  class="w-full rounded px-3 py-2 text-left text-sm text-primary hover:bg-slate-50"
+                  (click)="switchToManualMode()"
+                  data-testid="org-search-create-btn">
+                  I want to create '<strong>{{ searchTerm() }}</strong
+                  >'
+                </button>
+              </div>
+            </ng-template>
+          }
+        </lfx-autocomplete>
+      </div>
     </div>
   } @else {
     <!-- Manual entry mode -->
-    <div class="flex flex-col gap-3">
+    <div class="flex w-full flex-col gap-3">
       @if (nameControl()) {
-        <div class="flex items-center gap-2">
+        <div class="flex w-full items-center gap-2">
           @if (resolvedOrg(); as resolved) {
             @if (resolved.logo) {
               <img [src]="resolved.logo" [alt]="resolved.name" class="h-8 w-8 shrink-0 rounded" data-testid="org-search-resolved-logo" />
             }
           }
-          <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+          <div class="min-w-0 flex-1">
+            <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+          </div>
         </div>
       }
 
