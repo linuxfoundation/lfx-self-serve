@@ -142,6 +142,10 @@ export class PublicMeetingController {
       // Authenticated registered participants and organizers can access private/restricted
       // meeting details without a password in the URL — their registrant record is the gate.
       if (meeting.invited || meeting.organizer) {
+        // host_key grants Zoom host privileges — only organizers should receive it.
+        if (!meeting.organizer) {
+          delete (meeting as Partial<Meeting>).host_key;
+        }
         res.json({
           meeting,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
@@ -154,13 +158,22 @@ export class PublicMeetingController {
       if (isAuthenticated) {
         const userEmail = getEffectiveEmail(req);
         if (userEmail) {
-          const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
-          if (registrantsByEmail.length > 0) {
-            res.json({
-              meeting,
-              project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+          try {
+            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
+            if (registrantsByEmail.length > 0) {
+              meeting.invited = true;
+              delete (meeting as Partial<Meeting>).host_key;
+              res.json({
+                meeting,
+                project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+              });
+              return;
+            }
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
             });
-            return;
           }
         }
       }
