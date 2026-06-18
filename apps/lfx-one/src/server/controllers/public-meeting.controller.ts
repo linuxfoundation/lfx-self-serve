@@ -149,6 +149,22 @@ export class PublicMeetingController {
         return;
       }
 
+      // Fallback for authenticated users: the invited flag can miss someone if the query
+      // service OR lookup had a false negative. Re-check directly by email with M2M.
+      if (isAuthenticated) {
+        const userEmail = getEffectiveEmail(req);
+        if (userEmail) {
+          const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
+          if (registrantsByEmail.length > 0) {
+            res.json({
+              meeting,
+              project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+            });
+            return;
+          }
+        }
+      }
+
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
