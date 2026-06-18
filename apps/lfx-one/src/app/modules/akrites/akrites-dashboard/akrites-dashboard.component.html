@@ -106,8 +106,9 @@
     <lfx-akrites-risk-matrix-tab
       [points]="scatterPoints()"
       [loading]="scatterLoading()"
-      [statusCounts]="scatterStatusCounts()"
+      [statusCounts]="statusCounts()"
       (packageClick)="onPackageClick($event)"
+      (filterChange)="onRiskMatrixFilterChange($event)"
       data-testid="akrites-risk-matrix-tab">
     </lfx-akrites-risk-matrix-tab>
   }

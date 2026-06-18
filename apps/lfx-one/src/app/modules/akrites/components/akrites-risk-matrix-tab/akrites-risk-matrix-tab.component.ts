@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AkritesScatterPoint, AkritesStatus, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { CheckboxComponent } from '@shared/components/checkbox/checkbox.component';
 
 const STATUS_COLORS: Record<AkritesStatus, { bg: string; border: string }> = {
   unassigned: { bg: '#62748e', border: '#fff' },
@@ -28,8 +31,6 @@ const STATUS_LABELS: Record<AkritesStatus, string> = {
 
 const STATUS_ORDER: AkritesStatus[] = ['unassigned', 'needs_attention', 'escalated', 'blocked', 'inactive', 'open', 'assessing', 'active'];
 
-const DEFAULT_HIDDEN = new Set<AkritesStatus>();
-
 const EMPTY_STATUS_COUNTS: AkritesStatusCounts = {
   all: 0,
   unassigned: 0,
@@ -44,39 +45,39 @@ const EMPTY_STATUS_COUNTS: AkritesStatusCounts = {
 
 @Component({
   selector: 'lfx-akrites-risk-matrix-tab',
-  imports: [],
+  imports: [CheckboxComponent, ReactiveFormsModule],
   templateUrl: './akrites-risk-matrix-tab.component.html',
 })
 export class AkritesRiskMatrixTabComponent {
+  private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
+
   public readonly points = input<AkritesScatterPoint[]>([]);
   public readonly loading = input(false);
   public readonly statusCounts = input<AkritesStatusCounts>(EMPTY_STATUS_COUNTS);
   public readonly packageClick = output<string>();
+  public readonly filterChange = output<AkritesStatus[]>();
 
   protected readonly statusOrder = STATUS_ORDER;
-  protected readonly hiddenStatuses = signal<Set<AkritesStatus>>(new Set(DEFAULT_HIDDEN));
 
-  protected readonly visiblePoints = computed(() => {
-    const hidden = this.hiddenStatuses();
-    return this.points().filter((p) => !hidden.has(p.status));
-  });
+  protected readonly statusFilterForm: FormGroup = this.fb.group(Object.fromEntries(STATUS_ORDER.map((s) => [s, true])));
+
+  protected readonly checkedCount = signal(STATUS_ORDER.length);
+
+  public constructor() {
+    this.statusFilterForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((values) => {
+      const visible = STATUS_ORDER.filter((s) => !!values[s]);
+      this.checkedCount.set(visible.length);
+      this.filterChange.emit(visible.length > 0 ? visible : [...STATUS_ORDER]);
+    });
+  }
+
+  protected isChecked(status: AkritesStatus): boolean {
+    return !!this.statusFilterForm.get(status)?.value;
+  }
 
   protected statusCount(status: AkritesStatus): number {
-    return this.statusCounts()[status];
-  }
-
-  protected toggleStatus(status: AkritesStatus): void {
-    const current = new Set(this.hiddenStatuses());
-    if (current.has(status)) {
-      current.delete(status);
-    } else {
-      current.add(status);
-    }
-    this.hiddenStatuses.set(current);
-  }
-
-  protected isStatusVisible(status: AkritesStatus): boolean {
-    return !this.hiddenStatuses().has(status);
+    return this.statusCounts()[status] ?? 0;
   }
 
   protected dotLeft(healthScore: number | null): string {
