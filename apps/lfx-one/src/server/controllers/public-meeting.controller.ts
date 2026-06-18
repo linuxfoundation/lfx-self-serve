@@ -139,6 +139,16 @@ export class PublicMeetingController {
         return;
       }
 
+      // Authenticated registered participants and organizers can access private/restricted
+      // meeting details without a password in the URL — their registrant record is the gate.
+      if (meeting.invited || meeting.organizer) {
+        res.json({
+          meeting,
+          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        });
+        return;
+      }
+
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
