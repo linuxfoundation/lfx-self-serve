@@ -113,15 +113,17 @@
             }
 
             <!-- Action button -->
-            <div class="mt-[18px]">
-              <button
-                type="button"
-                [class]="getActionButtonClass(col.actionVariant)"
-                (click)="onAction($event, pkg, col)"
-                [attr.data-testid]="'akrites-triage-action-' + pkg.id">
-                {{ col.actionLabel }}
-              </button>
-            </div>
+            @if (col.status !== 'unassigned') {
+              <div class="mt-[18px]">
+                <button
+                  type="button"
+                  [class]="getActionButtonClass(col.actionVariant)"
+                  (click)="onAction($event, pkg, col)"
+                  [attr.data-testid]="'akrites-triage-action-' + pkg.id">
+                  {{ col.actionLabel }}
+                </button>
+              </div>
+            }
           </div>
         }
       </div>
