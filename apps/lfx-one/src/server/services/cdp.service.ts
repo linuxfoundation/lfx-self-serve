@@ -20,7 +20,7 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 
 import { CDP_PLATFORM_ICONS } from '@lfx-one/shared/constants';
-import { MicroserviceError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveName } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
@@ -150,6 +150,15 @@ export class CdpService {
    * so downstream identity/work/affiliation calls have a target.
    */
   public async resolveMember(req: Request | undefined, lfids: string[], emails?: string[]): Promise<string> {
+    // Guard up front: an empty/missing LFID would seed createMember with undefined values
+    // and surface as a confusing upstream 4xx/5xx. Fail fast with a clear validation error.
+    if (!lfids?.length || !lfids[0]) {
+      throw ServiceValidationError.forField('lfids', 'At least one LFID is required to resolve a CDP member', {
+        operation: 'resolve_cdp_member',
+        service: 'cdp_service',
+      });
+    }
+
     const resolved = await this.resolveMemberId(req, lfids, emails);
     if (resolved) {
       return resolved;
