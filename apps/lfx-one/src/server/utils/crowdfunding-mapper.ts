@@ -166,7 +166,7 @@ export function mapCfDonationToMyDonation(d: BackendDonation): MyDonation {
   };
 }
 
-const VALID_RECURRING_STATUSES: RecurringDonationStatus[] = ['active', 'paused'];
+const VALID_RECURRING_STATUSES: RecurringDonationStatus[] = ['active', 'paused', 'canceled'];
 
 function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
   return VALID_RECURRING_STATUSES.includes(value as RecurringDonationStatus) ? (value as RecurringDonationStatus) : 'active';

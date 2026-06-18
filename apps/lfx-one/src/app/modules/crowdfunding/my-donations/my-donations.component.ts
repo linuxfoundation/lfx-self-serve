@@ -46,8 +46,6 @@ export class MyDonationsComponent {
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}initiatives`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
-  // TODO: derive from API response once cancelled-recurring concept is implemented
-  protected readonly cancelledCount = signal(0);
   protected readonly loadingMore = signal(false);
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
@@ -58,7 +56,7 @@ export class MyDonationsComponent {
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly stats: Signal<DonationStats> = this.initStats();
   protected readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
-  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initRecurringDonations();
+  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initAllRecurringDonations();
   private readonly paymentMethod: Signal<PaymentMethod | null> = this.initPaymentMethod();
   protected readonly paymentMethods = computed(() => (this.paymentMethod() ? [this.paymentMethod()!] : []));
   private readonly donationHistoryState: Signal<MyDonationsResponse> = this.initDonationHistory();
@@ -74,10 +72,6 @@ export class MyDonationsComponent {
 
   protected onViewRecurringDetail(donation: RecurringDonation): void {
     void this.router.navigate(['/crowdfunding/donations/recurring', donation.id]);
-  }
-
-  protected onViewCancelled(): void {
-    // TODO: navigate to cancelled donations view
   }
 
   protected onCancelDonation(donation: RecurringDonation): void {
@@ -160,7 +154,7 @@ export class MyDonationsComponent {
     });
   }
 
-  private initRecurringDonations(): Signal<RecurringDonation[]> {
+  private initAllRecurringDonations(): Signal<RecurringDonation[]> {
     return toSignal(
       this.recurringRefresh$.pipe(
         switchMap(() => this.crowdfundingService.getMyRecurringDonations()),
