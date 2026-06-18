@@ -318,8 +318,10 @@ export class ProfileEditDialogComponent {
 
       // Keep the currently-saved organization selectable even if it's no longer backed by a
       // work-history entry (e.g. the entry was deleted). value matches the form control value
-      // (patched from the saved metadata) so it stays selected; once the user picks another org
-      // it won't be re-added to the list.
+      // (patched from the saved metadata) so it stays selected. savedOrg is captured from the
+      // CombinedProfile at dialog open and doesn't change during the session, so this option
+      // persists for the dialog's lifetime; it's dropped on the next open once the saved org is
+      // one of the work-history entries.
       const savedOrg = (this.combinedProfile.profile?.organization ?? '').trim();
       if (savedOrg && !seen.has(savedOrg.toLowerCase())) {
         options.unshift({ label: savedOrg, value: savedOrg });
