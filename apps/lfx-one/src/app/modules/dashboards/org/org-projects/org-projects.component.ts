@@ -488,7 +488,7 @@ export class OrgProjectsComponent {
       const workspace = this.selectedWorkspaceId();
       const all = [...(this.response()?.projects ?? []), ...(this.addedByWorkspace()[workspace] ?? [])];
       const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
-      // Drop stale/unknown employee ids from the URL so a shared deep link can't filter everything out.
+      // Ignore stale/unknown employee ids when filtering; URL query params are left unchanged.
       const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
       const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
       const hidden = this.hiddenByWorkspace()[workspace] ?? new Set<string>();

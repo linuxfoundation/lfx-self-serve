@@ -285,7 +285,8 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
 
 /**
  * Escape a single CSV cell per RFC 4180 and neutralize formula-injection prefixes.
- * Cells starting with =, +, -, @, TAB, or CR are prefixed with a leading apostrophe.
+ * String cells starting with =, +, -, @, TAB, or CR are prefixed with a leading apostrophe;
+ * numeric values (including negatives) are left unchanged so Excel keeps them numeric.
  * @param value - Raw cell value
  * @returns CSV-safe cell string
  */
