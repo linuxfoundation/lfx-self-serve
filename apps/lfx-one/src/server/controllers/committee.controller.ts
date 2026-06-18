@@ -10,9 +10,10 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
+  AcceptCommitteeInviteRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { committeeRequiresOrganization, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -679,7 +680,47 @@ export class CommitteeController {
         return;
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId);
+      // Reject bodies that are not a plain object (e.g. null, arrays, primitives).
+      // The client always sends at least {} — this guard catches malformed bodies only.
+      if (req.body !== undefined && (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))) {
+        next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Fetch with throwOnSettingsError so a settings-service outage fails the accept
+      // (returns 503) rather than silently treating business_email_required as false.
+      const committee = await this.committeeService.getCommitteeById(req, id, { throwOnSettingsError: true });
+
+      // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
+      const acceptData: AcceptCommitteeInviteRequest = {};
+
+      if (committeeRequiresOrganization(committee)) {
+        const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
+        const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
+        if (!orgName) {
+          next(
+            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+        acceptData.organization = {
+          name: orgName,
+          id: typeof body.organization?.id === 'string' ? body.organization.id.trim() || null : null,
+          website: typeof body.organization?.website === 'string' ? body.organization.website.trim() || null : null,
+        };
+      }
+
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();
