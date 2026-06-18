@@ -14,6 +14,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { catchError, of, switchMap, tap } from 'rxjs';
 import { AkritesService } from '@shared/services/akrites.service';
+import { ProjectContextService } from '@shared/services/project-context.service';
 import { formatActivityType } from '../../akrites.utils';
 
 @Component({
@@ -23,7 +24,10 @@ import { formatActivityType } from '../../akrites.utils';
 })
 export class AkritesOverviewTabComponent {
   private readonly akritesService = inject(AkritesService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly canWrite = this.projectContextService.canWrite;
 
   public readonly metrics = input<AkritesMetrics | undefined>(undefined);
   public readonly metricsLoading = input<boolean>(false);

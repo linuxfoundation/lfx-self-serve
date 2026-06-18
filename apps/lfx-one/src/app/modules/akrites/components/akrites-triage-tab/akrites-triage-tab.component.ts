@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { AKRITES_TRIAGE_COLUMNS } from '@lfx-one/shared/constants';
 import { AkritesPackage, AkritesTriageBoardColumnConfig, AkritesTriageColumnState, AkritesTriageStatus } from '@lfx-one/shared/interfaces';
 import { AkritesService } from '@shared/services/akrites.service';
+import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -17,8 +18,11 @@ import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 })
 export class AkritesTriageTabComponent {
   private readonly akritesService = inject(AkritesService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly canWrite = this.projectContextService.canWrite;
 
   public readonly reloadTrigger = input<number>(0);
 

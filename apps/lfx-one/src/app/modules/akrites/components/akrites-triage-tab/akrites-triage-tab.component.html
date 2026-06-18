@@ -112,8 +112,8 @@
               </div>
             }
 
-            <!-- Action button -->
-            @if (col.status !== 'unassigned') {
+            <!-- Action button — writer-only, not shown for unassigned -->
+            @if (canWrite() && col.status !== 'unassigned') {
               <div class="mt-[18px]">
                 <button
                   type="button"
