@@ -786,10 +786,11 @@ export class CommitteeService {
             enable_voting: committee.enable_voting,
             business_email_required: committee.business_email_required,
           });
-        } catch {
+        } catch (settingsError) {
           logger.warning(req, 'accept_invite', 'Unable to fetch committee settings; treating as org-required (fail-closed)', {
             committee_uid: invite.committee_uid,
             invite_uid: invite.uid,
+            err: settingsError,
           });
         }
 
