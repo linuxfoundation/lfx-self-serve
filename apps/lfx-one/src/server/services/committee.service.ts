@@ -794,7 +794,7 @@ export class CommitteeService {
         }
 
         if (requiresOrganization) {
-          const orgName = invite.organization?.name?.trim();
+          const orgName = invite.organization?.name?.trim() || null;
           if (!orgName) {
             logger.warning(req, 'accept_invite', 'Skipping auto-accept — committee requires organization but invite has none; user must accept manually', {
               committee_uid: invite.committee_uid,
@@ -802,7 +802,14 @@ export class CommitteeService {
             });
             continue;
           }
-          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: invite.organization });
+          // Build an explicit allowlist payload — trim fields and coerce empty strings to null
+          // rather than forwarding the raw query-service organization reference upstream.
+          const orgPayload = {
+            name: orgName,
+            id: invite.organization?.id?.trim() || null,
+            website: invite.organization?.website?.trim() || null,
+          };
+          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
         } else {
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
         }

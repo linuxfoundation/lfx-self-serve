@@ -149,7 +149,7 @@ export class InviteController {
    */
   private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<void> {
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
-    const sessionEmail = getEffectiveEmail(req);
+    const sessionEmail = getEffectiveEmail(req)?.trim() ?? null;
 
     if (!invitedEmail) {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — LFID invite token has no email claim', {
