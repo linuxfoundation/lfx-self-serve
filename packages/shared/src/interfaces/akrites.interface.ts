@@ -436,14 +436,23 @@ export interface AkritesTriageBoardColumnConfig {
   label: string;
   /** Hex color for the column icon circle and gradient tint. */
   color: string;
-  /** FontAwesome icon name without the `fa-` prefix (e.g. `user-xmark`). */
-  iconName: string;
+  /** Pre-computed FontAwesome class string bound directly in the template. */
+  iconClass: string;
   actionLabel: string;
   actionVariant: 'blue' | 'red' | 'default';
+  /** Pre-computed Tailwind class string for the action button. */
+  actionButtonClass: string;
+}
+
+/** `AkritesPackage` extended with pre-computed display values to avoid method calls in bindings. */
+export interface AkritesTriagePackageVM extends AkritesPackage {
+  healthColor: string;
+  healthLabel: string;
+  vulnColor: string;
 }
 
 export interface AkritesTriageColumnState {
-  packages: AkritesPackage[];
+  packages: AkritesTriagePackageVM[];
   total: number;
   loading: boolean;
   error: boolean;

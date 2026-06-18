@@ -109,11 +109,53 @@ export const AKRITES_UPDATABLE_STATUS_OPTIONS: Array<{ value: AkritesUpdatableSt
   { value: 'inactive', label: 'Inactive' },
 ];
 
+const _BTN_BASE = 'h-8 px-3.5 rounded-full border bg-white text-[12.5px] font-medium cursor-pointer transition-colors';
+
 /** Columns shown on the Triage board tab, in display order. All columns are always rendered. */
 export const AKRITES_TRIAGE_COLUMNS: AkritesTriageBoardColumnConfig[] = [
-  { status: 'unassigned', label: 'Unassigned', color: '#62748e', iconName: 'user-xmark', actionLabel: 'Assign steward', actionVariant: 'blue' },
-  { status: 'needs_attention', label: 'Needs attention', color: '#f97316', iconName: 'binoculars', actionLabel: 'Review', actionVariant: 'default' },
-  { status: 'escalated', label: 'Escalated', color: '#e5484d', iconName: 'arrow-up', actionLabel: 'Resolve', actionVariant: 'red' },
-  { status: 'blocked', label: 'Blocked', color: '#e5484d', iconName: 'circle-info', actionLabel: 'Resolve blocker', actionVariant: 'red' },
-  { status: 'inactive', label: 'Inactive', color: '#90a1b9', iconName: 'clock', actionLabel: 'Reassign', actionVariant: 'default' },
+  {
+    status: 'unassigned',
+    label: 'Unassigned',
+    color: '#62748e',
+    iconClass: 'fa-light fa-user-xmark text-[11px]',
+    actionLabel: 'Assign steward',
+    actionVariant: 'blue',
+    actionButtonClass: `${_BTN_BASE} border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-400`,
+  },
+  {
+    status: 'needs_attention',
+    label: 'Needs attention',
+    color: '#f97316',
+    iconClass: 'fa-light fa-binoculars text-[11px]',
+    actionLabel: 'Review',
+    actionVariant: 'default',
+    actionButtonClass: `${_BTN_BASE} border-gray-300 text-gray-700 hover:bg-gray-50`,
+  },
+  {
+    status: 'escalated',
+    label: 'Escalated',
+    color: '#e5484d',
+    iconClass: 'fa-light fa-arrow-up text-[11px]',
+    actionLabel: 'Resolve',
+    actionVariant: 'red',
+    actionButtonClass: `${_BTN_BASE} border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400`,
+  },
+  {
+    status: 'blocked',
+    label: 'Blocked',
+    color: '#e5484d',
+    iconClass: 'fa-light fa-circle-info text-[11px]',
+    actionLabel: 'Resolve blocker',
+    actionVariant: 'red',
+    actionButtonClass: `${_BTN_BASE} border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400`,
+  },
+  {
+    status: 'inactive',
+    label: 'Inactive',
+    color: '#90a1b9',
+    iconClass: 'fa-light fa-clock text-[11px]',
+    actionLabel: 'Reassign',
+    actionVariant: 'default',
+    actionButtonClass: `${_BTN_BASE} border-gray-300 text-gray-700 hover:bg-gray-50`,
+  },
 ];
