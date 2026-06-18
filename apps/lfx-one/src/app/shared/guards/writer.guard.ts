@@ -65,9 +65,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug } });
 
   const writeFeature: string | undefined = route.data?.['writeFeature'];
-  const deniedMessage =
-    (writeFeature && WRITE_FEATURE_MESSAGES[writeFeature]) ??
-    "You don't have permission to perform this action for this project.";
+  const deniedMessage = (writeFeature && WRITE_FEATURE_MESSAGES[writeFeature]) ?? "You don't have permission to perform this action for this project.";
 
   return projectService.getProject(slug, false).pipe(
     map((project) => {
