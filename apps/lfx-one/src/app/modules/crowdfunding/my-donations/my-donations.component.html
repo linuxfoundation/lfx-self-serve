@@ -27,13 +27,11 @@
     <!-- Stats -->
     <lfx-stat-card-grid [cards]="statCards()" data-testid="donations-me-stats" />
 
-    <!-- Recurring donations (hidden only when there are no active and no cancelled subscriptions) -->
-    @if (recurringDonations().length > 0 || cancelledCount() > 0) {
+    <!-- Recurring donations -->
+    @if (recurringDonations().length > 0) {
       <lfx-recurring-donations-list
         [donations]="recurringDonations()"
-        [cancelledCount]="cancelledCount()"
         (viewDetail)="onViewRecurringDetail($event)"
-        (viewCancelled)="onViewCancelled()"
         (cancelDonation)="onCancelDonation($event)" />
     }
 

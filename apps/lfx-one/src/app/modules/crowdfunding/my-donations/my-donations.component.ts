@@ -8,7 +8,7 @@ import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse, StatCardItem } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS } from '@lfx-one/shared/constants';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS, EMPTY_RECURRING_DONATION_LIST } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
 import { DonationHistoryTableComponent } from './components/donation-history-table/donation-history-table.component';
@@ -18,8 +18,6 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
 import { map, scan, switchMap, tap } from 'rxjs/operators';
-
-const EMPTY_RECURRING: RecurringDonation[] = [];
 
 @Component({
   selector: 'lfx-my-donations',
@@ -46,8 +44,6 @@ export class MyDonationsComponent {
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}initiatives`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
-  // TODO: derive from API response once cancelled-recurring concept is implemented
-  protected readonly cancelledCount = signal(0);
   protected readonly loadingMore = signal(false);
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
@@ -58,7 +54,7 @@ export class MyDonationsComponent {
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly stats: Signal<DonationStats> = this.initStats();
   protected readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
-  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initRecurringDonations();
+  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initAllRecurringDonations();
   private readonly paymentMethod: Signal<PaymentMethod | null> = this.initPaymentMethod();
   protected readonly paymentMethods = computed(() => (this.paymentMethod() ? [this.paymentMethod()!] : []));
   private readonly donationHistoryState: Signal<MyDonationsResponse> = this.initDonationHistory();
@@ -74,10 +70,6 @@ export class MyDonationsComponent {
 
   protected onViewRecurringDetail(donation: RecurringDonation): void {
     void this.router.navigate(['/crowdfunding/donations/recurring', donation.id]);
-  }
-
-  protected onViewCancelled(): void {
-    // TODO: navigate to cancelled donations view
   }
 
   protected onCancelDonation(donation: RecurringDonation): void {
@@ -160,13 +152,13 @@ export class MyDonationsComponent {
     });
   }
 
-  private initRecurringDonations(): Signal<RecurringDonation[]> {
+  private initAllRecurringDonations(): Signal<RecurringDonation[]> {
     return toSignal(
       this.recurringRefresh$.pipe(
         switchMap(() => this.crowdfundingService.getMyRecurringDonations()),
         map((res: RecurringDonationsResponse) => res.data)
       ),
-      { initialValue: EMPTY_RECURRING }
+      { initialValue: EMPTY_RECURRING_DONATION_LIST }
     );
   }
 
