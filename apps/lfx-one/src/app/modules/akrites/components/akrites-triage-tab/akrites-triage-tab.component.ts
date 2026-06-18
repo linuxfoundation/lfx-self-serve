@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, TitleCasePipe } from '@angular/common';
-import { Component, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, Signal, computed, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { AKRITES_TRIAGE_COLUMNS } from '@lfx-one/shared/constants';
+import { AKRITES_TRIAGE_COLUMNS, lfxColors } from '@lfx-one/shared/constants';
 import {
   AkritesPackage,
   AkritesTriageBoardColumnConfig,
@@ -103,20 +103,25 @@ export class AkritesTriageTabComponent {
   }
 
   private healthColor(score: number | null): string {
-    if (score === null) return '#9ca3af';
-    if (score >= 70) return '#22c55e';
-    if (score >= 50) return '#f59e0b';
-    if (score >= 30) return '#f97316';
-    return '#ef4444';
+    if (score === null) return lfxColors.gray[400];
+    if (score >= 70) return lfxColors.emerald[500];
+    if (score >= 50) return lfxColors.amber[500];
+    if (score >= 30) return lfxColors.amber[600];
+    return lfxColors.red[500];
   }
 
   private vulnColor(vulnCount: number, vulnSeverity: string | null): string {
-    if (vulnCount === 0) return '#22c55e';
-    const colors: Record<string, string> = { critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#3b82f6' };
-    return vulnSeverity ? (colors[vulnSeverity] ?? '#9ca3af') : '#9ca3af';
+    if (vulnCount === 0) return lfxColors.emerald[500];
+    const colors: Record<string, string> = {
+      critical: lfxColors.red[500],
+      high: lfxColors.amber[600],
+      medium: lfxColors.amber[500],
+      low: lfxColors.blue[500],
+    };
+    return vulnSeverity ? (colors[vulnSeverity] ?? lfxColors.gray[400]) : lfxColors.gray[400];
   }
 
-  private initBoardData() {
+  private initBoardData(): Signal<Record<AkritesTriageStatus, AkritesTriageColumnState> | undefined> {
     return toSignal(
       toObservable(this.reloadTrigger).pipe(
         tap(() => this.loading.set(true)),
