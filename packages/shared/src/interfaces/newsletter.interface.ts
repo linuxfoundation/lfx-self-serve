@@ -78,6 +78,7 @@ export interface Newsletter {
   project_uid: string;
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout;
   ed_reply_email: string;
   committee_uids: string[];
   status: NewsletterStatus;
@@ -93,6 +94,7 @@ export interface Newsletter {
 export interface CreateNewsletterRequest {
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout;
   ed_reply_email: string;
   committee_uids: string[];
 }
@@ -100,6 +102,7 @@ export interface CreateNewsletterRequest {
 export interface UpdateNewsletterRequest {
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout;
   ed_reply_email: string;
   committee_uids: string[];
 }
@@ -171,4 +174,66 @@ export interface NewsletterChartDataset {
 export interface NewsletterChartData {
   labels: string[];
   datasets: NewsletterChartDataset[];
+}
+
+// ---------------------------------------------------------------------------
+// Gatewaze-style editor: structured layout + template manifest (spec 004 §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON Schema describing a block's editable fields. Authored in the declarative
+ * templates pulled at build time and rendered into form controls by the editor
+ * (ngx-formly / JSONForms).
+ */
+export type NewsletterFieldSchema = Record<string, unknown>;
+
+/**
+ * A block instance in a newsletter's structured layout. Blocks are recursive: a
+ * container block nests child blocks via `blocks`. This is the unified model —
+ * there is no separate "brick" type; everything is a block.
+ */
+export interface NewsletterBlock {
+  block_type: string;
+  content: Record<string, unknown>;
+  blocks?: NewsletterBlock[];
+}
+
+/**
+ * The structured layout the editor saves and the server renders to MJML →
+ * body_html. Persisted as body_layout (JSONB) on the newsletter.
+ */
+export interface NewsletterLayout {
+  wrapper_key: string;
+  blocks: NewsletterBlock[];
+}
+
+/** Palette entry describing one block type (from the build-time template pull). */
+export interface NewsletterBlockManifestEntry {
+  block_type: string;
+  label: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  schema: NewsletterFieldSchema;
+  /** True when this block can nest child blocks (a container block). */
+  is_container?: boolean;
+  /** For container blocks: the block types allowed as children. */
+  allowed_block_types?: string[];
+}
+
+/** Provenance of the template manifest (the pinned, build-time template repo). */
+export interface NewsletterTemplateSource {
+  repo: string;
+  commit: string;
+}
+
+/**
+ * The block palette + field schemas bundled into the app at build time from the
+ * hard-coded template repo (spec 004 §6.3, Phase 1).
+ */
+export interface NewsletterTemplateManifest {
+  wrapper_key: string;
+  wrapper_keys?: string[];
+  blocks: NewsletterBlockManifestEntry[];
+  source?: NewsletterTemplateSource;
 }
