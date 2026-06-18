@@ -69,3 +69,23 @@ export function getLifecycleLabel(lifecycle: AkritesLifecycle | null): string {
   if (!lifecycle) return 'Unknown';
   return lifecycle.charAt(0).toUpperCase() + lifecycle.slice(1);
 }
+
+export function formatActivityType(type: string): string {
+  const labels: Record<string, string> = {
+    escalation: 'Escalated',
+    state_changed: 'Status changed',
+    steward_assigned: 'Steward assigned',
+    steward_removed: 'Steward removed',
+    stewardship_opened: 'Opened for stewardship',
+    package_synced: 'Package synced',
+    advisory_detected: 'New security advisory detected',
+    advisory_resolved: 'Security advisory resolved',
+    status_inactive: 'Marked inactive',
+    quarterly_update: 'Quarterly status update',
+    remediation_logged: 'Remediation progress logged',
+    assessment_started: 'Security assessment started',
+    blocker_resolved: 'Blocker resolved',
+    reactivated: 'Reactivated',
+  };
+  return labels[type] ?? type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}

@@ -13,17 +13,19 @@ import {
   AkritesSortKey,
   AkritesStatusCounts,
   AkritesEscalateRequest,
+  AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, timer, debounceTime, tap, forkJoin } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
+import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
-  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent],
+  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent],
   templateUrl: './akrites-dashboard.component.html',
 })
 export class AkritesDashboardComponent {
@@ -31,6 +33,7 @@ export class AkritesDashboardComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly activeTab = signal<AkritesDashboardTab>('overview');
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
@@ -38,8 +41,8 @@ export class AkritesDashboardComponent {
   protected readonly bulkEscalateVisible = signal(false);
   protected readonly bulkActionLoading = signal(false);
 
-  // Bumped after a steward admin action to force the package list to re-fetch.
-  private readonly reloadTrigger = signal(0);
+  // Bumped after a steward admin action to force the package list and activity feed to re-fetch.
+  protected readonly reloadTrigger = signal(0);
 
   protected readonly filters = signal<AkritesFilterState>({
     search: '',
@@ -58,12 +61,11 @@ export class AkritesDashboardComponent {
   private readonly metricsResult = this.initMetrics();
 
   protected readonly tableLoading = signal(true);
+  protected readonly metricsLoading = signal(true);
   protected readonly initialLoading = computed(() => this.loadResult() === undefined);
   protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
   protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
-  protected readonly totalPackages = computed(() => this.metricsResult()?.totalPackages ?? 0);
-
-  protected readonly criticalCount = computed(() => this.metricsResult()?.criticalPackages ?? 0);
+  protected readonly metrics = computed<AkritesMetrics | undefined>(() => this.metricsResult());
 
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
@@ -78,6 +80,69 @@ export class AkritesDashboardComponent {
     return this.packages().find((p) => p.id === id)?.status ?? null;
   });
 
+  protected setActiveTab(tab: AkritesDashboardTab): void {
+    if (tab === 'overview') {
+      this.selectedPackageId.set(null);
+      this.drawerVisible.set(false);
+    }
+    this.activeTab.set(tab);
+  }
+
+  protected onOverviewNavigate(filter: Partial<AkritesFilterState>): void {
+    this.onFilterChange(filter);
+    this.activeTab.set('packages');
+  }
+
+  protected onOverviewResolveEscalation(purl: string): void {
+    this.akritesService
+      .getPackage(purl)
+      .pipe(
+        take(1),
+        switchMap((pkg) => {
+          if (!pkg || pkg.status !== 'escalated' || pkg.stewardshipId === null) {
+            // Already resolved or not escalated — open drawer to show current state
+            if (pkg) this.onPackageClick(pkg.id);
+            return of(null);
+          }
+          return this.akritesService.updateStewardshipStatus(pkg.stewardshipId, { status: 'active' });
+        }),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not resolve escalation. Please try again.' });
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        if (result !== null) {
+          this.messageService.add({ severity: 'success', summary: 'Resolved', detail: 'Escalation resolved — package is now active.' });
+          this.reloadTrigger.update((n) => n + 1);
+        }
+      });
+  }
+
+  protected onOverviewPackageClick(purl: string): void {
+    const pkg = this.packages().find((p) => p.purl === purl);
+    if (pkg) {
+      this.onPackageClick(pkg.id);
+      return;
+    }
+    // Package not in loaded list — fetch by PURL so we can open the drawer directly
+    this.akritesService
+      .getPackage(purl)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (fetched) => {
+          if (fetched) {
+            this.onPackageClick(fetched.id);
+          }
+        },
+        error: () => {
+          this.onFilterChange({ search: purl });
+          this.activeTab.set('packages');
+        },
+      });
+  }
+
   protected onPackageClick(id: string): void {
     this.selectedPackageId.set(id);
     this.drawerVisible.set(true);
@@ -85,11 +150,9 @@ export class AkritesDashboardComponent {
 
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
-    timer(300)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        if (!this.drawerVisible()) this.selectedPackageId.set(null);
-      });
+    this.selectedPackageId.set(null);
+    // Bump so the activity feed and package list reflect any changes made in the drawer.
+    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected onStewardshipChanged(): void {
@@ -243,8 +306,10 @@ export class AkritesDashboardComponent {
   private initMetrics() {
     return toSignal<AkritesMetrics | undefined>(
       this.akritesService.getMetrics().pipe(
+        tap(() => this.metricsLoading.set(false)),
         catchError((err) => {
-          console.warn('[AKRITES] metrics fetch failed — KPI strip will show zeros', err);
+          console.warn('[AKRITES] metrics fetch failed — overview KPIs will show zeros', err);
+          this.metricsLoading.set(false);
           return of(undefined);
         })
       )
