@@ -78,7 +78,6 @@
           </div>
         }
 
-        <!-- Empty state when all statuses filtered out -->
         @if (points().length > 0 && visiblePoints().length === 0) {
           <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p class="text-sm text-gray-400">All statuses hidden — use the legend to show packages.</p>
@@ -101,21 +100,19 @@
     <div class="w-44 flex-shrink-0 pt-1" data-testid="risk-matrix-legend">
       <div class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Status</div>
       @for (status of statusOrder; track status) {
-        @if ((statusCounts().get(status) ?? 0) > 0) {
-          <label class="flex items-center gap-2.5 py-1.5 cursor-pointer select-none" [attr.data-testid]="'risk-matrix-legend-' + status">
-            <input
-              type="checkbox"
-              class="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
-              [checked]="isStatusVisible(status)"
-              (change)="toggleStatus(status)" />
-            <span
-              class="w-3.5 h-3.5 rounded-full flex-shrink-0 border-2"
-              [style.background-color]="legendDotBg(status)"
-              [style.border-color]="legendDotBorderColor(status)"></span>
-            <span class="text-sm text-gray-700 flex-1">{{ statusLabel(status) }}</span>
-            <span class="text-sm text-gray-400">{{ statusCounts().get(status) ?? 0 }}</span>
-          </label>
-        }
+        <label class="flex items-center gap-2.5 py-1.5 cursor-pointer select-none" [attr.data-testid]="'risk-matrix-legend-' + status">
+          <input
+            type="checkbox"
+            class="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+            [checked]="isStatusVisible(status)"
+            (change)="toggleStatus(status)" />
+          <span
+            class="w-3.5 h-3.5 rounded-full flex-shrink-0 border-2"
+            [style.background-color]="legendDotBg(status)"
+            [style.border-color]="legendDotBorderColor(status)"></span>
+          <span class="text-sm text-gray-700 flex-1">{{ statusLabel(status) }}</span>
+          <span class="text-sm text-gray-400">{{ statusCount(status) }}</span>
+        </label>
       }
     </div>
   </div>

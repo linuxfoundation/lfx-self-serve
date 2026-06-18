@@ -321,6 +321,10 @@ export class AkritesServerService {
         });
       });
       const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_SCATTER}`);
+      const statusFilter = req.query['status'] as string | undefined;
+      if (statusFilter) {
+        url.searchParams.set('status', statusFilter);
+      }
 
       logger.debug(req, 'get_akrites_scatter', 'Fetching scatter data from CDP', {
         url: url.toString(),

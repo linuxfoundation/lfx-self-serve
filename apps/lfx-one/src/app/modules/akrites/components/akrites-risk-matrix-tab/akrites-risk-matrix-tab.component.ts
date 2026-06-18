@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, signal } from '@angular/core';
-import { AkritesScatterPoint, AkritesStatus } from '@lfx-one/shared/interfaces';
+import { AkritesScatterPoint, AkritesStatus, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
 
 const STATUS_COLORS: Record<AkritesStatus, { bg: string; border: string }> = {
   unassigned: { bg: '#62748e', border: '#fff' },
@@ -28,8 +28,19 @@ const STATUS_LABELS: Record<AkritesStatus, string> = {
 
 const STATUS_ORDER: AkritesStatus[] = ['unassigned', 'needs_attention', 'escalated', 'blocked', 'inactive', 'open', 'assessing', 'active'];
 
-// Statuses hidden by default (positive/healthy ones — match the design prototype's initial state).
-const DEFAULT_HIDDEN = new Set<AkritesStatus>(['open', 'assessing', 'active']);
+const DEFAULT_HIDDEN = new Set<AkritesStatus>();
+
+const EMPTY_STATUS_COUNTS: AkritesStatusCounts = {
+  all: 0,
+  unassigned: 0,
+  open: 0,
+  assessing: 0,
+  active: 0,
+  needs_attention: 0,
+  escalated: 0,
+  blocked: 0,
+  inactive: 0,
+};
 
 @Component({
   selector: 'lfx-akrites-risk-matrix-tab',
@@ -39,6 +50,7 @@ const DEFAULT_HIDDEN = new Set<AkritesStatus>(['open', 'assessing', 'active']);
 export class AkritesRiskMatrixTabComponent {
   public readonly points = input<AkritesScatterPoint[]>([]);
   public readonly loading = input(false);
+  public readonly statusCounts = input<AkritesStatusCounts>(EMPTY_STATUS_COUNTS);
   public readonly packageClick = output<string>();
 
   protected readonly statusOrder = STATUS_ORDER;
@@ -49,13 +61,9 @@ export class AkritesRiskMatrixTabComponent {
     return this.points().filter((p) => !hidden.has(p.status));
   });
 
-  protected readonly statusCounts = computed<Map<AkritesStatus, number>>(() => {
-    const counts = new Map<AkritesStatus, number>();
-    for (const p of this.points()) {
-      counts.set(p.status, (counts.get(p.status) ?? 0) + 1);
-    }
-    return counts;
-  });
+  protected statusCount(status: AkritesStatus): number {
+    return this.statusCounts()[status];
+  }
 
   protected toggleStatus(status: AkritesStatus): void {
     const current = new Set(this.hiddenStatuses());

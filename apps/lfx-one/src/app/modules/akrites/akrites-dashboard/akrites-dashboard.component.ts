@@ -70,6 +70,7 @@ export class AkritesDashboardComponent {
   private readonly loadResult = this.initLoadResult();
   private readonly metricsResult = this.initMetrics();
   private readonly scatterResult = this.initScatterResult();
+  private readonly scatterStatusCountsResult = this.initScatterStatusCounts();
 
   protected readonly tableLoading = signal(true);
   protected readonly metricsLoading = signal(true);
@@ -83,8 +84,13 @@ export class AkritesDashboardComponent {
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
     if (fromApi) return fromApi;
-    // Fall back to zeros while the first load is in flight.
     return { all: 0, unassigned: 0, open: 0, assessing: 0, active: 0, needs_attention: 0, escalated: 0, blocked: 0, inactive: 0 };
+  });
+
+  protected readonly scatterStatusCounts = computed<AkritesStatusCounts>(() => {
+    return (
+      this.scatterStatusCountsResult() ?? { all: 0, unassigned: 0, open: 0, assessing: 0, active: 0, needs_attention: 0, escalated: 0, blocked: 0, inactive: 0 }
+    );
   });
 
   protected readonly selectedPackageStatus = computed(() => {
@@ -343,6 +349,24 @@ export class AkritesDashboardComponent {
               return of<AkritesScatterPoint[]>([]);
             }),
             tap(() => this.scatterLoading.set(false))
+          )
+        )
+      )
+    );
+  }
+
+  private initScatterStatusCounts() {
+    const source = computed(() => ({ tab: this.activeTab(), reload: this.reloadTrigger() }));
+    return toSignal(
+      toObservable(source).pipe(
+        filter(({ tab }) => tab === 'risk-matrix'),
+        switchMap(() =>
+          this.akritesService.getPackages({ pageSize: 1 }).pipe(
+            map((res) => res.statusCounts ?? null),
+            catchError((err) => {
+              console.warn('[AKRITES] scatter status counts fetch failed', err);
+              return of<AkritesStatusCounts | null>(null);
+            })
           )
         )
       )
