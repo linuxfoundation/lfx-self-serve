@@ -203,7 +203,7 @@ export class CrowdfundingAuthService {
     const refreshToken = req.appSession?.crowdfundingRefreshToken;
     if (!refreshToken) return Promise.resolve(false);
 
-    const key = crypto.createHash('sha256').update(refreshToken).digest('hex').substring(0, 16);
+    const key = crypto.createHash('sha256').update(refreshToken).digest('hex');
     const inflight = this.pendingRefreshes.get(key);
     if (inflight) return inflight;
 
