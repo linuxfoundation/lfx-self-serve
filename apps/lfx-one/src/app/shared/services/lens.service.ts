@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { ALL_LENSES, DEFAULT_LENS, LENS_COOKIE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { Lens, LensOption } from '@lfx-one/shared/interfaces';
+import { ALL_LENSES, DEFAULT_LENS, DEFAULT_NAV_LENS, LENS_COOKIE_KEY, NAV_LENS_COOKIE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { Lens, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 import { CookieRegistryService } from './cookie-registry.service';
@@ -24,6 +24,10 @@ export class LensService {
 
   private readonly selectedLens: WritableSignal<Lens>;
 
+  /** Last foundation/project lens viewed — lets the merged 'Projects' entry (hybrid personas) return to a foundation. */
+  private readonly navLensSelection: WritableSignal<NavLens>;
+  public readonly lastNavLens: Signal<NavLens>;
+
   /** Active lens clamped to the current persona's allowed set; falls back to default if disallowed. */
   public readonly activeLens: Signal<Lens> = this.initActiveLens();
   /** Full set of lenses the current persona is authorised to use — drives routing and downstream visibility filters. */
@@ -36,12 +40,18 @@ export class LensService {
   public constructor() {
     const stored = this.loadFromCookie();
     this.selectedLens = signal<Lens>(stored ?? DEFAULT_LENS);
+    this.navLensSelection = signal<NavLens>(this.loadNavLensFromCookie() ?? DEFAULT_NAV_LENS);
+    this.lastNavLens = this.navLensSelection.asReadonly();
   }
 
   public setLens(lens: Lens): void {
     const allowed = this.getAllowedLensIds();
     if (!allowed.includes(lens)) {
       return;
+    }
+    if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
+      this.navLensSelection.set(lens);
+      this.persistNavLensToCookie(lens);
     }
     if (lens === this.selectedLens()) {
       return;
@@ -97,7 +107,7 @@ export class LensService {
       expires: 30,
       path: '/',
       sameSite: 'Lax',
-      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+      secure: process.env['NODE_ENV'] === 'production',
     });
     this.cookieRegistry.registerCookie(LENS_COOKIE_KEY);
   }
@@ -107,6 +117,28 @@ export class LensService {
       const stored = this.cookieService.get(LENS_COOKIE_KEY);
       if (stored && stored in ALL_LENSES) {
         return stored as Lens;
+      }
+    } catch {
+      /* invalid cookie data */
+    }
+    return null;
+  }
+
+  private persistNavLensToCookie(lens: NavLens): void {
+    this.cookieService.set(NAV_LENS_COOKIE_KEY, lens, {
+      expires: 30,
+      path: '/',
+      sameSite: 'Lax',
+      secure: process.env['NODE_ENV'] === 'production',
+    });
+    this.cookieRegistry.registerCookie(NAV_LENS_COOKIE_KEY);
+  }
+
+  private loadNavLensFromCookie(): NavLens | null {
+    try {
+      const stored = this.cookieService.get(NAV_LENS_COOKIE_KEY);
+      if (stored === 'foundation' || stored === 'project') {
+        return stored;
       }
     } catch {
       /* invalid cookie data */

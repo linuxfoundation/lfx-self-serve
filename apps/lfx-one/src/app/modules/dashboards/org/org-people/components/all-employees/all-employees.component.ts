@@ -14,7 +14,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
-import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
 import type {
@@ -47,7 +47,7 @@ export class AllEmployeesComponent {
   private readonly dataService = inject(AllEmployeesService);
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly accessState = inject(OrgLensAccessStateService);
-  private readonly personPanel = inject(PersonProfilePanelService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly initialLimit = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
@@ -238,7 +238,14 @@ export class AllEmployeesComponent {
 
   protected onPersonClick(row: OrgAllEmployeeRowVm): void {
     if (row.isSynthetic) return;
-    this.personPanel.open(row.name);
+    this.drawer.open({
+      personKey: row.personKey,
+      name: row.name,
+      title: row.title,
+      avatarUrl: row.avatarUrl,
+      initials: row.initials,
+      avatarColorClass: row.avatarColorClass,
+    });
   }
 
   /** Record a broken avatar (by composite `personKey::avatarUrl`) so the template stops rendering the image and the initials behind it show through. */

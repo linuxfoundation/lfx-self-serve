@@ -69,6 +69,9 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
 
@@ -99,8 +102,8 @@ export * from './sse.interface';
 // Copilot interfaces
 export * from './copilot.interface';
 
-// OSSPREY admin dashboard interfaces
-export * from './ossprey.interface';
+// Akrites admin dashboard interfaces
+export * from './akrites.interface';
 
 // Committee application interfaces
 export * from './committee-application.interface';
@@ -207,6 +210,9 @@ export * from './org-people-event-attendees.interface';
 
 // Org People — Contributors tab (LFXV2-1874)
 export * from './org-people-contributors.interface';
+
+// Shared person-detail drawer (LFXV2-2195)
+export * from './person-detail-drawer.interface';
 
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';

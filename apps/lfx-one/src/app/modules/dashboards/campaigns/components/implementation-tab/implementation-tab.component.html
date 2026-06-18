@@ -189,12 +189,12 @@
               (change)="onLinkedInAccountChange($event)"
               class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="implementation-linkedin-account">
-              @for (account of linkedInAccounts; track account.accountId) {
+              @for (account of linkedInAccounts(); track account.accountId) {
                 <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
               }
             </select>
             @if (selectedLinkedInAccount()) {
-              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().organizationId }} · Status: {{ selectedLinkedInAccount().status }}</p>
+              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
             }
           </div>
 
@@ -300,6 +300,73 @@
         </div>
       }
 
+      <!-- Meta Ads Section -->
+      @if (showMetaSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-meta-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-meta text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Meta Ads</h3>
+          </div>
+
+          <!-- Meta Budget -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700">Meta Budget (USD)</label>
+              <input
+                type="number"
+                [value]="metaBudgetUsd()"
+                (input)="onMetaBudgetInput($event)"
+                min="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-meta-budget" />
+            </div>
+            <div class="flex items-end gap-2 pb-1">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  [checked]="metaLifetimeBudget()"
+                  (change)="onMetaLifetimeBudgetChange($event)"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Lifetime budget
+              </label>
+            </div>
+          </div>
+
+          <!-- Geo Targets -->
+          @if (metaGeoTargets().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
+              <div class="flex flex-wrap gap-2">
+                @for (geo of metaGeoTargets(); track geo) {
+                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    {{ geo }}
+                  </span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Variant Preview -->
+          @if (metaVariants().length > 0) {
+            <div>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ metaVariants().length }})</label>
+              <div class="flex flex-col gap-2">
+                @for (variant of metaVariants(); track $index; let i = $index) {
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
+                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
+                    <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
+                    @if (variant.description) {
+                      <p class="text-xs text-gray-500">{{ variant.description | slice: 0 : metaCharLimits.description }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
       <!-- Submit -->
       <div class="flex items-center gap-3">
         <lfx-button
@@ -365,6 +432,9 @@
                       @case ('reddit-ads') {
                         reddit · {{ campaign.adGroupCount }} ad groups · {{ campaign.adCount }} ads
                       }
+                      @case ('meta-ads') {
+                        meta · {{ campaign.adCount }} ads
+                      }
                       @default {
                         {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
                       }
@@ -382,6 +452,9 @@
                     }
                     @case ('reddit-ads') {
                       Open in Reddit Ads
+                    }
+                    @case ('meta-ads') {
+                      Open in Meta Ads Manager
                     }
                     @default {
                       Open in Google Ads

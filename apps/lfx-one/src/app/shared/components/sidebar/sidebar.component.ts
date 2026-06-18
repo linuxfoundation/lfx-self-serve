@@ -16,7 +16,6 @@ import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -53,7 +52,6 @@ export class SidebarComponent {
   private readonly navigationService = inject(NavigationService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
-  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
@@ -153,21 +151,24 @@ export class SidebarComponent {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
     }
-    // When on an entity detail page (e.g. /project/mailing-lists/:id or /project/groups/:id),
-    // switching project context should land on the new project's dashboard — staying on the
-    // current entity would show data from the wrong project until the user navigates away.
-    this.redirectFromEntityPageIfNeeded(context.slug);
+    this.redirectOnContextSwitch(context.slug);
   }
 
-  private redirectFromEntityPageIfNeeded(projectSlug: string): void {
+  // Keep the URL's lens prefix in sync with the selected context so a hard refresh restores it
+  // (syncLensFromRoute + projectQueryParamGuard). Redirect on lens-type change or off an entity page.
+  private redirectOnContextSwitch(projectSlug: string): void {
     const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
-    // Entity detail pages match /<lens>/<section>/<id> (exactly 3 segments, project or foundation prefix)
-    if (segments.length === 3 && (segments[0] === 'project' || segments[0] === 'foundation')) {
-      // Use activeLens() (updated synchronously by setLens() above) for the destination prefix.
-      // Pass the slug explicitly — router.url lags behind location.replaceState so
-      // queryParamsHandling:'preserve' would carry stale params.
-      const lensPrefix = this.activeLens() === 'foundation' ? 'foundation' : 'project';
-      this.router.navigate([`/${lensPrefix}`, 'overview'], { queryParams: { project: projectSlug } });
+    const currentPrefix = segments[0];
+    if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
+      return;
+    }
+    // activeLens() reflects setLens() synchronously; pass the slug explicitly since router.url lags
+    // location.replaceState, so queryParamsHandling:'preserve' would carry stale params.
+    const targetLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
+    const lensTypeChanged = currentPrefix !== targetLens;
+    const onEntityPage = segments.length === 3;
+    if (lensTypeChanged || onEntityPage) {
+      this.router.navigate([`/${targetLens}`, 'overview'], { queryParams: { project: projectSlug } });
     }
   }
 
@@ -175,12 +176,10 @@ export class SidebarComponent {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
       if (!this.orgLensFlag()) return false;
-      if (this.orgRoleGrantsService.writerSet().size > 0) return true;
-      if (this.orgRoleGrantsService.auditorSet().size > 0) return true;
-      // Persona-seeds fallback per D-005 — keeps the selector visible for users on
-      // dev sandbox accounts that have a persona-seeded org list but no
+      // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
+      // the selector visible for users on dev sandbox accounts that have a seeded org list but no
       // settings-doc grants in the upstream b2b_org_settings docs.
-      return this.accountContextService.availableAccounts().length > 0;
+      return this.accountContextService.hasOrgSelectorAccess();
     });
   }
 

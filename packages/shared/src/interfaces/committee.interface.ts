@@ -138,6 +138,12 @@ export interface PendingInvitation {
    * populated only if upstream adds it. Stays `undefined` otherwise.
    */
   expires_at?: string | null;
+  /** Suggested organization from the invite (pre-fills the accept modal) */
+  organization?: CommitteeOrganizationReference | null;
+  /** Whether the committee has voting enabled — enriched from the committee resource */
+  enable_voting?: boolean;
+  /** Whether the committee requires a business email — enriched from the committee resource */
+  business_email_required?: boolean;
 }
 
 /**
@@ -161,6 +167,45 @@ export interface CreateCommitteeInviteRequest {
   invitee_email: string;
   /** Suggested role for the invitee (optional) */
   role?: string | null;
+  /** Suggested default organization for the invitee (optional; pre-fills the accept flow when committee has voting or business-email rules) */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/**
+ * Payload for accepting a committee invite (committee-service accept-invite).
+ */
+export interface AcceptCommitteeInviteRequest {
+  /** Organization the invitee confirms on acceptance */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Raw organization form values shared by invite-create and invite-accept dialogs. */
+export interface CommitteeOrganizationFormValue {
+  organization: string;
+  organization_url: string;
+  organization_id: string | null;
+}
+
+/** Data passed into the accept-invite organization dialog. */
+export interface AcceptInviteOrganizationDialogData {
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Result returned by the accept-invite organization dialog on confirm. */
+export interface AcceptInviteOrganizationDialogResult {
+  organization: CommitteeOrganizationReference;
+}
+
+/** Context needed to accept a committee invitation from any surface. */
+export interface InvitationAcceptContext {
+  committeeUid: string;
+  inviteUid: string;
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+  enable_voting?: boolean;
+  business_email_required?: boolean;
+  inviteRequiresOrganization?: boolean;
 }
 
 /**

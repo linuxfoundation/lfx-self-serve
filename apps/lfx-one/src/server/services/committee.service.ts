@@ -17,6 +17,7 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
+  AcceptCommitteeInviteRequest,
   MyCommittee,
   PendingInvitation,
   Project,
@@ -247,7 +248,15 @@ export class CommitteeService {
   public async getCommitteeById(
     req: Request,
     committeeId: string,
-    options: { includeMembership?: boolean; includeProjectMetadata?: boolean; includeInheritedPermissions?: boolean } = {}
+    options: {
+      includeMembership?: boolean;
+      includeProjectMetadata?: boolean;
+      includeInheritedPermissions?: boolean;
+      /** When true, a settings-service failure throws instead of silently returning {}. Use on
+       *  write paths (e.g. accept invite) where an unknown business_email_required must not
+       *  be treated as false (fail-closed). */
+      throwOnSettingsError?: boolean;
+    } = {}
   ): Promise<Committee> {
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
@@ -262,7 +271,7 @@ export class CommitteeService {
     // Fetch settings, optional caller membership, access, and optional inherited
     // (parent-project) permissions in parallel.
     const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
-      this.getCommitteeSettings(req, committeeId),
+      this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
@@ -656,12 +665,43 @@ export class CommitteeService {
     // Enrich committee context (name, category, project) for the distinct committees once.
     // Best-effort: a failed lookup degrades to a UID fallback rather than dropping the list.
     const committeeUids = Array.from(new Set(pendingInvites.map((invite) => invite.committee_uid).filter(Boolean)));
-    const committeeContext = new Map<string, { committee_name: string; category?: string | null; project_name?: string | null }>();
+    const committeeContext = new Map<
+      string,
+      {
+        committee_name: string;
+        category?: string | null;
+        project_name?: string | null;
+        enable_voting?: boolean;
+        business_email_required?: boolean;
+      }
+    >();
 
     try {
       const committees = await this.getCommitteesByIds(req, committeeUids);
       const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
       const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
+
+      // business_email_required is a settings-only field not present in the query-service
+      // committee index (which only stores CommitteeBase). Fetch settings in parallel so the
+      // invitationRequiresOrganization guard is accurate for business-email-only committees.
+      // throwOnError: true so a transient outage throws and is caught below, where we fail
+      // closed (true) rather than leaving business_email_required undefined — enable_voting
+      // is always defined from the index, so the both-undefined guard in
+      // invitationRequiresOrganization never fires here; without this, a settings outage
+      // would silently skip the org dialog and cause a server 400 on accept.
+      const settingsByUid = new Map<string, boolean | undefined>();
+      await Promise.all(
+        committeeUids.map(async (uid) => {
+          try {
+            const settings = await this.getCommitteeSettings(req, uid, { throwOnError: true });
+            settingsByUid.set(uid, settings.business_email_required);
+          } catch {
+            // Settings unavailable — fail closed: assume org is required so the dialog
+            // appears and the server's authoritative check can decide.
+            settingsByUid.set(uid, true);
+          }
+        })
+      );
 
       for (const uid of committeeUids) {
         const committee = committees.get(uid);
@@ -670,6 +710,8 @@ export class CommitteeService {
             committee_name: committee.name || uid,
             category: committee.category ?? null,
             project_name: projectNameByCommittee.get(uid) || null,
+            enable_voting: committee.enable_voting,
+            business_email_required: settingsByUid.get(uid),
           });
         }
       }
@@ -692,6 +734,9 @@ export class CommitteeService {
         invitee_email: invite.invitee_email,
         status: invite.status,
         created_at: invite.created_at,
+        organization: invite.organization ?? null,
+        enable_voting: context?.enable_voting,
+        business_email_required: context?.business_email_required,
         // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
         // optional fields not in the committee-service contract yet, so JSON drops them rather than
         // sending an explicit null that consumers would have to disambiguate from "set".
@@ -1446,16 +1491,21 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches committee settings by ID
-   * @returns Committee settings or empty object if not found/error
+   * Fetches committee settings by ID.
+   * By default returns {} on error so callers that display settings can degrade gracefully.
+   * Pass { throwOnError: true } on write paths where an unknown setting must not silently
+   * default to false (e.g. accept-invite org enforcement).
    */
-  private async getCommitteeSettings(req: Request, committeeId: string): Promise<CommitteeSettingsData> {
+  private async getCommitteeSettings(req: Request, committeeId: string, options: { throwOnError?: boolean } = {}): Promise<CommitteeSettingsData> {
     try {
       const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET');
 
       return settings || {};
-    } catch {
-      logger.debug(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
+    } catch (error) {
+      if (options.throwOnError) {
+        throw error;
+      }
+      logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });
       return {};

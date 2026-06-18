@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,10 +10,9 @@ import {
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
-  LINKEDIN_AD_ACCOUNTS,
   LINKEDIN_CHAR_LIMITS,
-  LINKEDIN_DEFAULT_ACCOUNT_ID,
   LINKEDIN_GEO_RESOLVE_MAP,
+  META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { map, startWith, Subscription, take } from 'rxjs';
@@ -26,10 +25,11 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignType,
-  LinkedInAdAccount,
+  LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  MetaAdVariant,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -41,7 +41,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
-export class ImplementationTabComponent {
+export class ImplementationTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly fb = inject(FormBuilder);
@@ -53,7 +53,7 @@ export class ImplementationTabComponent {
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
-  protected readonly linkedInAccounts: readonly LinkedInAdAccount[] = LINKEDIN_AD_ACCOUNTS;
+  protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -88,28 +88,37 @@ export class ImplementationTabComponent {
   protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
   protected readonly linkedInBudgetUsd = signal(500);
   protected readonly linkedInLifetimeBudget = signal(false);
-  protected readonly linkedInAccountId = signal<string>(LINKEDIN_DEFAULT_ACCOUNT_ID);
+  protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
+  protected readonly linkedInAccountsLoading = signal(false);
+  protected readonly linkedInAccountId = signal<string>('');
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  protected readonly metaVariants = signal<MetaAdVariant[]>([]);
+  protected readonly metaGeoTargets = signal<string[]>([]);
+  protected readonly metaBudgetUsd = signal(500);
+  protected readonly metaLifetimeBudget = signal(false);
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
-  protected readonly selectedLinkedInAccount = computed(
-    () => this.linkedInAccounts.find((a) => a.accountId === this.linkedInAccountId()) ?? this.linkedInAccounts[0]
-  );
+  protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
+  protected readonly selectedLinkedInAccount = computed(() => {
+    const accounts = this.linkedInAccounts();
+    return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
+  });
 
   protected readonly canSubmit = computed(() => {
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');
     const redditSelected = platforms.includes('reddit-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected) return false;
+    const metaSelected = platforms.includes('meta-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -120,6 +129,8 @@ export class ImplementationTabComponent {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     return true;
   });
 
@@ -151,6 +162,25 @@ export class ImplementationTabComponent {
       if (!brief) return;
       this.populateFromBrief(brief);
     });
+  }
+
+  public ngOnInit(): void {
+    this.linkedInAccountsLoading.set(true);
+    this.campaignService
+      .getLinkedInAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccounts.set(accounts);
+          if (accounts.length > 0 && !this.linkedInAccountId()) {
+            this.linkedInAccountId.set(accounts[0].accountId);
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+        error: () => {
+          this.linkedInAccountsLoading.set(false);
+        },
+      });
   }
 
   // === Public Methods ===
@@ -232,6 +262,14 @@ export class ImplementationTabComponent {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onMetaBudgetInput(event: Event): void {
+    this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
+  protected onMetaLifetimeBudgetChange(event: Event): void {
+    this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 
@@ -298,6 +336,23 @@ export class ImplementationTabComponent {
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
+              project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
+      ...(platforms.includes('meta-ads')
+        ? {
+            metaConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.metaBudgetUsd(),
+              lifetimeBudget: this.metaLifetimeBudget(),
+              startDate: form.startDate,
+              endDate: form.endDate,
+              geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
+              variants: this.metaVariants(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -395,6 +450,24 @@ export class ImplementationTabComponent {
       this.redditInterests.set(brief.redditCopy.recommendedInterests);
       this.redditKeywords.set(brief.redditCopy.recommendedKeywords);
       this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
+    }
+
+    const metaCopy = brief.structuredCopy?.['meta_ads'] as Record<string, unknown> | undefined;
+    if (metaCopy) {
+      const rawVariants = metaCopy['variants'];
+      const variants = Array.isArray(rawVariants) ? (rawVariants as { primary_text?: string; headline?: string; description?: string }[]) : [];
+      this.metaVariants.set(
+        variants.map((v) => ({
+          primaryText: v.primary_text ?? '',
+          headline: v.headline ?? '',
+          description: v.description,
+        }))
+      );
+      const rawGeos = metaCopy['recommended_geos'];
+      this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
+    } else if (brief.metaCopy) {
+      this.metaVariants.set(brief.metaCopy.variants);
+      this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
     }
 
     this.briefKeywords.set(brief.keywords);

@@ -33,7 +33,7 @@
   </div>
 
   @if (activeTab() === 'active') {
-    <div role="tabpanel" id="memberships-tab-panel-active" [attr.aria-labelledby]="'memberships-tab-trigger-active'">
+    <div role="tabpanel" id="memberships-tab-panel-active" [attr.aria-labelledby]="'memberships-tab-trigger-active'" class="flex flex-col gap-6">
       <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="active-memberships-summary">
         <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
           <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-active">
