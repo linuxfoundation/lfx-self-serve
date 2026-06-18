@@ -18,7 +18,7 @@ import { RecurringDonationsListComponent } from './components/recurring-donation
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
-import { map, scan, switchMap, tap } from 'rxjs/operators';
+import { defaultIfEmpty, map, scan, switchMap, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-my-donations',
@@ -170,7 +170,7 @@ export class MyDonationsComponent {
   private initDonationHistory(): Signal<MyDonationsResponse> {
     return toSignal(
       toObservable(this.donationHistoryOffset).pipe(
-        switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset })),
+        switchMap((offset) => this.crowdfundingService.getMyDonations({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(defaultIfEmpty(EMPTY_MY_DONATIONS))),
         scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_MY_DONATIONS),
         tap(() => {
           this.isLoading.set(false);

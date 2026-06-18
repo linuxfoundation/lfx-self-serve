@@ -66,6 +66,7 @@ export class InitiativeDetailComponent {
     return toSignal(
       toObservable(this.initiativeSlug).pipe(
         filter((slug) => !!slug),
+        tap(() => this.isLoading.set(true)),
         switchMap((slug) => this.crowdfundingService.getInitiativeBySlug(slug).pipe(tap(() => this.isLoading.set(false))))
       ),
       { initialValue: null }

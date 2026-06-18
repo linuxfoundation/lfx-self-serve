@@ -28,6 +28,8 @@ const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
  * has an Auth0 session — no second consent screen is shown.
  */
 export class CrowdfundingAuthService {
+  private readonly pendingRefreshes = new Map<string, Promise<boolean>>();
+
   private _clientId: string | undefined;
   private _clientSecret: string | undefined;
   private _audience: string | undefined;
@@ -192,12 +194,25 @@ export class CrowdfundingAuthService {
    * Attempts to silently renew the CF access token using the stored refresh token.
    * Returns true and updates the session on success; returns false (non-throwing)
    * on any failure so callers can fall back to the auth-code redirect.
-   * Clears the stale refresh token on invalid_grant so we don't retry on every request.
+   * Clears the stale refresh token only on invalid_grant (terminal error); transient
+   * failures (5xx, timeouts) leave the token in place for the next request to retry.
+   * Single-flight: concurrent requests sharing the same refresh token share one Promise
+   * so only one refresh attempt hits Auth0 per in-flight batch.
    */
-  public async tryRefreshToken(req: Request): Promise<boolean> {
+  public tryRefreshToken(req: Request): Promise<boolean> {
     const refreshToken = req.appSession?.crowdfundingRefreshToken;
-    if (!refreshToken) return false;
+    if (!refreshToken) return Promise.resolve(false);
 
+    const key = crypto.createHash('sha256').update(refreshToken).digest('hex').substring(0, 16);
+    const inflight = this.pendingRefreshes.get(key);
+    if (inflight) return inflight;
+
+    const promise = this.doRefreshToken(req, refreshToken).finally(() => this.pendingRefreshes.delete(key));
+    this.pendingRefreshes.set(key, promise);
+    return promise;
+  }
+
+  private async doRefreshToken(req: Request, refreshToken: string): Promise<boolean> {
     const startTime = logger.startOperation(req, 'crowdfunding_token_refresh', {});
 
     try {
@@ -216,11 +231,14 @@ export class CrowdfundingAuthService {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
+        const errorCode = (errorBody as Record<string, unknown>)?.['error'];
         logger.warning(req, 'crowdfunding_token_refresh', 'Token refresh returned non-OK status', {
           status: response.status,
-          error: (errorBody as Record<string, unknown>)?.['error'],
+          error: errorCode,
         });
-        if (req.appSession) delete req.appSession.crowdfundingRefreshToken;
+        if (errorCode === 'invalid_grant' && req.appSession) {
+          delete req.appSession.crowdfundingRefreshToken;
+        }
         return false;
       }
 
