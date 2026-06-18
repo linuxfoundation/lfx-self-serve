@@ -489,3 +489,20 @@ export interface AkritesScatterResponse {
   points: AkritesScatterPoint[];
   total: number;
 }
+
+export interface AkritesScatterPointVM extends AkritesScatterPoint {
+  left: string;
+  top: string;
+  bg: string;
+  borderColor: string;
+  healthLabel: string;
+  statusLabel: string;
+}
+
+export interface AkritesLegendItemVM {
+  status: AkritesStatus;
+  bg: string;
+  borderColor: string;
+  label: string;
+  count: number;
+}

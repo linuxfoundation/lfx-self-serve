@@ -4,32 +4,9 @@
 import { Component, DestroyRef, inject, input, output, signal, computed } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { AkritesScatterPoint, AkritesStatus, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { AkritesScatterPoint, AkritesScatterPointVM, AkritesLegendItemVM, AkritesStatus, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
 import { AKRITES_STATUS_COLORS, AKRITES_STATUS_LABELS, AKRITES_STATUS_ORDER, AKRITES_EMPTY_STATUS_COUNTS } from '@lfx-one/shared/constants';
 import { CheckboxComponent } from '@shared/components/checkbox/checkbox.component';
-
-export interface AkritesScatterPointVM extends AkritesScatterPoint {
-  /** Pre-computed left position percentage. */
-  left: string;
-  /** Pre-computed top position percentage. */
-  top: string;
-  /** Pre-computed background color. */
-  bg: string;
-  /** Pre-computed border color. */
-  borderColor: string;
-  /** Pre-computed health label. */
-  healthLabel: string;
-  /** Pre-computed status label. */
-  statusLabel: string;
-}
-
-export interface AkritesLegendItemVM {
-  status: AkritesStatus;
-  bg: string;
-  borderColor: string;
-  label: string;
-  count: number;
-}
 
 @Component({
   selector: 'lfx-akrites-risk-matrix-tab',
@@ -54,7 +31,7 @@ export class AkritesRiskMatrixTabComponent {
   protected readonly checkedCount = signal(AKRITES_STATUS_ORDER.length);
 
   // Pre-compute scatter point view models with all position/color/label calculations
-  protected readonly pointVMs = computed(() =>
+  protected readonly pointVMs = computed<AkritesScatterPointVM[]>(() =>
     this.points().map((p) => ({
       ...p,
       left: `${6 + (p.healthScore ?? 50) * 0.88}%`,
@@ -67,7 +44,7 @@ export class AkritesRiskMatrixTabComponent {
   );
 
   // Pre-compute legend items with all color and label calculations
-  protected readonly legendItems = computed(() =>
+  protected readonly legendItems = computed<AkritesLegendItemVM[]>(() =>
     AKRITES_STATUS_ORDER.map((status) => {
       const c = AKRITES_STATUS_COLORS[status];
       return {
