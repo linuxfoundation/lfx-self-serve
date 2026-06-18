@@ -4,8 +4,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { filter, firstValueFrom, map, switchMap } from 'rxjs';
+import { filter, firstValueFrom, map, switchMap, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
+import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
@@ -15,7 +16,14 @@ import { InitiativeSettingsDrawerComponent } from './components/initiative-setti
 
 @Component({
   selector: 'lfx-initiative-detail',
-  imports: [ButtonComponent, InitiativeDetailHeaderComponent, InitiativeOverviewComponent, InitiativeFinancialsComponent, InitiativeSettingsDrawerComponent],
+  imports: [
+    ButtonComponent,
+    RouteLoadingComponent,
+    InitiativeDetailHeaderComponent,
+    InitiativeOverviewComponent,
+    InitiativeFinancialsComponent,
+    InitiativeSettingsDrawerComponent,
+  ],
   templateUrl: './initiative-detail.component.html',
   styleUrl: './initiative-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,6 +34,7 @@ export class InitiativeDetailComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
 
   // ─── WritableSignals ───────────────────────────────────────────────────────
+  protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<string>('overview');
   protected readonly settingsDrawerVisible = signal(false);
 
@@ -57,7 +66,7 @@ export class InitiativeDetailComponent {
     return toSignal(
       toObservable(this.initiativeSlug).pipe(
         filter((slug) => !!slug),
-        switchMap((slug) => this.crowdfundingService.getInitiativeBySlug(slug))
+        switchMap((slug) => this.crowdfundingService.getInitiativeBySlug(slug).pipe(tap(() => this.isLoading.set(false))))
       ),
       { initialValue: null }
     );
