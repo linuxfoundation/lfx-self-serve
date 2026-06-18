@@ -7,16 +7,17 @@ import { Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
+import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { CrowdfundingInitiativesStats, InitiativesResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_INITIATIVES_RESPONSE } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { finalize, scan, switchMap } from 'rxjs/operators';
+import { finalize, scan, switchMap, tap } from 'rxjs/operators';
 import { InitiativesListComponent } from './components/initiatives-list/initiatives-list.component';
 
 @Component({
   selector: 'lfx-my-initiatives',
-  imports: [ButtonComponent, StatCardGridComponent, InitiativesListComponent],
+  imports: [ButtonComponent, StatCardGridComponent, RouteLoadingComponent, InitiativesListComponent],
   templateUrl: './my-initiatives.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -26,9 +27,10 @@ export class MyInitiativesComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
 
   // ─── Public Fields ─────────────────────────────────────────────────────────
-  protected readonly crowdfundingUrl = environment.urls.crowdfunding;
+  protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}?fundraise=true`;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
+  protected readonly isLoading = signal(true);
   protected readonly loadingMore = signal(false);
 
   // ─── Pagination Driver ────────────────────────────────────────────────────
@@ -59,7 +61,8 @@ export class MyInitiativesComponent {
         switchMap((offset) =>
           this.crowdfundingService.getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(finalize(() => this.loadingMore.set(false)))
         ),
-        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE)
+        scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE),
+        tap(() => this.isLoading.set(false))
       ),
       { initialValue: EMPTY_INITIATIVES_RESPONSE }
     );

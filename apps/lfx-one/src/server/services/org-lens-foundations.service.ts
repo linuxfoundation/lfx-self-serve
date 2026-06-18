@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   GovernanceParticipationBucket,
   MembershipTierClass,
@@ -15,6 +16,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /**
  * Raw row shape returned by the joined query (foundations rollup LEFT
@@ -87,6 +89,27 @@ export class OrgLensFoundationsService {
   }
 
   public async getFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
+    return withOrgCache(
+      accountId,
+      'foundations',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchFoundationsAndProjects(accountId),
+      OrgLensFoundationsService.isFoundationsResponse
+    );
+  }
+
+  // Rejects a corrupt/legacy entry (degrade to a miss) before it reaches shapeResponse consumers.
+  private static isFoundationsResponse(value: unknown): value is OrgLensFoundationsAndProjectsResponse {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      typeof (value as OrgLensFoundationsAndProjectsResponse).accountId === 'string' &&
+      Array.isArray((value as OrgLensFoundationsAndProjectsResponse).rows)
+    );
+  }
+
+  private async fetchFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
     // Single LEFT JOIN against the two pre-aggregated rollups. ORDER BY is
     // CASE-guarded so `project_count_lf` only sorts non-member LF rows and
     // NEVER member rows (which sort by tier_rank then foundation_name).

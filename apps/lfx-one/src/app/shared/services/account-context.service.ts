@@ -12,6 +12,7 @@ import { take } from 'rxjs/operators';
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
@@ -28,6 +29,7 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly http = inject(HttpClient);
   private readonly storageKey = ACCOUNT_COOKIE_KEY;
 
@@ -62,6 +64,16 @@ export class AccountContextService {
     }
     return result;
   });
+
+  /**
+   * Whether the caller may see the org-selector / Org Lens surfaces: a direct writer or auditor
+   * grant, or at least one persona-seeded account. Single source of truth shared by the sidebar
+   * selector visibility gate and the Org Overview no-access gate so the two cannot drift apart.
+   * Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   */
+  public readonly hasOrgSelectorAccess: Signal<boolean> = computed(
+    () => this.orgRoleGrantsService.writerSet().size > 0 || this.orgRoleGrantsService.auditorSet().size > 0 || this.availableAccounts().length > 0
+  );
 
   public constructor() {
     // Bootstrap on the placeholder; cookie only contributes accountId for later seed reconciliation — display fields never come from the cookie.

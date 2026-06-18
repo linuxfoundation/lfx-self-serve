@@ -18,13 +18,6 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
-export interface LinkedInAdAccount {
-  accountId: string;
-  label: string;
-  organizationId: string;
-  status: 'ACTIVE' | 'BILLING_HOLD';
-}
-
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
@@ -129,6 +122,7 @@ export interface CampaignBriefOutput {
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
+  metaCopy?: MetaBriefCopy;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +162,42 @@ export interface LinkedInBriefCopy {
   recommendedTargetingProfile: LinkedInTargetingProfile;
   strategy?: LinkedInTargetingStrategy;
 }
+
+/**
+ * One ad account / org pairing in the runtime LinkedIn config.
+ *
+ * Values (accountId, orgId, label, status) are loaded server-side from the
+ * mounted ConfigMap and never embedded in the client bundle. The type itself
+ * lives in the shared package because the client consumes it as the response
+ * shape of `GET /api/campaigns/linkedin/accounts` (see CampaignService.
+ * getLinkedInAccounts and the campaigns dashboard tabs).
+ *
+ * `status` is optional to preserve graceful degradation if the ConfigMap
+ * omits it; production ConfigMaps always supply it.
+ */
+export interface LinkedInAccount {
+  accountId: string;
+  label: string;
+  orgId: string;
+  status?: 'ACTIVE' | 'BILLING_HOLD';
+}
+
+/**
+ * Shape of /etc/lfx-self-serve/linkedin/linkedin.json (configurable via the
+ * LINKEDIN_CONFIG_PATH env var). Mounted by the chart's `staticConfigMaps`
+ * hook; populated from the private GitOps repo.
+ */
+export interface LinkedInRuntimeConfig {
+  defaultAccountId: string;
+  defaultOrgId: string;
+  accounts: readonly LinkedInAccount[];
+  employerExclusions: readonly string[];
+  targetingProfiles: readonly LinkedInTargetingProfileConfig[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Creation (Implementation Phase)
+// ---------------------------------------------------------------------------
 
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
@@ -242,6 +272,100 @@ export interface RedditCampaignCreateResult {
   steps: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Meta Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+export interface MetaAdVariant {
+  primaryText: string;
+  headline: string;
+  description?: string;
+}
+
+export interface MetaBriefCopy {
+  variants: MetaAdVariant[];
+  recommendedGeos: string[];
+}
+
+export interface MetaCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  startDate: string;
+  endDate: string;
+  geoTargets: string[];
+  variants: MetaAdVariant[];
+  project?: string;
+}
+
+export interface MetaCampaignCreateResult {
+  platform: 'meta-ads';
+  campaignName: string;
+  campaignId: string;
+  adSetName: string;
+  adSetId: string;
+  adCount: number;
+  metaUrl: string;
+  steps: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Meta Ads Monitoring
+// ---------------------------------------------------------------------------
+
+export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending';
+
+export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
+
+export interface MetaCampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  totalBudget: number;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  pacingPct: number;
+  pacingLabel: MetaPacingLabel;
+  startDate: string;
+  endDate: string;
+}
+
+export interface MetaAccountTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  campaignCount: number;
+}
+
+export interface MetaActionItem {
+  priority: MetaActionPriority;
+  campaignName: string;
+  issue: string;
+  action: string;
+}
+
+export interface MetaAccountOption {
+  key: string;
+  label: string;
+}
+
+export interface MetaMonitorResponse {
+  accountLabel: string;
+  pulledAt: string;
+  dateRange: { mode: string };
+  campaigns: MetaCampaignMetrics[];
+  accountTotals: MetaAccountTotals;
+  actionItems: MetaActionItem[];
+}
+
 export interface CampaignBriefRefineRequest {
   currentCopy: Record<string, unknown>;
   currentKeywords: CampaignKeyword[];
@@ -278,6 +402,7 @@ export interface CampaignCreateRequest {
   platforms?: CampaignPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
+  metaConfig?: MetaCampaignCreateRequest;
 }
 
 export interface CampaignCreateResult {
@@ -588,11 +713,6 @@ export interface LinkedInActionItem {
   campaignName: string;
   issue: string;
   action: string;
-}
-
-export interface LinkedInAccountOption {
-  key: string;
-  label: string;
 }
 
 export interface LinkedInMonitorResponse {

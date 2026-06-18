@@ -2539,12 +2539,24 @@ export interface WebActivitiesSummaryRow {
 }
 
 /**
+ * Individual domain within a classification group (from WEB_ACTIVITIES_BY_DOMAIN)
+ */
+export interface WebActivityDomainDetail {
+  host: string;
+  sessions: number;
+  pageViews: number;
+  newUsers: number;
+  returningUsers: number;
+}
+
+/**
  * Domain group breakdown in the API response
  */
 export interface WebActivitiesDomainGroup {
   domainGroup: string;
   totalSessions: number;
   totalPageViews: number;
+  domains: WebActivityDomainDetail[];
 }
 
 /**
@@ -2804,6 +2816,7 @@ export interface EmailTypeBreakdown {
 export interface EmailCtrResponse {
   currentCtr: number;
   changePercentage: number;
+  momChangePercentage: number | null;
   trend: 'up' | 'down';
   monthlyData: number[];
   monthlyLabels: string[];

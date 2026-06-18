@@ -3,10 +3,10 @@
 
 import type {
   CampaignGoalOption,
+  CampaignPlatform,
   CampaignPlatformOption,
   CampaignStatus,
   CampaignTabOption,
-  LinkedInAdAccount,
   LinkedInGeoTarget,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
@@ -23,7 +23,7 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
-  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', disabled: true },
+  { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
@@ -41,12 +41,11 @@ export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**
- * Upper-bound thresholds for each pacing label (percentage of budget spent).
- * A campaign's pacingPct falls into the first bucket whose threshold it does not exceed:
+ * Pacing thresholds (percentage of budget spent).
  *   pacingPct < 50  → underspending
- *   pacingPct < 90  → normal
- *   pacingPct < 100 → constrained
- *   pacingPct ≥ 100 → overspending (130 marks severe overspending)
+ *   pacingPct <= 90 → normal
+ *   pacingPct <= 100 → constrained
+ *   pacingPct > 100 → overspending (130 marks severe)
  */
 export const CAMPAIGN_PACING_THRESHOLDS = {
   underspending: 50,
@@ -54,6 +53,20 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   constrained: 100,
   overspending: 130,
 } as const;
+
+/** Official vendor brand colors — external to the LFX design system (not in lfxColors). */
+export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> = {
+  'google-ads': '#4285F4',
+  'linkedin-ads': '#0077B5',
+  'reddit-ads': '#FF4500',
+  'meta-ads': '#1877F2',
+  'microsoft-ads': '#00A4EF',
+  'brave-ads': '#FB542B',
+  feathr: '#6366F1',
+  'twitter-ads': '#000000',
+};
+
+export const PLATFORM_DEFAULT_COLOR = '#6B7280';
 
 export const CAMPAIGN_CHAR_LIMITS = {
   searchHeadline: 30,
@@ -115,16 +128,17 @@ export const LINKEDIN_CHAR_LIMITS = {
   headline: 200,
 } as const;
 
-export const LINKEDIN_AD_ACCOUNTS: readonly LinkedInAdAccount[] = [
-  { accountId: '538170226', label: 'The Linux Foundation', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '509430019', label: 'LF Events', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263296', label: 'CNCF', organizationId: '12893459', status: 'ACTIVE' },
-  { accountId: '510263297', label: 'LF Networking', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263298', label: 'LF AI & Data', organizationId: '208777', status: 'ACTIVE' },
-  { accountId: '510263299', label: 'LF Energy', organizationId: '208777', status: 'ACTIVE' },
-] as const;
+export const META_CHAR_LIMITS = {
+  primaryText: 125,
+  headline: 40,
+  description: 30,
+} as const;
 
-export const LINKEDIN_DEFAULT_ACCOUNT_ID = '538170226';
+// NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
+// targeting profile URN lists are loaded at runtime from a mounted ConfigMap
+// (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
+// They are kept out of source control entirely so vendor IDs never ship in the
+// client bundle or the public chart repo.
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },

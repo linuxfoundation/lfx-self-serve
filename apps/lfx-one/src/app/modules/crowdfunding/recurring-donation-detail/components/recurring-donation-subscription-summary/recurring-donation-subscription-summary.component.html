@@ -14,6 +14,10 @@
         <span class="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700" data-testid="status-badge-active">
           Active
         </span>
+      } @else if (donation().status === 'canceled') {
+        <span class="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600" data-testid="status-badge-canceled">
+          Canceled
+        </span>
       } @else {
         <span class="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500" data-testid="status-badge-paused">
           Paused
@@ -21,17 +25,19 @@
       }
     </div>
 
-    <!-- Action buttons -->
-    <div class="flex items-center gap-2 flex-shrink-0" data-testid="action-buttons">
-      <lfx-button
-        label="Cancel"
-        icon="fa-solid fa-circle-xmark"
-        severity="danger"
-        size="small"
-        [outlined]="true"
-        data-testid="cancel-btn"
-        (click)="cancelDonation.emit()" />
-    </div>
+    <!-- Action buttons (hidden for canceled subscriptions) -->
+    @if (donation().status !== 'canceled') {
+      <div class="flex items-center gap-2 flex-shrink-0" data-testid="action-buttons">
+        <lfx-button
+          label="Cancel"
+          icon="fa-solid fa-circle-xmark"
+          severity="danger"
+          size="small"
+          [outlined]="true"
+          data-testid="cancel-btn"
+          (click)="cancelDonation.emit()" />
+      </div>
+    }
   </div>
 
   <!-- Billing note -->
@@ -51,6 +57,11 @@
       <div class="flex flex-col gap-0.5" data-testid="next-charge">
         <span class="text-xs font-medium text-gray-400 uppercase tracking-wide">Next Charge</span>
         <span class="text-sm font-semibold text-gray-800">{{ (donation().nextChargeDate | date: 'MMM d, y' : 'UTC') ?? '—' }}</span>
+      </div>
+    } @else if (donation().status === 'canceled') {
+      <div class="flex flex-col gap-0.5" data-testid="canceled-status">
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wide">Status</span>
+        <span class="text-sm font-semibold text-red-600">Canceled</span>
       </div>
     } @else {
       <div class="flex flex-col gap-0.5" data-testid="paused-since">

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgActiveMembership,
   OrgActiveMembershipsResponse,
@@ -16,6 +17,7 @@ import { Request } from 'express';
 import { logger } from './logger.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 // Spec 024: key contacts are sourced live from the query-service indexer (real-time), replacing the
 // spec-015 mock fixture. Only the foundation header is still derived from the Snowflake summary.
@@ -41,6 +43,7 @@ interface RawMembershipRow {
 interface RawExpiredRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string | null;
   FOUNDATION_LOGO_URL: string | null;
   MEMBERSHIP_TIER_DISPLAY_NAME: string;
   TIER_START_DATE: string | null;
@@ -52,6 +55,7 @@ interface RawExpiredRow {
 interface RawDiscoverRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string | null;
   FOUNDATION_LOGO_URL: string | null;
   PROJECT_TYPE: string | null;
   SUGGESTED_TIER: string | null;
@@ -70,40 +74,26 @@ export class OrgLensMembershipsService {
   }
 
   public async getActiveMemberships(accountId: string, search?: string, tier?: string, renewal?: string): Promise<OrgActiveMembershipsResponse> {
-    const query = `
-      SELECT
-        ACCOUNT_ID,
-        FOUNDATION_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_SLUG,
-        FOUNDATION_LOGO_URL,
-        MEMBERSHIP_TIER_DISPLAY_NAME,
-        TIER_START_DATE,
-        TIER_END_DATE,
-        FIRST_MEMBERSHIP_STARTED_AT,
-        BOARD_MEMBER_SEAT_COUNT,
-        COMMITTEE_MEMBER_SEAT_COUNT,
-        ORG_PROJECTS_COUNT,
-        PROJECT_COUNT,
-        MEMBER_COUNT,
-        IS_RENEWING_WITHIN_90_DAYS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_MEMBERSHIPS_SUMMARY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY FOUNDATION_NAME ASC
-    `;
+    // Cache the raw per-org Snowflake rows so the in-JS search/tier/renewal filtering below stays out of
+    // the key (best hit rate); all callers share the same cached rows.
+    const rows = await withOrgCache(
+      accountId,
+      'memberships-active',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchActiveMembershipRows(accountId),
+      OrgLensMembershipsService.isRawRowArray
+    );
 
-    const result = await this.snowflakeService.execute<RawMembershipRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
       return { accountId, summary: { activeMemberships: 0, renewingWithin90Days: 0, governanceRoles: 0 }, memberships: [] };
     }
 
-    const allMemberships = result.rows.map((raw) => this.shapeRow(raw));
+    const allMemberships = rows.map((raw) => this.shapeRow(raw));
 
     const summary = {
       activeMemberships: allMemberships.length,
-      renewingWithin90Days: result.rows.filter((r) => r.IS_RENEWING_WITHIN_90_DAYS).length,
-      governanceRoles: result.rows.reduce((sum, r) => sum + r.BOARD_MEMBER_SEAT_COUNT + r.COMMITTEE_MEMBER_SEAT_COUNT, 0),
+      renewingWithin90Days: rows.filter((r) => r.IS_RENEWING_WITHIN_90_DAYS).length,
+      governanceRoles: rows.reduce((sum, r) => sum + r.BOARD_MEMBER_SEAT_COUNT + r.COMMITTEE_MEMBER_SEAT_COUNT, 0),
     };
 
     let filtered = allMemberships;
@@ -131,30 +121,22 @@ export class OrgLensMembershipsService {
   }
 
   public async getExpiredMemberships(accountId: string, search?: string): Promise<OrgExpiredMembershipsResponse> {
-    const query = `
-      SELECT
-        FOUNDATION_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_LOGO_URL,
-        MEMBERSHIP_TIER_DISPLAY_NAME,
-        TIER_START_DATE,
-        TIER_END_DATE,
-        EXPIRATION_DATE,
-        ACTION_TYPE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_EXPIRED_MEMBERSHIPS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY FOUNDATION_NAME ASC
-    `;
+    const rows = await withOrgCache(
+      accountId,
+      'memberships-expired',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchExpiredMembershipRows(accountId),
+      OrgLensMembershipsService.isRawRowArray
+    );
 
-    const result = await this.snowflakeService.execute<RawExpiredRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
       return { accountId, memberships: [] };
     }
 
-    let memberships: OrgExpiredMembership[] = result.rows.map((raw) => ({
+    let memberships: OrgExpiredMembership[] = rows.map((raw) => ({
       foundationId: raw.FOUNDATION_ID,
       foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
       foundationLogo: raw.FOUNDATION_LOGO_URL,
       membershipTier: raw.MEMBERSHIP_TIER_DISPLAY_NAME,
       tierStartDate: this.formatDate(raw.TIER_START_DATE),
@@ -172,30 +154,22 @@ export class OrgLensMembershipsService {
   }
 
   public async getDiscoverOpportunities(accountId: string): Promise<OrgDiscoverOpportunitiesResponse> {
-    const query = `
-      SELECT
-        FOUNDATION_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_LOGO_URL,
-        PROJECT_TYPE,
-        SUGGESTED_TIER,
-        CONTRIBUTORS_COUNT,
-        CONTRIBUTION_COUNT,
-        RELEVANT_PROJECTS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_DISCOVER_MEMBERSHIPS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY CONTRIBUTION_COUNT DESC
-    `;
+    const rows = await withOrgCache(
+      accountId,
+      'memberships-discover',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchDiscoverOpportunityRows(accountId),
+      OrgLensMembershipsService.isRawRowArray
+    );
 
-    const result = await this.snowflakeService.execute<RawDiscoverRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
       return { accountId, opportunities: [] };
     }
 
-    const opportunities: OrgDiscoverOpportunity[] = result.rows.map((raw) => ({
+    const opportunities: OrgDiscoverOpportunity[] = rows.map((raw) => ({
       foundationId: raw.FOUNDATION_ID,
       foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
       foundationLogo: raw.FOUNDATION_LOGO_URL,
       category: raw.PROJECT_TYPE ?? '',
       suggestedTier: raw.SUGGESTED_TIER ?? '',
@@ -268,6 +242,84 @@ export class OrgLensMembershipsService {
     const active = await this.getActiveMemberships(accountId);
     const row = active.memberships.find((m) => m.foundationId === foundationId);
     return row ? row.foundationSlug : null;
+  }
+
+  // Rejects a corrupt/legacy raw-row entry (degrade to a miss) before mapping/filtering runs over it; an
+  // empty array is a legitimate cacheable result. Every cached row in this service carries FOUNDATION_ID.
+  private static isRawRowArray(value: unknown): boolean {
+    return (
+      Array.isArray(value) &&
+      value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el) && typeof (el as { FOUNDATION_ID?: unknown }).FOUNDATION_ID === 'string')
+    );
+  }
+
+  private async fetchActiveMembershipRows(accountId: string): Promise<RawMembershipRow[]> {
+    const query = `
+      SELECT
+        ACCOUNT_ID,
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        FOUNDATION_LOGO_URL,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        TIER_START_DATE,
+        TIER_END_DATE,
+        FIRST_MEMBERSHIP_STARTED_AT,
+        BOARD_MEMBER_SEAT_COUNT,
+        COMMITTEE_MEMBER_SEAT_COUNT,
+        ORG_PROJECTS_COUNT,
+        PROJECT_COUNT,
+        MEMBER_COUNT,
+        IS_RENEWING_WITHIN_90_DAYS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_MEMBERSHIPS_SUMMARY
+      WHERE ACCOUNT_ID = ?
+      ORDER BY FOUNDATION_NAME ASC
+    `;
+
+    const result = await this.snowflakeService.execute<RawMembershipRow>(query, [accountId]);
+    return result.rows;
+  }
+
+  private async fetchExpiredMembershipRows(accountId: string): Promise<RawExpiredRow[]> {
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        FOUNDATION_LOGO_URL,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        TIER_START_DATE,
+        TIER_END_DATE,
+        EXPIRATION_DATE,
+        ACTION_TYPE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_EXPIRED_MEMBERSHIPS
+      WHERE ACCOUNT_ID = ?
+      ORDER BY FOUNDATION_NAME ASC
+    `;
+
+    const result = await this.snowflakeService.execute<RawExpiredRow>(query, [accountId]);
+    return result.rows;
+  }
+
+  private async fetchDiscoverOpportunityRows(accountId: string): Promise<RawDiscoverRow[]> {
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        FOUNDATION_LOGO_URL,
+        PROJECT_TYPE,
+        SUGGESTED_TIER,
+        CONTRIBUTORS_COUNT,
+        CONTRIBUTION_COUNT,
+        RELEVANT_PROJECTS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_DISCOVER_MEMBERSHIPS
+      WHERE ACCOUNT_ID = ?
+      ORDER BY CONTRIBUTION_COUNT DESC
+    `;
+
+    const result = await this.snowflakeService.execute<RawDiscoverRow>(query, [accountId]);
+    return result.rows;
   }
 
   private shapeRow(raw: RawMembershipRow): OrgActiveMembership {

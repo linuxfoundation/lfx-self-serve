@@ -30,7 +30,7 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
-  PublicMeetingResponse,
+  PublicMeetingProject,
   PublicPastMeetingResponse,
   QueryServiceCountResponse,
   UpdateMeetingAttachmentRequest,
@@ -212,13 +212,13 @@ export class MeetingService {
     );
   }
 
-  public getPublicMeeting(id: string, password: string | null): Observable<PublicMeetingResponse> {
+  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
     let params = new HttpParams();
     if (password) {
       params = params.set('password', password);
     }
 
-    return this.http.get<PublicMeetingResponse>(`/public/api/meetings/${id}`, { params }).pipe(
+    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);

@@ -80,8 +80,11 @@ export class LensSwitcherComponent {
 
   protected setLens(lens: Lens): void {
     this.userMenu()?.hide();
-    this.lensService.setLens(lens);
-    this.router.navigate([LENS_DEFAULT_ROUTES[lens]]);
+    // Hybrid personas merge foundation + project into the 'Projects' button — return to the last
+    // viewed nav lens so a previously selected foundation isn't reset to the project lens.
+    const target = this.isHybrid() && lens === 'project' ? this.lensService.lastNavLens() : lens;
+    this.lensService.setLens(target);
+    this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
   }
 
   protected toggleUserMenu(event: Event): void {

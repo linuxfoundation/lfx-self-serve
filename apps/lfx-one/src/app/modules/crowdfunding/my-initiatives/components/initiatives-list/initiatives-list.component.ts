@@ -22,7 +22,16 @@ export class InitiativesListComponent {
   public readonly initiativeClick = output<string>();
   public readonly loadMore = output<void>();
 
-  protected readonly activeFilter = signal<'active' | 'pending' | 'archived'>('active');
+  private readonly userFilter = signal<'active' | 'pending' | 'archived' | null>(null);
+
+  protected readonly activeFilter = computed<'active' | 'pending' | 'archived'>(() => {
+    const pick = this.userFilter();
+    if (pick !== null) return pick;
+    const counts = this.statusCounts();
+    if (counts.active === 0 && counts.pending > 0) return 'pending';
+    if (counts.active === 0 && counts.pending === 0 && counts.archived > 0) return 'archived';
+    return 'active';
+  });
 
   protected readonly statusCounts = this.initStatusCounts();
   protected readonly filterOptions = this.initFilterOptions();
@@ -58,7 +67,7 @@ export class InitiativesListComponent {
 
   protected setFilter(value: string): void {
     if (value === 'active' || value === 'pending' || value === 'archived') {
-      this.activeFilter.set(value);
+      this.userFilter.set(value);
     }
   }
 

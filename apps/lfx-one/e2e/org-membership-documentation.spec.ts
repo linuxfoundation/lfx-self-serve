@@ -139,16 +139,16 @@ test.describe('Documentation Tab — testid resolution (SC-008, FR-028)', () => 
     await expect(firstMeta).toContainText('PDF');
   });
 
-  // Spec 019 FR-014 / FR-016: the Certificate card is now wrapped in
-  // `@if (certificateTemplate(); as cert)` so it disappears entirely for orgs
-  // without an active TLF Corporate Membership AND for degraded cert queries.
-  // The three tests below assert the card's structure and SSR-served
-  // `cert.title` / `cert.subtitle` (which the dbt model
-  // `platinum_lfx_one_org_lens_tlf_certificate` formats as
-  // `'Linux Foundation {tier} Certificate'` and
-  // `'Member since {Mon YYYY} · Issued to {account_name}'` — see
-  // `tests/assert_tlf_certificate_title_derivation.sql`). They skip gracefully
-  // when the seeded org for this run is non-TLF and the card is absent.
+  // INFO: Future Epic implementation — the Certificate of Membership card is hidden via the
+  // component's `showCertificateCard` flag. The three legacy structural tests below stay
+  // defensive (they already skipped when the card was absent for non-TLF orgs) so they
+  // re-activate automatically when the flag is flipped back on; the test directly below pins
+  // the current hidden state so a regression that re-renders the card fails loudly.
+  test('Certificate of Membership card is hidden (Future Epic implementation)', async ({ page }) => {
+    await expect(page.getByTestId('membership-detail-docs-certificate-card')).toHaveCount(0);
+    await expect(page.getByTestId('membership-detail-docs-certificate-title')).toHaveCount(0);
+  });
+
   test('renders the Certificate of Membership card with all testids (SC-003)', async ({ page }) => {
     const card = page.getByTestId('membership-detail-docs-certificate-card');
     if (!(await card.isVisible().catch(() => false))) {

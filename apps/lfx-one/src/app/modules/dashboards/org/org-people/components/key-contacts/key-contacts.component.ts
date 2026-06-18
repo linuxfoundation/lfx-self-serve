@@ -13,7 +13,6 @@ import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonProfilePanelService } from '@services/person-profile-panel.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
 import type {
   AddKeyContactRequest,
@@ -58,7 +57,6 @@ export class KeyContactsComponent {
   private readonly dataService = inject(KeyContactsService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
-  private readonly personPanel = inject(PersonProfilePanelService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -148,11 +146,6 @@ export class KeyContactsComponent {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     this.toggleExpansion(email);
-  }
-
-  protected onPersonClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
-    event.stopPropagation();
-    this.personPanel.open(group.displayName);
   }
 
   protected retry(): void {
