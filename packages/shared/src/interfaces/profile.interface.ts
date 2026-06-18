@@ -472,9 +472,11 @@ export interface CdpResolveRequest {
 
 /**
  * CDP member resolve response
+ * @description `memberId` is absent when CDP has no member for the requested
+ * LFID/emails — a successful (200) resolve can legitimately yield no member.
  */
 export interface CdpResolveResponse {
-  memberId: string;
+  memberId?: string;
 }
 
 /**
