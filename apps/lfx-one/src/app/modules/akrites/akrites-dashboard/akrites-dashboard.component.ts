@@ -22,10 +22,11 @@ import { AkritesPackageDrawerComponent } from '../components/akrites-package-dra
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
+import { AkritesTriageTabComponent } from '../components/akrites-triage-tab/akrites-triage-tab.component';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
-  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent],
+  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent, AkritesTriageTabComponent],
   templateUrl: './akrites-dashboard.component.html',
 })
 export class AkritesDashboardComponent {

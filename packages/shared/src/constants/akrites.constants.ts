@@ -11,6 +11,7 @@ import {
   AkritesInactiveReason,
   AkritesStewardRole,
   AkritesUpdatableStatus,
+  AkritesTriageBoardColumnConfig,
 } from '../interfaces';
 
 /** Status pills shown above the Akrites package queue, in display order. */
@@ -106,4 +107,13 @@ export const AKRITES_UPDATABLE_STATUS_OPTIONS: Array<{ value: AkritesUpdatableSt
   { value: 'needs_attention', label: 'Needs attention' },
   { value: 'blocked', label: 'Blocked' },
   { value: 'inactive', label: 'Inactive' },
+];
+
+/** Columns shown on the Triage board tab, in display order. Only non-zero columns are rendered. */
+export const AKRITES_TRIAGE_COLUMNS: AkritesTriageBoardColumnConfig[] = [
+  { status: 'unassigned', label: 'Unassigned', color: '#62748e', iconName: 'user-xmark', actionLabel: 'Assign steward', actionVariant: 'blue' },
+  { status: 'needs_attention', label: 'Needs attention', color: '#f97316', iconName: 'binoculars', actionLabel: 'Review', actionVariant: 'default' },
+  { status: 'escalated', label: 'Escalated', color: '#e5484d', iconName: 'arrow-up', actionLabel: 'Resolve', actionVariant: 'red' },
+  { status: 'blocked', label: 'Blocked', color: '#e5484d', iconName: 'circle-info', actionLabel: 'Resolve blocker', actionVariant: 'red' },
+  { status: 'inactive', label: 'Inactive', color: '#90a1b9', iconName: 'clock', actionLabel: 'Reassign', actionVariant: 'default' },
 ];

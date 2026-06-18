@@ -31,6 +31,15 @@
       <i class="fa-light fa-box text-base" aria-hidden="true"></i>
       Packages
     </button>
+    <button
+      type="button"
+      class="inline-flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px font-medium transition-colors"
+      [class]="activeTab() === 'triage' ? 'border-blue-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-700'"
+      (click)="setActiveTab('triage')"
+      data-testid="akrites-tab-triage">
+      <i class="fa-light fa-table-columns text-base" aria-hidden="true"></i>
+      Triage board
+    </button>
   </div>
 
   <!-- Overview Tab -->
@@ -71,6 +80,16 @@
         data-testid="akrites-packages-tab">
       </lfx-akrites-packages-tab>
     }
+  }
+
+  <!-- Triage Board Tab -->
+  @if (activeTab() === 'triage') {
+    <lfx-akrites-triage-tab
+      [reloadTrigger]="reloadTrigger()"
+      (packageClick)="onPackageClick($event)"
+      (stewardshipChanged)="onStewardshipChanged()"
+      data-testid="akrites-triage-tab">
+    </lfx-akrites-triage-tab>
   }
 
   <!-- Bulk Actions Bar -->

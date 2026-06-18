@@ -425,4 +425,26 @@ export interface AkritesActivityDayGroup {
   rows: AkritesActivityRowVM[];
 }
 
-export type AkritesDashboardTab = 'overview' | 'packages';
+export type AkritesDashboardTab = 'overview' | 'packages' | 'triage';
+
+// ===== Triage Board =====
+
+export type AkritesTriageStatus = Extract<AkritesStatus, 'unassigned' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive'>;
+
+export interface AkritesTriageBoardColumnConfig {
+  status: AkritesTriageStatus;
+  label: string;
+  /** Hex color for the column icon circle and gradient tint. */
+  color: string;
+  /** FontAwesome icon name without the `fa-` prefix (e.g. `user-xmark`). */
+  iconName: string;
+  actionLabel: string;
+  actionVariant: 'blue' | 'red' | 'default';
+}
+
+export interface AkritesTriageColumnState {
+  packages: AkritesPackage[];
+  total: number;
+  loading: boolean;
+  error: boolean;
+}
