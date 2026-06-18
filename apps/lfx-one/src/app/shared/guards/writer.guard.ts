@@ -4,8 +4,9 @@
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
-import { map } from 'rxjs';
+import { catchError, map, of, switchMap } from 'rxjs';
 
+import { CommitteeService } from '../services/committee.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
@@ -22,13 +23,15 @@ const WRITE_FEATURE_MESSAGES: Record<string, string> = {
  * Protects create/edit/admin routes that require project write permission.
  *
  * Fast path: ED persona is synchronously allowed (cookie-seeded, no HTTP round-trip).
- * Slow path: fetches the project and evaluates write permission server-side via the
- * FGA-driven authorization check. Two fields drive the decision:
+ * Slow path: evaluates write permission in priority order:
  *
- * - `project.writer` — covers project owner, project writer, and inherited parent-project writers.
- * - `project.meetingCoordinator` — covers the meeting_coordinator role, which is granted the
- *   ability to create meetings but not other write features (votes, surveys, mailing lists,
- *   committees). Only routes with `data.writeFeature === 'meetings'` accept this role.
+ * 1. `project.writer` — project owner, writer, or inherited parent-project writer.
+ * 2. `project.meetingCoordinator` — meeting_coordinator role on the project; accepted
+ *    only for routes with `data.writeFeature === 'meetings'`.
+ * 3. `committee.writer` — committee writer; accepted only when `committee_uid` is
+ *    present in the query params and `writeFeature === 'meetings'`. The backend ruleset
+ *    allows committee:uid#writer to create meetings associated with their committee
+ *    (POST /itx/meetings when the request body includes a committee).
  *
  * Slug resolution: prefers the `?project=` query param (authoritative for the navigation
  * target, works before the lens has synced) then falls back to the active context's slug.
@@ -43,6 +46,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);
+  const committeeService = inject(CommitteeService);
   const messageService = inject(MessageService);
   const router = inject(Router);
 
@@ -51,11 +55,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   }
 
   const slug = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
+  const committeeUid = route.queryParamMap.get('committee_uid') ?? null;
 
-  // Use the lens encoded in the route ancestry (parent route carries data.lens) so the
-  // denied redirect lands on the same lens the user was navigating within, preventing
-  // NavigationService.applyDefaultSelection from overriding the project when it does not
-  // appear in the foundation items list.
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
@@ -67,25 +68,33 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   const deniedMessage = (writeFeature && WRITE_FEATURE_MESSAGES[writeFeature]) ?? "You don't have permission to perform this action for this project.";
 
+  const deny = () => {
+    messageService.add({ severity: 'warn', summary: 'Access Denied', detail: deniedMessage });
+    return deniedUrl;
+  };
+
   return projectService.getProject(slug, false).pipe(
-    map((project) => {
-      // null means the fetch failed (404/5xx/network) — redirect silently rather than
-      // showing a misleading "Access Denied" toast for an availability issue.
+    switchMap((project) => {
+      // null means the fetch failed (404/5xx/network) — redirect silently, no toast.
       if (project === null) {
-        return deniedUrl;
+        return of(deniedUrl);
       }
-      const isWriter = project.writer === true;
+      if (project.writer === true) {
+        return of(true as const);
+      }
       // meeting_coordinator can create meetings but not other write features
-      const isMeetingCoordinator = writeFeature === 'meetings' && project.meetingCoordinator === true;
-      if (!isWriter && !isMeetingCoordinator) {
-        messageService.add({
-          severity: 'warn',
-          summary: 'Access Denied',
-          detail: deniedMessage,
-        });
-        return deniedUrl;
+      if (writeFeature === 'meetings' && project.meetingCoordinator === true) {
+        return of(true as const);
       }
-      return true;
+      // Committee writers can create meetings associated with their committee.
+      // Only applicable when a committee_uid is present in the route query params.
+      if (committeeUid && writeFeature === 'meetings') {
+        return committeeService.getCommittee(committeeUid).pipe(
+          map((committee) => (committee?.writer === true ? (true as const) : deny())),
+          catchError(() => of(deny()))
+        );
+      }
+      return of(deny());
     })
   );
 };
