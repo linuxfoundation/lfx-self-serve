@@ -36,7 +36,7 @@
       @let state = getColumnState(col.status);
       @if (state.total > 0 || state.error) {
         <div
-          class="flex-1 min-w-[240px] border border-gray-200 rounded-[14px] p-3 flex flex-col gap-2.5"
+          class="flex-1 min-w-[240px] max-w-[320px] border border-gray-200 rounded-[14px] p-3 flex flex-col gap-2.5"
           [style.background]="'linear-gradient(180deg, ' + col.color + '12 0%, #fff 38%)'"
           [attr.data-testid]="'akrites-triage-col-' + col.status">
           <!-- Column header -->
@@ -86,10 +86,10 @@
                 <span
                   class="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full py-0.5 px-2.5 text-[11px] font-semibold text-gray-700">
                   <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background]="getVulnColor(pkg.vulnCount, pkg.vulnSeverity)"></span>
-                  @if (pkg.vulnCount > 0) {
+                  @if (pkg.vulnCount > 0 && pkg.vulnSeverity) {
                     {{ pkg.vulnCount }} {{ pkg.vulnSeverity | titlecase }}
                   } @else {
-                    0 vulns
+                    {{ pkg.vulnCount }} vulns
                   }
                 </span>
               </div>
