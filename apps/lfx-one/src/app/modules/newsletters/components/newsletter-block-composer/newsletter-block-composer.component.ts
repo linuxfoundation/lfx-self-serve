@@ -5,8 +5,16 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { NewsletterBlockManifestEntry, NewsletterBlockPaletteGroup, NewsletterComposerBlock, NewsletterLayout } from '@lfx-one/shared/interfaces';
+import {
+  NewsletterBlockManifestEntry,
+  NewsletterBlockPaletteGroup,
+  NewsletterComposerBlock,
+  NewsletterFieldSchema,
+  NewsletterLayout,
+} from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
+
+import { NewsletterBlockFieldsComponent } from '../newsletter-block-fields/newsletter-block-fields.component';
 
 /**
  * Newsletter block-composer — the first increment of the native-Angular,
@@ -30,7 +38,7 @@ import { NewsletterManifestService } from '@services/newsletter-manifest.service
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ButtonComponent],
+  imports: [DragDropModule, ButtonComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
@@ -51,6 +59,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly isBrowser = signal<boolean>(false);
   // The canvas: the ordered top-level blocks the user has composed.
   protected readonly blocks = signal<NewsletterComposerBlock[]>([]);
+  // The currently selected block (top-level or container child), edited in the
+  // fields panel. Null when nothing is selected.
+  protected readonly selectedBlockId = signal<string | null>(null);
 
   // === Derived Signals (from the manifest service) ===
   protected readonly manifest = this.manifestService.manifest;
@@ -66,6 +77,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly containerListIds: Signal<string[]> = this.initContainerListIds();
   // The palette feeds the canvas and every container drop list (drag a chip in).
   protected readonly paletteConnectedTo: Signal<string[]> = computed(() => [this.canvasListId, ...this.containerListIds()]);
+  // The selected block resolved from its id (searches top-level + children).
+  protected readonly selectedBlock: Signal<NewsletterComposerBlock | null> = computed(() => {
+    const id = this.selectedBlockId();
+    return id ? this.findBlock(this.blocks(), id) : null;
+  });
+  // The manifest field schema for the selected block (drives the fields panel).
+  protected readonly selectedSchema: Signal<NewsletterFieldSchema | null> = computed(() => {
+    const block = this.selectedBlock();
+    if (!block) return null;
+    return this.manifestService.getBlock(block.block_type)?.schema ?? null;
+  });
 
   // Stable drop-list ids.
   protected readonly canvasListId = 'newsletter-composer-canvas-list';
@@ -90,9 +112,32 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   // === Protected Methods ===
 
-  /** Append a palette block to the end of the canvas. */
+  /** Append a palette block to the end of the canvas, and select it. */
   protected addBlock(entry: NewsletterBlockManifestEntry): void {
-    this.blocks.update((current) => [...current, this.create(entry)]);
+    const block = this.create(entry);
+    this.blocks.update((current) => [...current, block]);
+    this.selectedBlockId.set(block.id);
+    this.emit();
+  }
+
+  /** Select a block (top-level or container child) for field editing. */
+  protected selectBlock(id: string): void {
+    this.selectedBlockId.set(id);
+  }
+
+  /** True when the given block id is the selected one (for highlighting). */
+  protected isSelected(id: string): boolean {
+    return this.selectedBlockId() === id;
+  }
+
+  /**
+   * Apply edited content to the selected block immutably (top-level or nested),
+   * then re-emit the layout. No-op when nothing is selected.
+   */
+  protected onContentChange(content: Record<string, unknown>): void {
+    const id = this.selectedBlockId();
+    if (!id) return;
+    this.blocks.update((current) => this.patchContent(current, id, content));
     this.emit();
   }
 
@@ -171,7 +216,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   /** Remove a top-level block from the canvas. */
   protected removeBlock(id: string): void {
+    const removedIds = this.collectIds(this.blocks().filter((block) => block.id === id));
     this.blocks.update((current) => current.filter((block) => block.id !== id));
+    this.clearSelectionIfRemoved(removedIds);
     this.emit();
   }
 
@@ -181,6 +228,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!parent) return;
     const children = (parent.children ?? []).filter((child) => child.id !== childId);
     this.updateBlock(parentId, { children });
+    this.clearSelectionIfRemoved([childId]);
     this.emit();
   }
 
@@ -291,6 +339,50 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Patch a top-level block immutably. */
   private updateBlock(id: string, patch: Partial<NewsletterComposerBlock>): void {
     this.blocks.update((current) => current.map((block) => (block.id === id ? { ...block, ...patch } : block)));
+  }
+
+  /** Find a block by id within a tree (top-level or container child). */
+  private findBlock(blocks: NewsletterComposerBlock[], id: string): NewsletterComposerBlock | null {
+    for (const block of blocks) {
+      if (block.id === id) return block;
+      const child = block.children?.find((c) => c.id === id);
+      if (child) return child;
+    }
+    return null;
+  }
+
+  /** Immutably replace the `content` of the block matching `id` (top-level or child). */
+  private patchContent(blocks: NewsletterComposerBlock[], id: string, content: Record<string, unknown>): NewsletterComposerBlock[] {
+    return blocks.map((block) => {
+      if (block.id === id) {
+        return { ...block, content };
+      }
+      if (block.children?.some((child) => child.id === id)) {
+        return {
+          ...block,
+          children: block.children.map((child) => (child.id === id ? { ...child, content } : child)),
+        };
+      }
+      return block;
+    });
+  }
+
+  /** All ids in a sub-tree (a block plus its children). */
+  private collectIds(blocks: NewsletterComposerBlock[]): string[] {
+    const ids: string[] = [];
+    for (const block of blocks) {
+      ids.push(block.id);
+      if (block.children) ids.push(...block.children.map((child) => child.id));
+    }
+    return ids;
+  }
+
+  /** Drop the current selection if its block was just removed. */
+  private clearSelectionIfRemoved(removedIds: string[]): void {
+    const selected = this.selectedBlockId();
+    if (selected && removedIds.includes(selected)) {
+      this.selectedBlockId.set(null);
+    }
   }
 
   /** Project the canvas into a NewsletterLayout and emit it. */

@@ -1,0 +1,132 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<aside class="flex w-full flex-col gap-3 lg:w-80 lg:shrink-0" data-testid="newsletter-composer-fields">
+  <h3 class="text-sm font-semibold text-gray-700">Block fields</h3>
+
+  @if (block(); as selected) {
+    @if (form(); as fg) {
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'newsletter-composer-fields-' + selected.block_type">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ selected.label }}</p>
+
+        @if (fieldEntries().length === 0) {
+          <p class="text-sm text-gray-500" data-testid="newsletter-composer-fields-none">This block has no editable fields.</p>
+        }
+
+        @for (entry of fieldEntries(); track trackByKey($index, entry)) {
+          <div class="flex flex-col gap-1.5" [attr.data-testid]="'newsletter-composer-field-' + entry.key">
+            <label class="text-sm font-medium text-gray-700">{{ fieldLabel(entry) }}</label>
+
+            @switch (entry.type) {
+              @case ('richtext') {
+                <lfx-rich-editor
+                  [form]="fg"
+                  [control]="entry.key"
+                  [editorStyle]="{ minHeight: '180px' }"
+                  [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                </lfx-rich-editor>
+              }
+              @case ('textarea') {
+                <lfx-textarea
+                  [form]="fg"
+                  [control]="entry.key"
+                  [autoResize]="true"
+                  styleClass="w-full"
+                  [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                </lfx-textarea>
+              }
+              @case ('number') {
+                <lfx-input-number [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                </lfx-input-number>
+              }
+              @case ('array') {
+                <div class="flex flex-col gap-3" [attr.data-testid]="'newsletter-composer-field-array-' + entry.key">
+                  @for (item of arrayItems(entry.key); track trackByIndex($index)) {
+                    <div
+                      class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3"
+                      [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-item-' + $index">
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-gray-500">Item {{ $index + 1 }}</span>
+                        <lfx-button
+                          icon="fa-light fa-xmark"
+                          severity="danger"
+                          [text]="true"
+                          size="small"
+                          ariaLabel="Remove item"
+                          [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-remove-' + $index"
+                          (onClick)="removeItem(entry.key, $index)" />
+                      </div>
+
+                      @for (nested of nestedEntries(entry); track trackByKey($index, nested)) {
+                        <div class="flex flex-col gap-1.5">
+                          <label class="text-xs font-medium text-gray-600">{{ fieldLabel(nested) }}</label>
+                          @switch (nested.type) {
+                            @case ('richtext') {
+                              <lfx-rich-editor
+                                [form]="item"
+                                [control]="nested.key"
+                                [editorStyle]="{ minHeight: '140px' }"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                              </lfx-rich-editor>
+                            }
+                            @case ('textarea') {
+                              <lfx-textarea
+                                [form]="item"
+                                [control]="nested.key"
+                                [autoResize]="true"
+                                styleClass="w-full"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                              </lfx-textarea>
+                            }
+                            @case ('number') {
+                              <lfx-input-number
+                                [form]="item"
+                                [control]="nested.key"
+                                styleClass="w-full"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                              </lfx-input-number>
+                            }
+                            @default {
+                              <lfx-input-text
+                                [form]="item"
+                                [control]="nested.key"
+                                styleClass="w-full"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                              </lfx-input-text>
+                            }
+                          }
+                        </div>
+                      }
+                    </div>
+                  } @empty {
+                    <p class="text-xs text-gray-400">No items yet.</p>
+                  }
+
+                  <lfx-button
+                    label="Add item"
+                    icon="fa-light fa-plus"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-add'"
+                    (onClick)="addItem(entry)" />
+                </div>
+              }
+              @default {
+                <lfx-input-text [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                </lfx-input-text>
+              }
+            }
+          </div>
+        }
+      </div>
+    }
+  } @else {
+    <div
+      class="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 py-10 text-center"
+      data-testid="newsletter-composer-fields-empty">
+      <i class="fa-light fa-sliders text-2xl text-gray-300" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">Select a block to edit its fields.</p>
+    </div>
+  }
+</aside>

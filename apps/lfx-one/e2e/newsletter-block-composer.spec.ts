@@ -172,6 +172,43 @@ test.describe('Newsletter Block Composer — Phase 1', () => {
     await expect(target.getByTestId('newsletter-composer-child-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
+  test('selecting a block shows its fields panel', async ({ page }) => {
+    await gotoPreview(page);
+
+    // Adding a block auto-selects it; the fields panel renders its schema fields.
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+
+    await expect(page.getByTestId('newsletter-composer-fields-sponsored_ad')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-field-headline')).toBeVisible();
+  });
+
+  test('editing a text field updates the emitted layout content', async ({ page }) => {
+    await gotoPreview(page);
+
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+    await expect(page.getByTestId('newsletter-composer-field-headline')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const headlineInput = page.locator('[data-test="newsletter-composer-field-input-headline"]');
+    await headlineInput.fill('Launch week is here');
+
+    // The emitted layout reflects the edited content.
+    await expect(page.getByTestId('newsletter-composer-preview-output')).toContainText('Launch week is here', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('editing a richtext field updates the emitted layout content', async ({ page }) => {
+    await gotoPreview(page);
+
+    await page.getByTestId('newsletter-composer-palette-item-intro_paragraph').click();
+    await expect(page.getByTestId('newsletter-composer-field-text')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // The rich editor mounts a contenteditable carrying the field's data-testid.
+    const editor = page.getByTestId('newsletter-composer-field-input-text');
+    await editor.click();
+    await editor.pressSequentially('Hello contributors');
+
+    await expect(page.getByTestId('newsletter-composer-preview-output')).toContainText('Hello contributors', { timeout: ELEMENT_TIMEOUT });
+  });
+
   test('removing a block clears it from the canvas and layout', async ({ page }) => {
     await gotoPreview(page);
 

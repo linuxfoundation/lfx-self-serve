@@ -181,11 +181,39 @@ export interface NewsletterChartData {
 // ---------------------------------------------------------------------------
 
 /**
- * JSON Schema describing a block's editable fields. Authored in the declarative
- * templates pulled at build time and rendered into form controls by the editor
- * (ngx-formly / JSONForms).
+ * The editable field types the block-composer fields panel knows how to render.
+ * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.
+ * `slot` is the container child-list marker and is not rendered as an input.
  */
-export type NewsletterFieldSchema = Record<string, unknown>;
+export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'array' | 'image' | 'slot';
+
+/**
+ * A single editable field in a block's schema. `fields` describes the per-item
+ * shape of an `array` field (each array item is an object keyed by these field
+ * names). `default` seeds an empty control when the block is first edited.
+ */
+export interface NewsletterFieldDefinition {
+  type: NewsletterFieldType;
+  label?: string;
+  default?: unknown;
+  /** For `array` fields: the nested per-item field definitions. */
+  fields?: Record<string, NewsletterFieldDefinition>;
+}
+
+/**
+ * JSON Schema describing a block's editable fields, keyed by field name. Authored
+ * in the declarative templates pulled at build time and rendered into form
+ * controls by the editor's fields panel.
+ */
+export type NewsletterFieldSchema = Record<string, NewsletterFieldDefinition>;
+
+/**
+ * A field definition flattened with its key — the view-model the fields panel
+ * iterates over to render one control per field.
+ */
+export interface NewsletterFieldEntry extends NewsletterFieldDefinition {
+  key: string;
+}
 
 /**
  * A block instance in a newsletter's structured layout. Blocks are recursive: a

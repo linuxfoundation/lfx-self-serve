@@ -1,0 +1,203 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, effect, input, OnDestroy, output, Signal, signal } from '@angular/core';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+import { ButtonComponent } from '@components/button/button.component';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
+import { humanizeFieldKey } from '@lfx-one/shared/utils';
+
+/**
+ * Fields panel for the newsletter block-composer (LFXV2-2382).
+ *
+ * Given the currently selected canvas block and its manifest `schema`, renders
+ * one form control per field bound to `block.content[field]`. Field types map to
+ * the existing LFX form wrappers:
+ *   - text     → lfx-input-text
+ *   - textarea → lfx-textarea
+ *   - richtext → lfx-rich-editor (Tiptap)
+ *   - number   → lfx-input-number
+ *   - array    → a repeatable list of nested field groups (add / remove item)
+ *   - image    → lfx-input-text (URL string; no upload widget yet)
+ *
+ * The panel drives a single reactive `FormGroup` keyed by field name (array
+ * fields use a `FormArray` of per-item `FormGroup`s). It rebuilds the form when
+ * the selected block changes (keyed by block `id`) and re-emits the assembled
+ * `content` object on every value change so the composer can update the block
+ * immutably and re-emit its layout.
+ *
+ * When no block is selected, an empty placeholder is shown.
+ */
+@Component({
+  selector: 'lfx-newsletter-block-fields',
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, RichEditorComponent, InputNumberComponent],
+  templateUrl: './newsletter-block-fields.component.html',
+})
+export class NewsletterBlockFieldsComponent implements OnDestroy {
+  // === Inputs ===
+  /** The selected canvas block (null when nothing is selected). */
+  public readonly block = input<NewsletterComposerBlock | null>(null);
+  /** The selected block's manifest field schema (null when unknown). */
+  public readonly schema = input<NewsletterFieldSchema | null>(null);
+
+  // === Outputs ===
+  /** Emits the block's assembled content object whenever a field changes. */
+  public readonly contentChange = output<Record<string, unknown>>();
+
+  // === Writable Signals ===
+  // The reactive form backing the rendered controls. Rebuilt per selected block.
+  protected readonly form = signal<FormGroup | null>(null);
+
+  // === Computed Signals ===
+  // The non-slot fields to render, flattened with their key (ordered by schema).
+  protected readonly fieldEntries: Signal<NewsletterFieldEntry[]> = this.initFieldEntries();
+
+  // The block id the current form was built for, to detect selection changes.
+  private builtForBlockId: string | null = null;
+  private valueSub: Subscription | null = null;
+  // Suppress the value-change emit while we (re)build the form from inputs.
+  private suppressEmit = false;
+
+  public constructor() {
+    // Rebuild the form whenever the selected block changes (by id).
+    effect(() => {
+      const block = this.block();
+      const entries = this.fieldEntries();
+      if (!block) {
+        this.teardownForm();
+        this.builtForBlockId = null;
+        this.form.set(null);
+        return;
+      }
+      if (block.id === this.builtForBlockId) {
+        return;
+      }
+      this.buildForm(block, entries);
+    });
+  }
+
+  public ngOnDestroy(): void {
+    this.teardownForm();
+  }
+
+  // === Protected Methods (template) ===
+
+  /** A field's display label — explicit `label` or a humanized key. */
+  protected fieldLabel(entry: NewsletterFieldEntry): string {
+    return entry.label ?? humanizeFieldKey(entry.key);
+  }
+
+  /** The FormArray backing an `array` field. */
+  protected arrayControl(key: string): FormArray | null {
+    const ctrl = this.form()?.get(key);
+    return ctrl instanceof FormArray ? ctrl : null;
+  }
+
+  /** The per-item FormGroups of an `array` field, for template iteration. */
+  protected arrayItems(key: string): FormGroup[] {
+    return (this.arrayControl(key)?.controls ?? []) as FormGroup[];
+  }
+
+  /** The nested field definitions of an `array` field, flattened with key. */
+  protected nestedEntries(entry: NewsletterFieldEntry): NewsletterFieldEntry[] {
+    return Object.entries(entry.fields ?? {}).map(([key, def]) => ({ key, ...def }));
+  }
+
+  /** Append an empty item group to an `array` field. */
+  protected addItem(entry: NewsletterFieldEntry): void {
+    const array = this.arrayControl(entry.key);
+    if (!array) return;
+    array.push(this.buildItemGroup(entry, {}));
+  }
+
+  /** Remove an item group from an `array` field. */
+  protected removeItem(key: string, index: number): void {
+    this.arrayControl(key)?.removeAt(index);
+  }
+
+  protected trackByKey(_index: number, entry: NewsletterFieldEntry): string {
+    return entry.key;
+  }
+
+  protected trackByIndex(index: number): number {
+    return index;
+  }
+
+  // === Private Initializers ===
+  private initFieldEntries(): Signal<NewsletterFieldEntry[]> {
+    return computed(() => {
+      const schema = this.schema();
+      if (!schema) return [];
+      return Object.entries(schema)
+        .filter(([, def]) => def.type !== 'slot')
+        .map(([key, def]) => ({ key, ...def }));
+    });
+  }
+
+  // === Private Helpers ===
+
+  /** Build the reactive form for a block and wire its value-change emit. */
+  private buildForm(block: NewsletterComposerBlock, entries: NewsletterFieldEntry[]): void {
+    this.teardownForm();
+
+    const group = new FormGroup({});
+    for (const entry of entries) {
+      group.addControl(entry.key, this.buildControl(entry, block.content[entry.key]));
+    }
+
+    this.builtForBlockId = block.id;
+    this.form.set(group);
+
+    this.valueSub = group.valueChanges.subscribe(() => {
+      if (this.suppressEmit) return;
+      this.contentChange.emit(this.collect(group, entries));
+    });
+  }
+
+  /** Build a control for a single field, seeded from existing content / default. */
+  private buildControl(entry: NewsletterFieldEntry, existing: unknown): FormControl | FormArray {
+    if (entry.type === 'array') {
+      const items = Array.isArray(existing) ? (existing as Record<string, unknown>[]) : [];
+      return new FormArray(items.map((item) => this.buildItemGroup(entry, item)));
+    }
+
+    const seeded = existing ?? entry.default ?? this.emptyFor(entry.type);
+    return new FormControl(seeded);
+  }
+
+  /** Build one FormGroup for an `array` item from its nested field definitions. */
+  private buildItemGroup(entry: NewsletterFieldEntry, item: Record<string, unknown>): FormGroup {
+    const group = new FormGroup({});
+    for (const [key, def] of Object.entries(entry.fields ?? {})) {
+      const seeded = item[key] ?? def.default ?? this.emptyFor(def.type);
+      group.addControl(key, new FormControl(seeded));
+    }
+    return group;
+  }
+
+  /** Assemble the block content object from the current form value. */
+  private collect(group: FormGroup, entries: NewsletterFieldEntry[]): Record<string, unknown> {
+    const content: Record<string, unknown> = {};
+    for (const entry of entries) {
+      const ctrl = group.get(entry.key);
+      if (!ctrl) continue;
+      content[entry.key] = ctrl.value;
+    }
+    return content;
+  }
+
+  /** Empty seed value for a scalar field type. */
+  private emptyFor(type: NewsletterFieldDefinition['type']): unknown {
+    return type === 'number' ? null : '';
+  }
+
+  private teardownForm(): void {
+    this.valueSub?.unsubscribe();
+    this.valueSub = null;
+  }
+}
