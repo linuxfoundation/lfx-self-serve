@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Location } from '@angular/common';
-import { Component, DestroyRef, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { isPlatformBrowser, Location } from '@angular/common';
+import { Component, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
@@ -156,6 +156,8 @@ export class AppComponent {
   // SSR redirect so the client always sees it on NavigationEnd regardless of how the user
   // arrived (SPA click or copy-paste full-page-load).
   private initAccessDeniedToast(): void {
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
+
     const router = inject(Router);
     const location = inject(Location);
     const messageService = inject(MessageService);
