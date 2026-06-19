@@ -61,7 +61,10 @@ export class AkritesPackagesTabComponent {
     busFactor1Only: false,
     staleOnly: false,
     unstewardedOnly: false,
+    page: 1,
+    pageSize: 25,
   });
+  public readonly total = input<number>(0);
   public readonly selectedPackages = input<Set<string>>(new Set());
 
   public readonly filterChange = output<Partial<AkritesFilterState>>();
@@ -70,6 +73,7 @@ export class AkritesPackagesTabComponent {
   public readonly togglePackage = output<{ id: string; event: Event }>();
   public readonly toggleAll = output<{ checked: boolean }>();
   public readonly clearFilters = output<void>();
+  public readonly pageChange = output<{ page: number; pageSize: number }>();
 
   protected readonly sortMenuOpen = signal(false);
   protected readonly filterPanelOpen = signal(false);
@@ -184,5 +188,10 @@ export class AkritesPackagesTabComponent {
   protected onSortSelect(value: string): void {
     this.sortChange.emit(value);
     this.sortMenuOpen.set(false);
+  }
+
+  protected onTablePage(event: { first: number; rows: number }): void {
+    const page = Math.floor(event.first / event.rows) + 1;
+    this.pageChange.emit({ page, pageSize: event.rows });
   }
 }
