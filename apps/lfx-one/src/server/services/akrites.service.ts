@@ -9,6 +9,7 @@ import {
   CdpPackageDetail,
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
+  CdpScatterResponse,
   CdpStewardSummary,
   CdpStewardshipSummary,
   AkritesActivityResponse,
@@ -21,6 +22,8 @@ import {
   AkritesMetrics,
   AkritesPackage,
   AkritesPackagesResponse,
+  AkritesScatterResponse,
+  AkritesStatus,
   AkritesSteward,
   AkritesStewardRole,
   AkritesStewardshipResponse,
@@ -304,6 +307,77 @@ export class AkritesServerService {
   /** Update a stewardship's status (e.g. assessing/active/needs_attention/blocked/inactive). */
   public async updateStewardshipStatus(req: Request, id: number, body: AkritesUpdateStatusRequest): Promise<AkritesStewardshipResponse> {
     return this.cdpWrite<AkritesStewardshipResponse>(req, 'update_akrites_stewardship_status', 'PATCH', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
+  }
+
+  public async getScatterData(req: Request): Promise<AkritesScatterResponse> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_akrites_scatter',
+          service: 'akrites_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGES_SCATTER}`);
+      const statusFilter = req.query['status'] as string | undefined;
+      if (statusFilter) {
+        url.searchParams.set('status', statusFilter);
+      }
+
+      logger.debug(req, 'get_akrites_scatter', 'Fetching scatter data from CDP', {
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP scatter request failed: ${response.statusText}`, response.status, 'CDP_SCATTER_ERROR', {
+          operation: 'get_akrites_scatter',
+          service: 'akrites_service',
+          errorBody: errorText,
+        });
+      }
+
+      const data = (await response.json()) as CdpScatterResponse;
+
+      const validStatuses: AkritesStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
+      const points = (data.points ?? []).map((p) => {
+        const status = validStatuses.includes(p.stewardshipStatus as AkritesStatus) ? (p.stewardshipStatus as AkritesStatus) : 'unassigned';
+        const parsed = p.stewardshipId ? Number.parseInt(p.stewardshipId, 10) : null;
+        const stewardshipId = parsed !== null && !Number.isNaN(parsed) ? parsed : null;
+
+        return {
+          purl: p.purl,
+          name: p.name,
+          impactScore: p.criticalityScore ?? null,
+          healthScore: p.healthScore ?? null,
+          status,
+          stewardshipId,
+          openVulns: p.openVulns ?? 0,
+        };
+      });
+
+      logger.debug(req, 'get_akrites_scatter', 'Fetched scatter data from CDP', { point_count: points.length });
+
+      return { points, total: data.total ?? points.length };
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch Akrites scatter data', 502, 'AKRITES_SCATTER_ERROR', {
+        operation: 'get_akrites_scatter',
+        service: 'akrites_service',
+      });
+    }
   }
 
   public mapListItem(item: CdpStewardshipSummary): AkritesPackage {

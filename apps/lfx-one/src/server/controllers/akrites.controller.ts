@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AkritesActivityResponse, AkritesListParams, AkritesMetrics, AkritesPackagesResponse } from '@lfx-one/shared/interfaces';
+import { AkritesActivityResponse, AkritesListParams, AkritesMetrics, AkritesPackagesResponse, AkritesScatterResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -165,6 +165,20 @@ export class AkritesController {
       const data = await this.akritesService.escalateStewardship(req, id, body);
 
       logger.success(req, 'escalate_akrites_stewardship', startTime, { stewardship_id: id, resolution_path: body.resolutionPath });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getScatterData(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_akrites_scatter');
+
+    try {
+      const data: AkritesScatterResponse = await this.akritesService.getScatterData(req);
+
+      logger.success(req, 'get_akrites_scatter', startTime, { point_count: data.points?.length ?? 0 });
 
       res.json(data);
     } catch (error) {
