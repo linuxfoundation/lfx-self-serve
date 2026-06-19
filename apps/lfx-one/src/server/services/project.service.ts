@@ -303,8 +303,10 @@ export class ProjectService {
       const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
       // Skip meeting_coordinator check when already a writer — the guard allows writer OR
       // meeting_coordinator, so the extra round trip can't change the outcome.
+      // Return the field as undefined (omitted) rather than false — false would be a
+      // false-negative assertion since the role was never actually checked for writers.
       if (writerProject.writer) {
-        return { ...writerProject, meetingCoordinator: false };
+        return writerProject;
       }
       const isMeetingCoordinator = await this.accessCheckService
         .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
