@@ -44,9 +44,6 @@ export class ProjectContextService {
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
   public readonly canWrite: Signal<boolean> = this.initCanWrite();
 
-  /** Meeting-schedule permission — true for writers AND meeting_coordinator role holders. */
-  public readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
-
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
 
@@ -185,23 +182,6 @@ export class ProjectContextService {
           }
           return this.projectService.getProject(ctx.slug, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
-          );
-        })
-      ),
-      { initialValue: false }
-    );
-  }
-
-  private initCanWriteMeetings(): Signal<boolean> {
-    return toSignal(
-      toObservable(this.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) {
-            return of(false);
-          }
-          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.writer === true || project?.meetingCoordinator === true),
             catchError(() => of(false))
           );
         })
