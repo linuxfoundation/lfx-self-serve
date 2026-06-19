@@ -164,7 +164,10 @@ export class AppComponent {
     const validNoticeKeys = new Set([...Object.keys(ACCESS_DENIED_MESSAGES), 'access']);
 
     router.events
-      .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed(destroyRef))
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(destroyRef)
+      )
       .subscribe(() => {
         const parsed = router.parseUrl(router.url);
         const notice = parsed.queryParams['_notice'];
