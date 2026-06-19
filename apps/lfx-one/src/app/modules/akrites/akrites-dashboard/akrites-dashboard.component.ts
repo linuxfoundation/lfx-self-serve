@@ -152,8 +152,6 @@ export class AkritesDashboardComponent {
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
     this.selectedPackageId.set(null);
-    // Bump so the activity feed and package list reflect any changes made in the drawer.
-    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected onStewardshipChanged(): void {

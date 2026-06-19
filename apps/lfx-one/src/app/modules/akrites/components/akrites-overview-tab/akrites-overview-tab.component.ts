@@ -15,7 +15,7 @@ import {
 import { catchError, of, switchMap, tap } from 'rxjs';
 import { AkritesService } from '@shared/services/akrites.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
-import { formatActivityType } from '../../akrites.utils';
+import { formatActivityType, formatStatus } from '../../akrites.utils';
 
 @Component({
   selector: 'lfx-akrites-overview-tab',
@@ -206,7 +206,7 @@ export class AkritesOverviewTabComponent {
         statusDotStyle: this.getStatusDotStyle(row.stewardshipStatus),
         statusLabelStyle: this.getStatusLabelStyle(row.stewardshipStatus),
         activityIcon: this.getActivityIcon(row.activityType),
-        formattedStatus: row.stewardshipStatus.replace(/_/g, ' '),
+        formattedStatus: formatStatus(row.stewardshipStatus),
         formattedActivityLabel: formatActivityType(row.activityType),
         action: this.getActivityAction(row.activityType, row.stewardshipStatus),
       };

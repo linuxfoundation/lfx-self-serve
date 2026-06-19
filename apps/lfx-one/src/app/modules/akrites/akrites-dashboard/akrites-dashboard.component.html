@@ -86,6 +86,7 @@
   @if (activeTab() === 'triage') {
     <lfx-akrites-triage-tab
       [reloadTrigger]="reloadTrigger()"
+      [sortBy]="filters().sort"
       (packageClick)="onPackageClick($event)"
       (stewardshipChanged)="onStewardshipChanged()"
       data-testid="akrites-triage-tab">

@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { AKRITES_TRIAGE_COLUMNS, lfxColors } from '@lfx-one/shared/constants';
 import {
   AkritesPackage,
+  AkritesSortKey,
   AkritesTriageBoardColumnConfig,
   AkritesTriageColumnState,
   AkritesTriagePackageVM,
@@ -29,6 +30,7 @@ export class AkritesTriageTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly reloadTrigger = input<number>(0);
+  public readonly sortBy = input<AkritesSortKey>('risk');
 
   public readonly packageClick = output<string>();
   public readonly stewardshipChanged = output<void>();
@@ -122,12 +124,13 @@ export class AkritesTriageTabComponent {
   }
 
   private initBoardData(): Signal<Record<AkritesTriageStatus, AkritesTriageColumnState> | undefined> {
+    const source = computed(() => ({ reload: this.reloadTrigger(), sort: this.sortBy() }));
     return toSignal(
-      toObservable(this.reloadTrigger).pipe(
+      toObservable(source).pipe(
         tap(() => this.loading.set(true)),
-        switchMap(() => {
+        switchMap(({ sort }) => {
           const requests = AKRITES_TRIAGE_COLUMNS.map((col) =>
-            this.akritesService.getPackages({ status: col.status, pageSize: 50, sortBy: 'risk' }).pipe(
+            this.akritesService.getPackages({ status: col.status, pageSize: 50, sortBy: sort }).pipe(
               map((res) => ({ status: col.status, packages: (res.packages ?? []).map((p) => this.toVM(p)), total: res.total ?? 0, error: false })),
               catchError(() => of({ status: col.status, packages: [] as AkritesTriagePackageVM[], total: 0, error: true }))
             )

@@ -374,24 +374,24 @@
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Build provenance</span>
               @if (pkg.provenance === null) {
-                <span class="text-gray-400">—</span>
+                <span class="text-gray-400" data-testid="akrites-provenance-build-value">—</span>
               } @else if (pkg.provenance === 'None') {
-                <span class="inline-flex items-center gap-1.5 font-medium text-slate-900">
+                <span class="inline-flex items-center gap-1.5 font-medium text-slate-900" data-testid="akrites-provenance-build-value">
                   <i class="fa-solid fa-circle-exclamation text-red-500" aria-hidden="true"></i>
                   None
                 </span>
               } @else {
-                <span class="font-medium text-slate-900">{{ pkg.provenance }}</span>
+                <span class="font-medium text-slate-900" data-testid="akrites-provenance-build-value">{{ pkg.provenance }}</span>
               }
             </div>
             <div class="flex justify-between items-center gap-3 px-4 py-2.5 text-sm">
               <span class="text-gray-500">Signed releases</span>
               @if (pkg.provenance === null) {
-                <span class="text-gray-400">—</span>
+                <span class="text-gray-400" data-testid="akrites-provenance-signed-value">—</span>
               } @else if (pkg.provenance === 'Full') {
-                <span class="font-medium text-slate-900">Yes</span>
+                <span class="font-medium text-slate-900" data-testid="akrites-provenance-signed-value">Yes</span>
               } @else {
-                <span class="inline-flex items-center gap-1.5 font-medium text-slate-900">
+                <span class="inline-flex items-center gap-1.5 font-medium text-slate-900" data-testid="akrites-provenance-signed-value">
                   <i class="fa-solid fa-circle-exclamation text-red-500" aria-hidden="true"></i>
                   No / unverified
                 </span>
@@ -441,7 +441,7 @@
     <div class="flex items-center justify-between gap-3 w-full">
       <div class="flex flex-col gap-1">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Stewardship status</span>
-        <lfx-tag [value]="formattedStatus()" [severity]="statusTagSeverity()" [rounded]="true" />
+        <lfx-tag [value]="formattedStatus()" [severity]="statusTagSeverity()" [rounded]="true" data-testid="akrites-drawer-status-tag" />
       </div>
       <div class="flex items-center gap-2">
         @if (canOpenForStewardship()) {

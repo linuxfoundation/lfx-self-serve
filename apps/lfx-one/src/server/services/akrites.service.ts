@@ -488,6 +488,7 @@ export class AkritesServerService {
 
   private mapProvenance(integrity?: { buildProvenance: unknown | null; signedReleases: unknown | null } | null): AkritesPackage['provenance'] {
     if (!integrity) return null;
+    if (integrity.buildProvenance === null && integrity.signedReleases === null) return null;
     const hasBuild = Boolean(integrity.buildProvenance);
     const hasSigned = Boolean(integrity.signedReleases);
     if (hasBuild && hasSigned) return 'Full';
