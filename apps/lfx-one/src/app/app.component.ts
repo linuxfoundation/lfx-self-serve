@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { Component, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { Component, DestroyRef, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -158,21 +159,26 @@ export class AppComponent {
     const router = inject(Router);
     const location = inject(Location);
     const messageService = inject(MessageService);
+    const destroyRef = inject(DestroyRef);
 
-    router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => {
-      const parsed = router.parseUrl(router.url);
-      const notice = parsed.queryParams['_notice'];
-      if (!notice) return;
+    const validNoticeKeys = new Set([...Object.keys(ACCESS_DENIED_MESSAGES), 'access']);
 
-      messageService.add({
-        severity: 'warn',
-        summary: 'Access Denied',
-        detail: ACCESS_DENIED_MESSAGES[notice] ?? "You don't have permission to perform this action for this project.",
+    router.events
+      .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed(destroyRef))
+      .subscribe(() => {
+        const parsed = router.parseUrl(router.url);
+        const notice = parsed.queryParams['_notice'];
+        if (!notice || !validNoticeKeys.has(String(notice))) return;
+
+        messageService.add({
+          severity: 'warn',
+          summary: 'Access Denied',
+          detail: ACCESS_DENIED_MESSAGES[notice] ?? "You don't have permission to perform this action for this project.",
+        });
+
+        // Remove _notice from the URL without triggering another navigation cycle
+        delete parsed.queryParams['_notice'];
+        location.replaceState(router.serializeUrl(parsed));
       });
-
-      // Remove _notice from the URL without triggering another navigation cycle
-      delete parsed.queryParams['_notice'];
-      location.replaceState(router.serializeUrl(parsed));
-    });
   }
 }
