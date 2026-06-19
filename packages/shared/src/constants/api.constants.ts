@@ -74,6 +74,7 @@ export const CDP_CONFIG = {
   MAX_PAGE_SIZE: 100,
   ENDPOINTS: {
     RESOLVE_MEMBER: '/v1/members/resolve',
+    CREATE_MEMBER: '/v1/members',
     MEMBER_IDENTITIES: (memberId: string) => `/v1/members/${memberId}/identities`,
     MEMBER_WORK_EXPERIENCES: (memberId: string) => `/v1/members/${memberId}/work-experiences`,
     MEMBER_PROJECT_AFFILIATIONS: (memberId: string) => `/v1/members/${memberId}/project-affiliations`,

@@ -9,12 +9,14 @@ import { errors as JoseErrors, JWK, JWT } from 'jose';
 import { AuthorizationError, ServiceValidationError } from '../errors';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { logger } from '../services/logger.service';
+import { CommitteeService } from '../services/committee.service';
 import { NatsService } from '../services/nats.service';
-import { getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
 /** Controller for non-LF user invite acceptance via signed JWT. */
 export class InviteController {
   private readonly natsService = new NatsService();
+  private readonly committeeService = new CommitteeService();
 
   /** POST /api/invite/accept — verify JWT (HS256), publish NATS fire-and-forget, return return_url. */
   public async acceptInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -96,6 +98,16 @@ export class InviteController {
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
+      try {
+        await this.autoAcceptPendingCommitteeInvites(req, payload);
+      } catch (error) {
+        // Best-effort — committee auto-accept failures must not block LFID invite acceptance.
+        logger.warning(req, 'accept_invite', 'Committee invite auto-accept failed; LFID accept continues', {
+          invite_uid: payload.invite_uid,
+          err: error,
+        });
+      }
+
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,
         username,
@@ -128,5 +140,41 @@ export class InviteController {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * When an LFID invite is accepted for a committee invitee, accept any matching pending
+   * committee_invite so a committee_member is created with the session username. Requires
+   * the authenticated user's email to match the email embedded in the LFID invite JWT.
+   */
+  private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<void> {
+    const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const sessionEmail = getEffectiveEmail(req)?.trim() ?? null;
+
+    if (!invitedEmail) {
+      logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — LFID invite token has no email claim', {
+        invite_uid: payload.invite_uid,
+      });
+      return;
+    }
+
+    if (!sessionEmail) {
+      logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — session email unavailable', {
+        invite_uid: payload.invite_uid,
+      });
+      return;
+    }
+
+    if (invitedEmail !== sessionEmail) {
+      logger.info(req, 'accept_invite', 'Skipping committee invite auto-accept — session email does not match LFID invite token email', {
+        invite_uid: payload.invite_uid,
+      });
+      return;
+    }
+
+    await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
+      invitedEmail,
+      resourceUid: payload.resource_uid,
+    });
   }
 }

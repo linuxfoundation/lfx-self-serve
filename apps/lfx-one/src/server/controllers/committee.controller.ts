@@ -4,13 +4,13 @@
 import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
+  AcceptCommitteeInviteRequest,
   CommitteeCreateData,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
-  AcceptCommitteeInviteRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { committeeRequiresOrganization, isFileTypeAllowed } from '@lfx-one/shared/utils';
