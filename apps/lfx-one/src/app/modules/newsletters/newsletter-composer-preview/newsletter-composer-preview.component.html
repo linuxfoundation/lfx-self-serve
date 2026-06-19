@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6" data-testid="newsletter-composer-preview">
+  <header class="flex flex-col gap-1">
+    <h1 class="text-xl font-semibold text-gray-900">Newsletter Block Composer</h1>
+    <p class="text-sm text-gray-500">
+      Phase-1 preview (LFXV2-2381). Drag blocks from the palette into the canvas, reorder them, and remove them. The emitted layout appears below.
+    </p>
+  </header>
+
+  <lfx-newsletter-block-composer (layoutChange)="onLayoutChange($event)" />
+
+  <section class="flex flex-col gap-2">
+    <h2 class="text-sm font-semibold text-gray-700">Emitted layout</h2>
+    <pre class="overflow-x-auto rounded-md border border-gray-200 bg-gray-900 p-4 text-xs text-gray-100" data-testid="newsletter-composer-preview-output">{{
+      layout() | json
+    }}</pre>
+  </section>
+</div>

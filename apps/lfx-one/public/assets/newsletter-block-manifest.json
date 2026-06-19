@@ -1,0 +1,392 @@
+{
+  "wrapper_key": "default",
+  "blocks": [
+    {
+      "block_type": "agent_infrastructure",
+      "label": "Agent Infrastructure",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        },
+        "useful_links": {
+          "type": "array",
+          "label": "Useful links",
+          "fields": {
+            "title": {
+              "type": "text",
+              "label": "Link title"
+            },
+            "url": {
+              "type": "text",
+              "label": "URL"
+            },
+            "description": {
+              "type": "text",
+              "label": "Description"
+            }
+          }
+        }
+      }
+    },
+    {
+      "block_type": "blog_post",
+      "label": "Blog Post",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "description": {
+          "type": "richtext",
+          "label": "Description"
+        },
+        "blog_link": {
+          "type": "text",
+          "label": "Blog link"
+        },
+        "link_text": {
+          "type": "text",
+          "label": "Link text",
+          "default": "Read the blog"
+        }
+      }
+    },
+    {
+      "block_type": "generic",
+      "label": "Generic",
+      "category": "block",
+      "schema": {
+        "heading": {
+          "type": "text",
+          "label": "Heading (eyebrow)"
+        },
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        },
+        "useful_links": {
+          "type": "array",
+          "label": "Useful links",
+          "fields": {
+            "title": {
+              "type": "text",
+              "label": "Link title"
+            },
+            "url": {
+              "type": "text",
+              "label": "URL"
+            },
+            "description": {
+              "type": "text",
+              "label": "Description"
+            }
+          }
+        }
+      }
+    },
+    {
+      "block_type": "generic_section",
+      "label": "Generic Section",
+      "category": "block",
+      "schema": {
+        "section_title": {
+          "type": "text",
+          "label": "Eyebrow label"
+        },
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "description": {
+          "type": "richtext",
+          "label": "Description"
+        },
+        "link": {
+          "type": "text",
+          "label": "Link URL"
+        },
+        "link_text": {
+          "type": "text",
+          "label": "Link text"
+        }
+      }
+    },
+    {
+      "block_type": "hidden_gems",
+      "label": "Hidden Gems",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "gems": {
+          "type": "array",
+          "label": "Gems",
+          "fields": {
+            "link_text": {
+              "type": "text"
+            },
+            "link_url": {
+              "type": "text"
+            },
+            "description": {
+              "type": "richtext"
+            }
+          }
+        }
+      }
+    },
+    {
+      "block_type": "hot_take",
+      "label": "Hot Take",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        },
+        "poll_option_1_label": {
+          "type": "text",
+          "label": "Poll option 1 label"
+        },
+        "poll_option_1_link": {
+          "type": "text",
+          "label": "Poll option 1 link"
+        },
+        "poll_option_2_label": {
+          "type": "text",
+          "label": "Poll option 2 label"
+        },
+        "poll_option_2_link": {
+          "type": "text",
+          "label": "Poll option 2 link"
+        }
+      }
+    },
+    {
+      "block_type": "how_we_help",
+      "label": "How We Help",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        }
+      }
+    },
+    {
+      "block_type": "intro_paragraph",
+      "label": "Intro Paragraph",
+      "category": "block",
+      "schema": {
+        "text": {
+          "type": "richtext",
+          "label": "Text"
+        }
+      }
+    },
+    {
+      "block_type": "job_of_week",
+      "label": "Job Of Week",
+      "category": "block",
+      "schema": {
+        "header_title": {
+          "type": "text",
+          "label": "Header"
+        },
+        "jobs": {
+          "type": "array",
+          "label": "Jobs",
+          "fields": {
+            "job_title": {
+              "type": "text"
+            },
+            "company": {
+              "type": "text"
+            },
+            "location": {
+              "type": "text"
+            },
+            "apply_link": {
+              "type": "text"
+            },
+            "description": {
+              "type": "richtext"
+            }
+          }
+        },
+        "jobs_board_url": {
+          "type": "text",
+          "label": "Jobs board URL"
+        }
+      }
+    },
+    {
+      "block_type": "last_weeks_take",
+      "label": "Last Weeks Take",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        }
+      }
+    },
+    {
+      "block_type": "meme_of_week",
+      "label": "Meme Of Week",
+      "category": "block",
+      "schema": {
+        "image_url": {
+          "type": "image",
+          "label": "Meme image"
+        }
+      }
+    },
+    {
+      "block_type": "ml_confessions",
+      "label": "Ml Confessions",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "story": {
+          "type": "richtext",
+          "label": "Story"
+        },
+        "confess_link": {
+          "type": "text",
+          "label": "Confession form link"
+        }
+      }
+    },
+    {
+      "block_type": "mlops_community",
+      "label": "Mlops Community",
+      "category": "block",
+      "schema": {
+        "children": {
+          "type": "slot",
+          "label": "Bricks"
+        }
+      },
+      "is_container": true
+    },
+    {
+      "block_type": "podcast",
+      "label": "Podcast",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "description": {
+          "type": "richtext",
+          "label": "Description"
+        },
+        "video_link": {
+          "type": "text",
+          "label": "Video link"
+        },
+        "spotify_link": {
+          "type": "text",
+          "label": "Spotify link"
+        },
+        "apple_link": {
+          "type": "text",
+          "label": "Apple link"
+        }
+      }
+    },
+    {
+      "block_type": "reading_group",
+      "label": "Reading Group",
+      "category": "block",
+      "schema": {
+        "title": {
+          "type": "text",
+          "label": "Title"
+        },
+        "description": {
+          "type": "richtext",
+          "label": "Description"
+        },
+        "link": {
+          "type": "text",
+          "label": "Link URL"
+        },
+        "link_text": {
+          "type": "text",
+          "label": "Link text",
+          "default": "Join the reading group"
+        }
+      }
+    },
+    {
+      "block_type": "sponsored_ad",
+      "label": "Sponsored Ad",
+      "category": "block",
+      "schema": {
+        "sponsor_name": {
+          "type": "text",
+          "label": "Sponsor name"
+        },
+        "headline": {
+          "type": "text",
+          "label": "Headline"
+        },
+        "image_url": {
+          "type": "image",
+          "label": "Image"
+        },
+        "image_link": {
+          "type": "text",
+          "label": "Image click link"
+        },
+        "body": {
+          "type": "richtext",
+          "label": "Body"
+        },
+        "cta_text": {
+          "type": "text",
+          "label": "CTA text"
+        },
+        "cta_link": {
+          "type": "text",
+          "label": "CTA link"
+        }
+      }
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/gatewaze/newsletter-aaif-user-community.git",
+    "commit": "1d85409938fca39738e644df67b4f248bcc01268"
+  }
+}

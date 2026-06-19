@@ -1,0 +1,22 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Styling is Tailwind-first in the template. CDK drag-drop preview / placeholder
+// states need a little structural polish that utility classes can't express
+// cleanly, so they live here.
+
+.cdk-drag-preview {
+  @apply rounded-md border border-gray-200 bg-white opacity-95 shadow-lg;
+}
+
+.cdk-drag-placeholder {
+  @apply opacity-40;
+}
+
+.cdk-drag-animating {
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}

@@ -227,6 +227,27 @@ export interface NewsletterTemplateSource {
   commit: string;
 }
 
+/** A category bucket of palette entries for the block-composer palette. */
+export interface NewsletterBlockPaletteGroup {
+  category: string;
+  entries: NewsletterBlockManifestEntry[];
+}
+
+/**
+ * Block-composer canvas view-model: a NewsletterBlock plus a stable local `id`
+ * (for CDK drag-drop trackBy / drop-list correlation), the resolved palette
+ * `label`, and an `isContainer` convenience flag. Projected back to a
+ * NewsletterBlock when the composer emits its NewsletterLayout.
+ */
+export interface NewsletterComposerBlock {
+  id: string;
+  block_type: string;
+  label: string;
+  isContainer: boolean;
+  content: Record<string, unknown>;
+  children?: NewsletterComposerBlock[];
+}
+
 /**
  * The block palette + field schemas bundled into the app at build time from the
  * hard-coded template repo (spec 004 §6.3, Phase 1).
