@@ -247,6 +247,13 @@ export interface NewsletterBlockManifestEntry {
   is_container?: boolean;
   /** For container blocks: the block types allowed as children. */
   allowed_block_types?: string[];
+  /**
+   * Raw declarative template HTML (the element tree, SCHEMA comment stripped)
+   * bundled at build time. The client-side renderer parses + binds it to draw a
+   * styled preview on the composer canvas. Optional: absent when a manifest is
+   * generated without templates (older asset versions).
+   */
+  template?: string;
 }
 
 /** Provenance of the template manifest (the pinned, build-time template repo). */
@@ -285,4 +292,11 @@ export interface NewsletterTemplateManifest {
   wrapper_keys?: string[];
   blocks: NewsletterBlockManifestEntry[];
   source?: NewsletterTemplateSource;
+  /**
+   * Raw page-chrome wrapper template HTML (header / footer + a
+   * `<slot name="body" />` where the composed blocks render). Bundled at build
+   * time for the client-side preview. Optional: absent when no wrapper template
+   * was found at generation time.
+   */
+  wrapper?: string;
 }

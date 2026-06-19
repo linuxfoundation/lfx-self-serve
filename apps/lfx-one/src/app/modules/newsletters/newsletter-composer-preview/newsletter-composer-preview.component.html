@@ -9,7 +9,11 @@
     </p>
   </header>
 
-  <lfx-newsletter-block-composer (layoutChange)="onLayoutChange($event)" />
+  <!-- Client-only interactive editor: its renderer uses DOMParser (browser-only),
+       so server/client diverge. ngSkipHydration as a static template attribute
+       (the host-binding form is not honored by the hydration runtime) skips SSR
+       hydration for this subtree. -->
+  <lfx-newsletter-block-composer ngSkipHydration (layoutChange)="onLayoutChange($event)" />
 
   <section class="flex flex-col gap-2">
     <h2 class="text-sm font-semibold text-gray-700">Emitted layout</h2>

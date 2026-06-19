@@ -15,6 +15,13 @@
  * The JSON is parsed into the manifest entry's `schema`. A block is a container
  * (`is_container: true`) when its schema declares a field of type `slot`.
  *
+ * For the client-side visual editor (LFXV2-2381), each entry also carries its
+ * raw `template` HTML (the element tree with the SCHEMA comment stripped) and
+ * the manifest carries the top-level `wrapper` template (the page chrome). The
+ * declarative renderer in the Angular app parses these client-side to draw a
+ * styled preview on the composer canvas — the server MJML render remains the
+ * source of truth for the SENT email.
+ *
  * Usage:
  *   node scripts/build-newsletter-manifest.mjs [--template-repo <path>]
  *
@@ -43,6 +50,8 @@ const OUTPUT_PATH = join(APP_ROOT, 'public', 'assets', 'newsletter-block-manifes
 // The two template directories that make up the single block namespace.
 const BLOCK_DIRS = ['blocks', 'bricks'];
 const WRAPPER_KEY = 'default';
+// The page-chrome wrapper template (header / footer + <slot name="body" />).
+const WRAPPER_PATH = ['wrappers', `${WRAPPER_KEY}.html`];
 
 /** Parse `--template-repo <path>` from argv, falling back to the default clone. */
 function parseTemplateRepo(argv) {
@@ -81,6 +90,18 @@ function hasSlotField(schema) {
   return Object.values(schema).some((field) => field && typeof field === 'object' && field.type === 'slot');
 }
 
+/**
+ * Strip the leading `<!-- SCHEMA: {...} -->` comment (and surrounding blank
+ * lines) from a template, returning just the element-tree body that the
+ * client-side renderer walks. The schema is already captured separately.
+ */
+function extractTemplateBody(html) {
+  // Drop ALL HTML comments — the SCHEMA comment (captured separately) plus any
+  // authoring notes. Comments are inert in the renderer (the DOM walk ignores
+  // them), so stripping them just keeps the bundled asset tidy.
+  return html.replace(/<!--[\s\S]*?-->/g, '').trim();
+}
+
 /** Best-effort provenance: the template repo's git remote + pinned commit. */
 function resolveSource(templateRepo) {
   const gitDir = join(templateRepo, '.git');
@@ -114,6 +135,8 @@ function readBlockDir(templateRepo, dir) {
         label: humanize(blockType),
         category: 'block',
         schema,
+        // Raw element tree (SCHEMA comment stripped) for the client-side renderer.
+        template: extractTemplateBody(html),
       };
       if (hasSlotField(schema)) {
         entry.is_container = true;
@@ -143,6 +166,15 @@ function main() {
     wrapper_key: WRAPPER_KEY,
     blocks,
   };
+
+  // Page-chrome wrapper template (header/footer + <slot name="body" />) for the
+  // client-side preview. Optional — the editor falls back to a bare body when
+  // it's absent.
+  const wrapperPath = join(templateRepo, ...WRAPPER_PATH);
+  if (existsSync(wrapperPath)) {
+    manifest.wrapper = extractTemplateBody(readFileSync(wrapperPath, 'utf8'));
+  }
+
   const source = resolveSource(templateRepo);
   if (source) {
     manifest.source = source;

@@ -4,8 +4,10 @@
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  NewsletterBlock,
   NewsletterBlockManifestEntry,
   NewsletterBlockPaletteGroup,
   NewsletterComposerBlock,
@@ -15,6 +17,7 @@ import {
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 
 import { NewsletterBlockFieldsComponent } from '../newsletter-block-fields/newsletter-block-fields.component';
+import { NewsletterRendererService } from '../../services/newsletter-renderer.service';
 
 /**
  * Newsletter block-composer — the first increment of the native-Angular,
@@ -45,6 +48,8 @@ import { NewsletterBlockFieldsComponent } from '../newsletter-block-fields/newsl
 export class NewsletterBlockComposerComponent implements OnInit {
   // === Services ===
   private readonly manifestService = inject(NewsletterManifestService);
+  private readonly renderer = inject(NewsletterRendererService);
+  private readonly sanitizer = inject(DomSanitizer);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
@@ -89,6 +94,16 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return this.manifestService.getBlock(block.block_type)?.schema ?? null;
   });
 
+  // The wrapper chrome (header above / footer below the blocks), rendered from
+  // the manifest's wrapper template. Recomputes when the manifest loads.
+  protected readonly wrapperHeader: Signal<SafeHtml> = this.initWrapperHeader();
+  protected readonly wrapperFooter: Signal<SafeHtml> = this.initWrapperFooter();
+
+  // Per-block rendered (and trusted) preview HTML, keyed by the block's local
+  // id. Recomputes whenever the canvas blocks or the manifest change — i.e. a
+  // Fields-panel edit (which patches block.content) re-renders that block.
+  protected readonly renderedBlocks: Signal<Map<string, SafeHtml>> = this.initRenderedBlocks();
+
   // Stable drop-list ids.
   protected readonly canvasListId = 'newsletter-composer-canvas-list';
   protected readonly paletteListId = 'newsletter-composer-palette-list';
@@ -123,6 +138,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Select a block (top-level or container child) for field editing. */
   protected selectBlock(id: string): void {
     this.selectedBlockId.set(id);
+  }
+
+  /** Trusted, rendered preview HTML for a block id (empty when not yet rendered). */
+  protected renderedBlock(id: string): SafeHtml {
+    return this.renderedBlocks().get(id) ?? '';
   }
 
   /** True when the given block id is the selected one (for highlighting). */
@@ -254,6 +274,55 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   // === Private Initializers ===
+
+  /**
+   * Render every canvas block to trusted preview HTML, keyed by local id.
+   *
+   * Trust note: the rendered string is injected via
+   * `DomSanitizer.bypassSecurityTrustHtml`. The content is the AUTHENTICATED
+   * author's OWN newsletter — the same trust boundary the repo already
+   * documents for `body_html` / email chrome ("no sanitizer, trust boundary =
+   * UI"). The declarative renderer further constrains output to an allowlisted,
+   * inert HTML subset, so no scripts/handlers can ride along.
+   */
+  private initRenderedBlocks(): Signal<Map<string, SafeHtml>> {
+    return computed(() => {
+      const map = new Map<string, SafeHtml>();
+      // Touch the manifest so the computed re-runs once templates are loaded.
+      if (!this.manifest()) return map;
+      const templateOf = (blockType: string): string | undefined => this.manifestService.getBlock(blockType)?.template;
+      for (const block of this.blocks()) {
+        // Container blocks render their chrome WITHOUT slot content — the live
+        // child drop-list in the template hosts the (independently rendered)
+        // children, so the slot is left empty to avoid double-rendering.
+        const children = block.isContainer ? [] : this.toLayoutChildren(block);
+        const html = this.renderer.renderBlock(templateOf(block.block_type), block.content, children, templateOf);
+        map.set(block.id, this.sanitizer.bypassSecurityTrustHtml(html));
+        for (const child of block.children ?? []) {
+          const childHtml = this.renderer.renderBlock(templateOf(child.block_type), child.content, [], templateOf);
+          map.set(child.id, this.sanitizer.bypassSecurityTrustHtml(childHtml));
+        }
+      }
+      return map;
+    });
+  }
+
+  private initWrapperHeader(): Signal<SafeHtml> {
+    return computed(() => {
+      const wrapper = this.manifest()?.wrapper;
+      const { header } = this.renderer.renderWrapperChrome(wrapper, this.wrapperPreviewContent());
+      return this.sanitizer.bypassSecurityTrustHtml(header);
+    });
+  }
+
+  private initWrapperFooter(): Signal<SafeHtml> {
+    return computed(() => {
+      const wrapper = this.manifest()?.wrapper;
+      const { footer } = this.renderer.renderWrapperChrome(wrapper, this.wrapperPreviewContent());
+      return this.sanitizer.bypassSecurityTrustHtml(footer);
+    });
+  }
+
   private initContainerListIds(): Signal<string[]> {
     return computed(() =>
       this.blocks()
@@ -388,6 +457,28 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Project the canvas into a NewsletterLayout and emit it. */
   private emit(): void {
     this.layoutChange.emit(this.toLayout());
+  }
+
+  /** A container block's children projected to the shared NewsletterBlock shape. */
+  private toLayoutChildren(block: NewsletterComposerBlock): NewsletterBlock[] {
+    if (!block.isContainer || !block.children) return [];
+    return block.children.map((child) => this.toLayoutBlock(child));
+  }
+
+  /**
+   * Placeholder runtime fields for the wrapper preview (date / view-online /
+   * unsubscribe links). These are substituted per recipient at send time; the
+   * editor shows representative values so the chrome reads like the real email.
+   */
+  private wrapperPreviewContent(): Record<string, unknown> {
+    return {
+      edition: {
+        date: 'Newsletter preview',
+        view_online_link: '',
+        unsubscribe_url: '#',
+        manage_subscriptions_url: '#',
+      },
+    };
   }
 
   /** Map the canvas blocks back to the shared NewsletterLayout shape. */
