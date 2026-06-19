@@ -181,7 +181,9 @@ export class CommitteeMeetingsComponent {
   public onScheduleMeeting(): void {
     const committee = this.committee();
     const slug = committee.project_slug;
-    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: { project: slug, _notice: 'meetings' } });
+    const denyParams: Record<string, string> = { _notice: 'meetings' };
+    if (slug) denyParams['project'] = slug;
+    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: denyParams });
 
     this.committeeService
       .getCommittee(committee.uid)

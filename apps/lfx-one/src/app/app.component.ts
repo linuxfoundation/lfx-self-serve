@@ -172,18 +172,23 @@ export class AppComponent {
       )
       .subscribe(() => {
         const parsed = router.parseUrl(router.url);
-        const notice = parsed.queryParams['_notice'];
-        if (!notice || !validNoticeKeys.has(String(notice))) return;
+        const raw = parsed.queryParams['_notice'];
+        if (!raw) return;
+
+        const noticeKey = String(raw);
+
+        // Strip _notice unconditionally — even invalid values must not linger
+        // and re-trigger this subscriber on subsequent NavigationEnd events.
+        delete parsed.queryParams['_notice'];
+        location.replaceState(router.serializeUrl(parsed));
+
+        if (!validNoticeKeys.has(noticeKey)) return;
 
         messageService.add({
           severity: 'warn',
           summary: 'Access Denied',
-          detail: ACCESS_DENIED_MESSAGES[notice] ?? "You don't have permission to perform this action for this project.",
+          detail: ACCESS_DENIED_MESSAGES[noticeKey] ?? "You don't have permission to perform this action for this project.",
         });
-
-        // Remove _notice from the URL without triggering another navigation cycle
-        delete parsed.queryParams['_notice'];
-        location.replaceState(router.serializeUrl(parsed));
       });
   }
 }
