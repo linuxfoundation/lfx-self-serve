@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,12 +16,14 @@ import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
 import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
 
@@ -29,7 +31,6 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
   selector: 'lfx-committee-meetings',
   imports: [
     ReactiveFormsModule,
-    RouterLink,
     ButtonComponent,
     CardComponent,
     InputTextComponent,
@@ -44,7 +45,9 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeMeetingsComponent {
+  private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
+  private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
   private readonly router = inject(Router);
@@ -171,6 +174,36 @@ export class CommitteeMeetingsComponent {
     if (props.type === 'meeting' && props.meetingId) {
       void this.router.navigate(['/meetings', props.meetingId]);
     }
+  }
+
+  /** Checks committee write permission fresh before navigating to the create-meeting route.
+   * Shows an "Access Denied" toast if the permission has been revoked since the page loaded
+   * (e.g. Manager demoted to Member between page load and button click). */
+  public onScheduleMeeting(): void {
+    const committee = this.committee();
+    this.committeeService
+      .getCommittee(committee.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Access Denied',
+              detail: "You don't have permission to schedule meetings for this project.",
+            });
+            return;
+          }
+          void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Access Denied',
+            detail: "You don't have permission to schedule meetings for this project.",
+          });
+        },
+      });
   }
 
   // Private initializer functions
