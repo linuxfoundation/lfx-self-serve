@@ -102,6 +102,7 @@ export class CdpService {
           client_id: this.clientId,
           client_secret: this.clientSecret,
           audience: this.audience,
+          scope: 'read:packages read:stewardships write:stewardships',
         }),
         signal: AbortSignal.timeout(10000),
       });
