@@ -38,9 +38,10 @@ const WRITE_FEATURE_MESSAGES: Record<string, string> = {
  * Redirects to the lens-appropriate overview on denial so the correct project context is
  * preserved and NavigationService.applyDefaultSelection does not override the selection.
  *
- * On denial, shows a warning toast. Routes opt into a contextual message by setting
- * `data.writeFeature` (e.g. `'meetings'`, `'votes'`); falls back to a generic message
- * when absent.
+ * On denial — including when the project fetch fails with 403/404 (committee member with no
+ * direct project-level OpenFGA relation) — shows a warning toast. Routes opt into a
+ * contextual message by setting `data.writeFeature` (e.g. `'meetings'`, `'votes'`); falls
+ * back to a generic message when absent.
  */
 export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -75,9 +76,11 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
   return projectService.getProject(slug, false).pipe(
     switchMap((project) => {
-      // null means the fetch failed (404/5xx/network) — redirect silently, no toast.
+      // null means the project was unreachable or the user lacks viewer access — treat as
+      // a denial so they get feedback. Silent redirect was confusing for committee members
+      // who have committee access but no direct project-level OpenFGA relation.
       if (project === null) {
-        return of(deniedUrl);
+        return of(deny());
       }
       if (project.writer === true) {
         return of(true as const);
