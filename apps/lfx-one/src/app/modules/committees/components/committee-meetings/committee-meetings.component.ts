@@ -20,7 +20,6 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
@@ -47,7 +46,6 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
 export class CommitteeMeetingsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
-  private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
   private readonly router = inject(Router);
@@ -177,32 +175,26 @@ export class CommitteeMeetingsComponent {
   }
 
   /** Checks committee write permission fresh before navigating to the create-meeting route.
-   * Shows an "Access Denied" toast if the permission has been revoked since the page loaded
-   * (e.g. Manager demoted to Member between page load and button click). */
+   * If the permission has been revoked since the page loaded (e.g. Manager demoted to Member),
+   * redirects to the project overview with _notice=meetings so AppComponent shows the toast —
+   * consistent with the writerGuard denial flow. */
   public onScheduleMeeting(): void {
     const committee = this.committee();
+    const slug = committee.project_slug;
+    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: { project: slug, _notice: 'meetings' } });
+
     this.committeeService
       .getCommittee(committee.uid)
       .pipe(take(1))
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
-            this.messageService.add({
-              severity: 'warn',
-              summary: 'Access Denied',
-              detail: "You don't have permission to schedule meetings for this project.",
-            });
+            deny();
             return;
           }
           void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
         },
-        error: () => {
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Access Denied',
-            detail: "You don't have permission to schedule meetings for this project.",
-          });
-        },
+        error: () => deny(),
       });
   }
 
