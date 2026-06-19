@@ -79,6 +79,7 @@
         [loading]="tableLoading()"
         [statusCounts]="statusCounts()"
         [filters]="filters()"
+        [total]="total()"
         [selectedPackages]="selectedPackages()"
         (filterChange)="onFilterChange($event)"
         (sortChange)="onSortChange($event)"
@@ -86,6 +87,7 @@
         (togglePackage)="onTogglePackage($event)"
         (toggleAll)="onToggleAll($event)"
         (clearFilters)="onClearFilters()"
+        (pageChange)="onPageChange($event)"
         data-testid="akrites-packages-tab">
       </lfx-akrites-packages-tab>
     }
@@ -95,6 +97,7 @@
   @if (activeTab() === 'triage') {
     <lfx-akrites-triage-tab
       [reloadTrigger]="reloadTrigger()"
+      [sortBy]="filters().sort"
       (packageClick)="onPackageClick($event)"
       (stewardshipChanged)="onStewardshipChanged()"
       data-testid="akrites-triage-tab">

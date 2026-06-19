@@ -337,6 +337,8 @@ export interface AkritesFilterState {
   busFactor1Only: boolean;
   staleOnly: boolean;
   unstewardedOnly: boolean;
+  page: number;
+  pageSize: number;
 }
 
 export interface AkritesStatusCounts {

@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CDP_CONFIG, AKRITES_VALID_TABS, AKRITES_DEFAULT_TAB, AKRITES_DEFAULT_VISIBLE_STATUSES, AKRITES_TOTAL_STATUSES } from '@lfx-one/shared/constants';
+import { AKRITES_VALID_TABS, AKRITES_DEFAULT_TAB, AKRITES_DEFAULT_VISIBLE_STATUSES, AKRITES_TOTAL_STATUSES } from '@lfx-one/shared/constants';
 import {
   AkritesFilterState,
   AkritesListParams,
@@ -69,6 +69,8 @@ export class AkritesDashboardComponent {
     busFactor1Only: false,
     staleOnly: false,
     unstewardedOnly: false,
+    page: 1,
+    pageSize: 25,
   });
 
   private readonly loadResult = this.initLoadResult();
@@ -84,6 +86,8 @@ export class AkritesDashboardComponent {
   protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
   protected readonly metrics = computed<AkritesMetrics | undefined>(() => this.metricsResult());
   protected readonly scatterPoints = computed<AkritesScatterPoint[]>(() => this.scatterResult() ?? []);
+
+  protected readonly total = computed<number>(() => this.loadResult()?.total ?? 0);
 
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
@@ -173,8 +177,6 @@ export class AkritesDashboardComponent {
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
     this.selectedPackageId.set(null);
-    // Bump so the activity feed and package list reflect any changes made in the drawer.
-    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected onStewardshipChanged(): void {
@@ -182,7 +184,11 @@ export class AkritesDashboardComponent {
   }
 
   protected onFilterChange(partial: Partial<AkritesFilterState>): void {
-    this.filters.update((current) => ({ ...current, ...partial }));
+    this.filters.update((current) => ({ ...current, ...partial, page: 1 }));
+  }
+
+  protected onPageChange(event: { page: number; pageSize: number }): void {
+    this.filters.update((current) => ({ ...current, page: event.page, pageSize: event.pageSize }));
   }
 
   protected onTogglePackage(payload: { id: string; event: Event }): void {
@@ -310,7 +316,7 @@ export class AkritesDashboardComponent {
   }
 
   protected onSortChange(sort: string): void {
-    this.filters.update((current) => ({ ...current, sort: sort as AkritesSortKey }));
+    this.filters.update((current) => ({ ...current, sort: sort as AkritesSortKey, page: 1 }));
   }
 
   protected onClearFilters(): void {
@@ -383,10 +389,9 @@ export class AkritesDashboardComponent {
         tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap(({ f }) => {
-          // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
-          // Divergence is intentional for v1 — pagination will align them in a future iteration.
           const params: AkritesListParams = {
-            pageSize: CDP_CONFIG.MAX_PAGE_SIZE,
+            page: f.page,
+            pageSize: f.pageSize,
             sortBy: f.sort,
             search: f.search || undefined,
             status: f.tab !== 'all' ? f.tab : undefined,
