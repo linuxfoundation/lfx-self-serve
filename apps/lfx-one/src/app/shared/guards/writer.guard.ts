@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
-import { catchError, map, of, switchMap } from 'rxjs';
+import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
 import { CommitteeService } from '../services/committee.service';
 import { PersonaService } from '../services/persona.service';
@@ -33,6 +33,11 @@ import { ProjectService } from '../services/project.service';
  * contextual "Access Denied" toast, and strips the param via Location.replaceState. This
  * two-step approach works for both SPA navigation and full-page-load (SSR) scenarios where
  * MessageService.add() on the server has no client-side effect.
+ *
+ * When `project` is `null` (403/404/5xx from the BFF), the committee check is still
+ * attempted when `committee_uid` is present — a committee writer may hold their role
+ * without having a direct project-level OpenFGA viewer relation. Only if that check also
+ * fails or is inapplicable does the guard deny.
  */
 export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -59,13 +64,27 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: writeFeature ?? 'access' } });
   const deny = () => deniedUrl;
 
+  // Committee writers can create meetings associated with their committee.
+  // Only applicable when committee_uid is present in the route query params
+  // (set by committee-meetings.component's createMeetingQueryParams()).
+  // CommitteeService.getCommittee has a tap() that sets the committee signal as a
+  // side-effect — acceptable here: on deny navigation is blocked before any committee
+  // view renders; on allow the committee page overwrites it.
+  const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
+    committeeService.getCommittee(committeeUid!).pipe(
+      map((committee) => (committee?.writer === true ? (true as const) : deny())),
+      catchError(() => of(deny()))
+    );
+
   return projectService.getProject(slug, false, { meetingCoordinator: writeFeature === 'meetings' }).pipe(
     switchMap((project) => {
-      // null means the project was unreachable or the user lacks viewer access — treat as
-      // a denial so they get feedback. Silent redirect was confusing for committee members
-      // who have committee access but no direct project-level OpenFGA relation.
+      // project === null means the BFF returned 403/404/5xx — could be a real access
+      // denial (committee member without a direct project-level OpenFGA viewer relation)
+      // or a transient server error. Still attempt the committee check when applicable so
+      // a committee writer is not incorrectly denied solely because the project fetch
+      // failed. If no committee check is applicable, deny with feedback.
       if (project === null) {
-        return of(deny());
+        return committeeUid && writeFeature === 'meetings' ? checkCommittee() : of(deny());
       }
       if (project.writer === true) {
         return of(true as const);
@@ -74,17 +93,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       if (writeFeature === 'meetings' && project.meetingCoordinator === true) {
         return of(true as const);
       }
-      // Committee writers can create meetings associated with their committee.
-      // Only applicable when a committee_uid is present in the route query params
-      // (set by committee-meetings.component's createMeetingQueryParams()).
-      // Note: CommitteeService.getCommittee has a tap() that sets the committee signal
-      // as a side-effect. This is acceptable here — on deny the navigation is blocked
-      // before any committee view renders; on allow the committee page overwrites it.
       if (committeeUid && writeFeature === 'meetings') {
-        return committeeService.getCommittee(committeeUid).pipe(
-          map((committee) => (committee?.writer === true ? (true as const) : deny())),
-          catchError(() => of(deny()))
-        );
+        return checkCommittee();
       }
       return of(deny());
     })
