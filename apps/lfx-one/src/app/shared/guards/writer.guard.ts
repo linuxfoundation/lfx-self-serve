@@ -74,7 +74,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     return deniedUrl;
   };
 
-  return projectService.getProject(slug, false).pipe(
+  return projectService.getProject(slug, false, { meetingCoordinator: writeFeature === 'meetings' }).pipe(
     switchMap((project) => {
       // null means the project was unreachable or the user lacks viewer access — treat as
       // a denial so they get feedback. Silent redirect was confusing for committee members
@@ -90,7 +90,11 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
         return of(true as const);
       }
       // Committee writers can create meetings associated with their committee.
-      // Only applicable when a committee_uid is present in the route query params.
+      // Only applicable when a committee_uid is present in the route query params
+      // (set by committee-meetings.component's createMeetingQueryParams()).
+      // Note: CommitteeService.getCommittee has a tap() that sets the committee signal
+      // as a side-effect. This is acceptable here — on deny the navigation is blocked
+      // before any committee view renders; on allow the committee page overwrites it.
       if (committeeUid && writeFeature === 'meetings') {
         return committeeService.getCommittee(committeeUid).pipe(
           map((committee) => (committee?.writer === true ? (true as const) : deny())),

@@ -12,10 +12,13 @@ export interface Project {
   /** Response-only — write access for the current user. */
   writer?: boolean;
   /**
-   * Response-only — `true` when the user holds the meeting_coordinator role on this project.
-   * The BFF skips this check for project writers (it can't change the guard outcome), so
-   * `false`/`undefined` means either "not a coordinator" or "check was not performed".
-   * Consumers must not treat a missing/false value as a definitive role denial.
+   * Response-only — present only when the caller requested the meeting_coordinator check
+   * (`?meeting_coordinator=true`) and the user is not already a writer.
+   *
+   * - `true`      — user holds the `meeting_coordinator` role on this project.
+   * - `false`     — check ran clean; user does not hold the role.
+   * - `undefined` — check was not requested, was skipped (user is a writer), or failed
+   *   transiently. Do NOT treat as a definitive role denial.
    */
   meetingCoordinator?: boolean;
   public: boolean;

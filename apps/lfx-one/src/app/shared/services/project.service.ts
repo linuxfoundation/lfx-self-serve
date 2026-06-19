@@ -29,10 +29,11 @@ export class ProjectService {
     return this.projectsCache.get(cacheKey)!;
   }
 
-  public getProject(slug: string, current: boolean = true): Observable<Project | null> {
-    const cacheKey = `${slug}:${current}`;
+  public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
-      const project$ = this.http.get<Project>(`/api/projects/${slug}`).pipe(
+      const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
+      const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
         catchError(() => of(null)),
         shareReplay(1),
         tap((project) => {

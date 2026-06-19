@@ -288,7 +288,7 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, uid: string, access: boolean = true): Promise<Project> {
+  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -308,14 +308,23 @@ export class ProjectService {
       if (writerProject.writer) {
         return writerProject;
       }
+      // Only run the meeting_coordinator FGA check when the caller explicitly requests it.
+      // This field is consumed by exactly one branch of writer.guard.ts; running it on every
+      // GET /api/projects/:slug call would add a second sequential access-check round-trip
+      // for all non-writer callers (guards, components, etc.) that never read the field.
+      if (!includeMeetingCoordinator) {
+        return writerProject;
+      }
       const isMeetingCoordinator = await this.accessCheckService
         .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
         .catch((error) => {
-          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, defaulting to false', {
+          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
             project_uid: project.uid,
             error: error instanceof Error ? error.message : String(error),
           });
-          return false;
+          // Return undefined rather than false — false implies the check ran clean and found no
+          // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
+          return undefined;
         });
       return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
     }
@@ -393,7 +402,7 @@ export class ProjectService {
    * Fetches a single project by slug using NATS for slug resolution
    * First resolves slug to ID via NATS, then fetches project data
    */
-  public async getProjectBySlug(req: Request, projectSlug: string): Promise<Project> {
+  public async getProjectBySlug(req: Request, projectSlug: string, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const natsResult = await this.getProjectIdBySlug(req, projectSlug);
 
     if (!natsResult.exists || !natsResult.uid) {
@@ -405,7 +414,7 @@ export class ProjectService {
     }
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid);
+    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
