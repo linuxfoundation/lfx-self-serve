@@ -108,6 +108,7 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
+  protected readonly canWriteMeetings = this.projectContextService.canWriteMeetings;
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
