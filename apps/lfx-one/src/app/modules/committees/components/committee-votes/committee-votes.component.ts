@@ -11,6 +11,7 @@ import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
@@ -24,6 +25,7 @@ import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
 })
 export class CommitteeVotesComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
@@ -47,9 +49,10 @@ export class CommitteeVotesComponent {
    * since the page loaded — consistent with the writerGuard denial flow. */
   public onCreateVote(): void {
     const committee = this.committee();
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'votes' };
     if (committee.project_slug) denyParams['project'] = committee.project_slug;
-    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: denyParams });
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
     this.committeeService
       .getCommittee(committee.uid)
