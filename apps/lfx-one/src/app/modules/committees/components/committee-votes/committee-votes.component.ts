@@ -3,15 +3,17 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
+import { CommitteeService } from '@services/committee.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
@@ -21,8 +23,10 @@ import { catchError, filter, finalize, of, switchMap } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeVotesComponent {
+  private readonly committeeService = inject(CommitteeService);
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
+  private readonly router = inject(Router);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -37,6 +41,30 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
+
+  /** Checks committee write permission fresh before navigating to the create-vote route.
+   * Redirects to project overview with _notice=votes if permission has been revoked
+   * since the page loaded — consistent with the writerGuard denial flow. */
+  public onCreateVote(): void {
+    const committee = this.committee();
+    const denyParams: Record<string, string> = { _notice: 'votes' };
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: denyParams });
+
+    this.committeeService
+      .getCommittee(committee.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
+        },
+        error: () => deny(),
+      });
+  }
 
   /** Opens the vote results drawer for the selected vote. */
   public viewVoteResults(voteUid: string): void {

@@ -17,8 +17,7 @@
           icon="fa-light fa-check-to-slot"
           severity="info"
           size="small"
-          [routerLink]="['/votes', 'create']"
-          [queryParams]="createVoteQueryParams()"
+          (click)="onCreateVote()"
           data-testid="committee-votes-create-btn"></lfx-button>
       }
     </lfx-votes-table>
@@ -30,8 +29,7 @@
           icon="fa-light fa-check-to-slot"
           severity="info"
           size="small"
-          [routerLink]="['/votes', 'create']"
-          [queryParams]="createVoteQueryParams()"
+          (click)="onCreateVote()"
           data-testid="committee-votes-empty-create-btn"></lfx-button>
       </div>
     }
