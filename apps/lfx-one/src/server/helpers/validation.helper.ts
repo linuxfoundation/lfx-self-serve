@@ -306,10 +306,16 @@ export function parseOpenStewardshipBody(req: Request, operation: string): strin
 
 /** Validates the assign-steward body; throws 400 for missing/invalid fields. */
 export function parseAssignStewardBody(req: Request, operation: string): AkritesAssignStewardRequest {
-  const body = (req.body ?? {}) as { userId?: unknown; role?: unknown; moveToAssessing?: unknown };
+  const body = (req.body ?? {}) as { userId?: unknown; username?: unknown; displayName?: unknown; role?: unknown; moveToAssessing?: unknown };
 
   if (typeof body.userId !== 'string' || body.userId.trim() === '') {
     throw ServiceValidationError.forField('userId', 'userId is required', { operation });
+  }
+  if (typeof body.username !== 'string' || body.username.trim() === '') {
+    throw ServiceValidationError.forField('username', 'username is required', { operation });
+  }
+  if (typeof body.displayName !== 'string' || body.displayName.trim() === '') {
+    throw ServiceValidationError.forField('displayName', 'displayName is required', { operation });
   }
   if (typeof body.role !== 'string' || !VALID_AKRITES_STEWARD_ROLES.includes(body.role as AkritesStewardRole)) {
     throw ServiceValidationError.forField('role', `Invalid role. Allowed: ${VALID_AKRITES_STEWARD_ROLES.join(', ')}`, { operation });
@@ -320,6 +326,8 @@ export function parseAssignStewardBody(req: Request, operation: string): Akrites
 
   return {
     userId: body.userId.trim(),
+    username: body.username.trim(),
+    displayName: body.displayName.trim(),
     role: body.role as AkritesStewardRole,
     moveToAssessing: body.moveToAssessing as boolean | undefined,
   };

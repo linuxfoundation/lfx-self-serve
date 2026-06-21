@@ -6,6 +6,7 @@ import { Component, DestroyRef, Signal, computed, inject, input, output, signal 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AKRITES_TRIAGE_COLUMNS, lfxColors } from '@lfx-one/shared/constants';
 import {
+  AkritesAssignStewardRequest,
   AkritesPackage,
   AkritesSortKey,
   AkritesTriageBoardColumnConfig,
@@ -17,10 +18,11 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 
 @Component({
   selector: 'lfx-akrites-triage-tab',
-  imports: [DecimalPipe, TitleCasePipe],
+  imports: [DecimalPipe, TitleCasePipe, AkritesAssignStewardModalComponent],
   templateUrl: './akrites-triage-tab.component.html',
 })
 export class AkritesTriageTabComponent {
@@ -37,6 +39,9 @@ export class AkritesTriageTabComponent {
 
   protected readonly TRIAGE_COLUMNS = AKRITES_TRIAGE_COLUMNS;
   protected readonly loading = signal(true);
+  protected readonly actionLoading = signal(false);
+  protected readonly assignModalVisible = signal(false);
+  protected readonly assignTargetPackage = signal<AkritesTriagePackageVM | null>(null);
   protected readonly canWrite = this.projectContextService.canWrite;
 
   protected readonly boardData = this.initBoardData();
@@ -63,12 +68,67 @@ export class AkritesTriageTabComponent {
     this.packageClick.emit(pkg.id);
   }
 
-  protected onAction(event: Event, pkg: AkritesPackage, column: AkritesTriageBoardColumnConfig): void {
+  protected onAction(event: Event, pkg: AkritesTriagePackageVM, column: AkritesTriageBoardColumnConfig): void {
     event.stopPropagation();
-    if ((column.status === 'escalated' || column.status === 'blocked') && pkg.stewardshipId) {
+    if (column.status === 'unassigned' || column.status === 'inactive') {
+      this.assignTargetPackage.set(pkg);
+      this.assignModalVisible.set(true);
+    } else if ((column.status === 'escalated' || column.status === 'blocked') && pkg.stewardshipId) {
       this.resolvePackage(pkg);
     } else {
       this.packageClick.emit(pkg.id);
+    }
+  }
+
+  protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
+    const pkg = this.assignTargetPackage();
+    if (!pkg || this.actionLoading()) return;
+    this.actionLoading.set(true);
+
+    const assign = (id: number) =>
+      this.akritesService
+        .assignSteward(id, body)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.assignModalVisible.set(false);
+            this.assignTargetPackage.set(null);
+            this.actionLoading.set(false);
+            this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
+            this.stewardshipChanged.emit();
+          },
+          error: () => {
+            this.actionLoading.set(false);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
+          },
+        });
+
+    if (pkg.stewardshipId !== null) {
+      assign(pkg.stewardshipId);
+    } else {
+      this.akritesService
+        .openStewardship(pkg.purl)
+        .pipe(
+          switchMap((res) => {
+            const id = parseInt(res.stewardship.id, 10);
+            return this.akritesService.assignSteward(id, body);
+          }),
+          take(1),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe({
+          next: () => {
+            this.assignModalVisible.set(false);
+            this.assignTargetPackage.set(null);
+            this.actionLoading.set(false);
+            this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
+            this.stewardshipChanged.emit();
+          },
+          error: () => {
+            this.actionLoading.set(false);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
+          },
+        });
     }
   }
 

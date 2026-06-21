@@ -400,6 +400,7 @@ export class AkritesServerService {
       stewardshipId: item.stewardshipId ? parseInt(item.stewardshipId, 10) : null,
       stewards: (item.stewards ?? []).map((s) => ({
         userId: s.userId,
+        username: null,
         role: s.role as AkritesStewardRole,
         assignedAt: s.assignedAt,
         name: null,
@@ -541,14 +542,14 @@ export class AkritesServerService {
     }
   }
 
-  /** Map CDP steward rows to the UI shape. Name/avatar stay null until the roster endpoint exists. */
   private mapStewards(stewards: CdpStewardSummary[] | null): AkritesSteward[] {
     if (!stewards) return [];
     return stewards.map((s) => ({
       userId: s.userId,
+      username: s.username ?? null,
       role: s.role,
       assignedAt: s.assignedAt,
-      name: null,
+      name: s.displayName ?? null,
       avatarUrl: null,
     }));
   }

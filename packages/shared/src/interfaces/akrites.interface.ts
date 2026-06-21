@@ -35,6 +35,19 @@ export interface AkritesRoleOption {
   description: string;
 }
 
+/** A committee member returned by the steward search endpoint, used for the assignable-steward picker. */
+export interface AkritesSearchStewardResult {
+  /** Auth0/LFX user UID — sent as `userId` in the assign endpoint body. */
+  userId: string;
+  username: string;
+  displayName: string;
+  email: string;
+  committeeName: string;
+  committeeUid: string;
+  organization: string | null;
+  status: string;
+}
+
 // ===== CDP Raw Types =====
 
 export interface CdpActivityRow {
@@ -166,11 +179,13 @@ export interface CdpPackageDetail {
 
 // ===== CDP Stewardship Raw Types =====
 
-/** Steward row as returned in the package detail `stewardship.stewards` array. No display name/avatar yet (see roster endpoint). */
+/** Steward row as returned in the package detail `stewardship.stewards` array. */
 export interface CdpStewardSummary {
   id: string;
   stewardshipId: string;
   userId: string;
+  username: string | null;
+  displayName: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   assignedBy: string | null;
@@ -206,6 +221,8 @@ export interface AkritesOpenStewardshipRequest {
 
 export interface AkritesAssignStewardRequest {
   userId: string;
+  username: string;
+  displayName: string;
   role: AkritesStewardRole;
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
   moveToAssessing?: boolean;
@@ -265,12 +282,10 @@ export interface AkritesAssessment {
   monitoring: string[];
 }
 
-/**
- * Steward shown in the UI. `name`/`avatarUrl` are populated once the assignable-steward
- * roster endpoint exists; until then only `userId` (Auth0 sub) + `role` are available.
- */
+/** Steward shown in the UI. `name` is the display name from CDP; `username` is the LFX username. */
 export interface AkritesSteward {
   userId: string;
+  username: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   name: string | null;

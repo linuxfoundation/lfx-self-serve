@@ -3,7 +3,7 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, of, catchError, take } from 'rxjs';
+import { Observable, of, catchError, take, map } from 'rxjs';
 import {
   AkritesActivityResponse,
   AkritesAssignStewardRequest,
@@ -14,10 +14,13 @@ import {
   AkritesPackage,
   AkritesPackagesResponse,
   AkritesScatterResponse,
+  AkritesSearchStewardResult,
   AkritesStatus,
   AkritesStewardshipResponse,
   AkritesUpdateStatusRequest,
+  CommitteeMember,
 } from '@lfx-one/shared/interfaces';
+import { AKRITES_STEWARD_COMMITTEE_UID } from '@lfx-one/shared/constants';
 
 @Injectable({
   providedIn: 'root',
@@ -85,5 +88,23 @@ export class AkritesService {
 
   public updateStewardshipStatus(stewardshipId: number, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
     return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/status`, body).pipe(take(1));
+  }
+
+  public searchStewards(): Observable<AkritesSearchStewardResult[]> {
+    return this.http.get<CommitteeMember[]>(`/api/committees/${AKRITES_STEWARD_COMMITTEE_UID}/members`).pipe(
+      map((members) =>
+        members.map((m) => ({
+          userId: m.uid,
+          username: m.username ?? '',
+          displayName: `${m.first_name} ${m.last_name}`.trim(),
+          email: m.email,
+          committeeName: m.committee_name,
+          committeeUid: m.committee_uid,
+          organization: m.organization?.name ?? null,
+          status: m.status ?? '',
+        }))
+      ),
+      catchError(() => of([] as AkritesSearchStewardResult[]))
+    );
   }
 }
