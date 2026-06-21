@@ -28,6 +28,7 @@
         <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none" aria-hidden="true"></i>
         <input
           type="text"
+          aria-label="Search stewards"
           [value]="searchQuery()"
           (input)="onSearchInput($event)"
           placeholder="Search by name, username, or org…"
@@ -120,6 +121,7 @@
     <!-- Move to assessing -->
     <button
       type="button"
+      [attr.aria-pressed]="moveToAssessing()"
       class="flex items-start gap-2.5 cursor-pointer text-left"
       (click)="moveToAssessing.set(!moveToAssessing())"
       data-testid="akrites-assign-move-assessing">

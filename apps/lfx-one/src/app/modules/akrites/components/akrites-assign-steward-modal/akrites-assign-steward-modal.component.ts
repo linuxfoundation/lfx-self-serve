@@ -47,7 +47,12 @@ export class AkritesAssignStewardModalComponent {
   }
 
   protected onSearchInput(event: Event): void {
-    this.searchQuery.set((event.target as HTMLInputElement).value);
+    const query = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(query);
+    const selected = this.selectedSteward();
+    if (selected && !this.stewardMatchesQuery(selected, query)) {
+      this.selectedSteward.set(null);
+    }
   }
 
   protected getInitials(displayName: string): string {
@@ -88,13 +93,15 @@ export class AkritesAssignStewardModalComponent {
       });
   }
 
+  private stewardMatchesQuery(steward: AkritesSearchStewardResult, query: string): boolean {
+    const q = query.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      steward.displayName.toLowerCase().includes(q) || steward.username.toLowerCase().includes(q) || (steward.organization ?? '').toLowerCase().includes(q)
+    );
+  }
+
   private initFilteredStewards(): Signal<AkritesSearchStewardResult[]> {
-    return computed(() => {
-      const q = this.searchQuery().toLowerCase().trim();
-      if (!q) return this.stewards();
-      return this.stewards().filter(
-        (s) => s.displayName.toLowerCase().includes(q) || s.username.toLowerCase().includes(q) || (s.organization ?? '').toLowerCase().includes(q)
-      );
-    });
+    return computed(() => this.stewards().filter((s) => this.stewardMatchesQuery(s, this.searchQuery())));
   }
 }
