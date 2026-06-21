@@ -16,8 +16,7 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
-          [routerLink]="['/surveys', 'create']"
-          [queryParams]="createSurveyQueryParams()"
+          (click)="onCreateSurvey()"
           data-testid="committee-surveys-create-btn"></lfx-button>
       }
     </lfx-surveys-table>
@@ -29,8 +28,7 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
-          [routerLink]="['/surveys', 'create']"
-          [queryParams]="createSurveyQueryParams()"
+          (click)="onCreateSurvey()"
           data-testid="committee-surveys-empty-create-btn"></lfx-button>
       </div>
     }
