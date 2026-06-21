@@ -85,51 +85,28 @@ export class AkritesTriageTabComponent {
     if (!pkg || this.actionLoading()) return;
     this.actionLoading.set(true);
 
-    const assign = (id: number) =>
-      this.akritesService
-        .assignSteward(id, body)
-        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: () => {
-            this.assignModalVisible.set(false);
-            this.assignTargetPackage.set(null);
-            this.actionLoading.set(false);
-            this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
-            this.stewardshipChanged.emit();
-          },
-          error: () => {
-            this.actionLoading.set(false);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
-          },
-        });
+    const stewardshipId$ =
+      pkg.stewardshipId !== null ? of(pkg.stewardshipId) : this.akritesService.openStewardship(pkg.purl).pipe(map((res) => parseInt(res.stewardship.id, 10)));
 
-    if (pkg.stewardshipId !== null) {
-      assign(pkg.stewardshipId);
-    } else {
-      this.akritesService
-        .openStewardship(pkg.purl)
-        .pipe(
-          switchMap((res) => {
-            const id = parseInt(res.stewardship.id, 10);
-            return this.akritesService.assignSteward(id, body);
-          }),
-          take(1),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe({
-          next: () => {
-            this.assignModalVisible.set(false);
-            this.assignTargetPackage.set(null);
-            this.actionLoading.set(false);
-            this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
-            this.stewardshipChanged.emit();
-          },
-          error: () => {
-            this.actionLoading.set(false);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
-          },
-        });
-    }
+    stewardshipId$
+      .pipe(
+        switchMap((id) => this.akritesService.assignSteward(id, body)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          this.assignModalVisible.set(false);
+          this.assignTargetPackage.set(null);
+          this.actionLoading.set(false);
+          this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
+          this.stewardshipChanged.emit();
+        },
+        error: () => {
+          this.actionLoading.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
+        },
+      });
   }
 
   private resolvePackage(pkg: AkritesPackage): void {
