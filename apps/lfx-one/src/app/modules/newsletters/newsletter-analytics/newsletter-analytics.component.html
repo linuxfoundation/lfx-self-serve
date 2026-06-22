@@ -40,7 +40,20 @@
           <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
             <span class="text-xs uppercase tracking-wide text-gray-500">Recipients</span>
             <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-recipients">{{ a.total_recipients }}</span>
-            <span class="text-xs text-gray-500">{{ a.delivered }} delivered · {{ a.failed }} failed</span>
+            <span class="text-xs text-gray-500">
+              {{ a.delivered }} delivered ·
+              @if (a.failed > 0) {
+                <button
+                  type="button"
+                  class="text-blue-600 hover:underline"
+                  (click)="openFailedDrawer()"
+                  data-testid="newsletter-analytics-failed-trigger">
+                  {{ a.failed }} failed
+                </button>
+              } @else {
+                {{ a.failed }} failed
+              }
+            </span>
           </div>
         </lfx-card>
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
@@ -86,6 +99,11 @@
           }
         </div>
       </lfx-card>
+
+      <lfx-newsletter-failed-recipients-drawer
+        [(visible)]="failedDrawerVisible"
+        [failedRecipients]="a.failed_recipients ?? []"
+        [failedCount]="a.failed" />
     </div>
   }
 </div>
