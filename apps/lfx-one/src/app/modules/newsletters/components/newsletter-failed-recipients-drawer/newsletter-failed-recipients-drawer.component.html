@@ -71,7 +71,13 @@
 
   <ng-template #footer>
     <div class="flex items-center justify-end gap-3 w-full px-1 py-3 border-t border-slate-200" data-testid="newsletter-failed-recipients-drawer-footer">
-      <lfx-button label="Close" severity="secondary" [text]="true" size="small" (onClick)="onClose()" data-testid="newsletter-failed-recipients-drawer-close-button" />
+      <lfx-button
+        label="Close"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        (onClick)="onClose()"
+        data-testid="newsletter-failed-recipients-drawer-close-button" />
     </div>
   </ng-template>
 </p-drawer>

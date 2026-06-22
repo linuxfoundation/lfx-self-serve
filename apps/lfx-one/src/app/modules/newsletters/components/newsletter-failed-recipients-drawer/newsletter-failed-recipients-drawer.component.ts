@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, model, PLATFORM_ID, Signal } from '@angular/core';
+import { Clipboard } from '@angular/cdk/clipboard';
+import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,7 +17,7 @@ import { DrawerModule } from 'primeng/drawer';
 })
 export class NewsletterFailedRecipientsDrawerComponent {
   // === Services ===
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly clipboard = inject(Clipboard);
   private readonly messageService = inject(MessageService);
 
   // === Inputs ===
@@ -39,32 +39,28 @@ export class NewsletterFailedRecipientsDrawerComponent {
   }
 
   protected copyAll(): void {
-    // Clipboard is browser-only — guard so SSR never touches `navigator`.
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
     const emails = this.failedRecipients();
     if (!emails.length) {
       return;
     }
 
-    navigator.clipboard
-      .writeText(emails.join('\n'))
-      .then(() => {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Copied',
-          detail: `${emails.length} email${emails.length === 1 ? '' : 's'} copied to clipboard.`,
-        });
-      })
-      .catch(() => {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Copy failed',
-          detail: 'Could not copy emails to the clipboard.',
-        });
+    // Angular CDK's Clipboard is SSR-safe and feature-detects support, returning
+    // false (instead of throwing) when the platform can't copy — e.g. an insecure
+    // context or an older browser without the async clipboard API.
+    if (this.clipboard.copy(emails.join('\n'))) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Copied',
+        detail: `${emails.length} email${emails.length === 1 ? '' : 's'} copied to clipboard.`,
       });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Copy unavailable',
+      detail: 'Could not copy emails. Please copy them manually.',
+    });
   }
 
   private initFilteredRecipients(): Signal<string[]> {

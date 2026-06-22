@@ -43,11 +43,7 @@
             <span class="text-xs text-gray-500">
               {{ a.delivered }} delivered ·
               @if (a.failed > 0) {
-                <button
-                  type="button"
-                  class="text-blue-600 hover:underline"
-                  (click)="openFailedDrawer()"
-                  data-testid="newsletter-analytics-failed-trigger">
+                <button type="button" class="text-blue-600 hover:underline" (click)="openFailedDrawer()" data-testid="newsletter-analytics-failed-trigger">
                   {{ a.failed }} failed
                 </button>
               } @else {
@@ -100,10 +96,7 @@
         </div>
       </lfx-card>
 
-      <lfx-newsletter-failed-recipients-drawer
-        [(visible)]="failedDrawerVisible"
-        [failedRecipients]="a.failed_recipients ?? []"
-        [failedCount]="a.failed" />
+      <lfx-newsletter-failed-recipients-drawer [(visible)]="failedDrawerVisible" [failedRecipients]="a.failed_recipients ?? []" [failedCount]="a.failed" />
     </div>
   }
 </div>
