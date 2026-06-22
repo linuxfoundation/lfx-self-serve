@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,6 +19,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformOption,
+  CampaignProgramTypeOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   LinkedInBriefCopy,
@@ -43,6 +44,9 @@ export class PlanningTabComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+
+  // === Inputs ===
+  public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
 
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
@@ -218,6 +222,7 @@ export class PlanningTabComponent implements OnInit {
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      programType: this.programTypeConfig().id,
     };
 
     this.briefSubscription = this.campaignService
@@ -268,6 +273,7 @@ export class PlanningTabComponent implements OnInit {
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
       selectedPlatforms: [...this.selectedPlatforms()],
       linkedInCopy: this.getLinkedInCopy(),
+      programType: this.programTypeConfig().id,
     });
   }
 
@@ -413,6 +419,7 @@ export class PlanningTabComponent implements OnInit {
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
       platforms: [...this.selectedPlatforms()],
+      programType: this.programTypeConfig().id,
     };
 
     this.briefSubscription?.unsubscribe();

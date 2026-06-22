@@ -26,6 +26,20 @@ export type DateRangeOption = 7 | 14 | 30;
 
 export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead-generation' | 'engagement';
 
+export type CampaignProgramType = 'events' | 'education';
+
+export interface CampaignProgramTypeOption {
+  id: CampaignProgramType;
+  label: string;
+  breadcrumbLabel: string;
+  urlLabel: string;
+  urlPlaceholder: string;
+  urlHelp: string;
+  goalLabel: string;
+  audiencePlaceholder: string;
+  valuePropPlaceholder: string;
+}
+
 export type CampaignTab = CampaignPhase;
 
 export interface CampaignTabOption {
@@ -83,6 +97,7 @@ export type CampaignSSEEventType =
 export interface CampaignBriefRequest {
   url: string;
   platforms?: CampaignPlatform[];
+  programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
   valueProp?: string;
@@ -119,6 +134,7 @@ export interface CampaignBriefOutput {
   totalBudget: number | null;
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
+  programType?: CampaignProgramType;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -372,6 +388,7 @@ export interface CampaignBriefRefineRequest {
   feedback: string;
   eventDetails?: CampaignEventDetails | null;
   platforms?: CampaignPlatform[];
+  programType?: CampaignProgramType;
 }
 
 // ---------------------------------------------------------------------------

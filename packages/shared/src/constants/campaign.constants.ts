@@ -5,6 +5,7 @@ import type {
   CampaignGoalOption,
   CampaignPlatform,
   CampaignPlatformOption,
+  CampaignProgramTypeOption,
   CampaignStatus,
   CampaignTabOption,
   LinkedInGeoTarget,
@@ -28,6 +29,31 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
+] as const;
+
+export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
+  {
+    id: 'events',
+    label: 'Events Campaigns',
+    breadcrumbLabel: 'Events Campaigns',
+    urlLabel: 'Event Page URL',
+    urlPlaceholder: 'https://events.linuxfoundation.org/your-event/',
+    urlHelp: 'Paste any LF event page — dates and details are scraped live, not from AI memory.',
+    goalLabel: 'Conversions / Registrations',
+    audiencePlaceholder: 'e.g., Cloud-native developers, DevOps engineers',
+    valuePropPlaceholder: 'e.g., Free registration, 200+ sessions, hands-on labs with industry experts',
+  },
+  {
+    id: 'education',
+    label: 'Education Campaigns',
+    breadcrumbLabel: 'Education Campaigns',
+    urlLabel: 'Course / Training Page URL',
+    urlPlaceholder: 'https://training.linuxfoundation.org/training/your-course/',
+    urlHelp: 'Paste any LF Training page — course details are scraped live, not from AI memory.',
+    goalLabel: 'Conversions / Enrollments',
+    audiencePlaceholder: 'e.g., IT professionals seeking certifications, career changers',
+    valuePropPlaceholder: 'e.g., Industry-recognized certification, self-paced learning, exam bundle discounts',
+  },
 ] as const;
 
 export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [

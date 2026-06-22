@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 
-import { CAMPAIGN_TABS } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignTab } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
+import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
@@ -22,8 +22,12 @@ export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly tabs = CAMPAIGN_TABS;
+  protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
   protected readonly selectedTab = signal<CampaignTab>('planning');
+  protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
+
+  protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
 
   protected selectTab(tab: CampaignTab): void {
     this.selectedTab.set(tab);
@@ -50,6 +54,11 @@ export class CampaignsComponent {
         target?.focus();
       }
     }
+  }
+
+  protected onProgramTypeChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as CampaignProgramType;
+    this.selectedProgramType.set(value);
   }
 
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
