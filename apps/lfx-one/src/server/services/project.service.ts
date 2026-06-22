@@ -3362,14 +3362,14 @@ export class ProjectService {
       const makeRow = (monthIndex: number): Omit<SocialMediaPlatformMonthlyRow, 'momChangeFollowers'> => {
         const growth = 1 + monthIndex * 0.012;
         const followers = Math.round(seed.baseFollowers * growth);
-        const prevFollowers = monthIndex === 0 ? Math.round(seed.baseFollowers * 0.988) : Math.round(seed.baseFollowers * (1 + (monthIndex - 1) * 0.012));
+        const prevFollowers = monthIndex === 0 ? 0 : Math.round(seed.baseFollowers * (1 + (monthIndex - 1) * 0.012));
         return {
           month: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
           followers,
-          newFollowers: followers - prevFollowers,
-          impressions: Math.round(seed.baseImpressions * growth * (0.9 + Math.random() * 0.2)),
-          engagementRate: Math.round(seed.baseEngagement * (0.95 + Math.random() * 0.1) * 100) / 100,
-          posts: Math.round(seed.basePosts * (0.8 + Math.random() * 0.4)),
+          newFollowers: monthIndex === 0 ? 0 : followers - prevFollowers,
+          impressions: Math.round(seed.baseImpressions * growth * (0.9 + monthIndex * 0.02)),
+          engagementRate: Math.round(seed.baseEngagement * (0.95 + monthIndex * 0.01) * 100) / 100,
+          posts: Math.round(seed.basePosts * (0.85 + monthIndex * 0.03)),
         };
       };
 
