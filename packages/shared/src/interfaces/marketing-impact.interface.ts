@@ -135,6 +135,26 @@ export interface SocialAccountRow {
   posts: string;
 }
 
+/** View-model row for a single month inside a social monthly platform. */
+export interface SocialMonthlyRow {
+  month: string;
+  impressions: string;
+  engagementRate: string;
+  followers: string;
+  newFollowers: string;
+  momChange: string;
+  momChangeClass: string;
+}
+
+/** View-model for an expandable social platform with monthly data. */
+export interface SocialMonthlyPlatform {
+  platform: string;
+  latestFollowers: string;
+  latestMomChange: string;
+  latestMomChangeClass: string;
+  months: SocialMonthlyRow[];
+}
+
 /** Segment data for the sentiment breakdown horizontal bar chart. */
 export interface SentimentBar {
   positive: number;

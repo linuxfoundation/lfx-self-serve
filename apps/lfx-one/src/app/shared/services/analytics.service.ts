@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   OrgLensAccountContextResponse,
@@ -62,6 +62,7 @@ import {
   CodeContributionSummaryResponse,
   BoardMeetingParticipationSummaryResponse,
   KeywordPerformanceResponse,
+  SocialMediaMonthlyResponse,
   SocialMediaResponse,
   SocialReachResponse,
   WebActivitiesSummaryResponse,
@@ -896,6 +897,16 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  public getSocialMediaMonthly(foundationSlug: string, year?: number): Observable<SocialMediaMonthlyResponse> {
+    let params = new HttpParams().set('foundationSlug', foundationSlug);
+    if (year) {
+      params = params.set('year', year.toString());
+    }
+    return this.http
+      .get<SocialMediaMonthlyResponse>('/api/analytics/social-media/monthly', { params })
+      .pipe(catchError(() => of({ year: year ?? new Date().getFullYear(), platforms: [] })));
   }
 
   /**
