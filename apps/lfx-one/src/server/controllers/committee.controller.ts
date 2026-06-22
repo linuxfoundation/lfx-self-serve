@@ -725,23 +725,27 @@ export class CommitteeController {
       // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
       const acceptData: AcceptCommitteeInviteRequest = {};
 
-      // Only pre-validate org when organization_required is explicitly true. When it is
-      // null/undefined (invite pre-dates committee-service v1.1), skip the BFF check and let
-      // the upstream accept endpoint be authoritative — avoid blocking valid accepts with a
-      // spurious 400 due to the fail-closed fallback in invitationRequiresOrganization.
-      if (pendingInvite.organization_required === true) {
-        const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
-        const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
-        if (!orgName) {
-          next(
-            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
-              operation: 'accept_committee_invite',
-              service: 'committee_controller',
-              path: req.path,
-            })
-          );
-          return;
-        }
+      const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
+      const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
+
+      // Only enforce org as required when organization_required is explicitly true. When it is
+      // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
+      // let the upstream accept endpoint be authoritative.
+      if (pendingInvite.organization_required === true && !orgName) {
+        next(
+          ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Always forward the organization when the user supplied one — the upstream committee-service
+      // is authoritative on org requirements and must receive the value regardless of whether the
+      // invite's organization_required field is populated (it is absent on pre-v1.1 invites).
+      if (orgName) {
         acceptData.organization = {
           name: orgName,
           id: typeof body.organization?.id === 'string' ? body.organization.id.trim() || null : null,
