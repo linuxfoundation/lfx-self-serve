@@ -640,7 +640,21 @@ export class CampaignProxyService {
       try {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
         eventDetails = JSON.parse(extraction) as Record<string, unknown>;
-        yield { type: 'event', data: eventDetails };
+        yield {
+          type: 'event',
+          data: {
+            name: eventDetails['name'] ?? '',
+            dates: eventDetails['dates'] ?? '',
+            city: eventDetails['city'] ?? '',
+            countryCode: eventDetails['country_code'] ?? '',
+            audience: eventDetails['audience'] ?? '',
+            themes: Array.isArray(eventDetails['themes']) ? eventDetails['themes'] : [],
+            registrationUrl: eventDetails['registration_url'] ?? '',
+            speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
+            slug: eventDetails['slug'] ?? '',
+            formatNotes: eventDetails['format_notes'] ?? '',
+          },
+        };
       } catch (error) {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
         yield { type: 'status', data: `Could not extract structured ${extractLabel}, generating copy from URL...` };

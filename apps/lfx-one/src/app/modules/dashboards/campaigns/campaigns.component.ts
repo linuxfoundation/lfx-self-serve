@@ -60,6 +60,8 @@ export class CampaignsComponent {
     const value = (event.target as HTMLSelectElement).value;
     if (this.programTypes.some((pt) => pt.id === value)) {
       this.selectedProgramType.set(value as CampaignProgramType);
+      this.briefOutput.set(null);
+      this.selectedTab.set('planning');
     }
   }
 
