@@ -727,11 +727,15 @@ export class CommitteeController {
 
       const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
       const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
+      const orgId = typeof body.organization?.id === 'string' ? body.organization.id.trim() : '';
+
+      // Upstream accepts "organization id OR (organization name + domain)" — treat either as present.
+      const hasOrg = !!(orgName || orgId);
 
       // Only enforce org as required when organization_required is explicitly true. When it is
       // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
       // let the upstream accept endpoint be authoritative.
-      if (pendingInvite.organization_required === true && !orgName) {
+      if (pendingInvite.organization_required === true && !hasOrg) {
         next(
           ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
             operation: 'accept_committee_invite',
@@ -745,10 +749,10 @@ export class CommitteeController {
       // Always forward the organization when the user supplied one — the upstream committee-service
       // is authoritative on org requirements and must receive the value regardless of whether the
       // invite's organization_required field is populated (it is absent on pre-v1.1 invites).
-      if (orgName) {
+      if (hasOrg) {
         acceptData.organization = {
           name: orgName,
-          id: typeof body.organization?.id === 'string' ? body.organization.id.trim() || null : null,
+          id: orgId || null,
           website: typeof body.organization?.website === 'string' ? body.organization.website.trim() || null : null,
         };
       }
