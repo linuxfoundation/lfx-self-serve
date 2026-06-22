@@ -16,10 +16,12 @@ export const SURVEY_ROUTES: Routes = [
     path: 'create',
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
     canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'surveys' },
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
     canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'surveys' },
   },
 ];

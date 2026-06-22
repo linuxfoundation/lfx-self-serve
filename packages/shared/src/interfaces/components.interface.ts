@@ -3,6 +3,7 @@
 
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
+import type { CommitteeOrganizationReference } from './committee.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -515,6 +516,10 @@ export interface PendingActionItem {
   inviteGroupName?: string;
   /** Invitation title text up to (and excluding) the group name (set on Invitation action types), e.g. "You've been invited to " — built alongside `text` so the UI can link just the group name without runtime string-splitting. */
   inviteTitlePrefix?: string;
+  /** Suggested organization from the committee_invite (set on Invitation action types) */
+  inviteOrganization?: CommitteeOrganizationReference | null;
+  /** Precomputed flag: accept must collect organization when true (set on Invitation action types) */
+  inviteRequiresOrganization?: boolean;
 }
 
 /**

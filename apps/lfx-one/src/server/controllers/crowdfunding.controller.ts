@@ -83,13 +83,9 @@ export class CrowdfundingController {
 
       const paymentMethod = await this.crowdfundingService.getMyPaymentMethod(req);
 
-      if (!paymentMethod) {
-        res.status(404).json({ message: 'No payment method found' });
-        return;
-      }
-
       logger.success(req, 'get_my_payment_method', startTime);
 
+      // null when the user has no payment method — not a 404, just an empty state
       res.json(paymentMethod);
     } catch (error) {
       next(error);

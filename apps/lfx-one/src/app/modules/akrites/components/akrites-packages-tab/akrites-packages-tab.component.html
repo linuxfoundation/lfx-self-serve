@@ -173,7 +173,22 @@
   }
 
   <!-- Package table -->
-  <lfx-table [value]="filteredPackages()" [loading]="loading()" [rowHover]="true" size="small" data-testid="akrites-packages-table">
+  <lfx-table
+    [value]="filteredPackages()"
+    [loading]="loading()"
+    [rowHover]="true"
+    size="small"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
+    [paginator]="true"
+    [rows]="filters().pageSize"
+    [first]="(filters().page - 1) * filters().pageSize"
+    [totalRecords]="total()"
+    [rowsPerPageOptions]="[25, 50, 100]"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="{first} - {last} of {totalRecords}"
+    (onPage)="onTablePage($event)"
+    data-testid="akrites-packages-table">
     <ng-template #header>
       <tr>
         <th class="w-9">
@@ -366,5 +381,4 @@
       </tr>
     </ng-template>
   </lfx-table>
-  <p class="text-xs text-gray-500">Showing {{ filteredPackages().length }} of {{ packages().length }} packages</p>
 </div>

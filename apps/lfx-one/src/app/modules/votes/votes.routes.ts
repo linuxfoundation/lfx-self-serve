@@ -16,12 +16,12 @@ export const VOTE_ROUTES: Routes = [
     path: 'create',
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { preload: false },
+    data: { preload: false, writeFeature: 'votes' },
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { preload: false },
+    data: { preload: false, writeFeature: 'votes' },
   },
 ];

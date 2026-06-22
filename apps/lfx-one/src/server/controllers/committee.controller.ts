@@ -4,6 +4,7 @@
 import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
+  AcceptCommitteeInviteRequest,
   CommitteeCreateData,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
@@ -23,6 +24,7 @@ import { contentDispositionAttachment } from '../helpers/content-disposition.hel
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -679,7 +681,75 @@ export class CommitteeController {
         return;
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId);
+      // Reject bodies that are not a plain object (e.g. null, arrays, primitives).
+      // The client always sends at least {} — this guard catches malformed bodies only.
+      if (req.body !== undefined && (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))) {
+        next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Determine org-required using the invite's own organization_required field — accessible
+      // to the invitee via the email-scoped query index regardless of committee-viewer status.
+      // This replaces the previous getCommitteeById + getCommitteeSettings fetch which failed
+      // the access check for invitees who are not yet committee viewers (LFXV2-2453).
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        next(
+          ServiceValidationError.forField('email', 'User email not found in authentication context', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
+      if (!pendingInvite) {
+        next(
+          ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
+      const acceptData: AcceptCommitteeInviteRequest = {};
+
+      // Only pre-validate org when organization_required is explicitly true. When it is
+      // null/undefined (invite pre-dates committee-service v1.1), skip the BFF check and let
+      // the upstream accept endpoint be authoritative — avoid blocking valid accepts with a
+      // spurious 400 due to the fail-closed fallback in invitationRequiresOrganization.
+      if (pendingInvite.organization_required === true) {
+        const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
+        const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
+        if (!orgName) {
+          next(
+            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+        acceptData.organization = {
+          name: orgName,
+          id: typeof body.organization?.id === 'string' ? body.organization.id.trim() || null : null,
+          website: typeof body.organization?.website === 'string' ? body.organization.website.trim() || null : null,
+        };
+      }
+
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();

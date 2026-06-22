@@ -48,7 +48,7 @@ export function getAdvisoryTagSeverity(severity: AkritesSeverity | null): TagSev
 }
 
 export function formatStatus(status: string): string {
-  return status.replace(/_/g, ' ');
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // Band thresholds mirror the design spec (design/LFX-AKRITES-Admin-Dashboard.html):

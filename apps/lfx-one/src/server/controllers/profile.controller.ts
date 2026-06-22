@@ -174,6 +174,15 @@ export class ProfileController {
         has_metadata: !!natsUserData,
       });
 
+      // Per-user profile data must never be served from a cache — otherwise the client
+      // refetch right after a profile save can return the pre-save body from the browser
+      // HTTP cache, leaving the header card / edit dialog showing stale values until a full reload.
+      res.set({
+        ['Cache-Control']: 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+
       res.json(combinedProfile);
     } catch (error) {
       next(error);

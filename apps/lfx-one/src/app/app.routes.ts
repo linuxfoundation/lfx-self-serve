@@ -288,6 +288,10 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
+        path: 'meetups',
+        loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
+      },
+      {
         path: 'groups',
         canActivate: [lensRedirectGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
@@ -351,6 +355,11 @@ export const routes: Routes = [
       {
         path: 'me/events',
         redirectTo: 'events',
+        pathMatch: 'full',
+      },
+      {
+        path: 'me/meetups',
+        redirectTo: 'meetups',
         pathMatch: 'full',
       },
       {
