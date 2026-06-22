@@ -13,7 +13,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { invitationRequiresOrganization, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -725,7 +725,11 @@ export class CommitteeController {
       // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
       const acceptData: AcceptCommitteeInviteRequest = {};
 
-      if (invitationRequiresOrganization({ organization_required: pendingInvite.organization_required })) {
+      // Only pre-validate org when organization_required is explicitly true. When it is
+      // null/undefined (invite pre-dates committee-service v1.1), skip the BFF check and let
+      // the upstream accept endpoint be authoritative — avoid blocking valid accepts with a
+      // spurious 400 due to the fail-closed fallback in invitationRequiresOrganization.
+      if (pendingInvite.organization_required === true) {
         const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
         const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
         if (!orgName) {
