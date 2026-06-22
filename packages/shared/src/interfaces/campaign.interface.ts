@@ -30,6 +30,14 @@ export type CampaignProgramType = 'events' | 'education';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
+export interface RedditObjectiveParams {
+  readonly redditObjective: string;
+  readonly bidType: 'CPM' | 'CPC';
+  readonly bidValue: number;
+  readonly optimizationGoal: string;
+  readonly viewThroughConversionType?: string;
+}
+
 export interface CampaignProgramTypeOption {
   id: CampaignProgramType;
   label: string;

@@ -15,6 +15,7 @@ import type {
   MetaPlacement,
   ParsedCampaignName,
   RedditObjective,
+  RedditObjectiveParams,
 } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
@@ -210,14 +211,6 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
 // ---------------------------------------------------------------------------
 // Reddit Ads — Objective Parameters
 // ---------------------------------------------------------------------------
-
-export interface RedditObjectiveParams {
-  readonly redditObjective: string;
-  readonly bidType: 'CPM' | 'CPC';
-  readonly bidValue: number;
-  readonly optimizationGoal: string;
-  readonly viewThroughConversionType?: string;
-}
 
 export const REDDIT_OBJECTIVE_PARAMS: Readonly<Record<RedditObjective, RedditObjectiveParams>> = {
   awareness: { redditObjective: 'IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'IMPRESSIONS' },

@@ -951,6 +951,7 @@ export class CampaignProxyService {
 
   public async updateCampaignStatus(req: Request, campaignId: string, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
     const { platform, status } = body;
+    logger.debug(req, 'campaign_status_update', 'Dispatching status update', { platform, campaignId, status });
 
     switch (platform) {
       case 'meta-ads':
