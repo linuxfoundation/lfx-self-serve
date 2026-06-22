@@ -10,8 +10,10 @@ import type {
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
+  CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
+import { VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -21,6 +23,9 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
+
+/** Platforms that support the campaign status toggle endpoint. */
+const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads']);
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -487,19 +492,17 @@ export class CampaignController {
     }
 
     const body = req.body as Partial<CampaignStatusUpdateRequest>;
-    const supportedPlatforms = new Set<CampaignPlatform>(['meta-ads']);
-    const validStatuses = new Set(['ACTIVE', 'PAUSED']);
 
-    if (!body.platform || !supportedPlatforms.has(body.platform)) {
+    if (!body.platform || !SUPPORTED_STATUS_PLATFORMS.has(body.platform)) {
       next(
-        ServiceValidationError.forField('platform', `platform must be one of: ${[...supportedPlatforms].join(', ')}`, {
+        ServiceValidationError.forField('platform', `platform must be one of: ${[...SUPPORTED_STATUS_PLATFORMS].join(', ')}`, {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
         })
       );
       return;
     }
-    if (!body.status || !validStatuses.has(body.status)) {
+    if (!body.status || !VALID_CAMPAIGN_TOGGLE_STATUSES.has(body.status as CampaignToggleStatus)) {
       next(
         ServiceValidationError.forField('status', 'status must be ACTIVE or PAUSED', {
           operation: 'campaign_status_update',
@@ -515,7 +518,7 @@ export class CampaignController {
       const result = await this.proxyService.updateCampaignStatus(req, {
         platform: body.platform,
         campaignId,
-        status: body.status,
+        status: body.status as CampaignToggleStatus,
       });
       logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
       res.json(result);

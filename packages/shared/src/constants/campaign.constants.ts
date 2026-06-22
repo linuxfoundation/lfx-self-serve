@@ -8,9 +8,11 @@ import type {
   CampaignProgramTypeOption,
   CampaignStatus,
   CampaignTabOption,
+  CampaignToggleStatus,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
+  MetaPlacement,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
 
@@ -162,6 +164,7 @@ export const META_CHAR_LIMITS = {
   description: 30,
 } as const;
 
+/** Maps internal objective identifiers to Meta Marketing API campaign objective, optimization goal, and promoted object type. */
 export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjectiveParams>> = {
   awareness: { campaignObjective: 'OUTCOME_AWARENESS', optimizationGoal: 'REACH', promotedObjectType: 'none' },
   traffic: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
@@ -170,7 +173,8 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
 
-export const META_DEFAULT_PLACEMENTS: Readonly<Record<string, boolean>> = {
+/** Default Meta ad placement toggles — Facebook and Instagram feeds enabled, all others off. */
+export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   facebookFeed: true,
   instagramFeed: true,
   stories: false,
@@ -178,6 +182,9 @@ export const META_DEFAULT_PLACEMENTS: Readonly<Record<string, boolean>> = {
   audienceNetwork: false,
   messengerInbox: false,
 } as const;
+
+/** Valid statuses for the campaign status toggle endpoint. */
+export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap

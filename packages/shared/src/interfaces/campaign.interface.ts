@@ -835,10 +835,13 @@ export interface HubSpotUtmCreateResult {
 // Campaign Status Toggle
 // ---------------------------------------------------------------------------
 
+/** Supported statuses for the campaign status toggle endpoint. */
+export type CampaignToggleStatus = 'ACTIVE' | 'PAUSED';
+
 export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
   campaignId: string;
-  status: 'ACTIVE' | 'PAUSED';
+  status: CampaignToggleStatus;
 }
 
 export interface CampaignStatusUpdateResult {

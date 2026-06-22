@@ -30,7 +30,7 @@ function getMetaAccessToken(): string {
   return token;
 }
 
-async function metaRequest<T>(req: Request | undefined, method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<T> {
+async function metaRequest<T>(req: Request | undefined, method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
   const token = getMetaAccessToken();
   const url = `${META_BASE_URL}${path}`;
 
@@ -43,7 +43,7 @@ async function metaRequest<T>(req: Request | undefined, method: 'GET' | 'POST' |
     signal: AbortSignal.timeout(META_REQUEST_TIMEOUT_MS),
   };
 
-  if (body && (method === 'POST' || method === 'PATCH')) {
+  if (body && method === 'POST') {
     init.body = JSON.stringify(body);
   }
 
@@ -175,13 +175,13 @@ function resolveRegion(geoTargets: string[]): string {
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
 
-const OBJECTIVE_LABELS: Record<MetaObjective, string> = {
+const OBJECTIVE_LABELS = {
   awareness: 'Awareness',
   traffic: 'Traffic',
   engagement: 'Engagement',
   leads: 'Leads',
   conversions: 'Conversions',
-};
+} as const satisfies Record<MetaObjective, string>;
 
 function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
@@ -391,10 +391,12 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 export async function updateMetaCampaignStatus(req: Request | undefined, campaignId: string, status: 'ACTIVE' | 'PAUSED'): Promise<CampaignStatusUpdateResult> {
   const startTime = logger.startOperation(req, 'meta_campaign_status_update', { campaignId, status });
 
-  const currentResp = await metaRequest<{ status: string }>(req, 'GET', `/${campaignId}?fields=status`);
+  const currentResp = await metaRequest<Partial<{ status: string }>>(req, 'GET', `/${campaignId}?fields=status`);
+  if (!currentResp.status) {
+    throw new Error('Meta API returned no status field for the campaign. The campaign may not exist or access may be restricted.');
+  }
   const previousStatus = currentResp.status;
 
-  // Meta uses POST (not PATCH) for updates to campaign objects
   await metaRequest<{ success: boolean }>(req, 'POST', `/${campaignId}`, { status });
 
   logger.success(req, 'meta_campaign_status_update', startTime, { campaignId, previousStatus, newStatus: status });
