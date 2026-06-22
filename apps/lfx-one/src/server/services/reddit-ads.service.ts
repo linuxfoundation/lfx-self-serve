@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CampaignStatusUpdateResult,
   RedditActionItem,
   RedditAccountTotals,
   RedditCampaignCreateRequest,
@@ -11,6 +12,7 @@ import type {
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
+import { REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
@@ -90,7 +92,7 @@ interface RedditApiResponse {
   [key: string]: unknown;
 }
 
-async function redditRequest(method: 'GET' | 'POST', url: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
+async function redditRequest(method: 'GET' | 'POST' | 'PATCH', url: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
   const token = await refreshRedditToken();
 
   const resp = await fetch(url, {
@@ -336,6 +338,8 @@ function toIsoTimestamp(dateStr: string): string {
 interface RedditCampaignData {
   id?: string;
   name?: string;
+  configured_status?: string;
+  effective_status?: string;
   [key: string]: unknown;
 }
 
@@ -392,6 +396,40 @@ function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: nu
   return `${base}${sep}${params.toString()}`;
 }
 
+function extractRedditPostId(urlOrId: string): string {
+  const match = urlOrId.match(/reddit\.com\/(?:r\/\w+\/)?comments\/([a-z0-9]+)/i);
+  if (match) return `t3_${match[1]}`;
+  if (urlOrId.startsWith('t3_')) return urlOrId;
+  if (/^[a-z0-9]+$/i.test(urlOrId.trim())) return `t3_${urlOrId.trim()}`;
+  throw new Error(`Cannot extract Reddit post ID from: ${urlOrId}`);
+}
+
+export async function updateRedditCampaignStatus(
+  req: Request | undefined,
+  accountId: string,
+  campaignId: string,
+  status: 'ACTIVE' | 'PAUSED'
+): Promise<CampaignStatusUpdateResult> {
+  const startTime = logger.startOperation(req, 'reddit_campaign_status_update', { campaignId, status });
+
+  const currentResp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}`);
+  const currentData = currentResp.data as RedditCampaignData | undefined;
+  const previousStatus = String(currentData?.configured_status ?? currentData?.effective_status ?? 'unknown');
+
+  await redditRequest('PATCH', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}`, {
+    data: { configured_status: status },
+  });
+
+  logger.success(req, 'reddit_campaign_status_update', startTime, { campaignId, previousStatus, newStatus: status });
+
+  return {
+    platform: 'reddit-ads',
+    campaignId,
+    previousStatus,
+    newStatus: status,
+  };
+}
+
 export async function executeRedditCampaignCreation(req: Request | undefined, config: RedditCampaignCreateRequest): Promise<RedditCampaignCreateResult> {
   const startTime = logger.startOperation(req, 'reddit_campaign_create', { eventName: config.eventName });
   const steps: string[] = [];
@@ -422,25 +460,28 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     steps.push(`Account verification warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 
-  // Step 2: Create campaign (PAUSED, lifetime budget)
+  // Step 2: Create campaign (PAUSED, lifetime budget, objective-aware params)
   const campaignName = buildRedditCampaignName(config);
   const campaignStartTime = toIsoTimestamp(config.startDate);
   const campaignEndTime = toIsoTimestamp(config.endDate);
 
-  const campaignBody = {
+  const objective = config.objective ?? 'conversions';
+  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
+
+  const campaignBody: Record<string, unknown> = {
     data: {
       name: campaignName,
-      objective: 'CONVERSIONS',
+      objective: objParams.redditObjective,
       configured_status: 'PAUSED',
       is_campaign_budget_optimization: true,
       bid_strategy: 'BIDLESS',
-      bid_type: 'CPM',
-      optimization_goal: 'PURCHASE',
+      bid_type: objParams.bidType,
+      optimization_goal: objParams.optimizationGoal,
       goal_type: 'LIFETIME_SPEND',
       goal_value: toMicrodollars(config.budgetUsd),
-      view_through_conversion_type: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
       start_time: campaignStartTime,
       end_time: campaignEndTime,
+      ...(objParams.viewThroughConversionType && { view_through_conversion_type: objParams.viewThroughConversionType }),
     },
   };
 
@@ -483,8 +524,8 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       campaign_id: campaignId,
       configured_status: 'PAUSED',
       bid_strategy: 'BIDLESS',
-      bid_type: 'CPM',
-      optimization_goal: 'PURCHASE',
+      bid_type: objParams.bidType,
+      optimization_goal: objParams.optimizationGoal,
       targeting,
       start_time: effectiveStart,
       end_time: campaignEndTime,
@@ -518,19 +559,50 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     steps.push(`Targeting: ${config.keywords.length} keywords, ${geos.length} geos (communities skipped — add manually in Reddit Ads Manager)`);
   }
 
-  // Step 4: Reddit ads require a post_id — log UTM URLs and headlines for manual ad creation
-  const variantCount = config.variants.length;
-  if (variantCount > 0) {
-    steps.push(`${variantCount} ad variant(s) ready — create ads in Reddit Ads Manager with these headlines:`);
-    for (let i = 0; i < variantCount; i++) {
-      const utmUrl = buildRedditUtmUrl(config, i);
-      steps.push(`  Variant ${i + 1}: "${config.variants[i].headline}" → ${utmUrl}`);
+  // Step 4: Create ads from post URL if provided, otherwise log manual instructions
+  let adCount = 0;
+  let adId: string | undefined;
+
+  if (config.postUrl) {
+    const postId = extractRedditPostId(config.postUrl);
+    steps.push(`Extracted post ID: ${postId} from ${config.postUrl}`);
+
+    const utmUrl = buildRedditUtmUrl(config, 0);
+    const adBody = {
+      data: {
+        ad_group_id: adGroupId,
+        name: `${config.eventName.replace(/\|/g, '-')} - Ad`,
+        post_id: postId,
+        configured_status: 'PAUSED',
+        click_url: utmUrl,
+      },
+    };
+
+    try {
+      const adResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ads`, adBody);
+      const adData = (adResp.data as RedditCampaignData) ?? {};
+      adId = String(adData.id ?? '');
+      if (adId) {
+        adCount = 1;
+        steps.push(`Ad created: ${adId} (post: ${postId}, click URL: ${utmUrl})`);
+      }
+    } catch (err) {
+      steps.push(`Ad creation failed: ${err instanceof Error ? err.message : 'Unknown error'} — add ad manually in Reddit Ads Manager`);
     }
   } else {
-    steps.push('No ad variants provided — add ads manually in Reddit Ads Manager');
+    const variantCount = config.variants.length;
+    if (variantCount > 0) {
+      steps.push(`${variantCount} ad variant(s) ready — create ads in Reddit Ads Manager with these headlines:`);
+      for (let i = 0; i < variantCount; i++) {
+        const utmUrl = buildRedditUtmUrl(config, i);
+        steps.push(`  Variant ${i + 1}: "${config.variants[i].headline}" → ${utmUrl}`);
+      }
+    } else {
+      steps.push('No ad variants or post URL provided — add ads manually in Reddit Ads Manager');
+    }
   }
 
-  logger.success(req, 'reddit_campaign_create', startTime, { campaignId, adGroupId });
+  logger.success(req, 'reddit_campaign_create', startTime, { campaignId, adGroupId, adCount });
 
   return {
     platform: 'reddit-ads',
@@ -538,7 +610,8 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     campaignId,
     adGroupName,
     adGroupId,
-    adCount: 0,
+    adCount,
+    adId,
     redditUrl: REDDIT_ADS_MANAGER_URL,
     steps,
   };

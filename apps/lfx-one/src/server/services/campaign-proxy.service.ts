@@ -29,7 +29,7 @@ import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
-import { executeRedditCampaignCreation } from './reddit-ads.service';
+import { executeRedditCampaignCreation, updateRedditCampaignStatus } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
 // Google Ads gRPC client (via google-ads-api)
@@ -955,6 +955,14 @@ export class CampaignProxyService {
     switch (platform) {
       case 'meta-ads':
         return updateMetaCampaignStatus(req, campaignId, status);
+      case 'reddit-ads': {
+        const { REDDIT_ACCOUNTS } = await import('../constants');
+        const accountId = body.accountId || REDDIT_ACCOUNTS[0]?.accountId;
+        if (!accountId) {
+          throw new Error('No Reddit ad account configured');
+        }
+        return updateRedditCampaignStatus(req, accountId, campaignId, status);
+      }
       default:
         throw new Error(`Status toggle is not supported for platform: ${platform}`);
     }

@@ -25,7 +25,7 @@ import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
-const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads']);
+const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
 
 const NUMERIC_ID_RE = /^\d+$/;
 
@@ -539,6 +539,7 @@ export class CampaignController {
       const result = await this.proxyService.updateCampaignStatus(req, campaignId, {
         platform: body.platform,
         status: body.status as CampaignToggleStatus,
+        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
       });
       logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
       res.json(result);
