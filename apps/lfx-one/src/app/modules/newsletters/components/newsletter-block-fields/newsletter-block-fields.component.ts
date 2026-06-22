@@ -9,6 +9,7 @@ import { InputNumberComponent } from '@components/input-number/input-number.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey } from '@lfx-one/shared/utils';
 
@@ -56,6 +57,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   // === Computed Signals ===
   // The non-slot fields to render, flattened with their key (ordered by schema).
   protected readonly fieldEntries: Signal<NewsletterFieldEntry[]> = this.initFieldEntries();
+
+  // Reserved keys for the universal Spacing controls, surfaced to the template.
+  protected readonly paddingKey = NEWSLETTER_SPACING_PADDING_KEY;
+  protected readonly marginKey = NEWSLETTER_SPACING_MARGIN_KEY;
 
   // The block id the current form was built for, to detect selection changes.
   private builtForBlockId: string | null = null;
@@ -150,6 +155,11 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
       group.addControl(entry.key, this.buildControl(entry, block.content[entry.key]));
     }
 
+    // Universal Spacing controls (Padding / Margin), auto-injected at the bottom
+    // of every block — mirrors gatewaze's auto-injected `_spacing_*` props.
+    group.addControl(this.paddingKey, new FormControl(this.seedSpacing(block.content[this.paddingKey])));
+    group.addControl(this.marginKey, new FormControl(this.seedSpacing(block.content[this.marginKey])));
+
     this.builtForBlockId = block.id;
     this.form.set(group);
 
@@ -188,7 +198,21 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
       if (!ctrl) continue;
       content[entry.key] = ctrl.value;
     }
+    // Persist the reserved spacing keys alongside the schema fields. Only carry
+    // a value when it's a non-default override, so default-spaced blocks keep a
+    // clean `content` (matches gatewaze, which skips the wrapper at `0px`).
+    for (const key of [this.paddingKey, this.marginKey]) {
+      const value = group.get(key)?.value;
+      if (typeof value === 'string' && value.trim() && value.trim() !== NEWSLETTER_SPACING_DEFAULT) {
+        content[key] = value.trim();
+      }
+    }
     return content;
+  }
+
+  /** Seed a spacing control from existing content, defaulting to `0px`. */
+  private seedSpacing(existing: unknown): string {
+    return typeof existing === 'string' && existing.trim() ? existing : NEWSLETTER_SPACING_DEFAULT;
   }
 
   /** Empty seed value for a scalar field type. */

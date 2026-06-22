@@ -267,6 +267,30 @@
       "template": "<Section class=\"card\">\n  <div style=\"padding:15px 15px 5px\">\n    <Text class=\"eyebrow\">LAST WEEK'S TAKE</Text>\n    <Heading if=\"title\" class=\"title\">{{title}}</Heading>\n    <richtext field=\"body\" class=\"body\" />\n  </div>\n</Section>"
     },
     {
+      "block_type": "logo_header",
+      "label": "Logo Header",
+      "category": "navigation",
+      "icon": "fa-light fa-image",
+      "schema": {
+        "image_url": {
+          "type": "image",
+          "label": "Banner image URL",
+          "default": "https://userimg-assets.customeriomail.com/images/client-env-156870/1733915861589_LogoHat3_01JETQ0TG7QVYJ84NS1VQ69KXN.png"
+        },
+        "brand_label": {
+          "type": "text",
+          "label": "Brand label (right side)",
+          "default": "MLOps Community × The Linux Foundation"
+        },
+        "link": {
+          "type": "text",
+          "label": "Link URL",
+          "default": "https://mlops.community/"
+        }
+      },
+      "template": "<Section style=\"padding:16px 24px\">\n  <Row>\n    <Column style=\"width:50%;vertical-align:middle\">\n      <Link href=\"{{link}}\"><Img if=\"image_url\" src=\"{{image_url}}\" alt=\"\" width=\"98\" style=\"display:block;border:0\" /></Link>\n    </Column>\n    <Column style=\"width:50%;vertical-align:middle;text-align:right\">\n      <Text if=\"brand_label\" style=\"margin:0;font-size:13px;color:#7B7D81;text-align:right\">{{brand_label}}</Text>\n    </Column>\n  </Row>\n</Section>"
+    },
+    {
       "block_type": "meme_of_week",
       "label": "Meme Of Week",
       "category": "block",

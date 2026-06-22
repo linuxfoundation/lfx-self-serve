@@ -6,13 +6,17 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
+import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
   NewsletterBlockPaletteGroup,
   NewsletterComposerBlock,
+  NewsletterComposerTab,
+  NewsletterComposerTabDef,
   NewsletterFieldSchema,
   NewsletterLayout,
+  NewsletterOutlineEntry,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 
@@ -67,6 +71,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // The currently selected block (top-level or container child), edited in the
   // fields panel. Null when nothing is selected.
   protected readonly selectedBlockId = signal<string | null>(null);
+  // The active left-rail tab (Gatewaze-Puck parity). Selecting a block
+  // auto-switches this to 'fields'; the user can switch back to 'blocks'.
+  protected readonly activeTab = signal<NewsletterComposerTab>('blocks');
 
   // === Derived Signals (from the manifest service) ===
   protected readonly manifest = this.manifestService.manifest;
@@ -93,6 +100,29 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!block) return null;
     return this.manifestService.getBlock(block.block_type)?.schema ?? null;
   });
+
+  // Flattened canvas outline (top-level + container children) for the Outline tab.
+  protected readonly outline: Signal<NewsletterOutlineEntry[]> = computed(() => {
+    const entries: NewsletterOutlineEntry[] = [];
+    for (const block of this.blocks()) {
+      entries.push({ id: block.id, label: block.label, blockType: block.block_type, depth: 0, isContainer: block.isContainer });
+      for (const child of block.children ?? []) {
+        entries.push({ id: child.id, label: child.label, blockType: child.block_type, depth: 1, isContainer: child.isContainer });
+      }
+    }
+    return entries;
+  });
+
+  // The breadcrumb label for the Fields tab header ("Page › <Block label>").
+  protected readonly fieldsBreadcrumb: Signal<string> = computed(() => this.selectedBlock()?.label ?? '');
+
+  // The left-rail tab definitions (icons + labels; AI is a disabled placeholder).
+  protected readonly tabs: NewsletterComposerTabDef[] = [
+    { id: 'blocks', label: 'Blocks', icon: 'fa-light fa-cube' },
+    { id: 'fields', label: 'Fields', icon: 'fa-light fa-sliders' },
+    { id: 'outline', label: 'Outline', icon: 'fa-light fa-list-tree' },
+    { id: 'ai', label: 'AI', icon: 'fa-light fa-sparkles', disabled: true },
+  ];
 
   // The wrapper chrome (header above / footer below the blocks), rendered from
   // the manifest's wrapper template. Recomputes when the manifest loads.
@@ -131,13 +161,43 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected addBlock(entry: NewsletterBlockManifestEntry): void {
     const block = this.create(entry);
     this.blocks.update((current) => [...current, block]);
-    this.selectedBlockId.set(block.id);
+    this.selectBlock(block.id);
     this.emit();
   }
 
-  /** Select a block (top-level or container child) for field editing. */
+  /**
+   * Select a block (top-level or container child) for field editing and
+   * auto-switch the rail to the Fields tab — replicates Puck's
+   * `setUi → plugin:'fields'` on select.
+   */
   protected selectBlock(id: string): void {
     this.selectedBlockId.set(id);
+    this.activeTab.set('fields');
+  }
+
+  /** Switch the active left-rail tab. Selection persists across tab changes. */
+  protected setTab(tab: NewsletterComposerTab): void {
+    if (this.tabs.find((t) => t.id === tab)?.disabled) return;
+    this.activeTab.set(tab);
+  }
+
+  /** True when the given rail tab is the active one. */
+  protected isActiveTab(tab: NewsletterComposerTab): boolean {
+    return this.activeTab() === tab;
+  }
+
+  /**
+   * The outer-spacing inline style for a canvas block, from its reserved
+   * `_spacing_padding` / `_spacing_margin` content keys. Empty when both are
+   * default — matching gatewaze, which skips the spacing wrapper at `0px`.
+   */
+  protected blockSpacingStyle(block: NewsletterComposerBlock): Record<string, string> {
+    const padding = this.spacingValue(block.content[NEWSLETTER_SPACING_PADDING_KEY]);
+    const margin = this.spacingValue(block.content[NEWSLETTER_SPACING_MARGIN_KEY]);
+    const style: Record<string, string> = {};
+    if (padding !== NEWSLETTER_SPACING_DEFAULT) style['padding'] = padding;
+    if (margin !== NEWSLETTER_SPACING_DEFAULT) style['margin'] = margin;
+    return style;
   }
 
   /** Trusted, rendered preview HTML for a block id (empty when not yet rendered). */
@@ -378,16 +438,36 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return removed ?? null;
   }
 
-  /** Build a fresh canvas block from a manifest entry (empty Phase-1 content). */
+  /**
+   * Build a fresh canvas block from a manifest entry, seeding scalar fields from
+   * their schema `default` so the block renders something immediately (e.g. the
+   * logo_header banner shows its default image without opening Fields first).
+   */
   private create(entry: NewsletterBlockManifestEntry): NewsletterComposerBlock {
     return {
       id: `block-${this.blockIdCounter++}`,
       block_type: entry.block_type,
       label: entry.label,
       isContainer: !!entry.is_container,
-      content: {},
+      content: this.seedDefaults(entry.schema),
       children: entry.is_container ? [] : undefined,
     };
+  }
+
+  /** Initial content seeded from a schema's scalar `default` values. */
+  private seedDefaults(schema: NewsletterFieldSchema | undefined): Record<string, unknown> {
+    const content: Record<string, unknown> = {};
+    if (!schema) return content;
+    for (const [key, def] of Object.entries(schema)) {
+      if (def.type === 'slot' || def.type === 'array') continue;
+      if (def.default !== undefined) content[key] = def.default;
+    }
+    return content;
+  }
+
+  /** Normalise a stored spacing value to a CSS string, defaulting to `0px`. */
+  private spacingValue(raw: unknown): string {
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : NEWSLETTER_SPACING_DEFAULT;
   }
 
   /** Rehydrate a persisted layout block (and its children) into a canvas block. */

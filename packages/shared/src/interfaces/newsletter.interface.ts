@@ -269,6 +269,35 @@ export interface NewsletterBlockPaletteGroup {
 }
 
 /**
+ * The left-rail tabs of the block-composer editor (Gatewaze-Puck parity). The
+ * rail switches the sidebar between the block palette, the selected block's
+ * fields, the canvas outline, and an AI placeholder. `ai` is reserved/disabled
+ * in this pass.
+ */
+export type NewsletterComposerTab = 'blocks' | 'fields' | 'outline' | 'ai';
+
+/** One rail tab descriptor (id, label, icon, disabled state). */
+export interface NewsletterComposerTabDef {
+  id: NewsletterComposerTab;
+  label: string;
+  icon: string;
+  disabled?: boolean;
+}
+
+/**
+ * A flattened outline entry for the composer's Outline tab: one row per canvas
+ * block (top-level or container child), with a `depth` for indentation and the
+ * block's stable local id for selection.
+ */
+export interface NewsletterOutlineEntry {
+  id: string;
+  label: string;
+  blockType: string;
+  depth: number;
+  isContainer: boolean;
+}
+
+/**
  * Block-composer canvas view-model: a NewsletterBlock plus a stable local `id`
  * (for CDK drag-drop trackBy / drop-list correlation), the resolved palette
  * `label`, and an `isContainer` convenience flag. Projected back to a

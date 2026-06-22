@@ -53,6 +53,57 @@ const WRAPPER_KEY = 'default';
 // The page-chrome wrapper template (header / footer + <slot name="body" />).
 const WRAPPER_PATH = ['wrappers', `${WRAPPER_KEY}.html`];
 
+// Platform-level blocks that are NOT authored as files in the template repo but
+// are always available in the palette. The gatewaze editor ships these as
+// composite react-email blocks (see gatewaze-modules .../email-blocks/blocks/).
+// We declare them here as declarative templates so the same client renderer can
+// draw them. `logo_header` is the top-of-edition banner: a full-width logo image
+// with an optional right-aligned brand label, mirroring gatewaze's LogoHeader.
+//
+// The default `image_url` is the real MLOps Community masthead the AAIF
+// user-community editions ship with (the "here." LogoHat3 PNG, served from the
+// legacy Customer.io image CDN and linked to mlops.community). The brand label
+// defaults to the "MLOps Community × The Linux Foundation" lockup text — there
+// is no single combined banner asset in the gatewaze repos, the lockup is a
+// logo image plus brand-label text, exactly as LogoHeader.tsx renders it.
+const PLATFORM_BLOCKS = [
+  {
+    block_type: 'logo_header',
+    label: 'Logo Header',
+    category: 'navigation',
+    icon: 'fa-light fa-image',
+    schema: {
+      image_url: {
+        type: 'image',
+        label: 'Banner image URL',
+        default: 'https://userimg-assets.customeriomail.com/images/client-env-156870/1733915861589_LogoHat3_01JETQ0TG7QVYJ84NS1VQ69KXN.png',
+      },
+      brand_label: {
+        type: 'text',
+        label: 'Brand label (right side)',
+        default: 'MLOps Community × The Linux Foundation',
+      },
+      link: {
+        type: 'text',
+        label: 'Link URL',
+        default: 'https://mlops.community/',
+      },
+    },
+    template: [
+      '<Section style="padding:16px 24px">',
+      '  <Row>',
+      '    <Column style="width:50%;vertical-align:middle">',
+      '      <Link href="{{link}}"><Img if="image_url" src="{{image_url}}" alt="" width="98" style="display:block;border:0" /></Link>',
+      '    </Column>',
+      '    <Column style="width:50%;vertical-align:middle;text-align:right">',
+      '      <Text if="brand_label" style="margin:0;font-size:13px;color:#7B7D81;text-align:right">{{brand_label}}</Text>',
+      '    </Column>',
+      '  </Row>',
+      '</Section>',
+    ].join('\n'),
+  },
+];
+
 /** Parse `--template-repo <path>` from argv, falling back to the default clone. */
 function parseTemplateRepo(argv) {
   const idx = argv.indexOf('--template-repo');
@@ -153,7 +204,7 @@ function main() {
     process.exit(1);
   }
 
-  const blocks = BLOCK_DIRS.flatMap((dir) => readBlockDir(templateRepo, dir))
+  const blocks = [...PLATFORM_BLOCKS, ...BLOCK_DIRS.flatMap((dir) => readBlockDir(templateRepo, dir))]
     // Deterministic order so the committed asset diffs cleanly across runs.
     .sort((a, b) => a.block_type.localeCompare(b.block_type));
 

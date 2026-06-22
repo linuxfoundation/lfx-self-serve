@@ -34,17 +34,28 @@
 // don't reference lfxColors/Tailwind (the component's own UI chrome does).
 //
 // The renderer maps the declarative `class="card|eyebrow|…"` names onto these
-// `nl-*` classes (see newsletter-renderer.service.ts CLASS_MAP). Scoped under
-// `.nl-preview` so they never leak into the surrounding app.
+// `nl-*` classes (see newsletter-renderer.service.ts CLASS_MAP). The blocks are
+// injected via [innerHTML], which does NOT receive the component's emulated
+// encapsulation attribute — so these rules MUST pierce encapsulation with
+// `:host ::ng-deep` or they silently never match. `:host` keeps them scoped to
+// this component (no global leak); `.nl-preview` scopes them to the preview.
 // ---------------------------------------------------------------------------
 
-.nl-preview {
+:host ::ng-deep .nl-preview {
   // The authored email column width; the preview frame scales it down to fit.
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: #000;
 
+  // The email body sits on a light page; the white bordered cards read against
+  // it just like a real inbox render. (Editor chrome around this stays Tailwind.)
+  .nl-chrome,
+  .nl-card {
+    background: #ffffff;
+  }
+
   // 650px centred column with the inter-block 20px gap (BORDERED_CARD/COLUMN).
+  // box-sizing + overflow:hidden keep the 15px corners clipping inner content.
   .nl-card {
     width: 650px;
     max-width: 100%;
@@ -53,14 +64,17 @@
     border-radius: 15px;
     color: #000;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   // Small uppercase brand-blue label above a heading (EYEBROW).
   .nl-eyebrow {
     margin: 0 0 4px;
     font-size: 12px;
+    letter-spacing: 0.04em;
     color: #4086c6;
     font-weight: bold;
+    text-transform: uppercase;
   }
 
   // Section heading (TITLE).
@@ -111,8 +125,11 @@
   }
 
   // Row → flex so columns sit side-by-side like the email's table layout.
+  // flex-wrap keeps the two-up columns from overflowing the scaled-down
+  // preview frame on narrow editor widths (the sent email stays a table).
   .nl-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: flex-start;
   }

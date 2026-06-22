@@ -1,14 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<aside class="flex w-full flex-col gap-3 lg:w-80 lg:shrink-0" data-testid="newsletter-composer-fields">
-  <h3 class="text-sm font-semibold text-gray-700">Block fields</h3>
-
+<div class="flex w-full flex-col gap-3" data-testid="newsletter-composer-fields">
   @if (block(); as selected) {
     @if (form(); as fg) {
       <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'newsletter-composer-fields-' + selected.block_type">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ selected.label }}</p>
-
         @if (fieldEntries().length === 0) {
           <p class="text-sm text-gray-500" data-testid="newsletter-composer-fields-none">This block has no editable fields.</p>
         }
@@ -119,14 +115,27 @@
             }
           </div>
         }
+
+        <!-- Universal spacing controls — auto-injected at the bottom of every
+             block's fields (gatewaze parity). CSS shorthand strings; default
+             "0px" renders without an outer spacing wrapper. -->
+        <div class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="newsletter-composer-fields-spacing">
+          <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Spacing</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium text-gray-700">Padding</label>
+              <lfx-input-text [form]="fg" [control]="paddingKey" placeholder="0px" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + paddingKey">
+              </lfx-input-text>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium text-gray-700">Margin</label>
+              <lfx-input-text [form]="fg" [control]="marginKey" placeholder="0px" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + marginKey">
+              </lfx-input-text>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400">CSS shorthand, e.g. <code>12px</code> or <code>8px 16px</code>.</p>
+        </div>
       </div>
     }
-  } @else {
-    <div
-      class="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 py-10 text-center"
-      data-testid="newsletter-composer-fields-empty">
-      <i class="fa-light fa-sliders text-2xl text-gray-300" aria-hidden="true"></i>
-      <p class="text-sm text-gray-500">Select a block to edit its fields.</p>
-    </div>
   }
-</aside>
+</div>

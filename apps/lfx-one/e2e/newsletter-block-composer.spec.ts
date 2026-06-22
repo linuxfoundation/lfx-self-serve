@@ -146,6 +146,9 @@ test.describe('Newsletter Block Composer — Phase 1', () => {
     await gotoPreview(page);
 
     await page.getByTestId('newsletter-composer-palette-item-intro_paragraph').click();
+    // Adding a block auto-switches the rail to the Fields tab; return to Blocks
+    // to add the next one.
+    await page.getByTestId('newsletter-composer-tab-blocks').click();
     await page.getByTestId('newsletter-composer-palette-item-mlops_community').click();
 
     await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -157,8 +160,10 @@ test.describe('Newsletter Block Composer — Phase 1', () => {
   test('nests a block into a container via drag-and-drop', async ({ page }) => {
     await gotoPreview(page);
 
-    // Add a container and a plain block at the top level.
+    // Add a container and a plain block at the top level. Each add auto-switches
+    // the rail to Fields, so return to Blocks before the next palette click.
     await page.getByTestId('newsletter-composer-palette-item-mlops_community').click();
+    await page.getByTestId('newsletter-composer-tab-blocks').click();
     await page.getByTestId('newsletter-composer-palette-item-intro_paragraph').click();
     await expect(page.getByTestId('newsletter-composer-container-mlops_community')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
