@@ -37,7 +37,7 @@ Completing certain training programs qualifies you for LFX badges. After you com
 
 ## Your company's activity
 
-The **Training & Certifications** page in Org Lens (route: `/org/training`) gives you visibility into training and certification activity across your organization. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
+The **Training & Certification** page in Org Lens (route: `/org/training`) gives you visibility into training and certification activity across your organization. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
 
 ### What you can see
 
@@ -47,7 +47,7 @@ The **Training & Certifications** page in Org Lens (route: `/org/training`) give
 
 ### Navigation
 
-Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certifications** from the left navigation sidebar (route: `/org/training`).
+Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/org/training`).
 
 ### Who can access this
 
