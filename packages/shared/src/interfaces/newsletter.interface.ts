@@ -116,6 +116,10 @@ export interface NewsletterAnalytics {
   total_recipients: number;
   delivered: number;
   failed: number;
+  // Best-effort list of recipient addresses that failed delivery. Derived upstream from
+  // per-recipient email-service status records; may lag or be shorter than `failed` (which
+  // comes from the engagement rollup), and may be absent on older upstream deployments.
+  failed_recipients?: string[];
   total_opens: number;
   unique_opens: number;
   open_rate: number;
