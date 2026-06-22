@@ -13,14 +13,25 @@ export function committeeRequiresOrganization(flags: { enable_voting?: boolean; 
 }
 
 /**
- * Resolves whether an invitation accept flow must collect organization, preferring a
- * precomputed dashboard flag when present.
+ * Resolves whether an invitation accept flow must collect organization.
+ *
+ * Precedence (highest first):
+ * 1. `organization_required` — authoritative field on the invite itself (committee-service ≥ v1.1).
+ *    Preferred because it is access-safe: the invitee can read their own invite without being a
+ *    committee viewer, whereas the committee/settings endpoints fail the access check for non-members.
+ * 2. `inviteRequiresOrganization` — precomputed flag carried through the accept context.
+ * 3. `enable_voting` / `business_email_required` — legacy enriched flags; fail-closed to `true`
+ *    when both are undefined (unknown committee settings).
  */
 export function invitationRequiresOrganization(flags: {
+  organization_required?: boolean | null;
   enable_voting?: boolean;
   business_email_required?: boolean;
   inviteRequiresOrganization?: boolean;
 }): boolean {
+  if (flags.organization_required != null) {
+    return flags.organization_required;
+  }
   if (flags.inviteRequiresOrganization !== undefined) {
     return flags.inviteRequiresOrganization;
   }

@@ -13,7 +13,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { committeeRequiresOrganization, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { invitationRequiresOrganization, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -24,6 +24,7 @@ import { contentDispositionAttachment } from '../helpers/content-disposition.hel
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -693,14 +694,38 @@ export class CommitteeController {
         return;
       }
 
-      // Fetch with throwOnSettingsError so a settings-service outage fails the accept
-      // (returns 503) rather than silently treating business_email_required as false.
-      const committee = await this.committeeService.getCommitteeById(req, id, { throwOnSettingsError: true });
+      // Determine org-required using the invite's own organization_required field — accessible
+      // to the invitee via the email-scoped query index regardless of committee-viewer status.
+      // This replaces the previous getCommitteeById + getCommitteeSettings fetch which failed
+      // the access check for invitees who are not yet committee viewers (LFXV2-2453).
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        next(
+          ServiceValidationError.forField('email', 'User email not found in authentication context', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
+      if (!pendingInvite) {
+        next(
+          ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
+            operation: 'accept_committee_invite',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
 
       // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
       const acceptData: AcceptCommitteeInviteRequest = {};
 
-      if (committeeRequiresOrganization(committee)) {
+      if (invitationRequiresOrganization({ organization_required: pendingInvite.organization_required })) {
         const body = (req.body ?? {}) as AcceptCommitteeInviteRequest;
         const orgName = typeof body.organization?.name === 'string' ? body.organization.name.trim() : '';
         if (!orgName) {
