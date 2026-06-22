@@ -14,6 +14,7 @@ import type {
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
+  CampaignProgramType,
   CampaignSSEEventType,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
@@ -334,7 +335,7 @@ Generate high-quality, conversion-focused ad copy for the Linux Foundation's LFX
 const COPY_SYSTEM_PROMPT_EDUCATION = `You are an expert digital marketer specialising in professional training, certifications, and online education for software developers and IT professionals.
 Generate high-quality, conversion-focused ad copy for the Linux Foundation's training and certification programs.`;
 
-function getCopySystemPromptBase(programType?: string): string {
+function getCopySystemPromptBase(programType?: CampaignProgramType): string {
   return programType === 'education' ? COPY_SYSTEM_PROMPT_EDUCATION : COPY_SYSTEM_PROMPT_EVENTS;
 }
 
@@ -342,7 +343,7 @@ const COPY_GOOGLE_SECTION = `
 GOOGLE SEARCH (RSA):
 - Headlines: 15 total, each ≤ 30 characters (STRICT — Google rejects longer)
 - Descriptions: 4 total, each ≤ 90 characters (STRICT)
-- Tone: direct, benefit-led, include CTA ("Register Now", "Join Today", "Secure Your Spot")
+- Tone: direct, benefit-led, include CTA (e.g. "Register Now", "Enroll Now", "Learn More")
 
 GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, Display):
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
@@ -399,13 +400,13 @@ META COPY RULES:
 
 const COPY_RULES_SECTION = `
 IMPORTANT RULES:
-1. Dates must come ONLY from the event data provided — never use training-data memory
+1. Dates and details must come ONLY from the data provided — never use training-data memory.
 2. CHARACTER LIMITS ARE HARD — platforms REJECT copy that exceeds them. Verify EVERY line.
-3. NEVER abbreviate month names, city names, or event names unless required to fit character limits
+3. NEVER abbreviate month names, city names, or proper nouns unless required to fit character limits.
 4. NEVER use em-dashes (—) or en-dashes (–) in ad copy. Use commas, periods, or colons instead.
 5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.`;
 
-function buildCopySystemPrompt(platforms: string[], programType?: string): string {
+function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgramType): string {
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
   const includeReddit = platforms.includes('reddit-ads');
@@ -439,7 +440,7 @@ const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION = `You are a LinkedIn Ads strate
 Analyze the course/certification details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
 Return only valid JSON. No markdown fences, no explanation.`;
 
-function getLinkedInStrategySystemPrompt(programType?: string): string {
+function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): string {
   return programType === 'education' ? LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION : LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS;
 }
 
@@ -462,8 +463,8 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
 {
   "name": "course or certification name",
   "dates": "duration (e.g. Self-paced, 3 days, 40 hours)",
-  "city": "Online",
-  "country_code": "US",
+  "city": "delivery location or null if online-only",
+  "country_code": "ISO country code or null if online-only",
   "audience": "target audience description",
   "themes": ["technology1", "skill1"],
   "registration_url": "enrollment URL",
@@ -476,7 +477,7 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
 
 If a field cannot be determined, use null.`;
 
-function getExtractionPrompt(programType?: string): string {
+function getExtractionPrompt(programType?: CampaignProgramType): string {
   return programType === 'education' ? EDUCATION_EXTRACTION_PROMPT : EVENT_EXTRACTION_PROMPT;
 }
 
@@ -591,7 +592,15 @@ export class CampaignProxyService {
       return;
     }
 
+    const supportedProgramTypes = new Set<CampaignProgramType>(['events', 'education']);
+    if (body.programType !== undefined && !supportedProgramTypes.has(body.programType)) {
+      yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
     const isRefinement = !!body.refineFeedback && !!body.previousCopy;
+    const isEducation = body.programType === 'education';
+    const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
 
     if (!isRefinement) {
@@ -608,17 +617,15 @@ export class CampaignProxyService {
       try {
         const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
         if (!ok) {
-          yield { type: 'error', data: `Event page returned HTTP ${status}` };
+          yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
         }
         html = scrapedHtml;
       } catch (error) {
-        yield { type: 'error', data: `Failed to fetch event page: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
       }
     }
-
-    const isEducation = body.programType === 'education';
     const extractLabel = isEducation ? 'course details' : 'event details';
     yield { type: 'status', data: isRefinement ? 'Refining brief...' : `Extracting ${extractLabel}...` };
 
@@ -769,6 +776,12 @@ export class CampaignProxyService {
     const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
+      return;
+    }
+
+    const supportedProgramTypes = new Set<CampaignProgramType>(['events', 'education']);
+    if (body.programType !== undefined && !supportedProgramTypes.has(body.programType)) {
+      yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
       return;
     }
 

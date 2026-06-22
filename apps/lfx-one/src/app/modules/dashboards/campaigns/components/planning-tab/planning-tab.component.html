@@ -93,7 +93,7 @@
               formControlName="campaignGoal"
               class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="planning-goal-select">
-              @for (goal of goals; track goal.id) {
+              @for (goal of goals(); track goal.id) {
                 <option [value]="goal.id">{{ goal.label }}</option>
               }
             </select>

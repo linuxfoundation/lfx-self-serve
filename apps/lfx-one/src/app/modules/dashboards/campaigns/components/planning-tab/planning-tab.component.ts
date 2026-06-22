@@ -15,7 +15,6 @@ import type {
   CampaignBriefRefineRequest,
   CampaignEventDetails,
   CampaignGoal,
-  CampaignGoalOption,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformOption,
@@ -53,7 +52,10 @@ export class PlanningTabComponent implements OnInit {
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
-  protected readonly goals: CampaignGoalOption[] = [...CAMPAIGN_GOALS];
+  protected readonly goals = computed(() => {
+    const goalLabel = this.programTypeConfig().goalLabel;
+    return CAMPAIGN_GOALS.map((g) => (g.id === 'conversions' ? { ...g, label: goalLabel } : g));
+  });
 
   // === Forms ===
   protected readonly briefForm = this.fb.nonNullable.group({
