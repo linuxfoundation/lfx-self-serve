@@ -482,6 +482,13 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
 }
 
 // ---------------------------------------------------------------------------
+// Validation constants
+// ---------------------------------------------------------------------------
+
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
+const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
+
+// ---------------------------------------------------------------------------
 // Background job management
 // ---------------------------------------------------------------------------
 
@@ -585,15 +592,13 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
-    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
+    const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
-    const supportedProgramTypes = new Set<CampaignProgramType>(['events', 'education']);
-    if (body.programType !== undefined && !supportedProgramTypes.has(body.programType)) {
+    if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
       return;
     }
@@ -772,15 +777,13 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
-    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
+    const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
-    const supportedProgramTypes = new Set<CampaignProgramType>(['events', 'education']);
-    if (body.programType !== undefined && !supportedProgramTypes.has(body.programType)) {
+    if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
       return;
     }

@@ -57,8 +57,10 @@ export class CampaignsComponent {
   }
 
   protected onProgramTypeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as CampaignProgramType;
-    this.selectedProgramType.set(value);
+    const value = (event.target as HTMLSelectElement).value;
+    if (this.programTypes.some((pt) => pt.id === value)) {
+      this.selectedProgramType.set(value as CampaignProgramType);
+    }
   }
 
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
