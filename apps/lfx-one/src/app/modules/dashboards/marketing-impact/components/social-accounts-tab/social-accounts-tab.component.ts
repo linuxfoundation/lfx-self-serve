@@ -4,6 +4,7 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MONTH_NAMES } from '@lfx-one/shared/constants';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -19,8 +20,6 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
-
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 @Component({
   selector: 'lfx-social-accounts-tab',
@@ -57,7 +56,7 @@ export class SocialAccountsTabComponent {
     return [current, current - 1, current - 2];
   });
 
-  // === Public Methods ===
+  // === Protected Methods ===
   protected togglePlatform(platform: string): void {
     const current = this.expandedPlatforms();
     const next = new Set(current);
@@ -67,10 +66,6 @@ export class SocialAccountsTabComponent {
       next.add(platform);
     }
     this.expandedPlatforms.set(next);
-  }
-
-  protected isPlatformExpanded(platform: string): boolean {
-    return this.expandedPlatforms().has(platform);
   }
 
   protected onYearChange(event: Event): void {
@@ -218,6 +213,8 @@ export class SocialAccountsTabComponent {
       const data = this.monthlyData();
       if (!data?.platforms?.length) return [];
 
+      const expanded = this.expandedPlatforms();
+
       return data.platforms.map((p) => {
         const allMonths: SocialMonthlyRow[] = MONTH_NAMES.map((name, i) => {
           const monthStr = `${data.year}-${String(i + 1).padStart(2, '0')}`;
@@ -248,6 +245,7 @@ export class SocialAccountsTabComponent {
 
         return {
           platform: p.platform,
+          expanded: expanded.has(p.platform),
           latestFollowers: latestRow ? formatNumber(latestRow.followers) : '—',
           latestMomChange: latestRow ? this.formatMomChange(latestRow.momChangeFollowers) : '—',
           latestMomChangeClass: latestRow ? this.getMomChangeClass(latestRow.momChangeFollowers) : 'text-gray-400',

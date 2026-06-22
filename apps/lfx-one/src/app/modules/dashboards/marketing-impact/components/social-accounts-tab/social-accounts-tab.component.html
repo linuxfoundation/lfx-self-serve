@@ -100,10 +100,14 @@
           <div
             class="flex cursor-pointer items-center gap-3 border-b border-gray-200 py-2.5 hover:bg-gray-50"
             role="row"
+            tabindex="0"
+            [attr.aria-expanded]="platform.expanded"
             (click)="togglePlatform(platform.platform)"
+            (keydown.enter)="togglePlatform(platform.platform)"
+            (keydown.space)="$event.preventDefault(); togglePlatform(platform.platform)"
             [attr.data-testid]="'social-monthly-platform-' + platform.platform">
-            <span class="w-6 text-center text-gray-400">
-              <i class="fa-light fa-chevron-right text-xs transition-transform duration-200" [class.rotate-90]="isPlatformExpanded(platform.platform)"></i>
+            <span class="w-6 text-center text-gray-400" aria-hidden="true">
+              <i class="fa-light fa-chevron-right text-xs transition-transform duration-200" [class.rotate-90]="platform.expanded"></i>
             </span>
             <span class="w-36 text-xs font-medium text-gray-700" role="cell">{{ platform.platform }}</span>
             <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ platform.latestFollowers }}</span>
@@ -111,7 +115,7 @@
           </div>
 
           <!-- Expanded monthly rows -->
-          @if (isPlatformExpanded(platform.platform)) {
+          @if (platform.expanded) {
             <!-- Sub-header -->
             <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 py-1.5 pl-9" role="row">
               <span class="w-36 text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">MONTH</span>

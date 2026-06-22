@@ -149,6 +149,7 @@ export interface SocialMonthlyRow {
 /** View-model for an expandable social platform with monthly data. */
 export interface SocialMonthlyPlatform {
   platform: string;
+  expanded: boolean;
   latestFollowers: string;
   latestMomChange: string;
   latestMomChangeClass: string;

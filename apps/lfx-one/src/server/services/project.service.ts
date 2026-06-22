@@ -3345,7 +3345,10 @@ export class ProjectService {
 
   // TODO: Replace dummy data with Snowflake view SOCIAL_MEDIA_PLATFORM_MONTHLY once data team creates it
   public async getSocialMediaMonthly(_foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
-    logger.debug(undefined, 'get_social_media_monthly', 'Returning dummy social media monthly data', { year });
+    logger.warning(undefined, 'get_social_media_monthly', 'Returning dummy data — Snowflake view not yet implemented', {
+      foundation_slug: _foundationSlug,
+      year,
+    });
 
     const platformSeeds: { name: string; baseFollowers: number; basePosts: number; baseImpressions: number; baseEngagement: number }[] = [
       { name: 'LinkedIn', baseFollowers: 125000, basePosts: 45, baseImpressions: 890000, baseEngagement: 3.2 },
