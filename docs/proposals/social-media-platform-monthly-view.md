@@ -84,7 +84,7 @@ Plus any additional platforms tracked for foundations (Bluesky, Mastodon are use
 
 The Express backend will run a single query against this view and return the results grouped by platform:
 
-```
+```text
 GET /api/analytics/social-media/monthly?foundationSlug=tlf&year=2026
 ```
 
