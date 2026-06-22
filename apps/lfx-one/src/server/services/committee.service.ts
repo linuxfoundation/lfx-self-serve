@@ -18,6 +18,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
+  PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
   ProjectSettings,
@@ -729,14 +730,20 @@ export class CommitteeService {
    * when multiple pending invites exist — matched against committee_invite UID first, then
    * committee UID; if no match and exactly one pending invite remains, that one is accepted.
    *
-   * Failures are logged and swallowed so LFID acceptance still succeeds — the user can
-   * accept manually from pending-actions / My Groups.
+   * Returns the first invite that requires an organization but had none pre-filled — the
+   * caller must surface this to the user to collect their organization and complete acceptance.
+   * Other invites (those that can be auto-accepted) are still processed before returning.
+   *
+   * Other failures are logged and swallowed so LFID acceptance still succeeds.
    */
-  public async acceptPendingCommitteeInvitesAfterLfidAccept(req: Request, params: { invitedEmail: string; resourceUid?: string }): Promise<void> {
+  public async acceptPendingCommitteeInvitesAfterLfidAccept(
+    req: Request,
+    params: { invitedEmail: string; resourceUid?: string }
+  ): Promise<PendingCommitteeInviteForOrg | null> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
       logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
-      return;
+      return null;
     }
 
     const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
@@ -745,13 +752,15 @@ export class CommitteeService {
         pending_count: pendingInvites.length,
         resource_uid: params.resourceUid,
       });
-      return;
+      return null;
     }
 
     logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
       accept_count: toAccept.length,
       resource_uid: params.resourceUid,
     });
+
+    let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
 
     for (const invite of toAccept) {
       try {
@@ -764,10 +773,20 @@ export class CommitteeService {
         if (requiresOrganization) {
           const orgName = invite.organization?.name?.trim() || null;
           if (!orgName) {
-            logger.warning(req, 'accept_invite', 'Skipping auto-accept — committee requires organization but invite has none; user must accept manually', {
-              committee_uid: invite.committee_uid,
-              invite_uid: invite.uid,
-            });
+            // Return the first such invite so the client can collect the org and complete acceptance.
+            // Keep processing other invites — those that don't need org can still be auto-accepted.
+            if (!pendingForOrg) {
+              logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+              });
+              pendingForOrg = {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+                committee_name: invite.committee_name?.trim() || invite.committee_uid,
+                organization: invite.organization ?? null,
+              };
+            }
             continue;
           }
           // Build an explicit allowlist payload — trim fields and coerce empty strings to null
@@ -789,6 +808,8 @@ export class CommitteeService {
         });
       }
     }
+
+    return pendingForOrg;
   }
 
   /**
