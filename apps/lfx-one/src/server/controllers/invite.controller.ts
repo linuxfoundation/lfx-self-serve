@@ -98,7 +98,7 @@ export class InviteController {
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
-      let pendingCommitteeInvite = undefined;
+      let pendingCommitteeInvite: PendingCommitteeInviteForOrg | undefined;
       try {
         pendingCommitteeInvite = (await this.autoAcceptPendingCommitteeInvites(req, payload)) ?? undefined;
       } catch (error) {
