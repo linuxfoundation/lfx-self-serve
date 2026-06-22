@@ -93,16 +93,20 @@ export class AkritesService {
   public searchStewards(): Observable<AkritesSearchStewardResult[]> {
     return this.http.get<CommitteeMember[]>(`/api/committees/${AKRITES_STEWARD_COMMITTEE_UID}/members`).pipe(
       map((members) =>
-        members.map((m) => ({
-          userId: m.uid,
-          username: m.username ?? '',
-          displayName: `${m.first_name} ${m.last_name}`.trim(),
-          email: m.email,
-          committeeName: m.committee_name,
-          committeeUid: m.committee_uid,
-          organization: m.organization?.name ?? null,
-          status: m.status ?? '',
-        }))
+        members.map((m) => {
+          const initials = `${m.first_name?.[0] ?? ''}${m.last_name?.[0] ?? ''}`.toUpperCase() || (m.username?.[0] ?? 'U').toUpperCase();
+          return {
+            userId: m.uid,
+            username: m.username ?? '',
+            displayName: `${m.first_name} ${m.last_name}`.trim(),
+            email: m.email,
+            committeeName: m.committee_name,
+            committeeUid: m.committee_uid,
+            organization: m.organization?.name ?? null,
+            status: m.status ?? '',
+            initials,
+          };
+        })
       ),
       catchError(() => of([] as AkritesSearchStewardResult[]))
     );

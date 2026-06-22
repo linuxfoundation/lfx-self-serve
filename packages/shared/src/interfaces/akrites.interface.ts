@@ -46,6 +46,8 @@ export interface AkritesSearchStewardResult {
   committeeUid: string;
   organization: string | null;
   status: string;
+  /** Pre-computed initials for the avatar display — avoids method calls in templates. */
+  initials: string;
 }
 
 // ===== CDP Raw Types =====
