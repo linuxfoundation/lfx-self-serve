@@ -9,6 +9,8 @@ import type {
   CampaignStatus,
   CampaignTabOption,
   LinkedInGeoTarget,
+  MetaObjective,
+  MetaObjectiveParams,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
 
@@ -158,6 +160,23 @@ export const META_CHAR_LIMITS = {
   primaryText: 125,
   headline: 40,
   description: 30,
+} as const;
+
+export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjectiveParams>> = {
+  awareness: { campaignObjective: 'OUTCOME_AWARENESS', optimizationGoal: 'REACH', promotedObjectType: 'none' },
+  traffic: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
+  engagement: { campaignObjective: 'OUTCOME_ENGAGEMENT', optimizationGoal: 'POST_ENGAGEMENT', promotedObjectType: 'page_id' },
+  leads: { campaignObjective: 'OUTCOME_LEADS', optimizationGoal: 'LEAD_GENERATION', promotedObjectType: 'page_id' },
+  conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
+} as const;
+
+export const META_DEFAULT_PLACEMENTS: Readonly<Record<string, boolean>> = {
+  facebookFeed: true,
+  instagramFeed: true,
+  stories: false,
+  reels: false,
+  audienceNetwork: false,
+  messengerInbox: false,
 } as const;
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and

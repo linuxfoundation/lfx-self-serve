@@ -303,6 +303,23 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
+
+export interface MetaPlacement {
+  facebookFeed: boolean;
+  instagramFeed: boolean;
+  stories: boolean;
+  reels: boolean;
+  audienceNetwork: boolean;
+  messengerInbox: boolean;
+}
+
+export interface MetaObjectiveParams {
+  readonly campaignObjective: string;
+  readonly optimizationGoal: string;
+  readonly promotedObjectType: 'page_id' | 'pixel_id' | 'none';
+}
+
 export interface MetaCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -315,6 +332,9 @@ export interface MetaCampaignCreateRequest {
   geoTargets: string[];
   variants: MetaAdVariant[];
   project?: string;
+  objective?: MetaObjective;
+  placements?: Partial<MetaPlacement>;
+  pixelId?: string;
 }
 
 export interface MetaCampaignCreateResult {
@@ -809,4 +829,22 @@ export interface HubSpotUtmCreateResult {
   created: boolean;
   hs_utm: string | null;
   campaign_name: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Status Toggle
+// ---------------------------------------------------------------------------
+
+export interface CampaignStatusUpdateRequest {
+  platform: CampaignPlatform;
+  campaignId: string;
+  status: 'ACTIVE' | 'PAUSED';
+}
+
+export interface CampaignStatusUpdateResult {
+  platform: CampaignPlatform;
+  campaignId: string;
+  previousStatus: string;
+  newStatus: string;
+  success: boolean;
 }

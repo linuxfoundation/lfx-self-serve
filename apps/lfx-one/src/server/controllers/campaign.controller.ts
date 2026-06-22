@@ -7,7 +7,9 @@ import type {
   BulkKeywordActionRequest,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignPlatform,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -468,6 +470,56 @@ export class CampaignController {
       res.json(data);
     } catch (error) {
       logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
+      next(error);
+    }
+  }
+
+  public async updateCampaignStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+    if (!campaignId) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId is required', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignStatusUpdateRequest>;
+    const supportedPlatforms = new Set<CampaignPlatform>(['meta-ads']);
+    const validStatuses = new Set(['ACTIVE', 'PAUSED']);
+
+    if (!body.platform || !supportedPlatforms.has(body.platform)) {
+      next(
+        ServiceValidationError.forField('platform', `platform must be one of: ${[...supportedPlatforms].join(', ')}`, {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!body.status || !validStatuses.has(body.status)) {
+      next(
+        ServiceValidationError.forField('status', 'status must be ACTIVE or PAUSED', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_status_update', { campaignId, platform: body.platform, status: body.status });
+
+    try {
+      const result = await this.proxyService.updateCampaignStatus(req, {
+        platform: body.platform,
+        campaignId,
+        status: body.status,
+      });
+      logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
+      res.json(result);
+    } catch (error) {
       next(error);
     }
   }

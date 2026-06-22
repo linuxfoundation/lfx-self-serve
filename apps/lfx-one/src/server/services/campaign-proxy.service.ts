@@ -16,6 +16,8 @@ import type {
   CampaignPlatform,
   CampaignProgramType,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
+  CampaignStatusUpdateResult,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
   MetaCampaignCreateResult,
@@ -26,7 +28,7 @@ import type { Request } from 'express';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
-import { executeMetaCampaignCreation } from './meta-ads.service';
+import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
 import { executeRedditCampaignCreation } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
@@ -940,6 +942,21 @@ export class CampaignProxyService {
       failed: results.length - succeeded,
       results,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Campaign Status Toggle
+  // ---------------------------------------------------------------------------
+
+  public async updateCampaignStatus(req: Request, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
+    const { platform, campaignId, status } = body;
+
+    switch (platform) {
+      case 'meta-ads':
+        return updateMetaCampaignStatus(req, campaignId, status);
+      default:
+        throw new Error(`Status toggle is not supported for platform: ${platform}`);
+    }
   }
 
   // === Private: campaign creation orchestration ===
