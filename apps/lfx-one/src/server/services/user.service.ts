@@ -34,13 +34,7 @@ import {
   UserPullRequestsRow,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import {
-  buildInvitationActions,
-  getCurrentOrNextOccurrence,
-  hasMeetingEnded,
-  normalizeIndexedMeetingAiSummary,
-  parseToInt,
-} from '@lfx-one/shared/utils';
+import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, normalizeIndexedMeetingAiSummary, parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
