@@ -90,7 +90,7 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
   const params = META_OBJECTIVE_PARAMS[objective];
   if (params.promotedObjectType === 'page_id') return { page_id: pageId };
   if (params.promotedObjectType === 'pixel_id') {
-    if (!pixelId || typeof pixelId !== 'string') {
+    if (typeof pixelId !== 'string' || !pixelId.trim()) {
       throw new Error(`pixelId must be a non-empty string for '${objective}' objective`);
     }
     return { pixel_id: pixelId.trim(), custom_event_type: 'PURCHASE' };
