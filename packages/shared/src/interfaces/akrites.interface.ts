@@ -41,9 +41,6 @@ export interface AkritesSearchStewardResult {
   userId: string;
   username: string;
   displayName: string;
-  email: string;
-  committeeName: string;
-  committeeUid: string;
   organization: string | null;
   status: string;
   /** Pre-computed initials for the avatar display — avoids method calls in templates. */
