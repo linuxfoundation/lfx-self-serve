@@ -3344,6 +3344,7 @@ export class ProjectService {
     }
   }
 
+  /** Fetches monthly social media metrics grouped by platform for the given year. Aggregates across all foundations when slug is `tlf`. */
   public async getSocialMediaMonthly(foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
     logger.debug(undefined, 'get_social_media_monthly', 'Fetching social media monthly data from Snowflake', {
       foundation_slug: foundationSlug,
@@ -3373,7 +3374,7 @@ export class ProjectService {
 
       const result = await this.snowflakeService.execute<{
         PLATFORM_NAME: string;
-        SNAPSHOT_MONTH: string;
+        SNAPSHOT_MONTH: string | Date;
         FOLLOWERS: number;
         NEW_FOLLOWERS: number;
         IMPRESSIONS: number;
@@ -3384,7 +3385,9 @@ export class ProjectService {
       const grouped = new Map<string, SocialMediaPlatformMonthlyRow[]>();
 
       for (const row of result.rows) {
-        const month = typeof row.SNAPSHOT_MONTH === 'string' ? row.SNAPSHOT_MONTH.slice(0, 7) : new Date(row.SNAPSHOT_MONTH).toISOString().slice(0, 7);
+        const isoDate = ProjectService.toIsoDate(row.SNAPSHOT_MONTH);
+        if (!isoDate) continue;
+        const month = isoDate.slice(0, 7);
         const impressions = Number(row.IMPRESSIONS) || 0;
         const engagements = Number(row.ENGAGEMENTS) || 0;
 
@@ -3416,7 +3419,7 @@ export class ProjectService {
       logger.warning(undefined, 'get_social_media_monthly', 'Failed to fetch social media monthly data, returning empty', {
         foundation_slug: foundationSlug,
         year,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return { year, platforms: [] };
     }
