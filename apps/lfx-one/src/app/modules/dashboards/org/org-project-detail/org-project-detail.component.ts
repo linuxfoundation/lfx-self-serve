@@ -3,8 +3,8 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, signal, type Signal } from '@angular/core';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, effect, ElementRef, inject, PLATFORM_ID, signal, type Signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
@@ -114,11 +114,17 @@ export class OrgProjectDetailComponent {
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  @ViewChild('technicalTrack') private techTrackRef?: ElementRef<HTMLElement>;
+  @ViewChild('ecosystemTrack') private ecoTrackRef?: ElementRef<HTMLElement>;
 
   protected readonly retryTrigger = signal(0);
   protected readonly fetchLoading = signal(true);
   protected readonly fetchError = signal(false);
   protected readonly detail = signal<OrgLensProjectDetailResponse | null>(null);
+  protected readonly techArrows = signal({ left: false, right: false });
+  protected readonly ecoArrows = signal({ left: false, right: false });
 
   protected readonly tabs: { id: OrgLensProjectDetailTab; label: string; icon: string }[] = [
     { id: 'pd-influence', label: 'Our Influence', icon: 'fa-light fa-chart-network' },
@@ -180,6 +186,17 @@ export class OrgProjectDetailComponent {
   protected readonly ecoSearch = signal('');
   protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
   protected readonly ecosystemBoard = computed(() => this.buildBoard('ecosystem', this.ecoSearch()));
+
+  // After cards populate (async data load), check whether each track is actually scrollable.
+  private readonly _scrollEffect = effect(() => {
+    const techLen = this.technicalCards().length;
+    const ecoLen = this.ecosystemCards().length;
+    if (techLen === 0 && ecoLen === 0) return;
+    Promise.resolve().then(() => {
+      this.refreshArrows(this.techTrackRef?.nativeElement, true);
+      this.refreshArrows(this.ecoTrackRef?.nativeElement, false);
+    });
+  });
 
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
@@ -352,9 +369,22 @@ export class OrgProjectDetailComponent {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
   }
 
-  /** Scrolls a card track by one card slot (240 px = w-56 + gap-4). */
+  /** Scrolls a card track by one card slot (304 px = w-72 + gap-4). */
   protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
-    el.scrollBy({ left: direction * 240, behavior: 'smooth' });
+    el.scrollBy({ left: direction * 304, behavior: 'smooth' });
+  }
+
+  /** Updates left/right arrow visibility from the track's scroll position. */
+  protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
+    this.refreshArrows(el, track === 'tech');
+  }
+
+  private refreshArrows(el: HTMLElement | undefined, tech: boolean): void {
+    if (!el || !isPlatformBrowser(this.platformId)) return;
+    (tech ? this.techArrows : this.ecoArrows).set({
+      left: el.scrollLeft > 0,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    });
   }
 
   private initialsFor(name: string): string {
@@ -429,6 +459,7 @@ export class OrgProjectDetailComponent {
       hasData: card.sparkline.length > 0,
       chartData: this.cardChartData(card.sparkline, card.projectSparkline, colorHex),
       caption: card.caption,
+      statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
       testId: `project-detail-${group}-card-${card.key}`,
     };
   }
