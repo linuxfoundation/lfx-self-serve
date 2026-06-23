@@ -201,10 +201,8 @@ export class SocialAccountsTabComponent {
             return of(null);
           }
           this.monthlyLoading.set(true);
-          return this.analyticsService.getSocialMediaMonthly(slug, year).pipe(
-            finalize(() => this.monthlyLoading.set(false)),
-            catchError(() => of(null))
-          );
+          this.expandedPlatforms.set(new Set());
+          return this.analyticsService.getSocialMediaMonthly(slug, year).pipe(finalize(() => this.monthlyLoading.set(false)));
         })
       ),
       { initialValue: null }
