@@ -94,7 +94,7 @@ interface RedditApiResponse {
 }
 
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
-  const url = `${REDDIT_ADS_BASE_URL}${path}`;
+  const url = new URL(`${REDDIT_ADS_BASE_URL}${path}`).href;
   const token = await refreshRedditToken();
 
   const resp = await fetch(url, {
