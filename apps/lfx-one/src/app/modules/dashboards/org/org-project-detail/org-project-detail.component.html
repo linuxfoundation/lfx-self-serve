@@ -275,7 +275,9 @@
     @if (card.scopeLabel) {
       <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500">{{ card.scopeLabel }}</div>
     }
-    <div class="flex flex-1 flex-col gap-3 p-4">
+    <div class="relative flex flex-1 flex-col gap-3 p-4" data-sparkline-host>
+      <!-- External tooltip overlay: hovers over the title + sparkline area, unconstrained by canvas height. -->
+      <div data-lfx-tip class="pointer-events-none absolute inset-x-0 top-0 z-10 hidden border-b border-gray-100 bg-white px-4 py-3"></div>
       <div class="text-sm font-semibold text-gray-900">{{ card.title }}</div>
       <div class="h-20">
         @if (card.hasData) {

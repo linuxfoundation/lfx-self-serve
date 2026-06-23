@@ -359,18 +359,43 @@ export class OrgProjectDetailComponent {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  /** Card sparkline options: extends the base line config with labeled datasets for the hover tooltip. */
+  /**
+   * Card sparkline options: uses an external HTML tooltip (data-lfx-tip) so the popup
+   * is not constrained by the canvas height and can render at a comfortable reading size.
+   */
   private buildCardChartOptions(): ChartOptions<ChartType> {
     return {
       ...BASE_LINE_CHART_OPTIONS,
       plugins: {
         legend: { display: false },
         tooltip: {
-          ...BASE_LINE_CHART_OPTIONS.plugins?.tooltip,
-          displayColors: true,
-          usePointStyle: true,
-          boxWidth: 8,
-          boxHeight: 8,
+          enabled: false,
+          external: ({ chart, tooltip }) => {
+            const tip = chart.canvas
+              .closest('[data-sparkline-host]')
+              ?.querySelector<HTMLElement>('[data-lfx-tip]');
+            if (!tip) return;
+
+            if (tooltip.opacity === 0) {
+              tip.style.display = 'none';
+              return;
+            }
+
+            const title = tooltip.title?.[0] ?? '';
+            const rows = (tooltip.dataPoints ?? [])
+              .map(
+                (p) =>
+                  '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
+                  `<span style="width:9px;height:9px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor as string}"></span>` +
+                  `<span style="font-size:13px;color:#4B5563">${p.dataset.label ?? ''}: ` +
+                  `<strong style="color:#111827;font-weight:600">${p.formattedValue}</strong></span>` +
+                  '</div>'
+              )
+              .join('');
+
+            tip.innerHTML = `<p style="font-size:13px;font-weight:700;color:#111827">${title}</p>${rows}`;
+            tip.style.display = 'block';
+          },
         },
       },
     };
