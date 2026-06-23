@@ -222,7 +222,11 @@ export class SocialAccountsTabComponent {
         const rowsByMonth = new Map(p.months.map((m) => [m.month, m]));
         const latestRow = p.months.length > 0 ? p.months.reduce((latest, row) => (row.month > latest.month ? row : latest)) : null;
 
-        const allMonths: SocialMonthlyRow[] = MONTH_NAMES.map((name, i) => {
+        const currentYear = new Date().getUTCFullYear();
+        const currentMonth = new Date().getUTCMonth();
+        const maxMonth = data.year === currentYear ? currentMonth : 11;
+
+        const allMonths: SocialMonthlyRow[] = MONTH_NAMES.slice(0, maxMonth + 1).map((name, i) => {
           const monthStr = `${data.year}-${String(i + 1).padStart(2, '0')}`;
           const row = rowsByMonth.get(monthStr);
           if (!row) {
