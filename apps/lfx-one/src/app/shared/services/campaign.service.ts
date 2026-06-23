@@ -146,8 +146,9 @@ export class CampaignService {
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
+    const slug = this.foundationSlug;
     return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', {
-      params: { event_name: eventName, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { event_name: eventName, ...(slug && { foundationSlug: slug }) },
     });
   }
 

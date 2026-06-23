@@ -137,12 +137,12 @@ export class AccessCheckService {
    * @param accessTypes Array of access types to check
    * @returns Record mapping each access type to its boolean result
    */
-  public async checkMultipleAccess(
+  public async checkMultipleAccess<T extends AccessCheckAccessType>(
     req: Request,
     resourceType: AccessCheckResourceType,
     id: string,
-    accessTypes: AccessCheckAccessType[]
-  ): Promise<Record<AccessCheckAccessType, boolean>> {
+    accessTypes: T[]
+  ): Promise<Record<T, boolean>> {
     const operationName = `check_multiple_access_${resourceType}`;
     const startTime = logger.startOperation(req, operationName, {
       resource_type: resourceType,
@@ -150,7 +150,7 @@ export class AccessCheckService {
       access_types: accessTypes,
     });
 
-    const fallback = Object.fromEntries(accessTypes.map((a) => [a, false])) as Record<AccessCheckAccessType, boolean>;
+    const fallback = Object.fromEntries(accessTypes.map((a) => [a, false])) as Record<T, boolean>;
 
     if (accessTypes.length === 0) {
       return fallback;
