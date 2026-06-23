@@ -5,7 +5,7 @@
 
 Maps every persona to the sidebar links and key pages it can see in each lens. Use this as the source of truth when adding new nav items, writing persona regression tests, or auditing access gating.
 
-For background on how personas and lenses are resolved, see [Lens & Persona System](./lens-system.md).
+For background on how personas and lenses are resolved, see [Lens & Persona System](./lens-system.md). For where the persona values themselves come from (the upstream detection contract and mapping), see [Persona Detection Pipeline](./persona-detection.md).
 
 ## Personas
 
