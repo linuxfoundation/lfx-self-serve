@@ -25,11 +25,12 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
-import { executeRedditCampaignCreation } from './reddit-ads.service';
+import { executeRedditCampaignCreation, updateRedditCampaignStatus } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
 // Google Ads gRPC client (via google-ads-api)
@@ -951,12 +952,40 @@ export class CampaignProxyService {
 
   public async updateCampaignStatus(req: Request, campaignId: string, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
     const { platform, status } = body;
+    logger.debug(req, 'campaign_status_update', 'Dispatching status update', { platform, campaignId, status });
 
     switch (platform) {
       case 'meta-ads':
         return updateMetaCampaignStatus(req, campaignId, status);
+      case 'reddit-ads': {
+        const { REDDIT_ACCOUNTS } = await import('../constants');
+        if (body.accountId !== undefined && typeof body.accountId !== 'string') {
+          throw ServiceValidationError.forField('accountId', 'accountId must be a string', {
+            operation: 'campaign_status_update',
+          });
+        }
+        if (typeof body.accountId === 'string' && !body.accountId.trim()) {
+          throw ServiceValidationError.forField('accountId', 'accountId must not be empty', {
+            operation: 'campaign_status_update',
+          });
+        }
+        const accountId = (typeof body.accountId === 'string' ? body.accountId.trim() : undefined) || REDDIT_ACCOUNTS[0]?.accountId;
+        if (!accountId) {
+          throw ServiceValidationError.forField('accountId', 'No Reddit ad account configured', {
+            operation: 'campaign_status_update',
+          });
+        }
+        if (!REDDIT_ACCOUNTS.some((a) => a.accountId === accountId)) {
+          throw ServiceValidationError.forField('accountId', `Reddit ad account ${accountId} is not whitelisted`, {
+            operation: 'campaign_status_update',
+          });
+        }
+        return updateRedditCampaignStatus(req, accountId, campaignId, status);
+      }
       default:
-        throw new Error(`Status toggle is not supported for platform: ${platform}`);
+        throw ServiceValidationError.forField('platform', `Status toggle is not supported for platform: ${platform}`, {
+          operation: 'campaign_status_update',
+        });
     }
   }
 

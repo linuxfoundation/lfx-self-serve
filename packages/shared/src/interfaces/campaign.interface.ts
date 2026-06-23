@@ -28,6 +28,17 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
+export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+export interface RedditObjectiveParams {
+  readonly redditObjective: string;
+  readonly bidType: 'CPM' | 'CPC';
+  /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
+  readonly bidValue: number;
+  readonly optimizationGoal: string;
+  readonly viewThroughConversionType?: string;
+}
+
 export interface CampaignProgramTypeOption {
   id: CampaignProgramType;
   label: string;
@@ -275,6 +286,8 @@ export interface RedditCampaignCreateRequest {
   keywords: string[];
   variants: RedditAdVariant[];
   project?: string;
+  objective?: RedditObjective;
+  postUrl?: string;
 }
 
 export interface RedditCampaignCreateResult {
@@ -284,6 +297,7 @@ export interface RedditCampaignCreateResult {
   adGroupName: string;
   adGroupId: string;
   adCount: number;
+  adId?: string;
   redditUrl: string;
   steps: string[];
 }
@@ -841,6 +855,7 @@ export type CampaignToggleStatus = 'ACTIVE' | 'PAUSED';
 export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
   status: CampaignToggleStatus;
+  accountId?: string;
 }
 
 export interface CampaignStatusUpdateResult {
