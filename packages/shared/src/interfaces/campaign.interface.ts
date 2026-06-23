@@ -33,6 +33,7 @@ export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_v
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
   readonly bidType: 'CPM' | 'CPC';
+  /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
   readonly bidValue: number;
   readonly optimizationGoal: string;
   readonly viewThroughConversionType?: string;

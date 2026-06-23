@@ -25,6 +25,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -960,15 +961,21 @@ export class CampaignProxyService {
         const { REDDIT_ACCOUNTS } = await import('../constants');
         const accountId = (typeof body.accountId === 'string' && body.accountId.trim()) || REDDIT_ACCOUNTS[0]?.accountId;
         if (!accountId) {
-          throw new Error('No Reddit ad account configured');
+          throw ServiceValidationError.forField('accountId', 'No Reddit ad account configured', {
+            operation: 'campaign_status_update',
+          });
         }
         if (!REDDIT_ACCOUNTS.some((a) => a.accountId === accountId)) {
-          throw new Error(`Reddit ad account ${accountId} is not whitelisted`);
+          throw ServiceValidationError.forField('accountId', `Reddit ad account ${accountId} is not whitelisted`, {
+            operation: 'campaign_status_update',
+          });
         }
         return updateRedditCampaignStatus(req, accountId, campaignId, status);
       }
       default:
-        throw new Error(`Status toggle is not supported for platform: ${platform}`);
+        throw ServiceValidationError.forField('platform', `Status toggle is not supported for platform: ${platform}`, {
+          operation: 'campaign_status_update',
+        });
     }
   }
 

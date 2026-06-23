@@ -463,8 +463,9 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     throw new Error(`End date ${config.endDate} must be after start date ${config.startDate}`);
   }
 
+  let validatedPostId: string | undefined;
   if (config.postUrl) {
-    extractRedditPostId(config.postUrl);
+    validatedPostId = extractRedditPostId(config.postUrl);
   }
 
   const account = REDDIT_ACCOUNTS[0];
@@ -485,6 +486,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
 
   const objective = config.objective ?? 'conversions';
   const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
+  // Belt-and-suspenders: TypeScript guarantees coverage but this guards against runtime widening
   if (!objParams) {
     throw new Error(`Unsupported Reddit objective: ${objective}`);
   }
@@ -584,8 +586,8 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   let adCount = 0;
   let adId: string | undefined;
 
-  if (config.postUrl) {
-    const postId = extractRedditPostId(config.postUrl);
+  if (config.postUrl && validatedPostId) {
+    const postId = validatedPostId;
     steps.push(`Extracted post ID: ${postId} from ${config.postUrl}`);
 
     const utmUrl = buildRedditUtmUrl(config, 0);
@@ -608,7 +610,13 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
         steps.push(`Ad created: ${adId} (post: ${postId}, click URL: ${utmUrl})`);
       }
     } catch (err) {
-      steps.push(`Ad creation failed: ${err instanceof Error ? err.message : 'Unknown error'} — add ad manually in Reddit Ads Manager`);
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      logger.warning(req, 'reddit_ad_create', `Ad creation failed: ${errMsg}`, {
+        campaign_id: campaignId,
+        ad_group_id: adGroupId,
+        post_id: postId,
+      });
+      steps.push(`Ad creation failed: ${errMsg} — add ad manually in Reddit Ads Manager`);
     }
   } else {
     const variantCount = config.variants.length;
