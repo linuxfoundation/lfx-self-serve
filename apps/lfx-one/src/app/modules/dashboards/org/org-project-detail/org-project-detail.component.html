@@ -160,21 +160,21 @@
                       {{ bandLabel(band) }}
                     </span>
                   }
-                </div>
-                <div class="flex items-center gap-2">
-                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, -1)" aria-label="Scroll technical cards left">
-                    <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
-                  </button>
-                  <div class="min-w-0 flex-1 overflow-hidden">
-                    <div #technicalTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      @for (card of technicalCards(); track card.key) {
-                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                      }
-                    </div>
+                  <div class="ml-auto flex items-center gap-1">
+                    <button type="button" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, -1)" aria-label="Scroll technical cards left">
+                      <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, 1)" aria-label="Scroll technical cards right">
+                      <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                    </button>
                   </div>
-                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, 1)" aria-label="Scroll technical cards right">
-                    <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
-                  </button>
+                </div>
+                <div class="overflow-hidden">
+                  <div #technicalTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    @for (card of technicalCards(); track card.key) {
+                      <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                    }
+                  </div>
                 </div>
               </section>
 
@@ -192,21 +192,21 @@
                       {{ bandLabel(band) }}
                     </span>
                   }
-                </div>
-                <div class="flex items-center gap-2">
-                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, -1)" aria-label="Scroll ecosystem cards left">
-                    <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
-                  </button>
-                  <div class="min-w-0 flex-1 overflow-hidden">
-                    <div #ecosystemTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      @for (card of ecosystemCards(); track card.key) {
-                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                      }
-                    </div>
+                  <div class="ml-auto flex items-center gap-1">
+                    <button type="button" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, -1)" aria-label="Scroll ecosystem cards left">
+                      <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, 1)" aria-label="Scroll ecosystem cards right">
+                      <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                    </button>
                   </div>
-                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, 1)" aria-label="Scroll ecosystem cards right">
-                    <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
-                  </button>
+                </div>
+                <div class="overflow-hidden">
+                  <div #ecosystemTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    @for (card of ecosystemCards(); track card.key) {
+                      <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                    }
+                  </div>
                 </div>
               </section>
 
