@@ -16,7 +16,6 @@ import {
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
-import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { formatActivityType, formatStatus } from '../../akrites.utils';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
@@ -30,7 +29,6 @@ export class AkritesOverviewTabComponent {
   private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly canWrite = computed(() => this.projectContextService.canWrite());
