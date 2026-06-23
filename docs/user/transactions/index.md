@@ -43,7 +43,7 @@ Organization-level financial commitments — including annual membership dues �
 For other organization-level financial activity, see the related Org Lens pages:
 
 - **Event sponsorships** — visible on the [Events](../events/) page in Org Lens (`/org/events`)
-- **Corporate training packages** — visible on the [Training & Certifications](../trainings/) page in Org Lens (`/org/training`)
+- **Corporate training packages** — visible on the [Training & Certification](../trainings/) page in Org Lens (`/org/training`)
 
 ### Navigation
 
