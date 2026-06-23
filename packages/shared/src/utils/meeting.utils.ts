@@ -668,7 +668,7 @@ export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_sum
 
   return {
     ...meeting,
-    ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled ?? null,
-    require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval ?? null,
+    ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled,
+    require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval,
   };
 }
