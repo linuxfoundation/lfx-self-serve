@@ -245,7 +245,7 @@ export class OrgProjectDetailComponent {
     const gap = 1.8;
     return heights.map((h, i) => ({
       x: i * (barWidth + gap),
-      y: 16 - h,
+      y: 15 - h,
       h,
       fillClass: i < rank ? BAND_SIGNAL_FILL[band] : BAND_SIGNAL_FILL_LIGHT[band],
     }));
@@ -350,6 +350,11 @@ export class OrgProjectDetailComponent {
   private formatCompactUsd(value: number | null): string {
     if (value === null || value === undefined) return '—';
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  }
+
+  /** Scrolls a card track by one card slot (240 px = w-56 + gap-4). */
+  protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
+    el.scrollBy({ left: direction * 240, behavior: 'smooth' });
   }
 
   private initialsFor(name: string): string {

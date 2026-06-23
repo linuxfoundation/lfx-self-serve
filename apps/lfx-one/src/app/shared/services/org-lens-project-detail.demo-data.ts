@@ -486,7 +486,11 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
     hero: {
       projectName: seed.name,
       description: seed.description,
-      logoUrl: '',
+      logoUrl: projectSlug === 'kubernetes'
+        ? 'https://raw.githubusercontent.com/cncf/artwork/master/projects/kubernetes/icon/color/kubernetes-icon-color.svg'
+        : projectSlug === 'argo'
+          ? 'https://raw.githubusercontent.com/cncf/artwork/master/projects/argo/icon/color/argo-icon-color.svg'
+          : '',
       sourceUrl: seed.sourceUrl,
       sourceLabel: `${seed.name} - ${seed.description.replace(/\.$/, '')}`,
       lfxInsightsUrl: `https://insights.linuxfoundation.org/project/${projectSlug}`,

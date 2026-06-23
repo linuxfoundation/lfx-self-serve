@@ -59,12 +59,6 @@
               </div>
             }
             <div class="flex flex-col gap-2">
-              <div class="flex items-center gap-2">
-                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700" data-testid="project-detail-org-context">
-                  <i class="fa-light fa-building text-blue-500" aria-hidden="true"></i>
-                  {{ orgName() }}
-                </span>
-              </div>
               <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
               <p class="max-w-xl text-sm leading-relaxed text-gray-600" data-testid="project-detail-description">
                 {{ h.description }}
@@ -85,7 +79,7 @@
           </div>
 
           <!-- Right: stat tiles -->
-          <div class="grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4 md:text-right" data-testid="project-detail-hero-stats">
+          <div class="flex flex-wrap gap-x-12 gap-y-4 md:shrink-0 md:text-right" data-testid="project-detail-hero-stats">
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium uppercase tracking-wide text-gray-500">First commit</span>
               <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-first-commit">{{ firstCommitLabel() }}</span>
@@ -158,7 +152,7 @@
                   <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
                   @if (technicalBand(); as band) {
                     <span [class]="bandChipClass(band)" data-testid="project-detail-technical-band">
-                      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                      <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
                         @for (bar of bandSignalBars(band); track bar.x) {
                           <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
                         }
@@ -167,10 +161,20 @@
                     </span>
                   }
                 </div>
-                <div class="flex gap-4 overflow-x-auto pb-1">
-                  @for (card of technicalCards(); track card.key) {
-                    <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                  }
+                <div class="flex items-center gap-2">
+                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, -1)" aria-label="Scroll technical cards left">
+                    <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
+                  </button>
+                  <div class="min-w-0 flex-1 overflow-hidden">
+                    <div #technicalTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      @for (card of technicalCards(); track card.key) {
+                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                      }
+                    </div>
+                  </div>
+                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(technicalTrack, 1)" aria-label="Scroll technical cards right">
+                    <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                  </button>
                 </div>
               </section>
 
@@ -180,7 +184,7 @@
                   <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
                   @if (ecosystemBand(); as band) {
                     <span [class]="bandChipClass(band)" data-testid="project-detail-ecosystem-band">
-                      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                      <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
                         @for (bar of bandSignalBars(band); track bar.x) {
                           <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
                         }
@@ -189,10 +193,20 @@
                     </span>
                   }
                 </div>
-                <div class="flex gap-4 overflow-x-auto pb-1">
-                  @for (card of ecosystemCards(); track card.key) {
-                    <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                  }
+                <div class="flex items-center gap-2">
+                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, -1)" aria-label="Scroll ecosystem cards left">
+                    <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
+                  </button>
+                  <div class="min-w-0 flex-1 overflow-hidden">
+                    <div #ecosystemTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      @for (card of ecosystemCards(); track card.key) {
+                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                      }
+                    </div>
+                  </div>
+                  <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-600" (click)="scrollCards(ecosystemTrack, 1)" aria-label="Scroll ecosystem cards right">
+                    <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                  </button>
                 </div>
               </section>
 
