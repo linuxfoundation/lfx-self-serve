@@ -964,7 +964,12 @@ export class CampaignProxyService {
             operation: 'campaign_status_update',
           });
         }
-        const accountId = (typeof body.accountId === 'string' && body.accountId.trim()) || REDDIT_ACCOUNTS[0]?.accountId;
+        if (typeof body.accountId === 'string' && !body.accountId.trim()) {
+          throw ServiceValidationError.forField('accountId', 'accountId must not be empty', {
+            operation: 'campaign_status_update',
+          });
+        }
+        const accountId = (typeof body.accountId === 'string' ? body.accountId.trim() : undefined) || REDDIT_ACCOUNTS[0]?.accountId;
         if (!accountId) {
           throw ServiceValidationError.forField('accountId', 'No Reddit ad account configured', {
             operation: 'campaign_status_update',
