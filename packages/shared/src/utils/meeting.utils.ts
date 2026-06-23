@@ -621,3 +621,20 @@ export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCu
 
   return cues;
 }
+
+/**
+ * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
+ * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
+ */
+export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_summary_enabled' | 'require_ai_summary_approval' | 'zoom_config'>>(meeting: T): T {
+  const zoom = meeting.zoom_config;
+  if (!zoom) {
+    return meeting;
+  }
+
+  return {
+    ...meeting,
+    ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled ?? null,
+    require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval ?? null,
+  };
+}

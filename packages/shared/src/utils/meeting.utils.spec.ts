@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting } from '../interfaces';
-import { buildRecurrenceSummary, resolveOccurrenceRecurrence, sortPastMeetingsDescending } from './meeting.utils';
+import { buildRecurrenceSummary, normalizeIndexedMeetingAiSummary, resolveOccurrenceRecurrence, sortPastMeetingsDescending } from './meeting.utils';
 
 /**
  * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
@@ -133,5 +133,48 @@ describe('resolveOccurrenceRecurrence', () => {
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
+  });
+});
+
+describe('normalizeIndexedMeetingAiSummary', () => {
+  it('derives ai_summary_enabled from zoom_config.ai_companion_enabled when top-level is absent', () => {
+    const meeting = { zoom_config: { ai_companion_enabled: true } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+  });
+
+  it('derives ai_summary_enabled false from zoom_config.ai_companion_enabled false', () => {
+    const meeting = { zoom_config: { ai_companion_enabled: false } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+  });
+
+  it('preserves explicit top-level ai_summary_enabled true over zoom_config false', () => {
+    const meeting = { ai_summary_enabled: true, zoom_config: { ai_companion_enabled: false } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+  });
+
+  it('preserves explicit top-level ai_summary_enabled false over zoom_config true', () => {
+    const meeting = { ai_summary_enabled: false, zoom_config: { ai_companion_enabled: true } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+  });
+
+  it('returns the same reference when zoom_config is absent', () => {
+    const meeting = { ai_summary_enabled: true } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting)).toBe(meeting);
+  });
+
+  it('derives require_ai_summary_approval from zoom_config with the same precedence', () => {
+    const fromZoom = { zoom_config: { ai_summary_require_approval: true } } as Meeting;
+    expect(normalizeIndexedMeetingAiSummary(fromZoom).require_ai_summary_approval).toBe(true);
+
+    const topLevelWins = {
+      require_ai_summary_approval: false,
+      zoom_config: { ai_summary_require_approval: true },
+    } as Meeting;
+    expect(normalizeIndexedMeetingAiSummary(topLevelWins).require_ai_summary_approval).toBe(false);
   });
 });

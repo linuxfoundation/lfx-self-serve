@@ -34,7 +34,13 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { buildRecurrenceNeverEndDate, getPastMeetingTranscriptUrl, mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
+import {
+  buildRecurrenceNeverEndDate,
+  getPastMeetingTranscriptUrl,
+  mapITXResponseToMeetingRsvp,
+  normalizeIndexedMeetingAiSummary,
+  transformV1SummaryToV2,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -96,10 +102,12 @@ export class MeetingService {
       has_more_pages: !!page_token,
     });
 
-    let meetings: Meeting[] = resources.map((resource) => ({
-      ...resource.data,
-      id: resource.data.id || resource.id?.split(':').pop() || resource.id,
-    }));
+    let meetings: Meeting[] = resources.map((resource) =>
+      normalizeIndexedMeetingAiSummary({
+        ...resource.data,
+        id: resource.data.id || resource.id?.split(':').pop() || resource.id,
+      })
+    );
 
     // Enrich meetings with project names and committee data in parallel (independent enrichments)
     const hasCommittees = meetings.some((m) => m.committees && m.committees.length > 0);

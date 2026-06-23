@@ -131,6 +131,23 @@ export interface MeetingCommittee {
   name?: string;
 }
 
+/**
+ * Zoom-specific configuration as returned on the indexed `v1_meeting` query-service projection.
+ * Note the field names differ from the top-level app contract: the indexer nests AI-summary
+ * enablement here as `ai_companion_enabled` (vs top-level `ai_summary_enabled`) and approval as
+ * `ai_summary_require_approval` (vs top-level `require_ai_summary_approval`).
+ */
+export interface MeetingZoomConfig {
+  /** Zoom numeric meeting ID */
+  meeting_id?: string;
+  /** Zoom meeting passcode */
+  passcode?: string;
+  /** Whether Zoom AI Companion (AI summary) is enabled */
+  ai_companion_enabled?: boolean | null;
+  /** Whether AI summaries require approval before publishing */
+  ai_summary_require_approval?: boolean | null;
+}
+
 export interface Meeting {
   // API Response fields - not in create payload
   /** Unique identifier for the meeting */
@@ -188,6 +205,8 @@ export interface Meeting {
   ai_summary_enabled?: boolean | null;
   /** Whether AI summary requires approval before being shared */
   require_ai_summary_approval?: boolean | null;
+  /** Nested Zoom config from the indexed query-service projection (source for ai_summary_enabled on list views) */
+  zoom_config?: MeetingZoomConfig | null;
 
   /** 6-digit Zoom host key */
   host_key?: string;
