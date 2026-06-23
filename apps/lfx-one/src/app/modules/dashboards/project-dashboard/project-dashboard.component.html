@@ -9,7 +9,7 @@
   }
 
   <div class="flex flex-col xl:flex-row xl:items-start xl:gap-10 gap-10" data-testid="project-dashboard-sections-grid">
-    <div class="flex flex-col gap-10 flex-1 min-w-0 order-2 xl:order-1">
+    <div class="flex flex-col gap-10 flex-1 min-w-0">
       @defer (on idle) {
         <lfx-recent-progress />
       } @placeholder {
@@ -78,7 +78,7 @@
     </div>
 
     @if (selectedProject()?.uid; as uid) {
-      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading()" />
+      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading" />
     }
   </div>
 </div>

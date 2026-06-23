@@ -48,7 +48,7 @@ export class ExecutiveDirectorDashboardComponent {
   // === Computed Signals ===
   protected readonly selectedFoundation = this.projectContextService.selectedFoundation;
   protected readonly selectedProject = computed(() => this.projectContextService.activeContext());
-  protected readonly staffHeading = computed(() => 'Foundation Staff');
+  protected readonly staffHeading = 'Foundation Staff';
   // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
   // Pass the raw list and let the child render the top N unhidden items.
   public readonly pendingActions: Signal<PendingActionItem[]>;

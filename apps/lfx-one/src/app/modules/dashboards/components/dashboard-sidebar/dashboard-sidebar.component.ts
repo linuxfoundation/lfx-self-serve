@@ -7,7 +7,7 @@ import { ProjectStaffCardComponent } from '../project-staff-card/project-staff-c
 
 @Component({
   selector: 'lfx-dashboard-sidebar',
-  host: { class: 'order-1 xl:order-2 block w-full shrink-0 xl:w-44' },
+  host: { class: 'block w-full shrink-0 xl:w-44' },
   imports: [DashboardQuicklinksComponent, ProjectStaffCardComponent],
   templateUrl: './dashboard-sidebar.component.html',
 })

@@ -28,7 +28,7 @@ export class ProjectDashboardComponent {
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
-  protected readonly staffHeading = computed(() => 'Project Staff');
+  protected readonly staffHeading = 'Project Staff';
 
   public readonly pendingActions: Signal<PendingActionItem[]>;
 

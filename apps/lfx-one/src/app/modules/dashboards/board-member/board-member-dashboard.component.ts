@@ -41,7 +41,7 @@ export class BoardMemberDashboardComponent {
 
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
-  protected readonly staffHeading = computed(() => 'Foundation Staff');
+  protected readonly staffHeading = 'Foundation Staff';
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
   // Pass the raw list and let the child render the top N unhidden items.
