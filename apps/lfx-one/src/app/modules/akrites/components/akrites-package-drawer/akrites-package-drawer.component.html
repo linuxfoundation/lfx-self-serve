@@ -511,6 +511,17 @@
             (onClick)="openStatusModal()"
             data-testid="akrites-drawer-reactivate" />
         }
+        @if (canAssignSteward()) {
+          <lfx-button
+            [label]="assignStewardLabel()"
+            icon="fa-light fa-user-plus"
+            size="small"
+            [outlined]="true"
+            [loading]="actionLoading()"
+            [disabled]="actionLoading()"
+            (onClick)="openAssignStewardModal()"
+            data-testid="akrites-drawer-assign" />
+        }
         @if (canEscalate()) {
           <lfx-button
             label="Escalate"
@@ -526,6 +537,12 @@
     </div>
   </ng-template>
 </p-drawer>
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignStewardModalVisible"
+  [packageName]="packageData()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />
 
 <lfx-akrites-escalate-modal
   [(visible)]="escalateModalVisible"

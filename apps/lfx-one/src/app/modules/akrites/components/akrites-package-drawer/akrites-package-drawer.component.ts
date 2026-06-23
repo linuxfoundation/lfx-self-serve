@@ -21,6 +21,7 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 import { AkritesEscalateModalComponent } from '../akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesStatusModalComponent } from '../akrites-status-modal/akrites-status-modal.component';
 import {
@@ -37,7 +38,15 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 
 @Component({
   selector: 'lfx-akrites-package-drawer',
-  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent, AkritesEscalateModalComponent, AkritesStatusModalComponent],
+  imports: [
+    DrawerModule,
+    ButtonComponent,
+    EmptyStateComponent,
+    TagComponent,
+    AkritesAssignStewardModalComponent,
+    AkritesEscalateModalComponent,
+    AkritesStatusModalComponent,
+  ],
   templateUrl: './akrites-package-drawer.component.html',
 })
 export class AkritesPackageDrawerComponent {
@@ -76,11 +85,14 @@ export class AkritesPackageDrawerComponent {
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
   protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned');
-  // Allow assigning a steward on any package — if no stewardship row exists yet the
-  // confirm handler auto-opens the package first and then chains the assign call.
+  // Show "Assign steward" for unassigned/open and "Reassign" for assessing/escalated/inactive.
   protected readonly canAssignSteward = computed(() => {
-    const status = this.stewardshipStatus();
-    return status !== 'inactive';
+    const s = this.stewardshipStatus();
+    return ['unassigned', 'open', 'assessing', 'escalated', 'inactive'].includes(s);
+  });
+  protected readonly assignStewardLabel = computed(() => {
+    const s = this.stewardshipStatus();
+    return ['assessing', 'escalated', 'inactive'].includes(s) ? 'Reassign' : 'Assign steward';
   });
   protected readonly canManageStatus = computed(() => this.stewardshipId() !== null);
   protected readonly canEscalate = computed(() => {

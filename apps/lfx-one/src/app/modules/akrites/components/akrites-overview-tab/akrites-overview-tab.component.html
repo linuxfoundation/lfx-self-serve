@@ -82,11 +82,23 @@
                       </span>
                     </div>
                     <!-- Activity description -->
-                    <div class="text-[14px] text-gray-500 mt-1">
-                      <b class="text-slate-900 font-semibold">{{ row.formattedActivityLabel }}</b>
-                      &nbsp;·&nbsp;{{ row.relativeTime }}
-                      @if (row.actorName) {
-                        &nbsp;·&nbsp;by {{ row.actorName }}
+                    <div class="flex items-center gap-2 mt-1 min-w-0">
+                      <span class="text-[14px] text-gray-500 truncate">
+                        <b class="text-slate-900 font-semibold">{{ row.formattedActivityLabel }}</b>
+                        &nbsp;·&nbsp;{{ row.relativeTime }}
+                      </span>
+                      @if (row.actorDisplay) {
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                          <span class="text-gray-300 text-[13px]">·</span>
+                          @if (row.actorAvatarUrl) {
+                            <img [src]="row.actorAvatarUrl" [alt]="row.actorDisplay" class="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                          } @else {
+                            <span class="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                              {{ row.actorInitials }}
+                            </span>
+                          }
+                          <span class="text-[12.5px] text-gray-500">{{ row.actorDisplay }}</span>
+                        </span>
                       }
                     </div>
                   </div>
@@ -224,3 +236,9 @@
     </button>
   </div>
 </div>
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignModalVisible"
+  [packageName]="assignTargetRow()?.packageName ?? null"
+  [loading]="assignActionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />

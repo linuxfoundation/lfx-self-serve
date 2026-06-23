@@ -35,14 +35,32 @@ export interface AkritesRoleOption {
   description: string;
 }
 
+/** A committee member returned by the steward search endpoint, used for the assignable-steward picker. */
+export interface AkritesSearchStewardResult {
+  /** Auth0/LFX user UID — sent as `userId` in the assign endpoint body. */
+  userId: string;
+  username: string;
+  displayName: string;
+  organization: string | null;
+  status: string;
+  /** Pre-computed initials for the avatar display — avoids method calls in templates. */
+  initials: string;
+}
+
 // ===== CDP Raw Types =====
+
+export interface CdpActivityActor {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
 
 export interface CdpActivityRow {
   id: string;
   stewardshipId: string;
   packagePurl: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -56,6 +74,15 @@ export interface CdpActivityResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/** Steward row in the package stewardship summary (list view). */
+export interface CdpStewardshipSteward {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  role: string;
+  assignedAt: string;
 }
 
 export interface CdpStewardshipSummary {
@@ -72,7 +99,7 @@ export interface CdpStewardshipSummary {
   healthBand: string | null;
   latestReleaseAt: string | null;
   lastActivity: { type: string; content: string; at: string } | null;
-  stewards: { userId: string; role: string; assignedAt: string }[];
+  stewards: CdpStewardshipSteward[];
 }
 
 export interface CdpPackagesListResponse {
@@ -166,11 +193,13 @@ export interface CdpPackageDetail {
 
 // ===== CDP Stewardship Raw Types =====
 
-/** Steward row as returned in the package detail `stewardship.stewards` array. No display name/avatar yet (see roster endpoint). */
+/** Steward row as returned in the package detail `stewardship.stewards` array. */
 export interface CdpStewardSummary {
   id: string;
   stewardshipId: string;
   userId: string;
+  username: string | null;
+  displayName: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   assignedBy: string | null;
@@ -202,11 +231,23 @@ export interface CdpStewardshipRecord {
 
 export interface AkritesOpenStewardshipRequest {
   purl: string;
+  actor: AkritesActorInput;
+}
+
+export interface AkritesActorInput {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
 }
 
 export interface AkritesAssignStewardRequest {
-  userId: string;
-  role: AkritesStewardRole;
+  steward: {
+    userId: string;
+    username: string;
+    displayName: string;
+    role: AkritesStewardRole;
+  };
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
   moveToAssessing?: boolean;
 }
@@ -265,12 +306,10 @@ export interface AkritesAssessment {
   monitoring: string[];
 }
 
-/**
- * Steward shown in the UI. `name`/`avatarUrl` are populated once the assignable-steward
- * roster endpoint exists; until then only `userId` (Auth0 sub) + `role` are available.
- */
+/** Steward shown in the UI. `name` is the display name from CDP; `username` is the LFX username. */
 export interface AkritesSteward {
   userId: string;
+  username: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   name: string | null;
@@ -393,8 +432,7 @@ export interface AkritesActivityRow {
   packagePurl: string;
   packageName: string;
   packageEcosystem: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -419,6 +457,9 @@ export interface AkritesActivityRowVM extends AkritesActivityRow {
   formattedStatus: string;
   formattedActivityLabel: string;
   action: { label: string; variant: 'default' | 'blue' | 'red' } | null;
+  actorDisplay: string | null;
+  actorAvatarUrl: string | null;
+  actorInitials: string | null;
 }
 
 export interface AkritesActivityDayGroup {
