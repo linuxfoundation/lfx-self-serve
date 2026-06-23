@@ -32,7 +32,7 @@ Go to **app.lfx.dev** and select **My Transactions** from the left navigation si
 
 ## Your company's activity
 
-Organization-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Org Lens (route: `/org/membership`).
+Organization-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Org Lens (route: `/org/memberships`).
 
 ### What you can see in Memberships
 
@@ -47,7 +47,7 @@ For other organization-level financial activity, see the related Org Lens pages:
 
 ### Navigation
 
-Switch to the **Org** lens using the lens selector at the top of LFX Self Serve, then select **Memberships** from the left navigation sidebar (route: `/org/membership`).
+Switch to the **Org** lens using the lens selector at the top of LFX Self Serve, then select **Memberships** from the left navigation sidebar (route: `/org/memberships`).
 
 ### Who can access this
 

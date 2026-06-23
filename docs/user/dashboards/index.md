@@ -41,7 +41,7 @@ The **Me lens** (route: `/`) is your personal dashboard. It shows your individua
 
 ### What you see
 
-- Your personal contributions and open source activity
+- Your personal contributions and open-source activity
 - Badges and credentials you have earned
 - Upcoming events relevant to your project affiliations
 - A summary of your committee memberships and roles
