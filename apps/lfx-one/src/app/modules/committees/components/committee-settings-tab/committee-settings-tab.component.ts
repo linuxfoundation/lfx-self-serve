@@ -135,29 +135,6 @@ export class CommitteeSettingsTabComponent {
       });
   }
 
-  private openPickerDialog(committeeUid: string): void {
-    const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
-
-    const ref = this.dialogService.open(MailingListPickerDialogComponent, {
-      header: 'Associated Mailing Lists',
-      width: '700px',
-      modal: true,
-      closable: true,
-      draggable: false,
-      data: {
-        mailingLists: this.projectMailingLists(),
-        associatedUids,
-        projectUid: this.committee().project_uid,
-        committeeUid,
-      },
-    }) as DynamicDialogRef;
-
-    ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
-      if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids);
-    });
-  }
-
   public removeMailingList(ml: GroupsIOMailingList): void {
     const committee = this.committee();
     if (!committee?.uid || this.removingMlUid()) return;
@@ -235,6 +212,29 @@ export class CommitteeSettingsTabComponent {
   }
 
   // -- Private methods --
+
+  private openPickerDialog(committeeUid: string): void {
+    const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
+
+    const ref = this.dialogService.open(MailingListPickerDialogComponent, {
+      header: 'Associated Mailing Lists',
+      width: '700px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: {
+        mailingLists: this.projectMailingLists(),
+        associatedUids,
+        projectUid: this.committee().project_uid,
+        committeeUid,
+      },
+    }) as DynamicDialogRef;
+
+    ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
+      if (!result) return;
+      this.saveMailingListAssociation(result.selectedUids, associatedUids);
+    });
+  }
 
   private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>): void {
     const committee = this.committee();
