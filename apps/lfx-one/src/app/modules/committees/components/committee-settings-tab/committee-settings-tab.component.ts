@@ -10,6 +10,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -30,6 +31,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 })
 export class CommitteeSettingsTabComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -112,6 +114,28 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openMailingListPicker(): void {
+    const committee = this.committee();
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
+
+    this.committeeService
+      .getCommittee(committee.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          this.openPickerDialog(committee.uid);
+        },
+        error: () => deny(),
+      });
+  }
+
+  private openPickerDialog(committeeUid: string): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
     const ref = this.dialogService.open(MailingListPickerDialogComponent, {
@@ -124,6 +148,7 @@ export class CommitteeSettingsTabComponent {
         mailingLists: this.projectMailingLists(),
         associatedUids,
         projectUid: this.committee().project_uid,
+        committeeUid,
       },
     }) as DynamicDialogRef;
 

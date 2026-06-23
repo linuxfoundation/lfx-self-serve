@@ -18,10 +18,8 @@
       styleClass="w-full"
       dataTest="settings-ml-picker-search"></lfx-input-text>
     <a
-      [routerLink]="['/mailing-lists/manage']"
-      [queryParams]="{ project_uid: projectUid }"
-      (click)="cancel()"
-      class="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap"
+      (click)="onCreateNewList()"
+      class="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap cursor-pointer"
       data-testid="settings-ml-create-new-btn">
       <i class="fa-light fa-plus text-xs"></i> Create New List
     </a>

@@ -4,29 +4,36 @@
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
 import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-list-type.pipe';
 
 @Component({
   selector: 'lfx-mailing-list-picker-dialog',
-  imports: [ButtonComponent, CheckboxComponent, InputTextComponent, ReactiveFormsModule, RouterLink, TagComponent, MailingListEmailPipe, MailingListTypePipe],
+  imports: [ButtonComponent, CheckboxComponent, InputTextComponent, ReactiveFormsModule, TagComponent, MailingListEmailPipe, MailingListTypePipe],
   templateUrl: './mailing-list-picker-dialog.component.html',
 })
 export class MailingListPickerDialogComponent {
   private readonly config = inject(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
+  private readonly router = inject(Router);
 
   public readonly mailingLists: GroupsIOMailingList[] = this.config.data.mailingLists;
   public readonly projectUid: string = this.config.data.projectUid;
+  private readonly committeeUid: string = this.config.data.committeeUid;
 
   public selectedMailingListUids = signal<Set<string>>(new Set(this.config.data.associatedUids));
   public mlSearchQuery = signal('');
@@ -72,6 +79,30 @@ export class MailingListPickerDialogComponent {
     }
     this.selectedMailingListUids.set(current);
     this.mlCheckboxForm.get(uid)?.setValue(current.has(uid));
+  }
+
+  public onCreateNewList(): void {
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
+    const deny = () => {
+      this.cancel();
+      void this.router.navigate([overviewPath], { queryParams: denyParams });
+    };
+
+    this.committeeService
+      .getCommittee(this.committeeUid)
+      .pipe(take(1))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          this.cancel();
+          void this.router.navigate(['/mailing-lists', 'manage'], { queryParams: { project_uid: this.projectUid } });
+        },
+        error: () => deny(),
+      });
   }
 
   public save(): void {
