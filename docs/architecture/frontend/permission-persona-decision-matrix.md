@@ -12,6 +12,7 @@ Sidebar/page/content visibility -> persona/role
 Create/manage authority -> resolved target context + writer permission
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
+LF Staff Mode -> explicit staff eligibility for LF operational workflows
 ```
 
 ## Context Entry
@@ -55,11 +56,12 @@ Discovery -> explicit browse/join/request workflows
 
 ### Existing Item Action From Me
 
-- **Example:** Edit a meeting, manage agenda, view vote results, update survey, manage document, edit newsletter draft.
-- **Required permission:** View permission for the item plus writer permission for the item's resolved target context.
+- **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
+- **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
+- **Required permission:** View permission or item eligibility for read actions. Writer permission for the item's resolved target context for write actions.
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
-- **Allowed actions:** Create/manage action is visible or enabled when writer permission passes.
-- **Denied actions:** If writer permission fails, keep view/read actions only.
+- **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when writer permission passes.
+- **Denied actions:** If writer permission fails, keep eligible view/read actions only.
 
 ### Create Action From Me
 
@@ -150,6 +152,15 @@ Discovery -> explicit browse/join/request workflows
 - **Visible experience:** Contributor-shaped Project experience.
 - **Allowed actions:** Read Project context and participate where eligible.
 - **Denied actions:** Create/manage resources.
+
+### LF Staff Mode
+
+- **Context:** Staff operational mode, not a Foundation/Project persona.
+- **Persona:** LF Staff.
+- **Required permission:** Explicit staff eligibility.
+- **Visible experience:** Staff support, troubleshooting, oversight, assisted workflows, and cross-foundation operations.
+- **Allowed actions:** Staff-only operations defined for LF workflows.
+- **Denied actions:** Do not use LF Staff Mode as a substitute for normal Foundation/Project writer permission unless the workflow is explicitly staff-owned and audited.
 
 ## Feature Decisions
 

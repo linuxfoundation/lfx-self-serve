@@ -1,6 +1,6 @@
 # Permission, Persona, and Navigation Model
 
-Working spec for aligning how LFX Self Serve decides where users can go, what they see, and what they can do.
+Working spec for aligning how the LFX Self Serve experience in this repo decides where users can go, what they see, and what they can do.
 
 ## TL;DR
 
@@ -116,7 +116,9 @@ This means ED is not a synonym for every privileged action, and Maintainer is no
 
 ### Writer Actions
 
-Do not introduce a separate Admin Mode unless we later need an explicit view/manage toggle.
+Do not introduce a separate Admin Mode for Foundation/Project create/manage authority. Admin Mode would imply that EDs, Board Members, Maintainers, or Contributors get a privileged write view because of persona alone, which conflicts with the target model.
+
+LF Staff Mode is different and may still be needed. LF Staff Mode should cover Linux Foundation operational workflows across contexts, such as support, troubleshooting, staff-only oversight, assisted workflows, and cross-foundation operations. It should not replace contextual writer permission for normal Foundation/Project create/manage actions.
 
 Keep create/manage actions inline where they belong:
 
@@ -145,6 +147,8 @@ Target writerGuard = resolved target context + canWrite()
 ```
 
 ED-only pages can still use persona guards where the page itself is an ED experience, such as Health Metrics or Campaigns. Create/edit/manage routes should not use ED as an authorization shortcut unless the user also has writer permission for the selected target context.
+
+LF Staff Mode should have its own explicit staff eligibility and audit expectations. It should not be inferred from ED, Board Member, Maintainer, Contributor, or writer permission.
 
 ### Discovery
 
@@ -318,5 +322,6 @@ Sidebar/page/content visibility -> persona/role
 Action authority -> existing contextual writer permission
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
-No separate Admin Mode unless we later need an explicit view/manage toggle
+No separate Admin Mode for Foundation/Project create/manage authority
+LF Staff Mode may still be needed for LF operational workflows
 ```
