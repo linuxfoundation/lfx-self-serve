@@ -423,6 +423,8 @@ export class ProfileAffiliationsComponent {
           this.cdpAffiliations.set(cdpAffiliations);
           this.lfxSlugs.set(lfxSlugs);
           this.workExperience.set(workExperiences);
+          // Count only user-connected identities: exclude the base LFID account and hidden entries,
+          // matching how ProfileIdentitiesComponent defines a "connected" identity.
           this.connectedIdentities.set(identities.filter((id) => id.platform !== 'lfid' && id.displayState !== 'hidden'));
           this.loading.set(false);
           return this.transformToProjectGroups(cdpAffiliations, lfxSlugs);
