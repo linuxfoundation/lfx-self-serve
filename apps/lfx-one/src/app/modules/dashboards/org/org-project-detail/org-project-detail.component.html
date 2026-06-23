@@ -156,56 +156,46 @@
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
                 <div class="flex items-center gap-3">
                   <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
-                  @if (technicalBand(); as b) {
-                    <span data-testid="project-detail-technical-band"><lfx-tag [value]="b.label" [severity]="b.severity" /></span>
+                  @if (technicalBand(); as band) {
+                    <span [class]="bandChipClass(band)" data-testid="project-detail-technical-band">
+                      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                        @for (bar of bandSignalBars(band); track bar.x) {
+                          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
+                        }
+                      </svg>
+                      {{ bandLabel(band) }}
+                    </span>
                   }
                 </div>
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="flex gap-4 overflow-x-auto pb-1">
                   @for (card of technicalCards(); track card.key) {
                     <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                   }
                 </div>
-                @if (sourceUrl()) {
-                  <a
-                    [href]="sourceUrl()"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
-                    data-testid="project-detail-get-involved">
-                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-                    <span>Get involved with this project</span>
-                  </a>
-                }
               </section>
 
               <!-- Ecosystem Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-ecosystem-group">
                 <div class="flex items-center gap-3">
                   <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
-                  @if (ecosystemBand(); as b) {
-                    <span data-testid="project-detail-ecosystem-band"><lfx-tag [value]="b.label" [severity]="b.severity" /></span>
+                  @if (ecosystemBand(); as band) {
+                    <span [class]="bandChipClass(band)" data-testid="project-detail-ecosystem-band">
+                      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                        @for (bar of bandSignalBars(band); track bar.x) {
+                          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
+                        }
+                      </svg>
+                      {{ bandLabel(band) }}
+                    </span>
                   }
                 </div>
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="flex gap-4 overflow-x-auto pb-1">
                   @for (card of ecosystemCards(); track card.key) {
                     <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                   }
                 </div>
               </section>
 
-              <!-- Influence Trend -->
-              <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
-                <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                  @if (hasTrendHistory()) {
-                    <div class="h-72" data-testid="project-detail-trend-chart">
-                      <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%" />
-                    </div>
-                  } @else {
-                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-trend-empty">Not enough history yet.</p>
-                  }
-                </div>
-              </section>
             </div>
           }
           @case ('pd-leaderboards') {
@@ -257,6 +247,20 @@
                     testid: 'ecosystem',
                   }"></ng-container>
               </div>
+
+              <!-- Influence Trend -->
+              <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
+                <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
+                <div class="rounded-lg border border-gray-200 bg-white p-4">
+                  @if (hasTrendHistory()) {
+                    <div class="h-72" data-testid="project-detail-trend-chart">
+                      <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%" />
+                    </div>
+                  } @else {
+                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-trend-empty">Not enough history yet.</p>
+                  }
+                </div>
+              </section>
             </div>
           }
         }
@@ -267,13 +271,13 @@
 
 <!-- Our Influence metric card: optional scope label, title, dual-line trendline, sentence (Technical + Ecosystem). -->
 <ng-template #influenceCard let-card>
-  <div class="flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white" [attr.data-testid]="card.testId">
+  <div class="flex w-56 shrink-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white" [attr.data-testid]="card.testId">
     @if (card.scopeLabel) {
       <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500">{{ card.scopeLabel }}</div>
     }
     <div class="flex flex-1 flex-col gap-3 p-4">
       <div class="text-sm font-semibold text-gray-900">{{ card.title }}</div>
-      <div class="h-14">
+      <div class="h-20">
         @if (card.hasData) {
           <lfx-chart type="line" [data]="card.chartData" [options]="cardChartOptions" height="100%" />
         } @else {

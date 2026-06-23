@@ -56,6 +56,36 @@ const BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: TagSeverit
   'non-lf': { label: 'Non-LF', severity: 'secondary' },
 };
 
+/**
+ * Signal-strength bar fill constants for the section-header band chip.
+ * Inlined here (not in @lfx-one/shared) to avoid conflict with the shared-package additions
+ * landing with PR #921 (LFXV2-1883). Merge those once that PR lands.
+ */
+const BAND_SIGNAL_RANK: Record<OrgLensProjectBand, number> = {
+  leading: 4,
+  contributing: 3,
+  participating: 2,
+  'non-lf': 0,
+};
+const BAND_SIGNAL_FILL: Record<OrgLensProjectBand, string> = {
+  leading: 'fill-emerald-500',
+  contributing: 'fill-blue-500',
+  participating: 'fill-amber-500',
+  'non-lf': 'fill-gray-400',
+};
+const BAND_SIGNAL_FILL_LIGHT: Record<OrgLensProjectBand, string> = {
+  leading: 'fill-emerald-200',
+  contributing: 'fill-blue-200',
+  participating: 'fill-amber-200',
+  'non-lf': 'fill-gray-200',
+};
+const BAND_CHIP_CLASS: Record<OrgLensProjectBand, string> = {
+  leading: 'inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700',
+  contributing: 'inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700',
+  participating: 'inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700',
+  'non-lf': 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
+};
+
 const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string }[] = [
   { id: 'influence', label: 'Calculated Influence' },
   { id: 'activity', label: 'Activity Count' },
@@ -119,16 +149,16 @@ export class OrgProjectDetailComponent {
   private readonly viewingScores = computed(() => this.detail()?.leaderboard.find((row) => row.isViewingOrg)?.scores ?? null);
   protected readonly technicalBand = computed(() => {
     const scores = this.viewingScores();
-    return scores ? BAND_TAG[bandForScore(scores.technical)] : null;
+    return scores ? bandForScore(scores.technical) : null;
   });
   protected readonly ecosystemBand = computed(() => {
     const scores = this.viewingScores();
-    return scores ? BAND_TAG[bandForScore(scores.ecosystem)] : null;
+    return scores ? bandForScore(scores.ecosystem) : null;
   });
 
   // Our Influence tab — Technical + Ecosystem cards (trendline + sentence), same card style.
   private readonly monthLabels: string[] = this.buildMonthLabels();
-  protected readonly cardChartOptions: ChartOptions<ChartType> = { ...BASE_LINE_CHART_OPTIONS };
+  protected readonly cardChartOptions: ChartOptions<ChartType> = this.buildCardChartOptions();
   protected readonly technicalCards = computed(() =>
     (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical'))
   );
@@ -198,6 +228,27 @@ export class OrgProjectDetailComponent {
   protected onSearch(dimension: LeaderboardDimension, event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     (dimension === 'technical' ? this.techSearch : this.ecoSearch).set(value);
+  }
+
+  protected bandChipClass(band: OrgLensProjectBand): string {
+    return BAND_CHIP_CLASS[band];
+  }
+
+  protected bandLabel(band: OrgLensProjectBand): string {
+    return BAND_TAG[band].label;
+  }
+
+  protected bandSignalBars(band: OrgLensProjectBand): { x: number; y: number; h: number; fillClass: string }[] {
+    const rank = BAND_SIGNAL_RANK[band];
+    const heights = [5, 8.3, 11.6, 15];
+    const barWidth = 2.6;
+    const gap = 1.8;
+    return heights.map((h, i) => ({
+      x: i * (barWidth + gap),
+      y: 16 - h,
+      h,
+      fillClass: i < rank ? BAND_SIGNAL_FILL[band] : BAND_SIGNAL_FILL_LIGHT[band],
+    }));
   }
 
   private initMetric(): OrgLensLeaderboardMetric {
@@ -308,6 +359,23 @@ export class OrgProjectDetailComponent {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
+  /** Card sparkline options: extends the base line config with labeled datasets for the hover tooltip. */
+  private buildCardChartOptions(): ChartOptions<ChartType> {
+    return {
+      ...BASE_LINE_CHART_OPTIONS,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...BASE_LINE_CHART_OPTIONS.plugins?.tooltip,
+          displayColors: true,
+          usePointStyle: true,
+          boxWidth: 8,
+          boxHeight: 8,
+        },
+      },
+    };
+  }
+
   /** Twelve trailing short-month labels (oldest → newest) for sparkline + trend tooltips. */
   private buildMonthLabels(): string[] {
     const out: string[] = [];
@@ -324,29 +392,41 @@ export class OrgProjectDetailComponent {
       title: card.label,
       scopeLabel: card.scopeLabel,
       hasData: card.sparkline.length > 0,
-      chartData: this.cardChartData(card.sparkline, colorHex),
+      chartData: this.cardChartData(card.sparkline, card.projectSparkline, colorHex),
       caption: card.caption,
       testId: `project-detail-${group}-card-${card.key}`,
     };
   }
 
-  /** Dual-line card sparkline: the metric line in `colorHex` plus a faint gray reference baseline. */
-  private cardChartData(series: number[], colorHex: string): ChartData<ChartType> {
-    return {
-      labels: this.monthLabels,
-      datasets: [
-        { data: series, borderColor: colorHex, backgroundColor: 'transparent', fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0 },
-        {
-          data: series.map((value) => Math.round(value * 0.8 * 10) / 10),
-          borderColor: lfxColors.gray[200],
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0.4,
-          borderWidth: 1.5,
-          pointRadius: 0,
-        },
-      ],
-    };
+  /** Dual-line card sparkline: the org metric line in `colorHex` plus a grey project-average reference. */
+  private cardChartData(series: number[], projectSeries: number[], colorHex: string): ChartData<ChartType> {
+    const datasets: ChartData<ChartType>['datasets'] = [
+      {
+        label: 'Your company',
+        data: series,
+        borderColor: colorHex,
+        backgroundColor: 'transparent',
+        fill: false,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+    ];
+    if (projectSeries.length > 0) {
+      datasets.push({
+        label: 'Project average',
+        data: projectSeries,
+        borderColor: lfxColors.gray[300],
+        backgroundColor: 'transparent',
+        fill: false,
+        tension: 0.4,
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      });
+    }
+    return { labels: this.monthLabels, datasets };
   }
 
   private buildTrendData(): ChartData<ChartType> {

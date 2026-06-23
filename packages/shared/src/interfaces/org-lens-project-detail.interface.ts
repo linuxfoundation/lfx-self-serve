@@ -59,6 +59,8 @@ export interface OrgLensProjectInfluenceCard {
   scopeLabel: string | null;
   /** 12 monthly bins, oldest → newest. Empty array → "No data". */
   sparkline: number[];
+  /** Project-wide average monthly series (grey reference line). Same length as sparkline. */
+  projectSparkline: number[];
   /** Descriptive sentence split so the middle stat can render bold. */
   caption: { prefix: string; emphasis: string; suffix: string };
 }

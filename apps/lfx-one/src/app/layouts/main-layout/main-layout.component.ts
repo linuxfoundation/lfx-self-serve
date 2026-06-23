@@ -509,9 +509,7 @@ export class MainLayoutComponent {
           icon: 'fa-light fa-display',
           routerLink: '/org/memberships',
         },
-        // INFO: Future Epic implementation — the Projects page is hidden until the
-        // org-projects drilldown is built. Restore the entry below to re-enable it.
-        // { label: 'Projects', icon: 'fa-light fa-folder', routerLink: '/org/projects' },
+        { label: 'Projects', icon: 'fa-light fa-folder', routerLink: '/org/projects' },
         // INFO: Future Epic implementation — the ROI page is hidden until the org ROI
         // feature is built. Restore the entry below to re-enable it.
         // { label: 'ROI', icon: 'fa-light fa-chart-line-up', routerLink: '/org/roi' },

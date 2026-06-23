@@ -253,21 +253,37 @@ function shareOf(n: number, total: number): number {
 
 interface Caption { prefix: string; emphasis: string; suffix: string }
 
-function card(key: string, label: string, scopeLabel: string | null, sparkline: number[], caption: Caption): OrgLensProjectInfluenceCard {
-  return { key, label, scopeLabel, sparkline, caption };
+function card(
+  key: string,
+  label: string,
+  scopeLabel: string | null,
+  sparkline: number[],
+  projectSparkline: number[],
+  caption: Caption
+): OrgLensProjectInfluenceCard {
+  return { key, label, scopeLabel, sparkline, projectSparkline, caption };
 }
 
 /** Five technical cards (project-level): contribution metrics + PR merge speed. */
 function technicalCards(seed: ProjectDetailSeed): OrgLensProjectInfluenceCard[] {
   const { org, totals } = seed;
-  // "% slower than average" derived from the technical influence score (lower score → slower merges).
   const mergeSlower = Math.round((100 - seed.influence.technical) * 0.4 * 100) / 100;
+  // Project-average series: derived from totals divided by estimated active-contributor counts.
+  // Maintainers are concentrated (~15 orgs each with meaningful presence); contributors are spread
+  // across ~90 orgs; commits/PRs are driven by ~20 high-volume orgs.
+  const projMaintainers = ramp(totals.maintainers / 15, 0.7);
+  const projContributors = ramp(totals.contributors / 90, 0.7);
+  const projCommits = ramp(totals.commits / 20, 0.7);
+  const projPrs = ramp(totals.prs / 20, 0.7);
+  // Merge-time baseline: 50 represents a project-neutral average (0=instant, 100=very slow).
+  const projMergeTime = ramp(50, 0.92, 1);
   return [
     card(
       'maintainers',
       'Maintainers',
       null,
       ramp(org.maintainers, 0.6),
+      projMaintainers,
       org.maintainers === 0
         ? { prefix: 'Our company employs ', emphasis: 'no', suffix: ' maintainers for this project.' }
         : {
@@ -276,22 +292,22 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectInfluenceCard[] 
             suffix: ` ${org.maintainers === 1 ? 'maintainer' : 'maintainers'} for this project.`,
           }
     ),
-    card('contributors', 'Contributors', null, ramp(org.contributors, 0.55), {
+    card('contributors', 'Contributors', null, ramp(org.contributors, 0.55), projContributors, {
       prefix: 'Our company employs ',
       emphasis: pctStr(shareOf(org.contributors, totals.contributors)),
       suffix: ' of contributors to this project.',
     }),
-    card('commits', 'Commit Activities', null, ramp(org.commits, 0.65), {
+    card('commits', 'Commit Activities', null, ramp(org.commits, 0.65), projCommits, {
       prefix: 'Employees made ',
       emphasis: pctStr(shareOf(org.commits, totals.commits)),
       suffix: ' of all commit activities.',
     }),
-    card('pull-requests', 'Pull Requests Opened', null, ramp(org.prs, 0.65), {
+    card('pull-requests', 'Pull Requests Opened', null, ramp(org.prs, 0.65), projPrs, {
       prefix: 'Employees opened ',
       emphasis: pctStr(shareOf(org.prs, totals.prs)),
       suffix: ' of all pull requests.',
     }),
-    card('avg-merge-time', 'Avg Time to Merge PRs', null, ramp(100 - seed.influence.technical, 0.85, 1), {
+    card('avg-merge-time', 'Avg Time to Merge PRs', null, ramp(100 - seed.influence.technical, 0.85, 1), projMergeTime, {
       prefix: 'PRs merged ',
       emphasis: `${mergeSlower}% slower`,
       suffix: ' than average.',
@@ -312,6 +328,11 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
   const sponsorPct = Math.round((e / 100) * 0.04 * 1000) / 1000;
   const meetupPct = Math.round((e / 100) * 0.013 * 1000) / 1000;
   const certifiedPct = Math.round((e / 100) * 0.005 * 1000) / 1000;
+  // Project-average proxies for ecosystem metrics (org is expected to be above avg for its band).
+  const projCollabAvg = ramp(eco.collaboration > 0 ? 15333 / 15 : 0, 0.65);
+  const projMeetingAvg = eco.meetingAttendance === 0 ? [] : ramp(eco.meetingAttendance * 0.78, 0.65);
+  const projBoardAvg = eco.boardMembers === 0 ? [] : ramp(eco.boardMembers * 0.7, 0.65);
+  const projCommitteeAvg = eco.committeeMembers === 0 ? [] : ramp(eco.committeeMembers * 0.8, 0.65);
 
   return [
     card(
@@ -319,6 +340,7 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       'Collaboration Activity',
       projectName,
       ramp(eco.collaboration, 0.6),
+      projCollabAvg,
       eco.collaboration === 0
         ? { prefix: 'No collaboration activity recorded for this project.', emphasis: '', suffix: '' }
         : { prefix: 'Employees contributed ', emphasis: pctStr(collabPct), suffix: ' of all collaboration activities.' }
@@ -328,6 +350,7 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       'Meeting Attendance',
       projectName,
       eco.meetingAttendance === 0 ? [] : ramp(eco.meetingAttendance, 0.6),
+      projMeetingAvg,
       eco.meetingAttendance === 0
         ? { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }
         : { prefix: 'Org reps attended ', emphasis: `${eco.meetingAttendance}`, suffix: ` project ${eco.meetingAttendance === 1 ? 'meeting' : 'meetings'}.` }
@@ -337,6 +360,7 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       'Board Members',
       foundation,
       eco.boardMembers === 0 ? [] : ramp(eco.boardMembers, 0.6),
+      projBoardAvg,
       eco.boardMembers === 0
         ? { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }
         : {
@@ -350,31 +374,32 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       'Committee Members',
       foundation,
       eco.committeeMembers === 0 ? [] : ramp(eco.committeeMembers, 0.6),
+      projCommitteeAvg,
       eco.committeeMembers === 0
         ? { prefix: `Your organization holds no committee seats in ${foundation}.`, emphasis: '', suffix: '' }
         : { prefix: 'Employees make up ', emphasis: pctStr(committeePct), suffix: ' of all committee members.' }
     ),
-    card('event-attendance', 'Event Attendance', foundation, ramp(eventAttPct * 100, 0.78, 1), {
+    card('event-attendance', 'Event Attendance', foundation, ramp(eventAttPct * 100, 0.78, 1), ramp(eventAttPct * 100 * 0.8, 0.72, 1), {
       prefix: 'Employees attended ',
       emphasis: pctStr(eventAttPct),
       suffix: ` of all ${foundation} events.`,
     }),
-    card('event-speakers', 'Event Speakers', foundation, ramp(speakerPct * 100, 0.78, 2), {
+    card('event-speakers', 'Event Speakers', foundation, ramp(speakerPct * 100, 0.78, 2), ramp(speakerPct * 100 * 0.8, 0.72, 2), {
       prefix: 'Employees represented ',
       emphasis: pctStr(speakerPct),
       suffix: ` of all speakers at ${foundation} events.`,
     }),
-    card('event-sponsorships', 'Event Sponsorships', foundation, ramp(sponsorPct * 100, 0.78, 2), {
+    card('event-sponsorships', 'Event Sponsorships', foundation, ramp(sponsorPct * 100, 0.78, 2), ramp(sponsorPct * 100 * 0.8, 0.72, 2), {
       prefix: 'Our company reached ',
       emphasis: pctStr(sponsorPct),
       suffix: ' of attendees through sponsorship.',
     }),
-    card('meetup-attendance', 'Meetup Attendance', foundation, ramp(meetupPct * 100, 0.78, 2), {
+    card('meetup-attendance', 'Meetup Attendance', foundation, ramp(meetupPct * 100, 0.78, 2), ramp(meetupPct * 100 * 0.8, 0.72, 2), {
       prefix: 'Employees attended ',
       emphasis: pctStr(meetupPct),
       suffix: ` of all ${foundation} meetups.`,
     }),
-    card('certified-individuals', 'Certified Individuals', foundation, ramp(certifiedPct * 100, 0.78, 2), {
+    card('certified-individuals', 'Certified Individuals', foundation, ramp(certifiedPct * 100, 0.78, 2), ramp(certifiedPct * 100 * 0.8, 0.72, 2), {
       prefix: 'Employees make up ',
       emphasis: pctStr(certifiedPct),
       suffix: ' of all certified individuals.',
