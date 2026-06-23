@@ -3,6 +3,7 @@
 
 import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InitiativeBase, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { InitiativeCardComponent } from '../initiative-card/initiative-card.component';
@@ -10,7 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 
 @Component({
   selector: 'lfx-initiatives-list',
-  imports: [ButtonComponent, CardComponent, FilterPillsComponent, InitiativeCardComponent],
+  imports: [ButtonComponent, CardComponent, EmptyStateComponent, FilterPillsComponent, InitiativeCardComponent],
   templateUrl: './initiatives-list.component.html',
   styleUrl: './initiatives-list.component.scss',
 })
@@ -21,7 +22,16 @@ export class InitiativesListComponent {
   public readonly initiativeClick = output<string>();
   public readonly loadMore = output<void>();
 
-  protected readonly activeFilter = signal<'active' | 'pending' | 'archived'>('active');
+  private readonly userFilter = signal<'active' | 'pending' | 'archived' | null>(null);
+
+  protected readonly activeFilter = computed<'active' | 'pending' | 'archived'>(() => {
+    const pick = this.userFilter();
+    if (pick !== null) return pick;
+    const counts = this.statusCounts();
+    if (counts.active === 0 && counts.pending > 0) return 'pending';
+    if (counts.active === 0 && counts.pending === 0 && counts.archived > 0) return 'archived';
+    return 'active';
+  });
 
   protected readonly statusCounts = this.initStatusCounts();
   protected readonly filterOptions = this.initFilterOptions();
@@ -34,9 +44,30 @@ export class InitiativesListComponent {
     });
   });
 
+  protected readonly emptyIcon = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'fa-light fa-box-archive';
+    if (filter === 'pending') return 'fa-light fa-hourglass';
+    return 'fa-light fa-box-dollar';
+  });
+
+  protected readonly emptyTitle = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'No archived initiatives';
+    if (filter === 'pending') return 'No pending initiatives';
+    return 'No active initiatives';
+  });
+
+  protected readonly emptySubtitle = computed(() => {
+    const filter = this.activeFilter();
+    if (filter === 'archived') return 'Hidden or declined initiatives will appear here.';
+    if (filter === 'pending') return 'Initiatives awaiting review will appear here.';
+    return 'Fundraising initiatives you publish will appear here.';
+  });
+
   protected setFilter(value: string): void {
     if (value === 'active' || value === 'pending' || value === 'archived') {
-      this.activeFilter.set(value);
+      this.userFilter.set(value);
     }
   }
 

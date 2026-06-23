@@ -32,7 +32,7 @@ export class SocialListeningTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
-  public readonly selectedMonth = input<string>('');
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -58,17 +58,17 @@ export class SocialListeningTabComponent {
   // === Private Initializers ===
   private initBrandData(): Signal<BrandHealthResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
-    const month$ = toObservable(this.selectedMonth);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, month$]).pipe(
-        switchMap(([slug, month]) => {
+      combineLatest([slug$, period$]).pipe(
+        switchMap(([slug, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getBrandHealth(slug, true, month || undefined).pipe(
+          return this.analyticsService.getBrandHealth(slug, true, period || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );

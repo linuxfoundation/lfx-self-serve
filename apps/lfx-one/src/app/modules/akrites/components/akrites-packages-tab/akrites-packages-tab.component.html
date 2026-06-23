@@ -1,0 +1,384 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 py-6">
+  <!-- Search -->
+  <div class="flex items-center gap-2.5 px-3.5 py-2.5 border border-gray-200 rounded-lg bg-white">
+    <i class="fa-light fa-magnifying-glass text-sm text-gray-400" aria-hidden="true"></i>
+    <input
+      type="text"
+      [value]="filters().search"
+      (input)="onSearchInput($event)"
+      placeholder="Search package, purl, steward, or contact…"
+      class="outline-none text-sm bg-transparent flex-1"
+      aria-label="Search packages"
+      data-testid="akrites-search" />
+  </div>
+
+  <!-- Status pills + sort/filter toolbar -->
+  <div class="flex items-center justify-between gap-3.5 flex-wrap">
+    <div class="inline-flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl">
+      @for (pill of statusPills; track pill.key) {
+        <button
+          type="button"
+          (click)="filterChange.emit({ tab: pill.key })"
+          [class]="
+            filters().tab === pill.key
+              ? 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-blue-600 shadow-sm transition-colors'
+              : 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:text-slate-900 transition-colors'
+          "
+          [attr.data-testid]="'akrites-pill-' + pill.key">
+          <span>{{ pill.label }}</span>
+          <span
+            [class]="
+              filters().tab === pill.key
+                ? 'text-xs font-bold rounded-full px-2 py-0.5 bg-blue-50 text-blue-600'
+                : 'text-xs font-bold rounded-full px-2 py-0.5 bg-gray-200 text-gray-600'
+            ">
+            {{ statusCounts()[pill.key] }}
+          </span>
+        </button>
+      }
+    </div>
+
+    <div class="flex items-center gap-2.5 ml-auto">
+      <div class="relative">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+          (click)="toggleSortMenu()"
+          data-testid="akrites-sort-button">
+          <i class="fa-light fa-arrow-down-wide-short" aria-hidden="true"></i>
+          Sort: <span>{{ sortLabel() }}</span>
+          <i class="fa-light fa-chevron-down text-xs" aria-hidden="true"></i>
+        </button>
+        @if (sortMenuOpen()) {
+          <div class="absolute top-11 right-0 min-w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-1.5">
+            @for (option of sortOptions; track option.value) {
+              <button
+                type="button"
+                [class]="
+                  filters().sort === option.value
+                    ? 'block w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-blue-600'
+                    : 'block w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50'
+                "
+                (click)="onSortSelect(option.value)">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="relative">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 h-9 px-3.5 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          (click)="toggleFilterPanel()"
+          data-testid="akrites-filter-button">
+          <i class="fa-light fa-filter" aria-hidden="true"></i>
+          Filter
+          @if (activeFilterChips().length > 0) {
+            <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-xs font-bold">
+              {{ activeFilterChips().length }}
+            </span>
+          }
+        </button>
+        @if (filterPanelOpen()) {
+          <div class="absolute top-11 right-0 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+            <div class="px-4 py-3.5 text-sm font-bold border-b border-gray-100">Filter</div>
+            <div class="flex flex-col">
+              <!-- Ecosystem -->
+              <div class="flex flex-col gap-2 px-4 py-3 border-b border-gray-100">
+                <span class="text-sm font-semibold text-slate-900">Ecosystem</span>
+                <lfx-select
+                  [form]="filterForm"
+                  control="ecosystem"
+                  [options]="ecosystemOptions"
+                  size="small"
+                  styleClass="w-full"
+                  dataTest="akrites-filter-ecosystem" />
+              </div>
+
+              <!-- Lifecycle -->
+              <div class="flex flex-col gap-2 px-4 py-3 border-b border-gray-100">
+                <span class="text-sm font-semibold text-slate-900">Lifecycle</span>
+                <lfx-select
+                  [form]="filterForm"
+                  control="lifecycle"
+                  [options]="lifecycleOptions"
+                  size="small"
+                  styleClass="w-full"
+                  dataTest="akrites-filter-lifecycle" />
+              </div>
+
+              <!-- Health -->
+              <div class="flex flex-col gap-2 px-4 py-3 border-b border-gray-100">
+                <span class="text-sm font-semibold text-slate-900">Health</span>
+                <lfx-select
+                  [form]="filterForm"
+                  control="healthBand"
+                  [options]="healthOptions"
+                  size="small"
+                  styleClass="w-full"
+                  dataTest="akrites-filter-health" />
+              </div>
+
+              <!-- Open vulnerabilities -->
+              <div class="flex flex-col gap-2 px-4 py-3 border-b border-gray-100">
+                <span class="text-sm font-semibold text-slate-900">Open vulnerabilities</span>
+                <lfx-select [form]="filterForm" control="vulnFilter" [options]="vulnOptions" size="small" styleClass="w-full" dataTest="akrites-filter-vulns" />
+              </div>
+
+              <!-- Coverage gaps -->
+              <div class="flex flex-col gap-2.5 px-4 py-3 border-b border-gray-100">
+                <span class="text-sm font-semibold text-slate-900">Coverage gaps</span>
+                <lfx-checkbox [form]="filterForm" control="busFactor1Only" label="Bus factor = 1" />
+                <lfx-checkbox [form]="filterForm" control="staleOnly" label="No activity ≥18mo" />
+              </div>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3.5">
+              <lfx-button label="Reset all" severity="secondary" [outlined]="true" size="small" (onClick)="resetAllFilters()" />
+              <lfx-button label="Apply filters" size="small" (onClick)="applyFilters()" />
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Active filter chips -->
+  @if (activeFilterChips().length > 0) {
+    <div class="flex flex-wrap items-center gap-2" data-testid="akrites-filter-chips">
+      @for (chip of activeFilterChips(); track chip.label) {
+        <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium">
+          {{ chip.label }}
+          <button
+            type="button"
+            class="flex items-center justify-center w-4 h-4 rounded-full hover:bg-blue-100 transition-colors"
+            (click)="onChipRemove(chip.clear)"
+            [attr.aria-label]="'Remove ' + chip.label + ' filter'">
+            <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
+          </button>
+        </span>
+      }
+      <button
+        type="button"
+        class="text-xs font-medium text-gray-500 underline hover:text-slate-900 px-1.5 py-1"
+        (click)="clearFilters.emit()"
+        data-testid="akrites-clear-filters">
+        Clear filters
+      </button>
+    </div>
+  }
+
+  <!-- Package table -->
+  <lfx-table
+    [value]="filteredPackages()"
+    [loading]="loading()"
+    [rowHover]="true"
+    size="small"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
+    [paginator]="true"
+    [rows]="filters().pageSize"
+    [first]="(filters().page - 1) * filters().pageSize"
+    [totalRecords]="total()"
+    [rowsPerPageOptions]="[25, 50, 100]"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="{first} - {last} of {totalRecords}"
+    (onPage)="onTablePage($event)"
+    data-testid="akrites-packages-table">
+    <ng-template #header>
+      <tr>
+        <th class="w-9">
+          <span
+            [class]="
+              allSelected()
+                ? 'inline-flex w-4 h-4 items-center justify-center rounded border bg-blue-500 border-blue-500 cursor-pointer'
+                : 'inline-flex w-4 h-4 items-center justify-center rounded border bg-white border-gray-300 hover:border-blue-500 cursor-pointer'
+            "
+            (click)="onToggleAllClick()"
+            (keydown.enter)="onToggleAllClick()"
+            (keydown.space)="onToggleAllClick(); $event.preventDefault()"
+            role="checkbox"
+            tabindex="0"
+            [attr.aria-checked]="allSelected()"
+            aria-label="Select all packages">
+            @if (allSelected()) {
+              <i class="fa-light fa-check text-white text-[10px]" aria-hidden="true"></i>
+            }
+          </span>
+        </th>
+        <th>Package</th>
+        <th>Ecosystem</th>
+        <th>Lifecycle</th>
+        <th>Health</th>
+        <th>Impact</th>
+        <th>Open vulns</th>
+        <th>Steward</th>
+        <th>Last activity</th>
+        <th>Stewardship</th>
+      </tr>
+    </ng-template>
+    <ng-template #loadingbody let-rowData>
+      <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
+        <td></td>
+        <td>
+          <div class="flex flex-col gap-1.5">
+            <div class="lfx-skeleton-bar w-48"></div>
+            <div class="lfx-skeleton-bar w-36"></div>
+          </div>
+        </td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td><div class="lfx-skeleton-bar w-20"></div></td>
+        <td><div class="lfx-skeleton-bar w-8"></div></td>
+        <td><div class="lfx-skeleton-bar w-10"></div></td>
+        <td><div class="lfx-skeleton-bar w-24"></div></td>
+        <td>
+          <div class="flex flex-col gap-1.5">
+            <div class="lfx-skeleton-bar w-16"></div>
+            <div class="lfx-skeleton-bar w-20"></div>
+          </div>
+        </td>
+        <td><div class="lfx-skeleton-bar w-16"></div></td>
+      </tr>
+    </ng-template>
+    <ng-template #body let-pkg>
+      <tr (click)="packageClick.emit(pkg.id)" class="cursor-pointer">
+        <td (click)="$event.stopPropagation()">
+          <span
+            [class]="
+              isPackageSelected(pkg.id)
+                ? 'inline-flex w-4 h-4 items-center justify-center rounded border bg-blue-500 border-blue-500 cursor-pointer'
+                : 'inline-flex w-4 h-4 items-center justify-center rounded border bg-white border-gray-300 hover:border-blue-500 cursor-pointer'
+            "
+            (click)="togglePackage.emit({ id: pkg.id, event: $event })"
+            (keydown.enter)="togglePackage.emit({ id: pkg.id, event: $event })"
+            (keydown.space)="togglePackage.emit({ id: pkg.id, event: $event }); $event.preventDefault()"
+            role="checkbox"
+            tabindex="0"
+            [attr.aria-checked]="isPackageSelected(pkg.id)"
+            [attr.aria-label]="'Select ' + pkg.name">
+            @if (isPackageSelected(pkg.id)) {
+              <i class="fa-light fa-check text-white text-[10px]" aria-hidden="true"></i>
+            }
+          </span>
+        </td>
+        <td>
+          <div class="text-sm font-semibold text-slate-900 max-w-64 truncate">{{ pkg.name }}</div>
+          <div class="text-xs text-gray-500 font-mono max-w-64 truncate">{{ pkg.purl }}</div>
+        </td>
+        <td>
+          <span class="inline-flex items-center gap-2 text-gray-600 font-medium whitespace-nowrap">
+            @switch (pkg.ecosystem) {
+              @case ('npm') {
+                <span
+                  class="inline-flex items-center justify-center bg-[#cb3837] text-white font-bold rounded px-1 py-0.5 leading-none tracking-tight flex-shrink-0"
+                  style="font-size: 9px"
+                  aria-hidden="true"
+                  >npm</span
+                >
+                npm
+              }
+              @case ('maven') {
+                <svg viewBox="0 0 24 24" width="16" height="16" class="flex-shrink-0" aria-hidden="true">
+                  <path d="M4 21C4 12 9.5 4.5 18 2c-1.7 9-7.5 15.5-14 19z" fill="#69a2d0" />
+                  <path d="M4 21c4.2-1 8-3.4 11-7.6C14 18.7 9.2 21 4 21z" fill="#cf2b58" />
+                </svg>
+                Maven
+              }
+              @case ('pypi') {
+                <i class="fa-brands fa-python text-[#3776ab] text-base flex-shrink-0" aria-hidden="true"></i>
+                PyPI
+              }
+              @case ('go') {
+                <i class="fa-brands fa-golang text-[#00ADD8] text-base flex-shrink-0" aria-hidden="true"></i>
+                Go
+              }
+              @case ('cargo') {
+                <i class="fa-brands fa-rust text-[#CE422B] text-base flex-shrink-0" aria-hidden="true"></i>
+                Cargo
+              }
+              @default {
+                <i class="fa-light fa-cube text-gray-400 text-base flex-shrink-0" aria-hidden="true"></i>
+                {{ pkg.ecosystem }}
+              }
+            }
+          </span>
+        </td>
+        <!-- TODO(v2): replace per-row template functions below with pure pipes or computed() maps to avoid per-cycle re-execution -->
+        <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" /></td>
+        <td>
+          @if (pkg.healthScore !== null) {
+            <lfx-tag
+              [value]="getHealthLabel(pkg.healthScore) + ' (' + pkg.healthScore + ')'"
+              [severity]="getHealthTagSeverity(pkg.healthScore)"
+              [rounded]="true"
+              [dot]="true" />
+          } @else {
+            <span class="text-gray-400">—</span>
+          }
+        </td>
+        <td>
+          @if (pkg.impactScore !== null) {
+            <lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" [rounded]="true" />
+          } @else {
+            <span class="text-gray-400">—</span>
+          }
+        </td>
+        <td>
+          @if (pkg.vulnCount > 0) {
+            <lfx-tag
+              [value]="pkg.vulnCount + (pkg.vulnSeverity ? ' ' + pkg.vulnSeverity : '')"
+              [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)"
+              [rounded]="true"
+              [dot]="true"
+              styleClass="whitespace-nowrap" />
+          } @else {
+            <span class="text-gray-400">—</span>
+          }
+        </td>
+        <td>
+          @if (pkg.stewards.length > 0) {
+            <div class="flex items-center">
+              @for (steward of pkg.stewards.slice(0, 3); track steward.userId; let i = $index) {
+                <span
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold border-2 border-white flex-shrink-0"
+                  [style.margin-left]="i > 0 ? '-6px' : '0'"
+                  [title]="steward.name ?? steward.userId">
+                  @if (steward.avatarUrl) {
+                    <img [src]="steward.avatarUrl" [alt]="steward.name ?? ''" class="w-full h-full rounded-full object-cover" />
+                  } @else {
+                    {{ steward | stewardInitials }}
+                  }
+                </span>
+              }
+              @if (pkg.stewards.length > 3) {
+                <span
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold border-2 border-white flex-shrink-0 -ml-1.5">
+                  +{{ pkg.stewards.length - 3 }}
+                </span>
+              }
+            </div>
+          } @else {
+            <span class="text-gray-400 italic">—</span>
+          }
+        </td>
+        <td>
+          <div class="text-xs font-semibold text-gray-700 whitespace-nowrap">{{ pkg.lastActivityLabel }}</div>
+          @if (pkg.lastActivityTime) {
+            <div class="text-xs text-gray-500">{{ pkg.lastActivityTime }}</div>
+          }
+        </td>
+        <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" [rounded]="true" /></td>
+      </tr>
+    </ng-template>
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="10" class="text-center py-8 text-sm text-gray-500">No packages match the current filters.</td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</div>

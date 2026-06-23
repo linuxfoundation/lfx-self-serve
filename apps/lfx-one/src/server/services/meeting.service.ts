@@ -39,7 +39,7 @@ import {
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
-  transformV1SummaryToV2,
+  selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -938,8 +938,15 @@ export class MeetingService {
         return null;
       }
 
-      // Always transform from V1 summary format to V2
-      const summary = transformV1SummaryToV2(resources[0].data);
+      const summary = selectPrimaryPastMeetingSummary(resources);
+
+      if (summary && resources.length > 1) {
+        logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
+          past_meeting_id: pastMeetingUid,
+          total: resources.length,
+          selected_uid: summary.uid,
+        });
+      }
 
       return summary;
     } catch (error) {

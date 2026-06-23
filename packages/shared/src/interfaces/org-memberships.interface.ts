@@ -33,6 +33,7 @@ export interface OrgActiveMembershipsResponse {
 export interface OrgExpiredMembership {
   foundationId: string;
   foundationName: string;
+  foundationSlug: string;
   foundationLogo: string | null;
   membershipTier: string;
   tierStartDate: string | null;
@@ -49,6 +50,7 @@ export interface OrgExpiredMembershipsResponse {
 export interface OrgDiscoverOpportunity {
   foundationId: string;
   foundationName: string;
+  foundationSlug: string;
   foundationLogo: string | null;
   category: string;
   suggestedTier: string;
@@ -120,6 +122,8 @@ export interface KeyContactEmployee {
   fullName: string;
   jobTitle: string | null;
   initials: string;
+  /** Optional avatar/photo URL; the picker falls back to initials when absent. */
+  avatarUrl?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */

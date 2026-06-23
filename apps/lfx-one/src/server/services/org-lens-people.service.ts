@@ -1,22 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_ALL_EMPLOYEE_STATS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
-  OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
   OrgAllEmployeeStats,
   OrgAllEmployeeTraining,
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
+  OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Per-(account, person) row from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL. */
 interface OrgPeopleAllRow {
@@ -27,6 +29,7 @@ interface OrgPeopleAllRow {
   NAME: string | null;
   TITLE: string | null;
   EMAIL: string | null;
+  PHOTO: string | null;
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
@@ -34,6 +37,9 @@ interface OrgPeopleAllRow {
   EVENTS_COUNT: number;
   COURSES_COUNT: number;
 }
+
+/** Roster row including the raw ENGAGED_FOUNDATION_IDS column (Snowflake ARRAY may arrive as a JSON string or a parsed array). */
+type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
 
 /** One-row aggregate from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS. */
 interface OrgPeopleStatsRow {
@@ -104,30 +110,27 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload; three Snowflake queries in parallel. */
+  /** Bundled rows + stats + foundations payload; three Snowflake queries in parallel, served through the shared per-org cache. */
   public async getAllEmployees(accountId: string): Promise<OrgAllEmployeesResponse> {
-    const [rows, stats, foundations] = await Promise.all([
-      this.fetchAllEmployeeRows(accountId),
-      this.fetchAllEmployeeStats(accountId),
-      this.fetchFoundationOptions(accountId),
-    ]);
+    const raw = await withOrgCache(
+      accountId,
+      'people-all',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchAllEmployeesRaw(accountId),
+      isAllEmployeesRaw
+    );
 
     return {
       accountId,
-      rows,
-      stats,
-      foundations,
+      rows: raw.rowsRaw.map((row) => this.mapEmployeeRow(row)),
+      stats: this.mapStats(raw.statsRaw),
+      foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     };
   }
 
-  /** Chevron-expansion detail for one person within an account; four Snowflake queries in parallel. */
+  /** Chevron-expansion detail for one person within an account; four Snowflake queries in parallel, served through the shared per-org cache. */
   public async getEmployeeDetail(accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
-    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
-      this.fetchCommitteeMembershipRows(accountId, personKey),
-      this.fetchCodeContributionRows(accountId, personKey),
-      this.fetchEventRows(accountId, personKey),
-      this.fetchTrainingRows(accountId, personKey),
-    ]);
+    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeDetailRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -163,8 +166,11 @@ export class OrgLensPeopleService {
     };
   }
 
-  private async fetchAllEmployeeRows(accountId: string): Promise<OrgAllEmployeeRow[]> {
-    const query = `
+  /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
+  private async fetchAllEmployeesRaw(
+    accountId: string
+  ): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; statsRaw: OrgPeopleStatsRow[]; foundationRaw: FoundationOptionRow[] }> {
+    const rowsQuery = `
       SELECT
         ACCOUNT_ID,
         PERSON_KEY,
@@ -173,6 +179,7 @@ export class OrgLensPeopleService {
         NAME,
         TITLE,
         EMAIL,
+        PHOTO,
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
@@ -185,27 +192,7 @@ export class OrgLensPeopleService {
       ORDER BY NAME ASC NULLS LAST
     `;
 
-    const result = await this.snowflakeService.execute<OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null }>(query, [accountId]);
-
-    return result.rows.map((row) => ({
-      personKey: row.PERSON_KEY,
-      lfid: row.LFID,
-      cdpMemberId: row.CDP_MEMBER_ID,
-      name: row.NAME ?? '',
-      title: row.TITLE,
-      email: row.EMAIL,
-      seatsCount: row.SEATS_COUNT ?? 0,
-      boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
-      committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
-      commitsCount: row.COMMITS_COUNT ?? 0,
-      eventsCount: row.EVENTS_COUNT ?? 0,
-      coursesCount: row.COURSES_COUNT ?? 0,
-      engagedFoundationIds: this.parseFoundationIdArray(row.ENGAGED_FOUNDATION_IDS),
-    }));
-  }
-
-  private async fetchAllEmployeeStats(accountId: string): Promise<OrgAllEmployeeStats> {
-    const query = `
+    const statsQuery = `
       SELECT
         ACCOUNT_ID,
         ACTIVE_IN_OSS,
@@ -217,25 +204,8 @@ export class OrgLensPeopleService {
       WHERE ACCOUNT_ID = ?
     `;
 
-    const result = await this.snowflakeService.execute<OrgPeopleStatsRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return EMPTY_ORG_ALL_EMPLOYEE_STATS;
-    }
-
-    const row = result.rows[0];
-    return {
-      activeInOss: row.ACTIVE_IN_OSS ?? 0,
-      inGovernance: row.IN_GOVERNANCE ?? 0,
-      codeContributors: row.CODE_CONTRIBUTORS ?? 0,
-      eventAttendees: row.EVENT_ATTENDEES ?? 0,
-      trainees: row.TRAINEES ?? 0,
-    };
-  }
-
-  /** Distinct (foundation_id, foundation_name) pairs across the four detail tables; keeps the BFF confined to PLATINUM_LFX_ONE. */
-  private async fetchFoundationOptions(accountId: string): Promise<OrgAllEmployeeFoundationOption[]> {
-    const query = `
+    // Distinct (foundation_id, foundation_name) pairs across the four detail tables; keeps the BFF confined to PLATINUM_LFX_ONE.
+    const foundationQuery = `
       WITH pairs AS (
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMMITTEE_MEMBERSHIP
@@ -258,12 +228,83 @@ export class OrgLensPeopleService {
       ORDER BY FOUNDATION_NAME ASC
     `;
 
-    const result = await this.snowflakeService.execute<FoundationOptionRow>(query, [accountId, accountId, accountId, accountId]);
+    const [rowsResult, statsResult, foundationResult] = await Promise.all([
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId]),
+      this.snowflakeService.execute<OrgPeopleStatsRow>(statsQuery, [accountId]),
+      this.snowflakeService.execute<FoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
+    ]);
 
-    return result.rows.map((row) => ({
-      foundationId: row.FOUNDATION_ID,
-      foundationName: row.FOUNDATION_NAME,
-    }));
+    return { rowsRaw: rowsResult.rows, statsRaw: statsResult.rows, foundationRaw: foundationResult.rows };
+  }
+
+  private mapEmployeeRow(row: OrgPeopleAllRowRaw): OrgAllEmployeeRow {
+    const name = cleanDisplayName(row.NAME, row.EMAIL);
+    const [firstName, lastName] = splitDisplayName(name);
+    return {
+      personKey: row.PERSON_KEY,
+      lfid: row.LFID,
+      cdpMemberId: row.CDP_MEMBER_ID,
+      name,
+      firstName,
+      lastName,
+      title: row.TITLE,
+      email: row.EMAIL,
+      avatarUrl: row.PHOTO ?? null,
+      sources: ['snowflake'] as OrgPersonSource[],
+      seatsCount: row.SEATS_COUNT ?? 0,
+      boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
+      committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
+      commitsCount: row.COMMITS_COUNT ?? 0,
+      eventsCount: row.EVENTS_COUNT ?? 0,
+      coursesCount: row.COURSES_COUNT ?? 0,
+      engagedFoundationIds: this.parseFoundationIdArray(row.ENGAGED_FOUNDATION_IDS),
+    };
+  }
+
+  private mapStats(rows: OrgPeopleStatsRow[]): OrgAllEmployeeStats {
+    if (rows.length === 0) {
+      return EMPTY_ORG_ALL_EMPLOYEE_STATS;
+    }
+
+    const row = rows[0];
+    return {
+      activeInOss: row.ACTIVE_IN_OSS ?? 0,
+      inGovernance: row.IN_GOVERNANCE ?? 0,
+      codeContributors: row.CODE_CONTRIBUTORS ?? 0,
+      eventAttendees: row.EVENT_ATTENDEES ?? 0,
+      trainees: row.TRAINEES ?? 0,
+    };
+  }
+
+  /** Cached per-org detail bundle (four raw row arrays); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  private async fetchEmployeeDetailRaw(
+    accountId: string,
+    personKey: string
+  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
+    if (!isFilterSafeIdentifier(personKey)) {
+      return this.runEmployeeDetailFetch(accountId, personKey);
+    }
+
+    return withOrgCache(
+      accountId,
+      `people-detail:${personKey}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.runEmployeeDetailFetch(accountId, personKey),
+      isEmployeeDetailRaw
+    );
+  }
+
+  private async runEmployeeDetailFetch(
+    accountId: string,
+    personKey: string
+  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
+    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
+      this.fetchCommitteeMembershipRows(accountId, personKey),
+      this.fetchCodeContributionRows(accountId, personKey),
+      this.fetchEventRows(accountId, personKey),
+      this.fetchTrainingRows(accountId, personKey),
+    ]);
+    return { committeeRows, codeRows, eventRows, trainingRows };
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -406,6 +447,26 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
+}
+
+/** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */
+function cleanDisplayName(rawName: string | null, email: string | null): string {
+  const name = (rawName ?? '').trim();
+  const isPlaceholder = name === '' || /\[\[[^\]]*\]\]/.test(name);
+  if (!isPlaceholder) {
+    return name;
+  }
+  return (email ?? '').trim() || 'Unknown member';
+}
+
+function isAllEmployeesRaw(value: unknown): boolean {
+  const v = value as { rowsRaw?: unknown; statsRaw?: unknown; foundationRaw?: unknown } | null;
+  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.statsRaw) && Array.isArray(v.foundationRaw);
+}
+
+function isEmployeeDetailRaw(value: unknown): boolean {
+  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown } | null;
+  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

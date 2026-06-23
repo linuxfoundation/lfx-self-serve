@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { Component, computed, inject, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -11,6 +11,7 @@ import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.co
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
@@ -22,7 +23,6 @@ import {
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
 } from '@lfx-one/shared/constants';
 import type {
-  CommitterPanelTab,
   ContributionsCommitSortColumn,
   ContributionsDateRange,
   ContributionsDateRangeOption,
@@ -30,7 +30,6 @@ import type {
   ContributionsSortColumn,
   ContributionsSortDirection,
   FilterPillOption,
-  OrgCommitterDetailVm,
   OrgContributionCommitRowVm,
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
@@ -38,11 +37,11 @@ import type {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { DrawerModule } from 'primeng/drawer';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
-import { buildCommitterExtras, decorateCommitFeedRow, decorateRepoRow } from './org-contributions.util';
+import { decorateCommitFeedRow, decorateRepoRow } from './org-contributions.util';
 
 /** Code Contributions list page (LFXV2-1894) — KPI strip, composing filter bar, server-paginated Repositories table, per-repo drill-in. */
 @Component({
@@ -58,25 +57,19 @@ import { buildCommitterExtras, decorateCommitFeedRow, decorateRepoRow } from './
     MultiSelectComponent,
     StatCardGridComponent,
     TableComponent,
-    DrawerModule,
+    PersonDetailDrawerComponent,
   ],
   templateUrl: './org-contributions.component.html',
 })
 export class OrgContributionsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(ContributionsService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
-  protected readonly committerPanelTabs: readonly { id: CommitterPanelTab; label: string }[] = [
-    { id: 'events', label: 'Events' },
-    { id: 'training', label: 'Training' },
-    { id: 'code', label: 'Code Contributions' },
-    { id: 'governance', label: 'Governance' },
-  ];
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -89,20 +82,14 @@ export class OrgContributionsComponent {
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
   protected readonly dir = signal<ContributionsSortDirection>(this.initialParams.get('dir') === 'asc' ? 1 : -1);
+  protected readonly commitSort = signal<ContributionsCommitSortColumn>(this.parseInitialCommitSort());
+  protected readonly commitDir = signal<ContributionsSortDirection>(this.initialParams.get('commitDir') === 'asc' ? 1 : -1);
   protected readonly page = signal<number>(this.parseInitialPage());
   protected readonly size = signal<number>(this.parseInitialSize());
   protected readonly retryTrigger = signal<number>(0);
 
   // Repositories / Commits live on separate tabs within one content card (LFX card-tabs pattern).
-  protected readonly mainTab = signal<'repositories' | 'commits'>('repositories');
-
-  // Org-wide Commits feed sort is client-side over the rows the BFF already returned.
-  protected readonly commitSort = signal<ContributionsCommitSortColumn>('date');
-  protected readonly commitDir = signal<ContributionsSortDirection>(-1);
-
-  // Committer side panel — name of the committer whose detail drawer is open (null = closed).
-  protected readonly selectedCommitter = signal<string | null>(null);
-  protected readonly committerTab = signal<CommitterPanelTab>('code');
+  protected readonly mainTab = signal<'repositories' | 'commits'>(this.parseInitialView());
 
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
@@ -130,13 +117,14 @@ export class OrgContributionsComponent {
   protected readonly kpis = computed(() => this.response().kpis);
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
-  protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.initCommitRows());
+  protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());
   protected readonly commitAriaSortMap: Signal<Record<ContributionsCommitSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() =>
     this.initCommitAriaSortMap()
   );
-  protected readonly committerDetail: Signal<OrgCommitterDetailVm | null> = computed(() => this.initCommitterDetail());
   protected readonly totalRecords = computed(() => this.response().totalRecords);
+  protected readonly commitsTotalRecords = computed(() => this.response().commitsTotalRecords);
+  protected readonly activeTotalRecords = computed(() => (this.mainTab() === 'commits' ? this.commitsTotalRecords() : this.totalRecords()));
 
   protected readonly projectOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initProjectOptions());
   protected readonly employeeOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initEmployeeOptions());
@@ -146,7 +134,7 @@ export class OrgContributionsComponent {
   protected readonly searchPlaceholder = computed(() => (this.mainTab() === 'commits' ? 'Search commits' : 'Search repositories'));
   protected readonly mainTabs: Signal<FilterPillOption[]> = computed(() => [
     { id: 'repositories', label: `Repositories (${this.totalRecords().toLocaleString()})` },
-    { id: 'commits', label: `Commits (${this.commitRows().length.toLocaleString()})` },
+    { id: 'commits', label: `Commits (${this.commitsTotalRecords().toLocaleString()})` },
   ]);
 
   protected readonly sortIconMap: Signal<Record<ContributionsSortColumn, string>> = computed(() => this.initSortIconMap());
@@ -163,6 +151,27 @@ export class OrgContributionsComponent {
     combineLatest([toObservable(this.sort), toObservable(this.dir), toObservable(this.size)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.page.set(1));
+    combineLatest([toObservable(this.commitSort), toObservable(this.commitDir)])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.page.set(1));
+  }
+
+  protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
+    if (!commit.personKey) {
+      return;
+    }
+    this.drawer.open({
+      personKey: commit.personKey,
+      name: commit.committerName,
+      title: commit.committerTitle,
+      avatarUrl: commit.committerAvatarUrl,
+      initials: commit.initials,
+      avatarColorClass: commit.avatarColorClass,
+      username: commit.username,
+      profileUrl: commit.profileUrl,
+      sourceIconClass: commit.sourceIconClass,
+      defaultTab: 'code',
+    });
   }
 
   protected onSort(column: ContributionsSortColumn): void {
@@ -185,51 +194,9 @@ export class OrgContributionsComponent {
     this.commitDir.set(column === 'date' ? -1 : 1);
   }
 
-  protected openCommitter(name: string): void {
-    this.committerTab.set('code');
-    this.selectedCommitter.set(name);
-  }
-
-  protected setCommitterTab(tab: CommitterPanelTab): void {
-    this.committerTab.set(tab);
-  }
-
-  /** Roving-tabindex keyboard nav for the committer panel tablist (Arrow keys / Home / End). */
-  protected onCommitterTabKeydown(event: KeyboardEvent): void {
-    const tabs = this.committerPanelTabs;
-    const current = tabs.findIndex((t) => t.id === this.committerTab());
-    let next = current;
-    switch (event.key) {
-      case 'ArrowRight':
-        next = (current + 1) % tabs.length;
-        break;
-      case 'ArrowLeft':
-        next = (current - 1 + tabs.length) % tabs.length;
-        break;
-      case 'Home':
-        next = 0;
-        break;
-      case 'End':
-        next = tabs.length - 1;
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
-    this.setCommitterTab(tabs[next].id);
-    if (isPlatformBrowser(this.platformId)) {
-      document.getElementById(`org-contributions-committer-tab-${tabs[next].id}`)?.focus();
-    }
-  }
-
-  protected onCommitterPanelVisible(visible: boolean): void {
-    if (!visible) {
-      this.selectedCommitter.set(null);
-    }
-  }
-
   protected onMainTabChange(tabId: string): void {
     this.mainTab.set(tabId === 'commits' ? 'commits' : 'repositories');
+    this.page.set(1);
   }
 
   protected onTablePage(event: { first?: number; rows?: number }): void {
@@ -250,12 +217,15 @@ export class OrgContributionsComponent {
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
     return {
+      view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
       projects: values.projects ?? [],
       employees: values.employees ?? [],
       sort: this.sort(),
       dir: this.dir(),
+      commitSort: this.commitSort(),
+      commitDir: this.commitDir(),
       page: this.page(),
       size: this.size(),
     };
@@ -291,24 +261,6 @@ export class OrgContributionsComponent {
     );
   }
 
-  private initCommitRows(): OrgContributionCommitRowVm[] {
-    const rows = this.response().commits.map(decorateCommitFeedRow);
-    const col = this.commitSort();
-    const dir = this.commitDir();
-    return rows.sort((a, b) => {
-      switch (col) {
-        case 'project':
-          return a.projectName.localeCompare(b.projectName) * dir;
-        case 'committer':
-          return a.committerName.localeCompare(b.committerName) * dir;
-        case 'username':
-          return (a.username ?? '').localeCompare(b.username ?? '') * dir;
-        case 'date':
-          return (new Date(a.committedTs).getTime() - new Date(b.committedTs).getTime()) * dir;
-      }
-    });
-  }
-
   private initKpiCards(): StatCardItem[] {
     const k = this.kpis();
     return [
@@ -321,36 +273,6 @@ export class OrgContributionsComponent {
       { value: k.repositories.toLocaleString(), label: 'Repositories', icon: 'fa-light fa-folder', iconContainerClass: 'bg-violet-100 text-violet-600' },
       { value: k.commits.toLocaleString(), label: 'Commits', icon: 'fa-light fa-code-commit', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
     ];
-  }
-
-  private initCommitterDetail(): OrgCommitterDetailVm | null {
-    const name = this.selectedCommitter();
-    if (!name) {
-      return null;
-    }
-    const rows = this.commitRows().filter((c) => c.committerName === name);
-    if (rows.length === 0) {
-      return null;
-    }
-    const first = rows[0];
-    const projects = [...new Set(rows.map((c) => c.projectName))].sort((a, b) => a.localeCompare(b));
-    const extras = buildCommitterExtras(first.committerName);
-    return {
-      name: first.committerName,
-      title: first.committerTitle,
-      username: first.username,
-      source: first.source,
-      sourceIconClass: first.sourceIconClass,
-      profileUrl: first.profileUrl,
-      initials: first.initials,
-      avatarColorClass: first.avatarColorClass,
-      totalCommits: rows.length,
-      projects,
-      commits: rows,
-      events: extras.events,
-      training: extras.training,
-      governance: extras.governance,
-    };
   }
 
   private initCommitSortIconMap(): Record<ContributionsCommitSortColumn, string> {
@@ -418,12 +340,15 @@ export class OrgContributionsComponent {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
+        view: query.view === 'repositories' ? null : query.view,
         q: query.search || null,
         range: query.dateRange === CONTRIBUTIONS_DEFAULT_DATE_RANGE ? null : query.dateRange,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
+        commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,
+        commitDir: query.commitDir === 1 ? 'asc' : null,
         page: query.page > 1 ? query.page : null,
         size: query.size === CONTRIBUTIONS_DEFAULT_PAGE_SIZE ? null : query.size,
       },
@@ -440,6 +365,15 @@ export class OrgContributionsComponent {
   private parseInitialSort(): ContributionsSortColumn {
     const raw = this.initialParams.get('sort');
     return raw === 'firstCommit' || raw === 'lastCommit' ? raw : 'commits';
+  }
+
+  private parseInitialCommitSort(): ContributionsCommitSortColumn {
+    const raw = this.initialParams.get('commitSort');
+    return raw === 'project' || raw === 'committer' || raw === 'username' ? raw : 'date';
+  }
+
+  private parseInitialView(): 'repositories' | 'commits' {
+    return this.initialParams.get('view') === 'commits' ? 'commits' : 'repositories';
   }
 
   private parseInitialCsv(param: string): string[] {

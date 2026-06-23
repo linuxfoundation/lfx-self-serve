@@ -2,9 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div
-  class="flex items-center gap-4 p-5 cursor-pointer hover:bg-gray-50"
-  role="button"
-  tabindex="0"
+  class="flex items-center gap-4 p-5"
+  [class.cursor-pointer]="isClickable()"
+  [class.hover:bg-gray-50]="isClickable()"
+  [class.opacity-80]="!isClickable()"
+  [attr.role]="isClickable() ? 'button' : null"
+  [attr.tabindex]="isClickable() ? 0 : null"
   [attr.aria-label]="initiative().name"
   [attr.data-testid]="'initiative-card-' + initiative().id"
   (click)="onCardClick()"
@@ -45,7 +48,7 @@
         }
       }
     </div>
-    <p class="text-xs text-gray-500 truncate">{{ initiative().description }}</p>
+    <p class="text-xs text-gray-500 truncate">{{ description() }}</p>
   </div>
 
   <!-- Metrics -->

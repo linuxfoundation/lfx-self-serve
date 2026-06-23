@@ -62,6 +62,7 @@ export interface CrowdfundingTransaction {
   donorType?: 'organization' | 'individual';
   donorLogoUrl?: string;
   donorUsername?: string;
+  initiativeId?: string;
 }
 
 export interface CrowdfundingTransactionList {
@@ -147,6 +148,8 @@ export interface InitiativeDetail extends InitiativeBase {
   projectHealthRating?: string;
   fundingGoals?: FundingGoal[];
   financialSummary?: FinancialSummary;
+
+  beneficiaries?: Beneficiary[];
 }
 
 export type CrowdfundingInitiativeStatus = 'submitted' | 'pending' | 'published' | 'declined' | 'hidden';
@@ -206,6 +209,20 @@ export interface CrowdfundingInitiativeDetail extends CrowdfundingInitiative {
   matchPct?: number;
 }
 
+// TODO: wire up when the CF API exposes charge status on subscription transactions
+export type ChargeStatus = 'paid' | 'failed' | 'pending';
+
+// TODO: wire up when charge-status is available from the CF API
+export interface ChargeHistoryItem {
+  id: string;
+  /** Display period, e.g. "May 2026". */
+  period: string;
+  status: ChargeStatus;
+  /** ISO date string of when the charge occurred. */
+  dateCharged: string;
+  amountCents: number;
+}
+
 export interface DonationStats {
   totalDonated: number;
   initiativesSupported: number;
@@ -213,7 +230,7 @@ export interface DonationStats {
   activeRecurringCount: number;
 }
 
-export type RecurringDonationStatus = 'active' | 'paused';
+export type RecurringDonationStatus = 'active' | 'paused' | 'canceled';
 export type DonationKind = 'one-time' | 'monthly';
 
 export interface RecurringDonation {
@@ -226,6 +243,18 @@ export interface RecurringDonation {
   startDate: string;
   nextChargeDate?: string;
   pausedSince?: string;
+  /** Slug of the associated initiative — used to fetch charge history. */
+  initiativeSlug: string;
+  /** Total amount contributed to this initiative in dollars. */
+  totalContributed: number;
+  /** Fund type of the associated initiative. */
+  fundType: FundType;
+  /** Short description of the initiative. */
+  description?: string;
+  /** Topic tags for the initiative. */
+  tags?: string[];
+  /** Public URL for the initiative on the crowdfunding site. */
+  initiativeUrl?: string;
 }
 
 export type RecurringDonationsResponse = OffsetPaginatedResponse<RecurringDonation>;
@@ -258,6 +287,12 @@ export interface TopicOption {
 export interface UpdateGoalInput {
   name: string;
   amountCents: number;
+}
+
+export interface Beneficiary {
+  id: string;
+  name?: string;
+  email?: string;
 }
 
 export interface UpdateBeneficiaryInput {

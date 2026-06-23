@@ -17,7 +17,7 @@
           severity="info"
           size="small"
           [routerLink]="['/surveys', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [queryParams]="createSurveyQueryParams()"
           data-testid="committee-surveys-create-btn"></lfx-button>
       }
     </lfx-surveys-table>
@@ -30,7 +30,7 @@
           severity="info"
           size="small"
           [routerLink]="['/surveys', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [queryParams]="createSurveyQueryParams()"
           data-testid="committee-surveys-empty-create-btn"></lfx-button>
       </div>
     }

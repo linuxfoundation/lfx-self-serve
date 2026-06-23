@@ -61,24 +61,6 @@ export class PublicMeetingController {
 
       const isAuthenticated = req.oidc?.isAuthenticated();
 
-      // Strict private gate: anonymous viewers of a private meeting get only the minimum needed to
-      // render the sign-in gate. Password-on-URL is intentionally NOT sufficient — LFX login is
-      // required. Run BEFORE the project / invited / organizer lookups so a transient project
-      // upstream failure doesn't convert a valid private meeting into a 404 for the anonymous
-      // viewer; they still get the sign-in CTA.
-      if (meeting.visibility === MeetingVisibility.PRIVATE && !isAuthenticated) {
-        logger.success(req, 'get_public_meeting_by_id', startTime, {
-          meeting_id: id,
-          project_uid: meeting.project_uid,
-          redacted: true,
-        });
-        res.json({
-          meeting: { id: meeting.id, visibility: meeting.visibility },
-          project: null,
-        });
-        return;
-      }
-
       // Fetch project and invited status in parallel (both depend only on meeting data)
       const [project, meetingWithInvited] = await Promise.all([
         this.projectService.getProjectById(req, meeting.project_uid, false),
@@ -140,6 +122,12 @@ export class PublicMeetingController {
         meeting.committee_members_count = 0;
       }
 
+      // The Zoom host key grants host privileges to whoever possesses it.
+      // Strip it from the response for unauthenticated callers.
+      if (!isAuthenticated) {
+        delete (meeting as Partial<Meeting>).host_key;
+      }
+
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
@@ -149,6 +137,49 @@ export class PublicMeetingController {
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
         });
         return;
+      }
+
+      // Authenticated registered participants and organizers can access private/restricted
+      // meeting details without a password in the URL — their registrant record is the gate.
+      if (meeting.invited || meeting.organizer) {
+        // host_key grants Zoom host privileges — only organizers should receive it.
+        if (!meeting.organizer) {
+          delete (meeting as Partial<Meeting>).host_key;
+        }
+        res.json({
+          meeting,
+          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        });
+        return;
+      }
+
+      // Fallback for authenticated users: the invited flag can miss someone if the query
+      // service OR lookup had a false negative. Re-check directly by email with M2M.
+      if (isAuthenticated) {
+        const userEmail = getEffectiveEmail(req);
+        if (userEmail) {
+          try {
+            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
+            if (registrantsByEmail.length > 0) {
+              logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
+                meeting_id: id,
+                email: userEmail,
+              });
+              meeting.invited = true;
+              delete (meeting as Partial<Meeting>).host_key;
+              res.json({
+                meeting,
+                project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+              });
+              return;
+            }
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
+            });
+          }
+        }
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
@@ -191,24 +222,6 @@ export class PublicMeetingController {
       const meeting = await this.meetingService.getPastMeetingById(req, id);
 
       const isAuthenticated = req.oidc?.isAuthenticated();
-
-      // Strict private gate: anonymous viewers of a private past meeting get only the minimum
-      // needed to render the sign-in gate. Run BEFORE the project / organizer / fullAccess
-      // lookups so a transient project upstream failure doesn't convert a valid private meeting
-      // into a 404 for the anonymous viewer; they still get the sign-in CTA.
-      if (meeting.visibility === MeetingVisibility.PRIVATE && !isAuthenticated) {
-        logger.success(req, 'get_public_past_meeting_by_id', startTime, {
-          past_meeting_id: id,
-          project_uid: meeting.project_uid,
-          redacted: true,
-        });
-        res.json({
-          meeting: { id: meeting.id, visibility: meeting.visibility },
-          project: null,
-          full_access: false,
-        });
-        return;
-      }
 
       // Fetch project
       const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
@@ -253,9 +266,12 @@ export class PublicMeetingController {
         meeting.organizer = isOrganizer;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI. The
-      // private + anonymous case has already been redacted-and-returned above, so this
-      // branch only handles authenticated non-members on a private/restricted past meeting.
+      // Strip the Zoom host key for unauthenticated callers (mirrors getMeetingById).
+      if (!isAuthenticated) {
+        delete (meeting as Partial<Meeting>).host_key;
+      }
+
+      // For non-full-access users, return only the fields needed for the basic UI
       const meetingResponse = fullAccess
         ? meeting
         : {
@@ -311,16 +327,6 @@ export class PublicMeetingController {
           operation: 'post_meeting_link',
           service: 'public_meeting_controller',
           path: `/itx/meetings/${id}`,
-        });
-      }
-
-      // Anonymous viewers cannot fetch a join URL for a private meeting, even with a valid
-      // password URL. LFX login is required to join.
-      if (meeting.visibility === MeetingVisibility.PRIVATE && !req.oidc?.isAuthenticated()) {
-        throw new AuthorizationError('Sign in is required to join a private meeting', {
-          operation: 'post_meeting_link',
-          service: 'public_meeting_controller',
-          path: req.path,
         });
       }
 

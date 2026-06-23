@@ -5,7 +5,16 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import {
+  computeMomPct,
+  formatChangePct,
+  formatCurrency,
+  formatNumber,
+  isPeriodMonth,
+  resolvePeriodRange,
+  trendColorClass,
+  trendDirection,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -25,7 +34,7 @@ export class OverviewTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
-  public readonly selectedMonth = input<string>('');
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
@@ -43,11 +52,11 @@ export class OverviewTabComponent {
   private initOverviewKpiData(): Signal<OverviewKpiData> {
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
-    const month$ = toObservable(this.selectedMonth);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, focus$, month$]).pipe(
-        switchMap(([slug, focus, month]) => {
+      combineLatest([slug$, focus$, period$]).pipe(
+        switchMap(([slug, focus, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ revenueImpact: null, brandReach: null, emailCtr: null });
@@ -58,10 +67,10 @@ export class OverviewTabComponent {
           return forkJoin({
             revenueImpact: isWebOnly
               ? of(null)
-              : this.analyticsService.getRevenueImpact(slug, classification, month || undefined).pipe(catchError(() => of(null))),
-            // getBrandReach uses pre-computed _30D columns that cannot be month-filtered
+              : this.analyticsService.getRevenueImpact(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            // getBrandReach uses pre-computed _30D columns that cannot be period-filtered
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
-            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, month || undefined).pipe(catchError(() => of(null))),
+            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
@@ -72,11 +81,16 @@ export class OverviewTabComponent {
   private initPerformanceSummaryKpis(): Signal<PerformanceSummaryKpi[]> {
     return computed(() => {
       const data = this.overviewKpiData();
+      const isMonth = isPeriodMonth(this.selectedPeriod());
+      const changeSuffix: 'MoM' | 'Period' = isMonth ? 'MoM' : 'Period';
       const cards: PerformanceSummaryKpi[] = [];
 
       if (data.revenueImpact) {
         const ri = data.revenueImpact;
-        const yoyPct = ri.changePercentage;
+        const yoyPct = isMonth ? ri.changePercentage : null;
+        const trend = ri.paidMedia?.monthlyTrend ?? [];
+        const revMomPct = computeMomPct(trend.map((m) => m.revenue));
+        const roasMomPct = computeMomPct(trend.map((m) => m.roas));
         cards.push(
           {
             id: 'attributed-revenue',
@@ -84,9 +98,9 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-dollar-sign',
             iconClass: 'bg-green-100 text-green-600',
             value: formatCurrency(ri.revenueAttributed),
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
+            momChange: formatChangePct(revMomPct, changeSuffix),
+            momTrend: trendDirection(revMomPct),
+            momTrendClass: trendColorClass(revMomPct),
             yoyChange: formatChangePct(yoyPct, 'YoY'),
             yoyTrend: trendDirection(yoyPct),
             yoyTrendClass: trendColorClass(yoyPct),
@@ -97,9 +111,9 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-chart-line-up',
             iconClass: 'bg-blue-100 text-blue-600',
             value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
+            momChange: formatChangePct(roasMomPct, changeSuffix),
+            momTrend: trendDirection(roasMomPct),
+            momTrendClass: trendColorClass(roasMomPct),
             yoyChange: null,
             yoyTrend: 'neutral',
             yoyTrendClass: 'text-gray-500',
@@ -127,14 +141,14 @@ export class OverviewTabComponent {
 
       if (data.emailCtr) {
         const ec = data.emailCtr;
-        const momPct = ec.changePercentage;
+        const momPct = ec.momChangePercentage;
         cards.push({
           id: 'email-ctr',
           label: 'Email CTR',
           icon: 'fa-light fa-envelope-open',
           iconClass: 'bg-amber-100 text-amber-600',
           value: `${(ec.currentCtr ?? 0).toFixed(2)}%`,
-          momChange: formatChangePct(momPct, 'vs avg'),
+          momChange: formatChangePct(momPct, changeSuffix),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),
           yoyChange: null,
@@ -150,8 +164,12 @@ export class OverviewTabComponent {
 
   private initSummaryTitle(): Signal<string> {
     return computed(() => {
-      const monthValue = this.selectedMonth();
-      const [year, month] = monthValue.split('-').map(Number);
+      const periodValue = this.selectedPeriod();
+      if (!isPeriodMonth(periodValue)) {
+        const resolved = resolvePeriodRange(periodValue);
+        return resolved ? `${resolved.label} performance summary` : 'Performance summary';
+      }
+      const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return 'Performance summary';
       const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
       return `${monthName} performance summary`;
@@ -160,8 +178,14 @@ export class OverviewTabComponent {
 
   private initSummarySubtitle(): Signal<string> {
     return computed(() => {
-      const monthValue = this.selectedMonth();
-      const [year, month] = monthValue.split('-').map(Number);
+      const periodValue = this.selectedPeriod();
+      if (!isPeriodMonth(periodValue)) {
+        const resolved = resolvePeriodRange(periodValue);
+        const name = this.foundationName();
+        const foundation = name || 'all LF projects';
+        return resolved ? `${resolved.label} · Linear attribution · ${foundation}` : '';
+      }
+      const [year, month] = periodValue.split('-').map(Number);
       if (!year || !month) return '';
       const date = new Date(Date.UTC(year, month - 1, 1));
       const priorMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
@@ -171,8 +195,8 @@ export class OverviewTabComponent {
       const yoyLabel = priorYear.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
       const name = this.foundationName();
-      const foundation = name ? name : 'all LF projects';
-      return `Compared to ${momLabel} and ${yoyLabel} · Linear attribution · ${foundation}`;
+      const foundation = name || 'all LF projects';
+      return `vs. ${momLabel} (MoM) · vs. ${yoyLabel} (YoY) · Linear attribution · ${foundation}`;
     });
   }
 }

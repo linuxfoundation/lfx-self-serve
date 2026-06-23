@@ -33,6 +33,7 @@ import eventsRouter from './routes/events.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
+import meetupsRouter from './routes/meetups.route';
 import navigationRouter from './routes/navigation.route';
 import newslettersRouter from './routes/newsletters.route';
 import organizationsRouter from './routes/organizations.route';
@@ -54,7 +55,7 @@ import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
-import osspreyRouter from './routes/ossprey.route';
+import akritesRouter from './routes/akrites.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -221,6 +222,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
+app.use('/api/meetups', meetupsRouter);
 app.use('/api/organizations', organizationsRouter);
 app.use('/api/orgs', orgsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
@@ -246,9 +248,13 @@ app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
-// OSSPREY: LD-flag-controlled rollout for all authenticated LFX users (osspreyEnabledGuard).
+// Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
-app.use('/api/ossprey', osspreyRouter);
+app.use('/api/akrites', akritesRouter);
+// Redirect old /api/ossprey/* paths to /api/akrites/* for backwards compatibility.
+app.use('/api/ossprey', (req, res) => {
+  res.redirect(308, `/api/akrites${req.url}`);
+});
 
 app.use('/api/*', apiErrorHandler);
 

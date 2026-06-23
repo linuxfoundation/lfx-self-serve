@@ -11,7 +11,7 @@ import { DocsSearchComponent } from '../../components/docs-search/docs-search.co
 import { DocsTopicCardComponent } from '../../components/docs-topic-card/docs-topic-card.component';
 import { DocsManifestService } from '../../services/docs-manifest.service';
 
-const LANDING_TITLE = 'LFX Self Serve Documentation';
+const LANDING_TITLE = 'LFX Documentation';
 const LANDING_DESCRIPTION = 'Browse user guides, FAQs, and how-tos for the LFX Self Serve product — meetings, committees, mailing lists, and more.';
 
 /**

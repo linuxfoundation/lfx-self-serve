@@ -7,7 +7,7 @@
  * Smoke coverage (deterministic via route stubs, mirroring org-lens-access.spec.ts):
  * - S1: page renders — header, KPI strip, filter bar, Repositories table + rows
  * - S2: tab switch to Commits renders the commits feed
- * - S3: clicking a committer opens the detail side panel
+ * - S3: clicking a committer opens the shared person-detail drawer (LFXV2-2195)
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -15,14 +15,34 @@
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
-import type { OrgContributionsResponse } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 const CONTRIBUTIONS_URL = '/org/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
 
-const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+
+const MOCK_PERSON_KEY = 'cdp:emp-ana';
+
+const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
+  personKey: MOCK_PERSON_KEY,
+  boardSeats: [],
+  committeeSeats: [],
+  code: [
+    {
+      projectId: 'proj-k8s',
+      projectName: 'Kubernetes',
+      foundationId: 'fdn-cncf',
+      foundationName: 'CNCF',
+      totalCommits: 1240,
+      lastActivityDate: '2026-05-13',
+      isMaintainer: true,
+    },
+  ],
+  events: [],
+  training: [],
+};
 
 const BASE_RESPONSE: OrgContributionsResponse = {
   accountId: MOCK_ACCOUNT_ID,
@@ -59,8 +79,11 @@ const BASE_RESPONSE: OrgContributionsResponse = {
   commits: [
     {
       commitSha: 'demo-aramirez-20260513',
+      contributorId: 'emp-ana',
+      personKey: MOCK_PERSON_KEY,
       projectName: 'Kubernetes',
       committerName: 'Ana Ramirez',
+      committerAvatarUrl: null,
       committerTitle: 'Staff Engineer',
       username: 'aramirez',
       source: 'github',
@@ -75,6 +98,7 @@ const BASE_RESPONSE: OrgContributionsResponse = {
   ],
   employeeOptions: [{ id: 'emp-ana', displayName: 'Ana Ramirez', commits: 1240 }],
   totalRecords: 2,
+  commitsTotalRecords: 1,
 };
 
 test.setTimeout(120_000);
@@ -90,6 +114,17 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
+async function seedSelectedOrgCookie(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: 'lfx-selected-account',
+      value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }),
+      domain: 'localhost',
+      path: '/',
+    },
+  ]);
+}
+
 async function stubOrgContext(page: Page): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
@@ -99,23 +134,78 @@ async function stubOrgContext(page: Page): Promise<void> {
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat LLC', accountSlug: 'red-hat-llc', membershipTier: '', uid: MOCK_UID }],
+        organizations: [
+          {
+            accountId: MOCK_ACCOUNT_ID,
+            accountName: 'Red Hat LLC',
+            accountSlug: 'red-hat-llc',
+            membershipTier: '',
+            uid: MOCK_ACCOUNT_ID,
+          },
+        ],
         isRootWriter: false,
       }),
+    })
+  );
+
+  await page.route('**/api/analytics/org-lens-account-context*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          accountId: MOCK_ACCOUNT_ID,
+          accountName: 'Red Hat LLC',
+          accountSlug: 'red-hat-llc',
+          logoUrl: null,
+          cdevOrgId: null,
+          cdevOrgName: null,
+          cdevOrgLogo: null,
+          isMember: true,
+          memberAccountType: 'Corporate',
+          membershipId: null,
+          membershipProjectId: null,
+          membershipProjectName: null,
+          membershipTierDisplayName: null,
+          membershipTierClass: null,
+        },
+      ]),
     })
   );
 }
 
 async function stubContributions(page: Page, response: OrgContributionsResponse = BASE_RESPONSE): Promise<void> {
-  await page.route('**/api/orgs/*/lens/contributions*', (route) => {
+  await page.route('**/api/orgs/*/lens/contributions**', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
   });
 }
 
+async function stubPersonDetail(page: Page, detail: OrgAllEmployeeDetail = MOCK_PERSON_DETAIL): Promise<void> {
+  await page.route('**/api/orgs/*/lens/people/*/detail', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(detail) });
+  });
+}
+
+async function waitForContributionsLoaded(page: Page): Promise<void> {
+  await expect(page.getByTestId('org-contributions-no-company-empty-state')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+  await expect(page.getByTestId('org-contributions-content-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  await expect(page.getByTestId('org-contributions-repositories-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+}
+
+async function switchToCommitsTab(page: Page): Promise<void> {
+  const commitsTab = page.getByTestId('filter-pill-commits');
+  await expect(commitsTab).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  await commitsTab.click();
+  await expect(page.getByTestId('org-contributions-commits-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+}
+
 async function gotoContributions(page: Page, response: OrgContributionsResponse = BASE_RESPONSE): Promise<void> {
+  await seedSelectedOrgCookie(page);
   await stubOrgContext(page);
   await stubContributions(page, response);
+  await stubPersonDetail(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -148,20 +238,23 @@ test.describe('Org Lens Code Contributions — render (S1)', () => {
 test.describe('Org Lens Code Contributions — commits tab (S2)', () => {
   test('S2: switching to the Commits tab renders the commits feed', async ({ page }) => {
     await gotoContributions(page);
+    await waitForContributionsLoaded(page);
 
-    await page.getByRole('tab', { name: /Commits/ }).click();
-    await expect(page.getByTestId('org-contributions-commits-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await switchToCommitsTab(page);
     await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible();
   });
 });
 
-test.describe('Org Lens Code Contributions — committer panel (S3)', () => {
-  test('S3: clicking a committer opens the detail side panel', async ({ page }) => {
+test.describe('Org Lens Code Contributions — person detail drawer (S3)', () => {
+  test('S3: clicking a committer opens the shared person-detail drawer on the Code tab', async ({ page }) => {
     await gotoContributions(page);
+    await waitForContributionsLoaded(page);
 
-    await page.getByRole('tab', { name: /Commits/ }).click();
+    await switchToCommitsTab(page);
+    await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
-    await expect(page.getByTestId('org-contributions-committer-panel')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-contributions-committer-panel-header')).toContainText('Ana Ramirez');
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
+    await expect(page.getByTestId('person-detail-drawer-tab-code')).toHaveAttribute('aria-selected', 'true');
   });
 });

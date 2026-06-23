@@ -293,3 +293,12 @@ export interface AccessAwareOrgsResult {
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
 }
+
+/** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
+export interface AccessAwareOrgsCacheEntry {
+  resolved: [string, ResolvedOrgRole][];
+  orgDocByUid: [string, B2bOrgIndexedDoc][];
+  upstreamFailed: boolean;
+  loadedAt: string;
+  username: string;
+}

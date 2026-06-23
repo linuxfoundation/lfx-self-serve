@@ -10,7 +10,7 @@ import {
   CROWDFUNDING_FUND_TYPE_LABELS,
 } from '@lfx-one/shared/constants';
 import { InitiativeBase } from '@lfx-one/shared/interfaces';
-import { formatCurrency } from '@lfx-one/shared/utils';
+import { formatCurrency, stripHtml } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 
 @Component({
@@ -30,13 +30,17 @@ export class InitiativeCardComponent {
 
   protected readonly progressPercent = this.initProgressPercent();
 
+  protected readonly description = computed(() => stripHtml(this.initiative().description));
+  protected readonly isClickable = computed(() => this.initiative().status !== 'declined');
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
 
   protected readonly formattedRaised = computed(() => formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
   protected readonly formattedGoal: Signal<string | null> = this.initFormattedGoal();
 
   protected onCardClick(): void {
-    this.cardClick.emit(this.initiative().slug);
+    if (this.isClickable()) {
+      this.cardClick.emit(this.initiative().slug);
+    }
   }
 
   private initFormattedGoal(): Signal<string | null> {

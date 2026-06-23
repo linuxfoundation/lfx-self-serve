@@ -42,6 +42,19 @@ export interface BehavioralClassDisplayConfig {
 // ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
 
 /**
+ * Organization reference carried on committee invites and member records.
+ * Mirrors the committee-service organization object: `id`, `name`, and `website`.
+ */
+export interface CommitteeOrganizationReference {
+  /** CDP organization ID */
+  id?: string | null;
+  /** Organization display name */
+  name?: string | null;
+  /** Organization website URL */
+  website?: string | null;
+}
+
+/**
  * How users can join this group.
  *  - open:        Anyone can self-join; no approval required.
  *  - invite_only: Members / admins send invite links; invitee clicks to accept.
@@ -80,6 +93,17 @@ export interface CommitteeInvite {
   status: CommitteeInviteStatus;
   /** Creation timestamp (RFC3339) */
   created_at: string;
+  /** Suggested organization for the invitee (optional) */
+  organization?: CommitteeOrganizationReference | null;
+  /** Committee display name captured at invite-creation time (committee-service ≥ v1.1) */
+  committee_name?: string | null;
+  /**
+   * Whether the invitee must supply an organization when accepting. True when the committee
+   * has voting enabled or requires a business email (committee-service ≥ v1.1). Carried on
+   * the invite so the accept flow does not need to fetch the access-controlled committee/settings
+   * endpoints — those fail for invitees who are not yet committee viewers.
+   */
+  organization_required?: boolean | null;
 }
 
 /**
@@ -88,18 +112,21 @@ export interface CommitteeInvite {
  * committee-service `committee_invite` resource with its `committee` resource for
  * display context (committee name, project name, category).
  *
- * The underlying `committee_invite` resource carries ONLY: uid, committee_uid,
- * invitee_email, role, status, created_at. There is NO inviter name and NO expiry in
- * the current committee-service contract — so {@link inviter_name} and
- * {@link expires_at} are reserved, optional fields that stay `undefined` until/unless
- * the committee-service starts emitting them. Do NOT fabricate either on the BFF.
+ * `committee_name` is sourced from the invite's own `committee_name` field when
+ * available (committee-service ≥ v1.1), falling back to the enriched committee resource
+ * name, then the committee UID. `organization_required` is sourced from the invite's own
+ * field when available; legacy `enable_voting` / `business_email_required` are kept for
+ * backwards compat but are no longer fetched in the accept path.
+ *
+ * `inviter_name` / `expires_at` are reserved, optional fields that stay `undefined`
+ * until/unless the committee-service starts emitting them. Do NOT fabricate either on the BFF.
  */
 export interface PendingInvitation {
   /** committee_invite UID — used for accept/decline */
   uid: string;
   /** Committee this invitation is for */
   committee_uid: string;
-  /** Committee display name — enriched from the committee resource */
+  /** Committee display name */
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
@@ -123,6 +150,18 @@ export interface PendingInvitation {
    * populated only if upstream adds it. Stays `undefined` otherwise.
    */
   expires_at?: string | null;
+  /** Suggested organization from the invite (pre-fills the accept modal) */
+  organization?: CommitteeOrganizationReference | null;
+  /**
+   * Whether the invitee must supply an organization when accepting. Sourced from the
+   * invite's own `organization_required` field (committee-service ≥ v1.1) so the accept
+   * flow does not require committee-viewer access.
+   */
+  organization_required?: boolean | null;
+  /** Whether the committee has voting enabled — enriched from the committee resource (legacy) */
+  enable_voting?: boolean;
+  /** Whether the committee requires a business email — enriched from the committee resource (legacy) */
+  business_email_required?: boolean;
 }
 
 /**
@@ -146,6 +185,46 @@ export interface CreateCommitteeInviteRequest {
   invitee_email: string;
   /** Suggested role for the invitee (optional) */
   role?: string | null;
+  /** Suggested default organization for the invitee (optional; pre-fills the accept flow when committee has voting or business-email rules) */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/**
+ * Payload for accepting a committee invite (committee-service accept-invite).
+ */
+export interface AcceptCommitteeInviteRequest {
+  /** Organization the invitee confirms on acceptance */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Raw organization form values shared by invite-create and invite-accept dialogs. */
+export interface CommitteeOrganizationFormValue {
+  organization: string;
+  organization_url: string;
+  organization_id: string | null;
+}
+
+/** Data passed into the accept-invite organization dialog. */
+export interface AcceptInviteOrganizationDialogData {
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Result returned by the accept-invite organization dialog on confirm. */
+export interface AcceptInviteOrganizationDialogResult {
+  organization: CommitteeOrganizationReference;
+}
+
+/** Context needed to accept a committee invitation from any surface. */
+export interface InvitationAcceptContext {
+  committeeUid: string;
+  inviteUid: string;
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+  organization_required?: boolean | null;
+  enable_voting?: boolean;
+  business_email_required?: boolean;
+  inviteRequiresOrganization?: boolean;
 }
 
 /**

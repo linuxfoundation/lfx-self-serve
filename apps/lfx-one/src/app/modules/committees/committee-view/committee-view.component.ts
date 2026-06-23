@@ -29,12 +29,14 @@ import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
   findPendingInvitationForCommittee,
+  invitationRequiresOrganization,
   getChatPlatformIcon,
   getChatPlatformLabel,
   getRepoPlatformIcon,
   getRepoPlatformLabel,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -47,8 +49,9 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
@@ -110,6 +113,7 @@ export class CommitteeViewComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -263,6 +267,8 @@ export class CommitteeViewComponent {
       this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
     }
 
+    syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
       for (const inviteUid of [...this.pendingDeclines.keys()]) {
@@ -364,8 +370,7 @@ export class CommitteeViewComponent {
         .subscribe({
           next: () => {
             this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-            this.refreshCommittee();
-            this.membersRefresh.update((v) => v + 1);
+            this.refreshCommitteeAfterMembershipChange();
           },
           error: (err: HttpErrorResponse) => {
             const detail = this.getJoinErrorMessage(err, committee.name);
@@ -404,22 +409,37 @@ export class CommitteeViewComponent {
   }
 
   public onAcceptInvite(invite: PendingInvitation): void {
-    const committeeName = this.committee()?.name ?? 'this group';
-    // Optimistic: hide the banner everywhere immediately, then commit upstream.
-    this.invitationService.markResolved(invite.uid);
-    this.invitationService
-      .acceptInvitation(invite.committee_uid, invite.uid)
-      .pipe(take(1))
+    const committeeName = this.committee()?.name ?? invite.committee_name ?? 'this group';
+    const requiresOrganization = invitationRequiresOrganization(invite);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(invite.uid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invite.committee_uid,
+        inviteUid: invite.uid,
+        committeeName,
+        organization: invite.organization,
+        enable_voting: invite.enable_voting,
+        business_email_required: invite.business_email_required,
+        inviteRequiresOrganization: requiresOrganization,
+      })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(invite.uid);
+          }
           this.invitationService.forgetResolved(invite.uid);
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
-          // Refresh so my_role populates — the banner hides and member-only tabs/CTAs unlock.
-          this.refreshCommittee();
-          this.membersRefresh.update((v) => v + 1);
+          this.refreshCommitteeAfterMembershipChange();
         },
         error: () => {
-          this.invitationService.unmarkResolved(invite.uid);
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(invite.uid);
+          }
           this.messageService.add({
             severity: 'error',
             summary: 'Unable to Accept',
@@ -500,6 +520,47 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+
+  /**
+   * Refreshes committee + members after join/accept. The membership query index can lag
+   * the upstream write, so poll until `my_role` surfaces before giving up.
+   */
+  private refreshCommitteeAfterMembershipChange(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+    this.refreshMembers();
+
+    if (!committeeId) {
+      return;
+    }
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
+        filter((committee) => !!committee?.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        error: () => {
+          if (!pollSucceeded && !this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+        complete: () => {
+          if (!pollSucceeded && !this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
   /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
   private flushDecline(inviteUid: string): void {
     const pending = this.pendingDeclines.get(inviteUid);

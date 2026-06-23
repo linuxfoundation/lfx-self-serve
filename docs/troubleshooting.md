@@ -273,10 +273,10 @@ echo $TEST_PASSWORD
 pm2 status
 
 # View application logs
-pm2 logs lfx-one
+pm2 logs lfx-self-serve
 
 # Restart application
-pm2 restart lfx-one
+pm2 restart lfx-self-serve
 
 # Check ecosystem configuration
 cat ecosystem.config.js
@@ -289,10 +289,10 @@ cat ecosystem.config.js
 pm2 monit
 
 # Check for memory leaks
-pm2 show lfx-one
+pm2 show lfx-self-serve
 
 # Restart if memory limit exceeded
-pm2 restart lfx-one
+pm2 restart lfx-self-serve
 ```
 
 ## 📊 Diagnostic Commands
@@ -379,7 +379,7 @@ pm2 start ecosystem.config.js --debug
 yarn start # Check terminal output
 
 # Production PM2 logs
-pm2 logs lfx-one
+pm2 logs lfx-self-serve
 
 # System logs (Linux)
 journalctl -u nodejs-app

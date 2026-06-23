@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -74,14 +74,24 @@ export class ProfileLayoutComponent {
     selectedTab: ['attribution'],
   });
 
-  // Profile data from service
-  public readonly profileData: Signal<ProfileHeaderData | null> = this.initProfileData();
+  // Profile data from the service (server-fetched). The profile GET is eventually consistent
+  // (read-after-write lag in the auth-service), so after a save we apply an optimistic override
+  // that takes precedence — otherwise an immediate refetch can return the pre-save body.
+  private readonly fetchedProfileData: Signal<ProfileHeaderData | null> = this.initProfileData();
+  private readonly optimisticProfileData = signal<ProfileHeaderData | null>(null);
+  public readonly profileData: Signal<ProfileHeaderData | null> = computed(() => this.optimisticProfileData() ?? this.fetchedProfileData());
 
   // Loading state
   public readonly loading = signal<boolean>(true);
 
+  // Tracks failed avatar image loads so we can fall back to initials
+  public readonly avatarLoadError = signal<boolean>(false);
+
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
+
+  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
+  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -121,6 +131,13 @@ export class ProfileLayoutComponent {
   public readonly tabNotifications: Signal<Map<string, boolean>> = this.initTabNotifications();
 
   public constructor() {
+    // Reset the avatar error flag whenever the picture URL changes so a newly-set
+    // (or refreshed) avatar re-attempts to load instead of staying on the initials fallback
+    effect(() => {
+      this.avatarUrl();
+      this.avatarLoadError.set(false);
+    });
+
     // Subscribe to tab selection changes for mobile navigation
     this.tabForm.controls.selectedTab.valueChanges.pipe(takeUntilDestroyed()).subscribe((route) => {
       if (route) {
@@ -172,11 +189,48 @@ export class ProfileLayoutComponent {
       data: { combinedProfile: this.combinedProfile },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | null) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: Partial<UserMetadata> | null) => {
       if (result) {
-        this.refreshProfile$.next();
+        this.applyOptimisticProfileUpdate(result);
       }
     });
+  }
+
+  /**
+   * Reflect a just-saved profile change immediately, without waiting on the eventually-consistent
+   * profile GET. Merges the saved metadata into the cached CombinedProfile (so a reopened edit
+   * dialog is correct too) and sets it as the optimistic header override.
+   */
+  private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
+    if (!this.combinedProfile) {
+      // No base profile to merge into yet (e.g. Flow C cold load, where the save resolves before
+      // the initial profile GET populates combinedProfile). Fall back to a refetch so the UI still
+      // reflects the change — there's nothing cached to clobber in this case.
+      this.refreshProfile$.next();
+      return;
+    }
+
+    // The dialog builds metadata with `key: undefined` for empty fields; those keys are omitted
+    // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
+    // optimistic view would clear fields that were never actually persisted as cleared.
+    const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
+
+    const mergedProfile: CombinedProfile = {
+      ...this.combinedProfile,
+      user: {
+        ...this.combinedProfile.user,
+        // user.first_name / last_name are derived from given_name / family_name server-side
+        first_name: definedMetadata.given_name ?? this.combinedProfile.user.first_name,
+        last_name: definedMetadata.family_name ?? this.combinedProfile.user.last_name,
+      },
+      profile: {
+        ...this.combinedProfile.profile,
+        ...definedMetadata,
+      },
+    };
+
+    this.combinedProfile = mergedProfile;
+    this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
   }
 
   /**
@@ -220,12 +274,15 @@ export class ProfileLayoutComponent {
 
     this.userService.updateUserProfile(updateData).subscribe({
       next: () => {
+        // Optimistic update only — same as the dialog-close path. We intentionally do NOT
+        // refresh here: the profile GET is eventually consistent, so an immediate refetch could
+        // overwrite combinedProfile with the pre-save body and reintroduce stale-on-reopen.
+        this.applyOptimisticProfileUpdate(userMetadata);
         this.messageService.add({
           severity: 'success',
           summary: 'Success',
           detail: 'Profile updated successfully!',
         });
-        this.refreshProfile$.next();
       },
       error: () => {
         this.messageService.add({

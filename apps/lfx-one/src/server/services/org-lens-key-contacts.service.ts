@@ -252,6 +252,7 @@ export class OrgLensKeyContactsService {
         status: 'Active',
         primary_contact: body.contactType === KEY_CONTACT_PRIMARY_CONTACT_TYPE,
         board_member: false,
+        send_invite: true,
       }
     );
     return this.toPerson(created);
@@ -266,6 +267,7 @@ export class OrgLensKeyContactsService {
       primary_contact: body.contactType === KEY_CONTACT_PRIMARY_CONTACT_TYPE,
       board_member: false,
       ...(title ? { title } : {}),
+      send_invite: true,
     };
   }
 

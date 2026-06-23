@@ -68,8 +68,14 @@ export interface OrgContributionEmployeeOption {
 /** One row in the org-wide Commits activity feed — a flat list of recent commits across all active repos. */
 export interface OrgContributionCommitRow {
   commitSha: string;
+  /** Stable Crowd.dev member UUID — employee filter key. */
+  contributorId: string | null;
+  /** Org Lens person identity for the shared detail drawer (DP2) — COALESCE(LFID-mapped user_id, 'cdp:'||member_id). */
+  personKey: string | null;
   projectName: string;
   committerName: string;
+  /** Contributor avatar URL (member_logo from warehouse). Initials are the client fallback when null. */
+  committerAvatarUrl: string | null;
   /** Job title / role shown under the committer name. */
   committerTitle: string | null;
   /** Commit handle (without the leading `@`). */
@@ -94,22 +100,28 @@ export interface OrgContributionsResponse {
   commits: OrgContributionCommitRow[];
   projectOptions: OrgContributionProjectOption[];
   employeeOptions: OrgContributionEmployeeOption[];
-  /** Total rows matching the active filters across all pages — drives the footer + pager. */
+  /** Repositories rows matching the active filters — drives the Repositories pager + tab count. */
   totalRecords: number;
+  /** Commits feed rows matching the active filters — drives the Commits pager + tab count. */
+  commitsTotalRecords: number;
 }
 
 /** Composed filter/pagination state — serialized to URL query params and to the BFF request. */
 export interface OrgContributionsQuery {
+  /** Active tab — KPI search follows this tab's semantics; `page`/`size` paginate the active table. */
+  view: ContributionsView;
   dateRange: ContributionsDateRange;
   /** Free-text search. On the Repositories tab it scopes the Repository path; on the Commits feed it scopes message/project/committer/username. */
   search: string;
   /** Selected project slugs. */
   projects: string[];
-  /** Selected employee ids. */
+  /** Selected employee ids (Crowd.dev member_id values). */
   employees: string[];
   sort: ContributionsSortColumn;
   dir: ContributionsSortDirection;
-  /** 1-based page index. */
+  commitSort: ContributionsCommitSortColumn;
+  commitDir: ContributionsSortDirection;
+  /** 1-based page index for the active `view` table. */
   page: number;
   size: number;
 }
@@ -155,63 +167,23 @@ export interface ContributionsFilterOption {
   sublabel: string;
 }
 
-/** Tabs in the committer side panel — mirrors the LFX person-profile panel. */
-export type CommitterPanelTab = 'events' | 'training' | 'code' | 'governance';
+/** Active content tab — drives tab-aware KPI search semantics and which table `page`/`size` paginate. */
+export type ContributionsView = 'repositories' | 'commits';
 
-/** Demo event-participation item shown in the committer panel's Events tab. */
-export interface OrgCommitterEventItem {
-  name: string;
-  /** ISO date of the event. */
-  date: string;
-  /** Participation role, e.g. Attendee / Speaker. */
-  role: string;
-}
-
-/** Demo training/certification item shown in the committer panel's Training tab. */
-export interface OrgCommitterTrainingItem {
-  course: string;
-  /** Completion status, e.g. Completed / In Progress. */
-  status: string;
-}
-
-/** Demo governance item (board / committee seat) shown in the committer panel's Governance tab. */
-export interface OrgCommitterGovernanceItem {
-  role: string;
-  body: string;
-}
-
-/** Committer side-panel view-model — derived client-side from the loaded Commits feed. */
-export interface OrgCommitterDetailVm {
-  name: string;
-  title: string | null;
-  username: string | null;
-  source: ContributionSource;
-  sourceIconClass: string;
-  /** External user-profile URL for the handle, or null when the source has no public profile. */
-  profileUrl: string | null;
-  initials: string;
-  avatarColorClass: string;
-  /** Commit count across the rows currently in the feed. */
-  totalCommits: number;
-  /** Distinct project names the committer has commits in. */
-  projects: string[];
-  /** The committer's commit rows (already decorated + sorted). */
-  commits: OrgContributionCommitRowVm[];
-  /** Demo cross-engagement sections (Events / Training / Governance) — populated client-side for the scaffold. */
-  events: OrgCommitterEventItem[];
-  training: OrgCommitterTrainingItem[];
-  governance: OrgCommitterGovernanceItem[];
-}
-
-/** Sortable columns on the org-wide Commits activity feed (client-side). */
+/** Sortable columns on the org-wide Commits activity feed (server-side). */
 export type ContributionsCommitSortColumn = 'project' | 'committer' | 'username' | 'date';
 
 /** Pre-decorated Commits-feed row — committer avatar + source icon + preformatted date. */
 export interface OrgContributionCommitRowVm {
   commitSha: string;
+  contributorId: string | null;
+  /** Org Lens person identity — drives `PersonDetailDrawerService.open`. */
+  personKey: string | null;
   projectName: string;
   committerName: string;
   committerTitle: string | null;
+  /** Contributor avatar URL (member_logo). Initials fallback when null. */
+  committerAvatarUrl: string | null;
   username: string | null;
   source: ContributionSource;
   /** Human-readable source label, e.g. `GitHub` — used for accessible labels. */

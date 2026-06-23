@@ -20,7 +20,7 @@ import {
   MemberFormValue,
   OrganizationResolveResult,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
+import { buildCommitteeOrganizationPayload, formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -291,14 +291,7 @@ export class MemberFormComponent {
   }
 
   private buildOrganizationPayload(formValue: MemberFormValue): CreateCommitteeMemberRequest['organization'] {
-    if (formValue.organization || formValue.organization_url || formValue.organization_id) {
-      return {
-        id: formValue.organization_id || null,
-        name: formValue.organization || null,
-        website: formValue.organization_url || null,
-      };
-    }
-    return null;
+    return buildCommitteeOrganizationPayload(formValue);
   }
 
   private createMemberFormGroup(): FormGroup {
@@ -322,10 +315,12 @@ export class MemberFormComponent {
         permission: new FormControl<CommitteePermissionLevel>('member'),
       },
       {
-        validators: [
-          MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
-          MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
-        ],
+        validators: this.committee?.enable_voting
+          ? [
+              MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
+              MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
+            ]
+          : [],
       }
     );
   }

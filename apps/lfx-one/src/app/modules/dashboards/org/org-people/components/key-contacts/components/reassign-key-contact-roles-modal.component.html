@@ -126,7 +126,7 @@
                   [attr.data-testid]="'reassign-key-contact-employee-option-' + emp.email"
                   (mousedown)="$event.preventDefault()"
                   (click)="onSelectEmployee(emp)">
-                  <div class="flex h-7 w-7 items-center justify-center rounded-full bg-purple-500 text-xs font-semibold text-white">{{ emp.initials }}</div>
+                  <lfx-employee-avatar [initials]="emp.initials" [avatarUrl]="emp.avatarUrl ?? null" />
                   <div class="flex min-w-0 flex-col">
                     <span class="truncate text-sm font-medium text-gray-900">{{ emp.fullName }}</span>
                     <span class="truncate text-xs text-gray-500">{{ emp.email }}</span>

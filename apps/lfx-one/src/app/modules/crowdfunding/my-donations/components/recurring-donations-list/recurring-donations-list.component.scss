@@ -1,2 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+
+.recurring-card {
+  @apply flex items-center gap-3 p-4 bg-white border-b border-gray-200 cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-colors;
+
+  &:first-child {
+    @apply rounded-t-lg;
+  }
+  &:last-child {
+    @apply border-b-0 rounded-b-lg;
+  }
+}

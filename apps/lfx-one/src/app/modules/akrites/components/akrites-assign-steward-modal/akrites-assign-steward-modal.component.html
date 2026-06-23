@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-dialog
+  [(visible)]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [style]="{ width: '32rem' }"
+  [dismissableMask]="true"
+  (onShow)="onShow()"
+  header="Assign steward"
+  data-testid="akrites-assign-steward-modal">
+  <div class="flex flex-col gap-4">
+    @if (packageName()) {
+      <p class="text-sm text-gray-500">
+        Assigning a steward to <span class="font-medium text-slate-900">{{ packageName() }}</span
+        >.
+      </p>
+    }
+
+    <!-- Role selection -->
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium text-gray-700">Role</span>
+      <div class="flex flex-col gap-2" role="radiogroup" aria-label="Steward role">
+        @for (option of roleOptions; track option.value) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="selectedRole() === option.value"
+            (click)="selectRole(option.value)"
+            class="flex flex-col gap-0.5 text-left px-3.5 py-2.5 rounded-lg border transition-colors"
+            [class.border-blue-500]="selectedRole() === option.value"
+            [class.bg-blue-50]="selectedRole() === option.value"
+            [class.border-gray-200]="selectedRole() !== option.value"
+            [class.hover:bg-gray-50]="selectedRole() !== option.value"
+            [attr.data-testid]="'akrites-assign-role-' + option.value">
+            <span class="text-sm font-medium text-slate-900">{{ option.label }}</span>
+            <span class="text-xs text-gray-500">{{ option.description }}</span>
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- User ID field — placeholder until the steward roster endpoint ships -->
+    <div class="flex flex-col gap-1.5">
+      <label for="akrites-assign-userid" class="text-sm font-medium text-gray-700">User ID</label>
+      <lfx-input-text
+        [form]="form"
+        control="userId"
+        id="akrites-assign-userid"
+        placeholder="Enter Auth0 user ID (e.g. auth0|abc123)"
+        size="small"
+        dataTest="akrites-assign-userid" />
+      @if (form.controls.userId.touched && form.controls.userId.errors?.['required']) {
+        <p class="text-xs text-red-600">User ID is required.</p>
+      }
+      <p class="text-xs text-gray-400">
+        <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+        A searchable user picker will be available once the steward roster endpoint is ready.
+      </p>
+    </div>
+
+    <!-- Move to assessing -->
+    <label class="flex items-start gap-2.5 cursor-pointer" for="akrites-assign-move-assessing" data-testid="akrites-assign-move-assessing">
+      <div class="relative mt-0.5 flex-shrink-0">
+        <input type="checkbox" id="akrites-assign-move-assessing" [formControl]="form.controls.moveToAssessing" class="sr-only peer" />
+        <span
+          class="inline-flex w-4 h-4 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-1"
+          [class.bg-blue-500]="form.controls.moveToAssessing.value"
+          [class.border-blue-500]="form.controls.moveToAssessing.value"
+          [class.bg-white]="!form.controls.moveToAssessing.value"
+          [class.border-gray-300]="!form.controls.moveToAssessing.value"
+          aria-hidden="true">
+          @if (form.controls.moveToAssessing.value) {
+            <i class="fa-light fa-check text-white text-[10px]" aria-hidden="true"></i>
+          }
+        </span>
+      </div>
+      <span class="flex flex-col">
+        <span class="text-sm text-slate-900">Move to Assessing</span>
+        <span class="text-xs text-gray-500">Atomically transition the stewardship to the Assessing status after assignment.</span>
+      </span>
+    </label>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-2">
+      <lfx-button label="Cancel" [text]="true" severity="secondary" (onClick)="onCancel()" data-testid="akrites-assign-cancel" />
+      <lfx-button
+        label="Assign steward"
+        [loading]="loading()"
+        [disabled]="form.invalid || loading()"
+        (onClick)="onConfirm()"
+        data-testid="akrites-assign-confirm" />
+    </div>
+  </ng-template>
+</p-dialog>

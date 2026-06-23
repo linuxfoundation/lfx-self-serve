@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { Component, computed, input, output, Signal, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -9,23 +10,34 @@ import { MenuItem } from 'primeng/api';
 
 @Component({
   selector: 'lfx-recurring-donations-list',
-  imports: [ButtonComponent, MenuComponent],
+  imports: [ButtonComponent, DatePipe, MenuComponent],
   templateUrl: './recurring-donations-list.component.html',
   styleUrl: './recurring-donations-list.component.scss',
 })
 export class RecurringDonationsListComponent {
   public readonly donations = input.required<RecurringDonation[]>();
-  public readonly cancelledCount = input<number>(0);
 
-  public readonly viewCancelled = output<void>();
+  public readonly viewDetail = output<RecurringDonation>();
   public readonly cancelDonation = output<RecurringDonation>();
 
   private readonly menus = viewChildren<MenuComponent>(MenuComponent);
 
   protected readonly donationsWithMenuItems = this.initDonationsWithMenuItems();
 
+  protected onCardKeyActivate(event: Event, donation: RecurringDonation): void {
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    this.viewDetail.emit(donation);
+  }
+
   protected onMenuToggle(event: Event, index: number): void {
     this.menus()[index]?.toggle(event);
+  }
+
+  protected menuIndexFor(donationIndex: number): number {
+    return this.donationsWithMenuItems()
+      .slice(0, donationIndex)
+      .filter((e) => e.menuItems.length > 0).length;
   }
 
   private initDonationsWithMenuItems(): Signal<{ donation: RecurringDonation; menuItems: MenuItem[] }[]> {
@@ -38,6 +50,7 @@ export class RecurringDonationsListComponent {
   }
 
   private buildMenuItems(donation: RecurringDonation): MenuItem[] {
+    if (donation.status === 'canceled') return [];
     return [{ label: 'Cancel', icon: 'fa-solid fa-xmark', styleClass: 'text-red-600', command: () => this.cancelDonation.emit(donation) }];
   }
 }

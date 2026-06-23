@@ -8,14 +8,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
-import { buildMarketingImpactMonthOptions, getDefaultMarketingImpactMonth } from '@lfx-one/shared/utils';
+import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
 
 import type {
   FilterPillOption,
   MarketingImpactFocusProgram,
-  MarketingImpactMonthOption,
+  MarketingImpactPeriodOption,
   MarketingImpactTab,
   MarketingImpactTabOption,
 } from '@lfx-one/shared/interfaces';
@@ -50,14 +50,14 @@ export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
-  private readonly defaultMonth = getDefaultMarketingImpactMonth();
+  private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
   // === Forms ===
   protected readonly headerForm = this.fb.nonNullable.group({
-    month: [this.defaultMonth],
+    period: [this.defaultPeriod],
   });
 
-  protected readonly monthOptions: MarketingImpactMonthOption[] = buildMarketingImpactMonthOptions();
+  protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
   protected readonly focusOptions: FilterPillOption[] = MARKETING_IMPACT_FOCUS_OPTIONS;
   protected readonly tabs: MarketingImpactTabOption[] = MARKETING_IMPACT_TABS;
 
@@ -69,7 +69,7 @@ export class MarketingImpactComponent {
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
   protected readonly foundationName = computed(() => this.projectContextService.selectedFoundation()?.name ?? '');
   protected readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug);
-  protected readonly selectedMonth: Signal<string> = this.initSelectedMonth();
+  protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
 
@@ -91,9 +91,9 @@ export class MarketingImpactComponent {
   }
 
   // === Private Initializers ===
-  private initSelectedMonth(): Signal<string> {
-    return toSignal(this.headerForm.controls.month.valueChanges.pipe(startWith(this.defaultMonth)), {
-      initialValue: this.defaultMonth,
+  private initSelectedPeriod(): Signal<string> {
+    return toSignal(this.headerForm.controls.period.valueChanges.pipe(startWith(this.defaultPeriod)), {
+      initialValue: this.defaultPeriod,
     });
   }
 
@@ -107,11 +107,11 @@ export class MarketingImpactComponent {
   private initContextLabel(): Signal<string> {
     return computed(() => {
       const name = this.foundationName();
-      const monthValue = this.selectedMonth();
-      const option = this.monthOptions.find((o) => o.value === monthValue);
-      const monthLabel = option?.label ?? '';
-      if (!name || !monthLabel) return '';
-      return `Cross-channel performance for ${name} · ${monthLabel}`;
+      const periodValue = this.selectedPeriod();
+      const option = this.periodOptions.find((o) => o.value === periodValue);
+      const periodLabel = option?.label ?? '';
+      if (!name || !periodLabel) return '';
+      return `Cross-channel performance for ${name} · ${periodLabel}`;
     });
   }
 }
