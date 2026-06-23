@@ -4,13 +4,14 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
+import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
 import { ProjectSettings, UserInfo } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 interface StaffRow {
-  key: 'executive_director' | 'program_manager' | 'opportunity_owner';
+  key: (typeof PROJECT_STAFF_ROWS)[number]['key'];
   label: string;
   icon: string;
   user: UserInfo | null | undefined;
@@ -26,6 +27,8 @@ export class ProjectStaffCardComponent {
   private readonly permissionsService = inject(PermissionsService);
 
   public readonly projectUid = input.required<string>();
+  public readonly layout = input<'carousel' | 'sidebar'>('carousel');
+  public readonly heading = input<string>('Project Staff');
 
   // `loading` and `hasError` are tracked separately from `settings` so the template can tell the
   // three states apart: still fetching, fetch failed, fetch succeeded with no staff assigned.
@@ -57,11 +60,10 @@ export class ProjectStaffCardComponent {
 
   protected readonly staff: Signal<StaffRow[]> = computed(() => {
     const s = this.settings();
-    return [
-      { key: 'executive_director', label: 'Executive Director', icon: 'fa-light fa-user-tie', user: s?.executive_director },
-      { key: 'program_manager', label: 'Program Manager', icon: 'fa-light fa-user-gear', user: s?.program_manager },
-      { key: 'opportunity_owner', label: 'Opportunity Owner', icon: 'fa-light fa-user-chart', user: s?.opportunity_owner },
-    ];
+    return PROJECT_STAFF_ROWS.map((row) => ({
+      ...row,
+      user: s?.[row.key],
+    }));
   });
 
   protected readonly hasAnyStaff = computed(() => this.staff().some((row) => !!row.user));

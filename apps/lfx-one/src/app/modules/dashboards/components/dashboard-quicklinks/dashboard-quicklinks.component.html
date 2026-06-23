@@ -1,17 +1,36 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (canWrite()) {
-  <div class="flex items-center gap-2 text-sm" data-testid="dashboard-quicklinks">
-    <span class="text-surface-400 font-medium">Quick links:</span>
-    @for (link of links; track link.testId; let last = $last) {
-      <a [routerLink]="link.route" class="flex items-center gap-1.5 text-primary hover:underline" [attr.data-testid]="'dashboard-quicklink-' + link.testId">
-        <i [class]="link.icon" aria-hidden="true"></i>
-        {{ link.label }}
-      </a>
-      @if (!last) {
-        <span class="text-surface-300 select-none" aria-hidden="true">|</span>
+@if (layout() === 'header') {
+  @if (canWrite()) {
+    <div class="flex items-center gap-2 text-sm" data-testid="dashboard-quicklinks">
+      <span class="text-surface-400 font-medium">Quick links:</span>
+      @for (link of links; track link.testId; let last = $last) {
+        <a [routerLink]="link.route" class="flex items-center gap-1.5 text-primary hover:underline" [attr.data-testid]="'dashboard-quicklink-' + link.testId">
+          <i [class]="link.icon" aria-hidden="true"></i>
+          {{ link.label }}
+        </a>
+        @if (!last) {
+          <span class="text-surface-300 select-none" aria-hidden="true">|</span>
+        }
       }
-    }
-  </div>
+    </div>
+  }
+} @else {
+  @if (canWrite()) {
+    <div class="flex flex-col gap-3" data-testid="dashboard-quicklinks-sidebar">
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Quick links</h2>
+      <div class="flex flex-row flex-wrap items-center gap-x-4 gap-y-2 xl:flex-col xl:items-start xl:gap-3">
+        @for (link of links; track link.testId) {
+          <a
+            [routerLink]="link.route"
+            class="flex items-center gap-2 text-sm text-primary hover:underline"
+            [attr.data-testid]="'dashboard-quicklink-' + link.testId">
+            <i [class]="link.icon" aria-hidden="true"></i>
+            {{ link.label }}
+          </a>
+        }
+      </div>
+    </div>
+  }
 }

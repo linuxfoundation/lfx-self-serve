@@ -77,3 +77,4 @@ export * from './akrites.constants';
 export * from './crowdfunding.constants';
 
 export * from './project-context.constants';
+export * from './project-staff.constants';

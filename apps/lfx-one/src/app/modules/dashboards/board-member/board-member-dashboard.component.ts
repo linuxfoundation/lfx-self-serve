@@ -11,7 +11,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
-import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
+import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
@@ -25,7 +25,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
     MyMeetingsComponent,
     FoundationHealthComponent,
     SkeletonModule,
-    DashboardQuicklinksComponent,
+    DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
   ],
   templateUrl: './board-member-dashboard.component.html',
@@ -41,6 +41,7 @@ export class BoardMemberDashboardComponent {
 
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
+  protected readonly staffHeading = computed(() => 'Foundation Staff');
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
   // Pass the raw list and let the child render the top N unhidden items.
