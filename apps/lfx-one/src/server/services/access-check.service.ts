@@ -169,9 +169,7 @@ export class AccessCheckService {
       );
 
       if (response.results.length !== accessTypes.length) {
-        throw new Error(
-          `access-check result count mismatch: expected ${accessTypes.length}, received ${response.results.length}`
-        );
+        throw new Error(`access-check result count mismatch: expected ${accessTypes.length}, received ${response.results.length}`);
       }
 
       const result = { ...fallback };
