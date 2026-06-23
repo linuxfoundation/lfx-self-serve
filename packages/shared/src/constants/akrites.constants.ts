@@ -165,7 +165,7 @@ export const AKRITES_STATUS_ORDER: AkritesStatus[] = ['unassigned', 'needs_atten
  * Members of this committee are fetched via GET /api/committees/:id/members.
  * See: https://app.lfx.dev/groups/8bffb08a-3707-4f8f-9e1c-0cbca8a4dfb6
  */
-export const AKRITES_STEWARD_COMMITTEE_UID = '8bffb08a-3707-4f8f-9e1c-0cbca8a4dfb6';
+export const AKRITES_STEWARD_COMMITTEE_UID = 'f41a2f37-a4b0-441f-bacf-49a0a9a5dd8d'; // DEV ONLY: AY Group (7 members) — revert to 8bffb08a-3707-4f8f-9e1c-0cbca8a4dfb6
 
 /** Empty status counts object with all statuses initialized to 0. */
 export const AKRITES_EMPTY_STATUS_COUNTS: AkritesStatusCounts = {

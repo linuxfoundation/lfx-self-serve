@@ -63,10 +63,12 @@ export class AkritesAssignStewardModalComponent {
     const steward = this.selectedSteward();
     if (!steward) return;
     this.confirm.emit({
-      userId: steward.userId,
-      username: steward.username,
-      displayName: steward.displayName,
-      role: this.selectedRole(),
+      steward: {
+        userId: steward.userId,
+        username: steward.username || null,
+        displayName: steward.displayName || null,
+        role: this.selectedRole(),
+      },
       moveToAssessing: this.moveToAssessing() || undefined,
     });
   }

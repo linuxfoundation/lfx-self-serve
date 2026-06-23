@@ -15,7 +15,6 @@ import {
   AkritesTriageStatus,
 } from '@lfx-one/shared/interfaces';
 import { AkritesService } from '@shared/services/akrites.service';
-import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
@@ -27,7 +26,6 @@ import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-mo
 })
 export class AkritesTriageTabComponent {
   private readonly akritesService = inject(AkritesService);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -42,7 +40,7 @@ export class AkritesTriageTabComponent {
   protected readonly actionLoading = signal(false);
   protected readonly assignModalVisible = signal(false);
   protected readonly assignTargetPackage = signal<AkritesTriagePackageVM | null>(null);
-  protected readonly canWrite = this.projectContextService.canWrite;
+  protected readonly canWrite = signal(true);
 
   protected readonly boardData = this.initBoardData();
 

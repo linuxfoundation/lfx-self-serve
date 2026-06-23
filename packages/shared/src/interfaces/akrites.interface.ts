@@ -52,12 +52,18 @@ export interface AkritesSearchStewardResult {
 
 // ===== CDP Raw Types =====
 
+export interface CdpActivityActor {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
 export interface CdpActivityRow {
   id: string;
   stewardshipId: string;
   packagePurl: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -87,7 +93,7 @@ export interface CdpStewardshipSummary {
   healthBand: string | null;
   latestReleaseAt: string | null;
   lastActivity: { type: string; content: string; at: string } | null;
-  stewards: { userId: string; role: string; assignedAt: string }[];
+  stewards: { userId: string; username: string | null; displayName: string | null; role: string; assignedAt: string }[];
 }
 
 export interface CdpPackagesListResponse {
@@ -221,11 +227,20 @@ export interface AkritesOpenStewardshipRequest {
   purl: string;
 }
 
-export interface AkritesAssignStewardRequest {
+export interface AkritesActorInput {
   userId: string;
-  username: string;
-  displayName: string;
-  role: AkritesStewardRole;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface AkritesAssignStewardRequest {
+  steward: {
+    userId: string;
+    username: string | null;
+    displayName: string | null;
+    role: AkritesStewardRole;
+  };
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
   moveToAssessing?: boolean;
 }
@@ -410,8 +425,7 @@ export interface AkritesActivityRow {
   packagePurl: string;
   packageName: string;
   packageEcosystem: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -436,6 +450,9 @@ export interface AkritesActivityRowVM extends AkritesActivityRow {
   formattedStatus: string;
   formattedActivityLabel: string;
   action: { label: string; variant: 'default' | 'blue' | 'red' } | null;
+  actorDisplay: string | null;
+  actorAvatarUrl: string | null;
+  actorInitials: string | null;
 }
 
 export interface AkritesActivityDayGroup {

@@ -10,9 +10,9 @@ import {
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
   CdpScatterResponse,
-  CdpStewardSummary,
   CdpStewardshipSummary,
   AkritesActivityResponse,
+  AkritesActorInput,
   AkritesAdvisory,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
@@ -91,7 +91,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -146,7 +146,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -205,7 +205,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -253,7 +253,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (response.status === 404) {
@@ -290,8 +290,8 @@ export class AkritesServerService {
    * Open a package for stewardship (creates the stewardship row if absent).
    * Returns the stewardship record, including the integer `id` used by the other admin actions.
    */
-  public async openStewardship(req: Request, purl: string): Promise<AkritesStewardshipResponse> {
-    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, { purl });
+  public async openStewardship(req: Request, purl: string, actor: AkritesActorInput): Promise<AkritesStewardshipResponse> {
+    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, { purl, actor });
   }
 
   /** Assign (or re-assign) a steward to a stewardship, optionally moving it to `assessing`. */
@@ -336,7 +336,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -398,14 +398,7 @@ export class AkritesServerService {
       vulnSeverity,
       status: (item.stewardshipStatus as AkritesPackage['status']) || 'unassigned',
       stewardshipId: item.stewardshipId ? parseInt(item.stewardshipId, 10) : null,
-      stewards: (item.stewards ?? []).map((s) => ({
-        userId: s.userId,
-        username: null,
-        role: s.role as AkritesStewardRole,
-        assignedAt: s.assignedAt,
-        name: null,
-        avatarUrl: null,
-      })),
+      stewards: this.mapStewards(item.stewards ?? []),
       lastActivityLabel: item.lastActivity ? item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type) : '—',
       lastActivityTime: item.lastActivity ? this.formatRelativeTime(item.lastActivity.at) : '',
       downloadsLastMonth: null,
@@ -519,7 +512,7 @@ export class AkritesServerService {
           'X-LFX-Request-ID': requestId,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -542,12 +535,14 @@ export class AkritesServerService {
     }
   }
 
-  private mapStewards(stewards: CdpStewardSummary[] | null): AkritesSteward[] {
+  private mapStewards(
+    stewards: { userId: string; username: string | null; displayName: string | null; role: string; assignedAt: string }[] | null
+  ): AkritesSteward[] {
     if (!stewards) return [];
     return stewards.map((s) => ({
       userId: s.userId,
       username: s.username ?? null,
-      role: s.role,
+      role: s.role as AkritesStewardRole,
       assignedAt: s.assignedAt,
       name: s.displayName ?? null,
       avatarUrl: null,
