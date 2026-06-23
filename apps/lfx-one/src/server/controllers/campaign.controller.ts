@@ -483,11 +483,13 @@ export class CampaignController {
 
   public async updateCampaignStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     const campaignId = req.params['campaignId'];
+
     if (!campaignId) {
       next(
-        ServiceValidationError.forField('campaignId', 'campaignId is required', {
+        ServiceValidationError.forField('campaignId', 'campaignId route parameter is required', {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
+          path: req.path,
         })
       );
       return;
@@ -497,6 +499,7 @@ export class CampaignController {
         ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string', {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
+          path: req.path,
         })
       );
       return;
