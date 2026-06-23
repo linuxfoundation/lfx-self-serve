@@ -110,14 +110,14 @@ function bandForScore(score: number): OrgLensProjectBand {
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
+  @ViewChild('technicalTrack') private techTrackRef?: ElementRef<HTMLElement>;
+  @ViewChild('ecosystemTrack') private ecoTrackRef?: ElementRef<HTMLElement>;
+
   protected readonly accountContext = inject(AccountContextService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
-
-  @ViewChild('technicalTrack') private techTrackRef?: ElementRef<HTMLElement>;
-  @ViewChild('ecosystemTrack') private ecoTrackRef?: ElementRef<HTMLElement>;
 
   protected readonly retryTrigger = signal(0);
   protected readonly fetchLoading = signal(true);
@@ -271,6 +271,16 @@ export class OrgProjectDetailComponent {
     }));
   }
 
+  /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
+  protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
+    el.scrollBy({ left: direction * 336, behavior: 'smooth' });
+  }
+
+  /** Updates left/right arrow visibility from the track's scroll position. */
+  protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
+    this.refreshArrows(el, track === 'tech');
+  }
+
   private initMetric(): OrgLensLeaderboardMetric {
     const raw = this.queryParamMap().get('metric');
     return raw && VALID_METRICS.has(raw) ? (raw as OrgLensLeaderboardMetric) : DEFAULT_METRIC;
@@ -370,16 +380,6 @@ export class OrgProjectDetailComponent {
   private formatCompactUsd(value: number | null): string {
     if (value === null || value === undefined) return '—';
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
-  }
-
-  /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
-  protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
-    el.scrollBy({ left: direction * 336, behavior: 'smooth' });
-  }
-
-  /** Updates left/right arrow visibility from the track's scroll position. */
-  protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
-    this.refreshArrows(el, track === 'tech');
   }
 
   private refreshArrows(el: HTMLElement | undefined, tech: boolean): void {

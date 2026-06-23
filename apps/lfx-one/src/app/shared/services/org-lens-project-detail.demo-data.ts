@@ -471,6 +471,12 @@ function deltaFromSparkline(series: number[]): number {
   return start === 0 ? 0 : Math.round(((series[series.length - 1] - start) / start) * 100) / 100;
 }
 
+const CNCF_ARTWORK = 'https://raw.githubusercontent.com/cncf/artwork/master/projects';
+const PROJECT_LOGO_URLS: Record<string, string> = {
+  kubernetes: `${CNCF_ARTWORK}/kubernetes/icon/color/kubernetes-icon-color.svg`,
+  argo: `${CNCF_ARTWORK}/argo/icon/color/argo-icon-color.svg`,
+};
+
 /**
  * Demo detail for one project. Returns `null` for an unknown slug so the page renders its
  * not-found (404) state. `orgUid` echoes into the response envelope; `orgName` personalizes
@@ -486,11 +492,7 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
     hero: {
       projectName: seed.name,
       description: seed.description,
-      logoUrl: projectSlug === 'kubernetes'
-        ? 'https://raw.githubusercontent.com/cncf/artwork/master/projects/kubernetes/icon/color/kubernetes-icon-color.svg'
-        : projectSlug === 'argo'
-          ? 'https://raw.githubusercontent.com/cncf/artwork/master/projects/argo/icon/color/argo-icon-color.svg'
-          : '',
+      logoUrl: PROJECT_LOGO_URLS[projectSlug] ?? '',
       sourceUrl: seed.sourceUrl,
       sourceLabel: `${seed.name} - ${seed.description.replace(/\.$/, '')}`,
       lfxInsightsUrl: `https://insights.linuxfoundation.org/project/${projectSlug}`,
