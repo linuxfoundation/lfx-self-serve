@@ -959,6 +959,11 @@ export class CampaignProxyService {
         return updateMetaCampaignStatus(req, campaignId, status);
       case 'reddit-ads': {
         const { REDDIT_ACCOUNTS } = await import('../constants');
+        if (body.accountId !== undefined && typeof body.accountId !== 'string') {
+          throw ServiceValidationError.forField('accountId', 'accountId must be a string', {
+            operation: 'campaign_status_update',
+          });
+        }
         const accountId = (typeof body.accountId === 'string' && body.accountId.trim()) || REDDIT_ACCOUNTS[0]?.accountId;
         if (!accountId) {
           throw ServiceValidationError.forField('accountId', 'No Reddit ad account configured', {

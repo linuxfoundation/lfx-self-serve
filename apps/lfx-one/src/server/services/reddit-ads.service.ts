@@ -441,6 +441,7 @@ export async function updateRedditCampaignStatus(
     campaignId,
     previousStatus,
     newStatus: status,
+    success: true,
   };
 }
 
