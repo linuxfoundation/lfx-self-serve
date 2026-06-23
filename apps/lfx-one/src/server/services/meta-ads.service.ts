@@ -3,6 +3,7 @@
 
 import type {
   CampaignStatusUpdateResult,
+  CampaignToggleStatus,
   MetaActionItem,
   MetaAccountTotals,
   MetaCampaignCreateRequest,
@@ -389,16 +390,21 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 // Campaign Status Toggle
 // ---------------------------------------------------------------------------
 
-export async function updateMetaCampaignStatus(req: Request | undefined, campaignId: string, status: 'ACTIVE' | 'PAUSED'): Promise<CampaignStatusUpdateResult> {
+export async function updateMetaCampaignStatus(
+  req: Request | undefined,
+  campaignId: string,
+  status: CampaignToggleStatus
+): Promise<CampaignStatusUpdateResult> {
   const startTime = logger.startOperation(req, 'meta_campaign_status_update', { campaignId, status });
 
-  const currentResp = await metaRequest<Partial<{ status: string }>>(req, 'GET', `/${campaignId}?fields=status`);
+  const safeId = encodeURIComponent(campaignId);
+  const currentResp = await metaRequest<Partial<{ status: string }>>(req, 'GET', `/${safeId}?fields=status`);
   if (!currentResp.status) {
     throw new Error('Meta API returned no status field for the campaign. The campaign may not exist or access may be restricted.');
   }
   const previousStatus = currentResp.status;
 
-  const updateResp = await metaRequest<{ success: boolean }>(req, 'POST', `/${campaignId}`, { status });
+  const updateResp = await metaRequest<{ success: boolean }>(req, 'POST', `/${safeId}`, { status });
 
   logger.success(req, 'meta_campaign_status_update', startTime, { campaignId, previousStatus, newStatus: status });
 

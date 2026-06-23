@@ -847,6 +847,6 @@ export interface CampaignStatusUpdateResult {
   platform: CampaignPlatform;
   campaignId: string;
   previousStatus: string;
-  newStatus: string;
+  newStatus: CampaignToggleStatus;
   success: boolean;
 }

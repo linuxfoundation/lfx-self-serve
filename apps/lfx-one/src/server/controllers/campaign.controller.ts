@@ -27,6 +27,8 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 /** Platforms that support the campaign status toggle endpoint. */
 const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads']);
 
+const NUMERIC_ID_RE = /^\d+$/;
+
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
   private readonly metricsService = new CampaignMetricsService();
@@ -484,6 +486,15 @@ export class CampaignController {
     if (!campaignId) {
       next(
         ServiceValidationError.forField('campaignId', 'campaignId is required', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!NUMERIC_ID_RE.test(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string', {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
         })
