@@ -121,10 +121,13 @@ export class AccessCheckService {
   /**
    * Check multiple access types on a single resource in one API call.
    *
-   * Unlike {@link checkAccess}, which keys its Map by `resource.id` only (causing
-   * distinct access-type results for the same ID to collide), this method keys by
-   * `"id#access"` so every combination is preserved independently.
+   * Unlike {@link checkAccess} — which maps its results by `resource.id` only,
+   * causing multiple access types for the same ID to collide (last-write-wins) —
+   * this method operates on a single ID and returns a `Record` keyed by
+   * `AccessCheckAccessType`, so every relation is preserved independently.
    *
+   * Results are matched positionally to `accessTypes` (same order as the upstream
+   * `/access-check` response), then stored as `record[accessType] = hasAccess`.
    * Fails-closed: returns all-false on upstream error.
    *
    * @param req Express request object with auth context

@@ -53,6 +53,10 @@ export function requireProjectAccess(relation: AccessCheckAccessType): RequestHa
     const operation = `require_project_access_${relation}`;
 
     try {
+      // Pre-error WARN logs on each deny path are intentional: authorization denials
+      // are security-relevant audit events and warrant a dedicated log entry before
+      // apiErrorHandler processes the AuthorizationError. This is an exception to
+      // the no-pre-next-error-logging rule that applies to business-logic controllers.
       const foundationSlug = req.query['foundationSlug'];
 
       if (!foundationSlug || typeof foundationSlug !== 'string' || !SLUG_PATTERN.test(foundationSlug)) {
