@@ -2174,7 +2174,7 @@ export class AnalyticsController {
           operation: 'get_social_media_monthly',
         });
       }
-      const year = yearParam ? Number(yearParam) : new Date().getFullYear();
+      const year = yearParam ? Number(yearParam) : new Date().getUTCFullYear();
 
       if (!Number.isInteger(year) || year < 2020 || year > 2100) {
         throw ServiceValidationError.forField('year', 'year must be between 2020 and 2100', {
