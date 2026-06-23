@@ -128,7 +128,8 @@ export class AccessCheckService {
    *
    * Results are matched positionally to `accessTypes` (same order as the upstream
    * `/access-check` response), then stored as `record[accessType] = hasAccess`.
-   * Fails-closed: returns all-false on upstream error.
+   * Throws on upstream error or result-count mismatch — callers must catch and
+   * decide how to fail (e.g. omit probe fields, return `undefined`, or deny).
    *
    * @param req Express request object with auth context
    * @param resourceType Resource type (e.g. 'project')

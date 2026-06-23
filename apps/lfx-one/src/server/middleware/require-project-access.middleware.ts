@@ -28,8 +28,9 @@ const PROJECT_UID_CACHE = Symbol('projectUidCache');
  *
  * Gate logic (all fail-closed):
  * 1. Read `foundationSlug` from `req.query`; validate format.
- * 2. Resolve slug → project UID via NATS (result cached on `req` to amortise
- *    parallel analytics calls that all share the same slug).
+ * 2. Resolve slug → project UID via NATS (result cached on `req` to avoid
+ *    redundant NATS calls when multiple middleware instances are stacked on
+ *    the same route — not shared across concurrent requests).
  * 3. Check the FGA relation via `/access-check` on LFX_V2_SERVICE.
  * 4. Call `next()` on success; `next(AuthorizationError)` on any failure.
  *
