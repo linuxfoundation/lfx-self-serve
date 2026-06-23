@@ -9,6 +9,7 @@ import type {
   RedditCampaignCreateResult,
   RedditCampaignMetrics,
   RedditMonitorResponse,
+  RedditObjective,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
@@ -93,7 +94,13 @@ interface RedditApiResponse {
 }
 
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
-  const segments = path.split('/').map((s) => encodeURIComponent(decodeURIComponent(s)));
+  const segments = path.split('/').map((s) => {
+    try {
+      return encodeURIComponent(decodeURIComponent(s));
+    } catch {
+      return encodeURIComponent(s);
+    }
+  });
   const sanitizedPath = segments.join('/');
   const url = `${REDDIT_ADS_BASE_URL}${sanitizedPath}`;
   const token = await refreshRedditToken();
@@ -381,7 +388,7 @@ function resolveRegion(geoTargets: string[]): string {
 function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
-  const objective = REDDIT_OBJECTIVE_LABELS[config.objective ?? 'conversions'];
+  const objective = REDDIT_OBJECTIVE_LABELS[(config.objective ?? 'conversions') as RedditObjective] ?? 'Conversions';
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | ToFU`;
 }
