@@ -333,6 +333,12 @@ export function parseAssignStewardBody(req: Request, operation: string): Akrites
   if (typeof steward.userId !== 'string' || steward.userId.trim() === '') {
     throw ServiceValidationError.forField('steward.userId', 'steward.userId is required', { operation });
   }
+  if (typeof steward.username !== 'string' || steward.username.trim() === '') {
+    throw ServiceValidationError.forField('steward.username', 'steward.username is required', { operation });
+  }
+  if (typeof steward.displayName !== 'string' || steward.displayName.trim() === '') {
+    throw ServiceValidationError.forField('steward.displayName', 'steward.displayName is required', { operation });
+  }
   if (typeof steward.role !== 'string' || !VALID_AKRITES_STEWARD_ROLES.includes(steward.role as AkritesStewardRole)) {
     throw ServiceValidationError.forField('steward.role', `Invalid role. Allowed: ${VALID_AKRITES_STEWARD_ROLES.join(', ')}`, { operation });
   }
@@ -343,8 +349,8 @@ export function parseAssignStewardBody(req: Request, operation: string): Akrites
   return {
     steward: {
       userId: steward.userId.trim(),
-      username: typeof steward.username === 'string' ? steward.username.trim() || null : null,
-      displayName: typeof steward.displayName === 'string' ? steward.displayName.trim() || null : null,
+      username: steward.username.trim(),
+      displayName: steward.displayName.trim(),
       role: steward.role as AkritesStewardRole,
     },
     moveToAssessing: body.moveToAssessing as boolean | undefined,

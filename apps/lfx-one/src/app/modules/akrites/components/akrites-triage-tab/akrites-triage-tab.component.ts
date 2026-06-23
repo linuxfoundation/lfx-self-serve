@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { AkritesService } from '@shared/services/akrites.service';
 import { PersonaService } from '@shared/services/persona.service';
+import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
@@ -30,6 +31,7 @@ export class AkritesTriageTabComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly personaService = inject(PersonaService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   public readonly reloadTrigger = input<number>(0);
   public readonly sortBy = input<AkritesSortKey>('risk');
@@ -42,7 +44,7 @@ export class AkritesTriageTabComponent {
   protected readonly actionLoading = signal(false);
   protected readonly assignModalVisible = signal(false);
   protected readonly assignTargetPackage = signal<AkritesTriagePackageVM | null>(null);
-  protected readonly canWrite = computed(() => this.personaService.currentPersona() === 'executive-director');
+  protected readonly canWrite = computed(() => this.projectContextService.canWrite());
 
   protected readonly boardData = this.initBoardData();
 

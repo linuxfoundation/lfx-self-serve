@@ -235,8 +235,8 @@ export interface AkritesActorInput {
 export interface AkritesAssignStewardRequest {
   steward: {
     userId: string;
-    username: string | null;
-    displayName: string | null;
+    username: string;
+    displayName: string;
     role: AkritesStewardRole;
   };
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
