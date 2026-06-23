@@ -14,6 +14,8 @@ import type {
   MetaObjectiveParams,
   MetaPlacement,
   ParsedCampaignName,
+  RedditObjective,
+  RedditObjectiveParams,
 } from '../interfaces/campaign.interface';
 
 /** Tab definitions for the Campaigns page tab navigation. */
@@ -204,4 +206,28 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
   usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
   germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
   'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+} as const;
+
+// ---------------------------------------------------------------------------
+// Reddit Ads — Objective Parameters
+// ---------------------------------------------------------------------------
+
+export const REDDIT_OBJECTIVE_PARAMS: Readonly<Record<RedditObjective, RedditObjectiveParams>> = {
+  awareness: { redditObjective: 'IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'IMPRESSIONS' },
+  traffic: { redditObjective: 'CLICKS', bidType: 'CPC', bidValue: 500_000, optimizationGoal: 'CLICKS' },
+  conversions: {
+    redditObjective: 'CONVERSIONS',
+    bidType: 'CPM',
+    bidValue: 3_000_000,
+    optimizationGoal: 'PURCHASE',
+    viewThroughConversionType: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
+  },
+  video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'VIDEO_VIEWS' },
+} as const;
+
+export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  conversions: 'Conversions',
+  video_views: 'Video Views',
 } as const;
