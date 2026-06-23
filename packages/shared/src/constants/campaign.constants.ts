@@ -224,3 +224,10 @@ export const REDDIT_OBJECTIVE_PARAMS: Readonly<Record<RedditObjective, RedditObj
   },
   video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'VIDEO_VIEWS' },
 } as const;
+
+export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  conversions: 'Conversions',
+  video_views: 'Video Views',
+} as const;

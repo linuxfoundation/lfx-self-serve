@@ -9,11 +9,10 @@ import type {
   RedditCampaignCreateResult,
   RedditCampaignMetrics,
   RedditMonitorResponse,
-  RedditObjective,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
-import { REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import { REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
@@ -376,13 +375,6 @@ function resolveRegion(geoTargets: string[]): string {
   const primaryGeo = geoTargets[0].toUpperCase();
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
-
-const REDDIT_OBJECTIVE_LABELS: Record<RedditObjective, string> = {
-  awareness: 'Awareness',
-  traffic: 'Traffic',
-  conversions: 'Conversions',
-  video_views: 'Video Views',
-};
 
 function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
