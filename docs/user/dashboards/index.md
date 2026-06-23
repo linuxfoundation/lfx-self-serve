@@ -33,7 +33,7 @@ Your **persona** is determined by your committee memberships and roles across Li
 | **Contributor**        | Me and Project lenses                   |
 | **Maintainer**         | Me and Project lenses with write access |
 | **Board Member**       | Me, Foundation, and Project lenses      |
-| **Executive Director** | All lenses                              |
+| **Executive Director** | Me, Foundation, and Project lenses (Org lens available with org admin access) |
 
 ## Your personal dashboard
 
