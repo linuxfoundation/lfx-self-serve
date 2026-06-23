@@ -132,7 +132,7 @@ export function requireProjectAccess(relation: AccessCheckAccessType): RequestHa
       logger.warning(req, operation, 'Marketing access check threw unexpectedly — denying access', {
         path: req.path,
         relation,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
       next(
         new AuthorizationError('Marketing access check failed', {

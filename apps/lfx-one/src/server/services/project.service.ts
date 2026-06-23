@@ -329,7 +329,7 @@ export class ProjectService {
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
               project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             });
             // Return undefined rather than false — false implies the check ran clean and found no
             // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
@@ -348,7 +348,7 @@ export class ProjectService {
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'marketing access check failed, skipping fields', {
               project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             });
             return undefined;
           });
