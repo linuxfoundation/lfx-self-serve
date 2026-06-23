@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, i
 import { SkeletonModule } from 'primeng/skeleton';
 import { HealthMetricsCardEmptyStateComponent } from '../health-metrics-card-empty-state/health-metrics-card-empty-state.component';
 import { HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
@@ -122,7 +122,9 @@ export class CodeContributionCardComponent {
   protected readonly exploreMoreUrl = computed(() => {
     const slug = this.summaryData().projectSlug;
     if (!slug) return '';
-    return buildInsightsUrl(`/project/${slug}/contributors`);
+    return buildLensAwareInsightsUrl(slug, this.projectContextService.isFoundationContext(), {
+      projectSubPath: 'contributors',
+    });
   });
 
   public constructor() {
