@@ -41,7 +41,7 @@ export class SocialAccountsTabComponent {
   protected readonly loading = signal(false);
   protected readonly monthlyLoading = signal(false);
   protected readonly expandedPlatforms = signal<Set<string>>(new Set());
-  protected readonly selectedYear = signal(new Date().getFullYear());
+  protected readonly selectedYear = signal(new Date().getUTCFullYear());
 
   // === Computed Signals ===
   protected readonly socialData: Signal<SocialMediaResponse | null> = this.initSocialData();
@@ -52,7 +52,7 @@ export class SocialAccountsTabComponent {
   protected readonly monthlyPlatforms: Signal<SocialMonthlyPlatform[]> = this.initMonthlyPlatforms();
   protected readonly hasMonthlyData = computed(() => this.monthlyPlatforms().length > 0);
   protected readonly availableYears = computed(() => {
-    const current = new Date().getFullYear();
+    const current = new Date().getUTCFullYear();
     return [current, current - 1];
   });
 
@@ -70,7 +70,10 @@ export class SocialAccountsTabComponent {
 
   protected onYearChange(event: Event): void {
     const target = event.target as HTMLSelectElement;
-    this.selectedYear.set(parseInt(target.value, 10));
+    const parsed = parseInt(target.value, 10);
+    if (Number.isFinite(parsed) && this.availableYears().includes(parsed)) {
+      this.selectedYear.set(parsed);
+    }
   }
 
   // === Private Initializers ===

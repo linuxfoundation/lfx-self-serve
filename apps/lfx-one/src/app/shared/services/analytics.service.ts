@@ -907,7 +907,7 @@ export class AnalyticsService {
     }
     return this.http
       .get<SocialMediaMonthlyResponse>('/api/analytics/social-media/monthly', { params })
-      .pipe(catchError(() => of({ year: Number.isFinite(year) ? year! : new Date().getFullYear(), platforms: [] })));
+      .pipe(catchError(() => of({ year: Number.isFinite(year) ? year! : new Date().getUTCFullYear(), platforms: [] })));
   }
 
   /**

@@ -3344,9 +3344,9 @@ export class ProjectService {
   }
 
   /** Returns monthly social-media metrics by platform. Temporary dummy data until SOCIAL_MEDIA_PLATFORM_MONTHLY is available. */
-  public async getSocialMediaMonthly(_foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
-    logger.warning(undefined, 'get_social_media_monthly', 'Returning dummy data — Snowflake view not yet implemented', {
-      foundation_slug: _foundationSlug,
+  public async getSocialMediaMonthly(foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
+    logger.debug(undefined, 'get_social_media_monthly', 'Returning dummy data — Snowflake view not yet implemented', {
+      foundation_slug: foundationSlug,
       year,
     });
 
