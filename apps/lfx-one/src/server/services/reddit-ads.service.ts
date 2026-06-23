@@ -9,6 +9,7 @@ import type {
   RedditCampaignCreateResult,
   RedditCampaignMetrics,
   RedditMonitorResponse,
+  RedditObjective,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
@@ -92,11 +93,8 @@ interface RedditApiResponse {
   [key: string]: unknown;
 }
 
-async function redditRequest(method: 'GET' | 'POST' | 'PATCH', url: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
-  if (!url.startsWith(REDDIT_ADS_BASE_URL)) {
-    throw new Error(`Reddit API request blocked — URL must start with ${REDDIT_ADS_BASE_URL}`);
-  }
-
+async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
+  const url = `${REDDIT_ADS_BASE_URL}${path}`;
   const token = await refreshRedditToken();
 
   const resp = await fetch(url, {
@@ -112,7 +110,7 @@ async function redditRequest(method: 'GET' | 'POST' | 'PATCH', url: string, body
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`Reddit API ${method} ${url} → ${resp.status}: ${text.slice(0, 400)}`);
+    throw new Error(`Reddit API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`);
   }
 
   return (await resp.json()) as RedditApiResponse;
@@ -137,7 +135,7 @@ async function fetchAccountMetrics(accountId: string, startDate: string, endDate
     },
   };
 
-  const resp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/reports`, reportBody);
+  const resp = await redditRequest('POST', `/ad_accounts/${accountId}/reports`, reportBody);
   const metrics = ((resp.data as { metrics?: { impressions?: number; clicks?: number; spend?: number }[] })?.metrics ?? [])[0];
 
   return {
@@ -156,7 +154,7 @@ async function fetchCampaignMetrics(accountId: string, campaignId: string, start
     },
   };
 
-  const resp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}/reports`, reportBody);
+  const resp = await redditRequest('POST', `/ad_accounts/${accountId}/campaigns/${campaignId}/reports`, reportBody);
   const m = ((resp.data as { metrics?: { impressions?: number; clicks?: number; spend?: number }[] })?.metrics ?? [])[0];
 
   return {
@@ -183,7 +181,7 @@ interface RedditCampaignElement {
 }
 
 async function fetchCampaigns(accountId: string): Promise<RedditCampaignElement[]> {
-  const resp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`);
+  const resp = await redditRequest('GET', `/ad_accounts/${accountId}/campaigns`);
   const data = resp.data as { campaigns?: RedditCampaignElement[] } | RedditCampaignElement[] | undefined;
 
   if (Array.isArray(data)) return data;
@@ -379,11 +377,19 @@ function resolveRegion(geoTargets: string[]): string {
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
 
+const REDDIT_OBJECTIVE_LABELS: Record<RedditObjective, string> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  conversions: 'Conversions',
+  video_views: 'Video Views',
+};
+
 function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
+  const objective = REDDIT_OBJECTIVE_LABELS[config.objective ?? 'conversions'];
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
-  return `Events | ${event} | ${region} | Conversions | Intent | Social | ${project} | ToFU`;
+  return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | ToFU`;
 }
 
 function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: number): string {
@@ -419,11 +425,11 @@ export async function updateRedditCampaignStatus(
 ): Promise<CampaignStatusUpdateResult> {
   const startTime = logger.startOperation(req, 'reddit_campaign_status_update', { campaignId, status });
 
-  const currentResp = await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}`);
+  const currentResp = await redditRequest('GET', `/ad_accounts/${accountId}/campaigns/${campaignId}`);
   const currentData = currentResp.data as RedditCampaignData | undefined;
   const previousStatus = String(currentData?.configured_status ?? currentData?.effective_status ?? 'unknown');
 
-  await redditRequest('PATCH', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns/${campaignId}`, {
+  await redditRequest('PATCH', `/ad_accounts/${accountId}/campaigns/${campaignId}`, {
     data: { configured_status: status },
   });
 
@@ -465,7 +471,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
 
   // Step 1: Verify account
   try {
-    await redditRequest('GET', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}`);
+    await redditRequest('GET', `/ad_accounts/${accountId}`);
     steps.push(`Account verified: ${account.label} (${accountId})`);
   } catch (err) {
     steps.push(`Account verification warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -499,7 +505,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     },
   };
 
-  const campaignResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/campaigns`, campaignBody);
+  const campaignResp = await redditRequest('POST', `/ad_accounts/${accountId}/campaigns`, campaignBody);
   const campData = (campaignResp.data as RedditCampaignData) ?? {};
   const campaignId = String(campData.id ?? '');
   if (!campaignId) {
@@ -549,13 +555,13 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   let adGroupResp: RedditApiResponse;
   let usedCommunities = communityNames.length > 0;
   try {
-    adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(targetingWithCommunities));
+    adGroupResp = await redditRequest('POST', `/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(targetingWithCommunities));
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : '';
     if (communityNames.length > 0 && errMsg.includes('invalid communities')) {
       steps.push(`Community targeting failed (invalid subreddits: ${communityNames.join(', ')}), retrying with keywords only`);
       usedCommunities = false;
-      adGroupResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(baseTargeting));
+      adGroupResp = await redditRequest('POST', `/ad_accounts/${accountId}/ad_groups`, buildAdGroupBody(baseTargeting));
     } else {
       throw err;
     }
@@ -593,7 +599,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     };
 
     try {
-      const adResp = await redditRequest('POST', `${REDDIT_ADS_BASE_URL}/ad_accounts/${accountId}/ads`, adBody);
+      const adResp = await redditRequest('POST', `/ad_accounts/${accountId}/ads`, adBody);
       const adData = (adResp.data as RedditCampaignData) ?? {};
       adId = String(adData.id ?? '');
       if (adId) {
