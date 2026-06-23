@@ -20,6 +20,7 @@ import {
   AkritesHistoryEntry,
   AkritesListParams,
   AkritesMetrics,
+  AkritesOpenStewardshipRequest,
   AkritesPackage,
   AkritesPackagesResponse,
   AkritesScatterResponse,
@@ -291,7 +292,8 @@ export class AkritesServerService {
    * Returns the stewardship record, including the integer `id` used by the other admin actions.
    */
   public async openStewardship(req: Request, purl: string, actor: AkritesActorInput): Promise<AkritesStewardshipResponse> {
-    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, { purl, actor });
+    const body: AkritesOpenStewardshipRequest = { purl, actor };
+    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, body);
   }
 
   /** Assign (or re-assign) a steward to a stewardship, optionally moving it to `assessing`. */

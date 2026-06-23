@@ -222,6 +222,7 @@ export interface CdpStewardshipRecord {
 
 export interface AkritesOpenStewardshipRequest {
   purl: string;
+  actor: AkritesActorInput;
 }
 
 export interface AkritesActorInput {

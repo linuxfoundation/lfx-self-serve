@@ -16,6 +16,7 @@ import {
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
+import { PersonaService } from '@shared/services/persona.service';
 import { formatActivityType, formatStatus } from '../../akrites.utils';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 
@@ -28,8 +29,9 @@ export class AkritesOverviewTabComponent {
   private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly personaService = inject(PersonaService);
 
-  protected readonly canWrite = signal(true);
+  protected readonly canWrite = computed(() => this.personaService.currentPersona() === 'executive-director');
 
   public readonly metrics = input<AkritesMetrics | undefined>(undefined);
   public readonly metricsLoading = input<boolean>(false);
@@ -240,7 +242,7 @@ export class AkritesOverviewTabComponent {
 
       // Pre-compute all display properties: styles, icons, labels, actions, actor
       const actor = row.actor;
-      const actorDisplay = actor?.displayName || actor?.username || null;
+      const actorDisplay = actor?.displayName || actor?.username || actor?.userId || null;
       const actorInitials = this.computeActorInitials(actor);
 
       const vm: AkritesActivityRowVM = {
@@ -270,7 +272,7 @@ export class AkritesOverviewTabComponent {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
-  private computeActorInitials(actor: { displayName: string | null; username: string | null } | null): string | null {
+  private computeActorInitials(actor: AkritesActivityRow['actor']): string | null {
     if (!actor) return null;
     if (actor.displayName) {
       return actor.displayName
@@ -279,6 +281,6 @@ export class AkritesOverviewTabComponent {
         .map((w) => w[0]?.toUpperCase() ?? '')
         .join('');
     }
-    return actor.username?.[0]?.toUpperCase() ?? '';
+    return (actor.username?.[0] ?? actor.userId?.[0] ?? '').toUpperCase() || null;
   }
 }
