@@ -297,7 +297,7 @@
 
 <!-- Our Influence metric card: optional scope label, small title, trendline, prominent stat + short label. -->
 <ng-template #influenceCard let-card>
-  <div class="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" [attr.data-testid]="card.testId">
+  <div class="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" [attr.data-testid]="card.testId">
     @if (card.scopeLabel) {
       <div class="border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-400">{{ card.scopeLabel }}</div>
     }
@@ -306,7 +306,7 @@
       <p class="mb-3 text-xs font-medium text-gray-500">{{ card.title }}</p>
       <div class="h-16">
         @if (card.hasData) {
-          <lfx-chart type="line" [data]="card.chartData" [options]="cardChartOptions" height="100%" />
+          <lfx-chart [type]="card.chartType" [data]="card.chartData" [options]="card.chartType === 'bar' ? barCardOptions : lineCardOptions" height="100%" />
         } @else {
           <div class="flex h-full items-center justify-center text-xs text-gray-400">No data</div>
         }

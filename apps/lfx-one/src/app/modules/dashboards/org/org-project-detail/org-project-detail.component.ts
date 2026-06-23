@@ -13,7 +13,7 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { BASE_LINE_CHART_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
+import { lfxColors } from '@lfx-one/shared/constants';
 import type {
   OrgLensLeaderboardMetric,
   OrgLensProjectBand,
@@ -162,9 +162,8 @@ export class OrgProjectDetailComponent {
     return scores ? bandForScore(scores.ecosystem) : null;
   });
 
-  // Our Influence tab — Technical + Ecosystem cards (trendline + sentence), same card style.
+  // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
-  protected readonly cardChartOptions: ChartOptions<ChartType> = this.buildCardChartOptions();
   protected readonly technicalCards = computed(() =>
     (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical'))
   );
@@ -176,6 +175,10 @@ export class OrgProjectDetailComponent {
   protected readonly hasTrendHistory = computed(() => (this.detail()?.trend.length ?? 0) >= 3);
   protected readonly trendChartData = computed<ChartData<ChartType>>(() => this.buildTrendData());
   protected readonly trendChartOptions: ChartOptions<ChartType> = this.buildTrendOptions();
+
+  // Sparkline card options — stable class-level references so Angular passes them correctly through ng-template context.
+  protected readonly lineCardOptions: ChartOptions<ChartType> = this.buildLineAreaCardOptions();
+  protected readonly barCardOptions: ChartOptions<ChartType> = this.buildBarCardOptions();
 
   // Leaderboards tab — URL-persisted metric toggle + two side-by-side dimension boards with search.
   protected readonly metricOptions = METRIC_OPTIONS;
@@ -369,9 +372,9 @@ export class OrgProjectDetailComponent {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(value);
   }
 
-  /** Scrolls a card track by one card slot (304 px = w-72 + gap-4). */
+  /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
   protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
-    el.scrollBy({ left: direction * 304, behavior: 'smooth' });
+    el.scrollBy({ left: direction * 336, behavior: 'smooth' });
   }
 
   /** Updates left/right arrow visibility from the track's scroll position. */
@@ -394,51 +397,68 @@ export class OrgProjectDetailComponent {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  /**
-   * Card sparkline options: uses an external HTML tooltip (data-lfx-tip) so the popup
-   * is not constrained by the canvas height and can render at a comfortable reading size.
-   */
-  private buildCardChartOptions(): ChartOptions<ChartType> {
-    return {
-      ...BASE_LINE_CHART_OPTIONS,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          enabled: false,
-          external: ({ chart, tooltip }) => {
-            const tip = chart.canvas
-              .closest('[data-sparkline-host]')
-              ?.querySelector<HTMLElement>('[data-lfx-tip]');
-            if (!tip) return;
+  /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
+  private buildExternalTooltipFn(): (args: { chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } }; tooltip: { opacity: number; caretX: number; caretY: number; title?: string[]; dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[] } }) => void {
+    return ({ chart, tooltip }) => {
+      const tip = chart.canvas
+        .closest('[data-sparkline-host]')
+        ?.querySelector<HTMLElement>('[data-lfx-tip]');
+      if (!tip) return;
 
-            if (tooltip.opacity === 0) {
-              tip.style.display = 'none';
-              return;
-            }
+      if (tooltip.opacity === 0) {
+        tip.style.display = 'none';
+        return;
+      }
 
-            const rect = chart.canvas.getBoundingClientRect();
-            tip.style.left = `${rect.left + tooltip.caretX + 12}px`;
-            tip.style.top = `${rect.top + tooltip.caretY}px`;
-            tip.style.transform = 'translateY(-100%)';
+      const rect = chart.canvas.getBoundingClientRect();
+      tip.style.left = `${rect.left + tooltip.caretX + 12}px`;
+      tip.style.top = `${rect.top + tooltip.caretY}px`;
+      tip.style.transform = 'translateY(-100%)';
 
-            const title = tooltip.title?.[0] ?? '';
-            const rows = (tooltip.dataPoints ?? [])
-              .map(
-                (p) =>
-                  '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
-                  `<span style="width:9px;height:9px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor as string}"></span>` +
-                  `<span style="font-size:13px;color:#4B5563">${p.dataset.label ?? ''}: ` +
-                  `<strong style="color:#111827;font-weight:600">${p.formattedValue}</strong></span>` +
-                  '</div>'
-              )
-              .join('');
+      const title = tooltip.title?.[0] ?? '';
+      const rows = (tooltip.dataPoints ?? [])
+        .map(
+          (p) =>
+            '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
+            `<span style="width:9px;height:9px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}</span>` +
+            `<span style="font-size:13px;color:#4B5563">${p.dataset.label ?? ''}: ` +
+            `<strong style="color:#111827;font-weight:600">${p.formattedValue}</strong></span>` +
+            '</div>'
+        )
+        .join('');
 
-            tip.innerHTML = `<p style="font-size:13px;font-weight:700;color:#111827">${title}</p>${rows}`;
-            tip.style.display = 'block';
-          },
-        },
-      },
+      tip.innerHTML = `<p style="font-size:13px;font-weight:700;color:#111827">${title}</p>${rows}`;
+      tip.style.display = 'block';
     };
+  }
+
+  private buildLineAreaCardOptions(): ChartOptions<ChartType> {
+    const external = this.buildExternalTooltipFn() as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      scales: { x: { display: false }, y: { display: false } },
+    };
+  }
+
+  private buildBarCardOptions(): ChartOptions<ChartType> {
+    const external = this.buildExternalTooltipFn() as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
+    };
+  }
+
+  /** Maps a card key to its preferred visualization variant. */
+  private chartVariantFor(key: string): 'area' | 'bar' | 'line' {
+    if (['pull-requests', 'meeting-attendance', 'event-attendance'].includes(key)) return 'bar';
+    if (['avg-time-to-merge', 'board-members'].includes(key)) return 'line';
+    return 'area';
   }
 
   /** Twelve trailing short-month labels (oldest → newest) for sparkline + trend tooltips. */
@@ -452,27 +472,35 @@ export class OrgProjectDetailComponent {
   }
 
   private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem') {
+    const variant = this.chartVariantFor(card.key);
     return {
       key: card.key,
       title: card.label,
       scopeLabel: card.scopeLabel,
       hasData: card.sparkline.length > 0,
-      chartData: this.cardChartData(card.sparkline, card.projectSparkline, colorHex),
+      chartType: (variant === 'bar' ? 'bar' : 'line') as ChartType,
+      chartData: this.buildCardChartData(card.sparkline, card.projectSparkline, colorHex, variant),
       caption: card.caption,
       statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
       testId: `project-detail-${group}-card-${card.key}`,
     };
   }
 
-  /** Dual-line card sparkline: the org metric line in `colorHex` plus a grey project-average reference. */
-  private cardChartData(series: number[], projectSeries: number[], colorHex: string): ChartData<ChartType> {
+  private buildCardChartData(series: number[], projectSeries: number[], colorHex: string, variant: 'area' | 'bar' | 'line'): ChartData<ChartType> {
+    if (variant === 'bar') {
+      return {
+        labels: this.monthLabels,
+        datasets: [{ label: 'Your company', data: series, backgroundColor: colorHex + '99', borderColor: colorHex, borderWidth: 0, borderRadius: 4 }],
+      };
+    }
+    const fill = variant === 'area';
     const datasets: ChartData<ChartType>['datasets'] = [
       {
         label: 'Your company',
         data: series,
         borderColor: colorHex,
-        backgroundColor: 'transparent',
-        fill: false,
+        backgroundColor: fill ? colorHex + '33' : 'transparent',
+        fill: fill ? 'origin' : false,
         tension: 0.4,
         borderWidth: 2,
         pointRadius: 0,
