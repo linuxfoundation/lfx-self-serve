@@ -65,8 +65,8 @@ export class AkritesAssignStewardModalComponent {
     this.confirm.emit({
       steward: {
         userId: steward.userId,
-        username: steward.username || null,
-        displayName: steward.displayName || null,
+        username: steward.username,
+        displayName: steward.displayName,
         role: this.selectedRole(),
       },
       moveToAssessing: this.moveToAssessing() || undefined,
