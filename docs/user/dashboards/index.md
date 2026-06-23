@@ -28,11 +28,11 @@ The lenses available to you depend on your persona. Not all users see all lenses
 
 Your **persona** is determined by your committee memberships and roles across Linux Foundation projects. The four personas are:
 
-| Persona                | Access                                  |
-| ---------------------- | --------------------------------------- |
-| **Contributor**        | Me and Project lenses                   |
-| **Maintainer**         | Me and Project lenses with write access |
-| **Board Member**       | Me, Foundation, and Project lenses      |
+| Persona                | Access                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| **Contributor**        | Me and Project lenses                                                         |
+| **Maintainer**         | Me and Project lenses with write access                                       |
+| **Board Member**       | Me, Foundation, and Project lenses                                            |
 | **Executive Director** | Me, Foundation, and Project lenses (Org lens available with org admin access) |
 
 ## Your personal dashboard
