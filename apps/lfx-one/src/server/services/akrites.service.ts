@@ -10,7 +10,6 @@ import {
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
   CdpScatterResponse,
-  CdpStewardSummary,
   CdpStewardshipSteward,
   CdpStewardshipSummary,
   AkritesActivityResponse,
