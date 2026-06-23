@@ -100,6 +100,9 @@ export class OrgProjectDetailComponent {
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly pageState: Signal<OrgLensProjectDetailPageState> = computed(() => this.initPageState());
 
+  /** The viewing org's display name — falls back to a demo placeholder when no org is selected. */
+  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? 'Acme Corp');
+
   // Hero presentation — derived from the loaded payload.
   protected readonly hero = computed(() => this.detail()?.hero ?? null);
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
@@ -243,17 +246,17 @@ export class OrgProjectDetailComponent {
   }
 
   private initDetailStream(): Observable<OrgLensProjectDetailResponse | null> {
-    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid));
+    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid ?? 'demo-org'));
+    const orgName$ = toObservable(computed(() => this.accountContext.selectedAccount()?.accountName ?? 'Acme Corp'));
     const projectSlug$ = this.route.paramMap.pipe(map((params) => params.get('projectSlug')));
     const retryTrigger$ = toObservable(this.retryTrigger);
 
-    return combineLatest([orgUid$.pipe(filter((id): id is string => !!id)), projectSlug$.pipe(filter((slug): slug is string => !!slug)), retryTrigger$]).pipe(
+    return combineLatest([orgUid$, orgName$, projectSlug$.pipe(filter((slug): slug is string => !!slug)), retryTrigger$]).pipe(
       tap(() => {
         this.fetchLoading.set(true);
         this.fetchError.set(false);
       }),
-      switchMap(([orgUid, projectSlug]) => {
-        const orgName = this.accountContext.selectedAccount()?.accountName ?? '';
+      switchMap(([orgUid, orgName, projectSlug]) => {
         return this.detailService.getProjectDetail(orgUid, orgName, projectSlug).pipe(
           catchError(() => {
             this.fetchError.set(true);

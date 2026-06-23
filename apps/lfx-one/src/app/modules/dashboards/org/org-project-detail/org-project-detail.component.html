@@ -59,6 +59,12 @@
               </div>
             }
             <div class="flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700" data-testid="project-detail-org-context">
+                  <i class="fa-light fa-building text-blue-500" aria-hidden="true"></i>
+                  {{ orgName() }}
+                </span>
+              </div>
               <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
               <p class="max-w-xl text-sm leading-relaxed text-gray-600" data-testid="project-detail-description">
                 {{ h.description }}
