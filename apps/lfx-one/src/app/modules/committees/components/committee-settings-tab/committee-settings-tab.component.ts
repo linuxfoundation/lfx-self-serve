@@ -215,7 +215,7 @@ export class CommitteeSettingsTabComponent {
 
   // -- Private methods --
 
-  private openPickerDialog(committeeUid: string, projectUid: string | undefined): void {
+  private openPickerDialog(committeeUid: string, projectUid: string): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
     const ref = this.dialogService.open(MailingListPickerDialogComponent, {
@@ -227,7 +227,7 @@ export class CommitteeSettingsTabComponent {
       data: {
         mailingLists: this.projectMailingLists(),
         associatedUids,
-        projectUid: projectUid ?? '',
+        projectUid,
         committeeUid,
       },
     }) as DynamicDialogRef;

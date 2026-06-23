@@ -86,7 +86,7 @@ export class MailingListPickerDialogComponent {
 
     this.committeeService
       .getCommittee(this.committeeUid)
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (fresh) => {
           const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
