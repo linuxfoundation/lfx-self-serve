@@ -183,6 +183,13 @@ describe('normalizeIndexedMeetingAiSummary', () => {
     } as Meeting;
     expect(normalizeIndexedMeetingAiSummary(topLevelWins).require_ai_summary_approval).toBe(false);
   });
+
+  it('leaves ai_summary fields undefined when neither layer provides a value', () => {
+    const meeting = { zoom_config: { meeting_id: '123' } } as Meeting;
+    const result = normalizeIndexedMeetingAiSummary(meeting);
+    expect(result.ai_summary_enabled).toBeUndefined();
+    expect(result.require_ai_summary_approval).toBeUndefined();
+  });
 });
 
 function summaryResource(id: string, data: Partial<PastMeetingSummary> & { content?: string; edited_content?: string }): QueryServiceItem<PastMeetingSummary> {

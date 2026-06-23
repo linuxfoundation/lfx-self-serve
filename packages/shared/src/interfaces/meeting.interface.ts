@@ -131,12 +131,7 @@ export interface MeetingCommittee {
   name?: string;
 }
 
-/**
- * Zoom-specific configuration as returned on the indexed `v1_meeting` query-service projection.
- * Note the field names differ from the top-level app contract: the indexer nests AI-summary
- * enablement here as `ai_companion_enabled` (vs top-level `ai_summary_enabled`) and approval as
- * `ai_summary_require_approval` (vs top-level `require_ai_summary_approval`).
- */
+/** Indexed v1_meeting zoom_config; AI flags use ai_companion_enabled / ai_summary_require_approval vs top-level ai_summary_enabled / require_ai_summary_approval. */
 export interface MeetingZoomConfig {
   /** Zoom numeric meeting ID */
   meeting_id?: string;
