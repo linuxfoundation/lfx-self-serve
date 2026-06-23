@@ -119,6 +119,85 @@ export class AccessCheckService {
   }
 
   /**
+   * Check multiple access types on a single resource in one API call.
+   *
+   * Unlike {@link checkAccess}, which keys its Map by `resource.id` only (causing
+   * distinct access-type results for the same ID to collide), this method keys by
+   * `"id#access"` so every combination is preserved independently.
+   *
+   * Fails-closed: returns all-false on upstream error.
+   *
+   * @param req Express request object with auth context
+   * @param resourceType Resource type (e.g. 'project')
+   * @param id Resource unique identifier
+   * @param accessTypes Array of access types to check
+   * @returns Record mapping each access type to its boolean result
+   */
+  public async checkMultipleAccess(
+    req: Request,
+    resourceType: AccessCheckResourceType,
+    id: string,
+    accessTypes: AccessCheckAccessType[]
+  ): Promise<Record<AccessCheckAccessType, boolean>> {
+    const operationName = `check_multiple_access_${resourceType}`;
+    const startTime = logger.startOperation(req, operationName, {
+      resource_type: resourceType,
+      resource_id: id,
+      access_types: accessTypes,
+    });
+
+    const fallback = Object.fromEntries(accessTypes.map((a) => [a, false])) as Record<AccessCheckAccessType, boolean>;
+
+    if (accessTypes.length === 0) {
+      return fallback;
+    }
+
+    try {
+      const apiRequests = accessTypes.map((access) => `${resourceType}:${id}#${access}`);
+      const requestPayload: AccessCheckApiRequest = { requests: apiRequests };
+
+      const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        '/access-check',
+        'POST',
+        undefined,
+        requestPayload
+      );
+
+      const result = { ...fallback };
+
+      for (let i = 0; i < accessTypes.length; i++) {
+        const access = accessTypes[i];
+        const resultString = response.results[i];
+        let hasAccess = false;
+
+        if (resultString && typeof resultString === 'string') {
+          const parts = resultString.split('\t');
+          if (parts.length >= 2) {
+            hasAccess = parts[1]?.toLowerCase() === 'true';
+          }
+        }
+
+        result[access] = hasAccess;
+      }
+
+      logger.success(req, operationName, startTime, {
+        resource_id: id,
+        granted: accessTypes.filter((a) => result[a]),
+      });
+
+      return result;
+    } catch (error) {
+      logger.error(req, operationName, startTime, error, {
+        resource_id: id,
+        fallback_behavior: 'returning no access',
+      });
+      return fallback;
+    }
+  }
+
+  /**
    * Add writer access field to multiple resources automatically
    * @param req Express request object with auth context
    * @param resources Array of resource objects with uid or id field

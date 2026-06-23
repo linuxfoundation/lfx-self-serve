@@ -28,29 +28,42 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
 
+import { ProjectContextService } from './project-context.service';
 import { SseService } from './sse.service';
 
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
   private readonly sse = inject(SseService);
+  private readonly projectContextService = inject(ProjectContextService);
+
+  /**
+   * Returns the `foundationSlug` of the currently selected foundation.
+   * Sent on every campaign request so the server can resolve the foundation
+   * project and enforce the campaign_viewer / campaign_manager FGA relation.
+   * See LFXV2-2235.
+   */
+  private get foundationSlug(): string | undefined {
+    return this.projectContextService.selectedFoundation()?.slug ?? undefined;
+  }
 
   public generateBrief(request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
-    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/generate', {
-      method: 'POST',
-      body: request,
-    });
+    const slug = this.foundationSlug;
+    const url = slug ? `/api/campaigns/brief/generate?foundationSlug=${encodeURIComponent(slug)}` : '/api/campaigns/brief/generate';
+    return this.sse.connect<CampaignSSEEventType>(url, { method: 'POST', body: request });
   }
 
   public refineBrief(request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
-    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/refine', {
-      method: 'POST',
-      body: request,
-    });
+    const slug = this.foundationSlug;
+    const url = slug ? `/api/campaigns/brief/refine?foundationSlug=${encodeURIComponent(slug)}` : '/api/campaigns/brief/refine';
+    return this.sse.connect<CampaignSSEEventType>(url, { method: 'POST', body: request });
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
-    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
+    const slug = this.foundationSlug;
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request, {
+      ...(slug && { params: { foundationSlug: slug } }),
+    });
   }
 
   public getCreateResult(jobId: string): Observable<CampaignCreateResponse | null> {
@@ -70,58 +83,67 @@ export class CampaignService {
   }
 
   public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
-    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts');
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getRedditAccounts(): Observable<RedditAccountOption[]> {
-    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts');
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey } });
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getMetaAccounts(): Observable<MetaAccountOption[]> {
-    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts');
+    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey } });
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
-    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days } });
+    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public getAudience(days: number = 30): Observable<AudienceDemographics> {
-    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
+    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName } });
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
   }
 
   public createHubSpotUtm(eventName: string): Observable<HubSpotUtmCreateResult> {
-    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName } });
+    const slug = this.foundationSlug;
+    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName, ...(slug && { foundationSlug: slug }) } });
   }
 
   public executeKeywordActions(request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
-    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request);
+    const slug = this.foundationSlug;
+    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request, {
+      ...(slug && { params: { foundationSlug: slug } }),
+    });
   }
 
   private pollJobStatus(jobId: string): Observable<CampaignJobStatus> {
     const maxPolls = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
+    const slug = this.foundationSlug;
     return timer(0, CAMPAIGN_JOB_POLL_INTERVAL_MS).pipe(
       take(maxPolls),
-      exhaustMap(() => this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`)),
+      exhaustMap(() =>
+        this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`, {
+          params: { ...(slug && { foundationSlug: slug }) },
+        })
+      ),
       takeWhile((status) => status.status === 'running', true)
     );
   }
