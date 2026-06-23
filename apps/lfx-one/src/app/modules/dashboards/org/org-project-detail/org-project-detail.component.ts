@@ -386,6 +386,11 @@ export class OrgProjectDetailComponent {
               return;
             }
 
+            const rect = chart.canvas.getBoundingClientRect();
+            tip.style.left = `${rect.left + tooltip.caretX + 12}px`;
+            tip.style.top = `${rect.top + tooltip.caretY}px`;
+            tip.style.transform = 'translateY(-100%)';
+
             const title = tooltip.title?.[0] ?? '';
             const rows = (tooltip.dataPoints ?? [])
               .map(
