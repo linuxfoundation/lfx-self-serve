@@ -2745,29 +2745,6 @@ export interface SocialMediaResponse {
   monthlyData: SocialMediaMonthlyData[];
 }
 
-/** Per-platform monthly row for the social media monthly growth table. */
-export interface SocialMediaPlatformMonthlyRow {
-  month: string;
-  followers: number;
-  newFollowers: number;
-  impressions: number;
-  engagementRate: number;
-  posts: number;
-  momChangeFollowers: number | null;
-}
-
-/** A single platform's monthly breakdown for the social media monthly growth table. */
-export interface SocialMediaPlatformMonthly {
-  platform: string;
-  months: SocialMediaPlatformMonthlyRow[];
-}
-
-/** API response for the social media monthly growth endpoint. */
-export interface SocialMediaMonthlyResponse {
-  year: number;
-  platforms: SocialMediaPlatformMonthly[];
-}
-
 // ============================================
 // Email CTR (Marketing Dashboard)
 // ============================================
