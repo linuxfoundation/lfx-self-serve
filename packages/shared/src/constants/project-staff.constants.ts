@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ProjectSettings } from '../interfaces/project.interface';
+import type { ProjectSettings } from '../interfaces/project.interface';
 
 export interface ProjectStaffRowConfig {
   key: keyof Pick<ProjectSettings, 'executive_director' | 'program_manager' | 'opportunity_owner'>;
