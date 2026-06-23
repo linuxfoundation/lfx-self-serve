@@ -948,8 +948,8 @@ export class CampaignProxyService {
   // Campaign Status Toggle
   // ---------------------------------------------------------------------------
 
-  public async updateCampaignStatus(req: Request, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
-    const { platform, campaignId, status } = body;
+  public async updateCampaignStatus(req: Request, campaignId: string, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
+    const { platform, status } = body;
 
     switch (platform) {
       case 'meta-ads':

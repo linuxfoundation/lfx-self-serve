@@ -491,6 +491,16 @@ export class CampaignController {
       return;
     }
 
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
     const body = req.body as Partial<CampaignStatusUpdateRequest>;
 
     if (!body.platform || !SUPPORTED_STATUS_PLATFORMS.has(body.platform)) {
@@ -515,9 +525,8 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_status_update', { campaignId, platform: body.platform, status: body.status });
 
     try {
-      const result = await this.proxyService.updateCampaignStatus(req, {
+      const result = await this.proxyService.updateCampaignStatus(req, campaignId, {
         platform: body.platform,
-        campaignId,
         status: body.status as CampaignToggleStatus,
       });
       logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });

@@ -89,7 +89,8 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
   const params = META_OBJECTIVE_PARAMS[objective];
   if (params.promotedObjectType === 'page_id') return { page_id: pageId };
   if (params.promotedObjectType === 'pixel_id') {
-    return pixelId ? { pixel_id: pixelId, custom_event_type: 'PURCHASE' } : { page_id: pageId };
+    if (!pixelId) throw new Error(`pixelId is required for '${objective}' objective but was not provided`);
+    return { pixel_id: pixelId, custom_event_type: 'PURCHASE' };
   }
   return null;
 }
@@ -397,7 +398,7 @@ export async function updateMetaCampaignStatus(req: Request | undefined, campaig
   }
   const previousStatus = currentResp.status;
 
-  await metaRequest<{ success: boolean }>(req, 'POST', `/${campaignId}`, { status });
+  const updateResp = await metaRequest<{ success: boolean }>(req, 'POST', `/${campaignId}`, { status });
 
   logger.success(req, 'meta_campaign_status_update', startTime, { campaignId, previousStatus, newStatus: status });
 
@@ -406,7 +407,7 @@ export async function updateMetaCampaignStatus(req: Request | undefined, campaig
     campaignId,
     previousStatus,
     newStatus: status,
-    success: true,
+    success: updateResp.success ?? true,
   };
 }
 

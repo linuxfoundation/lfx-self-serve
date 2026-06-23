@@ -840,7 +840,6 @@ export type CampaignToggleStatus = 'ACTIVE' | 'PAUSED';
 
 export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
-  campaignId: string;
   status: CampaignToggleStatus;
 }
 
