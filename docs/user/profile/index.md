@@ -47,11 +47,11 @@ The **Profile** page in Org Lens (route: `/org/profile`) shows your organization
 
 ### What you can see
 
-- Your organization's name, logo, and contact information
-- Billing address and billing contact information
-- Social media profiles, such as LinkedIn and Crunchbase
-- Key contacts representing your organization
-- Your company's stated areas of interest and project involvement
+- Your organization's name and logo
+- Website link and Crunchbase profile (if provided)
+- Organization description, industry/sector, and number of employees
+- Primary and billing addresses
+- Last updated date
 
 ### Navigation
 
