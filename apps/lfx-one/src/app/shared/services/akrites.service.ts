@@ -117,9 +117,9 @@ export class AkritesService {
           .map((m) => {
             const initials = `${m.first_name?.[0] ?? ''}${m.last_name?.[0] ?? ''}`.toUpperCase() || (m.username?.[0] ?? 'U').toUpperCase();
             return {
-              userId: m.uid,
+              userId: m.username, // Auth0 username (stable identity, not membership UID)
               username: m.username,
-              displayName: `${m.first_name} ${m.last_name}`.trim(),
+              displayName: `${m.first_name} ${m.last_name}`.trim() || m.username, // Fallback to username if name is blank
               organization: m.organization?.name ?? null,
               status: m.status ?? '',
               initials,

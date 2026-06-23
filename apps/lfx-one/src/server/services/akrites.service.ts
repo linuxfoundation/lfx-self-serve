@@ -10,6 +10,8 @@ import {
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
   CdpScatterResponse,
+  CdpStewardSummary,
+  CdpStewardshipSteward,
   CdpStewardshipSummary,
   AkritesActivityResponse,
   AkritesActorInput,
@@ -537,9 +539,7 @@ export class AkritesServerService {
     }
   }
 
-  private mapStewards(
-    stewards: { userId: string; username: string | null; displayName: string | null; role: string; assignedAt: string }[] | null
-  ): AkritesSteward[] {
+  private mapStewards(stewards: CdpStewardshipSteward[] | null): AkritesSteward[] {
     if (!stewards) return [];
     return stewards.map((s) => ({
       userId: s.userId,

@@ -76,6 +76,15 @@ export interface CdpActivityResponse {
   pageSize: number;
 }
 
+/** Steward row in the package stewardship summary (list view). */
+export interface CdpStewardshipSteward {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  role: string;
+  assignedAt: string;
+}
+
 export interface CdpStewardshipSummary {
   purl: string;
   name: string;
@@ -90,7 +99,7 @@ export interface CdpStewardshipSummary {
   healthBand: string | null;
   latestReleaseAt: string | null;
   lastActivity: { type: string; content: string; at: string } | null;
-  stewards: { userId: string; username: string | null; displayName: string | null; role: string; assignedAt: string }[];
+  stewards: CdpStewardshipSteward[];
 }
 
 export interface CdpPackagesListResponse {
