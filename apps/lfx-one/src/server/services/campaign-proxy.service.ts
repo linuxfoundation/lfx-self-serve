@@ -642,6 +642,7 @@ export class CampaignProxyService {
       try {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
         eventDetails = JSON.parse(extraction) as Record<string, unknown>;
+        // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
           type: 'event',
           data: {

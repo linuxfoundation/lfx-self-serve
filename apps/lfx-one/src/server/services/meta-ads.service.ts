@@ -90,8 +90,10 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
   const params = META_OBJECTIVE_PARAMS[objective];
   if (params.promotedObjectType === 'page_id') return { page_id: pageId };
   if (params.promotedObjectType === 'pixel_id') {
-    if (!pixelId) throw new Error(`pixelId is required for '${objective}' objective but was not provided`);
-    return { pixel_id: pixelId, custom_event_type: 'PURCHASE' };
+    if (!pixelId || typeof pixelId !== 'string') {
+      throw new Error(`pixelId must be a non-empty string for '${objective}' objective`);
+    }
+    return { pixel_id: pixelId.trim(), custom_event_type: 'PURCHASE' };
   }
   return null;
 }
@@ -130,8 +132,7 @@ function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<str
   }
 
   if (publisherPlatforms.length === 0) {
-    publisherPlatforms.push('facebook');
-    facebookPositions.push('feed');
+    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, audienceNetwork, or messengerInbox)');
   }
 
   const targeting: Record<string, unknown> = { publisher_platforms: publisherPlatforms };
@@ -280,6 +281,9 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
 
   const objective: MetaObjective = config.objective ?? 'traffic';
   const objParams = META_OBJECTIVE_PARAMS[objective];
+  if (!objParams) {
+    throw new Error(`Unknown Meta objective: '${objective}'. Valid objectives: ${Object.keys(META_OBJECTIVE_PARAMS).join(', ')}`);
+  }
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
   const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
@@ -413,7 +417,7 @@ export async function updateMetaCampaignStatus(
     campaignId,
     previousStatus,
     newStatus: status,
-    success: updateResp.success ?? true,
+    success: updateResp.success ?? false,
   };
 }
 
