@@ -115,21 +115,23 @@ export class CommitteeSettingsTabComponent {
 
   public openMailingListPicker(): void {
     const committee = this.committee();
+    const committeeUid = committee.uid;
+    const projectUid = committee.project_uid;
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
     if (committee.project_slug) denyParams['project'] = committee.project_slug;
     const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
     this.committeeService
-      .getCommittee(committee.uid)
-      .pipe(take(1))
+      .getCommittee(committeeUid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
             deny();
             return;
           }
-          this.openPickerDialog(committee.uid);
+          this.openPickerDialog(committeeUid, projectUid);
         },
         error: () => deny(),
       });
@@ -213,7 +215,7 @@ export class CommitteeSettingsTabComponent {
 
   // -- Private methods --
 
-  private openPickerDialog(committeeUid: string): void {
+  private openPickerDialog(committeeUid: string, projectUid: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
     const ref = this.dialogService.open(MailingListPickerDialogComponent, {
@@ -225,7 +227,7 @@ export class CommitteeSettingsTabComponent {
       data: {
         mailingLists: this.projectMailingLists(),
         associatedUids,
-        projectUid: this.committee().project_uid,
+        projectUid: projectUid ?? '',
         committeeUid,
       },
     }) as DynamicDialogRef;
