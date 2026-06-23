@@ -83,48 +83,72 @@ export class CampaignService {
   }
 
   public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', {
+      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
-    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', {
+      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
+      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getRedditAccounts(): Observable<RedditAccountOption[]> {
-    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', {
+      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
+      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getMetaAccounts(): Observable<MetaAccountOption[]> {
-    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', {
+      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
+      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
-    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', {
+      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public getAudience(days: number = 30): Observable<AudienceDemographics> {
-    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<AudienceDemographics>('/api/campaigns/audience', {
+      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) } });
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', {
+      params: { event_name: eventName, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+    });
   }
 
   public createHubSpotUtm(eventName: string): Observable<HubSpotUtmCreateResult> {
     const slug = this.foundationSlug;
-    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName, ...(slug && { foundationSlug: slug }) } });
+    return this.http.post<HubSpotUtmCreateResult>(
+      '/api/campaigns/hubspot/utm/create',
+      {},
+      { params: { event_name: eventName, ...(slug && { foundationSlug: slug }) } }
+    );
   }
 
   public executeKeywordActions(request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
