@@ -114,7 +114,7 @@ export function requireProjectAccess(relation: AccessCheckAccessType): RequestHa
       });
 
       if (!hasAccess) {
-        logger.warning(req, operation, 'FGA check denied marketing access', {
+        logger.warning(req, operation, 'FGA check did not grant marketing access (denied or upstream failure)', {
           path: req.path,
           relation,
           foundation_slug: foundationSlug,

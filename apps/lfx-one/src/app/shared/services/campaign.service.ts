@@ -83,56 +83,65 @@ export class CampaignService {
   }
 
   public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
+    const slug = this.foundationSlug;
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', {
-      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
+    const slug = this.foundationSlug;
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', {
-      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
+    const slug = this.foundationSlug;
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, accountKey, ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getRedditAccounts(): Observable<RedditAccountOption[]> {
+    const slug = this.foundationSlug;
     return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', {
-      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
+    const slug = this.foundationSlug;
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, accountKey, ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getMetaAccounts(): Observable<MetaAccountOption[]> {
+    const slug = this.foundationSlug;
     return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', {
-      params: { ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
+    const slug = this.foundationSlug;
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { days, accountKey, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, accountKey, ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
+    const slug = this.foundationSlug;
     return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', {
-      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, ...(slug && { foundationSlug: slug }) },
     });
   }
 
   public getAudience(days: number = 30): Observable<AudienceDemographics> {
+    const slug = this.foundationSlug;
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', {
-      params: { days, ...(this.foundationSlug && { foundationSlug: this.foundationSlug }) },
+      params: { days, ...(slug && { foundationSlug: slug }) },
     });
   }
 

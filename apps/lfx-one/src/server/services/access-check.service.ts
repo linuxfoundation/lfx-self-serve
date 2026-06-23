@@ -169,12 +169,9 @@ export class AccessCheckService {
       );
 
       if (response.results.length !== accessTypes.length) {
-        logger.warning(req, operationName, 'access-check result count mismatch — failing closed', {
-          resource_id: id,
-          expected: accessTypes.length,
-          received: response.results.length,
-        });
-        return fallback;
+        throw new Error(
+          `access-check result count mismatch: expected ${accessTypes.length}, received ${response.results.length}`
+        );
       }
 
       const result = { ...fallback };
@@ -203,9 +200,8 @@ export class AccessCheckService {
     } catch (error) {
       logger.error(req, operationName, startTime, error, {
         resource_id: id,
-        fallback_behavior: 'returning no access',
       });
-      return fallback;
+      throw error;
     }
   }
 
