@@ -1,0 +1,83 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
+  data-testid="newsletter-failed-recipients-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between w-full pr-4" data-testid="newsletter-failed-recipients-drawer-header">
+      <div class="flex flex-col gap-0.5">
+        <h2 class="text-lg font-semibold text-slate-900">Failed deliveries</h2>
+        <p class="text-xs text-slate-500">{{ failedCount() }} recipient{{ failedCount() === 1 ? '' : 's' }} didn't receive it</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+        data-testid="newsletter-failed-recipients-drawer-close"
+        aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4 py-2" data-testid="newsletter-failed-recipients-drawer-body">
+    @if (failedRecipients().length) {
+      <div class="flex items-center gap-3">
+        <div class="flex-1">
+          <lfx-input-text
+            [form]="searchForm"
+            control="search"
+            type="search"
+            icon="fa-light fa-magnifying-glass"
+            size="small"
+            placeholder="Search emails"
+            autocomplete="off"
+            dataTest="newsletter-failed-recipients-drawer-search" />
+        </div>
+        <lfx-button
+          label="Copy all"
+          icon="fa-light fa-copy"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="copyAll()"
+          data-testid="newsletter-failed-recipients-drawer-copy" />
+      </div>
+
+      @if (filteredRecipients().length) {
+        <ul class="flex flex-col gap-1" data-testid="newsletter-failed-recipients-drawer-list">
+          @for (email of filteredRecipients(); track email) {
+            <li class="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 bg-slate-50 rounded-md break-all">
+              <i class="fa-light fa-envelope text-slate-400"></i>
+              <span>{{ email }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="text-sm text-slate-500 px-1 py-4">No matches.</p>
+      }
+    } @else {
+      <div class="flex flex-col items-center justify-center py-12 gap-2 text-slate-500" data-testid="newsletter-failed-recipients-drawer-empty">
+        <i class="fa-light fa-envelope-circle-check text-3xl"></i>
+        <span class="text-sm">Detailed list not available.</span>
+      </div>
+    }
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-3 w-full px-1 py-3 border-t border-slate-200" data-testid="newsletter-failed-recipients-drawer-footer">
+      <lfx-button
+        label="Close"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        (onClick)="onClose()"
+        data-testid="newsletter-failed-recipients-drawer-close-button" />
+    </div>
+  </ng-template>
+</p-drawer>

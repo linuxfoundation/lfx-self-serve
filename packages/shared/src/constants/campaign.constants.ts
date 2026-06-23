@@ -5,9 +5,14 @@ import type {
   CampaignGoalOption,
   CampaignPlatform,
   CampaignPlatformOption,
+  CampaignProgramTypeOption,
   CampaignStatus,
   CampaignTabOption,
+  CampaignToggleStatus,
   LinkedInGeoTarget,
+  MetaObjective,
+  MetaObjectiveParams,
+  MetaPlacement,
   ParsedCampaignName,
 } from '../interfaces/campaign.interface';
 
@@ -28,6 +33,31 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
   { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
+] as const;
+
+export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
+  {
+    id: 'events',
+    label: 'Events Campaigns',
+    breadcrumbLabel: 'Events Campaigns',
+    urlLabel: 'Event Page URL',
+    urlPlaceholder: 'https://events.linuxfoundation.org/your-event/',
+    urlHelp: 'Paste any LF event page — dates and details are scraped live, not from AI memory.',
+    goalLabel: 'Conversions / Registrations',
+    audiencePlaceholder: 'e.g., Cloud-native developers, DevOps engineers',
+    valuePropPlaceholder: 'e.g., Free registration, 200+ sessions, hands-on labs with industry experts',
+  },
+  {
+    id: 'education',
+    label: 'Education Campaigns',
+    breadcrumbLabel: 'Education Campaigns',
+    urlLabel: 'Course / Training Page URL',
+    urlPlaceholder: 'https://training.linuxfoundation.org/training/your-course/',
+    urlHelp: 'Paste any LF Training page — course details are scraped live, not from AI memory.',
+    goalLabel: 'Conversions / Enrollments',
+    audiencePlaceholder: 'e.g., IT professionals seeking certifications, career changers',
+    valuePropPlaceholder: 'e.g., Industry-recognized certification, self-paced learning, exam bundle discounts',
+  },
 ] as const;
 
 export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
@@ -133,6 +163,28 @@ export const META_CHAR_LIMITS = {
   headline: 40,
   description: 30,
 } as const;
+
+/** Maps internal objective identifiers to Meta Marketing API campaign objective, optimization goal, and promoted object type. */
+export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjectiveParams>> = {
+  awareness: { campaignObjective: 'OUTCOME_AWARENESS', optimizationGoal: 'REACH', promotedObjectType: 'none' },
+  traffic: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
+  engagement: { campaignObjective: 'OUTCOME_ENGAGEMENT', optimizationGoal: 'POST_ENGAGEMENT', promotedObjectType: 'page_id' },
+  leads: { campaignObjective: 'OUTCOME_LEADS', optimizationGoal: 'LEAD_GENERATION', promotedObjectType: 'page_id' },
+  conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
+} as const;
+
+/** Default Meta ad placement toggles — Facebook and Instagram feeds enabled, all others off. */
+export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
+  facebookFeed: true,
+  instagramFeed: true,
+  stories: false,
+  reels: false,
+  audienceNetwork: false,
+  messengerInbox: false,
+} as const;
+
+/** Valid statuses for the campaign status toggle endpoint. */
+export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap

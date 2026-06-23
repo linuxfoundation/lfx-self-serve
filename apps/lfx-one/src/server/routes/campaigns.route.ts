@@ -24,5 +24,6 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
+router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
 
 export default router;

@@ -14,7 +14,10 @@ import type {
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
+  CampaignProgramType,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
+  CampaignStatusUpdateResult,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
   MetaCampaignCreateResult,
@@ -25,7 +28,7 @@ import type { Request } from 'express';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
-import { executeMetaCampaignCreation } from './meta-ads.service';
+import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
 import { executeRedditCampaignCreation } from './reddit-ads.service';
 
 // ---------------------------------------------------------------------------
@@ -328,14 +331,21 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
 // AI prompts
 // ---------------------------------------------------------------------------
 
-const COPY_SYSTEM_PROMPT_BASE = `You are an expert digital marketer specialising in developer events and open-source conferences.
+const COPY_SYSTEM_PROMPT_EVENTS = `You are an expert digital marketer specialising in developer events and open-source conferences.
 Generate high-quality, conversion-focused ad copy for the Linux Foundation's LFX events.`;
+
+const COPY_SYSTEM_PROMPT_EDUCATION = `You are an expert digital marketer specialising in professional training, certifications, and online education for software developers and IT professionals.
+Generate high-quality, conversion-focused ad copy for the Linux Foundation's training and certification programs.`;
+
+function getCopySystemPromptBase(programType?: CampaignProgramType): string {
+  return programType === 'education' ? COPY_SYSTEM_PROMPT_EDUCATION : COPY_SYSTEM_PROMPT_EVENTS;
+}
 
 const COPY_GOOGLE_SECTION = `
 GOOGLE SEARCH (RSA):
 - Headlines: 15 total, each ≤ 30 characters (STRICT — Google rejects longer)
 - Descriptions: 4 total, each ≤ 90 characters (STRICT)
-- Tone: direct, benefit-led, include CTA ("Register Now", "Join Today", "Secure Your Spot")
+- Tone: direct, benefit-led, include CTA (e.g. "Register Now", "Enroll Now", "Learn More")
 
 GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, Display):
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
@@ -392,19 +402,19 @@ META COPY RULES:
 
 const COPY_RULES_SECTION = `
 IMPORTANT RULES:
-1. Dates must come ONLY from the event data provided — never use training-data memory
+1. Dates and details must come ONLY from the data provided — never use training-data memory.
 2. CHARACTER LIMITS ARE HARD — platforms REJECT copy that exceeds them. Verify EVERY line.
-3. NEVER abbreviate month names, city names, or event names unless required to fit character limits
+3. NEVER abbreviate month names, city names, or proper nouns unless required to fit character limits.
 4. NEVER use em-dashes (—) or en-dashes (–) in ad copy. Use commas, periods, or colons instead.
 5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.`;
 
-function buildCopySystemPrompt(platforms: string[]): string {
+function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgramType): string {
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
   const includeReddit = platforms.includes('reddit-ads');
   const includeMeta = platforms.includes('meta-ads');
 
-  let prompt = COPY_SYSTEM_PROMPT_BASE + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
+  let prompt = getCopySystemPromptBase(programType) + '\n\nPLATFORM SPECIFICATIONS (hard limits — never exceed):\n';
 
   if (includeGoogle) prompt += COPY_GOOGLE_SECTION;
   if (includeLinkedIn) prompt += COPY_LINKEDIN_SECTION;
@@ -424,9 +434,17 @@ function buildCopySystemPrompt(platforms: string[]): string {
 
 const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
 
-const LINKEDIN_STRATEGY_SYSTEM_PROMPT = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
+const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
 Return only valid JSON. No markdown fences, no explanation.`;
+
+const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION = `You are a LinkedIn Ads strategist specializing in professional training, certifications, and career development for software developers and IT professionals.
+Analyze the course/certification details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
+Return only valid JSON. No markdown fences, no explanation.`;
+
+function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): string {
+  return programType === 'education' ? LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION : LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS;
+}
 
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
@@ -442,6 +460,35 @@ const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML
 }
 
 If a field cannot be determined, use null.`;
+
+const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification details from this HTML. Return valid JSON:
+{
+  "name": "course or certification name",
+  "dates": "duration (e.g. Self-paced, 3 days, 40 hours)",
+  "city": "delivery location or null if online-only",
+  "country_code": "ISO country code or null if online-only",
+  "audience": "target audience description",
+  "themes": ["technology1", "skill1"],
+  "registration_url": "enrollment URL",
+  "slug": "url-friendly-slug",
+  "format_notes": "self-paced/instructor-led/hybrid",
+  "price": "price or price range if found",
+  "certification_code": "e.g. CKA, LFCS, CKAD if applicable",
+  "prerequisites": "prerequisites if listed"
+}
+
+If a field cannot be determined, use null.`;
+
+function getExtractionPrompt(programType?: CampaignProgramType): string {
+  return programType === 'education' ? EDUCATION_EXTRACTION_PROMPT : EVENT_EXTRACTION_PROMPT;
+}
+
+// ---------------------------------------------------------------------------
+// Validation constants
+// ---------------------------------------------------------------------------
+
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
+const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
 
 // ---------------------------------------------------------------------------
 // Background job management
@@ -547,14 +594,20 @@ export class CampaignProxyService {
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
-    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
+    const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
       return;
     }
 
+    if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
+      yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
     const isRefinement = !!body.refineFeedback && !!body.previousCopy;
+    const isEducation = body.programType === 'education';
+    const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
 
     if (!isRefinement) {
@@ -571,28 +624,43 @@ export class CampaignProxyService {
       try {
         const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
         if (!ok) {
-          yield { type: 'error', data: `Event page returned HTTP ${status}` };
+          yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
         }
         html = scrapedHtml;
       } catch (error) {
-        yield { type: 'error', data: `Failed to fetch event page: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
       }
     }
-
-    yield { type: 'status', data: isRefinement ? 'Refining brief...' : 'Extracting event details...' };
+    const extractLabel = isEducation ? 'course details' : 'event details';
+    yield { type: 'status', data: isRefinement ? 'Refining brief...' : `Extracting ${extractLabel}...` };
 
     let eventDetails: Record<string, unknown> | null = null;
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(EVENT_EXTRACTION_PROMPT, `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
         eventDetails = JSON.parse(extraction) as Record<string, unknown>;
-        yield { type: 'event', data: eventDetails };
+        // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
+        yield {
+          type: 'event',
+          data: {
+            name: eventDetails['name'] ?? '',
+            dates: eventDetails['dates'] ?? '',
+            city: eventDetails['city'] ?? '',
+            countryCode: eventDetails['country_code'] ?? '',
+            audience: eventDetails['audience'] ?? '',
+            themes: Array.isArray(eventDetails['themes']) ? eventDetails['themes'] : [],
+            registrationUrl: eventDetails['registration_url'] ?? '',
+            speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
+            slug: eventDetails['slug'] ?? '',
+            formatNotes: eventDetails['format_notes'] ?? '',
+          },
+        };
       } catch (error) {
-        logger.warning(req, 'campaign_brief_extract', 'Event extraction failed, continuing with URL only', { err: error });
-        yield { type: 'status', data: 'Could not extract structured event details, generating copy from URL...' };
+        logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
+        yield { type: 'status', data: `Could not extract structured ${extractLabel}, generating copy from URL...` };
       }
 
       const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
@@ -616,7 +684,7 @@ export class CampaignProxyService {
     const platformList = selectedPlatforms.join(', ');
     yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
-    const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms);
+    const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
     const userPrompt = buildCopyPrompt(body, eventDetails);
     let fullCopy = '';
 
@@ -698,7 +766,7 @@ export class CampaignProxyService {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
-        let strategyText = (await aiChat(LINKEDIN_STRATEGY_SYSTEM_PROMPT, strategyPrompt)).trim();
+        let strategyText = (await aiChat(getLinkedInStrategySystemPrompt(body.programType), strategyPrompt)).trim();
         if (strategyText.startsWith('```')) {
           const firstNl = strategyText.indexOf('\n');
           if (firstNl !== -1) strategyText = strategyText.slice(firstNl + 1);
@@ -726,10 +794,14 @@ export class CampaignProxyService {
   ): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
 
-    const supportedPlatforms = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
-    const unsupported = (body.platforms ?? []).filter((p) => !supportedPlatforms.has(p));
+    const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
       yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
+      return;
+    }
+
+    if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
+      yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
       return;
     }
 
@@ -740,7 +812,7 @@ export class CampaignProxyService {
     const refinePlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
 
     try {
-      for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms), userPrompt, signal)) {
+      for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms, body.programType), userPrompt, signal)) {
         yield { type: 'copy_token', data: token };
         fullCopy += token;
       }
@@ -871,6 +943,21 @@ export class CampaignProxyService {
       failed: results.length - succeeded,
       results,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Campaign Status Toggle
+  // ---------------------------------------------------------------------------
+
+  public async updateCampaignStatus(req: Request, campaignId: string, body: CampaignStatusUpdateRequest): Promise<CampaignStatusUpdateResult> {
+    const { platform, status } = body;
+
+    switch (platform) {
+      case 'meta-ads':
+        return updateMetaCampaignStatus(req, campaignId, status);
+      default:
+        throw new Error(`Status toggle is not supported for platform: ${platform}`);
+    }
   }
 
   // === Private: campaign creation orchestration ===
@@ -1420,27 +1507,31 @@ function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string
       ? `\n\nREFINEMENT REQUEST — do not generate from scratch. Revise the previous copy below based on the user's feedback.\n\nUSER FEEDBACK:\n${body.refineFeedback}\n\nPREVIOUS COPY:\n${serializedPreviousCopy}`
       : '';
 
+  const isEducation = body.programType === 'education';
+  const contentLabel = isEducation ? 'training/certification program' : 'event';
+  const ctaVerb = isEducation ? 'Enroll Now' : 'Register Now';
+
   if (eventDetails) {
     const e = eventDetails;
     const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
     const speakers = Array.isArray(e['speakers']) ? (e['speakers'] as string[]).slice(0, 5).join(', ') : '';
-    return `Generate ad copy for this LF event across the requested platforms.
+    const educationNote = isEducation
+      ? `\n\nEDUCATION CAMPAIGN NOTES:\n- This is a training/certification campaign, NOT an event. Do not reference venues, travel, or in-person attendance.\n- Focus on career advancement, skill-building, and certification value.\n- Primary CTA should be "${ctaVerb}" or "Start Learning" — never "Register Now" or "Join Us in [City]".\n- Highlight self-paced learning, exam prep, industry recognition, and bundle discounts where relevant.\n- Sitelink ideas: course curriculum, exam details, certification paths, student testimonials, pricing/bundles.`
+      : '';
+    return `Generate ad copy for this LF ${contentLabel} across the requested platforms.
 
-EVENT DATA:
+${isEducation ? 'COURSE' : 'EVENT'} DATA:
 Name: ${e['name'] || ''}
-Dates: ${e['dates'] || ''}
-City: ${e['city'] || ''}
-Country: ${e['country_code'] || ''}
-Audience: ${e['audience'] || ''}
+${isEducation ? 'Duration' : 'Dates'}: ${e['dates'] || ''}
+${isEducation ? '' : `City: ${e['city'] || ''}\nCountry: ${e['country_code'] || ''}\n`}Audience: ${e['audience'] || ''}
 Themes: ${themes}
-Registration URL: ${e['registration_url'] || body.url}
-Speakers: ${speakers}
-Format: ${e['format_notes'] || ''}${extraBlock}${refinementBlock}
+${isEducation ? 'Enrollment' : 'Registration'} URL: ${e['registration_url'] || body.url}
+${isEducation ? '' : `Speakers: ${speakers}\nFormat: ${e['format_notes'] || ''}\n`}${extraBlock}${educationNote}${refinementBlock}
 
 ${platformInstruction}`;
   }
 
-  return `Generate ad copy for: ${body.url}${extraBlock}${refinementBlock}
+  return `Generate ad copy for this ${contentLabel}: ${body.url}${extraBlock}${refinementBlock}
 
 ${platformInstruction}`;
 }
@@ -1452,6 +1543,7 @@ function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<str
   if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
   const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
 
+  const isEducation = body.programType === 'education';
   const e = eventDetails || {};
   const name = (e['name'] as string) || '';
   const dates = (e['dates'] as string) || '';
@@ -1460,6 +1552,33 @@ function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<str
   const city = (e['city'] as string) || '';
   const yearMatch = dates.match(/20\d{2}/);
   const eventYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
+
+  if (isEducation) {
+    return `Generate 25-40 high-intent Google Search keywords for this training/certification program.
+
+COURSE: ${name || body.url}
+Themes: ${themes}
+Audience: ${audience}${extraBlock}
+
+Keyword categories to cover:
+1. Course/certification name exact: e.g. "${name}", "${name} certification"
+2. Certification acronyms: e.g. "CKA", "LFCS", "CKS" and their full names + "certification"/"exam"/"training"
+3. Topic training: "[technology] training", "[technology] certification", "[technology] course"
+4. Career/role: "[role] certification", "become a [role]", "[role] training"
+5. Competitor/adjacent: alternative certifications, "best [topic] certification ${eventYear}"
+
+Return a JSON array where each object has EXACTLY these keys:
+- "term": the keyword string
+- "match_type": "Exact", "Phrase", or "Broad"
+- "intent_level": "High" (direct course/cert search), "Medium" (related topic), "Low" (broad)
+- "notes": any flag (e.g. "evergreen term", "seasonal spike")
+
+CRITICAL RULES:
+- Focus on certification and training intent, NOT event/conference keywords.
+- Prefer HIGH INTENT — keywords that indicate someone actively looking to learn or get certified.
+- Include "linux foundation" branded terms where relevant.
+- Avoid generic broad terms that waste budget (e.g. "training" alone).`;
+  }
 
   return `Generate 25-40 high-intent Google Search keywords for this event.
 
@@ -1488,7 +1607,10 @@ CRITICAL RULES:
 }
 
 function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
-  const eventBlock = body.eventDetails ? `\nEVENT: ${body.eventDetails.name}\nDates: ${body.eventDetails.dates}\nCity: ${body.eventDetails.city}\n` : '';
+  const isEducation = body.programType === 'education';
+  const eventBlock = body.eventDetails
+    ? `\n${isEducation ? 'COURSE' : 'EVENT'}: ${body.eventDetails.name}\n${isEducation ? 'Duration' : 'Dates'}: ${body.eventDetails.dates}\n${isEducation ? '' : `City: ${body.eventDetails.city}\n`}`
+    : '';
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');
@@ -1517,10 +1639,13 @@ Respect all character limits from the system prompt. Return the same JSON format
 function buildRefineKeywordPrompt(body: CampaignBriefRefineRequest): string {
   const currentKws = (body.currentKeywords ?? []).map((kw) => kw.term).join(', ');
   const eventName = body.eventDetails?.name || '';
+  const isEducation = body.programType === 'education';
+  const contentLabel = isEducation ? 'course/certification' : 'event';
+  const intentLabel = isEducation ? 'direct course/cert search' : 'direct event search';
 
-  return `Regenerate keywords for this event based on user feedback.
+  return `Regenerate keywords for this ${contentLabel} based on user feedback.
 
-EVENT: ${eventName}
+${isEducation ? 'COURSE' : 'EVENT'}: ${eventName}
 CURRENT KEYWORDS: ${currentKws}
 
 USER FEEDBACK: ${body.feedback}
@@ -1530,13 +1655,14 @@ Based on the feedback, generate 25-40 refined Google Search keywords.
 Return a JSON array where each object has EXACTLY these keys:
 - "term": the keyword string
 - "match_type": "Exact", "Phrase", or "Broad"
-- "intent_level": "High" (direct event search), "Medium" (related topic), "Low" (broad)
+- "intent_level": "High" (${intentLabel}), "Medium" (related topic), "Low" (broad)
 - "notes": any flag (e.g. "added per user feedback")
 
 Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
 }
 
 function buildLinkedInStrategyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const isEducation = body.programType === 'education';
   const e = eventDetails || {};
   const name = (e['name'] as string) || '';
   const dates = (e['dates'] as string) || '';
@@ -1544,21 +1670,23 @@ function buildLinkedInStrategyPrompt(body: CampaignBriefRequest, eventDetails: R
   const audience = (e['audience'] as string) || '';
   const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
 
-  return `Generate a LinkedIn Ads targeting strategy for this event.
+  const contentLabel = isEducation ? 'training/certification program' : 'event';
+  const dataHeader = isEducation ? 'COURSE' : 'EVENT';
+  const locationLine = isEducation ? '' : `Location: ${city}\n`;
 
-EVENT:
+  return `Generate a LinkedIn Ads targeting strategy for this ${contentLabel}.
+
+${dataHeader}:
 Name: ${name || body.url}
-Dates: ${dates}
-Location: ${city}
-Audience: ${audience}
+${isEducation ? '' : `Dates: ${dates}\n`}${locationLine}Audience: ${audience}
 Themes: ${themes}
 ${body.campaignGoal ? `Campaign Goal: ${body.campaignGoal}` : ''}
 ${body.totalBudget ? `Total Budget: $${body.totalBudget}` : ''}
 
 Return a JSON object with these keys:
 {
-  "targeting_profile": "cloud-native" or "mcp" (select based on event topics),
-  "targeting_rationale": "why this profile fits the event",
+  "targeting_profile": "cloud-native" or "mcp" (select based on ${isEducation ? 'course' : 'event'} topics),
+  "targeting_rationale": "why this profile fits the ${contentLabel}",
   "recommended_skills": ["skill names relevant to the audience"],
   "recommended_groups": ["LinkedIn group names relevant to the audience"],
   "recommended_job_functions": ["job functions to target, e.g. Engineering, IT, Product"],
@@ -1573,10 +1701,10 @@ Return a JSON object with these keys:
 }
 
 RULES:
-- Select 3-8 geo targets based on event location, audience, and topic relevance
+- Select 3-8 geo targets based on ${isEducation ? 'audience demographics and course topic relevance (education campaigns are always-on and global)' : 'event location, audience, and topic relevance'}
 - Budget should be realistic for LinkedIn CPMs ($8-15 range)
-- Skills and groups should be specific to the event's technology focus
-- Job functions should target decision-makers and practitioners`;
+- Skills and groups should be specific to the ${isEducation ? "course's" : "event's"} technology focus
+- Job functions should target ${isEducation ? 'career-changers, practitioners seeking certification, and hiring managers who value certified professionals' : 'decision-makers and practitioners'}`;
 }
 
 const REGION_MAP: Record<string, string> = {
