@@ -32,6 +32,10 @@ The LFX One frontend is built with Angular 20 using stable zoneless change detec
 
 See which sidebar links and pages each persona can access in each lens, plus route guard wiring.
 
+### [Permission, Persona, and Navigation Model](./permission-persona-navigation-model-preread.md)
+
+Use the decision model for separating context access, persona-shaped experience, discovery, and writer-permission authority.
+
 ### [Angular Patterns](./angular-patterns.md)
 
 Learn about Angular 20 features, zoneless change detection, and SSR configuration.
