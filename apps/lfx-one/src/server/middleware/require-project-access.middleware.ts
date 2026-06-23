@@ -17,8 +17,8 @@ const SLUG_PATTERN = /^[a-z0-9-]+$/;
 
 /**
  * Symbol used to cache slug→UID lookups on the request object.
- * Prevents N+1 NATS calls when multiple middleware-gated analytics endpoints
- * fire in parallel on the same page load.
+ * Prevents redundant NATS calls when multiple requireProjectAccess middleware
+ * instances are stacked on the same route (e.g. reader + writer checks).
  */
 const PROJECT_UID_CACHE = Symbol('projectUidCache');
 
@@ -67,7 +67,7 @@ export function requireProjectAccess(relation: AccessCheckAccessType): RequestHa
           foundation_slug: typeof foundationSlug === 'string' ? foundationSlug : '[invalid type]',
         });
         next(
-          new AuthorizationError('Marketing access requires a valid foundationSlug', {
+          new AuthorizationError('Insufficient permissions for this resource', {
             operation,
             service: 'authorization',
             path: req.path,
@@ -93,7 +93,7 @@ export function requireProjectAccess(relation: AccessCheckAccessType): RequestHa
             foundation_slug: foundationSlug,
           });
           next(
-            new AuthorizationError('Foundation not found — marketing access denied', {
+            new AuthorizationError('Insufficient permissions for this resource', {
               operation,
               service: 'authorization',
               path: req.path,

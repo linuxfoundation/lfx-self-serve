@@ -168,6 +168,15 @@ export class AccessCheckService {
         requestPayload
       );
 
+      if (response.results.length !== accessTypes.length) {
+        logger.warning(req, operationName, 'access-check result count mismatch — failing closed', {
+          resource_id: id,
+          expected: accessTypes.length,
+          received: response.results.length,
+        });
+        return fallback;
+      }
+
       const result = { ...fallback };
 
       for (let i = 0; i < accessTypes.length; i++) {
