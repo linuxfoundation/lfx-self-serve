@@ -93,13 +93,9 @@ interface RedditApiResponse {
 }
 
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
-  const parsed = new URL(`${REDDIT_ADS_BASE_URL}${path}`);
-  const allowed = new URL(REDDIT_ADS_BASE_URL);
-  const basePath = allowed.pathname.endsWith('/') ? allowed.pathname : `${allowed.pathname}/`;
-  if (parsed.origin !== allowed.origin || !(parsed.pathname === allowed.pathname || parsed.pathname.startsWith(basePath))) {
-    throw new Error('Reddit API request blocked — URL resolved outside allowed base');
-  }
-  const url = parsed.href;
+  const segments = path.split('/').map((s) => encodeURIComponent(decodeURIComponent(s)));
+  const sanitizedPath = segments.join('/');
+  const url = `${REDDIT_ADS_BASE_URL}${sanitizedPath}`;
   const token = await refreshRedditToken();
 
   const resp = await fetch(url, {
