@@ -14,6 +14,7 @@ import {
   CdpProjectAffiliation,
   CdpProjectAffiliationEntry,
   DisabledOrgSuggestion,
+  EnrichedIdentity,
   FlatAffiliationRow,
   MaintainerConfirmationResult,
   ProjectAffiliationPatchBody,
@@ -65,10 +66,14 @@ export class ProfileAffiliationsComponent {
 
   private readonly cdpAffiliations = signal<CdpProjectAffiliation[]>([]);
   private readonly lfxSlugs = signal<Set<string>>(new Set());
+  private readonly connectedIdentities = signal<EnrichedIdentity[]>([]);
 
   public readonly apiProjectGroups: Signal<ProjectGroup[]> = this.initApiProjectGroups();
   public readonly sortedProjectGroups: Signal<ProjectGroup[]> = this.initSortedProjectGroups();
   public readonly isEmpty: Signal<boolean> = computed(() => this.projectGroups().length === 0);
+  public readonly hasConnectedIdentities: Signal<boolean> = computed(() => this.connectedIdentities().length > 0);
+  public readonly hasWorkExperience: Signal<boolean> = computed(() => this.workExperience().length > 0);
+  public readonly hasProfileSetup: Signal<boolean> = computed(() => this.hasConnectedIdentities() || this.hasWorkExperience());
 
   public readonly flattenedRows: Signal<FlatAffiliationRow[]> = this.initFlattenedRows();
   public readonly roleMenuItemsMap: Signal<Map<string, MenuItem[]>> = this.initRoleMenuItemsMap();
@@ -407,12 +412,18 @@ export class ProfileAffiliationsComponent {
 
   private initApiProjectGroups(): Signal<ProjectGroup[]> {
     return toSignal(
-      forkJoin([this.userService.getCdpProjectAffiliations(), this.projectService.getProjects(), this.userService.getWorkExperiences()]).pipe(
-        map(([cdpAffiliations, lfxProjects, workExperiences]) => {
+      forkJoin([
+        this.userService.getCdpProjectAffiliations(),
+        this.projectService.getProjects(),
+        this.userService.getWorkExperiences(),
+        this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))),
+      ]).pipe(
+        map(([cdpAffiliations, lfxProjects, workExperiences, identities]) => {
           const lfxSlugs = new Set(lfxProjects.map((p) => p.slug));
           this.cdpAffiliations.set(cdpAffiliations);
           this.lfxSlugs.set(lfxSlugs);
           this.workExperience.set(workExperiences);
+          this.connectedIdentities.set(identities.filter((id) => id.platform !== 'lfid' && id.displayState !== 'hidden'));
           this.loading.set(false);
           return this.transformToProjectGroups(cdpAffiliations, lfxSlugs);
         }),
