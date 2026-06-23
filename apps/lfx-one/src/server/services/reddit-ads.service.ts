@@ -397,11 +397,14 @@ function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: nu
 }
 
 function extractRedditPostId(urlOrId: string): string {
-  const match = urlOrId.match(/reddit\.com\/(?:r\/\w+\/)?comments\/([a-z0-9]+)/i);
-  if (match) return `t3_${match[1]}`;
-  if (urlOrId.startsWith('t3_')) return urlOrId;
-  if (/^[a-z0-9]+$/i.test(urlOrId.trim())) return `t3_${urlOrId.trim()}`;
-  throw new Error(`Cannot extract Reddit post ID from: ${urlOrId}`);
+  const trimmed = urlOrId.trim();
+  const fullMatch = trimmed.match(/reddit\.com\/(?:r\/\w+\/)?comments\/([a-z0-9]+)/i);
+  if (fullMatch) return `t3_${fullMatch[1]}`;
+  const shortMatch = trimmed.match(/redd\.it\/([a-z0-9]+)/i);
+  if (shortMatch) return `t3_${shortMatch[1]}`;
+  if (trimmed.startsWith('t3_')) return trimmed;
+  if (/^[a-z0-9]+$/i.test(trimmed)) return `t3_${trimmed}`;
+  throw new Error(`Cannot extract Reddit post ID from: ${trimmed}`);
 }
 
 export async function updateRedditCampaignStatus(
@@ -449,6 +452,10 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     throw new Error(`End date ${config.endDate} must be after start date ${config.startDate}`);
   }
 
+  if (config.postUrl) {
+    extractRedditPostId(config.postUrl);
+  }
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 
@@ -467,6 +474,9 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
 
   const objective = config.objective ?? 'conversions';
   const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
+  if (!objParams) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
 
   const campaignBody: Record<string, unknown> = {
     data: {

@@ -962,6 +962,9 @@ export class CampaignProxyService {
         if (!accountId) {
           throw new Error('No Reddit ad account configured');
         }
+        if (!REDDIT_ACCOUNTS.some((a) => a.accountId === accountId)) {
+          throw new Error(`Reddit ad account ${accountId} is not whitelisted`);
+        }
         return updateRedditCampaignStatus(req, accountId, campaignId, status);
       }
       default:
