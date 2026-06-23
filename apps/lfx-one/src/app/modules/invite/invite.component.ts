@@ -68,6 +68,7 @@ export class InviteComponent implements OnInit {
 
   private collectOrgAndAccept(invite: PendingCommitteeInviteForOrg, returnUrl: string): void {
     this.isProcessing.set(false);
+    let accepted = false;
     this.invitationAcceptFlow
       .accept({
         committeeUid: invite.committee_uid,
@@ -78,12 +79,23 @@ export class InviteComponent implements OnInit {
       })
       .pipe(take(1))
       .subscribe({
-        // Redirect whether the user confirmed or cancelled — the LFID accept already succeeded.
-        complete: () => {
+        next: () => {
+          // Committee invite accepted with org — redirect to the group page now that the user is a member.
+          accepted = true;
           window.location.href = returnUrl;
         },
         error: () => {
+          // Committee accept failed; LFID accept already succeeded. Redirect anyway — the user can
+          // retry accepting the committee invite from My Groups.
           window.location.href = returnUrl;
+        },
+        complete: () => {
+          if (!accepted) {
+            // User dismissed the org dialog without confirming. The LFID accept already succeeded
+            // but the committee invite is still pending. Navigate home so the user isn't left on a
+            // blank page — they can accept the invite from My Groups.
+            void this.router.navigate(['/']);
+          }
         },
       });
   }

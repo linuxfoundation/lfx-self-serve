@@ -34,7 +34,7 @@ import {
   UserPullRequestsRow,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, parseToInt } from '@lfx-one/shared/utils';
+import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, normalizeIndexedMeetingAiSummary, parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -479,6 +479,8 @@ export class UserService {
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
+    const normalizedMeetings = meetings.map(normalizeIndexedMeetingAiSummary);
+
     // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
     // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
@@ -489,7 +491,7 @@ export class UserService {
       const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
       const email = getEffectiveEmail(req) ?? '';
 
-      if ((email || username) && meetings.length > 0) {
+      if ((email || username) && normalizedMeetings.length > 0) {
         try {
           const [userRsvps, activeRegistrants] = await Promise.all([
             this.fetchAllUserRsvps(req, email, username),
@@ -510,7 +512,7 @@ export class UserService {
             }
           }
 
-          for (const meeting of meetings) {
+          for (const meeting of normalizedMeetings) {
             if (meeting.id) {
               meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
             }
@@ -527,7 +529,7 @@ export class UserService {
     // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
     // actionable RSVP/agenda nag — so the 40-minute grace `hasMeetingEnded` allows doesn't apply.
     const upcomingMeetings = options?.basic
-      ? meetings.filter((meeting) => {
+      ? normalizedMeetings.filter((meeting) => {
           const now = Date.now();
           if (meeting.occurrences && meeting.occurrences.length > 0) {
             return meeting.occurrences.some((occ) => {
@@ -541,7 +543,7 @@ export class UserService {
           const durationMinutes = parseToInt(meeting.duration) ?? 0;
           return now < startMs + durationMinutes * 60 * 1000;
         })
-      : meetings.filter((meeting) => {
+      : normalizedMeetings.filter((meeting) => {
           if (meeting.occurrences && meeting.occurrences.length > 0) {
             return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
           }
