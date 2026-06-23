@@ -93,6 +93,10 @@ interface RedditApiResponse {
 }
 
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', url: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
+  if (!url.startsWith(REDDIT_ADS_BASE_URL)) {
+    throw new Error(`Reddit API request blocked — URL must start with ${REDDIT_ADS_BASE_URL}`);
+  }
+
   const token = await refreshRedditToken();
 
   const resp = await fetch(url, {
