@@ -2169,9 +2169,14 @@ export class AnalyticsController {
       }
 
       const yearParam = getStringQueryParam(req, 'year');
-      const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+      if (yearParam && !/^\d{4}$/.test(yearParam)) {
+        throw ServiceValidationError.forField('year', 'year must be a 4-digit number', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+      const year = yearParam ? Number(yearParam) : new Date().getFullYear();
 
-      if (isNaN(year) || year < 2020 || year > 2100) {
+      if (!Number.isInteger(year) || year < 2020 || year > 2100) {
         throw ServiceValidationError.forField('year', 'year must be between 2020 and 2100', {
           operation: 'get_social_media_monthly',
         });

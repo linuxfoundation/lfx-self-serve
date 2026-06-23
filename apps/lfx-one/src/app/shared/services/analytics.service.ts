@@ -899,14 +899,15 @@ export class AnalyticsService {
     );
   }
 
+  /** Fetch monthly social media metrics by platform for the selected year. */
   public getSocialMediaMonthly(foundationSlug: string, year?: number): Observable<SocialMediaMonthlyResponse> {
     let params = new HttpParams().set('foundationSlug', foundationSlug);
-    if (year) {
-      params = params.set('year', year.toString());
+    if (Number.isFinite(year)) {
+      params = params.set('year', String(year));
     }
     return this.http
       .get<SocialMediaMonthlyResponse>('/api/analytics/social-media/monthly', { params })
-      .pipe(catchError(() => of({ year: year ?? new Date().getFullYear(), platforms: [] })));
+      .pipe(catchError(() => of({ year: Number.isFinite(year) ? year! : new Date().getFullYear(), platforms: [] })));
   }
 
   /**

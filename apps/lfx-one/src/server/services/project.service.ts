@@ -3343,7 +3343,7 @@ export class ProjectService {
     }
   }
 
-  // TODO: Replace dummy data with Snowflake view SOCIAL_MEDIA_PLATFORM_MONTHLY once data team creates it
+  /** Returns monthly social-media metrics by platform. Temporary dummy data until SOCIAL_MEDIA_PLATFORM_MONTHLY is available. */
   public async getSocialMediaMonthly(_foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
     logger.warning(undefined, 'get_social_media_monthly', 'Returning dummy data — Snowflake view not yet implemented', {
       foundation_slug: _foundationSlug,
@@ -3358,22 +3358,26 @@ export class ProjectService {
       { name: 'Instagram', baseFollowers: 32000, basePosts: 25, baseImpressions: 280000, baseEngagement: 5.6 },
     ];
 
-    const platforms = platformSeeds.map((seed) => {
+    const currentYear = new Date().getUTCFullYear();
+    const monthCount = year === currentYear ? new Date().getUTCMonth() + 1 : 12;
+
+    const platforms = platformSeeds.map((seed, platformIndex) => {
       const makeRow = (monthIndex: number): Omit<SocialMediaPlatformMonthlyRow, 'momChangeFollowers'> => {
         const growth = 1 + monthIndex * 0.012;
+        const jitter = 0.9 + (((platformIndex + 1) * 37 + (monthIndex + 1) * 17) % 21) / 100;
         const followers = Math.round(seed.baseFollowers * growth);
         const prevFollowers = monthIndex === 0 ? 0 : Math.round(seed.baseFollowers * (1 + (monthIndex - 1) * 0.012));
         return {
           month: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
           followers,
           newFollowers: monthIndex === 0 ? 0 : followers - prevFollowers,
-          impressions: Math.round(seed.baseImpressions * growth * (0.9 + monthIndex * 0.02)),
-          engagementRate: Math.round(seed.baseEngagement * (0.95 + monthIndex * 0.01) * 100) / 100,
-          posts: Math.round(seed.basePosts * (0.85 + monthIndex * 0.03)),
+          impressions: Math.round(seed.baseImpressions * growth * jitter),
+          engagementRate: Math.round(seed.baseEngagement * (0.95 + (jitter - 0.9) / 2) * 100) / 100,
+          posts: Math.round(seed.basePosts * (0.8 + (jitter - 0.9) * 2)),
         };
       };
 
-      const rawRows = Array.from({ length: 5 }, (_, i) => makeRow(i));
+      const rawRows = Array.from({ length: monthCount }, (_, i) => makeRow(i));
       const months: SocialMediaPlatformMonthlyRow[] = rawRows.map((row, i) => ({
         ...row,
         momChangeFollowers: this.computeMomChange(i, rawRows),

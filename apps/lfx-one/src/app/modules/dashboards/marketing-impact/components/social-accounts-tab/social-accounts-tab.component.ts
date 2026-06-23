@@ -53,7 +53,7 @@ export class SocialAccountsTabComponent {
   protected readonly hasMonthlyData = computed(() => this.monthlyPlatforms().length > 0);
   protected readonly availableYears = computed(() => {
     const current = new Date().getFullYear();
-    return [current, current - 1, current - 2];
+    return [current, current - 1];
   });
 
   // === Protected Methods ===
@@ -216,9 +216,12 @@ export class SocialAccountsTabComponent {
       const expanded = this.expandedPlatforms();
 
       return data.platforms.map((p) => {
+        const rowsByMonth = new Map(p.months.map((m) => [m.month, m]));
+        const latestRow = p.months.length > 0 ? p.months.reduce((latest, row) => (row.month > latest.month ? row : latest)) : null;
+
         const allMonths: SocialMonthlyRow[] = MONTH_NAMES.map((name, i) => {
           const monthStr = `${data.year}-${String(i + 1).padStart(2, '0')}`;
-          const row = p.months.find((m) => m.month === monthStr);
+          const row = rowsByMonth.get(monthStr);
           if (!row) {
             return {
               month: name,
@@ -240,8 +243,6 @@ export class SocialAccountsTabComponent {
             momChangeClass: this.getMomChangeClass(row.momChangeFollowers),
           };
         });
-
-        const latestRow = p.months.length > 0 ? p.months[p.months.length - 1] : null;
 
         return {
           platform: p.platform,
