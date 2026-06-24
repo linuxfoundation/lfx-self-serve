@@ -648,8 +648,8 @@ export class AkritesServerService {
     return advisories.map((adv) => ({
       id: adv.osvId,
       severity: adv.severity,
-      description: adv.resolution ?? adv.osvId,
-      state: adv.resolution != null ? ('Patched' as const) : ('Open' as const),
+      description: adv.osvId,
+      state: adv.resolution === 'patched' ? ('Patched' as const) : ('Open' as const),
       cvss: null,
       publishedAt: null,
       affectedVersionRange: null,
