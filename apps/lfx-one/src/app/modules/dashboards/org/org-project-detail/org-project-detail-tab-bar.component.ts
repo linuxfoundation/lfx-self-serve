@@ -7,6 +7,10 @@ import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgLensProj
 
 @Component({
   selector: 'lfx-org-project-detail-tab-bar',
+  host: {
+    class: 'flex w-full items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm',
+    'data-testid': 'project-detail-controls-bar',
+  },
   templateUrl: './org-project-detail-tab-bar.component.html',
 })
 export class OrgProjectDetailTabBarComponent {
@@ -18,7 +22,7 @@ export class OrgProjectDetailTabBarComponent {
   public readonly activeTab = input.required<OrgLensProjectDetailTab>();
   public readonly timeRange = input.required<OrgLensLeaderboardTimeRange>();
   public readonly timeRangeOptions = input.required<{ id: OrgLensLeaderboardTimeRange; label: string }[]>();
-  /** Optional metric toggle — rendered between the tab pills and time range when provided. */
+  /** When provided, renders the metric toggle between the tab pills and the time dropdown. */
   public readonly metric = input<OrgLensLeaderboardMetric | null>(null);
   public readonly metricOptions = input<{ id: OrgLensLeaderboardMetric; label: string; icon: string }[] | null>(null);
   public readonly tabChange = output<OrgLensProjectDetailTab>();
@@ -41,10 +45,5 @@ export class OrgProjectDetailTabBarComponent {
         setTimeout(() => this.tabBtns.get(n)?.nativeElement.focus());
       }
     }
-  }
-
-  protected onRangeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as OrgLensLeaderboardTimeRange;
-    this.timeRangeChange.emit(value);
   }
 }

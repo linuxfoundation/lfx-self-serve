@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, effect, ElementRef, inject, PLATFORM_ID, signal, type Signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -31,6 +29,8 @@ import type {
 import { parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { InputTextModule } from 'primeng/inputtext';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
@@ -118,7 +118,7 @@ const TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] =
   { id: 'all', label: 'All time' },
 ];
 
-const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, 'all': 36 };
+const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
 
 /** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
 const STACKED_PALETTE: string[] = [
@@ -150,7 +150,19 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, OrgProjectDetailTabBarComponent, TableComponent, TagComponent, DrawerModule, TooltipModule],
+  imports: [
+    NgTemplateOutlet,
+    BreadcrumbComponent,
+    ChartComponent,
+    EmptyStateComponent,
+    OrgProjectDetailTabBarComponent,
+    TableComponent,
+    TagComponent,
+    DrawerModule,
+    InputTextModule,
+    SkeletonModule,
+    TooltipModule,
+  ],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -401,7 +413,8 @@ export class OrgProjectDetailComponent {
       }),
       switchMap(([orgUid, orgName, projectSlug]) => {
         return this.detailService.getProjectDetail(orgUid, orgName, projectSlug).pipe(
-          catchError(() => {
+          catchError((err: unknown) => {
+            console.error('[OrgProjectDetail] failed to load project detail', err);
             this.fetchError.set(true);
             this.fetchLoading.set(false);
             return of<OrgLensProjectDetailResponse | null>(null);
@@ -460,9 +473,7 @@ export class OrgProjectDetailComponent {
   }
 
   /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
-  private buildExternalTooltipFn(
-    valueSuffix = ''
-  ): (args: {
+  private buildExternalTooltipFn(valueSuffix = ''): (args: {
     chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } };
     tooltip: {
       opacity: number;
@@ -563,7 +574,13 @@ export class OrgProjectDetailComponent {
     };
   }
 
-  private buildCardChartData(series: number[], projectSeries: number[], colorHex: string, variant: 'area' | 'bar' | 'line', labels: string[]): ChartData<ChartType> {
+  private buildCardChartData(
+    series: number[],
+    projectSeries: number[],
+    colorHex: string,
+    variant: 'area' | 'bar' | 'line',
+    labels: string[]
+  ): ChartData<ChartType> {
     if (variant === 'bar') {
       return {
         labels,
@@ -617,7 +634,11 @@ export class OrgProjectDetailComponent {
     const top10 = sorted.slice(0, 10);
     const rest = sorted.slice(10);
 
-    interface StackEntry { name: string; score: number; seed: number }
+    interface StackEntry {
+      name: string;
+      score: number;
+      seed: number;
+    }
     const entries: StackEntry[] = top10.map((r, i) => ({ name: r.orgName, score: r.scores.combined, seed: i }));
     if (rest.length > 0) {
       const avg = rest.reduce((s, r) => s + r.scores.combined, 0) / rest.length;
@@ -626,18 +647,23 @@ export class OrgProjectDetailComponent {
 
     // Build raw series, then normalize each month so all series sum to 100%.
     const rawSeries: number[][] = entries.map((entry) => this.buildTrendSeries(entry.score, months, entry.seed));
-    const pctSeries: number[][] = rawSeries.map((series, si) =>
-      series.map((val, mi) => {
-        const total = rawSeries.reduce((sum, s) => sum + (s[mi] ?? 0), 0);
-        return total > 0 ? Math.round((val / total) * 1000) / 10 : 0;
-      })
+    const monthTotals = rawSeries[0].map((_, mi) => rawSeries.reduce((sum, s) => sum + (s[mi] ?? 0), 0));
+    const pctSeries: number[][] = rawSeries.map((series) =>
+      series.map((val, mi) => (monthTotals[mi] > 0 ? Math.round((val / monthTotals[mi]) * 1000) / 10 : 0))
     );
 
-    const datasets = entries.map((entry, i) => {
-      const color = STACKED_PALETTE[i] ?? lfxColors.gray[300];
+    // Rank by most-recent-month share (most influential now → first in ranked[]).
+    const lastIdx = months - 1;
+    const ranked = entries.map((entry, i) => ({ entry, pct: pctSeries[i], lastShare: pctSeries[i][lastIdx] ?? 0 })).sort((a, b) => b.lastShare - a.lastShare);
+
+    // datasets[0] = most influential (bottom of stack, first/left in legend).
+    // datasets[N] = least influential (top of stack, last/right in legend).
+    // This matches the standard 100% stacked area convention used in the reference design.
+    const datasets = ranked.map((item, rankIdx) => {
+      const color = STACKED_PALETTE[rankIdx] ?? lfxColors.gray[300];
       return {
-        label: entry.name,
-        data: pctSeries[i],
+        label: item.entry.name,
+        data: item.pct,
         backgroundColor: color + '99',
         borderColor: color,
         borderWidth: 1.5,
@@ -672,17 +698,33 @@ export class OrgProjectDetailComponent {
   }
 
   /**
-   * Generates a deterministic N-month series ending near `currentScore`.
-   * Each seed value shifts the wave phase so companies look distinct.
+   * Generates a deterministic N-month series for each company using a shaped trajectory
+   * so the stacked chart shows real competitive dynamics — leaders dipping, challengers
+   * surging, mid-tier players crossing over. Each seed maps to a [start, mid, end] ratio
+   * applied to the company's current score, interpolated through a configurable midpoint.
+   * Values are clamped to 0.5 so no company disappears from the chart entirely.
    */
   private buildTrendSeries(currentScore: number, months: number, seed: number): number[] {
-    const startRatio = 0.72 + (seed % 5) * 0.04;
-    const series: number[] = [];
-    for (let i = 0; i < months; i++) {
+    // [startRatio, midRatio, endRatio, midPoint(0..1)]
+    // Ratios are multiples of currentScore. end is always 1.0 (= currentScore).
+    const SHAPES: [number, number, number, number][] = [
+      [0.88, 1.1, 1.0, 0.45], // 0: stable dominant — slight mid-peak, very steady presence
+      [0.52, 0.76, 1.0, 0.55], // 1: strong recent growth — was behind, now surging
+      [1.34, 1.18, 1.0, 0.5], // 2: gradual decline — was clearly ahead, ceding ground
+      [0.4, 0.62, 1.0, 0.62], // 3: late-stage surge — slow start, rapid recent acceleration
+      [1.14, 0.66, 1.0, 0.38], // 4: dip-and-recovery — sharp early drop then strong comeback
+      [1.48, 1.24, 1.0, 0.5], // 5: steep decline — large historical lead, losing fast
+      [0.76, 0.88, 1.0, 0.5], // 6: steady incremental growth — consistent upward drift
+      [0.46, 1.3, 1.0, 0.56], // 7: spike-then-settle — brief surge at mid-period, then normalises
+      [0.95, 0.56, 1.0, 0.44], // 8: valley — noticeable mid-period trough, full recovery
+      [1.24, 1.12, 1.0, 0.5], // 9: gentle decline — modest but sustained loss of share
+      [1.0, 1.0, 1.0, 0.5], // 10: flat (All others) — stable catch-all bucket
+    ];
+    const [startR, midR, endR, midT] = SHAPES[Math.min(seed, SHAPES.length - 1)];
+    return Array.from({ length: months }, (_, i) => {
       const t = months === 1 ? 1 : i / (months - 1);
-      const wave = Math.sin((i + seed * 2.1) * 0.8) * 0.05;
-      series.push(Math.round(currentScore * (startRatio + (1 - startRatio) * t + wave) * 10) / 10);
-    }
-    return series;
+      const ratio = t <= midT ? startR + (midR - startR) * (t / midT) : midR + (endR - midR) * ((t - midT) / (1 - midT));
+      return Math.max(0.5, Math.round(currentScore * ratio * 10) / 10);
+    });
   }
 }

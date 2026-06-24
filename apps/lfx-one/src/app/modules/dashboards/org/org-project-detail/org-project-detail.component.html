@@ -5,10 +5,10 @@
   @switch (pageState()) {
     @case ('loading') {
       <div class="flex flex-col gap-4" data-testid="project-detail-loading">
-        <div class="h-6 w-64 animate-pulse rounded bg-gray-200"></div>
-        <div class="h-10 w-3/4 animate-pulse rounded bg-gray-200"></div>
-        <div class="h-5 w-2/3 animate-pulse rounded bg-gray-200"></div>
-        <div class="mt-4 h-64 w-full animate-pulse rounded bg-gray-100"></div>
+        <p-skeleton height="1.5rem" width="16rem" />
+        <p-skeleton height="2.5rem" width="75%" />
+        <p-skeleton height="1.25rem" width="66%" />
+        <p-skeleton height="16rem" width="100%" styleClass="mt-4" />
       </div>
     }
 
@@ -110,7 +110,7 @@
           </div>
         </section>
 
-        <!-- Tab bar: tabs on left, optional metric toggle + time range on right -->
+        <!-- Tab bar: tabs on left, metric toggle (leaderboards only) + time range on right -->
         <lfx-org-project-detail-tab-bar
           [tabs]="tabs"
           [activeTab]="activeTab()"
@@ -150,6 +150,7 @@
                     <button
                       type="button"
                       class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      [class.invisible]="!techArrows().left"
                       (click)="scrollCards(technicalTrack, -1)"
                       aria-label="Scroll technical cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
@@ -157,6 +158,7 @@
                     <button
                       type="button"
                       class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      [class.invisible]="!techArrows().right"
                       (click)="scrollCards(technicalTrack, 1)"
                       aria-label="Scroll technical cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
@@ -194,6 +196,7 @@
                     <button
                       type="button"
                       class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      [class.invisible]="!ecoArrows().left"
                       (click)="scrollCards(ecosystemTrack, -1)"
                       aria-label="Scroll ecosystem cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
@@ -201,6 +204,7 @@
                     <button
                       type="button"
                       class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      [class.invisible]="!ecoArrows().right"
                       (click)="scrollCards(ecosystemTrack, 1)"
                       aria-label="Scroll ecosystem cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
@@ -237,12 +241,13 @@
                     <div class="relative">
                       <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
                       <input
+                        pInputText
                         type="text"
                         placeholder="Search"
                         [value]="techSearch()"
                         aria-label="Technical leaderboard search"
                         data-testid="project-detail-search-technical"
-                        class="w-40 rounded-lg border border-gray-300 py-1.5 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                        class="w-40 py-1.5 pl-9 pr-3 text-sm"
                         (input)="onSearch('technical', $event)" />
                     </div>
                   </div>
@@ -277,9 +282,17 @@
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
                               @if (row.orgLogoUrl) {
-                                <img [src]="row.orgLogoUrl" [alt]="row.orgName + ' logo'" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                                <img
+                                  [src]="row.orgLogoUrl"
+                                  [alt]="row.orgName + ' logo'"
+                                  class="h-7 w-7 shrink-0 rounded-full object-contain"
+                                  aria-hidden="true" />
                               } @else {
-                                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500" aria-hidden="true">{{ row.initials }}</span>
+                                <span
+                                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
+                                  aria-hidden="true"
+                                  >{{ row.initials }}</span
+                                >
                               }
                               <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
                               @if (row.isViewingOrg) {
@@ -309,12 +322,13 @@
                     <div class="relative">
                       <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
                       <input
+                        pInputText
                         type="text"
                         placeholder="Search"
                         [value]="ecoSearch()"
                         aria-label="Ecosystem leaderboard search"
                         data-testid="project-detail-search-ecosystem"
-                        class="w-40 rounded-lg border border-gray-300 py-1.5 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                        class="w-40 py-1.5 pl-9 pr-3 text-sm"
                         (input)="onSearch('ecosystem', $event)" />
                     </div>
                   </div>
@@ -349,9 +363,17 @@
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
                               @if (row.orgLogoUrl) {
-                                <img [src]="row.orgLogoUrl" [alt]="row.orgName + ' logo'" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                                <img
+                                  [src]="row.orgLogoUrl"
+                                  [alt]="row.orgName + ' logo'"
+                                  class="h-7 w-7 shrink-0 rounded-full object-contain"
+                                  aria-hidden="true" />
                               } @else {
-                                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500" aria-hidden="true">{{ row.initials }}</span>
+                                <span
+                                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
+                                  aria-hidden="true"
+                                  >{{ row.initials }}</span
+                                >
                               }
                               <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
                               @if (row.isViewingOrg) {
@@ -381,7 +403,7 @@
                 </div>
                 <div class="rounded-lg border border-gray-200 bg-white p-4">
                   @if (hasStackedTrend()) {
-                    <div class="h-80" data-testid="project-detail-trend-chart">
+                    <div class="h-[688px]" data-testid="project-detail-trend-chart">
                       <lfx-chart type="line" [data]="stackedTrendData()" [options]="stackedTrendOptions" height="100%" />
                     </div>
                   } @else {
@@ -425,7 +447,6 @@
     </div>
   </button>
 </ng-template>
-
 
 <!-- Card detail drawer — always in DOM so PrimeNG can animate open/close correctly -->
 <p-drawer
