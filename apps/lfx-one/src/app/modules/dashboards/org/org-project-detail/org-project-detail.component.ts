@@ -419,15 +419,15 @@ export class OrgProjectDetailComponent {
       const rows = (tooltip.dataPoints ?? [])
         .map(
           (p) =>
-            '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
-            `<span style="width:9px;height:9px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}</span>` +
-            `<span style="font-size:13px;color:#4B5563">${p.dataset.label ?? ''}: ` +
+            '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
+            `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}"></span>` +
+            `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${p.dataset.label ?? ''}: ` +
             `<strong style="color:#111827;font-weight:600">${p.formattedValue}</strong></span>` +
             '</div>'
         )
         .join('');
 
-      tip.innerHTML = `<p style="font-size:13px;font-weight:700;color:#111827">${title}</p>${rows}`;
+      tip.innerHTML = `<p style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap">${title}</p>${rows}`;
       tip.style.display = 'block';
     };
   }
@@ -504,7 +504,7 @@ export class OrgProjectDetailComponent {
         tension: 0.4,
         borderWidth: 2,
         pointRadius: 0,
-        pointHoverRadius: 4,
+        pointHoverRadius: 0,
       },
     ];
     if (projectSeries.length > 0) {
@@ -517,7 +517,7 @@ export class OrgProjectDetailComponent {
         tension: 0.4,
         borderWidth: 1.5,
         pointRadius: 0,
-        pointHoverRadius: 4,
+        pointHoverRadius: 0,
       });
     }
     return { labels: this.monthLabels, datasets };
