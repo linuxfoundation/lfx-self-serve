@@ -341,6 +341,7 @@ export class OrgProjectDetailComponent {
       return {
         rank: i + 1,
         orgName: entry.row.orgName,
+        orgLogoUrl: entry.row.orgLogoUrl,
         initials: this.initialsFor(entry.row.orgName),
         activityLabel: this.activityFor(entry.score).toLocaleString(),
         bandLabel: bandMeta.label,

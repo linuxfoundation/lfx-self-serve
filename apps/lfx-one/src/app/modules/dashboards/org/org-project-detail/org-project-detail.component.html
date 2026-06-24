@@ -312,10 +312,17 @@
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
                           <td class="px-3 py-3.5">
-                            <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
-                            @if (row.isViewingOrg) {
-                              <span class="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
-                            }
+                            <div class="flex items-center gap-2.5">
+                              @if (row.orgLogoUrl) {
+                                <img [src]="row.orgLogoUrl" [alt]="row.orgName + ' logo'" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                              } @else {
+                                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500" aria-hidden="true">{{ row.initials }}</span>
+                              }
+                              <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
+                              @if (row.isViewingOrg) {
+                                <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
+                              }
+                            </div>
                           </td>
                           <td class="px-3 py-3.5 text-right">
                             @if (isActivityMode()) {
@@ -378,10 +385,17 @@
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
                           <td class="px-3 py-3.5">
-                            <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
-                            @if (row.isViewingOrg) {
-                              <span class="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
-                            }
+                            <div class="flex items-center gap-2.5">
+                              @if (row.orgLogoUrl) {
+                                <img [src]="row.orgLogoUrl" [alt]="row.orgName + ' logo'" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                              } @else {
+                                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500" aria-hidden="true">{{ row.initials }}</span>
+                              }
+                              <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
+                              @if (row.isViewingOrg) {
+                                <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
+                              }
+                            </div>
                           </td>
                           <td class="px-3 py-3.5 text-right">
                             @if (isActivityMode()) {

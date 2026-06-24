@@ -439,6 +439,18 @@ const COMPETITORS: { name: string; strength: number; techBias: number; ecoBias: 
   { name: 'Independent contributors', strength: 0.32, techBias: 1.0, ecoBias: 0.8 },
 ];
 
+const ORG_LOGO_URLS: Record<string, string> = {
+  Google: 'https://github.com/google.png',
+  'Red Hat': 'https://github.com/RedHatOfficial.png',
+  Microsoft: 'https://github.com/microsoft.png',
+  Amazon: 'https://github.com/amzn.png',
+  VMware: 'https://github.com/vmware.png',
+  IBM: 'https://github.com/ibm.png',
+  Intel: 'https://github.com/intel.png',
+  SUSE: 'https://github.com/SUSE.png',
+  Huawei: 'https://github.com/Huawei.png',
+};
+
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
@@ -450,7 +462,7 @@ function leaderboard(seed: ProjectDetailSeed, orgName: string): OrgLensProjectLe
     const combined = round1(c.strength * topScore);
     return {
       orgName: c.name,
-      orgLogoUrl: '',
+      orgLogoUrl: ORG_LOGO_URLS[c.name] ?? '',
       scores: { combined, technical: round1(Math.min(99, combined * c.techBias)), ecosystem: round1(Math.min(99, combined * c.ecoBias)) },
       activityCount: Math.round(combined * 46),
       trendSparkline: ramp(combined, 0.86, 1),
