@@ -14,6 +14,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailSection,
@@ -106,9 +107,9 @@ const BAND_CHIP_CLASS: Record<OrgLensProjectBand, string> = {
   'non-lf': 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
 };
 
-const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string }[] = [
-  { id: 'influence', label: 'Calculated Influence' },
-  { id: 'activity', label: 'Activity Count' },
+const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: string }[] = [
+  { id: 'influence', label: 'Calculated Influence', icon: 'fa-light fa-chart-bar' },
+  { id: 'activity', label: 'Activity Count', icon: 'fa-light fa-list-ol' },
 ];
 
 const TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] = [
@@ -149,7 +150,7 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TableComponent, TagComponent, DrawerModule, TooltipModule],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, OrgProjectDetailTabBarComponent, TableComponent, TagComponent, DrawerModule, TooltipModule],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -215,12 +216,14 @@ export class OrgProjectDetailComponent {
 
   // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
-  protected readonly technicalCards = computed(() =>
-    (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical'))
-  );
-  protected readonly ecosystemCards = computed(() =>
-    (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem'))
-  );
+  protected readonly technicalCards = computed(() => {
+    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    return (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
+  });
+  protected readonly ecosystemCards = computed(() => {
+    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
+  });
 
   // Sparkline card options — stable class-level references so Angular passes them correctly through ng-template context.
   protected readonly lineCardOptions: ChartOptions<ChartType> = this.buildLineAreaCardOptions();
@@ -560,16 +563,19 @@ export class OrgProjectDetailComponent {
     return out;
   }
 
-  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem'): InfluenceCardVm {
+  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem', months = 12): InfluenceCardVm {
     const variant = this.chartVariantFor(card.key);
     const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
+    const sparkline = card.sparkline.slice(-months);
+    const projectSparkline = card.projectSparkline.slice(-months);
+    const labels = this.monthLabels.slice(-months);
     return {
       key: card.key,
       title: card.label,
       scopeLabel: card.scopeLabel,
-      hasData: card.sparkline.length > 0,
+      hasData: sparkline.length > 0,
       chartType: (variant === 'bar' ? 'bar' : 'line') as ChartType,
-      chartData: this.buildCardChartData(card.sparkline, card.projectSparkline, colorHex, variant),
+      chartData: this.buildCardChartData(sparkline, projectSparkline, colorHex, variant, labels),
       chartOptions: variant === 'bar' ? this.buildBarCardOptions(valueSuffix) : this.buildLineAreaCardOptions(valueSuffix),
       valueSuffix,
       caption: card.caption,
@@ -578,10 +584,10 @@ export class OrgProjectDetailComponent {
     };
   }
 
-  private buildCardChartData(series: number[], projectSeries: number[], colorHex: string, variant: 'area' | 'bar' | 'line'): ChartData<ChartType> {
+  private buildCardChartData(series: number[], projectSeries: number[], colorHex: string, variant: 'area' | 'bar' | 'line', labels: string[]): ChartData<ChartType> {
     if (variant === 'bar') {
       return {
-        labels: this.monthLabels,
+        labels,
         datasets: [{ label: 'Your company', data: series, backgroundColor: colorHex + '99', borderColor: colorHex, borderWidth: 0, borderRadius: 4 }],
       };
     }
@@ -612,7 +618,7 @@ export class OrgProjectDetailComponent {
         pointHoverRadius: 0,
       });
     }
-    return { labels: this.monthLabels, datasets };
+    return { labels, datasets };
   }
 
   /**

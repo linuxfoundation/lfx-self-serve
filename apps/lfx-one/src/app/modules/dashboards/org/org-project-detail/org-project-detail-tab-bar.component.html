@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm"
+  data-testid="project-detail-controls-bar">
+  <div class="flex items-center gap-2">
+    <ng-content></ng-content>
+  </div>
+  <div class="flex items-center gap-1.5" role="group" aria-label="Time range" data-testid="project-detail-time-range">
+    @for (opt of timeRangeOptions(); track opt.id) {
+      <button
+        type="button"
+        class="rounded-lg border px-3.5 py-1.5 text-sm font-medium transition-colors"
+        [class.bg-blue-600]="timeRange() === opt.id"
+        [class.border-blue-600]="timeRange() === opt.id"
+        [class.text-white]="timeRange() === opt.id"
+        [class.bg-white]="timeRange() !== opt.id"
+        [class.border-gray-300]="timeRange() !== opt.id"
+        [class.text-gray-700]="timeRange() !== opt.id"
+        [attr.aria-pressed]="timeRange() === opt.id"
+        [attr.data-testid]="'project-detail-range-' + opt.id"
+        (click)="timeRangeChange.emit(opt.id)">
+        {{ opt.label }}
+      </button>
+    }
+  </div>
+</div>

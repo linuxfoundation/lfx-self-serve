@@ -145,6 +145,13 @@
               id="project-detail-tab-panel-pd-influence"
               class="flex flex-col gap-8"
               [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
+              <!-- Controls bar: time range selector on right -->
+              <lfx-org-project-detail-tab-bar
+                [timeRange]="timeRange()"
+                [timeRangeOptions]="timeRangeOptions"
+                (timeRangeChange)="setTimeRange($event)">
+              </lfx-org-project-detail-tab-bar>
+
               <!-- Technical Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
                 <div class="flex items-center gap-3">
@@ -240,48 +247,32 @@
               id="project-detail-tab-panel-pd-leaderboards"
               class="flex flex-col gap-4"
               [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
-              <!-- Page-level controls: metric toggle + time range selector -->
-              <div class="flex flex-wrap items-center gap-3">
-                <div
-                  class="inline-flex w-fit rounded-md border border-gray-200 p-0.5"
-                  role="group"
-                  aria-label="Metric"
-                  data-testid="project-detail-metric-toggle">
-                  @for (opt of metricOptions; track opt.id) {
-                    <button
-                      type="button"
-                      class="rounded px-3 py-1 text-sm font-medium transition-colors"
-                      [class.bg-blue-600]="metric() === opt.id"
-                      [class.text-white]="metric() === opt.id"
-                      [class.text-gray-600]="metric() !== opt.id"
-                      [class.hover:bg-gray-100]="metric() !== opt.id"
-                      [attr.aria-pressed]="metric() === opt.id"
-                      [attr.data-testid]="'project-detail-metric-' + opt.id"
-                      (click)="setMetric(opt.id)">
-                      {{ opt.label }}
-                    </button>
-                  }
-                </div>
-                <div
-                  class="inline-flex w-fit rounded-md border border-gray-200 p-0.5"
-                  role="group"
-                  aria-label="Time range"
-                  data-testid="project-detail-time-range-toggle">
-                  @for (opt of timeRangeOptions; track opt.id) {
-                    <button
-                      type="button"
-                      class="rounded px-3 py-1 text-sm font-medium transition-colors"
-                      [class.bg-blue-600]="timeRange() === opt.id"
-                      [class.text-white]="timeRange() === opt.id"
-                      [class.text-gray-600]="timeRange() !== opt.id"
-                      [class.hover:bg-gray-100]="timeRange() !== opt.id"
-                      [attr.aria-pressed]="timeRange() === opt.id"
-                      [attr.data-testid]="'project-detail-range-' + opt.id"
-                      (click)="setTimeRange(opt.id)">
-                      {{ opt.label }}
-                    </button>
-                  }
-                </div>
+              <!-- Controls bar: time range selector on right -->
+              <lfx-org-project-detail-tab-bar
+                [timeRange]="timeRange()"
+                [timeRangeOptions]="timeRangeOptions"
+                (timeRangeChange)="setTimeRange($event)">
+              </lfx-org-project-detail-tab-bar>
+
+              <!-- Metric toggle: individual List/Calendar-style bordered buttons -->
+              <div class="flex items-center gap-2" role="group" aria-label="Metric" data-testid="project-detail-metric-toggle">
+                @for (opt of metricOptions; track opt.id) {
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors"
+                    [class.bg-blue-600]="metric() === opt.id"
+                    [class.border-blue-600]="metric() === opt.id"
+                    [class.text-white]="metric() === opt.id"
+                    [class.bg-white]="metric() !== opt.id"
+                    [class.border-gray-300]="metric() !== opt.id"
+                    [class.text-gray-700]="metric() !== opt.id"
+                    [attr.aria-pressed]="metric() === opt.id"
+                    [attr.data-testid]="'project-detail-metric-' + opt.id"
+                    (click)="setMetric(opt.id)">
+                    <i [class]="opt.icon" aria-hidden="true"></i>
+                    {{ opt.label }}
+                  </button>
+                }
               </div>
 
               <!-- Side-by-side Technical / Ecosystem leaderboards -->
