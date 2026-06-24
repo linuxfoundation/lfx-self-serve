@@ -85,7 +85,7 @@ export class AkritesService {
     return this.http.post<AkritesStewardshipResponse>('/api/akrites/stewardships', { purl, actor }).pipe(take(1));
   }
 
-  public assignSteward(stewardshipId: number, body: AkritesAssignStewardRequest): Observable<AkritesAssignStewardResponse> {
+  public assignSteward(stewardshipId: string, body: AkritesAssignStewardRequest): Observable<AkritesAssignStewardResponse> {
     const actor = this.buildActor();
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));
@@ -93,7 +93,7 @@ export class AkritesService {
     return this.http.put<AkritesAssignStewardResponse>(`/api/akrites/stewardships/${stewardshipId}/steward`, { ...body, actor }).pipe(take(1));
   }
 
-  public escalateStewardship(stewardshipId: number, body: AkritesEscalateRequest): Observable<AkritesStewardshipResponse> {
+  public escalateStewardship(stewardshipId: string, body: AkritesEscalateRequest): Observable<AkritesStewardshipResponse> {
     const actor = this.buildActor();
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));
@@ -101,7 +101,7 @@ export class AkritesService {
     return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/escalate`, { ...body, actor }).pipe(take(1));
   }
 
-  public updateStewardshipStatus(stewardshipId: number, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
+  public updateStewardshipStatus(stewardshipId: string, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
     const actor = this.buildActor();
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));

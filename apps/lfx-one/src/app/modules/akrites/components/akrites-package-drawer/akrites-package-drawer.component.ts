@@ -81,7 +81,7 @@ export class AkritesPackageDrawerComponent {
 
   // Prefer the loaded detail status (fresh after a mutation + reload) over the list-row input, which can be stale.
   protected readonly stewardshipStatus = computed<AkritesStatus>(() => this.packageData()?.status ?? this.packageStatus() ?? 'unassigned');
-  protected readonly stewardshipId = computed<number | null>(() => this.packageData()?.stewardshipId ?? null);
+  protected readonly stewardshipId = computed<string | null>(() => this.packageData()?.stewardshipId ?? null);
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
   protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned');
@@ -251,7 +251,7 @@ export class AkritesPackageDrawerComponent {
     this.akritesService
       .openStewardship(purl)
       .pipe(
-        switchMap((res) => this.akritesService.assignSteward(parseInt(res.stewardship.id, 10), body)),
+        switchMap((res) => this.akritesService.assignSteward(res.stewardship.id, body)),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
