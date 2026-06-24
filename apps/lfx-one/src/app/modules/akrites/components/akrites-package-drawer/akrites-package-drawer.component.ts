@@ -9,11 +9,11 @@ import { MessageService } from 'primeng/api';
 
 import {
   AkritesAdvisory,
+  AkritesAdvisorySeverity,
   AkritesAssignStewardRequest,
   AkritesEscalateRequest,
   AkritesPackage,
   AkritesStatus,
-  AkritesSeverity,
   AkritesSteward,
   AkritesUpdateStatusRequest,
   AkritesUpdatableStatus,
@@ -70,22 +70,22 @@ export class AkritesPackageDrawerComponent {
   protected readonly assignStewardModalVisible = signal(false);
   protected readonly escalateModalVisible = signal(false);
   protected readonly statusModalVisible = signal(false);
-  protected readonly advisorySeverityFilter = signal<AkritesSeverity | null>(null);
+  protected readonly advisorySeverityFilter = signal<AkritesAdvisorySeverity | null>(null);
   protected readonly advisoryResolutionFilter = signal<'open' | 'patched' | null>(null);
   protected readonly advisoryLoading = signal(false);
   protected readonly advisoryLoadingMore = signal(false);
   protected readonly advisoryItems = signal<(AkritesAdvisory & { tagSeverity: TagSeverity })[]>([]);
   protected readonly advisoryTotal = signal<number>(0);
   protected readonly advisoryHasMore = computed(() => this.advisoryTotal() > 0 && this.advisoryItems().length < this.advisoryTotal());
-  protected readonly advisoryShownCount = computed(() => {
-    const n = this.advisoryItems().length;
-    return n < 100 ? n : n - (n % 100);
-  });
+  protected readonly advisoryShownCount = computed(() => this.advisoryItems().length);
+  private static readonly ADVISORY_PAGE_SIZE = 10;
   private _advisoryNextPage = 2;
+  /** Monotonic key identifying the active advisory query; stale load-more responses are dropped. */
+  private _advisoryRequestKey = 0;
   private readonly reloadTrigger = signal(0);
   protected readonly packageData: Signal<AkritesPackage | null> = this.initPackageData();
 
-  protected readonly advisorySeverityOptions: readonly { value: AkritesSeverity; label: string }[] = [
+  protected readonly advisorySeverityOptions: readonly { value: AkritesAdvisorySeverity; label: string }[] = [
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'moderate', label: 'Moderate' },
@@ -157,7 +157,7 @@ export class AkritesPackageDrawerComponent {
     this.initAdvisoryLoader();
   }
 
-  protected setSeverityFilter(severity: AkritesSeverity | null): void {
+  protected setSeverityFilter(severity: AkritesAdvisorySeverity | null): void {
     this.advisorySeverityFilter.set(severity);
   }
 
@@ -170,6 +170,9 @@ export class AkritesPackageDrawerComponent {
     const purl = this.packageId();
     if (!purl) return;
 
+    // Capture the active request key so a response that resolves after the query
+    // context changed (package / tab / filters reset by initAdvisoryLoader) is dropped.
+    const requestKey = this._advisoryRequestKey;
     this.advisoryLoadingMore.set(true);
     this.akritesService
       .getPackageAdvisories({
@@ -177,7 +180,7 @@ export class AkritesPackageDrawerComponent {
         severity: this.advisorySeverityFilter(),
         resolution: this.advisoryResolutionFilter(),
         page: this._advisoryNextPage,
-        pageSize: 100,
+        pageSize: AkritesPackageDrawerComponent.ADVISORY_PAGE_SIZE,
       })
       .pipe(
         catchError(() => of(null)),
@@ -186,7 +189,8 @@ export class AkritesPackageDrawerComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((page) => {
-        if (page) {
+        // Ignore stale responses from a superseded query.
+        if (page && requestKey === this._advisoryRequestKey) {
           this._advisoryNextPage++;
           this.advisoryItems.update((items) => [...items, ...page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))]);
         }
@@ -388,12 +392,14 @@ export class AkritesPackageDrawerComponent {
       .pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap((p) => {
+          // Bump the request key so any in-flight load-more response is discarded.
+          this._advisoryRequestKey++;
           this.advisoryItems.set([]);
           this.advisoryTotal.set(0);
           this._advisoryNextPage = 2;
           if (!p) return of(null);
           this.advisoryLoading.set(true);
-          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: 10 }).pipe(
+          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.ADVISORY_PAGE_SIZE }).pipe(
             catchError(() => of(null)),
             finalize(() => this.advisoryLoading.set(false))
           );

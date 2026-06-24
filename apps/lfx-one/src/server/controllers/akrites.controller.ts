@@ -5,14 +5,15 @@ import {
   AkritesActivityResponse,
   AkritesAdvisoryPage,
   AkritesAdvisoryParams,
+  AkritesAdvisorySeverity,
   AkritesListParams,
   AkritesMetrics,
   AkritesPackagesResponse,
   AkritesScatterResponse,
-  AkritesSeverity,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import {
   getStringQueryParam,
   parseAssignStewardBody,
@@ -72,7 +73,7 @@ export class AkritesController {
     try {
       const purl = getStringQueryParam(req, 'purl');
       if (!purl) {
-        return next(new Error('purl query parameter is required'));
+        return next(ServiceValidationError.forField('purl', 'purl query parameter is required', { operation: 'get_akrites_package_advisories' }));
       }
 
       const pageRaw = getStringQueryParam(req, 'page');
@@ -82,9 +83,9 @@ export class AkritesController {
       const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
       const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 10;
 
-      const validSeverities: AkritesSeverity[] = ['critical', 'high', 'medium', 'moderate', 'low'];
+      const validSeverities: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
       const rawSeverity = getStringQueryParam(req, 'severity');
-      const severity = rawSeverity && validSeverities.includes(rawSeverity as AkritesSeverity) ? (rawSeverity as AkritesSeverity) : null;
+      const severity = rawSeverity && validSeverities.includes(rawSeverity as AkritesAdvisorySeverity) ? (rawSeverity as AkritesAdvisorySeverity) : null;
 
       const rawResolution = getStringQueryParam(req, 'resolution');
       const resolution = rawResolution === 'open' || rawResolution === 'patched' ? rawResolution : null;

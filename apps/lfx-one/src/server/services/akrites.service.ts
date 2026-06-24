@@ -18,6 +18,7 @@ import {
   AkritesAdvisory,
   AkritesAdvisoryPage,
   AkritesAdvisoryParams,
+  AkritesAdvisorySeverity,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
@@ -637,7 +638,7 @@ export class AkritesServerService {
 
   private getHighestVulnSeverity(advisories: AkritesAdvisory[]): AkritesSeverity | null {
     if (!advisories.length) return null;
-    const order: AkritesSeverity[] = ['critical', 'high', 'medium', 'moderate', 'low'];
+    const order: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
     for (const sev of order) {
       if (advisories.some((a) => a.severity === sev)) return sev;
     }

@@ -271,9 +271,10 @@
           <!-- Filters -->
           <div class="flex items-center gap-2 px-4 pb-2.5 flex-wrap border-b border-gray-100" data-testid="akrites-drawer-advisory-filters">
             <button
-              class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
               [class]="
-                advisorySeverityFilter() === null ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                advisorySeverityFilter() === null
+                  ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                  : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
               "
               (click)="setSeverityFilter(null)"
               data-testid="akrites-advisory-filter-all">
@@ -281,11 +282,10 @@
             </button>
             @for (opt of advisorySeverityOptions; track opt.value) {
               <button
-                class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
                 [class]="
                   advisorySeverityFilter() === opt.value
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                 "
                 (click)="setSeverityFilter(opt.value)"
                 [attr.data-testid]="'akrites-advisory-filter-' + opt.value">
@@ -294,33 +294,30 @@
             }
             <div class="ml-auto flex items-center gap-1">
               <button
-                class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
                 [class]="
                   advisoryResolutionFilter() === null
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                 "
                 (click)="setResolutionFilter(null)"
                 data-testid="akrites-advisory-state-all">
                 All
               </button>
               <button
-                class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
                 [class]="
                   advisoryResolutionFilter() === 'open'
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                 "
                 (click)="setResolutionFilter('open')"
                 data-testid="akrites-advisory-state-open">
                 Open
               </button>
               <button
-                class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
                 [class]="
                   advisoryResolutionFilter() === 'patched'
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                 "
                 (click)="setResolutionFilter('patched')"
                 data-testid="akrites-advisory-state-patched">
@@ -344,7 +341,11 @@
                       <span [class]="adv.state === 'Patched' ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'">{{ adv.state }}</span>
                     </div>
                   </div>
-                  <lfx-tag [value]="adv.severity ?? ''" [severity]="adv.tagSeverity" [rounded]="true" />
+                  @if (adv.severity) {
+                    <lfx-tag [value]="adv.severity" [severity]="adv.tagSeverity" [rounded]="true" />
+                  } @else {
+                    <lfx-tag value="Unknown" [severity]="adv.tagSeverity" [rounded]="true" />
+                  }
                 </div>
               }
             </div>
