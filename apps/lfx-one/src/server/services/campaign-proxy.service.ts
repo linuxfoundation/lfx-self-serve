@@ -37,8 +37,12 @@ import { executeRedditCampaignCreation, updateRedditCampaignStatus } from './red
 // ---------------------------------------------------------------------------
 
 import { GoogleAdsApi, enums } from 'google-ads-api';
+import { instance as gaxiosInstance } from 'gaxios';
 
 import type { Customer } from 'google-ads-api';
+
+// Use Node.js native fetch instead of node-fetch
+gaxiosInstance.defaults.fetchImplementation = globalThis.fetch;
 
 // ---------------------------------------------------------------------------
 // Required environment variables — log warnings on first use for missing ones
