@@ -469,6 +469,7 @@ export class AkritesServerService {
       lastActivityTime: '',
       downloadsLastMonth: (() => {
         if (impact?.downloadsLastMonth == null) return null;
+        if (typeof impact.downloadsLastMonth === 'string' && impact.downloadsLastMonth.trim() === '') return null;
         const n = Number(impact.downloadsLastMonth);
         return Number.isFinite(n) ? this.formatNumber(n) : null;
       })(),

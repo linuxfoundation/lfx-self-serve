@@ -90,7 +90,9 @@ export class AkritesService {
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));
     }
-    return this.http.put<AkritesAssignStewardResponse>(`/api/akrites/stewardships/${stewardshipId}/steward`, { ...body, actor }).pipe(take(1));
+    return this.http
+      .put<AkritesAssignStewardResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/steward`, { ...body, actor })
+      .pipe(take(1));
   }
 
   public escalateStewardship(stewardshipId: string, body: AkritesEscalateRequest): Observable<AkritesStewardshipResponse> {
@@ -98,7 +100,9 @@ export class AkritesService {
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));
     }
-    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/escalate`, { ...body, actor }).pipe(take(1));
+    return this.http
+      .put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/escalate`, { ...body, actor })
+      .pipe(take(1));
   }
 
   public updateStewardshipStatus(stewardshipId: string, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
@@ -106,7 +110,7 @@ export class AkritesService {
     if (!actor.userId) {
       return throwError(() => new Error('User is not authenticated'));
     }
-    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/status`, { ...body, actor }).pipe(take(1));
+    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/status`, { ...body, actor }).pipe(take(1));
   }
 
   public searchStewards(): Observable<AkritesSearchStewardResult[]> {
