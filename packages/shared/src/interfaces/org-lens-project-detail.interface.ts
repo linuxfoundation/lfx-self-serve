@@ -65,6 +65,16 @@ export interface OrgLensProjectInfluenceCard {
   caption: { prefix: string; emphasis: string; suffix: string };
 }
 
+/** One row in the monthly breakdown table shown in the card detail drawer. */
+export interface OrgLensInfluenceCardDetailRow {
+  month: string;
+  org: number;
+  avg: number;
+  /** Delta of org value vs the previous month (positive = up, negative = down, 0 = flat). */
+  delta: number;
+}
+
+
 /** One monthly point on the Influence Trend chart. */
 export interface OrgLensProjectTrendPoint {
   /** Year-month bin, e.g. "2025-07". */

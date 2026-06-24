@@ -15,6 +15,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import type {
+  OrgLensInfluenceCardDetailRow,
   OrgLensLeaderboardMetric,
   OrgLensProjectBand,
   OrgLensProjectDetailPageState,
@@ -26,8 +27,25 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
+import { DrawerModule } from 'primeng/drawer';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
+
+/** Presentation VM for each influence card — includes chart objects typed for Chart.js. */
+interface InfluenceCardVm {
+  key: string;
+  title: string;
+  scopeLabel: string | null;
+  hasData: boolean;
+  chartType: ChartType;
+  chartData: ChartData<ChartType>;
+  chartOptions: ChartOptions<ChartType>;
+  detailChartOptions: ChartOptions<ChartType>;
+  valueSuffix: string;
+  caption: { prefix: string; emphasis: string; suffix: string };
+  statLabel: string;
+  testId: string;
+}
 
 const DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
@@ -106,7 +124,7 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TagComponent],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TagComponent, DrawerModule],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -125,6 +143,22 @@ export class OrgProjectDetailComponent {
   protected readonly detail = signal<OrgLensProjectDetailResponse | null>(null);
   protected readonly techArrows = signal({ left: false, right: false });
   protected readonly ecoArrows = signal({ left: false, right: false });
+  protected readonly selectedCard = signal<InfluenceCardVm | null>(null);
+  protected readonly drawerOpen = signal(false);
+
+  protected readonly cardDetailRows = computed<OrgLensInfluenceCardDetailRow[]>(() => {
+    const card = this.selectedCard();
+    if (!card) return [];
+    const ds = (card.chartData as { datasets: { data: number[] }[] }).datasets;
+    const orgVals: number[] = ds[0]?.data ?? [];
+    const avgVals: number[] = ds[1]?.data ?? [];
+    return this.monthLabels.map((month, i) => ({
+      month,
+      org: orgVals[i] ?? 0,
+      avg: avgVals[i] ?? 0,
+      delta: i > 0 ? (orgVals[i] ?? 0) - (orgVals[i - 1] ?? 0) : 0,
+    }));
+  });
 
   protected readonly tabs: { id: OrgLensProjectDetailTab; label: string; icon: string }[] = [
     { id: 'pd-influence', label: 'Our Influence', icon: 'fa-light fa-chart-network' },
@@ -271,6 +305,19 @@ export class OrgProjectDetailComponent {
     }));
   }
 
+  protected openCardDetail(card: InfluenceCardVm): void {
+    this.selectedCard.set(card);
+    this.drawerOpen.set(true);
+  }
+
+  protected closeCardDetail(): void {
+    this.drawerOpen.set(false);
+  }
+
+  protected formatDetailValue(val: number, suffix: string): string {
+    return `${val}${suffix}`;
+  }
+
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
   protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
     el.scrollBy({ left: direction * 336, behavior: 'smooth' });
@@ -398,7 +445,7 @@ export class OrgProjectDetailComponent {
   }
 
   /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
-  private buildExternalTooltipFn(): (args: { chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } }; tooltip: { opacity: number; caretX: number; caretY: number; title?: string[]; dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[] } }) => void {
+  private buildExternalTooltipFn(valueSuffix = ''): (args: { chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } }; tooltip: { opacity: number; caretX: number; caretY: number; title?: string[]; dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[] } }) => void {
     return ({ chart, tooltip }) => {
       const tip = chart.canvas
         .closest('[data-sparkline-host]')
@@ -422,7 +469,7 @@ export class OrgProjectDetailComponent {
             '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
             `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}"></span>` +
             `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${p.dataset.label ?? ''}: ` +
-            `<strong style="color:#111827;font-weight:600">${p.formattedValue}</strong></span>` +
+            `<strong style="color:#111827;font-weight:600">${p.formattedValue}${valueSuffix}</strong></span>` +
             '</div>'
         )
         .join('');
@@ -432,8 +479,8 @@ export class OrgProjectDetailComponent {
     };
   }
 
-  private buildLineAreaCardOptions(): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn() as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
+  private buildLineAreaCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
+    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -443,8 +490,8 @@ export class OrgProjectDetailComponent {
     };
   }
 
-  private buildBarCardOptions(): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn() as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
+  private buildBarCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
+    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -454,10 +501,49 @@ export class OrgProjectDetailComponent {
     };
   }
 
+  private buildDetailChartOptions(valueSuffix = '', variant: 'area' | 'bar' | 'line' = 'area'): ChartOptions<ChartType> {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { usePointStyle: true, pointStyleWidth: 8, font: { size: 11 }, color: '#6B7280' },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; formattedValue: string }) =>
+              ` ${ctx.dataset.label ?? ''}: ${ctx.formattedValue}${valueSuffix}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          display: true,
+          grid: { display: false },
+          ticks: { font: { size: 10 }, color: '#9CA3AF', maxRotation: 0, maxTicksLimit: 6 },
+        },
+        y: {
+          display: true,
+          position: 'right',
+          grid: { color: '#F3F4F6' },
+          ticks: {
+            font: { size: 10 },
+            color: '#9CA3AF',
+            maxTicksLimit: 5,
+          },
+          beginAtZero: variant === 'bar',
+        },
+      },
+    };
+  }
+
   /** Maps a card key to its preferred visualization variant. */
   private chartVariantFor(key: string): 'area' | 'bar' | 'line' {
     if (['pull-requests', 'meeting-attendance', 'event-attendance'].includes(key)) return 'bar';
-    if (['avg-time-to-merge', 'board-members'].includes(key)) return 'line';
+    if (['avg-merge-time', 'board-members'].includes(key)) return 'line';
     return 'area';
   }
 
@@ -471,8 +557,9 @@ export class OrgProjectDetailComponent {
     return out;
   }
 
-  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem') {
+  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem'): InfluenceCardVm {
     const variant = this.chartVariantFor(card.key);
+    const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
     return {
       key: card.key,
       title: card.label,
@@ -480,6 +567,9 @@ export class OrgProjectDetailComponent {
       hasData: card.sparkline.length > 0,
       chartType: (variant === 'bar' ? 'bar' : 'line') as ChartType,
       chartData: this.buildCardChartData(card.sparkline, card.projectSparkline, colorHex, variant),
+      chartOptions: variant === 'bar' ? this.buildBarCardOptions(valueSuffix) : this.buildLineAreaCardOptions(valueSuffix),
+      detailChartOptions: this.buildDetailChartOptions(valueSuffix, variant),
+      valueSuffix,
       caption: card.caption,
       statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
       testId: `project-detail-${group}-card-${card.key}`,

@@ -113,7 +113,7 @@
         <div
           role="tablist"
           aria-label="Project detail sections"
-          class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
+          class="inline-flex w-fit items-center gap-1 rounded-full bg-gray-100 p-1"
           data-testid="project-detail-tab-bar"
           (keydown)="onTabKeydown($event)">
           @for (tab of tabs; track tab.id) {
@@ -131,7 +131,6 @@
               [class.hover:text-gray-900]="activeTab() !== tab.id"
               [attr.data-testid]="'project-detail-tab-' + tab.id"
               (click)="switchTab(tab.id)">
-              <i [class]="tab.icon" aria-hidden="true"></i>
               {{ tab.label }}
             </button>
           }
@@ -289,7 +288,12 @@
 
 <!-- Our Influence metric card: optional scope label, small title, trendline, prominent stat + short label. -->
 <ng-template #influenceCard let-card>
-  <div class="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" [attr.data-testid]="card.testId">
+  <button
+    type="button"
+    class="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    [attr.data-testid]="card.testId"
+    [attr.aria-label]="'View details for ' + card.title"
+    (click)="openCardDetail(card)">
     @if (card.scopeLabel) {
       <div class="border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-400">{{ card.scopeLabel }}</div>
     }
@@ -298,7 +302,7 @@
       <p class="mb-3 text-xs font-medium text-gray-500">{{ card.title }}</p>
       <div class="h-16">
         @if (card.hasData) {
-          <lfx-chart [type]="card.chartType" [data]="card.chartData" [options]="card.chartType === 'bar' ? barCardOptions : lineCardOptions" height="100%" />
+          <lfx-chart [type]="card.chartType" [data]="card.chartData" [options]="card.chartOptions" height="100%" />
         } @else {
           <div class="flex h-full items-center justify-center text-xs text-gray-400">No data</div>
         }
@@ -308,7 +312,7 @@
         <p class="mt-0.5 text-xs text-gray-500">{{ card.statLabel }}</p>
       </div>
     </div>
-  </div>
+  </button>
 </ng-template>
 
 <!-- One side-by-side leaderboard card (Technical or Ecosystem). -->
@@ -390,3 +394,87 @@
     }
   </div>
 </ng-template>
+
+<!-- Card detail drawer — always in DOM so PrimeNG can animate open/close correctly -->
+<p-drawer
+  [visible]="drawerOpen()"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  data-testid="influence-card-detail-drawer"
+  (visibleChange)="drawerOpen.set($event)">
+  @if (selectedCard(); as card) {
+    <ng-template #header>
+      <div class="flex w-full items-start gap-3">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+          <i class="fa-light fa-chart-line text-lg" aria-hidden="true"></i>
+        </div>
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <h2 class="text-base font-semibold text-gray-900" data-testid="influence-card-detail-title">{{ card.title }}</h2>
+          <p class="text-sm text-gray-500">Last 12 months · {{ card.scopeLabel ?? 'All projects' }}</p>
+        </div>
+      </div>
+    </ng-template>
+
+    <div class="flex flex-col gap-6">
+      <!-- Primary stat -->
+      <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-4">
+        <p class="text-3xl font-bold text-gray-900">{{ card.caption.emphasis }}</p>
+        <p class="mt-1 text-sm text-gray-500">{{ card.caption.prefix }}{{ card.caption.emphasis }}{{ card.caption.suffix }}</p>
+      </div>
+
+      <!-- Full-size chart -->
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-semibold text-gray-700">12-Month Trend</p>
+        <div class="h-52 rounded-xl border border-gray-100 bg-white p-4">
+          @if (card.hasData) {
+            <lfx-chart [type]="card.chartType" [data]="card.chartData" [options]="card.detailChartOptions" height="100%" />
+          } @else {
+            <div class="flex h-full items-center justify-center text-sm text-gray-400">No data available</div>
+          }
+        </div>
+      </div>
+
+      <!-- Monthly breakdown table -->
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-semibold text-gray-700">Monthly Breakdown</p>
+        <div class="overflow-hidden rounded-xl border border-gray-100">
+          <table class="w-full text-sm" data-testid="influence-card-detail-table">
+            <thead>
+              <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
+                <th scope="col" class="px-4 py-3">Month</th>
+                <th scope="col" class="px-4 py-3 text-right">Your org</th>
+                <th scope="col" class="px-4 py-3 text-right">Project avg</th>
+                <th scope="col" class="px-4 py-3 text-right">vs prior month</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              @for (row of cardDetailRows(); track row.month) {
+                <tr class="bg-white transition-colors hover:bg-gray-50">
+                  <td class="px-4 py-2.5 font-medium text-gray-700">{{ row.month }}</td>
+                  <td class="px-4 py-2.5 text-right font-semibold text-gray-900">{{ row.org }}{{ card.valueSuffix }}</td>
+                  <td class="px-4 py-2.5 text-right text-gray-500">{{ row.avg }}{{ card.valueSuffix }}</td>
+                  <td class="px-4 py-2.5 text-right">
+                    @if (row.delta > 0) {
+                      <span class="inline-flex items-center gap-1 text-emerald-600">
+                        <i class="fa-light fa-arrow-up text-xs" aria-hidden="true"></i>
+                        <span class="text-xs font-medium">+{{ row.delta }}{{ card.valueSuffix }}</span>
+                      </span>
+                    } @else if (row.delta < 0) {
+                      <span class="inline-flex items-center gap-1 text-red-500">
+                        <i class="fa-light fa-arrow-down text-xs" aria-hidden="true"></i>
+                        <span class="text-xs font-medium">{{ row.delta }}{{ card.valueSuffix }}</span>
+                      </span>
+                    } @else {
+                      <span class="text-xs text-gray-400">—</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  }
+</p-drawer>
