@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, model, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, model, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
@@ -91,12 +91,6 @@ export class AkritesPackageDrawerComponent {
     { value: 'moderate', label: 'Moderate' },
     { value: 'low', label: 'Low' },
   ];
-
-  private readonly _resetAdvisoryFilters = effect(() => {
-    this.packageId();
-    this.advisorySeverityFilter.set(null);
-    this.advisoryResolutionFilter.set(null);
-  });
 
   protected readonly drawerTabs: { key: DrawerTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -382,33 +376,41 @@ export class AkritesPackageDrawerComponent {
   }
 
   private initAdvisoryLoader(): void {
-    const filterParams = computed(() => {
-      if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
-      return {
-        purl: this.packageId()!,
-        severity: this.advisorySeverityFilter(),
-        resolution: this.advisoryResolutionFilter(),
-      };
-    });
-
-    toObservable(filterParams)
+    toObservable(this.packageId)
       .pipe(
-        // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
-        distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
-        switchMap((p) => {
-          // Bump the request key so any in-flight load-more response is discarded.
-          this._advisoryRequestKey++;
-          this.advisoryItems.set([]);
-          this.advisoryTotal.set(0);
-          this._advisoryNextPage = 2;
-          if (!p) return of(null);
-          this.advisoryLoading.set(true);
-          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
-            catchError(() => {
-              this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
-              return of(null);
-            }),
-            finalize(() => this.advisoryLoading.set(false))
+        tap(() => {
+          this.advisorySeverityFilter.set(null);
+          this.advisoryResolutionFilter.set(null);
+        }),
+        switchMap(() => {
+          const filterParams = computed(() => {
+            if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
+            return {
+              purl: this.packageId()!,
+              severity: this.advisorySeverityFilter(),
+              resolution: this.advisoryResolutionFilter(),
+            };
+          });
+
+          return toObservable(filterParams).pipe(
+            // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
+            distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
+            switchMap((p) => {
+              // Bump the request key so any in-flight load-more response is discarded.
+              this._advisoryRequestKey++;
+              this.advisoryItems.set([]);
+              this.advisoryTotal.set(0);
+              this._advisoryNextPage = 2;
+              if (!p) return of(null);
+              this.advisoryLoading.set(true);
+              return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
+                catchError(() => {
+                  this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
+                  return of(null);
+                }),
+                finalize(() => this.advisoryLoading.set(false))
+              );
+            })
           );
         }),
         takeUntilDestroyed(this.destroyRef)
