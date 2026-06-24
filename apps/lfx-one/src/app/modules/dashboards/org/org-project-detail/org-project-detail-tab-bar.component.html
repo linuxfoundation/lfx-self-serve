@@ -30,15 +30,39 @@
     }
   </div>
 
-  <!-- Right: time range dropdown -->
-  <select
-    class="cursor-pointer rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 focus:border-blue-500 focus:outline-none"
-    [value]="timeRange()"
-    aria-label="Time range"
-    data-testid="project-detail-time-range"
-    (change)="onRangeChange($event)">
-    @for (opt of timeRangeOptions(); track opt.id) {
-      <option [value]="opt.id">{{ opt.label }}</option>
+  <!-- Right: metric toggle (optional) + time range dropdown -->
+  <div class="flex items-center gap-3">
+    @if (metricOptions(); as opts) {
+      <div class="flex items-center gap-1.5" role="group" aria-label="Metric" data-testid="project-detail-metric-toggle">
+        @for (opt of opts; track opt.id) {
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+            [class.bg-blue-600]="metric() === opt.id"
+            [class.border-blue-600]="metric() === opt.id"
+            [class.text-white]="metric() === opt.id"
+            [class.bg-white]="metric() !== opt.id"
+            [class.border-gray-300]="metric() !== opt.id"
+            [class.text-gray-700]="metric() !== opt.id"
+            [attr.aria-pressed]="metric() === opt.id"
+            [attr.data-testid]="'project-detail-metric-' + opt.id"
+            (click)="metricChange.emit(opt.id)">
+            <i [class]="opt.icon" aria-hidden="true"></i>
+            {{ opt.label }}
+          </button>
+        }
+      </div>
     }
-  </select>
+
+    <select
+      class="cursor-pointer rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 focus:border-blue-500 focus:outline-none"
+      [value]="timeRange()"
+      aria-label="Time range"
+      data-testid="project-detail-time-range"
+      (change)="onRangeChange($event)">
+      @for (opt of timeRangeOptions(); track opt.id) {
+        <option [value]="opt.id">{{ opt.label }}</option>
+      }
+    </select>
+  </div>
 </div>

@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, ElementRef, inject, input, output, PLATFORM_ID, QueryList, ViewChildren } from '@angular/core';
-import type { OrgLensLeaderboardTimeRange, OrgLensProjectDetailTab } from '@lfx-one/shared/interfaces';
+import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgLensProjectDetailTab } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-org-project-detail-tab-bar',
@@ -18,8 +18,12 @@ export class OrgProjectDetailTabBarComponent {
   public readonly activeTab = input.required<OrgLensProjectDetailTab>();
   public readonly timeRange = input.required<OrgLensLeaderboardTimeRange>();
   public readonly timeRangeOptions = input.required<{ id: OrgLensLeaderboardTimeRange; label: string }[]>();
+  /** Optional metric toggle — rendered between the tab pills and time range when provided. */
+  public readonly metric = input<OrgLensLeaderboardMetric | null>(null);
+  public readonly metricOptions = input<{ id: OrgLensLeaderboardMetric; label: string; icon: string }[] | null>(null);
   public readonly tabChange = output<OrgLensProjectDetailTab>();
   public readonly timeRangeChange = output<OrgLensLeaderboardTimeRange>();
+  public readonly metricChange = output<OrgLensLeaderboardMetric>();
 
   protected onTabKeydown(event: KeyboardEvent): void {
     const ids = this.tabs().map((t) => t.id);

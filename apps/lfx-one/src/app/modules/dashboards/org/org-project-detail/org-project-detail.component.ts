@@ -236,10 +236,6 @@ export class OrgProjectDetailComponent {
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly scoreColumnLabel = computed(() => (this.isActivityMode() ? 'Activity (12mo)' : 'Influence Score'));
-  protected readonly leaderboardSubtitle = computed(() => {
-    const labels: Record<OrgLensLeaderboardTimeRange, string> = { '1y': 'Last 12 months', '2y': 'Last 2 years', 'all': 'All time' };
-    return labels[this.timeRange()];
-  });
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
   protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
@@ -628,16 +624,23 @@ export class OrgProjectDetailComponent {
       entries.push({ name: 'All others', score: avg, seed: 10 });
     }
 
+    // Build raw series, then normalize each month so all series sum to 100%.
+    const rawSeries: number[][] = entries.map((entry) => this.buildTrendSeries(entry.score, months, entry.seed));
+    const pctSeries: number[][] = rawSeries.map((series, si) =>
+      series.map((val, mi) => {
+        const total = rawSeries.reduce((sum, s) => sum + (s[mi] ?? 0), 0);
+        return total > 0 ? Math.round((val / total) * 1000) / 10 : 0;
+      })
+    );
+
     const datasets = entries.map((entry, i) => {
       const color = STACKED_PALETTE[i] ?? lfxColors.gray[300];
       return {
         label: entry.name,
-        data: this.buildTrendSeries(entry.score, months, entry.seed),
+        data: pctSeries[i],
         backgroundColor: color + '99',
         borderColor: color,
         borderWidth: 1.5,
-        // 'stack' fills from this line to the visual position of the dataset below it,
-        // which is the correct Chart.js 4.x primitive for stacked area charts.
         fill: 'stack',
         tension: 0.3,
         pointRadius: 0,
@@ -655,11 +658,15 @@ export class OrgProjectDetailComponent {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 16 } },
-        tooltip: { mode: 'index', intersect: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: { label: (ctx) => ` ${ctx.dataset.label ?? ''}: ${(ctx.parsed as { y: number }).y.toFixed(1)}%` },
+        },
       },
       scales: {
         x: { grid: { display: false } },
-        y: { stacked: true, beginAtZero: true, ticks: { maxTicksLimit: 6 } },
+        y: { stacked: true, min: 0, max: 100, ticks: { maxTicksLimit: 6, callback: (v) => `${v}%` } },
       },
     };
   }
