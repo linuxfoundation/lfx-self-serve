@@ -156,6 +156,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Fields-panel edit (which patches block.content) re-renders that block.
   protected readonly renderedBlocks: Signal<Map<string, SafeHtml>> = this.initRenderedBlocks();
 
+  // Per-block outer-spacing inline styles, keyed by block id — precomputed so the
+  // template reads a map (`blockSpacingStyles().get(id)`) instead of calling a
+  // function per change-detection pass.
+  protected readonly blockSpacingStyles: Signal<Map<string, Record<string, string>>> = this.initBlockSpacingStyles();
+
   // Stable drop-list ids.
   protected readonly canvasListId = 'newsletter-composer-canvas-list';
   protected readonly paletteListId = 'newsletter-composer-palette-list';
@@ -227,20 +232,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * `_spacing_padding` / `_spacing_margin` content keys. Empty when both are
    * default — matching gatewaze, which skips the spacing wrapper at `0px`.
    */
-  protected blockSpacingStyle(block: NewsletterComposerBlock): Record<string, string> {
-    const padding = this.spacingValue(block.content[NEWSLETTER_SPACING_PADDING_KEY]);
-    const margin = this.spacingValue(block.content[NEWSLETTER_SPACING_MARGIN_KEY]);
-    const style: Record<string, string> = {};
-    if (padding !== NEWSLETTER_SPACING_DEFAULT) style['padding'] = padding;
-    if (margin !== NEWSLETTER_SPACING_DEFAULT) style['margin'] = margin;
-    return style;
-  }
-
-  /** Trusted, rendered preview HTML for a block id (empty when not yet rendered). */
-  protected renderedBlock(id: string): SafeHtml {
-    return this.renderedBlocks().get(id) ?? '';
-  }
-
   /** True when the given block id is the selected one (for highlighting). */
   protected isSelected(id: string): boolean {
     return this.selectedBlockId() === id;
@@ -654,6 +645,34 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Normalise a stored spacing value to a CSS string, defaulting to `0px`. */
   private spacingValue(raw: unknown): string {
     return typeof raw === 'string' && raw.trim() ? raw.trim() : NEWSLETTER_SPACING_DEFAULT;
+  }
+
+  /** Build the per-block outer-spacing style map (top-level + container children). */
+  private initBlockSpacingStyles(): Signal<Map<string, Record<string, string>>> {
+    return computed(() => {
+      const map = new Map<string, Record<string, string>>();
+      for (const block of this.blocks()) {
+        map.set(block.id, this.spacingStyleFor(block));
+        for (const child of block.children ?? []) {
+          map.set(child.id, this.spacingStyleFor(child));
+        }
+      }
+      return map;
+    });
+  }
+
+  /**
+   * The outer-spacing inline style for a block, from its reserved
+   * `_spacing_padding` / `_spacing_margin` content keys. Empty when both are
+   * default — matching gatewaze, which skips the spacing wrapper at `0px`.
+   */
+  private spacingStyleFor(block: NewsletterComposerBlock): Record<string, string> {
+    const padding = this.spacingValue(block.content[NEWSLETTER_SPACING_PADDING_KEY]);
+    const margin = this.spacingValue(block.content[NEWSLETTER_SPACING_MARGIN_KEY]);
+    const style: Record<string, string> = {};
+    if (padding !== NEWSLETTER_SPACING_DEFAULT) style['padding'] = padding;
+    if (margin !== NEWSLETTER_SPACING_DEFAULT) style['margin'] = margin;
+    return style;
   }
 
   /** Rehydrate a persisted layout block (and its children) into a canvas block. */

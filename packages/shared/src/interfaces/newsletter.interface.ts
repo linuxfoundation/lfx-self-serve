@@ -270,11 +270,11 @@ export interface NewsletterBlockPaletteGroup {
 
 /**
  * The left-rail tabs of the block-composer editor (Gatewaze-Puck parity). The
- * rail switches the sidebar between the block palette, the selected block's
- * fields, the canvas outline, and an AI placeholder. `ai` is reserved/disabled
- * in this pass.
+ * rail switches the sidebar between the block palette, the canvas outline, and
+ * an AI placeholder. Field editing lives in the persistent right sidebar, not a
+ * rail tab. `ai` is reserved/disabled in this pass.
  */
-export type NewsletterComposerTab = 'blocks' | 'fields' | 'outline' | 'ai';
+export type NewsletterComposerTab = 'blocks' | 'outline' | 'ai';
 
 /** One rail tab descriptor (id, label, icon, disabled state). */
 export interface NewsletterComposerTabDef {

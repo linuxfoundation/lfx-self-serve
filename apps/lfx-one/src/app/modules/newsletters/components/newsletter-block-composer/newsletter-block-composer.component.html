@@ -213,7 +213,7 @@
             class="group/block relative cursor-pointer rounded-md transition-shadow"
             [class.ring-2]="isSelected(block.id)"
             [class.ring-blue-500]="isSelected(block.id)"
-            [style]="blockSpacingStyle(block)"
+            [style]="blockSpacingStyles().get(block.id)"
             cdkDrag
             [cdkDragData]="block"
             (click)="selectBlock(block.id)"
@@ -256,7 +256,7 @@
             <!-- Rendered email HTML for this block. `data-nl-block` lets the
                  inline-editing effect + toolbar locate this block's region. -->
             <div
-              [innerHTML]="renderedBlock(block.id)"
+              [innerHTML]="renderedBlocks().get(block.id)"
               [attr.data-nl-block]="block.id"
               [attr.data-testid]="'newsletter-composer-rendered-' + block.block_type"></div>
 
@@ -277,7 +277,7 @@
                     class="group/child relative cursor-pointer rounded transition-shadow"
                     [class.ring-2]="isSelected(child.id)"
                     [class.ring-blue-500]="isSelected(child.id)"
-                    [style]="blockSpacingStyle(child)"
+                    [style]="blockSpacingStyles().get(child.id)"
                     cdkDrag
                     [cdkDragData]="child"
                     (click)="selectBlock(child.id); $event.stopPropagation()"
@@ -300,7 +300,7 @@
                         (onClick)="removeChild(block.id, child.id); $event.stopPropagation()" />
                     </div>
                     <div
-                      [innerHTML]="renderedBlock(child.id)"
+                      [innerHTML]="renderedBlocks().get(child.id)"
                       [attr.data-nl-block]="child.id"
                       [attr.data-testid]="'newsletter-composer-rendered-child-' + child.block_type"></div>
                   </div>

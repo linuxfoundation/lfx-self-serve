@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { NewsletterBlock } from '@lfx-one/shared/interfaces';
-import { humanizeFieldKey } from '@lfx-one/shared/utils';
+import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 
 /**
  * Client-side declarative renderer for the newsletter block-composer preview.
@@ -559,13 +559,25 @@ function classList(attrs: Record<string, string>, extra?: string): string {
   return mapped.join(' ');
 }
 
-/** Resolve and serialise the passthrough attributes for an emitted element. */
+/** Attributes carrying a URL — their resolved value must pass the safe-URL gate. */
+const URL_ATTRS = new Set(['href', 'src']);
+
+/**
+ * Resolve and serialise the passthrough attributes for an emitted element. URL
+ * attributes (`href`/`src`) are gated through the shared `isValidUrl` before
+ * emission — a `javascript:` / `data:` value bound from a content field (the
+ * Fields panel does not scheme-check) is DROPPED rather than written into the
+ * trusted HTML (this renderer's output is `bypassSecurityTrustHtml`'d, so
+ * Angular's own URL sanitiser never runs). Mirrors the inline-link `applyLink`
+ * gate so both author-content paths are validated.
+ */
 function passthrough(_tag: string, attrs: Record<string, string>, content: Record<string, unknown>): string {
   const out: string[] = [];
   for (const a of PASSTHROUGH_ATTRS) {
-    if (attrs[a] !== undefined) {
-      out.push(`${a}="${escapeAttr(resolveAttr(attrs[a], content))}"`);
-    }
+    if (attrs[a] === undefined) continue;
+    const resolved = resolveAttr(attrs[a], content);
+    if (URL_ATTRS.has(a) && !isValidUrl(resolved)) continue;
+    out.push(`${a}="${escapeAttr(resolved)}"`);
   }
   return out.join(' ');
 }
