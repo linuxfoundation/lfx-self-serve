@@ -3366,7 +3366,7 @@ export class ProjectService {
           SUM(ENGAGEMENTS) AS ENGAGEMENTS,
           SUM(POSTS) AS POSTS
         FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_PLATFORM_MONTHLY
-        WHERE YEAR(SNAPSHOT_MONTH) = ?
+        WHERE SNAPSHOT_MONTH >= ? AND SNAPSHOT_MONTH < ?
           ${foundationFilter}
         GROUP BY PLATFORM_NAME, SNAPSHOT_MONTH
         ORDER BY PLATFORM_NAME, SNAPSHOT_MONTH ASC
@@ -3380,7 +3380,7 @@ export class ProjectService {
         IMPRESSIONS: number;
         ENGAGEMENTS: number;
         POSTS: number;
-      }>(query, [year, ...foundationParams]);
+      }>(query, [`${year}-01-01`, `${year + 1}-01-01`, ...foundationParams]);
 
       const grouped = new Map<string, SocialMediaPlatformMonthlyRow[]>();
 
@@ -3401,15 +3401,14 @@ export class ProjectService {
           momChangeFollowers: null,
         };
 
-        const list = grouped.get(row.PLATFORM_NAME) ?? [];
-        list.push(entry);
-        grouped.set(row.PLATFORM_NAME, list);
+        if (!grouped.has(row.PLATFORM_NAME)) grouped.set(row.PLATFORM_NAME, []);
+        grouped.get(row.PLATFORM_NAME)!.push(entry);
       }
 
       const platforms: SocialMediaPlatformMonthly[] = [];
       for (const [platform, months] of grouped) {
-        for (let i = 0; i < months.length; i++) {
-          months[i].momChangeFollowers = this.computeMomChange(i, months);
+        for (const month of months) {
+          month.momChangeFollowers = this.computeMomChangeByMonth(month, months);
         }
         platforms.push({ platform, months });
       }
@@ -6689,5 +6688,13 @@ export class ProjectService {
     const prev = data[index - 1].followers;
     if (prev === 0) return null;
     return Math.round(((data[index].followers - prev) / prev) * 1000) / 10;
+  }
+
+  private computeMomChangeByMonth(current: SocialMediaPlatformMonthlyRow, all: SocialMediaPlatformMonthlyRow[]): number | null {
+    const [year, month] = current.month.split('-').map(Number);
+    const prevStr = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+    const prev = all.find((m) => m.month === prevStr);
+    if (!prev || prev.followers === 0) return null;
+    return Math.round(((current.followers - prev.followers) / prev.followers) * 1000) / 10;
   }
 }
