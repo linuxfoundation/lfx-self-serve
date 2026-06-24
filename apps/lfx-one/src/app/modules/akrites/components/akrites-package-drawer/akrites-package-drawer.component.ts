@@ -8,7 +8,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
 import {
-  AkritesAdvisoryPage,
+  AkritesAdvisory,
   AkritesAssignStewardRequest,
   AkritesEscalateRequest,
   AkritesPackage,
@@ -72,11 +72,18 @@ export class AkritesPackageDrawerComponent {
   protected readonly statusModalVisible = signal(false);
   protected readonly advisorySeverityFilter = signal<AkritesSeverity | null>(null);
   protected readonly advisoryResolutionFilter = signal<'open' | 'patched' | null>(null);
-  protected readonly advisoryShowAll = signal(false);
   protected readonly advisoryLoading = signal(false);
+  protected readonly advisoryLoadingMore = signal(false);
+  protected readonly advisoryItems = signal<(AkritesAdvisory & { tagSeverity: TagSeverity })[]>([]);
+  protected readonly advisoryTotal = signal<number>(0);
+  protected readonly advisoryHasMore = computed(() => this.advisoryTotal() > 0 && this.advisoryItems().length < this.advisoryTotal());
+  protected readonly advisoryShownCount = computed(() => {
+    const n = this.advisoryItems().length;
+    return n < 100 ? n : n - (n % 100);
+  });
+  private _advisoryNextPage = 2;
   private readonly reloadTrigger = signal(0);
   protected readonly packageData: Signal<AkritesPackage | null> = this.initPackageData();
-  protected readonly advisoryPage: Signal<AkritesAdvisoryPage | null> = this.initAdvisoryPage();
 
   protected readonly advisorySeverityOptions: readonly { value: AkritesSeverity; label: string }[] = [
     { value: 'critical', label: 'Critical' },
@@ -89,7 +96,6 @@ export class AkritesPackageDrawerComponent {
     this.packageId();
     this.advisorySeverityFilter.set(null);
     this.advisoryResolutionFilter.set(null);
-    this.advisoryShowAll.set(false);
   });
 
   protected readonly drawerTabs: { key: DrawerTab; label: string }[] = [
@@ -145,23 +151,46 @@ export class AkritesPackageDrawerComponent {
   protected readonly safeRepoUrl = computed(() => this.getSafeRepoUrl(this.packageData()?.repoUrl ?? null));
   protected readonly mappingTagSeverity = computed(() => this.getMappingTagSeverity(this.packageData()?.supplyChainMapping ?? null));
   protected readonly stewardLabel = computed(() => this.getStewardLabel(this.packageData()?.stewards ?? []));
-  protected readonly enrichedAdvisories = computed(() =>
-    (this.advisoryPage()?.advisories ?? []).map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))
-  );
   protected readonly enrichedHistory = computed(() => (this.packageData()?.history ?? []).map((e) => ({ ...e, dotClass: this.getHistoryDotClass(e.type) })));
 
+  public constructor() {
+    this.initAdvisoryLoader();
+  }
+
   protected setSeverityFilter(severity: AkritesSeverity | null): void {
-    this.advisoryShowAll.set(false);
     this.advisorySeverityFilter.set(severity);
   }
 
   protected setResolutionFilter(resolution: 'open' | 'patched' | null): void {
-    this.advisoryShowAll.set(false);
     this.advisoryResolutionFilter.set(resolution);
   }
 
-  protected showAllAdvisories(): void {
-    this.advisoryShowAll.set(true);
+  protected loadMoreAdvisories(): void {
+    if (this.advisoryLoadingMore() || !this.advisoryHasMore()) return;
+    const purl = this.packageId();
+    if (!purl) return;
+
+    this.advisoryLoadingMore.set(true);
+    this.akritesService
+      .getPackageAdvisories({
+        purl,
+        severity: this.advisorySeverityFilter(),
+        resolution: this.advisoryResolutionFilter(),
+        page: this._advisoryNextPage,
+        pageSize: 100,
+      })
+      .pipe(
+        catchError(() => of(null)),
+        finalize(() => this.advisoryLoadingMore.set(false)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((page) => {
+        if (page) {
+          this._advisoryNextPage++;
+          this.advisoryItems.update((items) => [...items, ...page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))]);
+        }
+      });
   }
 
   protected onTabChange(tab: DrawerTab): void {
@@ -345,31 +374,38 @@ export class AkritesPackageDrawerComponent {
     this.messageService.add({ severity: 'error', summary: 'Action failed', detail: 'Something went wrong. Please try again.' });
   }
 
-  private initAdvisoryPage(): Signal<AkritesAdvisoryPage | null> {
-    const params = computed(() => {
+  private initAdvisoryLoader(): void {
+    const filterParams = computed(() => {
       if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
       return {
         purl: this.packageId()!,
         severity: this.advisorySeverityFilter(),
         resolution: this.advisoryResolutionFilter(),
-        pageSize: this.advisoryShowAll() ? 100 : 10,
       };
     });
 
-    return toSignal(
-      toObservable(params).pipe(
+    toObservable(filterParams)
+      .pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap((p) => {
+          this.advisoryItems.set([]);
+          this.advisoryTotal.set(0);
+          this._advisoryNextPage = 2;
           if (!p) return of(null);
           this.advisoryLoading.set(true);
-          return this.akritesService.getPackageAdvisories(p).pipe(
+          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: 10 }).pipe(
             catchError(() => of(null)),
             finalize(() => this.advisoryLoading.set(false))
           );
-        })
-      ),
-      { initialValue: null }
-    );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((page) => {
+        if (page) {
+          this.advisoryItems.set(page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) })));
+          this.advisoryTotal.set(page.total);
+        }
+      });
   }
 
   private initPackageData(): Signal<AkritesPackage | null> {

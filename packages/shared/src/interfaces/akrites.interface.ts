@@ -137,7 +137,6 @@ export interface CdpAdvisory {
   osvId: string;
   severity: AkritesSeverity | null;
   resolution: string | null;
-  isCritical?: boolean;
 }
 
 export interface CdpAdvisoryPage {

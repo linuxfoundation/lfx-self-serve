@@ -263,8 +263,8 @@
           <!-- Header -->
           <div class="flex items-center justify-between px-4 pt-3.5 pb-2">
             <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900">Advisories (OSV / GHSA)</h3>
-            @if (advisoryPage()?.total; as total) {
-              <span class="text-xs text-gray-400">{{ total }} total</span>
+            @if (advisoryTotal() > 0) {
+              <span class="text-xs text-gray-400">{{ advisoryTotal() }} total</span>
             }
           </div>
 
@@ -334,9 +334,9 @@
             <div class="flex items-center justify-center py-6">
               <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
             </div>
-          } @else if (enrichedAdvisories().length > 0) {
+          } @else if (advisoryItems().length > 0) {
             <div class="flex flex-col divide-y divide-gray-100">
-              @for (adv of enrichedAdvisories(); track adv.id) {
+              @for (adv of advisoryItems(); track adv.id) {
                 <div class="flex items-start justify-between gap-3 px-4 py-3">
                   <div class="min-w-0">
                     <div class="font-mono text-xs font-semibold text-slate-900">{{ adv.id }}</div>
@@ -348,14 +348,18 @@
                 </div>
               }
             </div>
-            @if (!advisoryShowAll() && (advisoryPage()?.total ?? 0) > enrichedAdvisories().length) {
-              <div class="px-4 py-2.5 border-t border-gray-100">
+            @if (advisoryHasMore()) {
+              <div class="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3">
                 <button
-                  class="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
-                  (click)="showAllAdvisories()"
-                  data-testid="akrites-advisory-show-all">
-                  Show all {{ advisoryPage()?.total }} advisories
+                  class="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors disabled:opacity-50"
+                  (click)="loadMoreAdvisories()"
+                  [disabled]="advisoryLoadingMore()"
+                  data-testid="akrites-advisory-load-more">
+                  Load more ({{ advisoryShownCount() }} of {{ advisoryTotal() }} shown)
                 </button>
+                @if (advisoryLoadingMore()) {
+                  <i class="fa-light fa-spinner-third fa-spin text-xs text-gray-400" aria-hidden="true"></i>
+                }
               </div>
             }
           } @else {
