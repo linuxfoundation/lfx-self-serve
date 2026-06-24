@@ -53,7 +53,8 @@ Current confusion:
 
 - The left rail says **Projects** even when the selected context is a foundation.
 - Me navigation repeats `My` on most labels even though the active lens already says Me.
-- Foundation/Project defaulting needs to land users in the highest-permission relevant context.
+- Foundation/Project defaulting can land users in a no-role context if selector eligibility is not authoritative.
+- Discovery contexts can bleed into the Foundation/Project selector, creating clutter and wrong-context landings.
 
 ## Target Model
 
@@ -105,7 +106,7 @@ Examples:
 
 Foundation and Project are context views, not persona rewards.
 
-Entry should be based on view permission. Once inside, role/persona shapes the experience.
+Entry should be based on an authoritative role/permission model. Once inside, role/persona shapes the experience.
 
 Role pairs:
 
@@ -154,6 +155,13 @@ LF Staff Mode should have its own explicit staff eligibility and audit expectati
 
 Discovery is for finding things outside the user's current contexts. It should create requests, registrations, subscriptions, or workflows, but it should not silently add the context to the Foundation/Project selector unless view permission is granted.
 
+Selector and Discovery must be separate:
+
+```text
+Selector = contexts where I have an authoritative role/view permission
+Discovery/Browse = contexts or resources I can find, join, register for, request, or inspect
+```
+
 Akrites is the clearest example:
 
 ```text
@@ -170,6 +178,31 @@ Other discovery examples:
 - **Mailing lists/newsletters:** find public subscription surfaces; subscribe, request access, or view public archive when available.
 
 ## Priorities
+
+### P0: Make Role And Permission Resolution Authoritative
+
+Owner: engineering, with product validation
+
+This is the dependency under selector eligibility, defaulting, writer actions, and discovery separation.
+
+Work needed:
+
+- Normalize one role/permission model across Foundation, Project, Group, and Working Group resources.
+- Confirm selector candidates come only from authoritative view/role permission, not broad discovery/search results.
+- Confirm APIs enforce view and write permission server side before changing `writerGuard` semantics.
+- Model group-scoped and working-group-scoped writer permission this cycle.
+- Define one role per context everywhere the selector, page header, and role labels are shown.
+- Add instrumentation for wrong-context landings, no-role defaults, selector items without roles, and UI-allowed/API-denied write attempts.
+
+Acceptance:
+
+```text
+Authoritative role/permission model = selector eligibility
+Discovery/search results != selector eligibility
+API permission enforcement = gate before writerGuard target-state change
+Group/WG writer scope = explicit model, not foundation-wide fallback
+No-role default count = zero
+```
 
 ### P1: Preserve My Dashboard As The Context Bridge
 
@@ -193,46 +226,53 @@ Acceptance:
 My Foundations and Projects row + selected context = switch to correct context view
 ```
 
-### P2: Default To The Highest-Permission Context
+### P2: Persist Last Valid Context, Then Default By Permission
 
-When a user clicks Foundation or Project context without selecting a specific row, land them in the highest-permission eligible context of that type.
+When a user clicks Foundation or Project context without selecting a specific row, use the last selected valid context first. Highest-permission defaulting is only the cold-start fallback.
 
 Foundation defaulting order:
 
 1. Keep existing selected foundation if still view-permitted.
-2. Choose a foundation where the user has writer/manage access.
-3. Choose Executive Director foundation if view-permitted.
-4. Choose Board Member foundation if view-permitted.
-5. Choose first view-permitted foundation in stable sort order.
-6. If none exist, stay in Me/discovery.
+2. Use last selected valid foundation if still view-permitted.
+3. Choose a foundation where the user has writer/manage access.
+4. Choose Executive Director foundation if view-permitted.
+5. Choose Board Member foundation if view-permitted.
+6. Choose first view-permitted foundation in stable sort order.
+7. If none exist, stay in Me/discovery.
 
 Project defaulting order:
 
 1. Keep existing selected project if still view-permitted.
-2. Choose a project where the user has writer/manage access.
-3. Choose Maintainer project if view-permitted.
-4. Choose Contributor project if view-permitted.
-5. Choose first view-permitted project in stable sort order.
-6. If none exist, stay in Me/discovery.
+2. Use last selected valid project if still view-permitted.
+3. Choose a project where the user has writer/manage access.
+4. Choose Maintainer project if view-permitted.
+5. Choose Contributor project if view-permitted.
+6. Choose first view-permitted project in stable sort order.
+7. If none exist, stay in Me/discovery.
 
 Examples:
 
-- ED for AAIF and Board Member for LF Europe: Foundation lands on AAIF.
-- Board Member for AAIF and CNCF, no ED role: Foundation lands on the most recently selected Board foundation, otherwise first stable item.
-- Foundation writer/manage on LF Products but no ED persona: Foundation lands on LF Products because writer/manage wins.
-- Maintainer for `agentgateway` and Contributor for `Goose`: Project lands on `agentgateway`.
-- Contributor for six projects, no Maintainer role: Project lands on the most recently selected Contributor project, otherwise first stable item.
-- Project writer/manage on `Goose` but only Contributor persona signals: Project lands on `Goose` because writer/manage wins.
+- User last selected AAIF and still has view permission: Foundation lands on AAIF, even if another foundation has a higher role.
+- User last selected `Goose` and still has view permission: Project lands on `Goose`, even if another project has writer/manage access.
+- Cold start, ED for AAIF and Board Member for LF Europe: Foundation lands on AAIF.
+- Cold start, Board Member for AAIF and CNCF, no ED role: Foundation lands on first stable Board foundation.
+- Cold start, Foundation writer/manage on LF Products but no ED persona: Foundation lands on LF Products because writer/manage wins.
+- Cold start, Maintainer for `agentgateway` and Contributor for `Goose`: Project lands on `agentgateway`.
+- Cold start, Contributor for six projects, no Maintainer role: Project lands on first stable Contributor project.
+- Cold start, Project writer/manage on `Goose` but only Contributor persona signals: Project lands on `Goose` because writer/manage wins.
 - User opens AAIF from My Dashboard: explicit selection wins; switch to Foundation context with AAIF selected.
 - User opens `agentgateway` from selector: explicit selection wins; switch to Project context with `agentgateway` selected.
 - User loses view permission for selected AAIF mid-session: clear AAIF and re-run defaulting.
 - User has no view-permitted foundations: do not enter empty Foundation context; stay in Me/discovery.
+- User has no role/view permission for EnerGNN: never default to EnerGNN; show it only in Discovery/Browse if discoverable.
 
 Acceptance:
 
 ```text
 Candidate contexts + view permission check = selector items
-Context click + highest-permission default = selected context
+Context click + last valid selection = selected context
+Cold start + highest-permission fallback = selected context
+No-role context = never selected by default
 Explicit selection always wins over defaulting
 ```
 
@@ -294,6 +334,7 @@ Me nav labels = task nouns
 Work needed:
 
 - Keep discovery separate from Foundation/Project selector eligibility.
+- Move no-role and public discoverable contexts out of the selector and into Browse/Discovery.
 - Use explicit user actions such as register, join, follow, request access, subscribe, or open for stewardship.
 - Do not silently add discovered contexts to selectors until view permission exists.
 
@@ -306,7 +347,6 @@ Discovery action = explicit request/registration/subscription/workflow
 
 ## Open Follow-Ups
 
-- Confirm whether upstream query/resource APIs already enforce view permission; if not, add explicit batch view checks.
 - Decide whether the left rail should keep separate Foundation and Project buttons or move to one context switcher with grouped context types.
 - Align the persona content matrix so ED/Board/Maintainer/Contributor differences remain product experience rules, not authorization shortcuts.
 - Add regression tests for read-only users who can view a context but cannot see create/manage affordances.
@@ -317,6 +357,7 @@ Discovery action = explicit request/registration/subscription/workflow
 Can we agree on this contract?
 
 ```text
+Authoritative role/permission model -> selector eligibility and defaulting
 Context selector eligibility -> view permission
 Sidebar/page/content visibility -> persona/role
 Action authority -> existing contextual writer permission
@@ -324,4 +365,5 @@ Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
 No separate Admin Mode for Foundation/Project create/manage authority
 LF Staff Mode may still be needed for LF operational workflows
+No-role contexts -> Browse/Discovery only, never default selection
 ```

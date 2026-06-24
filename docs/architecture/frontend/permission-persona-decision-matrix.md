@@ -7,13 +7,41 @@ Use this document to verify how LFX Self Serve should route users, shape pages, 
 ## Decision Rules
 
 ```text
+Authoritative role/permission model -> selector eligibility and defaulting
 Context selector eligibility -> view permission
 Sidebar/page/content visibility -> persona/role
 Create/manage authority -> resolved target context + writer permission
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
 LF Staff Mode -> explicit staff eligibility for LF operational workflows
+No-role contexts -> Browse/Discovery only, never default selection
 ```
+
+## P0 Gates
+
+### Selector Candidate
+
+- **Input:** Foundation or Project appears as a possible context.
+- **Required permission:** Authoritative role or view permission for that exact context.
+- **Destination:** Context selector only when permission exists.
+- **Allowed actions:** Show in selector with the user's normalized role for that context.
+- **Denied actions:** Do not include broad discovery/search results, public contexts, or no-role contexts in the selector.
+
+### Discovery Candidate
+
+- **Input:** Foundation, project, group, event, meetup, package, mailing list, or newsletter is discoverable but not role/view-permitted.
+- **Required permission:** Public/discovery eligibility.
+- **Destination:** Browse/Discovery surface.
+- **Allowed actions:** Register, join, follow, subscribe, request access, inspect, or open stewardship workflow.
+- **Denied actions:** Do not treat discovery eligibility as selector eligibility.
+
+### Write Candidate
+
+- **Input:** User attempts create/edit/delete/manage/send/publish.
+- **Required permission:** Resolved target context plus server-enforced writer permission.
+- **Destination:** Write flow only after UI and API permission checks agree.
+- **Allowed actions:** Continue when contextual writer permission passes.
+- **Denied actions:** Fail closed if the target context is missing, stale, no-role, or not writer-permitted.
 
 ## Context Entry
 
@@ -30,19 +58,19 @@ LF Staff Mode -> explicit staff eligibility for LF operational workflows
 
 - **Input:** User clicks Foundation/Project lens and chooses Foundation context without selecting a row.
 - **Required permission:** At least one view-permitted foundation.
-- **Destination:** Highest-permission eligible foundation.
-- **Default order:** Existing selected foundation, writer/manage foundation, ED foundation, Board Member foundation, first stable view-permitted foundation.
+- **Destination:** Last selected valid foundation first; highest-permission eligible foundation only on cold start.
+- **Default order:** Existing selected foundation, last selected valid foundation, writer/manage foundation, ED foundation, Board Member foundation, first stable view-permitted foundation.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected foundation.
-- **Denied actions:** Do not show create/manage because of ED persona alone in the target model.
+- **Denied actions:** Never default into a no-role/no-view foundation. Do not show create/manage because of ED persona alone in the target model.
 
 ### User Opens Project Without A Selected Project
 
 - **Input:** User clicks Foundation/Project lens and chooses Project context without selecting a row.
 - **Required permission:** At least one view-permitted project.
-- **Destination:** Highest-permission eligible project.
-- **Default order:** Existing selected project, writer/manage project, Maintainer project, Contributor project, first stable view-permitted project.
+- **Destination:** Last selected valid project first; highest-permission eligible project only on cold start.
+- **Default order:** Existing selected project, last selected valid project, writer/manage project, Maintainer project, Contributor project, first stable view-permitted project.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected project.
-- **Denied actions:** Contributor/Maintainer persona alone does not grant create/manage authority.
+- **Denied actions:** Never default into a no-role/no-view project. Contributor/Maintainer persona alone does not grant create/manage authority.
 
 ### User Selects A Specific Foundation Or Project
 
@@ -279,12 +307,26 @@ LF Staff Mode -> explicit staff eligibility for LF operational workflows
 - **Allowed actions:** Show discovery/request paths.
 - **Denied actions:** Do not enter an empty Foundation shell.
 
+### User Has A Discoverable But No-Role Foundation
+
+- **Input:** User can discover a foundation but has no authoritative role/view permission.
+- **Destination:** Browse/Discovery only.
+- **Allowed actions:** View public profile or request access if available.
+- **Denied actions:** Do not include it in selector and never default to it.
+
 ### User Has No View-Permitted Projects
 
 - **Input:** User clicks Project context.
 - **Destination:** Stay in Me or Discovery.
 - **Allowed actions:** Show discovery/request paths.
 - **Denied actions:** Do not enter an empty Project shell.
+
+### User Has A Discoverable But No-Role Project
+
+- **Input:** User can discover a project but has no authoritative role/view permission.
+- **Destination:** Browse/Discovery only.
+- **Allowed actions:** View public profile, follow, join, or request access if available.
+- **Denied actions:** Do not include it in selector and never default to it.
 
 ### User Loses View Permission Mid-Session
 
@@ -307,3 +349,13 @@ LF Staff Mode -> explicit staff eligibility for LF operational workflows
 - **Destination:** Requested route only if writer check passes.
 - **Allowed actions:** Continue if authorized.
 - **Denied actions:** Redirect or fail closed if target context is missing or writer permission fails.
+
+## Operational Metrics
+
+Track these so the team can prove the model is working:
+
+- **Wrong-context landing:** user lands in a context different from explicit or persisted valid selection.
+- **No-role default:** user defaults into a context without authoritative role/view permission. Target: zero.
+- **Selector no-role item:** selector shows a context without authoritative role/view permission. Target: zero.
+- **UI-allowed/API-denied write:** UI showed or enabled a write action that the API denied for permission. Target: zero after rollout.
+- **Multiple role labels per context:** one context shows conflicting roles in selector, page header, or resource rows. Target: zero.
