@@ -7,6 +7,7 @@ import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnIn
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
+import { isValidUrl } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
@@ -336,11 +337,19 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!isPlatformBrowser(this.platformId)) return;
     const url = window.prompt('Link URL (leave blank to remove)', 'https://');
     if (url === null) return; // cancelled
-    if (url.trim() === '') {
+    const trimmed = url.trim();
+    if (trimmed === '') {
       document.execCommand('unlink', false);
       return;
     }
-    document.execCommand('createLink', false, url.trim());
+    // Gate the URL through the shared safe-URL check so a `javascript:` / `data:`
+    // scheme can't be stored in the richtext (defense-in-depth — the canvas is
+    // the author's own content, but the value persists into body_layout).
+    if (!isValidUrl(trimmed)) {
+      window.alert('Please enter a valid http(s) URL.');
+      return;
+    }
+    document.execCommand('createLink', false, trimmed);
   }
 
   /**
@@ -879,20 +888,39 @@ function getAtPath(content: Record<string, unknown>, path: string): unknown {
   }, content);
 }
 
+/** Path segments that must never be written through (prototype-pollution guard). */
+const RESERVED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Immutably write `value` at a dotted/indexed path, cloning each container along
  * the way (objects spread, arrays copied) so the original content tree is never
- * mutated. Numeric segments index into arrays (`jobs.0.company`); a bare key
- * (`title`) sets the top level, matching the previous flat-key behaviour.
+ * mutated. Numeric segments index into arrays (`jobs.0.company`) — a missing
+ * container is created as an array when the next segment is numeric, else an
+ * object; a bare key (`title`) sets the top level, matching the previous
+ * flat-key behaviour. A path touching a reserved key (`__proto__` etc.) is
+ * rejected (returns `content` unchanged) so a crafted field key can't pollute
+ * the prototype.
  */
 function setAtPath(content: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
   const segments = path.split('.');
+  if (segments.some((seg) => RESERVED_PATH_SEGMENTS.has(seg))) {
+    return content;
+  }
   const root: Record<string, unknown> | unknown[] = Array.isArray(content) ? [...content] : { ...content };
   let cursor: Record<string, unknown> | unknown[] = root;
   for (let i = 0; i < segments.length - 1; i++) {
     const seg = segments[i];
     const child = (cursor as Record<string, unknown>)[seg];
-    const clone = Array.isArray(child) ? [...child] : { ...((child as Record<string, unknown>) ?? {}) };
+    let clone: Record<string, unknown> | unknown[];
+    if (Array.isArray(child)) {
+      clone = [...child];
+    } else if (child && typeof child === 'object') {
+      clone = { ...(child as Record<string, unknown>) };
+    } else {
+      // Missing container — shape it to match the next segment (array for an
+      // index, object otherwise) so the written tree stays well-formed.
+      clone = /^\d+$/.test(segments[i + 1]) ? [] : {};
+    }
     (cursor as Record<string, unknown>)[seg] = clone;
     cursor = clone;
   }
