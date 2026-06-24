@@ -78,6 +78,20 @@ export class AkritesPackageDrawerComponent {
   protected readonly advisoryTotal = signal<number>(0);
   protected readonly advisoryHasMore = computed(() => this.advisoryTotal() > 0 && this.advisoryItems().length < this.advisoryTotal());
   protected readonly advisoryShownCount = computed(() => this.advisoryItems().length);
+  /**
+   * Class-level computed so `toObservable(this.advisoryFilterParams)` can be called
+   * in the injection context of the constructor — creating `toObservable` inside a
+   * `switchMap` callback would run outside the injection context and crash at runtime
+   * when switching packages.
+   */
+  private readonly advisoryFilterParams = computed(() => {
+    if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
+    return {
+      purl: this.packageId()!,
+      severity: this.advisorySeverityFilter() ?? undefined,
+      resolution: this.advisoryResolutionFilter() ?? undefined,
+    };
+  });
   private static readonly advisoryPageSize = 10;
   private _advisoryNextPage = 2;
   /** Monotonic key identifying the active advisory query; stale load-more responses are dropped. */
@@ -377,41 +391,39 @@ export class AkritesPackageDrawerComponent {
   }
 
   private initAdvisoryLoader(): void {
+    // Reset filter signals whenever the selected package changes. This runs in
+    // the constructor's injection context — safe to call toObservable here.
     toObservable(this.packageId)
       .pipe(
         tap(() => {
           this.advisorySeverityFilter.set(null);
           this.advisoryResolutionFilter.set(null);
         }),
-        switchMap(() => {
-          const filterParams = computed(() => {
-            if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
-            return {
-              purl: this.packageId()!,
-              severity: this.advisorySeverityFilter() ?? undefined,
-              resolution: this.advisoryResolutionFilter() ?? undefined,
-            };
-          });
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
 
-          return toObservable(filterParams).pipe(
-            // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
-            distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
-            switchMap((p) => {
-              // Bump the request key so any in-flight load-more response is discarded.
-              this._advisoryRequestKey++;
-              this.advisoryItems.set([]);
-              this.advisoryTotal.set(0);
-              this._advisoryNextPage = 2;
-              if (!p) return of(null);
-              this.advisoryLoading.set(true);
-              return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
-                catchError(() => {
-                  this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
-                  return of(null);
-                }),
-                finalize(() => this.advisoryLoading.set(false))
-              );
-            })
+    // Drive advisory fetches from the class-level advisoryFilterParams computed.
+    // toObservable() is called here (constructor injection context) — NOT inside a
+    // switchMap callback — so Angular's injection context is always available.
+    toObservable(this.advisoryFilterParams)
+      .pipe(
+        // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
+        distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
+        switchMap((p) => {
+          // Bump the request key so any in-flight load-more response is discarded.
+          this._advisoryRequestKey++;
+          this.advisoryItems.set([]);
+          this.advisoryTotal.set(0);
+          this._advisoryNextPage = 2;
+          if (!p) return of(null);
+          this.advisoryLoading.set(true);
+          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
+              return of(null);
+            }),
+            finalize(() => this.advisoryLoading.set(false))
           );
         }),
         takeUntilDestroyed(this.destroyRef)
