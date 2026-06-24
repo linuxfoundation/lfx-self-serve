@@ -167,6 +167,16 @@ export class CommitteeViewComponent {
     return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
   });
 
+  // When the committee 403s and committee() is null, pendingInvitation() returns null because it
+  // requires committee.uid. This signal resolves the same invite using the route :id directly so
+  // the error state can surface the accept flow without a loaded committee record.
+  public pendingInvitationFromRoute: Signal<PendingInvitation | null> = computed(() => {
+    if (!this.error()) {
+      return null;
+    }
+    return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), this.committeeId());
+  });
+
   // Deferred-decline timers keyed by invite UID (committee UID stored alongside since the invite is
   // out of the cache by the time the timer/destroy flush fires). Mirrors the dashboard/My Groups UX.
   private readonly pendingDeclines = new Map<string, { committeeUid: string; timerId: ReturnType<typeof setTimeout> }>();
