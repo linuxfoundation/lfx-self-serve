@@ -4,7 +4,7 @@
 module.exports = {
   apps: [
     {
-      name: 'lfx-one',
+      name: 'lfx-self-serve',
       script: 'dist/lfx-one/server/server.mjs',
       node_args: '--import ./otel.mjs',
       env: {

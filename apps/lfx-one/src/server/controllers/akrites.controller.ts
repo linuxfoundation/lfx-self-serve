@@ -126,9 +126,9 @@ export class AkritesController {
     const startTime = logger.startOperation(req, 'open_akrites_stewardship');
 
     try {
-      const purl = parseOpenStewardshipBody(req, 'open_akrites_stewardship');
+      const { purl, actor } = parseOpenStewardshipBody(req, 'open_akrites_stewardship');
 
-      const data = await this.akritesService.openStewardship(req, purl);
+      const data = await this.akritesService.openStewardship(req, purl, actor);
 
       logger.success(req, 'open_akrites_stewardship', startTime, { purl });
 
@@ -147,7 +147,7 @@ export class AkritesController {
 
       const data = await this.akritesService.assignSteward(req, id, body);
 
-      logger.success(req, 'assign_akrites_steward', startTime, { stewardship_id: id, role: body.role });
+      logger.success(req, 'assign_akrites_steward', startTime, { stewardship_id: id, role: body.steward.role });
 
       res.json(data);
     } catch (error) {

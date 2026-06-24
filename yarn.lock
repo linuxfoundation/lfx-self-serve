@@ -13552,6 +13552,7 @@ __metadata:
     express-openid-connect: "npm:^2.19.2"
     express-rate-limit: "npm:^8.3.2"
     form-data: "npm:^4.0.4"
+    gaxios: "npm:^6.1.1"
     google-ads-api: "npm:^23.0.0"
     gray-matter: "npm:^4.0.3"
     html-to-image: "npm:^1.11.13"

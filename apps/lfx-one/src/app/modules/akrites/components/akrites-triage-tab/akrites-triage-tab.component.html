@@ -117,8 +117,8 @@
               </div>
             }
 
-            <!-- Action button — writer-only, not shown for unassigned -->
-            @if (canWrite() && col.status !== 'unassigned') {
+            <!-- Action button — writer-only -->
+            @if (canWrite()) {
               <div class="mt-[18px]">
                 <button
                   type="button"
@@ -144,3 +144,9 @@
     </div>
   }
 }
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignModalVisible"
+  [packageName]="assignTargetPackage()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />

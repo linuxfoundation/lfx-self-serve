@@ -149,8 +149,9 @@ router.get('/social-reach', (req, res, next) => analyticsController.getSocialRea
 // Keyword performance endpoint (marketing dashboard)
 router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
 
-// Social media endpoint (marketing dashboard)
+// Social media endpoints (marketing dashboard)
 router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));

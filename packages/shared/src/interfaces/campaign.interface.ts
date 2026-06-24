@@ -26,6 +26,31 @@ export type DateRangeOption = 7 | 14 | 30;
 
 export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead-generation' | 'engagement';
 
+export type CampaignProgramType = 'events' | 'education';
+
+export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+export interface RedditObjectiveParams {
+  readonly redditObjective: string;
+  readonly bidType: 'CPM' | 'CPC';
+  /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
+  readonly bidValue: number;
+  readonly optimizationGoal: string;
+  readonly viewThroughConversionType?: string;
+}
+
+export interface CampaignProgramTypeOption {
+  id: CampaignProgramType;
+  label: string;
+  breadcrumbLabel: string;
+  urlLabel: string;
+  urlPlaceholder: string;
+  urlHelp: string;
+  goalLabel: string;
+  audiencePlaceholder: string;
+  valuePropPlaceholder: string;
+}
+
 export type CampaignTab = CampaignPhase;
 
 export interface CampaignTabOption {
@@ -83,6 +108,7 @@ export type CampaignSSEEventType =
 export interface CampaignBriefRequest {
   url: string;
   platforms?: CampaignPlatform[];
+  programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
   valueProp?: string;
@@ -119,6 +145,7 @@ export interface CampaignBriefOutput {
   totalBudget: number | null;
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
+  programType?: CampaignProgramType;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -259,6 +286,8 @@ export interface RedditCampaignCreateRequest {
   keywords: string[];
   variants: RedditAdVariant[];
   project?: string;
+  objective?: RedditObjective;
+  postUrl?: string;
 }
 
 export interface RedditCampaignCreateResult {
@@ -268,6 +297,7 @@ export interface RedditCampaignCreateResult {
   adGroupName: string;
   adGroupId: string;
   adCount: number;
+  adId?: string;
   redditUrl: string;
   steps: string[];
 }
@@ -287,6 +317,23 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
+
+export interface MetaPlacement {
+  facebookFeed: boolean;
+  instagramFeed: boolean;
+  stories: boolean;
+  reels: boolean;
+  audienceNetwork: boolean;
+  messengerInbox: boolean;
+}
+
+export interface MetaObjectiveParams {
+  readonly campaignObjective: string;
+  readonly optimizationGoal: string;
+  readonly promotedObjectType: 'page_id' | 'pixel_id' | 'none';
+}
+
 export interface MetaCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -299,6 +346,9 @@ export interface MetaCampaignCreateRequest {
   geoTargets: string[];
   variants: MetaAdVariant[];
   project?: string;
+  objective?: MetaObjective;
+  placements?: Partial<MetaPlacement>;
+  pixelId?: string;
 }
 
 export interface MetaCampaignCreateResult {
@@ -372,6 +422,7 @@ export interface CampaignBriefRefineRequest {
   feedback: string;
   eventDetails?: CampaignEventDetails | null;
   platforms?: CampaignPlatform[];
+  programType?: CampaignProgramType;
 }
 
 // ---------------------------------------------------------------------------
@@ -792,4 +843,25 @@ export interface HubSpotUtmCreateResult {
   created: boolean;
   hs_utm: string | null;
   campaign_name: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Status Toggle
+// ---------------------------------------------------------------------------
+
+/** Supported statuses for the campaign status toggle endpoint. */
+export type CampaignToggleStatus = 'ACTIVE' | 'PAUSED';
+
+export interface CampaignStatusUpdateRequest {
+  platform: CampaignPlatform;
+  status: CampaignToggleStatus;
+  accountId?: string;
+}
+
+export interface CampaignStatusUpdateResult {
+  platform: CampaignPlatform;
+  campaignId: string;
+  previousStatus: string;
+  newStatus: CampaignToggleStatus;
+  success: boolean;
 }
