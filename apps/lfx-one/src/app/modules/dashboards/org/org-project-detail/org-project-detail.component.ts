@@ -12,6 +12,7 @@ import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.s
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import type {
@@ -52,9 +53,6 @@ const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-in
 
 const DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
 const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
-
-/** Rows shown per leaderboard before the viewing-org row is pinned below. */
-const LEADERBOARD_TOP_N = 10;
 
 /** Dimension keyed by each side-by-side leaderboard. */
 type LeaderboardDimension = 'technical' | 'ecosystem';
@@ -124,7 +122,7 @@ function bandForScore(score: number): OrgLensProjectBand {
  */
 @Component({
   selector: 'lfx-org-project-detail',
-  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TagComponent, DrawerModule, TooltipModule],
+  imports: [NgTemplateOutlet, BreadcrumbComponent, ChartComponent, EmptyStateComponent, TableComponent, TagComponent, DrawerModule, TooltipModule],
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
@@ -333,12 +331,10 @@ export class OrgProjectDetailComponent {
 
   /**
    * Rank the leaderboard for one dimension (technical / ecosystem), then apply the search filter.
-   * With no search: top-N rows plus the viewing-org row pinned below when it falls outside top-N.
-   * With a search: all matching rows (the viewing-org row appears inline if it matches).
+   * Returns all matching rows — the paginator handles slicing.
    */
   private buildBoard(dimension: LeaderboardDimension, search: string) {
     const valued = (this.detail()?.leaderboard ?? []).map((row) => ({ row, score: row.scores[dimension] }));
-    // Score desc; tie-break org name asc.
     valued.sort((a, b) => b.score - a.score || a.row.orgName.localeCompare(b.row.orgName));
     const ranked = valued.map((entry, i) => {
       const bandMeta = BAND_TAG[bandForScore(entry.score)];
@@ -352,13 +348,8 @@ export class OrgProjectDetailComponent {
         isViewingOrg: entry.row.isViewingOrg,
       };
     });
-
     const query = search.trim().toLowerCase();
-    if (query) {
-      return { visible: ranked.filter((r) => r.orgName.toLowerCase().includes(query)), pinned: null };
-    }
-    const pinned = ranked.find((r) => r.isViewingOrg && r.rank > LEADERBOARD_TOP_N) ?? null;
-    return { visible: ranked.slice(0, LEADERBOARD_TOP_N), pinned };
+    return query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked;
   }
 
   private initActiveTab(): OrgLensProjectDetailTab {
