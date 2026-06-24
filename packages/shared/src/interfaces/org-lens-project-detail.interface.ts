@@ -65,15 +65,38 @@ export interface OrgLensProjectInfluenceCard {
   caption: { prefix: string; emphasis: string; suffix: string };
 }
 
-/** One row in the monthly breakdown table shown in the card detail drawer. */
-export interface OrgLensInfluenceCardDetailRow {
-  month: string;
-  org: number;
-  avg: number;
-  /** Delta of org value vs the previous month (positive = up, negative = down, 0 = flat). */
-  delta: number;
+/** One cell in a card-specific detail table row. Exactly one of `person` or `text` should be set. */
+export interface OrgLensCardDetailCell {
+  /** Renders as avatar initials + name when set. */
+  person?: { name: string; avatarUrl?: string };
+  /** Plain text value when not a person cell. */
+  text?: string;
 }
 
+/** One row in the card-specific data table shown in the influence card detail drawer. */
+export interface OrgLensCardDetailRow {
+  cells: OrgLensCardDetailCell[];
+}
+
+/** Definition row shown at the top of the card detail drawer (mirrors app.lfx.dev format). */
+export interface OrgLensCardDefinition {
+  /** Plain-text description of what this metric counts or measures. */
+  text: string;
+  /** Determines the middle column header: 'count' → "Total count for this project"; 'average' → "Average for this project" */
+  totalType: 'count' | 'average';
+  /** Pre-formatted total or average value, e.g. "78", "1,764", "48.3 days". */
+  total: string;
+  /** Primary data source label, e.g. "LFX Insights", "LFX". */
+  dataSource: string;
+}
+
+/** Complete drawer detail section for one influence card: definition row + card-specific data table. */
+export interface OrgLensCardDetailSection {
+  definition: OrgLensCardDefinition;
+  /** Column header labels for the card-specific data table. */
+  columns: string[];
+  rows: OrgLensCardDetailRow[];
+}
 
 /** One monthly point on the Influence Trend chart. */
 export interface OrgLensProjectTrendPoint {
@@ -114,6 +137,8 @@ export interface OrgLensProjectDetailResponse {
   trend: OrgLensProjectTrendPoint[];
   /** All organizations contributing to the project; the viewing-org row is always included. */
   leaderboard: OrgLensProjectLeaderboardRow[];
+  /** Keyed by card key — drawer definition + card-specific data table for each influence card. */
+  cardDetails: Record<string, OrgLensCardDetailSection>;
 }
 
 /** Page-level lifecycle state for the Project Detail component. */

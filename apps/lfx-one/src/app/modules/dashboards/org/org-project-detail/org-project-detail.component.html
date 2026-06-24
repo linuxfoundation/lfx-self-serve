@@ -160,16 +160,27 @@
                   }
                   <div class="flex-1 h-px bg-gray-200"></div>
                   <div class="flex items-center gap-1">
-                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(technicalTrack, -1)" aria-label="Scroll technical cards left">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      (click)="scrollCards(technicalTrack, -1)"
+                      aria-label="Scroll technical cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(technicalTrack, 1)" aria-label="Scroll technical cards right">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      (click)="scrollCards(technicalTrack, 1)"
+                      aria-label="Scroll technical cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
                     </button>
                   </div>
                 </div>
                 <div class="overflow-hidden">
-                  <div #technicalTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" (scroll)="onTrackScroll(technicalTrack, 'tech')">
+                  <div
+                    #technicalTrack
+                    class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    (scroll)="onTrackScroll(technicalTrack, 'tech')">
                     @for (card of technicalCards(); track card.key) {
                       <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                     }
@@ -193,23 +204,33 @@
                   }
                   <div class="flex-1 h-px bg-gray-200"></div>
                   <div class="flex items-center gap-1">
-                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(ecosystemTrack, -1)" aria-label="Scroll ecosystem cards left">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      (click)="scrollCards(ecosystemTrack, -1)"
+                      aria-label="Scroll ecosystem cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(ecosystemTrack, 1)" aria-label="Scroll ecosystem cards right">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
+                      (click)="scrollCards(ecosystemTrack, 1)"
+                      aria-label="Scroll ecosystem cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
                     </button>
                   </div>
                 </div>
                 <div class="overflow-hidden">
-                  <div #ecosystemTrack class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" (scroll)="onTrackScroll(ecosystemTrack, 'eco')">
+                  <div
+                    #ecosystemTrack
+                    class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    (scroll)="onTrackScroll(ecosystemTrack, 'eco')">
                     @for (card of ecosystemCards(); track card.key) {
                       <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
                     }
                   </div>
                 </div>
               </section>
-
             </div>
           }
           @case ('pd-leaderboards') {
@@ -423,58 +444,72 @@
         <p class="mt-1 text-sm text-gray-500">{{ card.caption.prefix }}{{ card.caption.emphasis }}{{ card.caption.suffix }}</p>
       </div>
 
-      <!-- Full-size chart -->
-      <div class="flex flex-col gap-2">
-        <p class="text-sm font-semibold text-gray-700">12-Month Trend</p>
-        <div class="h-52 rounded-xl border border-gray-100 bg-white p-4">
-          @if (card.hasData) {
-            <lfx-chart [type]="card.chartType" [data]="card.chartData" [options]="card.detailChartOptions" height="100%" />
-          } @else {
-            <div class="flex h-full items-center justify-center text-sm text-gray-400">No data available</div>
-          }
-        </div>
-      </div>
-
-      <!-- Monthly breakdown table -->
-      <div class="flex flex-col gap-2">
-        <p class="text-sm font-semibold text-gray-700">Monthly Breakdown</p>
-        <div class="overflow-hidden rounded-xl border border-gray-100">
-          <table class="w-full text-sm" data-testid="influence-card-detail-table">
+      @if (cardDetail(); as detail) {
+        <!-- Definition table -->
+        <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-definition-table">
+          <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
-                <th scope="col" class="px-4 py-3">Month</th>
-                <th scope="col" class="px-4 py-3 text-right">Your org</th>
-                <th scope="col" class="px-4 py-3 text-right">Project avg</th>
-                <th scope="col" class="px-4 py-3 text-right">vs prior month</th>
+                <th scope="col" class="w-1/2 px-4 py-3">Definition</th>
+                <th scope="col" class="px-4 py-3">
+                  {{ detail.definition.totalType === 'average' ? 'Average for this project' : 'Total count for this project' }}
+                </th>
+                <th scope="col" class="px-4 py-3">Data source</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-50">
-              @for (row of cardDetailRows(); track row.month) {
-                <tr class="bg-white transition-colors hover:bg-gray-50">
-                  <td class="px-4 py-2.5 font-medium text-gray-700">{{ row.month }}</td>
-                  <td class="px-4 py-2.5 text-right font-semibold text-gray-900">{{ row.org }}{{ card.valueSuffix }}</td>
-                  <td class="px-4 py-2.5 text-right text-gray-500">{{ row.avg }}{{ card.valueSuffix }}</td>
-                  <td class="px-4 py-2.5 text-right">
-                    @if (row.delta > 0) {
-                      <span class="inline-flex items-center gap-1 text-emerald-600">
-                        <i class="fa-light fa-arrow-up text-xs" aria-hidden="true"></i>
-                        <span class="text-xs font-medium">+{{ row.delta }}{{ card.valueSuffix }}</span>
-                      </span>
-                    } @else if (row.delta < 0) {
-                      <span class="inline-flex items-center gap-1 text-red-500">
-                        <i class="fa-light fa-arrow-down text-xs" aria-hidden="true"></i>
-                        <span class="text-xs font-medium">{{ row.delta }}{{ card.valueSuffix }}</span>
-                      </span>
-                    } @else {
-                      <span class="text-xs text-gray-400">—</span>
-                    }
-                  </td>
-                </tr>
-              }
+            <tbody>
+              <tr class="bg-white">
+                <td class="px-4 py-3 text-gray-700">{{ detail.definition.text }}</td>
+                <td class="px-4 py-3 font-semibold text-gray-900">{{ detail.definition.total }}</td>
+                <td class="px-4 py-3 text-gray-500">{{ detail.definition.dataSource }}</td>
+              </tr>
+              <tr class="border-t border-gray-50">
+                <td colspan="3" class="px-4 py-2 text-xs text-gray-400">Showing 1 of 1 row</td>
+              </tr>
             </tbody>
           </table>
         </div>
-      </div>
+
+        <!-- Card-specific data table -->
+        @if (detail.rows.length > 0) {
+          <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-detail-table">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
+                  @for (col of detail.columns; track col) {
+                    <th scope="col" class="px-4 py-3">{{ col }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-50">
+                @for (dataRow of detail.rows; track $index) {
+                  <tr class="bg-white transition-colors hover:bg-gray-50">
+                    @for (cell of dataRow.cells; track $index) {
+                      <td class="px-4 py-2.5">
+                        @if (cell.person; as person) {
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700"
+                              aria-hidden="true">
+                              {{ personInitials(person.name) }}
+                            </span>
+                            <span class="font-medium text-blue-600">{{ person.name }}</span>
+                          </div>
+                        } @else {
+                          <span class="text-gray-700">{{ cell.text }}</span>
+                        }
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+            <div class="border-t border-gray-50 px-4 py-2 text-xs text-gray-400">Showing {{ detail.rows.length }} of {{ detail.rows.length }} rows</div>
+          </div>
+        } @else {
+          <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 text-center text-sm text-gray-400">No data available for this metric.</div>
+        }
+      }
     </div>
   }
 </p-drawer>

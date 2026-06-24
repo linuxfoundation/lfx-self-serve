@@ -4,6 +4,9 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import type {
+  OrgLensCardDetailCell,
+  OrgLensCardDetailRow,
+  OrgLensCardDetailSection,
   OrgLensProjectDetailResponse,
   OrgLensProjectHealth,
   OrgLensProjectInfluenceCard,
@@ -251,7 +254,11 @@ function shareOf(n: number, total: number): number {
   return total === 0 ? 0 : n / total;
 }
 
-interface Caption { prefix: string; emphasis: string; suffix: string }
+interface Caption {
+  prefix: string;
+  emphasis: string;
+  suffix: string;
+}
 
 function card(
   key: string,
@@ -477,6 +484,291 @@ const PROJECT_LOGO_URLS: Record<string, string> = {
   argo: `${CNCF_ARTWORK}/argo/icon/color/argo-icon-color.svg`,
 };
 
+// ---------------------------------------------------------------------------
+// Card detail drawer data — definition table + card-specific data tables
+// ---------------------------------------------------------------------------
+
+/** Demo people names used across all card detail tables. */
+const DEMO_PEOPLE = [
+  'Alex Chen',
+  'Jordan Miller',
+  'Sam Patel',
+  'Casey Thompson',
+  'Morgan Davis',
+  'Riley Anderson',
+  'Taylor Brown',
+  'Quinn Wilson',
+  'Avery Johnson',
+  'Blake Lee',
+];
+
+const DEMO_COMMITS = [
+  'Fix race condition in scheduler',
+  'Add unit tests for auth module',
+  'Refactor API error handling',
+  'Update dependency versions',
+  'Improve performance of query path',
+];
+
+const DEMO_PRS = [
+  'feat: add pod disruption budget support',
+  'fix: race condition in scheduler',
+  'docs: update API reference',
+  'refactor: improve error handling',
+  'feat: implement resource quotas',
+];
+
+/** Month+year dates (static for SSR stability). */
+const MONTH_DATES = ['Mar 2023', 'Jun 2024', 'Sep 2024', 'Nov 2024', 'Jan 2025', 'Apr 2025'];
+
+/** Full dates (static for SSR stability). */
+const FULL_DATES = ['Mar 15, 2024', 'Jun 22, 2024', 'Sep 8, 2024', 'Nov 30, 2024', 'Jan 14, 2025', 'Apr 5, 2025'];
+
+const DEMO_COMMITTEES = ['Technical Oversight Committee', 'Security TAG', 'Storage TAG', 'App Delivery TAG', 'Runtime TAG'];
+
+function personCell(i: number, pool: string[] = DEMO_PEOPLE): OrgLensCardDetailCell {
+  return { person: { name: pool[i % pool.length] } };
+}
+
+function textCell(value: string): OrgLensCardDetailCell {
+  return { text: value };
+}
+
+function row(...cells: OrgLensCardDetailCell[]): OrgLensCardDetailRow {
+  return { cells };
+}
+
+/** Generates drawer detail data for all influence cards in a project. */
+function buildCardDetails(seed: ProjectDetailSeed): Record<string, OrgLensCardDetailSection> {
+  const { org, totals } = seed;
+  const eco = seed.ecosystem;
+  const repoGroup = seed.name.split(' ')[0].toLowerCase();
+
+  return {
+    maintainers: {
+      definition: {
+        text: 'Individuals granted maintainer status with merge rights and code ownership for this project.',
+        totalType: 'count',
+        total: totals.maintainers.toString(),
+        dataSource: 'LFX Insights',
+      },
+      columns: ['Our Contributors', 'Username', 'Granted Maintainer Status'],
+      rows: Array.from({ length: Math.min(org.maintainers, 5) }, (_, i) =>
+        row(personCell(i), textCell('@' + DEMO_PEOPLE[i % DEMO_PEOPLE.length].toLowerCase().replace(' ', '.')), textCell('MAINTAINERS.md'))
+      ),
+    },
+
+    contributors: {
+      definition: {
+        text: 'Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range.',
+        totalType: 'count',
+        total: totals.contributors.toLocaleString(),
+        dataSource: 'LFX Insights',
+      },
+      columns: ['Our Contributors', 'Username', 'First activity', 'Most recent', '# Contributions'],
+      rows: Array.from({ length: Math.min(org.contributors, 5) }, (_, i) =>
+        row(
+          personCell(i),
+          textCell('@' + DEMO_PEOPLE[i % DEMO_PEOPLE.length].toLowerCase().replace(' ', '.')),
+          textCell(MONTH_DATES[i % MONTH_DATES.length]),
+          textCell(MONTH_DATES[(i + 2) % MONTH_DATES.length]),
+          textCell(String(Math.max(1, Math.round(org.commits / Math.max(1, org.contributors)) + i * 3)))
+        )
+      ),
+    },
+
+    commits: {
+      definition: {
+        text: "Code contributions committed directly to this project's repositories.",
+        totalType: 'count',
+        total: totals.commits.toLocaleString(),
+        dataSource: 'LFX Insights',
+      },
+      columns: ['Repository Group', 'Committer', 'Date', 'Commit'],
+      rows:
+        org.commits === 0
+          ? []
+          : DEMO_COMMITS.slice(0, 5).map((commit, i) => row(textCell(repoGroup), personCell(i), textCell(FULL_DATES[i % FULL_DATES.length]), textCell(commit))),
+    },
+
+    'pull-requests': {
+      definition: {
+        text: "Pull requests opened against this project's repositories in the selected time range.",
+        totalType: 'count',
+        total: totals.prs.toLocaleString(),
+        dataSource: 'LFX Insights',
+      },
+      columns: ['Repository Group', 'Committer', 'Date', 'PR Opened'],
+      rows:
+        org.prs === 0
+          ? []
+          : DEMO_PRS.slice(0, 5).map((pr, i) => row(textCell(repoGroup), personCell(i), textCell(FULL_DATES[i % FULL_DATES.length]), textCell(pr))),
+    },
+
+    'avg-merge-time': {
+      definition: {
+        text: "Average time from when a pull request is opened to when it is merged, for your organization's contributors.",
+        totalType: 'average',
+        total: '48.3 days',
+        dataSource: 'LFX Insights',
+      },
+      columns: ['Repo', 'Our Contributors', 'PR Name', 'Date', 'Merge Time'],
+      rows:
+        org.prs === 0
+          ? []
+          : DEMO_PRS.slice(0, 5).map((pr, i) =>
+              row(
+                textCell(repoGroup),
+                personCell(i),
+                textCell(pr),
+                textCell(FULL_DATES[i % FULL_DATES.length]),
+                textCell(String(Math.round(40 + i * 3)) + ' days')
+              )
+            ),
+    },
+
+    collaboration: {
+      definition: {
+        text: 'Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums.',
+        totalType: 'count',
+        total: '15,333',
+        dataSource: 'Confluence / Jira / GitHub / GitLab / Groups.io / Slack',
+      },
+      columns: ['Source', 'Our Collaborators', 'Location', 'Count', 'Most recent'],
+      rows:
+        eco.collaboration === 0
+          ? []
+          : ['GitHub', 'Slack', 'Groups.io', 'Jira'].map((source, i) =>
+              row(
+                textCell(source),
+                personCell(i),
+                textCell(['Issues & PRs', '#general channel', 'dev mailing list', 'Project board'][i]),
+                textCell(String(Math.max(1, Math.round(eco.collaboration * (0.35 - i * 0.06))))),
+                textCell(FULL_DATES[(i + 1) % FULL_DATES.length])
+              )
+            ),
+    },
+
+    'meeting-attendance': {
+      definition: {
+        text: 'Attendance at project committee, working group, and community meetings.',
+        totalType: 'count',
+        total: String(Math.max(1, Math.round(eco.meetingAttendance / 0.115))),
+        dataSource: 'LFX',
+      },
+      columns: ['Our meeting attendees', 'Meeting type', 'Meeting date'],
+      rows:
+        eco.meetingAttendance === 0
+          ? []
+          : ['Contributor Meeting', 'Technical Steering Committee', 'Community Call']
+              .slice(0, Math.min(eco.meetingAttendance, 3))
+              .map((type, i) => row(personCell(i), textCell(type), textCell(FULL_DATES[(i + 2) % FULL_DATES.length]))),
+    },
+
+    'board-members': {
+      definition: {
+        text: "Seat on the governing board of the project's foundation.",
+        totalType: 'count',
+        total: '55',
+        dataSource: 'LFX',
+      },
+      columns: ['Our board members', 'Added to board', 'Granted seat by'],
+      rows: Array.from({ length: Math.min(eco.boardMembers, 5) }, (_, i) =>
+        row(
+          personCell(i, ['Bridget Cromwell', 'Alexander Levan', 'Morgan Thompson', 'Casey Williams', 'Jordan Park']),
+          textCell(MONTH_DATES[i % MONTH_DATES.length]),
+          textCell('Membership Entitlement')
+        )
+      ),
+    },
+
+    'committee-members': {
+      definition: {
+        text: 'Individual who is on a foundation committee, such as advisory groups, steering committees, and marketing committees.',
+        totalType: 'count',
+        total: '1,764',
+        dataSource: 'LFX',
+      },
+      columns: ['Our committee members', 'Committee', 'Date joined'],
+      rows: Array.from({ length: Math.min(eco.committeeMembers, 5) }, (_, i) =>
+        row(personCell(i), textCell(DEMO_COMMITTEES[i % DEMO_COMMITTEES.length]), textCell(FULL_DATES[i % FULL_DATES.length]))
+      ),
+    },
+
+    'event-attendance': {
+      definition: {
+        text: "Registration and attendance at events hosted or co-located with this project's foundation.",
+        totalType: 'count',
+        total: '2,840',
+        dataSource: 'LFX',
+      },
+      columns: ['Our attendees', 'Event name', 'Date', 'Location'],
+      rows: [
+        row(personCell(0), textCell('KubeCon EU 2025'), textCell('Mar 2025'), textCell('London, UK')),
+        row(personCell(1), textCell('KubeCon NA 2024'), textCell('Nov 2024'), textCell('Salt Lake City, UT')),
+        row(personCell(2), textCell('CloudNativeCon NA 2024'), textCell('Nov 2024'), textCell('Salt Lake City, UT')),
+      ],
+    },
+
+    'event-speakers': {
+      definition: {
+        text: 'Employees who presented talks, workshops, or keynotes at foundation-hosted events.',
+        totalType: 'count',
+        total: '184',
+        dataSource: 'LFX',
+      },
+      columns: ['Our speakers', 'Event name', 'Talk title', 'Date'],
+      rows: [
+        row(personCell(0), textCell('KubeCon EU 2025'), textCell('Building Secure Software Supply Chains'), textCell('Mar 2025')),
+        row(personCell(1), textCell('KubeCon NA 2024'), textCell('Scaling Multi-Cluster Deployments'), textCell('Nov 2024')),
+      ],
+    },
+
+    'event-sponsorships': {
+      definition: {
+        text: 'Events where your organization sponsored, co-sponsored, or provided in-kind support.',
+        totalType: 'count',
+        total: '12',
+        dataSource: 'LFX',
+      },
+      columns: ['Event name', 'Date', 'Sponsorship level', 'Reach'],
+      rows: [
+        row(textCell('KubeCon EU 2025'), textCell('Mar 2025'), textCell('Diamond'), textCell('12,400 attendees')),
+        row(textCell('KubeCon NA 2024'), textCell('Nov 2024'), textCell('Gold'), textCell('8,200 attendees')),
+      ],
+    },
+
+    'meetup-attendance': {
+      definition: {
+        text: "Attendance at community meetups organized under this project's foundation.",
+        totalType: 'count',
+        total: '1,240',
+        dataSource: 'LFX',
+      },
+      columns: ['Our attendees', 'Meetup name', 'Date', 'Location'],
+      rows: [
+        row(personCell(0), textCell(seed.name + ' Meetup Seattle'), textCell('Jan 2025'), textCell('Seattle, WA')),
+        row(personCell(1), textCell(seed.name + ' Meetup New York'), textCell('Oct 2024'), textCell('New York, NY')),
+      ],
+    },
+
+    'certified-individuals': {
+      definition: {
+        text: "Employees who hold active certifications issued or recognized by this project's foundation.",
+        totalType: 'count',
+        total: '4,210',
+        dataSource: 'LFX',
+      },
+      columns: ['Our individuals', 'Certification name', 'Date issued'],
+      rows: [
+        row(personCell(0), textCell('Certified Kubernetes Administrator (CKA)'), textCell(FULL_DATES[0])),
+        row(personCell(1), textCell('Certified Kubernetes Application Developer (CKAD)'), textCell(FULL_DATES[1])),
+        row(personCell(2), textCell('Certified Kubernetes Security Specialist (CKS)'), textCell(FULL_DATES[2])),
+      ],
+    },
+  };
+}
+
 /**
  * Demo detail for one project. Returns `null` for an unknown slug so the page renders its
  * not-found (404) state. `orgUid` echoes into the response envelope; `orgName` personalizes
@@ -507,5 +799,6 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
     ecosystem: ecosystemCards(seed, seed.name, seed.foundationLabel),
     trend: trendSeries(seed),
     leaderboard: leaderboard(seed, orgName),
+    cardDetails: buildCardDetails(seed),
   };
 }

@@ -15,7 +15,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import type {
-  OrgLensInfluenceCardDetailRow,
+  OrgLensCardDetailSection,
   OrgLensLeaderboardMetric,
   OrgLensProjectBand,
   OrgLensProjectDetailPageState,
@@ -40,7 +40,6 @@ interface InfluenceCardVm {
   chartType: ChartType;
   chartData: ChartData<ChartType>;
   chartOptions: ChartOptions<ChartType>;
-  detailChartOptions: ChartOptions<ChartType>;
   valueSuffix: string;
   caption: { prefix: string; emphasis: string; suffix: string };
   statLabel: string;
@@ -146,18 +145,10 @@ export class OrgProjectDetailComponent {
   protected readonly selectedCard = signal<InfluenceCardVm | null>(null);
   protected readonly drawerOpen = signal(false);
 
-  protected readonly cardDetailRows = computed<OrgLensInfluenceCardDetailRow[]>(() => {
+  protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => {
     const card = this.selectedCard();
-    if (!card) return [];
-    const ds = (card.chartData as { datasets: { data: number[] }[] }).datasets;
-    const orgVals: number[] = ds[0]?.data ?? [];
-    const avgVals: number[] = ds[1]?.data ?? [];
-    return this.monthLabels.map((month, i) => ({
-      month,
-      org: orgVals[i] ?? 0,
-      avg: avgVals[i] ?? 0,
-      delta: i > 0 ? (orgVals[i] ?? 0) - (orgVals[i - 1] ?? 0) : 0,
-    }));
+    if (!card) return null;
+    return this.detail()?.cardDetails?.[card.key] ?? null;
   });
 
   protected readonly tabs: { id: OrgLensProjectDetailTab; label: string; icon: string }[] = [
@@ -314,8 +305,9 @@ export class OrgProjectDetailComponent {
     this.drawerOpen.set(false);
   }
 
-  protected formatDetailValue(val: number, suffix: string): string {
-    return `${val}${suffix}`;
+  /** Returns initials for a person name (used in drawer person-cell avatars). */
+  protected personInitials(name: string): string {
+    return this.initialsFor(name);
   }
 
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
@@ -445,11 +437,20 @@ export class OrgProjectDetailComponent {
   }
 
   /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
-  private buildExternalTooltipFn(valueSuffix = ''): (args: { chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } }; tooltip: { opacity: number; caretX: number; caretY: number; title?: string[]; dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[] } }) => void {
+  private buildExternalTooltipFn(
+    valueSuffix = ''
+  ): (args: {
+    chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } };
+    tooltip: {
+      opacity: number;
+      caretX: number;
+      caretY: number;
+      title?: string[];
+      dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[];
+    };
+  }) => void {
     return ({ chart, tooltip }) => {
-      const tip = chart.canvas
-        .closest('[data-sparkline-host]')
-        ?.querySelector<HTMLElement>('[data-lfx-tip]');
+      const tip = chart.canvas.closest('[data-sparkline-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
       if (!tip) return;
 
       if (tooltip.opacity === 0) {
@@ -501,45 +502,6 @@ export class OrgProjectDetailComponent {
     };
   }
 
-  private buildDetailChartOptions(valueSuffix = '', variant: 'area' | 'bar' | 'line' = 'area'): ChartOptions<ChartType> {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'bottom',
-          labels: { usePointStyle: true, pointStyleWidth: 8, font: { size: 11 }, color: '#6B7280' },
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx: { dataset: { label?: string }; formattedValue: string }) =>
-              ` ${ctx.dataset.label ?? ''}: ${ctx.formattedValue}${valueSuffix}`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          display: true,
-          grid: { display: false },
-          ticks: { font: { size: 10 }, color: '#9CA3AF', maxRotation: 0, maxTicksLimit: 6 },
-        },
-        y: {
-          display: true,
-          position: 'right',
-          grid: { color: '#F3F4F6' },
-          ticks: {
-            font: { size: 10 },
-            color: '#9CA3AF',
-            maxTicksLimit: 5,
-          },
-          beginAtZero: variant === 'bar',
-        },
-      },
-    };
-  }
-
   /** Maps a card key to its preferred visualization variant. */
   private chartVariantFor(key: string): 'area' | 'bar' | 'line' {
     if (['pull-requests', 'meeting-attendance', 'event-attendance'].includes(key)) return 'bar';
@@ -568,7 +530,6 @@ export class OrgProjectDetailComponent {
       chartType: (variant === 'bar' ? 'bar' : 'line') as ChartType,
       chartData: this.buildCardChartData(card.sparkline, card.projectSparkline, colorHex, variant),
       chartOptions: variant === 'bar' ? this.buildBarCardOptions(valueSuffix) : this.buildLineAreaCardOptions(valueSuffix),
-      detailChartOptions: this.buildDetailChartOptions(valueSuffix, variant),
       valueSuffix,
       caption: card.caption,
       statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
