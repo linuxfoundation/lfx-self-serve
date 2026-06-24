@@ -135,7 +135,7 @@ The per-request persona list is then `collectUniquePersonas` — the union of ev
 
 Two overrides are applied **per request, after the cached detection result**, so they are never baked into the shared cache:
 
-- **Root writer injection** — `checkRootWriter(req)` does an independent NATS lookup (`PROJECT_SLUG_TO_UID` for the `ROOT` slug + an access check). A writer on the tenant root project is force-promoted to `executive-director` (moved to the front of the list) and flagged `isRootWriter: true`. This is the only path that injects a persona the user doesn't natively hold.
+- **Root writer injection** — `checkRootWriter(req)` does an independent NATS lookup (`NatsSubjects.PROJECT_SLUG_TO_UID` for the `ROOT` slug + an access check). A writer on the tenant root project is force-promoted to `executive-director` (moved to the front of the list) and flagged `isRootWriter: true`. This is the only path that injects a persona the user doesn't natively hold.
 - **Impersonation persona context** — `req.appSession.impersonationPersonaContext` is honored **only if the target user actually holds that persona**, so impersonation can't escalate scope.
 
 ### 5. Organizations
