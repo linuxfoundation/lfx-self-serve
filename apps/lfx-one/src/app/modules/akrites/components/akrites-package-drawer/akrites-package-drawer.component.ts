@@ -171,8 +171,8 @@ export class AkritesPackageDrawerComponent {
     this.akritesService
       .getPackageAdvisories({
         purl,
-        severity: this.advisorySeverityFilter(),
-        resolution: this.advisoryResolutionFilter(),
+        severity: this.advisorySeverityFilter() ?? undefined,
+        resolution: this.advisoryResolutionFilter() ?? undefined,
         page: this._advisoryNextPage,
         pageSize: AkritesPackageDrawerComponent.advisoryPageSize,
       })
@@ -388,8 +388,8 @@ export class AkritesPackageDrawerComponent {
             if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
             return {
               purl: this.packageId()!,
-              severity: this.advisorySeverityFilter(),
-              resolution: this.advisoryResolutionFilter(),
+              severity: this.advisorySeverityFilter() ?? undefined,
+              resolution: this.advisoryResolutionFilter() ?? undefined,
             };
           });
 

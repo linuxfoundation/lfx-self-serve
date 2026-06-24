@@ -138,7 +138,7 @@ export interface AkritesListParams {
 export interface CdpAdvisory {
   osvId: string;
   severity: AkritesAdvisorySeverity | null;
-  resolution: string | null;
+  resolution: 'open' | 'patched' | null;
 }
 
 export interface CdpAdvisoryPage {
@@ -152,8 +152,8 @@ export interface AkritesAdvisoryParams {
   purl: string;
   page?: number;
   pageSize?: number;
-  severity?: AkritesAdvisorySeverity | null;
-  resolution?: 'open' | 'patched' | null;
+  severity?: AkritesAdvisorySeverity;
+  resolution?: 'open' | 'patched';
 }
 
 export interface AkritesAdvisoryPage {

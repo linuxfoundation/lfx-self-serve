@@ -11,6 +11,7 @@ import {
   AkritesPackagesResponse,
   AkritesScatterResponse,
 } from '@lfx-one/shared/interfaces';
+import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -55,7 +56,7 @@ export class AkritesController {
       const parsedPage = pageRaw ? Number(pageRaw) : NaN;
       const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
       const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
-      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 25;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(CDP_CONFIG.MAX_PAGE_SIZE, parsedPageSize) : 25;
 
       const data: AkritesActivityResponse = await this.akritesService.getActivityFeed(req, page, pageSize);
 
@@ -85,11 +86,11 @@ export class AkritesController {
       const parsedPage = pageRaw ? Number(pageRaw) : NaN;
       const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
       const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
-      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 10;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(CDP_CONFIG.MAX_PAGE_SIZE, parsedPageSize) : 10;
 
       const validSeverities: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
       const rawSeverity = getStringQueryParam(req, 'severity');
-      let severity: AkritesAdvisorySeverity | null = null;
+      let severity: AkritesAdvisorySeverity | undefined;
       if (rawSeverity) {
         if (!validSeverities.includes(rawSeverity as AkritesAdvisorySeverity)) {
           return next(
@@ -103,7 +104,7 @@ export class AkritesController {
 
       const validResolutions = ['open', 'patched'] as const;
       const rawResolution = getStringQueryParam(req, 'resolution');
-      let resolution: (typeof validResolutions)[number] | null = null;
+      let resolution: (typeof validResolutions)[number] | undefined;
       if (rawResolution) {
         if (!validResolutions.includes(rawResolution as (typeof validResolutions)[number])) {
           return next(
