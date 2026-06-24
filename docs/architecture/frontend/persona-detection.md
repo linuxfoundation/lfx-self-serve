@@ -148,11 +148,11 @@ Two overrides are applied **per request, after the cached detection result**, so
 | Affiliated project slugs | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email` |
 | ROOT project UID         | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                |
 
-Caches store the **in-flight Promise** so concurrent callers share one NATS round-trip. Failed lookups (or results carrying an `error`) are evicted immediately so the next caller retries. When there is no stable identifier (no username and no email), the cache is bypassed entirely to prevent cross-user leaks. A background sweep evicts expired entries every 60 s.
+Caches store the **in-flight Promise** so concurrent callers share one NATS round-trip. The **persona detection** cache evicts rejected Promises and resolved results carrying an `error` immediately so the next caller retries. The **affiliated project slugs** cache only evicts rejected Promises — on detection error it resolves to an empty list and the entry stays cached for the TTL. When there is no stable identifier (no username and no email), both caches are bypassed entirely to prevent cross-user leaks. A background sweep evicts expired entries every 60 s.
 
 ### 7. Enrichment
 
-`PersonaEnrichmentService.getEnrichedPersonas(req)` runs detection, then makes a **single batched** project-service call (`getProjectsByIds`) keyed by project UID to attach `projectName`, `logoUrl`, `parentProjectUid`, `description`, and `isFoundation`. On upstream error or empty projects it returns the base (un-enriched) response unchanged.
+`PersonaEnrichmentService.getEnrichedPersonas(req)` runs detection, then makes a **single batched** project-service call (`getProjectsByIds`) keyed by project UID to attach `projectName`, `logoUrl`, `parentProjectUid`, `description`, and `isFoundation`. When `base.error` is set or `base.projects` is empty, it returns the base response unchanged. Otherwise enrichment is fail-soft per project — batch failures or missing matches leave those entries un-enriched rather than aborting the whole response.
 
 ## API endpoints
 
