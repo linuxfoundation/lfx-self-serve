@@ -5,9 +5,9 @@
   <span
     class="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 text-xs font-medium px-2 py-0.5 whitespace-nowrap"
     [class.rounded-full]="rounded()"
-    [class]="styleClass()">
+    [ngClass]="styleClass()">
     @if (dot()) {
-      <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full" [class]="dotBgClass()" aria-hidden="true"></span>
+      <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full" [ngClass]="dotBgClass()" aria-hidden="true"></span>
     } @else if (icon()) {
       <i [class]="icon()" aria-hidden="true"></i>
     }

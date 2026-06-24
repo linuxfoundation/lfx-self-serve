@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { TagProps, TagSeverity } from '@lfx-one/shared/interfaces';
 import { TagModule } from 'primeng/tag';
 
 @Component({
   selector: 'lfx-tag',
-  imports: [TagModule],
+  imports: [NgClass, TagModule],
   templateUrl: './tag.component.html',
 })
 export class TagComponent {

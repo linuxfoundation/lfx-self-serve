@@ -356,8 +356,7 @@ export class AkritesServerService {
       const validStatuses: AkritesStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
       const points = (data.points ?? []).map((p) => {
         const status = validStatuses.includes(p.stewardshipStatus as AkritesStatus) ? (p.stewardshipStatus as AkritesStatus) : 'unassigned';
-        const parsed = p.stewardshipId ? Number.parseInt(p.stewardshipId, 10) : null;
-        const stewardshipId = parsed !== null && !Number.isNaN(parsed) ? parsed : null;
+        const stewardshipId = p.stewardshipId ?? null;
 
         return {
           purl: p.purl,
@@ -470,8 +469,8 @@ export class AkritesServerService {
       lastActivityTime: '',
       downloadsLastMonth: (() => {
         if (impact?.downloadsLastMonth == null) return null;
-        const n = typeof impact.downloadsLastMonth === 'string' ? parseFloat(impact.downloadsLastMonth) : impact.downloadsLastMonth;
-        return Number.isNaN(n) ? null : this.formatNumber(n);
+        const n = Number(impact.downloadsLastMonth);
+        return Number.isFinite(n) ? this.formatNumber(n) : null;
       })(),
       dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
       dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,

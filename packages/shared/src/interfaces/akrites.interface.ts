@@ -528,7 +528,7 @@ export interface AkritesScatterPoint {
   impactScore: number | null;
   healthScore: number | null;
   status: AkritesStatus;
-  stewardshipId: number | null;
+  stewardshipId: string | null;
   openVulns: number;
 }
 
