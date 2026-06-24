@@ -183,7 +183,10 @@ export class AkritesPackageDrawerComponent {
         pageSize: AkritesPackageDrawerComponent.advisoryPageSize,
       })
       .pipe(
-        catchError(() => of(null)),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load more advisories. Please try again.' });
+          return of(null);
+        }),
         finalize(() => this.advisoryLoadingMore.set(false)),
         take(1),
         takeUntilDestroyed(this.destroyRef)
@@ -401,7 +404,10 @@ export class AkritesPackageDrawerComponent {
           if (!p) return of(null);
           this.advisoryLoading.set(true);
           return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
-            catchError(() => of(null)),
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
+              return of(null);
+            }),
             finalize(() => this.advisoryLoading.set(false))
           );
         }),
