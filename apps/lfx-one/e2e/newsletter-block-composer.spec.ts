@@ -42,12 +42,16 @@ const MOCK_MANIFEST: NewsletterTemplateManifest = {
       label: 'Intro Paragraph',
       category: 'block',
       schema: { text: { type: 'richtext', label: 'Text' } },
+      // A richtext field → the renderer marks it inline-editable (richtext).
+      template: '<richtext field="text" class="body" />',
     },
     {
       block_type: 'sponsored_ad',
       label: 'Sponsored Ad',
       category: 'block',
       schema: { headline: { type: 'text', label: 'Headline' } },
+      // A single-field title binding → the renderer marks it inline-editable.
+      template: '<heading class="title">{{headline}}</heading>',
     },
     {
       block_type: 'mlops_community',
@@ -212,6 +216,62 @@ test.describe('Newsletter Block Composer — Phase 1', () => {
     await editor.pressSequentially('Hello contributors');
 
     await expect(page.getByTestId('newsletter-composer-preview-output')).toContainText('Hello contributors', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('selecting a block shows the floating block toolbar', async ({ page }) => {
+    await gotoPreview(page);
+
+    // Adding a block auto-selects it; the floating toolbar pins to the block.
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+
+    await expect(page.getByTestId('newsletter-composer-toolbar')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-toolbar-label')).toContainText('Sponsored Ad');
+    await expect(page.getByTestId('newsletter-composer-toolbar-duplicate')).toBeVisible();
+    await expect(page.getByTestId('newsletter-composer-toolbar-delete')).toBeVisible();
+  });
+
+  test('editing a title inline updates the emitted layout', async ({ page }) => {
+    await gotoPreview(page);
+
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+
+    // The renderer marked the single-field title as inline-editable; the
+    // composer wired a contentEditable carrying the field's data-testid.
+    const inline = page.getByTestId('newsletter-composer-inline-headline');
+    await expect(inline).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Replace the text in place. Edits commit on blur (no re-render mid-type).
+    await inline.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('Launch week is here');
+    // Blur to commit the inline edit back into block.content + re-emit.
+    await page.getByTestId('newsletter-composer-canvas').click({ position: { x: 5, y: 5 } });
+
+    await expect(page.getByTestId('newsletter-composer-preview-output')).toContainText('Launch week is here', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('duplicating a block from the toolbar adds a copy', async ({ page }) => {
+    await gotoPreview(page);
+
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+    await expect(page.getByTestId('newsletter-composer-toolbar-duplicate')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId('newsletter-composer-toolbar-duplicate').click();
+
+    // Two sponsored_ad blocks now render on the canvas.
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toHaveCount(2, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('deleting a block from the toolbar removes it', async ({ page }) => {
+    await gotoPreview(page);
+
+    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+    await expect(page.getByTestId('newsletter-composer-toolbar-delete')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId('newsletter-composer-toolbar-delete').click();
+
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toHaveCount(0);
+    await expect(page.getByTestId('newsletter-composer-canvas-empty')).toBeVisible();
   });
 
   test('removing a block clears it from the canvas and layout', async ({ page }) => {

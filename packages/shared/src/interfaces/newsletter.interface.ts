@@ -313,6 +313,22 @@ export interface NewsletterComposerBlock {
 }
 
 /**
+ * Position + state of the composer's floating block toolbar (the dark pill that
+ * hovers over the selected canvas block — block label + duplicate / delete, and
+ * the rich-text B/I/U/link controls when a richtext field is focused). `top` /
+ * `left` are pixel offsets relative to the canvas' positioned container.
+ * `richtextActive` toggles the formatting controls.
+ */
+export interface NewsletterComposerToolbarState {
+  blockId: string;
+  label: string;
+  top: number;
+  left: number;
+  isContainer: boolean;
+  richtextActive: boolean;
+}
+
+/**
  * The block palette + field schemas bundled into the app at build time from the
  * hard-coded template repo (spec 004 §6.3, Phase 1).
  */

@@ -64,6 +64,12 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
 
   // The block id the current form was built for, to detect selection changes.
   private builtForBlockId: string | null = null;
+  // The `content` reference the form currently reflects — set when the form is
+  // (re)built and whenever the panel emits its own edit. An incoming block whose
+  // `content` is a DIFFERENT reference (e.g. an inline canvas edit) means the
+  // panel is stale and must rebuild; the panel's own edits keep this reference,
+  // so they don't trigger a rebuild loop.
+  private syncedContent: Record<string, unknown> | null = null;
   private valueSub: Subscription | null = null;
   // Suppress the value-change emit while we (re)build the form from inputs.
   private suppressEmit = false;
@@ -80,6 +86,15 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
         return;
       }
       if (block.id === this.builtForBlockId) {
+        // Same block selected, but its content may have changed underneath the
+        // panel via inline canvas editing (a different `content` reference than
+        // the form last reflected). Patch the EXISTING controls in place so the
+        // sidebar mirrors the new values — crucially without rebuilding the form,
+        // which would swap controls the rich-editor never re-binds to. Panel-
+        // originated edits keep the same reference, so they no-op.
+        if (block.content !== this.syncedContent) {
+          this.syncFormValues(block, entries);
+        }
         return;
       }
       this.buildForm(block, entries);
@@ -146,6 +161,39 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
 
   // === Private Helpers ===
 
+  /**
+   * Sync an EXTERNAL content change (an inline canvas edit) into the existing
+   * form without rebuilding it. `patchValue` updates each control in place and
+   * emits per-control change events, so value-accessor wrappers that subscribe to
+   * their control — notably the Tiptap rich-editor — pick up the new value (a
+   * rebuild would swap in controls the editor never re-binds to). `suppressEmit`
+   * blocks the group-level re-emit so this doesn't echo back as a fresh edit.
+   *
+   * If an array field's item COUNT changed (never from inline editing, which only
+   * mutates values), the control structure is stale and we fall back to a rebuild.
+   */
+  private syncFormValues(block: NewsletterComposerBlock, entries: NewsletterFieldEntry[]): void {
+    const group = this.form();
+    if (!group) {
+      this.buildForm(block, entries);
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.type !== 'array') continue;
+      const incoming = block.content[entry.key];
+      const incomingLength = Array.isArray(incoming) ? incoming.length : 0;
+      if ((this.arrayControl(entry.key)?.length ?? 0) !== incomingLength) {
+        this.buildForm(block, entries);
+        return;
+      }
+    }
+
+    this.suppressEmit = true;
+    group.patchValue(block.content, { emitEvent: true });
+    this.suppressEmit = false;
+    this.syncedContent = block.content;
+  }
+
   /** Build the reactive form for a block and wire its value-change emit. */
   private buildForm(block: NewsletterComposerBlock, entries: NewsletterFieldEntry[]): void {
     this.teardownForm();
@@ -161,11 +209,16 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     group.addControl(this.marginKey, new FormControl(this.seedSpacing(block.content[this.marginKey])));
 
     this.builtForBlockId = block.id;
+    this.syncedContent = block.content;
     this.form.set(group);
 
     this.valueSub = group.valueChanges.subscribe(() => {
       if (this.suppressEmit) return;
-      this.contentChange.emit(this.collect(group, entries));
+      const content = this.collect(group, entries);
+      // Record the emitted reference so the echo back through `block` doesn't
+      // look like an external change and rebuild the form mid-edit.
+      this.syncedContent = content;
+      this.contentChange.emit(content);
     });
   }
 

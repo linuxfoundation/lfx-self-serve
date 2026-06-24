@@ -3,7 +3,7 @@
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, OnInit, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnInit, output, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
@@ -14,6 +14,7 @@ import {
   NewsletterComposerBlock,
   NewsletterComposerTab,
   NewsletterComposerTabDef,
+  NewsletterComposerToolbarState,
   NewsletterFieldSchema,
   NewsletterLayout,
   NewsletterOutlineEntry,
@@ -42,6 +43,17 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  * SSR: CDK drag-drop is browser-only, so the canvas drag affordances render only
  * after `isPlatformBrowser`. The manifest is fetched browser-side via the loader
  * service.
+ *
+ * Inline editing (pass 2, LFXV2-2381): the renderer tags single-field text /
+ * richtext elements with `data-nl-field` (and `data-nl-richtext`). For the
+ * SELECTED block, an after-render effect makes those elements `contentEditable`.
+ * On focus the element selects the block; while it's focused the rendered HTML
+ * for that block is FROZEN (`editingBlockId`) so a keystroke / a panel edit can
+ * never re-render under the caret. On blur the element's `textContent` (or
+ * `innerHTML` for richtext) is patched into `block.content` and the layout
+ * re-emits. A floating dark toolbar tracks the selected block (label +
+ * duplicate / delete, plus B/I/U/link when a richtext field has focus). URL /
+ * attribute fields stay panel-only — never marked inline-editable.
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
@@ -71,9 +83,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // The currently selected block (top-level or container child), edited in the
   // fields panel. Null when nothing is selected.
   protected readonly selectedBlockId = signal<string | null>(null);
-  // The active left-rail tab (Gatewaze-Puck parity). Selecting a block
-  // auto-switches this to 'fields'; the user can switch back to 'blocks'.
+  // The active left-rail tab (Blocks / Outline / AI). Field editing lives in the
+  // persistent RIGHT sidebar now, so selecting a block no longer changes this —
+  // the Blocks library stays open while you edit the selected block's fields.
   protected readonly activeTab = signal<NewsletterComposerTab>('blocks');
+  // The block whose inline contentEditable element currently has focus. While
+  // set, that block's rendered HTML is FROZEN (reused from the last render)
+  // so a keystroke or a panel edit can never re-render under the caret. Null
+  // when nothing is being inline-edited. Browser-only.
+  protected readonly editingBlockId = signal<string | null>(null);
+  // The floating block toolbar's position + state (null when hidden).
+  protected readonly toolbar = signal<NewsletterComposerToolbarState | null>(null);
+
+  // The canvas container — the positioned ancestor the floating toolbar is
+  // measured against, and the root we scan for `data-nl-field` elements.
+  protected readonly canvasRef = viewChild<ElementRef<HTMLElement>>('canvasEl');
 
   // === Derived Signals (from the manifest service) ===
   protected readonly manifest = this.manifestService.manifest;
@@ -113,13 +137,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return entries;
   });
 
-  // The breadcrumb label for the Fields tab header ("Page › <Block label>").
-  protected readonly fieldsBreadcrumb: Signal<string> = computed(() => this.selectedBlock()?.label ?? '');
-
   // The left-rail tab definitions (icons + labels; AI is a disabled placeholder).
+  // Fields is NOT a tab — it's the always-on right sidebar.
   protected readonly tabs: NewsletterComposerTabDef[] = [
     { id: 'blocks', label: 'Blocks', icon: 'fa-light fa-cube' },
-    { id: 'fields', label: 'Fields', icon: 'fa-light fa-sliders' },
     { id: 'outline', label: 'Outline', icon: 'fa-light fa-list-tree' },
     { id: 'ai', label: 'AI', icon: 'fa-light fa-sparkles', disabled: true },
   ];
@@ -140,6 +161,18 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   // Monotonic counter for unique per-instance block ids (CDK trackBy + child lists).
   private blockIdCounter = 0;
+
+  // Last-rendered HTML per block id. `initRenderedBlocks` reuses the frozen
+  // entry for `editingBlockId` so an in-progress inline edit is never wiped by
+  // a re-render (keystroke or panel-driven). Plain Map, mutated inside the
+  // computed (the computed's own dependency tracking drives recomputation).
+  private readonly renderCache = new Map<string, SafeHtml>();
+
+  public constructor() {
+    // After every render that touches the selected block, (re)wire its inline
+    // contentEditable elements. Browser-only; the canvas skips SSR hydration.
+    this.initInlineEditingEffect();
+  }
 
   public ngOnInit(): void {
     this.isBrowser.set(isPlatformBrowser(this.platformId));
@@ -166,13 +199,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
-   * Select a block (top-level or container child) for field editing and
-   * auto-switch the rail to the Fields tab — replicates Puck's
-   * `setUi → plugin:'fields'` on select.
+   * Select a block (top-level or container child). Its fields populate the
+   * persistent right sidebar; the left rail (Blocks library) is left as-is so
+   * the palette stays open while editing.
    */
   protected selectBlock(id: string): void {
     this.selectedBlockId.set(id);
-    this.activeTab.set('fields');
+    // Reposition the floating toolbar onto the newly-selected block next frame
+    // (after the ring / layout settles). Browser-only.
+    this.scheduleToolbarReposition();
   }
 
   /** Switch the active left-rail tab. Selection persists across tab changes. */
@@ -211,6 +246,18 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
+   * Swallow anchor navigation inside the live preview. The rendered email HTML
+   * contains real `href`s (and inline-editable text now lives INSIDE some of
+   * those anchors, e.g. a job title link), so a click would otherwise navigate
+   * the editor away. Block selection / inline focus still proceed normally.
+   */
+  protected onPreviewClick(event: MouseEvent): void {
+    if ((event.target as HTMLElement | null)?.closest('a')) {
+      event.preventDefault();
+    }
+  }
+
+  /**
    * Apply edited content to the selected block immutably (top-level or nested),
    * then re-emit the layout. No-op when nothing is selected.
    */
@@ -219,6 +266,81 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!id) return;
     this.blocks.update((current) => this.patchContent(current, id, content));
     this.emit();
+  }
+
+  // === Floating toolbar actions ===
+
+  /**
+   * Duplicate the toolbar's block: deep-clone it (fresh ids), insert the copy
+   * immediately after the original (top-level or within its container), select
+   * it, and re-emit. The Map-based render then picks the clone up automatically.
+   */
+  protected duplicateSelectedBlock(): void {
+    const id = this.toolbar()?.blockId ?? this.selectedBlockId();
+    if (!id) return;
+
+    // Top-level block: clone + insert after.
+    const topIndex = this.blocks().findIndex((b) => b.id === id);
+    if (topIndex !== -1) {
+      const clone = this.cloneBlock(this.blocks()[topIndex]);
+      const next = [...this.blocks()];
+      next.splice(topIndex + 1, 0, clone);
+      this.blocks.set(next);
+      this.selectBlock(clone.id);
+      this.emit();
+      return;
+    }
+
+    // Container child: clone + insert after within the parent's children.
+    for (const parent of this.blocks()) {
+      const childIndex = (parent.children ?? []).findIndex((c) => c.id === id);
+      if (childIndex === -1) continue;
+      const clone = this.cloneBlock(parent.children![childIndex]);
+      const children = [...parent.children!];
+      children.splice(childIndex + 1, 0, clone);
+      this.updateBlock(parent.id, { children });
+      this.selectBlock(clone.id);
+      this.emit();
+      return;
+    }
+  }
+
+  /** Delete the toolbar's block (top-level or container child). */
+  protected deleteSelectedBlock(): void {
+    const id = this.toolbar()?.blockId ?? this.selectedBlockId();
+    if (!id) return;
+    this.toolbar.set(null);
+    if (this.blocks().some((b) => b.id === id)) {
+      this.removeBlock(id);
+      return;
+    }
+    const parent = this.blocks().find((b) => (b.children ?? []).some((c) => c.id === id));
+    if (parent) this.removeChild(parent.id, id);
+  }
+
+  /**
+   * Apply a rich-text command to the current selection via `document.execCommand`.
+   * NOTE: `execCommand` is deprecated, but it remains the pragmatic baseline for
+   * a lightweight contentEditable formatter with no editor dependency — the
+   * registered fallbacks across browsers are still consistent for bold / italic
+   * / underline / createLink. `mousedown` on the toolbar buttons is prevented
+   * (template) so focus stays in the contentEditable and the selection survives.
+   */
+  protected applyFormat(command: 'bold' | 'italic' | 'underline'): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    document.execCommand(command, false);
+  }
+
+  /** Prompt for a URL and wrap the current selection in a link (or unlink). */
+  protected applyLink(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const url = window.prompt('Link URL (leave blank to remove)', 'https://');
+    if (url === null) return; // cancelled
+    if (url.trim() === '') {
+      document.execCommand('unlink', false);
+      return;
+    }
+    document.execCommand('createLink', false, url.trim());
   }
 
   /**
@@ -348,22 +470,77 @@ export class NewsletterBlockComposerComponent implements OnInit {
   private initRenderedBlocks(): Signal<Map<string, SafeHtml>> {
     return computed(() => {
       const map = new Map<string, SafeHtml>();
+      // The block currently being inline-edited: its HTML is FROZEN (reused from
+      // the render cache) so a keystroke or a panel edit never re-renders under
+      // the live caret. Edits are committed to content on blur, where a normal
+      // re-render is safe (the caret is already gone).
+      const frozenId = this.editingBlockId();
       // Touch the manifest so the computed re-runs once templates are loaded.
       if (!this.manifest()) return map;
       const templateOf = (blockType: string): string | undefined => this.manifestService.getBlock(blockType)?.template;
+
+      const renderInto = (block: NewsletterComposerBlock, html: () => string): void => {
+        const frozen = block.id === frozenId ? this.renderCache.get(block.id) : undefined;
+        const safe = frozen ?? this.sanitizer.bypassSecurityTrustHtml(html());
+        this.renderCache.set(block.id, safe);
+        map.set(block.id, safe);
+      };
+
       for (const block of this.blocks()) {
         // Container blocks render their chrome WITHOUT slot content — the live
         // child drop-list in the template hosts the (independently rendered)
         // children, so the slot is left empty to avoid double-rendering.
         const children = block.isContainer ? [] : this.toLayoutChildren(block);
-        const html = this.renderer.renderBlock(templateOf(block.block_type), block.content, children, templateOf);
-        map.set(block.id, this.sanitizer.bypassSecurityTrustHtml(html));
+        renderInto(block, () => this.renderer.renderBlock(templateOf(block.block_type), block.content, children, templateOf, true));
         for (const child of block.children ?? []) {
-          const childHtml = this.renderer.renderBlock(templateOf(child.block_type), child.content, [], templateOf);
-          map.set(child.id, this.sanitizer.bypassSecurityTrustHtml(childHtml));
+          renderInto(child, () => this.renderer.renderBlock(templateOf(child.block_type), child.content, [], templateOf, true));
         }
       }
+      // Drop cache entries for blocks no longer on the canvas.
+      for (const id of Array.from(this.renderCache.keys())) {
+        if (!map.has(id)) this.renderCache.delete(id);
+      }
       return map;
+    });
+  }
+
+  /**
+   * After each render, make the SELECTED block's `data-nl-field` elements
+   * contentEditable and (re)position the floating toolbar. Reading
+   * `renderedBlocks()` + `selectedBlockId()` makes the effect re-run when the
+   * canvas re-renders or the selection moves. Browser-only — the marker
+   * elements only exist after the canvas hydrates client-side.
+   *
+   * Idempotency: elements already wired carry a `data-nl-wired` flag, so a
+   * re-run doesn't double-bind. Listeners are added with `{ once: false }`
+   * straight on the element; Angular discards and recreates the element on the
+   * NEXT (non-frozen) re-render, which drops the old listeners with it.
+   */
+  private initInlineEditingEffect(): void {
+    afterRenderEffect(() => {
+      if (!isPlatformBrowser(this.platformId)) return;
+      // Tracked deps: re-run on canvas re-render and on selection change. The
+      // toolbar / editing-block reads + writes below are `untracked` so writing
+      // the toolbar signal here can't feed back into this effect.
+      this.renderedBlocks();
+      const selectedId = this.selectedBlockId();
+
+      untracked(() => {
+        const canvas = this.canvasRef()?.nativeElement;
+        if (!canvas) return;
+
+        // Only the selected block's rendered region is made editable (matches
+        // Gatewaze, where inline editing is gated to the selected component).
+        const host = selectedId ? canvas.querySelector<HTMLElement>(`[data-nl-block="${cssEscape(selectedId)}"]`) : null;
+        if (host) {
+          const fields = host.querySelectorAll<HTMLElement>('[data-nl-field]:not([data-nl-wired])');
+          fields.forEach((el) => this.wireEditable(el, selectedId!));
+        }
+
+        // Keep the toolbar pinned to the selected block (unless mid-edit, where
+        // the blur commit re-renders and repositions anyway).
+        if (!this.editingBlockId()) this.repositionToolbar();
+      });
     });
   }
 
@@ -534,6 +711,113 @@ export class NewsletterBlockComposerComponent implements OnInit {
     }
   }
 
+  // === Inline-editing helpers ===
+
+  /**
+   * Wire one `data-nl-field` element for inline editing: mark it editable,
+   * select-on-focus, freeze-while-typing, and commit-on-blur.
+   */
+  private wireEditable(el: HTMLElement, blockId: string): void {
+    el.setAttribute('data-nl-wired', 'true');
+    el.setAttribute('contenteditable', 'true');
+    el.setAttribute('data-testid', `newsletter-composer-inline-${el.getAttribute('data-nl-field')}`);
+    // Suppress the native browser spellcheck squiggle noise inside the preview.
+    el.spellcheck = false;
+
+    el.addEventListener('focus', () => {
+      const richtext = el.getAttribute('data-nl-richtext') === 'true';
+      // Selecting the block keeps panel + canvas consistent; freezing its HTML
+      // is what protects the caret from re-renders while typing.
+      if (this.selectedBlockId() !== blockId) this.selectBlock(blockId);
+      this.editingBlockId.set(blockId);
+      // Show the richtext formatting controls only for richtext fields.
+      this.toolbar.update((t) => (t ? { ...t, richtextActive: richtext } : t));
+    });
+
+    el.addEventListener('blur', () => {
+      this.commitInlineEdit(el, blockId);
+      this.editingBlockId.set(null);
+      this.toolbar.update((t) => (t ? { ...t, richtextActive: false } : t));
+    });
+  }
+
+  /**
+   * Read the edited element back into `block.content[field]` and re-emit. Text
+   * fields round-trip via `textContent`; richtext fields via `innerHTML`. No-op
+   * when the value is unchanged, so a focus-with-no-edit doesn't churn the
+   * layout. The patch re-renders the (now-unfrozen) block — fine, the caret is
+   * already gone.
+   */
+  private commitInlineEdit(el: HTMLElement, blockId: string): void {
+    const field = el.getAttribute('data-nl-field');
+    if (!field) return;
+    const richtext = el.getAttribute('data-nl-richtext') === 'true';
+    const next = richtext ? el.innerHTML : (el.textContent ?? '');
+
+    const block = this.findBlock(this.blocks(), blockId);
+    if (!block) return;
+    // `field` may be a dotted/indexed path into an `each` item (e.g.
+    // `jobs.0.company`); write into the nested array/object rather than a flat key.
+    if (getAtPath(block.content, field) === next) return;
+
+    const content = setAtPath(block.content, field, next);
+    this.blocks.update((current) => this.patchContent(current, blockId, content));
+    this.emit();
+  }
+
+  /** Deep-clone a canvas block sub-tree with fresh ids (for Duplicate). */
+  private cloneBlock(block: NewsletterComposerBlock): NewsletterComposerBlock {
+    return {
+      ...block,
+      id: `block-${this.blockIdCounter++}`,
+      content: structuredClone(block.content),
+      children: block.children?.map((child) => this.cloneBlock(child)),
+    };
+  }
+
+  // === Floating-toolbar positioning ===
+
+  /** Reposition the toolbar after the next frame (post-layout). */
+  private scheduleToolbarReposition(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    requestAnimationFrame(() => this.repositionToolbar());
+  }
+
+  /**
+   * Position the floating toolbar over the selected block. Coordinates are the
+   * block host's offset relative to the canvas' positioned container (the
+   * toolbar is absolutely positioned inside it), so it tracks the block on
+   * scroll/resize of the page without per-pixel listeners. Clears the toolbar
+   * when nothing is selected or the host isn't in the DOM yet.
+   */
+  private repositionToolbar(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const id = this.selectedBlockId();
+    const block = id ? this.findBlock(this.blocks(), id) : null;
+    const canvas = this.canvasRef()?.nativeElement;
+    if (!id || !block || !canvas) {
+      this.toolbar.set(null);
+      return;
+    }
+    const host = canvas.querySelector<HTMLElement>(`[data-nl-block="${cssEscape(id)}"]`);
+    if (!host) {
+      this.toolbar.set(null);
+      return;
+    }
+    const hostRect = host.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    const top = Math.max(hostRect.top - canvasRect.top - TOOLBAR_OFFSET, 0);
+    const left = Math.max(hostRect.left - canvasRect.left, 0);
+    this.toolbar.set({
+      blockId: id,
+      label: block.label,
+      top,
+      left,
+      isContainer: block.isContainer,
+      richtextActive: this.toolbar()?.richtextActive ?? false,
+    });
+  }
+
   /** Project the canvas into a NewsletterLayout and emit it. */
   private emit(): void {
     this.layoutChange.emit(this.toLayout());
@@ -579,4 +863,51 @@ export class NewsletterBlockComposerComponent implements OnInit {
     }
     return layoutBlock;
   }
+}
+
+/** Vertical gap (px) between the floating toolbar and the top of its block. */
+const TOOLBAR_OFFSET = 32;
+
+/**
+ * Read a dotted/indexed path out of a content object (`jobs.0.company`). A bare
+ * key (`title`) reads the top level. Returns undefined for a missing path.
+ */
+function getAtPath(content: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, seg) => {
+    if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[seg];
+    return undefined;
+  }, content);
+}
+
+/**
+ * Immutably write `value` at a dotted/indexed path, cloning each container along
+ * the way (objects spread, arrays copied) so the original content tree is never
+ * mutated. Numeric segments index into arrays (`jobs.0.company`); a bare key
+ * (`title`) sets the top level, matching the previous flat-key behaviour.
+ */
+function setAtPath(content: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+  const segments = path.split('.');
+  const root: Record<string, unknown> | unknown[] = Array.isArray(content) ? [...content] : { ...content };
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const seg = segments[i];
+    const child = (cursor as Record<string, unknown>)[seg];
+    const clone = Array.isArray(child) ? [...child] : { ...((child as Record<string, unknown>) ?? {}) };
+    (cursor as Record<string, unknown>)[seg] = clone;
+    cursor = clone;
+  }
+  (cursor as Record<string, unknown>)[segments[segments.length - 1]] = value;
+  return root as Record<string, unknown>;
+}
+
+/**
+ * Escape a string for use inside a CSS attribute-selector value. Uses
+ * `CSS.escape` when available (every modern browser); falls back to escaping
+ * the characters our ids could contain. Browser-only callers.
+ */
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+  return value.replace(/["\\\]]/g, '\\$&');
 }

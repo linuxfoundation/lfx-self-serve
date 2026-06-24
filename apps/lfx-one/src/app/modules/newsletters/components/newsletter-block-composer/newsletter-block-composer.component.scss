@@ -156,4 +156,21 @@
     max-width: 100%;
     height: auto;
   }
+
+  // Inline-edit placeholders. In edit mode the renderer keeps EMPTY editable
+  // fields rendered and tags them `data-nl-placeholder="Title|Body|…"`. While the
+  // field is empty, show that hint as muted italic text via ::before; the moment
+  // the author types, the element is no longer `:empty` and the hint disappears
+  // (no JS). `pointer-events: none` lets a click land the caret in the field, not
+  // the pseudo-element. The min-height keeps an empty field tall enough to click.
+  [data-nl-field][data-nl-placeholder]:empty {
+    min-height: 1.2em;
+
+    &::before {
+      content: attr(data-nl-placeholder);
+      color: #9ca3af;
+      font-style: italic;
+      pointer-events: none;
+    }
+  }
 }
