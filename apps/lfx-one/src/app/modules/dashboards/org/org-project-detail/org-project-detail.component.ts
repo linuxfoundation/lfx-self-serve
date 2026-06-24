@@ -644,10 +644,12 @@ export class OrgProjectDetailComponent {
       return {
         label: entry.name,
         data: this.buildTrendSeries(entry.score, months, entry.seed),
-        backgroundColor: color + 'cc',
+        backgroundColor: color + '99',
         borderColor: color,
-        borderWidth: 1,
-        fill: true,
+        borderWidth: 1.5,
+        // 'stack' fills from this line to the visual position of the dataset below it,
+        // which is the correct Chart.js 4.x primitive for stacked area charts.
+        fill: 'stack',
         tension: 0.3,
         pointRadius: 0,
         pointHoverRadius: 3,
