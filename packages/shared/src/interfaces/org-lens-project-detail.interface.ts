@@ -22,6 +22,9 @@ export type OrgLensScoreType = 'combined' | 'technical' | 'ecosystem';
 /** Leaderboard metric toggle (`?metric=`). Activity Count mode hides the Trend + Band columns. */
 export type OrgLensLeaderboardMetric = 'influence' | 'activity';
 
+/** Time range selector (`?range=`) for the leaderboards tab — affects the stacked trend chart and leaderboard period labels. */
+export type OrgLensLeaderboardTimeRange = '3m' | '6m' | '12m';
+
 /** Tab strip ids (URL `?tab=`). */
 export type OrgLensProjectDetailTab = 'pd-influence' | 'pd-leaderboards';
 
