@@ -189,6 +189,7 @@ export class AkritesPackageDrawerComponent {
         // Ignore stale responses from a superseded query.
         if (page && requestKey === this._advisoryRequestKey) {
           this._advisoryNextPage++;
+          this.advisoryTotal.set(page.total);
           this.advisoryItems.update((items) => [...items, ...page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))]);
         }
       });

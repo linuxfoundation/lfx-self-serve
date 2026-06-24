@@ -38,7 +38,7 @@ export function getHealthTagSeverity(score: number | null): TagSeverity {
 
 export function getAdvisoryTagSeverity(severity: AkritesSeverity | null): TagSeverity {
   if (!severity) return 'secondary';
-  const map: Partial<Record<AkritesSeverity, TagSeverity>> = {
+  const map: Record<AkritesSeverity, TagSeverity> = {
     critical: 'danger',
     high: 'danger',
     medium: 'warn',
