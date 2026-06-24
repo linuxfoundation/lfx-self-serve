@@ -78,7 +78,7 @@ export class AkritesPackageDrawerComponent {
   protected readonly advisoryTotal = signal<number>(0);
   protected readonly advisoryHasMore = computed(() => this.advisoryTotal() > 0 && this.advisoryItems().length < this.advisoryTotal());
   protected readonly advisoryShownCount = computed(() => this.advisoryItems().length);
-  private static readonly ADVISORY_PAGE_SIZE = 10;
+  private static readonly advisoryPageSize = 10;
   private _advisoryNextPage = 2;
   /** Monotonic key identifying the active advisory query; stale load-more responses are dropped. */
   private _advisoryRequestKey = 0;
@@ -180,7 +180,7 @@ export class AkritesPackageDrawerComponent {
         severity: this.advisorySeverityFilter(),
         resolution: this.advisoryResolutionFilter(),
         page: this._advisoryNextPage,
-        pageSize: AkritesPackageDrawerComponent.ADVISORY_PAGE_SIZE,
+        pageSize: AkritesPackageDrawerComponent.advisoryPageSize,
       })
       .pipe(
         catchError(() => of(null)),
@@ -399,7 +399,7 @@ export class AkritesPackageDrawerComponent {
           this._advisoryNextPage = 2;
           if (!p) return of(null);
           this.advisoryLoading.set(true);
-          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.ADVISORY_PAGE_SIZE }).pipe(
+          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
             catchError(() => of(null)),
             finalize(() => this.advisoryLoading.set(false))
           );
