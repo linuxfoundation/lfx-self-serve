@@ -41,7 +41,9 @@ import { instance as gaxiosInstance } from 'gaxios';
 
 import type { Customer } from 'google-ads-api';
 
-// Use Node.js native fetch instead of node-fetch
+// Override gaxios's bundled node-fetch with Node's built-in fetch (undici).
+// node-fetch fails with ERR_STREAM_PREMATURE_CLOSE when handling gzip-encoded
+// responses from oauth2.googleapis.com in the cluster environment.
 gaxiosInstance.defaults.fetchImplementation = globalThis.fetch;
 
 // ---------------------------------------------------------------------------
