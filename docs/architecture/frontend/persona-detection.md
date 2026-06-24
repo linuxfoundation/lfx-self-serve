@@ -27,10 +27,10 @@ const PERSONA_PRIORITY = ['executive-director', 'board-member', 'maintainer', 'c
 
 Personas are also grouped by scope, which drives lens gating downstream:
 
-| Set                       | Members                              | Drives             |
-| ------------------------- | ------------------------------------ | ------------------ |
-| `BOARD_SCOPED_PERSONAS`   | `board-member`, `executive-director` | `foundation` lens  |
-| `PROJECT_SCOPED_PERSONAS` | `maintainer`, `contributor`          | `project` lens     |
+| Set                       | Members                              | Drives            |
+| ------------------------- | ------------------------------------ | ----------------- |
+| `BOARD_SCOPED_PERSONAS`   | `board-member`, `executive-director` | `foundation` lens |
+| `PROJECT_SCOPED_PERSONAS` | `maintainer`, `contributor`          | `project` lens    |
 
 ## Upstream contract — `lfx-v2-persona-service`
 
@@ -38,13 +38,13 @@ Persona detection is **owned by a separate microservice** ([`lfx-v2-persona-serv
 
 The contract is a **NATS request/reply**, not REST:
 
-| Property      | Value                                       |
-| ------------- | ------------------------------------------- |
-| Subject       | `lfx.personas-api.get` (`NatsSubjects.PERSONAS_GET`) |
-| Request       | `{ "username": "jdoe", "email": "jdoe@example.com" }` |
-| Timeout       | 5 s (set in `fetchPersonaDetections`)       |
+| Property | Value                                                 |
+| -------- | ----------------------------------------------------- |
+| Subject  | `lfx.personas-api.get` (`NatsSubjects.PERSONAS_GET`)  |
+| Request  | `{ "username": "jdoe", "email": "jdoe@example.com" }` |
+| Timeout  | 5 s (set in `fetchPersonaDetections`)                 |
 
-`email` is the primary identity signal; `username` unlocks additional matching legs upstream and may be empty. The response is one entry per project, each carrying one or more **detections** describing *why* the project is relevant:
+`email` is the primary identity signal; `username` unlocks additional matching legs upstream and may be empty. The response is one entry per project, each carrying one or more **detections** describing _why_ the project is relevant:
 
 ```jsonc
 {
@@ -55,11 +55,11 @@ The contract is a **NATS request/reply**, not REST:
       "detections": [
         { "source": "board_member", "extra": { "committee_name": "TAC", "role": "Chair", "organization": { "id": "...", "name": "The Linux Foundation" } } },
         { "source": "cdp_roles", "extra": { "contributionCount": 42, "roles": [{ "role": "Maintainer", "repoUrl": "..." }] } },
-        { "source": "mailing_list" }
-      ]
-    }
+        { "source": "mailing_list" },
+      ],
+    },
   ],
-  "error": null
+  "error": null,
 }
 ```
 
@@ -67,17 +67,17 @@ The contract is a **NATS request/reply**, not REST:
 
 The upstream service emits these `detections[].source` tokens. The UI is responsible for interpreting them — the service passes data through without deciding what persona it implies.
 
-| Token                | Meaning (upstream)                                          |
-| -------------------- | ---------------------------------------------------------- |
-| `board_member`       | Member of a `Board`-category committee                     |
-| `executive_director` | Executive Director of the project                          |
-| `cdp_roles`          | CDP project affiliation — carries `roles[]` + `contributionCount` |
-| `cdp_activity`       | CDP/Snowflake activity signal *(reserved upstream; not yet emitted)* |
-| `writer`             | Project writer (access-control membership)                 |
-| `auditor`            | Project auditor (access-control membership)                |
-| `committee_member`   | Member of any committee (community engagement signal)      |
-| `mailing_list`       | Subscribed to a project mailing list                       |
-| `meeting_attendance` | Invited to or attended a project meeting                   |
+| Token                | Meaning (upstream)                                                   |
+| -------------------- | -------------------------------------------------------------------- |
+| `board_member`       | Member of a `Board`-category committee                               |
+| `executive_director` | Executive Director of the project                                    |
+| `cdp_roles`          | CDP project affiliation — carries `roles[]` + `contributionCount`    |
+| `cdp_activity`       | CDP/Snowflake activity signal _(reserved upstream; not yet emitted)_ |
+| `writer`             | Project writer (access-control membership)                           |
+| `auditor`            | Project auditor (access-control membership)                          |
+| `committee_member`   | Member of any committee (community engagement signal)                |
+| `mailing_list`       | Subscribed to a project mailing list                                 |
+| `meeting_attendance` | Invited to or attended a project meeting                             |
 
 A single project may carry multiple detections, and the same token may repeat (e.g. two Board committees → two `board_member` detections). Board-category members appear in **both** `board_member` and `committee_member`.
 
@@ -142,11 +142,11 @@ Two overrides are applied **per request, after the cached detection result**, so
 
 ### 6. Caching
 
-| Cache                          | TTL    | Key                      |
-| ------------------------------ | ------ | ------------------------ |
-| Persona detection result       | 15 s (`PERSONAS_CACHE_TTL_MS`) | `username \|\| email` |
-| Affiliated project slugs        | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email` |
-| ROOT project UID                | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`) | global |
+| Cache                    | TTL                                           | Key                   |
+| ------------------------ | --------------------------------------------- | --------------------- |
+| Persona detection result | 15 s (`PERSONAS_CACHE_TTL_MS`)                | `username \|\| email` |
+| Affiliated project slugs | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email` |
+| ROOT project UID         | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                |
 
 Caches store the **in-flight Promise** so concurrent callers share one NATS round-trip. Failed lookups (or results carrying an `error`) are evicted immediately so the next caller retries. When there is no stable identifier (no username and no email), the cache is bypassed entirely to prevent cross-user leaks. A background sweep evicts expired entries every 60 s.
 
@@ -158,21 +158,21 @@ Caches store the **in-flight Promise** so concurrent callers share one NATS roun
 
 One route serves both shapes (`apps/lfx-one/src/server/routes/persona.route.ts` → `PersonaController`):
 
-| Endpoint                              | Returns                                                       |
-| ------------------------------------- | ------------------------------------------------------------ |
-| `GET /api/user/personas`              | Raw detection (`PersonaApiResponse`) — `projectName`, `logoUrl`, `parentProjectUid`, and `description` null; `isFoundation` defaults to `false` |
-| `GET /api/user/personas?enriched=true`| Same, with project metadata batch-resolved                   |
+| Endpoint                               | Returns                                                                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/user/personas`               | Raw detection (`PersonaApiResponse`) — `projectName`, `logoUrl`, `parentProjectUid`, and `description` null; `isFoundation` defaults to `false` |
+| `GET /api/user/personas?enriched=true` | Same, with project metadata batch-resolved                                                                                                      |
 
 The `PersonaApiResponse` payload:
 
 ```typescript
 // packages/shared/src/interfaces/persona-detection.interface.ts
 interface PersonaApiResponse {
-  personas: PersonaType[];                                   // priority-ordered, primary first
+  personas: PersonaType[]; // priority-ordered, primary first
   personaProjects: Partial<Record<PersonaType, PersonaProject[]>>;
-  projects: EnrichedPersonaProject[];                        // detections + mapped personas per project
+  projects: EnrichedPersonaProject[]; // detections + mapped personas per project
   organizations: Account[];
-  isRootWriter: boolean;                                     // request-scoped, not cached
+  isRootWriter: boolean; // request-scoped, not cached
   error: string | null;
 }
 ```
@@ -189,17 +189,17 @@ interface PersonaApiResponse {
 
 ```typescript
 class PersonaService {
-  currentPersona: WritableSignal<PersonaType>;   // active (selected or primary)
-  allPersonas: WritableSignal<PersonaType[]>;     // everything detected
+  currentPersona: WritableSignal<PersonaType>; // active (selected or primary)
+  allPersonas: WritableSignal<PersonaType[]>; // everything detected
   personaProjects: WritableSignal<Partial<Record<PersonaType, PersonaProject[]>>>;
   detectedProjects: WritableSignal<EnrichedPersonaProject[]>;
 
-  hasBoardRole: Signal<boolean>;     // any BOARD_SCOPED persona present
-  hasProjectRole: Signal<boolean>;   // any PROJECT_SCOPED persona present
-  isBoardScoped: Signal<boolean>;    // current persona is board-scoped
+  hasBoardRole: Signal<boolean>; // any BOARD_SCOPED persona present
+  hasProjectRole: Signal<boolean>; // any PROJECT_SCOPED persona present
+  isBoardScoped: Signal<boolean>; // current persona is board-scoped
   isRootWriter: WritableSignal<boolean>;
 
-  setPersona(p: PersonaType): void;  // explicit user pin
+  setPersona(p: PersonaType): void; // explicit user pin
   refreshEnrichedPersonas(force?: boolean): Observable<PersonaApiResponse | null>;
 }
 ```
