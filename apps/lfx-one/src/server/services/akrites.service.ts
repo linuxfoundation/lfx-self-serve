@@ -391,7 +391,7 @@ export class AkritesServerService {
       id: item.purl,
       name: item.name,
       purl: item.purl,
-      ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || null,
+      ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || 'npm',
       lifecycle: (item.lifecycle as AkritesPackage['lifecycle']) || null,
       healthScore: item.health?.score ?? null,
       healthLabel: item.health?.label ? item.health.label.charAt(0).toUpperCase() + item.health.label.slice(1) : null,
@@ -468,10 +468,11 @@ export class AkritesServerService {
       stewards: this.mapStewards(stewardship?.stewards ?? null),
       lastActivityLabel: '—',
       lastActivityTime: '',
-      downloadsLastMonth:
-        impact?.downloadsLastMonth != null
-          ? this.formatNumber(typeof impact.downloadsLastMonth === 'string' ? parseFloat(impact.downloadsLastMonth) : impact.downloadsLastMonth)
-          : null,
+      downloadsLastMonth: (() => {
+        if (impact?.downloadsLastMonth == null) return null;
+        const n = typeof impact.downloadsLastMonth === 'string' ? parseFloat(impact.downloadsLastMonth) : impact.downloadsLastMonth;
+        return Number.isNaN(n) ? null : this.formatNumber(n);
+      })(),
       dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
       dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,

@@ -343,7 +343,7 @@ export interface AkritesPackage {
   vulnCount: number;
   vulnSeverity: AkritesSeverity | null;
   status: AkritesStatus;
-  /** Integer stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
+  /** Stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
   stewardshipId: string | null;
   stewards: AkritesSteward[];
   lastActivityLabel: string;
