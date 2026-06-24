@@ -131,7 +131,7 @@ export class CommitteeViewComponent {
   // `loading`, which only gates the full-page spinner on the initial fetch.
   public committeeRefreshing = signal<boolean>(false);
   public error = signal<boolean>(false);
-  public errorType = signal<'not-found' | 'server-error' | null>(null);
+  public errorType = signal<'not-found' | 'access-denied' | 'server-error' | null>(null);
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
@@ -170,12 +170,7 @@ export class CommitteeViewComponent {
   // When the committee 403s and committee() is null, pendingInvitation() returns null because it
   // requires committee.uid. This signal resolves the same invite using the route :id directly so
   // the error state can surface the accept flow without a loaded committee record.
-  public pendingInvitationFromRoute: Signal<PendingInvitation | null> = computed(() => {
-    if (!this.error()) {
-      return null;
-    }
-    return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), this.committeeId());
-  });
+  public pendingInvitationFromRoute: Signal<PendingInvitation | null> = this.initPendingInvitationFromRoute();
 
   // Deferred-decline timers keyed by invite UID (committee UID stored alongside since the invite is
   // out of the cache by the time the timer/destroy flush fires). Mirrors the dashboard/My Groups UX.
@@ -648,6 +643,15 @@ export class CommitteeViewComponent {
   }
 
   // -- Private initializer functions --
+  private initPendingInvitationFromRoute(): Signal<PendingInvitation | null> {
+    return computed(() => {
+      if (this.errorType() !== 'access-denied') {
+        return null;
+      }
+      return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), this.committeeId());
+    });
+  }
+
   private initCommitteeId(): Signal<string | null> {
     return toSignal(this.route.paramMap.pipe(map((params) => params.get('id'))), { requireSync: true });
   }
@@ -715,7 +719,9 @@ export class CommitteeViewComponent {
           return this.committeeService.getCommittee(committeeId).pipe(
             catchError((err) => {
               const status = err?.status;
-              if (status === 404 || status === 403) {
+              if (status === 403) {
+                this.errorType.set('access-denied');
+              } else if (status === 404) {
                 this.errorType.set('not-found');
               } else {
                 this.errorType.set('server-error');
