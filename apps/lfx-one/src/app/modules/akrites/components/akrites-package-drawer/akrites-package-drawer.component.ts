@@ -390,7 +390,8 @@ export class AkritesPackageDrawerComponent {
 
     toObservable(filterParams)
       .pipe(
-        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
+        distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
         switchMap((p) => {
           // Bump the request key so any in-flight load-more response is discarded.
           this._advisoryRequestKey++;
