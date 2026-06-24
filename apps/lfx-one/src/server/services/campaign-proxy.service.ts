@@ -24,6 +24,9 @@ import type {
   RedditCampaignCreateResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
+import { instance as gaxiosInstance } from 'gaxios';
+import { GoogleAdsApi, enums } from 'google-ads-api';
+import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -32,19 +35,17 @@ import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
 import { executeRedditCampaignCreation, updateRedditCampaignStatus } from './reddit-ads.service';
 
-// ---------------------------------------------------------------------------
-// Google Ads gRPC client (via google-ads-api)
-// ---------------------------------------------------------------------------
-
-import { GoogleAdsApi, enums } from 'google-ads-api';
-import { instance as gaxiosInstance } from 'gaxios';
-
-import type { Customer } from 'google-ads-api';
-
-// Override gaxios's bundled node-fetch with Node's built-in fetch (undici).
+// Override gaxios@6's bundled node-fetch with Node's built-in fetch (undici).
 // node-fetch fails with ERR_STREAM_PREMATURE_CLOSE when handling gzip-encoded
 // responses from oauth2.googleapis.com in the cluster environment.
-gaxiosInstance.defaults.fetchImplementation = globalThis.fetch;
+//
+// NOTE: this mutates the process-global gaxios@6 singleton, so it also
+// changes the default fetch for every other gaxios@6 consumer in this
+// process (@google-cloud/storage, gcp-metadata, gtoken, google-auth-library).
+// That's intentional — undici is the desired transport everywhere in Node 22+.
+if (globalThis.fetch) {
+  gaxiosInstance.defaults.fetchImplementation = globalThis.fetch as typeof gaxiosInstance.defaults.fetchImplementation;
+}
 
 // ---------------------------------------------------------------------------
 // Required environment variables — log warnings on first use for missing ones
