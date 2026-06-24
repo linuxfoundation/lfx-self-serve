@@ -85,10 +85,31 @@ export class AkritesController {
 
       const validSeverities: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
       const rawSeverity = getStringQueryParam(req, 'severity');
-      const severity = rawSeverity && validSeverities.includes(rawSeverity as AkritesAdvisorySeverity) ? (rawSeverity as AkritesAdvisorySeverity) : null;
+      let severity: AkritesAdvisorySeverity | null = null;
+      if (rawSeverity) {
+        if (!validSeverities.includes(rawSeverity as AkritesAdvisorySeverity)) {
+          return next(
+            ServiceValidationError.forField('severity', `Invalid severity. Allowed: ${validSeverities.join(', ')}`, {
+              operation: 'get_akrites_package_advisories',
+            })
+          );
+        }
+        severity = rawSeverity as AkritesAdvisorySeverity;
+      }
 
+      const validResolutions = ['open', 'patched'] as const;
       const rawResolution = getStringQueryParam(req, 'resolution');
-      const resolution = rawResolution === 'open' || rawResolution === 'patched' ? rawResolution : null;
+      let resolution: (typeof validResolutions)[number] | null = null;
+      if (rawResolution) {
+        if (!validResolutions.includes(rawResolution as (typeof validResolutions)[number])) {
+          return next(
+            ServiceValidationError.forField('resolution', `Invalid resolution. Allowed: ${validResolutions.join(', ')}`, {
+              operation: 'get_akrites_package_advisories',
+            })
+          );
+        }
+        resolution = rawResolution as (typeof validResolutions)[number];
+      }
 
       const params: AkritesAdvisoryParams = { purl, page, pageSize, severity, resolution };
       const data: AkritesAdvisoryPage = await this.akritesService.getPackageAdvisories(req, params);
