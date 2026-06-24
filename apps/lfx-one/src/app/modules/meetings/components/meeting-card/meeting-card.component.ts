@@ -188,7 +188,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting() as Meeting;
+    const meeting = this.meeting();
     const params: Record<string, string> = {};
     if (meeting.project_slug) params['project'] = meeting.project_slug;
     const committeeUid = meeting.committees?.[0]?.uid;
