@@ -271,6 +271,8 @@
           <!-- Filters -->
           <div class="flex items-center gap-2 px-4 pb-2.5 flex-wrap border-b border-gray-100" data-testid="akrites-drawer-advisory-filters">
             <button
+              type="button"
+              [attr.aria-pressed]="advisorySeverityFilter() === null"
               [class]="
                 advisorySeverityFilter() === null
                   ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
@@ -282,6 +284,8 @@
             </button>
             @for (opt of advisorySeverityOptions; track opt.value) {
               <button
+                type="button"
+                [attr.aria-pressed]="advisorySeverityFilter() === opt.value"
                 [class]="
                   advisorySeverityFilter() === opt.value
                     ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
@@ -294,6 +298,8 @@
             }
             <div class="ml-auto flex items-center gap-1">
               <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === null"
                 [class]="
                   advisoryResolutionFilter() === null
                     ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
@@ -304,6 +310,8 @@
                 All
               </button>
               <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === 'open'"
                 [class]="
                   advisoryResolutionFilter() === 'open'
                     ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
@@ -314,6 +322,8 @@
                 Open
               </button>
               <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === 'patched'"
                 [class]="
                   advisoryResolutionFilter() === 'patched'
                     ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
