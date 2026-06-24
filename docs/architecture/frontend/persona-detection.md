@@ -160,7 +160,7 @@ One route serves both shapes (`apps/lfx-one/src/server/routes/persona.route.ts` 
 
 | Endpoint                              | Returns                                                       |
 | ------------------------------------- | ------------------------------------------------------------ |
-| `GET /api/user/personas`              | Raw detection (`PersonaApiResponse`) — project metadata fields null |
+| `GET /api/user/personas`              | Raw detection (`PersonaApiResponse`) — `projectName`, `logoUrl`, `parentProjectUid`, and `description` null; `isFoundation` defaults to `false` |
 | `GET /api/user/personas?enriched=true`| Same, with project metadata batch-resolved                   |
 
 The `PersonaApiResponse` payload:
