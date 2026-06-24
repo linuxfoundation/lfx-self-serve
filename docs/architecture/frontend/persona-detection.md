@@ -11,6 +11,8 @@ For how those personas are then consumed by lenses, navigation, and guards, see 
 
 The upstream service name is deliberate: **personas describe how to present context to a user, not whether they may access something.** A persona shapes sidebar links, dashboard variants, and default scope. It is never the authority for a write/manage action — that stays with the access-check layer (`canWrite()`, route guards, and upstream microservice enforcement). See [Permission, Persona, and Navigation Model](./permission-persona-navigation-model-preread.md) for the view / persona / manage separation.
 
+Meeting create is a common example: the `writer` detection token maps to the `contributor` persona, but committee writers (often `contributor` persona) can create meetings via manage/write checks — see [Meetings write paths](./persona-content-matrix.md#meetings-write-paths) in the content matrix.
+
 ## The four personas
 
 ```typescript
