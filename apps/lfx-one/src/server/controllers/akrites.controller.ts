@@ -71,9 +71,13 @@ export class AkritesController {
     const startTime = logger.startOperation(req, 'get_akrites_package_advisories');
 
     try {
-      const purl = getStringQueryParam(req, 'purl');
+      const rawPurl = getStringQueryParam(req, 'purl');
+      const purl = rawPurl?.trim();
       if (!purl) {
         return next(ServiceValidationError.forField('purl', 'purl query parameter is required', { operation: 'get_akrites_package_advisories' }));
+      }
+      if (!purl.startsWith('pkg:')) {
+        return next(ServiceValidationError.forField('purl', 'purl must start with "pkg:"', { operation: 'get_akrites_package_advisories' }));
       }
 
       const pageRaw = getStringQueryParam(req, 'page');
