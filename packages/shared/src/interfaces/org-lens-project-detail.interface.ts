@@ -23,7 +23,7 @@ export type OrgLensScoreType = 'combined' | 'technical' | 'ecosystem';
 export type OrgLensLeaderboardMetric = 'influence' | 'activity';
 
 /** Time range selector (`?range=`) for the leaderboards tab — affects the stacked trend chart and leaderboard period labels. */
-export type OrgLensLeaderboardTimeRange = '3m' | '6m' | '12m';
+export type OrgLensLeaderboardTimeRange = '1y' | '2y' | 'all';
 
 /** Tab strip ids (URL `?tab=`). */
 export type OrgLensProjectDetailTab = 'pd-influence' | 'pd-leaderboards';

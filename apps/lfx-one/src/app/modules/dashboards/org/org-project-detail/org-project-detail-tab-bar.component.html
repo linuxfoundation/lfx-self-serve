@@ -4,25 +4,41 @@
 <div
   class="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm"
   data-testid="project-detail-controls-bar">
-  <div class="flex items-center gap-2">
-    <ng-content></ng-content>
-  </div>
-  <div class="flex items-center gap-1.5" role="group" aria-label="Time range" data-testid="project-detail-time-range">
-    @for (opt of timeRangeOptions(); track opt.id) {
+  <!-- Left: tab pills -->
+  <div
+    class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
+    role="tablist"
+    aria-label="Project detail sections"
+    (keydown)="onTabKeydown($event)">
+    @for (tab of tabs(); track tab.id) {
       <button
+        #tabBtn
         type="button"
-        class="rounded-lg border px-3.5 py-1.5 text-sm font-medium transition-colors"
-        [class.bg-blue-600]="timeRange() === opt.id"
-        [class.border-blue-600]="timeRange() === opt.id"
-        [class.text-white]="timeRange() === opt.id"
-        [class.bg-white]="timeRange() !== opt.id"
-        [class.border-gray-300]="timeRange() !== opt.id"
-        [class.text-gray-700]="timeRange() !== opt.id"
-        [attr.aria-pressed]="timeRange() === opt.id"
-        [attr.data-testid]="'project-detail-range-' + opt.id"
-        (click)="timeRangeChange.emit(opt.id)">
-        {{ opt.label }}
+        role="tab"
+        [id]="'project-detail-tab-trigger-' + tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-controls]="'project-detail-tab-panel-' + tab.id"
+        [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+        class="flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+        [class.bg-blue-600]="activeTab() === tab.id"
+        [class.text-white]="activeTab() === tab.id"
+        [class.text-gray-600]="activeTab() !== tab.id"
+        [attr.data-testid]="'project-detail-tab-' + tab.id"
+        (click)="tabChange.emit(tab.id)">
+        {{ tab.label }}
       </button>
     }
   </div>
+
+  <!-- Right: time range dropdown -->
+  <select
+    class="cursor-pointer rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 focus:border-blue-500 focus:outline-none"
+    [value]="timeRange()"
+    aria-label="Time range"
+    data-testid="project-detail-time-range"
+    (change)="onRangeChange($event)">
+    @for (opt of timeRangeOptions(); track opt.id) {
+      <option [value]="opt.id">{{ opt.label }}</option>
+    }
+  </select>
 </div>

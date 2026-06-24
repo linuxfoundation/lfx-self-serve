@@ -110,32 +110,15 @@
           </div>
         </section>
 
-        <!-- Tab strip -->
-        <div
-          role="tablist"
-          aria-label="Project detail sections"
-          class="inline-flex w-fit items-center gap-1 rounded-full bg-gray-100 p-1"
-          data-testid="project-detail-tab-bar"
-          (keydown)="onTabKeydown($event)">
-          @for (tab of tabs; track tab.id) {
-            <button
-              type="button"
-              role="tab"
-              [id]="'project-detail-tab-trigger-' + tab.id"
-              [attr.aria-selected]="activeTab() === tab.id"
-              [attr.aria-controls]="'project-detail-tab-panel-' + tab.id"
-              [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
-              class="flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-              [class.bg-blue-600]="activeTab() === tab.id"
-              [class.text-white]="activeTab() === tab.id"
-              [class.text-gray-600]="activeTab() !== tab.id"
-              [class.hover:text-gray-900]="activeTab() !== tab.id"
-              [attr.data-testid]="'project-detail-tab-' + tab.id"
-              (click)="switchTab(tab.id)">
-              {{ tab.label }}
-            </button>
-          }
-        </div>
+        <!-- Tab bar: tabs on left, time range dropdown on right -->
+        <lfx-org-project-detail-tab-bar
+          [tabs]="tabs"
+          [activeTab]="activeTab()"
+          [timeRange]="timeRange()"
+          [timeRangeOptions]="timeRangeOptions"
+          (tabChange)="switchTab($event)"
+          (timeRangeChange)="setTimeRange($event)">
+        </lfx-org-project-detail-tab-bar>
 
         <!-- Tab content -->
         @switch (activeTab()) {
@@ -145,13 +128,6 @@
               id="project-detail-tab-panel-pd-influence"
               class="flex flex-col gap-8"
               [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
-              <!-- Controls bar: time range selector on right -->
-              <lfx-org-project-detail-tab-bar
-                [timeRange]="timeRange()"
-                [timeRangeOptions]="timeRangeOptions"
-                (timeRangeChange)="setTimeRange($event)">
-              </lfx-org-project-detail-tab-bar>
-
               <!-- Technical Influence -->
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
                 <div class="flex items-center gap-3">
@@ -247,15 +223,8 @@
               id="project-detail-tab-panel-pd-leaderboards"
               class="flex flex-col gap-4"
               [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
-              <!-- Controls bar: time range selector on right -->
-              <lfx-org-project-detail-tab-bar
-                [timeRange]="timeRange()"
-                [timeRangeOptions]="timeRangeOptions"
-                (timeRangeChange)="setTimeRange($event)">
-              </lfx-org-project-detail-tab-bar>
-
-              <!-- Metric toggle: individual List/Calendar-style bordered buttons -->
-              <div class="flex items-center gap-2" role="group" aria-label="Metric" data-testid="project-detail-metric-toggle">
+              <!-- Metric toggle: right-aligned List/Calendar-style bordered buttons -->
+              <div class="flex justify-end gap-2" role="group" aria-label="Metric" data-testid="project-detail-metric-toggle">
                 @for (opt of metricOptions; track opt.id) {
                   <button
                     type="button"

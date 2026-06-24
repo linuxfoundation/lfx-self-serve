@@ -56,8 +56,8 @@ const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-in
 const DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
 const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
 
-const DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '12m';
-const VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['3m', '6m', '12m']);
+const DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
+const VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
 /** Dimension keyed by each side-by-side leaderboard. */
 type LeaderboardDimension = 'technical' | 'ecosystem';
@@ -113,12 +113,12 @@ const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: strin
 ];
 
 const TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] = [
-  { id: '3m', label: '3 months' },
-  { id: '6m', label: '6 months' },
-  { id: '12m', label: '12 months' },
+  { id: '1y', label: '1 year' },
+  { id: '2y', label: '2 years' },
+  { id: 'all', label: 'All time' },
 ];
 
-const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '3m': 3, '6m': 6, '12m': 12 };
+const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, 'all': 36 };
 
 /** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
 const STACKED_PALETTE: string[] = [
@@ -237,7 +237,7 @@ export class OrgProjectDetailComponent {
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly scoreColumnLabel = computed(() => (this.isActivityMode() ? 'Activity (12mo)' : 'Influence Score'));
   protected readonly leaderboardSubtitle = computed(() => {
-    const labels: Record<OrgLensLeaderboardTimeRange, string> = { '3m': 'Last 3 months', '6m': 'Last 6 months', '12m': 'Last 12 months' };
+    const labels: Record<OrgLensLeaderboardTimeRange, string> = { '1y': 'Last 12 months', '2y': 'Last 2 years', 'all': 'All time' };
     return labels[this.timeRange()];
   });
   protected readonly techSearch = signal('');
@@ -272,23 +272,6 @@ export class OrgProjectDetailComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
-  }
-
-  protected onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
-    const idx = ids.indexOf(this.activeTab());
-    let next: number | null = null;
-    if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
-    else if (event.key === 'ArrowLeft') next = (idx - 1 + ids.length) % ids.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = ids.length - 1;
-    if (next !== null) {
-      event.preventDefault();
-      this.switchTab(ids[next]);
-      if (typeof document !== 'undefined') {
-        (document.getElementById(`project-detail-tab-trigger-${ids[next]}`) as HTMLElement | null)?.focus();
-      }
-    }
   }
 
   protected retry(): void {
@@ -553,11 +536,11 @@ export class OrgProjectDetailComponent {
     return 'area';
   }
 
-  /** Twelve trailing short-month labels (oldest → newest) for sparkline + trend tooltips. */
+  /** 36 trailing short-month labels (oldest → newest) — sliced to the active time range as needed. */
   private buildMonthLabels(): string[] {
     const out: string[] = [];
     const now = new Date();
-    for (let i = 11; i >= 0; i--) {
+    for (let i = 35; i >= 0; i--) {
       out.push(new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleDateString('en-US', { month: 'short' }));
     }
     return out;
@@ -568,7 +551,7 @@ export class OrgProjectDetailComponent {
     const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
     const sparkline = card.sparkline.slice(-months);
     const projectSparkline = card.projectSparkline.slice(-months);
-    const labels = this.monthLabels.slice(-months);
+    const labels = this.monthLabels.slice(-sparkline.length);
     return {
       key: card.key,
       title: card.label,
