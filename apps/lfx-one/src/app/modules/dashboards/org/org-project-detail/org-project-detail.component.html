@@ -113,7 +113,7 @@
         <div
           role="tablist"
           aria-label="Project detail sections"
-          class="flex items-center gap-1 border-b border-gray-200"
+          class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
           data-testid="project-detail-tab-bar"
           (keydown)="onTabKeydown($event)">
           @for (tab of tabs; track tab.id) {
@@ -124,12 +124,11 @@
               [attr.aria-selected]="activeTab() === tab.id"
               [attr.aria-controls]="'project-detail-tab-panel-' + tab.id"
               [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
-              class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors"
-              [class.border-blue-600]="activeTab() === tab.id"
-              [class.text-blue-600]="activeTab() === tab.id"
-              [class.border-transparent]="activeTab() !== tab.id"
-              [class.text-gray-500]="activeTab() !== tab.id"
-              [class.hover:text-gray-700]="activeTab() !== tab.id"
+              class="flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+              [class.bg-blue-600]="activeTab() === tab.id"
+              [class.text-white]="activeTab() === tab.id"
+              [class.text-gray-600]="activeTab() !== tab.id"
+              [class.hover:text-gray-900]="activeTab() !== tab.id"
               [attr.data-testid]="'project-detail-tab-' + tab.id"
               (click)="switchTab(tab.id)">
               <i [class]="tab.icon" aria-hidden="true"></i>
@@ -160,7 +159,8 @@
                       {{ bandLabel(band) }}
                     </span>
                   }
-                  <div class="ml-auto flex items-center gap-1">
+                  <div class="flex-1 h-px bg-gray-200"></div>
+                  <div class="flex items-center gap-1">
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(technicalTrack, -1)" aria-label="Scroll technical cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
@@ -192,7 +192,8 @@
                       {{ bandLabel(band) }}
                     </span>
                   }
-                  <div class="ml-auto flex items-center gap-1">
+                  <div class="flex-1 h-px bg-gray-200"></div>
+                  <div class="flex items-center gap-1">
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100" (click)="scrollCards(ecosystemTrack, -1)" aria-label="Scroll ecosystem cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
@@ -264,7 +265,10 @@
 
               <!-- Influence Trend -->
               <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
-                <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
+                  <div class="flex-1 h-px bg-gray-200"></div>
+                </div>
                 <div class="rounded-lg border border-gray-200 bg-white p-4">
                   @if (hasTrendHistory()) {
                     <div class="h-72" data-testid="project-detail-trend-chart">
