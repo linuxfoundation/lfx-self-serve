@@ -309,7 +309,14 @@
           </span>
         </td>
         <!-- TODO(v2): replace per-row template functions below with pure pipes or computed() maps to avoid per-cycle re-execution -->
-        <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" [outlined]="true" /></td>
+        <td>
+          <lfx-tag
+            [value]="getLifecycleLabel(pkg.lifecycle)"
+            [severity]="getLifecycleTagSeverity(pkg.lifecycle)"
+            [rounded]="true"
+            [dot]="true"
+            [outlined]="true" />
+        </td>
         <td>
           @if (pkg.healthScore !== null) {
             <lfx-tag
