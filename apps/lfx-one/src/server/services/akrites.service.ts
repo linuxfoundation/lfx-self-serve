@@ -391,10 +391,11 @@ export class AkritesServerService {
       id: item.purl,
       name: item.name,
       purl: item.purl,
-      ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || 'npm',
-      lifecycle: null,
-      healthScore: null,
-      impactScore: null,
+      ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || null,
+      lifecycle: (item.lifecycle as AkritesPackage['lifecycle']) || null,
+      healthScore: item.health?.score ?? null,
+      healthLabel: item.health?.label ?? null,
+      impactScore: item.impact ?? null,
       busFactor: item.maintainerCount ?? null,
       monthsStale: null,
       vulnCount,
@@ -430,7 +431,7 @@ export class AkritesServerService {
     const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
-    const hs = detail.general?.healthScore;
+    const hs = detail.general?.healthScoreDetails;
     // Fixed positional slots — the drawer labels them Maintainer health /
     // Security & supply chain / Development activity, so missing scores keep
     // their position instead of shifting the rest.
@@ -456,17 +457,18 @@ export class AkritesServerService {
       ecosystem: (detail.ecosystem as AkritesPackage['ecosystem']) || 'npm',
       lifecycle: (risk?.lifecycle as AkritesPackage['lifecycle']) || null,
       healthScore: hs?.total ?? null,
+      healthLabel: hs?.label ?? null,
       impactScore: impact?.impactScore ?? null,
       busFactor: risk?.maintainerBusFactor ?? null,
       monthsStale: this.calculateMonthsStale(repo?.lastCommitAt),
       vulnCount: advisories.length,
       vulnSeverity,
       status: stewardship?.status ?? 'unassigned',
-      stewardshipId: stewardship?.id ?? null,
+      stewardshipId: stewardship?.id ? parseInt(stewardship.id, 10) : null,
       stewards: this.mapStewards(stewardship?.stewards ?? null),
       lastActivityLabel: '—',
       lastActivityTime: '',
-      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(typeof impact.downloadsLastMonth === 'string' ? parseFloat(impact.downloadsLastMonth) : impact.downloadsLastMonth) : null,
       dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
       dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,

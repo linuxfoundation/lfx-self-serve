@@ -313,7 +313,7 @@
         <td>
           @if (pkg.healthScore !== null) {
             <lfx-tag
-              [value]="getHealthLabel(pkg.healthScore) + ' (' + pkg.healthScore + ')'"
+              [value]="(pkg.healthLabel ?? getHealthLabel(pkg.healthScore)) + ' (' + pkg.healthScore + ')'"
               [severity]="getHealthTagSeverity(pkg.healthScore)"
               [rounded]="true"
               [dot]="true" />
