@@ -348,7 +348,7 @@
                 </div>
               }
             </div>
-            @if ((advisoryPage()?.total ?? 0) > enrichedAdvisories().length) {
+            @if (!advisoryShowAll() && (advisoryPage()?.total ?? 0) > enrichedAdvisories().length) {
               <div class="px-4 py-2.5 border-t border-gray-100">
                 <button
                   class="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors"
