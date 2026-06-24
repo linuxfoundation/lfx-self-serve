@@ -7,6 +7,8 @@ import { Observable, of, catchError, take, map, throwError } from 'rxjs';
 import {
   AkritesActorInput,
   AkritesActivityResponse,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
@@ -65,6 +67,15 @@ export class AkritesService {
   public getActivityFeed(page = 1, pageSize = 25): Observable<AkritesActivityResponse> {
     const params = new HttpParams().set('page', String(page)).set('pageSize', String(pageSize));
     return this.http.get<AkritesActivityResponse>('/api/akrites/activity', { params });
+  }
+
+  public getPackageAdvisories(params: AkritesAdvisoryParams): Observable<AkritesAdvisoryPage> {
+    let httpParams = new HttpParams().set('purl', params.purl);
+    if (params.page) httpParams = httpParams.set('page', String(params.page));
+    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.severity) httpParams = httpParams.set('severity', params.severity);
+    if (params.resolution) httpParams = httpParams.set('resolution', params.resolution);
+    return this.http.get<AkritesAdvisoryPage>('/api/akrites/packages/advisories', { params: httpParams });
   }
 
   public getPackage(purl: string): Observable<AkritesPackage | null> {

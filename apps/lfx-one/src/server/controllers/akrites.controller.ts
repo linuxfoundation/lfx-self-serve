@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AkritesActivityResponse, AkritesListParams, AkritesMetrics, AkritesPackagesResponse, AkritesScatterResponse } from '@lfx-one/shared/interfaces';
+import {
+  AkritesActivityResponse,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
+  AkritesListParams,
+  AkritesMetrics,
+  AkritesPackagesResponse,
+  AkritesScatterResponse,
+  AkritesSeverity,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -50,6 +59,40 @@ export class AkritesController {
       const data: AkritesActivityResponse = await this.akritesService.getActivityFeed(req, page, pageSize);
 
       logger.success(req, 'get_akrites_activity', startTime, { row_count: data.rows?.length ?? 0 });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getPackageAdvisories(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_akrites_package_advisories');
+
+    try {
+      const purl = getStringQueryParam(req, 'purl');
+      if (!purl) {
+        return next(new Error('purl query parameter is required'));
+      }
+
+      const pageRaw = getStringQueryParam(req, 'page');
+      const pageSizeRaw = getStringQueryParam(req, 'pageSize');
+      const parsedPage = pageRaw ? Number(pageRaw) : NaN;
+      const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
+      const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 10;
+
+      const validSeverities: AkritesSeverity[] = ['critical', 'high', 'medium', 'moderate', 'low'];
+      const rawSeverity = getStringQueryParam(req, 'severity');
+      const severity = rawSeverity && validSeverities.includes(rawSeverity as AkritesSeverity) ? (rawSeverity as AkritesSeverity) : null;
+
+      const rawResolution = getStringQueryParam(req, 'resolution');
+      const resolution = rawResolution === 'open' || rawResolution === 'patched' ? rawResolution : null;
+
+      const params: AkritesAdvisoryParams = { purl, page, pageSize, severity, resolution };
+      const data: AkritesAdvisoryPage = await this.akritesService.getPackageAdvisories(req, params);
+
+      logger.success(req, 'get_akrites_package_advisories', startTime, { purl, advisory_count: data.advisories?.length ?? 0 });
 
       res.json(data);
     } catch (error) {
