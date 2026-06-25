@@ -15,7 +15,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
   CommitteeInvite,
@@ -92,11 +92,13 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
-  // Default to hidden while committee is loading (fail closed for privacy)
+  // Fail-closed: only show members when visibility is explicitly set to basic_profile.
+  // Undefined/null/unknown values default to hidden so committees without a persisted
+  // setting don't inadvertently expose the member list.
   public readonly isMembersVisible = computed(() => {
     const committee = this.committee();
     if (!committee) return false;
-    return committee.member_visibility !== 'hidden' || this.canManageMembers();
+    return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
   });
   public readonly votingRepCount: Signal<number> = computed(
     () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length
