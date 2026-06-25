@@ -500,16 +500,22 @@ export class OrgProjectDetailComponent {
       tip.style.top = `${rect.top + tooltip.caretY}px`;
       tip.style.transform = 'translateY(-100%)';
 
-      const title = tooltip.title?.[0] ?? '';
+      const esc = (value: string) =>
+        value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch));
+
+      const title = esc(tooltip.title?.[0] ?? '');
       const rows = (tooltip.dataPoints ?? [])
-        .map(
-          (p) =>
+        .map((p) => {
+          const label = esc(p.dataset.label ?? '');
+          const formatted = esc(`${p.formattedValue}${valueSuffix}`);
+          return (
             '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
             `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}"></span>` +
-            `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${p.dataset.label ?? ''}: ` +
-            `<strong style="color:#111827;font-weight:600">${p.formattedValue}${valueSuffix}</strong></span>` +
+            `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${label}: ` +
+            `<strong style="color:#111827;font-weight:600">${formatted}</strong></span>` +
             '</div>'
-        )
+          );
+        })
         .join('');
 
       tip.innerHTML = `<p style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap">${title}</p>${rows}`;
