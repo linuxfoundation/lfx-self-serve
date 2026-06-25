@@ -441,8 +441,8 @@
         }
       </div>
       <div class="mt-4 border-t border-gray-100 pt-3">
-        <p class="text-2xl font-bold text-gray-900">{{ card.caption.emphasis }}</p>
-        <p class="mt-0.5 text-xs text-gray-500">{{ card.statLabel }}</p>
+        <p class="text-2xl font-bold text-gray-900">{{ card.caption.emphasis || '—' }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">{{ card.statLabel || card.caption.prefix }}</p>
       </div>
     </div>
   </button>
