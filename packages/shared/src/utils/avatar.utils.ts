@@ -9,7 +9,11 @@ function buildMyprofileAvatarUrl(username: string | null | undefined, baseUrl: s
   if (!handle) {
     return null;
   }
-  return `${baseUrl.replace(/\/+$/, '')}/${encodeURIComponent(handle)}.png`;
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return `${baseUrl.slice(0, end)}/${encodeURIComponent(handle)}.png`;
 }
 
 // Resolve a committee seat's avatar URL: inline `avatar` wins, else derive from `username` (interim path). Null → initials.
@@ -38,7 +42,7 @@ export function avatarColorClass(identity: string | null | undefined): string {
 export function avatarInitials(firstName: string | null | undefined, lastName: string | null | undefined, fallback?: string | null): string {
   const first = (firstName ?? '').trim();
   const last = (lastName ?? '').trim();
-  const fromName = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  const fromName = (first && last ? `${first.charAt(0)}${last.charAt(0)}` : (first || last).slice(0, 2)).toUpperCase();
   if (fromName) {
     return fromName;
   }
