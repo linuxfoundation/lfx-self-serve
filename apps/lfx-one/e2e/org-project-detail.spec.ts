@@ -5,8 +5,10 @@
  * Org Lens · Project Detail Page E2E Tests (LFXV2-1885)
  *
  * Covers the acceptance criteria for the per-project Org Lens view:
- * - leaderboard ranking, metric toggle with ?metric= persistence,
- *   Activity Count hiding the Band column
+ * - data-testid resolution smoke test (breadcrumb, hero, tabs, card groups, trend)
+ * - tab strip switching (click + keyboard) with ?tab= URL persistence
+ * - leaderboard ranking, score/metric toggles with ?metric= persistence,
+ *   Activity Count hiding the Trend + Band columns, and Show more pagination
  * - not-found (404) panel for an unknown slug
  *
  * Prerequisites:
@@ -94,6 +96,7 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-technical-viewing-row')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-viewing-row')).toBeVisible();
+    await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
   });
 
   test('metric toggle persists in the URL and switches the score column', async ({ page }) => {

@@ -247,7 +247,10 @@ export class OrgProjectDetailComponent {
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
-  protected readonly scoreColumnLabel = computed(() => (this.isActivityMode() ? 'Activity (12mo)' : 'Influence Score'));
+  protected readonly scoreColumnLabel = computed(() => {
+    if (!this.isActivityMode()) return 'Influence Score';
+    return `Activity (${TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
+  });
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
   protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
@@ -641,8 +644,8 @@ export class OrgProjectDetailComponent {
     }
     const entries: StackEntry[] = top10.map((r, i) => ({ name: r.orgName, score: r.scores.combined, seed: i }));
     if (rest.length > 0) {
-      const avg = rest.reduce((s, r) => s + r.scores.combined, 0) / rest.length;
-      entries.push({ name: 'All others', score: avg, seed: 10 });
+      const restScore = rest.reduce((s, r) => s + r.scores.combined, 0);
+      entries.push({ name: 'All others', score: restScore, seed: 10 });
     }
 
     // Build raw series, then normalize each month so all series sum to 100%.
