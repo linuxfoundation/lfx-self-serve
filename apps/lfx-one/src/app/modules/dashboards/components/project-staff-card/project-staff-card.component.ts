@@ -8,6 +8,7 @@ import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
 import { ProjectSettings, UserInfo } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 interface StaffRow {
@@ -19,7 +20,7 @@ interface StaffRow {
 
 @Component({
   selector: 'lfx-project-staff-card',
-  imports: [AvatarComponent, SkeletonModule],
+  imports: [AvatarComponent, SkeletonModule, TooltipModule],
   templateUrl: './project-staff-card.component.html',
   styleUrl: './project-staff-card.component.scss',
 })
