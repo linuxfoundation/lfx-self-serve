@@ -5,10 +5,8 @@
  * Org Lens · Project Detail Page E2E Tests (LFXV2-1885)
  *
  * Covers the acceptance criteria for the per-project Org Lens view:
- * - data-testid resolution smoke test (breadcrumb, hero, tabs, card groups, trend)
- * - tab strip switching (click + keyboard) with ?tab= URL persistence
- * - leaderboard ranking, score/metric toggles with ?score=/?metric= persistence,
- *   Activity Count hiding the Trend + Band columns, and Show more pagination
+ * - leaderboard ranking, metric toggle with ?metric= persistence,
+ *   Activity Count hiding the Band column
  * - not-found (404) panel for an unknown slug
  *
  * Prerequisites:
