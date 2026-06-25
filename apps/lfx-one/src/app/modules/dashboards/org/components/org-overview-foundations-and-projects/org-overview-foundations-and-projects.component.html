@@ -103,9 +103,7 @@
                                 (row.foundationSlug || row.foundationId) +
                                 '-project-' +
                                 (project.projectSlug && project.projectSlug.length > 0 ? project.projectSlug : project.projectId)
-                              "
-                              (click)="onProjectRowClick(project)"
-                              (keydown)="onProjectRowKeydown($event, project)">
+                              ">
                               <td class="py-2">
                                 <span class="inline-flex items-center gap-2">
                                   @switch (project.influence) {
