@@ -54,6 +54,8 @@ test.describe('Org Project Detail — testid resolution', () => {
     for (const key of ['collaboration', 'meeting-attendance', 'board-members', 'committee-members']) {
       await expect(page.getByTestId(`project-detail-ecosystem-card-${key}`)).toBeVisible();
     }
+
+    await page.getByTestId('project-detail-tab-pd-leaderboards').click();
     await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
   });
 });
