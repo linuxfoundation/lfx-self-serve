@@ -309,21 +309,29 @@
           </span>
         </td>
         <!-- TODO(v2): replace per-row template functions below with pure pipes or computed() maps to avoid per-cycle re-execution -->
-        <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" /></td>
+        <td>
+          <lfx-tag
+            [value]="getLifecycleLabel(pkg.lifecycle)"
+            [severity]="getLifecycleTagSeverity(pkg.lifecycle)"
+            [rounded]="true"
+            [dot]="true"
+            [outlined]="true" />
+        </td>
         <td>
           @if (pkg.healthScore !== null) {
             <lfx-tag
-              [value]="getHealthLabel(pkg.healthScore) + ' (' + pkg.healthScore + ')'"
+              [value]="(pkg.healthLabel ?? getHealthLabel(pkg.healthScore)) + ' (' + pkg.healthScore + ')'"
               [severity]="getHealthTagSeverity(pkg.healthScore)"
               [rounded]="true"
-              [dot]="true" />
+              [dot]="true"
+              [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }
         </td>
         <td>
           @if (pkg.impactScore !== null) {
-            <lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" [rounded]="true" />
+            <lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" [rounded]="true" [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }
@@ -335,7 +343,7 @@
               [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)"
               [rounded]="true"
               [dot]="true"
-              styleClass="whitespace-nowrap" />
+              [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }

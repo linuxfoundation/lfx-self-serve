@@ -91,6 +91,9 @@ export interface CdpStewardshipSummary {
   purl: string;
   name: string;
   ecosystem: string;
+  lifecycle: string | null;
+  health: { label: string | null; score: number | null } | null;
+  impact: number | null;
   criticalityScore: string | null;
   stewardshipId: string | null;
   stewardshipStatus: string | null;
@@ -168,15 +171,16 @@ export interface CdpPackageDetail {
   name: string;
   ecosystem: string;
   general: {
-    healthScore: {
+    healthScoreDetails: {
+      total: number | null;
+      label: string | null;
       maintainerHealth: number | null;
       securitySupplyChain: number | null;
       developmentActivity: number | null;
-      total: number | null;
     } | null;
     impact: {
       impactScore: number | null;
-      downloadsLastMonth: number | null;
+      downloadsLastMonth: number | string | null;
       dependentPackages: number | null;
       dependentRepos: number | null;
       transitiveReach: string | null;
@@ -189,13 +193,12 @@ export interface CdpPackageDetail {
       openSSFScorecard: number | null;
     } | null;
   } | null;
-  assessment: Record<string, unknown>;
+  assessment: Record<string, unknown> | null;
   security: {
     securityContacts: unknown | null;
     advisories: CdpAdvisory[];
     cvd: {
       isPvrEnabled: boolean | null;
-      hasSecurityPolicyEnabled: boolean | null;
       tier0Steward: unknown | null;
       criticalVulnerabilityFlag: boolean;
     } | null;
@@ -212,7 +215,7 @@ export interface CdpPackageDetail {
     } | null;
   } | null;
   stewardship: CdpStewardshipDetail | null;
-  history: Record<string, unknown>;
+  history: Record<string, unknown> | null;
 }
 
 // ===== CDP Stewardship Raw Types =====
@@ -231,7 +234,7 @@ export interface CdpStewardSummary {
 
 /** Stewardship block embedded in the CDP package detail response. */
 export interface CdpStewardshipDetail {
-  id: number | null;
+  id: string | null;
   status: AkritesStatus;
   stewards: CdpStewardSummary[] | null;
   lastActivityAt: string | null;
@@ -357,14 +360,15 @@ export interface AkritesPackage {
   ecosystem: AkritesEcosystem;
   lifecycle: AkritesLifecycle | null;
   healthScore: number | null;
+  healthLabel: string | null;
   impactScore: number | null;
   busFactor: number | null;
   monthsStale: number | null;
   vulnCount: number;
   vulnSeverity: AkritesSeverity | null;
   status: AkritesStatus;
-  /** Integer stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
-  stewardshipId: number | null;
+  /** Stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
+  stewardshipId: string | null;
   stewards: AkritesSteward[];
   lastActivityLabel: string;
   lastActivityTime: string;
@@ -548,7 +552,7 @@ export interface AkritesScatterPoint {
   impactScore: number | null;
   healthScore: number | null;
   status: AkritesStatus;
-  stewardshipId: number | null;
+  stewardshipId: string | null;
   openVulns: number;
 }
 

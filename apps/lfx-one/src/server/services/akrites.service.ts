@@ -425,8 +425,7 @@ export class AkritesServerService {
       const validStatuses: AkritesStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
       const points = (data.points ?? []).map((p) => {
         const status = validStatuses.includes(p.stewardshipStatus as AkritesStatus) ? (p.stewardshipStatus as AkritesStatus) : 'unassigned';
-        const parsed = p.stewardshipId ? Number.parseInt(p.stewardshipId, 10) : null;
-        const stewardshipId = parsed !== null && !Number.isNaN(parsed) ? parsed : null;
+        const stewardshipId = p.stewardshipId ?? null;
 
         return {
           purl: p.purl,
@@ -461,15 +460,16 @@ export class AkritesServerService {
       name: item.name,
       purl: item.purl,
       ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || 'npm',
-      lifecycle: null,
-      healthScore: null,
-      impactScore: null,
+      lifecycle: (item.lifecycle as AkritesPackage['lifecycle']) || null,
+      healthScore: item.health?.score ?? null,
+      healthLabel: item.health?.label ? item.health.label.charAt(0).toUpperCase() + item.health.label.slice(1) : null,
+      impactScore: item.impact ?? null,
       busFactor: item.maintainerCount ?? null,
       monthsStale: null,
       vulnCount,
       vulnSeverity,
       status: (item.stewardshipStatus as AkritesPackage['status']) || 'unassigned',
-      stewardshipId: item.stewardshipId ? parseInt(item.stewardshipId, 10) : null,
+      stewardshipId: item.stewardshipId ?? null,
       stewards: this.mapStewards(item.stewards ?? []),
       lastActivityLabel: item.lastActivity ? item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type) : '—',
       lastActivityTime: item.lastActivity ? this.formatRelativeTime(item.lastActivity.at) : '',
@@ -499,7 +499,7 @@ export class AkritesServerService {
     const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
-    const hs = detail.general?.healthScore;
+    const hs = detail.general?.healthScoreDetails;
     // Fixed positional slots — the drawer labels them Maintainer health /
     // Security & supply chain / Development activity, so missing scores keep
     // their position instead of shifting the rest.
@@ -525,6 +525,7 @@ export class AkritesServerService {
       ecosystem: (detail.ecosystem as AkritesPackage['ecosystem']) || 'npm',
       lifecycle: (risk?.lifecycle as AkritesPackage['lifecycle']) || null,
       healthScore: hs?.total ?? null,
+      healthLabel: hs?.label ? hs.label.charAt(0).toUpperCase() + hs.label.slice(1) : null,
       impactScore: impact?.impactScore ?? null,
       busFactor: risk?.maintainerBusFactor ?? null,
       monthsStale: this.calculateMonthsStale(repo?.lastCommitAt),
@@ -535,7 +536,12 @@ export class AkritesServerService {
       stewards: this.mapStewards(stewardship?.stewards ?? null),
       lastActivityLabel: '—',
       lastActivityTime: '',
-      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      downloadsLastMonth: (() => {
+        if (impact?.downloadsLastMonth == null) return null;
+        if (typeof impact.downloadsLastMonth === 'string' && impact.downloadsLastMonth.trim() === '') return null;
+        const n = Number(impact.downloadsLastMonth);
+        return Number.isFinite(n) ? this.formatNumber(n) : null;
+      })(),
       dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
       dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,

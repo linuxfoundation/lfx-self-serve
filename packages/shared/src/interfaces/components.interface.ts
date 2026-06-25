@@ -156,6 +156,8 @@ export interface TagProps {
   styleClass?: string;
   /** Renders a small filled circle dot before the label, inheriting the severity color */
   dot?: boolean;
+  /** Renders the tag with a border and transparent background instead of a filled background */
+  outlined?: boolean;
 }
 
 /**

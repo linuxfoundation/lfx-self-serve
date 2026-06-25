@@ -86,7 +86,7 @@ export class AkritesTriageTabComponent {
     this.actionLoading.set(true);
 
     const stewardshipId$ =
-      pkg.stewardshipId !== null ? of(pkg.stewardshipId) : this.akritesService.openStewardship(pkg.purl).pipe(map((res) => parseInt(res.stewardship.id, 10)));
+      pkg.stewardshipId !== null ? of(pkg.stewardshipId) : this.akritesService.openStewardship(pkg.purl).pipe(map((res) => res.stewardship.id));
 
     stewardshipId$
       .pipe(

@@ -106,9 +106,8 @@ export class AkritesOverviewTabComponent {
     if (!row || this.assignActionLoading()) return;
     this.assignActionLoading.set(true);
 
-    const stewardshipId = row.stewardshipId ? parseInt(row.stewardshipId, 10) : null;
     const stewardshipId$ =
-      stewardshipId !== null ? of(stewardshipId) : this.akritesService.openStewardship(row.packagePurl).pipe(map((res) => parseInt(res.stewardship.id, 10)));
+      row.stewardshipId !== null ? of(row.stewardshipId) : this.akritesService.openStewardship(row.packagePurl).pipe(map((res) => res.stewardship.id));
 
     stewardshipId$
       .pipe(
