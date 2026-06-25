@@ -3,6 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
 import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
@@ -11,9 +12,10 @@ import {
   QueryServiceCountResponse,
   UpdateVoteRequest,
   Vote,
+  VoteAnswerInput,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -54,6 +56,10 @@ export class VoteService {
   ): Observable<PaginatedResponse<Vote>> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 
+    if (pageSize) {
+      params = params.set('page_size', pageSize.toString());
+    }
+
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -92,7 +98,8 @@ export class VoteService {
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
   public getVotesByCommittee(committeeUid: string, orderBy?: string): Observable<Vote[]> {
-    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
+    // page_size=100 keeps the drain-all UX after VoteService.getVotes switched to single-page; committees over 100 are out of scope (LFXV2-1969).
+    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', '100');
 
     if (orderBy) {
       params = params.set('order', orderBy);
@@ -131,6 +138,23 @@ export class VoteService {
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
+  }
+
+  /** Wraps getMyVoteResponse + createVoteResponse; throws INVITATION_NOT_FOUND if no row exists. */
+  public submitMyResponse(voteUid: string, params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined }): Observable<void> {
+    return this.getMyVoteResponse(voteUid).pipe(
+      take(1),
+      switchMap((myResponse) => {
+        if (!myResponse?.uid) return throwError(() => new Error(INVITATION_NOT_FOUND));
+        const payload: CreateVoteResponseRequest = {
+          vote_response_uid: myResponse.uid,
+          vote_uid: voteUid,
+          abstain: params.abstain,
+          user_vote_content: params.userVoteContent,
+        };
+        return this.createVoteResponse(payload);
+      })
+    );
   }
 
   public getMyVoteResponse(voteUid: string): Observable<MyVoteResponse | null> {

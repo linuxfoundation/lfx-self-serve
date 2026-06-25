@@ -25,10 +25,12 @@ import {
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
+  PastMeetingTranscript,
+  PastMeetingTranscriptContent,
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
-  PublicMeetingResponse,
+  PublicMeetingProject,
   PublicPastMeetingResponse,
   QueryServiceCountResponse,
   UpdateMeetingAttachmentRequest,
@@ -210,13 +212,13 @@ export class MeetingService {
     );
   }
 
-  public getPublicMeeting(id: string, password: string | null): Observable<PublicMeetingResponse> {
+  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
     let params = new HttpParams();
     if (password) {
       params = params.set('password', password);
     }
 
-    return this.http.get<PublicMeetingResponse>(`/public/api/meetings/${id}`, { params }).pipe(
+    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);
@@ -388,6 +390,14 @@ export class MeetingService {
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
     return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+  }
+
+  public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
+    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${pastMeetingUid}/transcript`);
+  }
+
+  public getPastMeetingTranscriptContent(pastMeetingUid: string): Observable<PastMeetingTranscriptContent> {
+    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${pastMeetingUid}/transcript/content`);
   }
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {

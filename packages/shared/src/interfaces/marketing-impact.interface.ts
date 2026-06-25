@@ -1,14 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { BrandReachResponse, EmailCtrResponse, MarketingAttributionChannel, RevenueImpactResponse } from './analytics-data.interface';
+import type {
+  BrandReachResponse,
+  EmailCtrResponse,
+  MarketingAttributionChannel,
+  PaidProjectPerformance,
+  RevenueImpactResponse,
+} from './analytics-data.interface';
 
-/** Month option for the Marketing Impact page month picker. */
-export interface MarketingImpactMonthOption {
-  /** Display label (e.g., "April 2026") */
+/** Period option for the Marketing Impact date range picker. */
+export interface MarketingImpactPeriodOption {
   label: string;
-  /** ISO-style value for API use (e.g., "2026-04") */
   value: string;
+}
+
+/** Resolved date range from a validated period parameter. */
+export interface ResolvedPeriodRange {
+  type: 'month' | 'ytd' | 'trailing';
+  startDate: string;
+  endDate: string;
+  label: string;
 }
 
 /** Tab option for the Marketing Impact section tabs. */
@@ -17,8 +29,8 @@ export interface MarketingImpactTabOption {
   label: string;
 }
 
-/** Focus program identifiers for the Marketing Impact FOCUS filter bar. */
-export type MarketingImpactFocusProgram = 'all' | 'events' | 'newsletters' | 'surveys' | 'trainings';
+/** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'projectWebsites';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
 export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';
@@ -71,9 +83,6 @@ export interface AttributionChannelRow {
 /** Funnel stage identifier for the performance marketing filter. */
 export type FunnelStage = 'all' | 'tofu' | 'mofu' | 'bofu';
 
-/** Performance rating for paid project campaigns. */
-export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'POOR' | 'NO REVENUE';
-
 /** View-model row for the performance marketing project table. */
 export interface PaidProjectRow {
   name: string;
@@ -84,6 +93,17 @@ export interface PaidProjectRow {
   impressions: string;
   performance: PaidProjectPerformance;
   performanceClass: string;
+  campaigns: PaidCampaignRow[];
+}
+
+/** View-model row for a nested campaign under a project. */
+export interface PaidCampaignRow {
+  campaignName: string;
+  funnelStage: string;
+  spend: string;
+  revenue: string;
+  roas: string;
+  impressions: string;
 }
 
 /** View-model row for the email type breakdown table. */
@@ -106,6 +126,57 @@ export interface TopCampaignRow {
   ctr: string;
 }
 
+/** View-model row for the social accounts platform table. */
+export interface SocialAccountRow {
+  platform: string;
+  followers: string;
+  impressions: string;
+  engagementRate: string;
+  posts: string;
+}
+
+/** View-model row for a single month inside a social monthly platform. */
+export interface SocialMonthlyRow {
+  month: string;
+  impressions: string;
+  engagementRate: string;
+  followers: string;
+  newFollowers: string;
+  momChange: string;
+  momChangeClass: string;
+}
+
+/** View-model for an expandable social platform with monthly data. */
+export interface SocialMonthlyPlatform {
+  platform: string;
+  expanded: boolean;
+  latestFollowers: string;
+  latestMomChange: string;
+  latestMomChangeClass: string;
+  months: SocialMonthlyRow[];
+}
+
+/** Segment data for the sentiment breakdown horizontal bar chart. */
+export interface SentimentBar {
+  positive: number;
+  neutral: number;
+  negative: number;
+  positiveLabel: string;
+  neutralLabel: string;
+  negativeLabel: string;
+}
+
+/** View-model row for an individual domain inside a classification group. */
+export interface WebActivityDomainDetailRow {
+  host: string;
+  sessions: string;
+  pageViews: string;
+  newUsers: string;
+  returningUsers: string;
+  sessionShare: number;
+  sessionShareFormatted: string;
+}
+
 /** View-model row for the web activity domain table. */
 export interface WebActivityDomainRow {
   domain: string;
@@ -114,4 +185,65 @@ export interface WebActivityDomainRow {
   pagesPerSession: string;
   sessionShare: number;
   sessionShareFormatted: string;
+  domains: WebActivityDomainDetailRow[];
+}
+
+/** View-model row for the platform performance table. */
+export interface PlatformPerformanceRow {
+  platform: string;
+  spend: string;
+  revenue: string;
+  roas: string;
+  clicks: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  convRate: string;
+  conversions: string;
+  performance: PaidProjectPerformance;
+  performanceClass: string;
+  campaigns: PlatformCampaignRow[];
+}
+
+/** View-model row for a nested campaign under a platform. All numeric fields are pre-formatted strings. */
+export interface PlatformCampaignRow {
+  campaignName: string;
+  /** Pre-formatted currency string, e.g. "$1,234.56" */
+  spend: string;
+  /** Pre-formatted currency string, e.g. "$5,678.90" */
+  revenue: string;
+  /** Pre-formatted ROAS multiplier string, e.g. "2.34x" */
+  roas: string;
+  /** Pre-formatted number string, e.g. "1,234" */
+  clicks: string;
+  /** Pre-formatted number string, e.g. "12,345" */
+  impressions: string;
+}
+
+/** View-model row for the keyword performance table. */
+export interface KeywordRow {
+  keyword: string;
+  matchType: string;
+  clicks: string;
+  spend: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  conversions: string;
+  convRate: string;
+  revenue: string;
+  roas: string;
+  searchTerms: SearchTermRow[];
+}
+
+/** View-model row for a nested search term under a keyword. */
+export interface SearchTermRow {
+  searchTerm: string;
+  matchType: string;
+  clicks: string;
+  spend: string;
+  impressions: string;
+  ctr: string;
+  cpc: string;
+  conversions: string;
 }

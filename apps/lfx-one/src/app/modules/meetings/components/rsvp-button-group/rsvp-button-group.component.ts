@@ -36,9 +36,17 @@ export class RsvpButtonGroupComponent {
   public occurrenceId: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public disabled: InputSignal<boolean> = input<boolean>(false);
   public disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
+  /** Suppresses the success toast; pair with `suppressErrorToast` to suppress errors too. */
+  public suppressToast: InputSignal<boolean> = input<boolean>(false);
+  /** When true, suppresses the default error toast — callers handling errors via the `rsvpFailed` output. */
+  public suppressErrorToast: InputSignal<boolean> = input<boolean>(false);
+  /** Compact rendering: no surrounding container, buttons match secondary-outlined CTA style with colored icon + label per response. */
+  public compact: InputSignal<boolean> = input<boolean>(false);
 
   // Outputs
   public readonly rsvpChanged: OutputEmitterRef<MeetingRsvp> = output<MeetingRsvp>();
+  /** Emits the resolved error message when an RSVP submission fails. Pair with `suppressErrorToast=true` to render a custom error UI. */
+  public readonly rsvpFailed: OutputEmitterRef<string> = output<string>();
 
   // Internal state
   public isLoading: WritableSignal<boolean> = signal(false);
@@ -99,12 +107,14 @@ export class RsvpButtonGroupComponent {
         tap((rsvp: MeetingRsvp) => {
           // Success - emit the updated RSVP
           this.rsvpChanged.emit(rsvp);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'RSVP Updated',
-            detail: `You have responded "${this.formatResponse(response)}" for this meeting.`,
-            life: 3000,
-          });
+          if (!this.suppressToast()) {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'RSVP Updated',
+              detail: `You have responded "${this.formatResponse(response)}" for this meeting.`,
+              life: 3000,
+            });
+          }
           // Trigger refresh to fetch updated RSVP
           this.refreshTrigger.set(this.refreshTrigger() + 1);
         }),
@@ -117,12 +127,16 @@ export class RsvpButtonGroupComponent {
             errorMessage = error.error.error;
           }
 
-          this.messageService.add({
-            severity: 'error',
-            summary: 'RSVP Failed',
-            detail: errorMessage,
-            life: 5000,
-          });
+          this.rsvpFailed.emit(errorMessage);
+
+          if (!this.suppressErrorToast()) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'RSVP Failed',
+              detail: errorMessage,
+              life: 5000,
+            });
+          }
           return of(null);
         }),
         finalize(() => {

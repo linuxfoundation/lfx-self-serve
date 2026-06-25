@@ -3,6 +3,12 @@
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Playwright MCP session artifacts
+.playwright-mcp/
+
+# IDE
+.idea/
+
 # Dependencies
 node_modules
 .pnp
@@ -57,5 +63,12 @@ snowflake.log
 # Serena
 .serena/
 
-# Playwright MCP
+# Superpowers (brainstorming session artifacts)
+.superpowers/
+
+
+# Design reference files (Cowork session artifacts, not source code)
+design/
+
+# Playwright MCP snapshot/screenshot artifacts
 .playwright-mcp

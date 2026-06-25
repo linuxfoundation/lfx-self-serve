@@ -24,7 +24,9 @@ import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
+import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -32,7 +34,16 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ButtonComponent, CardComponent, MailingListTableComponent, ReactiveFormsModule, EmptyStateComponent, StatCardGridComponent],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    MailingListTableComponent,
+    ReactiveFormsModule,
+    EmptyStateComponent,
+    StatCardGridComponent,
+    SkeletonModule,
+    OpenIntercomDirective,
+  ],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })
@@ -65,6 +76,7 @@ export class MailingListDashboardComponent {
 
   // Lens
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  protected readonly personaLoaded = this.personaService.personaLoaded;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
   public myMailingListsLoading = signal<boolean>(true);

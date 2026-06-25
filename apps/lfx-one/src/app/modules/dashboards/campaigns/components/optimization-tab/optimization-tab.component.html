@@ -1,0 +1,558 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="optimization-tab">
+  <!-- Controls -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2" data-testid="optimization-date-range">
+      @for (days of dateRangeOptions; track days) {
+        <button
+          type="button"
+          (click)="setDateRange(days)"
+          [class]="
+            selectedDays() === days
+              ? 'rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
+              : 'rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
+          "
+          [attr.data-testid]="'optimization-range-' + days">
+          {{ days }}d
+        </button>
+      }
+    </div>
+    <div class="flex items-center gap-3">
+      @if (pulledAt()) {
+        <span class="text-xs text-gray-400" data-testid="optimization-pulled-at">Last pulled: {{ pulledAt() }}</span>
+      }
+      <button
+        type="button"
+        (click)="refresh()"
+        [disabled]="loading()"
+        class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        data-testid="optimization-refresh"
+        aria-label="Refresh optimization data">
+        <i class="fa-light fa-arrows-rotate" [class.fa-spin]="loading()" aria-hidden="true"></i>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @if (loading() && !monitorData()) {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
+      <div class="flex items-center gap-2 text-sm text-gray-500">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading optimization data...
+      </div>
+    </div>
+  } @else if (error()) {
+    <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="optimization-error">
+      <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-red-700">Failed to load optimization data</p>
+      <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
+      <button
+        type="button"
+        (click)="fetchData()"
+        class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+        data-testid="optimization-retry">
+        Retry
+      </button>
+    </div>
+  } @else if (!hasCampaigns()) {
+    <div
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
+      data-testid="optimization-empty">
+      <i class="fa-light fa-gauge-high text-3xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No active campaigns found for the selected date range.</p>
+    </div>
+  } @else {
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-4" data-testid="optimization-summary">
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Action Items</p>
+        <p class="text-lg font-semibold text-gray-900">{{ actionItems().length }}</p>
+      </div>
+      <div class="rounded-lg border border-red-200 bg-red-50 p-4">
+        <p class="text-xs font-medium text-red-600">High Priority</p>
+        <p class="text-lg font-semibold text-red-700" data-testid="optimization-high-count">{{ highCount() }}</p>
+      </div>
+      <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <p class="text-xs font-medium text-amber-600">Medium Priority</p>
+        <p class="text-lg font-semibold text-amber-700" data-testid="optimization-med-count">{{ medCount() }}</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Active Campaigns</p>
+        <p class="text-lg font-semibold text-gray-900">{{ campaigns().length }}</p>
+      </div>
+    </div>
+
+    <!-- Action Items Table -->
+    @if (hasActionItems()) {
+      <div class="flex flex-col gap-3" data-testid="optimization-action-items">
+        <h4 class="text-sm font-semibold text-gray-900">Action Items</h4>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Priority</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Issue</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500">Recommended Action</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of actionItems(); track $index) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'action-item-row-' + $index">
+                    <td class="px-4 py-3">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="item.priority | priorityClass">
+                        {{ item.priority }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <p class="font-medium text-gray-900">{{ item.eventName || item.campaigns[0] }}</p>
+                    </td>
+                    <td class="px-4 py-3 text-gray-700">{{ item.issue }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
+                    <td class="px-4 py-3 text-right">
+                      <span
+                        class="text-sm font-medium"
+                        [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
+                        {{ item.metrics.pacingPct }}%
+                      </span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    } @else {
+      <div
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 p-8"
+        data-testid="optimization-no-actions">
+        <i class="fa-light fa-circle-check text-2xl text-green-500" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-green-700">All campaigns are performing well</p>
+        <p class="text-xs text-green-600">No action items detected for the selected date range.</p>
+      </div>
+    }
+
+    <!-- Wasted Keyword Spend -->
+    <div class="flex flex-col gap-3" data-testid="optimization-wasted-keywords">
+      <div class="flex items-center gap-2">
+        <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
+        @if (hasWastedKeywords()) {
+          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
+        }
+      </div>
+      @if (keywordsLoading() && !keywordsData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading keyword data...
+          </div>
+        </div>
+      } @else if (keywordsError()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
+          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
+        </div>
+      } @else if (!hasWastedKeywords()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
+          <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
+          <p class="text-sm text-green-700">All keywords with spend are generating conversions.</p>
+        </div>
+      } @else {
+        <div class="flex justify-end">
+          <button
+            type="button"
+            (click)="bulkKeywordAction(wastedKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            data-testid="optimization-bulk-pause-wasted">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ wastedKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
+                        {{ kw.qualityScore ?? '–' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
+                          {{ result.success ? 'Done' : 'Failed' }}
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Low Quality Score Keywords -->
+    @if (hasLowQualityKeywords()) {
+      <div class="flex flex-col gap-3" data-testid="optimization-low-qs">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-semibold text-gray-900">Low Quality Score Keywords</h4>
+            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{{ lowQualityKeywords().length }}</span>
+          </div>
+          <button
+            type="button"
+            (click)="bulkKeywordAction(lowQualityKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            data-testid="optimization-bulk-pause-low-qs">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ lowQualityKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Quality Score</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0">
+                    <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
+                          {{ result.success ? 'Done' : 'Failed' }}
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Display Campaign Performance -->
+    @if (hasDisplayCampaigns()) {
+      <div class="flex flex-col gap-3" data-testid="optimization-display-campaigns">
+        <div class="flex items-center gap-2">
+          <h4 class="text-sm font-semibold text-gray-900">Display / Demand Gen Campaign Performance</h4>
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ displayCampaigns().length }}</span>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Format</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Pacing</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of displayCampaigns(); track c.campaignId) {
+                  <tr class="border-b border-gray-100 last:border-0">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ c.eventName || c.name }}</p>
+                      <p class="text-xs text-gray-400">{{ c.targeting }}</p>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
+                        {{ c.adFormat }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right" [class]="c.ctr < 0.3 ? 'font-medium text-red-600' : 'text-gray-700'">
+                      {{ c.ctr | adsPct }}
+                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
+                      {{ c.conversions | number }}
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <div class="flex items-center gap-2">
+                        <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
+                          <div class="h-full rounded-full" [class]="c | pacingClass" [style.width.%]="c.displayPacingPct"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">{{ c.pacingPct }}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- LinkedIn Optimization -->
+  @if (linkedInAccountOptions().length > 0) {
+    <div class="mt-2 flex flex-col gap-3" data-testid="linkedin-optimization">
+      <div class="flex items-center justify-between">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+          <i class="fa-brands fa-linkedin" [style.color]="platformColors['linkedin-ads']" aria-hidden="true"></i>
+          LinkedIn Optimization
+        </h3>
+        <select
+          [value]="selectedLinkedInAccountKey()"
+          (change)="onLinkedInAccountChange($event)"
+          aria-label="LinkedIn ad account"
+          class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          data-testid="linkedin-account-select-opt">
+          @for (acct of linkedInAccountOptions(); track acct.accountId) {
+            <option [value]="acct.accountId">{{ acct.label }}</option>
+          }
+        </select>
+      </div>
+
+      @if (linkedInLoading()) {
+        <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="linkedin-opt-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Loading LinkedIn optimization data...
+        </div>
+      } @else if (linkedInError()) {
+        <div class="rounded-lg border border-dashed border-red-300 bg-red-50 p-4 text-xs text-red-600" data-testid="linkedin-opt-error">
+          {{ linkedInError() }}
+        </div>
+      } @else if (linkedInActionItems().length === 0) {
+        <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center" data-testid="linkedin-opt-empty">
+          <i class="fa-light fa-circle-check mb-2 text-2xl text-green-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No LinkedIn optimization actions needed.</p>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2" data-testid="linkedin-action-items">
+          @for (item of linkedInActionItems(); track item.campaignName + item.issue) {
+            <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3" data-testid="linkedin-action-item">
+              <span [class]="'mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ' + linkedInPriorityClass(item.priority)">
+                {{ item.priority }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-xs font-medium text-gray-800" [title]="item.campaignName">{{ item.campaignName }}</p>
+                <p class="text-xs text-gray-500">{{ item.issue }}</p>
+                <p class="mt-1 text-xs text-blue-600">→ {{ item.action }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Reddit Optimization -->
+  @if (redditAccountOptions().length > 0) {
+    <div class="mt-2 flex flex-col gap-3" data-testid="reddit-optimization">
+      <div class="flex items-center justify-between">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+          <i class="fa-brands fa-reddit" [style.color]="platformColors['reddit-ads']" aria-hidden="true"></i>
+          Reddit Optimization
+        </h3>
+        <select
+          [value]="selectedRedditAccountKey()"
+          (change)="onRedditAccountChange($event)"
+          aria-label="Reddit ad account"
+          class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          data-testid="reddit-account-select-opt">
+          @for (acct of redditAccountOptions(); track acct.key) {
+            <option [value]="acct.key">{{ acct.label }}</option>
+          }
+        </select>
+      </div>
+
+      @if (redditLoading()) {
+        <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="reddit-opt-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Loading Reddit optimization data...
+        </div>
+      } @else if (redditError()) {
+        <div class="rounded-lg border border-dashed border-red-300 bg-red-50 p-4 text-xs text-red-600" data-testid="reddit-opt-error">
+          {{ redditError() }}
+        </div>
+      } @else if (redditActionItems().length === 0) {
+        <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center" data-testid="reddit-opt-empty">
+          <i class="fa-light fa-circle-check mb-2 text-2xl text-green-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No Reddit optimization actions needed.</p>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2" data-testid="reddit-action-items">
+          @for (item of redditActionItems(); track item.campaignName + item.issue) {
+            <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3" data-testid="reddit-action-item">
+              <span [class]="'mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ' + redditPriorityClass(item.priority)">
+                {{ item.priority }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-xs font-medium text-gray-800" [title]="item.campaignName">{{ item.campaignName }}</p>
+                <p class="text-xs text-gray-500">{{ item.issue }}</p>
+                <p class="mt-1 text-xs text-blue-600">→ {{ item.action }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Meta Optimization -->
+  @if (metaAccountOptions().length > 0 || metaError()) {
+    <div class="mt-2 flex flex-col gap-3" data-testid="meta-optimization">
+      <div class="flex items-center justify-between">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+          <i class="fa-brands fa-meta" [style.color]="platformColors['meta-ads']" aria-hidden="true"></i>
+          Meta Optimization
+        </h3>
+        <select
+          [value]="selectedMetaAccountKey()"
+          (change)="onMetaAccountChange($event)"
+          aria-label="Meta ad account"
+          class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          data-testid="meta-account-select-opt">
+          @for (acct of metaAccountOptions(); track acct.key) {
+            <option [value]="acct.key">{{ acct.label }}</option>
+          }
+        </select>
+      </div>
+
+      @if (metaLoading()) {
+        <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="meta-opt-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Loading Meta optimization data...
+        </div>
+      } @else if (metaError()) {
+        <div class="rounded-lg border border-dashed border-red-300 bg-red-50 p-4 text-xs text-red-600" data-testid="meta-opt-error">
+          {{ metaError() }}
+        </div>
+      } @else if (metaActionItems().length === 0) {
+        <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center" data-testid="meta-opt-empty">
+          <i class="fa-light fa-circle-check mb-2 text-2xl text-green-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No Meta optimization actions needed.</p>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2" data-testid="meta-action-items">
+          @for (item of metaActionItems(); track item.campaignName + item.issue) {
+            <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3" data-testid="meta-action-item">
+              <span [class]="'mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ' + (item.priority | priorityClass)">
+                {{ item.priority }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-xs font-medium text-gray-800" [title]="item.campaignName">{{ item.campaignName }}</p>
+                <p class="text-xs text-gray-500">{{ item.issue }}</p>
+                <p class="mt-1 text-xs text-blue-600">→ {{ item.action }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

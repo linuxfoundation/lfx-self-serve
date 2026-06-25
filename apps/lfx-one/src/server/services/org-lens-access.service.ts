@@ -1,0 +1,355 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Generated with [Cursor](https://cursor.com)
+
+import { ORG_ACCESS_ROLE_RELATION, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  MemberServiceB2bOrgSettings,
+  MemberServiceOrgUser,
+  OrgAccessInviteStatus,
+  OrgAccessListResponse,
+  OrgAccessRole,
+  OrgAccessSummary,
+  OrgAccessUser,
+} from '@lfx-one/shared/interfaces';
+import { Request } from 'express';
+
+import { MicroserviceError } from '../errors';
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
+import { invalidatePerUserCache, withPerUserCache } from './valkey.service';
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Each user row is served straight from cache to the client, so validate its element shape against the wire contract. */
+function isAccessUser(value: unknown): boolean {
+  const u = value as Partial<OrgAccessUser>;
+  return (
+    isObject(value) &&
+    typeof u.email === 'string' &&
+    typeof u.name === 'string' &&
+    typeof u.initials === 'string' &&
+    (u.avatarUrl === null || typeof u.avatarUrl === 'string') &&
+    (u.jobTitle === null || typeof u.jobTitle === 'string') &&
+    (u.role === 'admin' || u.role === 'viewer') &&
+    (u.inviteStatus === 'pending' || u.inviteStatus === 'accepted') &&
+    typeof u.isPending === 'boolean'
+  );
+}
+
+function isAccessSummary(value: unknown): boolean {
+  const s = value as Partial<OrgAccessSummary>;
+  return isObject(value) && typeof s.totalUsers === 'number' && typeof s.administrators === 'number' && typeof s.viewers === 'number';
+}
+
+/** Rejects a corrupt/legacy access-list entry (degrades to a miss) by validating every user element and the numeric summary fields against the wire contract. */
+function isAccessListResponse(value: unknown): boolean {
+  const v = value as Partial<OrgAccessListResponse>;
+  return (
+    isObject(value) &&
+    typeof v.orgUid === 'string' &&
+    Array.isArray(v.users) &&
+    v.users.every(isAccessUser) &&
+    isAccessSummary(v.summary) &&
+    typeof v.canManage === 'boolean'
+  );
+}
+
+/** Rejects a corrupt/legacy principals entry whose elements don't match the user wire shape (degrades to a miss before the directory merge reads user fields). */
+function isPrincipalArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isAccessUser);
+}
+
+// Spec 025 — Org Lens Access read/write against member-service settings.
+// Reads via GET /b2b_orgs/{uid}/settings. Writes use the PER-PRINCIPAL endpoints
+// (POST/PUT/DELETE /b2b_orgs/{uid}/settings/users[/{email}]) so member-service mutates a
+// single member while preserving every other member's username/invite lifecycle. This
+// replaces the previous full-replace read-modify-write, which could reset untouched members.
+// All member-service calls go through the LFX_V2_MEMBER_SERVICE base (defaults to the gateway);
+// caller-management (canManage) still reads role-grants via LFX_V2_SERVICE (query-service).
+export class OrgLensAccessService {
+  private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly roleGrants: OrgRoleGrantsService;
+  private readonly keyContacts: OrgLensKeyContactsService;
+
+  public constructor() {
+    this.microserviceProxy = new MicroserviceProxyService();
+    this.roleGrants = new OrgRoleGrantsService();
+    this.keyContacts = new OrgLensKeyContactsService();
+  }
+
+  // ── public API (controller boundary) ─────────────────────────────────────────
+
+  /**
+   * US1 — list elevated-access principals + summary + caller management flag.
+   * Pass `knownCanManage` from a write path that already asserted it to avoid a redundant
+   * role-grants lookup on the post-write refresh.
+   */
+  public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
+    // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
+    // (compute directly, no read/write). The caller's own earlier-read entries are dropped by the write
+    // path's invalidateCallerCaches; any other caller's per-user entry ages out within the TTL.
+    if (knownCanManage !== undefined) {
+      return this.computeAccessList(req, orgUid, knownCanManage);
+    }
+    const username = getEffectiveUsername(req) ?? '';
+    // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeAccessList(req, orgUid, undefined),
+      isAccessListResponse
+    );
+  }
+
+  /**
+   * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
+   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Access tab — the directory orchestrator owns its own merge + enrichment.
+   */
+  public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      async () => this.mapPrincipals(await this.fetchSettings(req, orgUid)),
+      isPrincipalArray
+    );
+  }
+
+  /** Add Users — invite a NEW principal via the per-principal POST endpoint; returns the refreshed list. */
+  public async inviteUser(req: Request, orgUid: string, email: string, role: OrgAccessRole, name?: string | null): Promise<OrgAccessListResponse> {
+    // Defense-in-depth UX gate (FR-011): reject non-managers before any write is issued.
+    await this.assertCanManage(req, orgUid, 'invite_org_access_user');
+    const cleanName = (name ?? '').trim();
+    const body: { email: string; invited_as: 'writer' | 'auditor'; name?: string } = {
+      email: email.trim().toLowerCase(),
+      invited_as: ORG_ACCESS_ROLE_RELATION[role],
+      ...(cleanName ? { name: cleanName } : {}),
+    };
+    await this.microserviceProxy.proxyRequest(req, 'LFX_V2_MEMBER_SERVICE', `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users`, 'POST', undefined, body);
+    await this.invalidateCallerCaches(req, orgUid);
+    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    return this.listAccessUsers(req, orgUid, true);
+  }
+
+  /** US2 — change a principal's role (Admin ⇄ Viewer) via the per-principal PUT endpoint; returns the refreshed list. */
+  public async changeRole(req: Request, orgUid: string, email: string, role: OrgAccessRole): Promise<OrgAccessListResponse> {
+    await this.assertCanManage(req, orgUid, 'change_org_access_role');
+    const target = email.trim().toLowerCase();
+    await this.microserviceProxy.proxyRequest(
+      req,
+      'LFX_V2_MEMBER_SERVICE',
+      `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users/${encodeURIComponent(target)}`,
+      'PUT',
+      undefined,
+      { invited_as: ORG_ACCESS_ROLE_RELATION[role] }
+    );
+    await this.invalidateCallerCaches(req, orgUid);
+    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    return this.listAccessUsers(req, orgUid, true);
+  }
+
+  /** US3 — revoke a principal's access via the per-principal DELETE endpoint; returns the refreshed list. */
+  public async removeUser(req: Request, orgUid: string, email: string): Promise<OrgAccessListResponse> {
+    await this.assertCanManage(req, orgUid, 'remove_org_access_user');
+    const target = email.trim().toLowerCase();
+    await this.microserviceProxy.proxyRequest(
+      req,
+      'LFX_V2_MEMBER_SERVICE',
+      `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users/${encodeURIComponent(target)}`,
+      'DELETE'
+    );
+    await this.invalidateCallerCaches(req, orgUid);
+    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    return this.listAccessUsers(req, orgUid, true);
+  }
+
+  // ── base helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Drop the acting caller's own cached access views after a write so their next read (page reload or the
+   * directory `:principals` merge) reflects the mutation immediately rather than serving the pre-write list
+   * for up to the TTL. The write response itself already bypasses the cache; this closes the read-after-write
+   * gap for the caller. Best-effort — a failed delete just leaves the entry to age out within the TTL — and
+   * scoped to the caller, so another admin's per-user entry still ages out on its own.
+   */
+  private async invalidateCallerCaches(req: Request, orgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    await Promise.all([
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`, username, orgUid),
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`, username, orgUid),
+    ]);
+  }
+
+  private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
+    const [settings, canManage] = await Promise.all([
+      this.fetchSettings(req, orgUid),
+      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
+    ]);
+    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
+    return { orgUid, users, summary: this.buildSummary(users), canManage };
+  }
+
+  /** Authoritative settings read (member-service source of record). */
+  private async fetchSettings(req: Request, orgUid: string): Promise<MemberServiceB2bOrgSettings> {
+    const settings = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgSettings>(
+      req,
+      'LFX_V2_MEMBER_SERVICE',
+      `/b2b_orgs/${encodeURIComponent(orgUid)}/settings`,
+      'GET'
+    );
+    return settings ?? {};
+  }
+
+  /** Maps writers→admin / auditors→viewer; includes accepted+pending, excludes revoked/expired (FR-002), dedups by email writer-wins. */
+  private mapPrincipals(settings: MemberServiceB2bOrgSettings): OrgAccessUser[] {
+    const byEmail = new Map<string, OrgAccessUser>();
+
+    const consume = (list: MemberServiceOrgUser[] | undefined, role: OrgAccessRole): void => {
+      for (const principal of list ?? []) {
+        const email = this.emailOf(principal);
+        if (!email) continue;
+        const status = this.effectiveStatus(principal);
+        if (status === 'revoked' || status === 'expired') continue;
+        // writer-wins: admins are consumed first, so never overwrite an existing admin row.
+        if (byEmail.has(email)) continue;
+        const name = (principal.name ?? '').trim() || email.split('@')[0];
+        byEmail.set(email, {
+          email,
+          name,
+          initials: this.deriveInitials(name),
+          avatarUrl: principal.avatar?.trim() ? principal.avatar.trim() : null,
+          jobTitle: null,
+          role,
+          inviteStatus: status,
+          isPending: status !== 'accepted',
+        });
+      }
+    };
+
+    consume(settings.writers, 'admin');
+    consume(settings.auditors, 'viewer');
+
+    return [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Pure projection of the mapped rows into the summary counts (SC-002 consistency). */
+  private buildSummary(users: OrgAccessUser[]): OrgAccessSummary {
+    let administrators = 0;
+    let viewers = 0;
+    for (const user of users) {
+      if (user.isPending) continue;
+      if (user.role === 'admin') administrators++;
+      else viewers++;
+    }
+    return { totalUsers: users.length, administrators, viewers };
+  }
+
+  /** Best-effort job-title enrichment by email from the org people/key_contact index (D-006). */
+  private async enrichJobTitles(req: Request, orgUid: string, users: OrgAccessUser[]): Promise<OrgAccessUser[]> {
+    if (users.length === 0) return users;
+    let titleByEmail = new Map<string, string>();
+    try {
+      const employees = await this.keyContacts.getEmployees(req, orgUid);
+      titleByEmail = new Map(employees.filter((e) => e.email && e.jobTitle).map((e) => [e.email.toLowerCase(), e.jobTitle as string]));
+    } catch (error) {
+      // Enrichment is non-essential — a missing title must never block the list (D-006).
+      logger.warning(req, 'enrich_org_access_job_titles', 'Job-title enrichment failed; rendering without titles', {
+        org_uid: orgUid,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return users;
+    }
+    return users.map((user) => ({ ...user, jobTitle: titleByEmail.get(user.email) ?? null }));
+  }
+
+  /** Caller can manage iff the selected org uid is a direct writer grant (D-005). UX gate only. */
+  private async resolveCanManage(req: Request, orgUid: string): Promise<boolean> {
+    const username = getEffectiveUsername(req);
+    if (!username) return false;
+    try {
+      const grants = await this.roleGrants.getRoleGrants(req, username);
+      return grants.writers.includes(orgUid);
+    } catch (error) {
+      logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup failed; defaulting canManage=false', {
+        org_uid: orgUid,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Write gate: throws 403 when the caller is verified NOT to be a direct writer, but a retriable
+   * 503 when the role-grants lookup itself fails — so a transient outage doesn't masquerade as
+   * "no permission". (The lenient `resolveCanManage` is for the read/list UX gate only.)
+   */
+  private async assertCanManage(req: Request, orgUid: string, operation: string): Promise<void> {
+    const forbidden = (): MicroserviceError =>
+      new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
+        operation,
+        service: 'LFX_V2_MEMBER_SERVICE',
+        path: `/b2b_orgs/${orgUid}/settings/users`,
+      });
+
+    const username = getEffectiveUsername(req);
+    if (!username) {
+      throw forbidden();
+    }
+
+    let isWriter: boolean;
+    try {
+      const grants = await this.roleGrants.getRoleGrants(req, username);
+      isWriter = grants.writers.includes(orgUid);
+    } catch (error) {
+      // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
+      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {
+        org_uid: orgUid,
+        operation,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      throw new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
+        operation,
+        // The failing upstream is the role-grants lookup (query-service), not the member-service
+        // settings endpoint — report its real path so outage telemetry isn't misleading.
+        service: 'LFX_V2_SERVICE',
+        path: '/query/resources',
+        originalError: error instanceof Error ? error : undefined,
+      });
+    }
+
+    if (!isWriter) {
+      throw forbidden();
+    }
+  }
+
+  // ── small utilities ──────────────────────────────────────────────────────────
+
+  /** Mirrors member-service `B2BOrgUser.EffectiveStatus`: explicit `invite_status` wins, else `username` present ⇒ accepted, absent ⇒ pending. */
+  private effectiveStatus(user: MemberServiceOrgUser): OrgAccessInviteStatus {
+    if (user.invite_status) return user.invite_status;
+    return user.username ? 'accepted' : 'pending';
+  }
+
+  private emailOf(user: MemberServiceOrgUser): string {
+    return (user.email ?? '').trim().toLowerCase();
+  }
+
+  private deriveInitials(name: string): string {
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase() || '?';
+    return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+  }
+}

@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
+import { writerGuard } from '@shared/guards/writer.guard';
 
 export const SURVEY_ROUTES: Routes = [
   {
@@ -14,11 +15,13 @@ export const SURVEY_ROUTES: Routes = [
   {
     path: 'create',
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'surveys' },
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'surveys' },
   },
 ];

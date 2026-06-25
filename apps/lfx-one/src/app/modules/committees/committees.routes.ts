@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
+import { writerGuard } from '@shared/guards/writer.guard';
 
 export const COMMITTEE_ROUTES: Routes = [
   {
@@ -14,7 +15,8 @@ export const COMMITTEE_ROUTES: Routes = [
   {
     path: 'create',
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'committees' },
   },
   {
     path: ':id',
@@ -24,6 +26,7 @@ export const COMMITTEE_ROUTES: Routes = [
   {
     path: ':id/edit',
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'committees' },
   },
 ];

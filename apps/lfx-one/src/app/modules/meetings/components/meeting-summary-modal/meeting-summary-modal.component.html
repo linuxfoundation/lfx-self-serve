@@ -29,7 +29,9 @@
         </div>
       }
     </div>
-  } @else {
+  } @else if (content) {
     <lfx-markdown-renderer [content]="content" data-testid="summary-content"></lfx-markdown-renderer>
+  } @else {
+    <p class="text-sm text-gray-500 text-center py-4" data-testid="summary-empty">No summary content available.</p>
   }
 </div>

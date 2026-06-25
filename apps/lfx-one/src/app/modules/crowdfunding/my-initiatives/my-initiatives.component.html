@@ -1,0 +1,42 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (isLoading()) {
+  <lfx-route-loading data-testid="my-initiatives-loading" />
+} @else {
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-initiatives">
+    <div class="flex flex-col gap-6">
+      <!-- Page header -->
+      <div class="flex items-start justify-between mt-3">
+        <div>
+          <h1 class="font-display font-light text-2xl" data-testid="my-initiatives-title">My Initiatives</h1>
+          <p class="mt-1 text-sm text-gray-500" data-testid="my-initiatives-description">Fundraising initiatives you manage on LFX Crowdfunding</p>
+        </div>
+        <div class="flex items-center gap-6">
+          <lfx-button
+            label="New Initiative"
+            icon="fa-light fa-arrow-up-right-from-square"
+            iconPos="right"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [href]="crowdfundingUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="new-initiative-button" />
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <lfx-stat-card-grid [cards]="statCards()" [loading]="!stats()" data-testid="initiatives-me-stats" />
+
+      <!-- Initiatives list with filter pills -->
+      <lfx-initiatives-list
+        [initiatives]="initiatives()"
+        [hasMore]="initiativesHasMore()"
+        [loadingMore]="loadingMore()"
+        (loadMore)="onLoadMoreInitiatives()"
+        (initiativeClick)="onInitiativeClick($event)" />
+    </div>
+  </div>
+}

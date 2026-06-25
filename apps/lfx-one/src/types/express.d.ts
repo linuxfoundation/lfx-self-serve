@@ -6,6 +6,7 @@ declare global {
     interface Request {
       bearerToken?: string;
       apiGatewayToken?: string;
+      crowdfundingToken?: string;
       appSession?: {
         profileAccessToken?: string;
         profileTokenType?: string;
@@ -18,6 +19,11 @@ declare global {
         socialAuthState?: string;
         apiGatewayToken?: string;
         apiGatewayTokenExpiresAt?: number;
+        crowdfundingToken?: string;
+        crowdfundingTokenExpiresAt?: number;
+        crowdfundingRefreshToken?: string;
+        crowdfundingAuthState?: string;
+        crowdfundingAuthReturnTo?: string;
         [key: string]: any;
       };
     }

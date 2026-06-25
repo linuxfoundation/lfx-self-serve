@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, Signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
+import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import { ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
@@ -28,7 +31,17 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
 
 @Component({
   selector: 'lfx-sidebar',
-  imports: [NgClass, NgTemplateOutlet, RouterModule, AvatarComponent, BadgeComponent, ProjectSelectorComponent, SkeletonModule, TooltipModule],
+  imports: [
+    NgClass,
+    NgTemplateOutlet,
+    RouterModule,
+    AvatarComponent,
+    BadgeComponent,
+    OrgSelectorComponent,
+    ProjectSelectorComponent,
+    SkeletonModule,
+    TooltipModule,
+  ],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
@@ -37,16 +50,26 @@ export class SidebarComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
+  private readonly router = inject(Router);
   private readonly userService = inject(UserService);
+  private readonly accountContextService = inject(AccountContextService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
+  /** Parent lens hint for the org-selector slot; ANDed with the flag + grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
+  public readonly showOrgSelector = input<boolean>(false);
   public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
   public readonly selectorPanelOpen = model<boolean>(false);
+
+  /** Final org-selector visibility — `parent input ∧ flag ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
+  protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
+
+  private readonly orgLensFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
@@ -82,6 +105,39 @@ export class SidebarComponent {
     }))
   );
 
+  // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
+  private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
+    itemsRef: [],
+    overrides: {},
+  });
+
+  protected readonly expandedGroupStates = computed(() => {
+    const items = this.items();
+    const { itemsRef, overrides } = this.expandedGroupOverrides();
+    const effectiveOverrides = itemsRef === items ? overrides : {};
+    const states: Record<string, boolean> = {};
+    // Group expansion is keyed by item.label — group labels must be unique within a single sidebar items tree.
+    const scanForGroups = (candidates: SidebarMenuItem[]) => {
+      for (const item of candidates) {
+        if (item.isGroup) {
+          states[item.label] = item.label in effectiveOverrides ? effectiveOverrides[item.label] : (item.expanded ?? true);
+        } else if (item.isSection && item.items?.length) {
+          scanForGroups(item.items);
+        }
+      }
+    };
+    scanForGroups(items);
+    return states;
+  });
+
+  protected toggleGroup(label: string): void {
+    const items = this.items();
+    const current = this.expandedGroupStates()[label] ?? true;
+    const prev = this.expandedGroupOverrides();
+    const baseOverrides = prev.itemsRef === items ? prev.overrides : {};
+    this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
+  }
+
   protected onItemSelected(item: LensItem): void {
     const context = lensItemToProjectContext(item);
     // Project-only users still see foundations in their project list (NavigationService only filters
@@ -95,6 +151,36 @@ export class SidebarComponent {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
     }
+    this.redirectOnContextSwitch(context.slug);
+  }
+
+  // Keep the URL's lens prefix in sync with the selected context so a hard refresh restores it
+  // (syncLensFromRoute + projectQueryParamGuard). Redirect on lens-type change or off an entity page.
+  private redirectOnContextSwitch(projectSlug: string): void {
+    const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
+    const currentPrefix = segments[0];
+    if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
+      return;
+    }
+    // activeLens() reflects setLens() synchronously; pass the slug explicitly since router.url lags
+    // location.replaceState, so queryParamsHandling:'preserve' would carry stale params.
+    const targetLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
+    const lensTypeChanged = currentPrefix !== targetLens;
+    const onEntityPage = segments.length === 3;
+    if (lensTypeChanged || onEntityPage) {
+      this.router.navigate([`/${targetLens}`, 'overview'], { queryParams: { project: projectSlug } });
+    }
+  }
+
+  private initEffectiveShowOrgSelector(): Signal<boolean> {
+    return computed<boolean>(() => {
+      if (!this.showOrgSelector()) return false;
+      if (!this.orgLensFlag()) return false;
+      // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
+      // the selector visible for users on dev sandbox accounts that have a seeded org list but no
+      // settings-doc grants in the upstream b2b_org_settings docs.
+      return this.accountContextService.hasOrgSelectorAccess();
+    });
   }
 
   private initNavLens(): Signal<NavLens | null> {
@@ -106,7 +192,7 @@ export class SidebarComponent {
 
   private initLensLoaded(): Signal<boolean> {
     return computed(() => {
-      if (this.isOrgLens()) return false;
+      if (this.isOrgLens()) return true;
       const lens = this.navLens();
       if (!lens) return true;
       return this.navigationService.loaded(lens)();

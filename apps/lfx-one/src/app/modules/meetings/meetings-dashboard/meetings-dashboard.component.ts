@@ -15,14 +15,16 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
+import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { DialogService } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import {
   BehaviorSubject,
   catchError,
@@ -47,7 +49,16 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective, EmptyStateComponent, FullCalendarComponent],
+  imports: [
+    MeetingCardComponent,
+    MeetingsTopBarComponent,
+    ButtonComponent,
+    CardComponent,
+    OnRenderDirective,
+    EmptyStateComponent,
+    FullCalendarComponent,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
@@ -55,6 +66,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);
@@ -64,6 +76,7 @@ export class MeetingsDashboardComponent {
   private readonly dialogService = inject(DialogService);
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
+  protected readonly personaLoaded = this.personaService.personaLoaded;
 
   public viewMode = signal<ViewMode>('list');
   public isListView = computed(() => this.viewMode() === 'list');
@@ -97,6 +110,7 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
+  protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
@@ -310,6 +324,21 @@ export class MeetingsDashboardComponent {
     }
   }
 
+  private initCanWriteMeetings(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.projectContextService.activeContext).pipe(
+        switchMap((ctx) => {
+          if (!ctx?.slug) return of(false);
+          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
+            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            catchError(() => of(false))
+          );
+        })
+      ),
+      { initialValue: false }
+    );
+  }
+
   private initializeUpcomingMeetings(): Signal<Meeting[]> {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.activeLens);
@@ -465,7 +494,14 @@ export class MeetingsDashboardComponent {
     return toSignal(
       merge(meLens$, firstPage$, nextPage$).pipe(
         tap((response) => this.pastPageToken.set(response.page_token)),
-        scan((acc: PastMeeting[], response: PageResult<PastMeeting>) => (response.reset ? response.data : [...acc, ...response.data]), [])
+        // Sort the full accumulator (not just the incoming page) descending by date: the upstream
+        // query-service can't sort past meetings by start_time, and the name-based page cursor means
+        // a freshly loaded page may contain meetings more recent than ones already shown. Re-sorting
+        // the merged list keeps the rendered order most-recent-first across "Load More". (LFXV2-2053)
+        scan(
+          (acc: PastMeeting[], response: PageResult<PastMeeting>) => sortPastMeetingsDescending(response.reset ? response.data : [...acc, ...response.data]),
+          []
+        )
       ),
       { initialValue: [] }
     );

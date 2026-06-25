@@ -35,7 +35,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC } from '@lfx-one/shared/utils';
+import { formatDateToUTC, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -71,6 +71,7 @@ export class EventsService {
       affiliatedProjectSlugs,
       isVisaRequestAccepted,
       isTravelFundRequestAccepted,
+      excludePastTravelFundDeadline,
     } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
@@ -107,6 +108,9 @@ export class EventsService {
       const registeredOnlyFilter = registeredOnly ? "AND r.EVENT_ID IS NOT NULL AND r.REGISTRATION_STATUS = 'Accepted'" : '';
       const visaRequestAcceptedFilter = isVisaRequestAccepted ? 'AND r.IS_VISA_REQUEST_ACCEPTED = TRUE' : '';
       const travelFundRequestAcceptedFilter = isTravelFundRequestAccepted ? 'AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE' : '';
+      const excludePastTravelFundDeadlineFilter = excludePastTravelFundDeadline
+        ? 'AND (r.TRAVEL_FUND_END_TS IS NULL OR r.TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP())'
+        : '';
 
       const slugs = affiliatedProjectSlugs ?? [];
       const hasAffiliatedSlugs = slugs.length > 0;
@@ -170,7 +174,8 @@ export class EventsService {
             NET_REVENUE,
             USER_ATTENDED,
             IS_VISA_REQUEST_ACCEPTED,
-            IS_TRAVEL_FUND_ACCEPTED
+            IS_TRAVEL_FUND_ACCEPTED,
+            TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE USER_EMAIL = ?
             AND IS_PAST_EVENT = FALSE
@@ -207,6 +212,7 @@ export class EventsService {
           r.USER_ATTENDED,
           (r.EVENT_ID IS NOT NULL) AS IS_REGISTERED,
           FALSE AS IS_PAST_EVENT,
+          r.TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
         FROM combined e
         LEFT JOIN user_reg r ON e.EVENT_ID = r.EVENT_ID
@@ -221,6 +227,7 @@ export class EventsService {
           ${registeredOnlyFilter}
           ${visaRequestAcceptedFilter}
           ${travelFundRequestAcceptedFilter}
+          ${excludePastTravelFundDeadlineFilter}
         ORDER BY ${sortField} ${normalizedSortOrder}
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
@@ -280,6 +287,7 @@ export class EventsService {
           EVENT_REGISTRATION_URL,
           USER_ATTENDED,
           TRUE AS IS_REGISTERED,
+          TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE USER_EMAIL = ?
@@ -882,6 +890,7 @@ export class EventsService {
         EVENT_COUNTRY,
         ${applicationDateColumn} AS APPLICATION_DATE,
         ${statusColumn} AS REQUEST_STATUS,
+        TRAVEL_FUND_END_TS,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
       WHERE ${statusColumn} IS NOT NULL
@@ -991,12 +1000,14 @@ export class EventsService {
     return {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
-      url: row.EVENT_URL ?? '',
+      // normalizeToUrl prepends https:// to scheme-less DB URLs and drops unsafe/invalid ones; '' keeps the non-null contract.
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
       applicationDate: row.APPLICATION_DATE
         ? new Date(row.APPLICATION_DATE).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : '—',
       status: row.REQUEST_STATUS,
+      travelFundEnd: row.TRAVEL_FUND_END_TS ? new Date(row.TRAVEL_FUND_END_TS).toISOString() : null,
     };
   }
 
@@ -1005,8 +1016,8 @@ export class EventsService {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
       category: row.EVENT_CATEGORY,
-      url: row.EVENT_URL ?? '',
-      registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
+      registrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
       status: row.EVENT_STATUS ?? null,
@@ -1032,8 +1043,8 @@ export class EventsService {
     return {
       id: row.EVENT_ID,
       name: row.EVENT_NAME,
-      url: row.EVENT_URL ?? '',
-      registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
+      url: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
+      registrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       foundation: row.PROJECT_NAME,
       startDate: new Date(row.EVENT_START_DATE).toISOString(),
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
@@ -1041,6 +1052,7 @@ export class EventsService {
       role: row.USER_ROLE ?? '',
       status,
       isRegistered: row.IS_REGISTERED,
+      travelFundEnd: row.TRAVEL_FUND_END_TS ? new Date(row.TRAVEL_FUND_END_TS).toISOString() : null,
     };
   }
 

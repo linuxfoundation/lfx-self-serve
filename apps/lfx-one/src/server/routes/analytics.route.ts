@@ -129,6 +129,14 @@ router.get('/org-training-enrollments-distribution', (req, res, next) => analyti
 router.get('/org-certified-employees-monthly', (req, res, next) => analyticsController.getOrgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-certified-employees-distribution', (req, res, next) => analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next));
 
+// Organization involvement endpoints (cross-foundation, accountId only — org overview page)
+router.get('/org-foundation-coverage', (req, res, next) => analyticsController.orgFoundationCoverage(req, res, next));
+router.get('/org-involvement-contributors-monthly', (req, res, next) => analyticsController.orgContributorsMonthly(req, res, next));
+router.get('/org-involvement-maintainers-monthly', (req, res, next) => analyticsController.orgMaintainersMonthly(req, res, next));
+router.get('/org-involvement-event-attendance-monthly', (req, res, next) => analyticsController.orgEventAttendanceMonthly(req, res, next));
+router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
+router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
+
 // Web activities summary endpoint (marketing dashboard)
 router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
 
@@ -138,8 +146,12 @@ router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req
 // Social reach endpoint (marketing dashboard)
 router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
-// Social media endpoint (marketing dashboard)
+// Keyword performance endpoint (marketing dashboard)
+router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+
+// Social media endpoints (marketing dashboard)
 router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
@@ -180,5 +192,8 @@ router.get('/marketing-attribution', (req, res, next) => analyticsController.get
 
 // Multi-foundation summary endpoint (multi-foundation dashboard)
 router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
+
+// Org Lens — bootstrap account context (display attrs + cdev mapping + tier)
+router.get('/org-lens-account-context', (req, res, next) => analyticsController.getOrgLensAccountContext(req, res, next));
 
 export default router;

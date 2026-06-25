@@ -8,6 +8,7 @@ import {
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
+  PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateVoteRequest,
@@ -37,36 +38,34 @@ export class VoteService {
   }
 
   /**
-   * Fetches all votes based on query parameters
+   * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<Vote[]> {
+  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
-    const queryFilters = { ...query };
-    delete queryFilters['page_token'];
-    delete queryFilters['page_size'];
-
     const params = {
-      ...queryFilters,
+      ...query,
       type: 'vote',
     };
 
-    const rawVotes = await fetchAllQueryResources<IndexedVote>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
     );
 
-    const votes = rawVotes.map((v) => this.normalizeIndexedVote(req, v));
+    const votes = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,
+      has_more_pages: !!page_token,
     });
 
-    return votes;
+    return { data: votes, page_token };
   }
 
   /**
@@ -252,7 +251,7 @@ export class VoteService {
 
   /**
    * Submits a ballot via POST /vote_responses using the user's bearer token (no M2M),
-   * then polls until the query service indexes the response as 'submitted'.
+   * then polls until the query service indexes the response as 'responded'.
    */
   public async createVoteResponse(req: Request, payload: CreateVoteResponseRequest): Promise<void> {
     logger.debug(req, 'create_vote_response', 'Submitting vote response', {
@@ -286,7 +285,7 @@ export class VoteService {
             filters: [`vote_uid:${payload.vote_uid}`],
           }
         );
-        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.SUBMITTED);
+        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.RESPONDED);
       },
       maxRetries: 5,
       retryDelayMs: 1000,
@@ -344,7 +343,7 @@ export class VoteService {
 
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.SUBMITTED) respondedVoteUids.add(r.vote_uid);
+      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(r.vote_uid);
     }
 
     // Extract unique vote UIDs

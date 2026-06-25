@@ -3,10 +3,13 @@
 
 export * from './color.utils';
 export * from './date-time.utils';
+export * from './docs.utils';
 export * from './file.utils';
 export * from './form.utils';
 export * from './html-utils';
 export * from './meeting.utils';
+export * from './past-meeting-summary.utils';
+export * from './past-meeting.utils';
 export * from './rsvp-calculator.util';
 export * from './string.utils';
 export * from './url.utils';
@@ -27,3 +30,9 @@ export * from './insights.utils';
 export * from './pagination.utils';
 export * from './project-counts.utils';
 export * from './identity.utils';
+export * from './enrollment.utils';
+export * from './org-selector.utils';
+export * from './search.utils';
+export * from './email.utils';
+export * from './invitation.utils';
+export * from './crowdfunding.utils';

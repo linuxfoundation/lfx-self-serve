@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,14 +15,14 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate } from '@lfx-one/shared/utils';
+import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
-import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
 
@@ -30,7 +30,6 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
   selector: 'lfx-committee-meetings',
   imports: [
     ReactiveFormsModule,
-    RouterLink,
     ButtonComponent,
     CardComponent,
     InputTextComponent,
@@ -45,6 +44,7 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeMeetingsComponent {
+  private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
@@ -67,6 +67,10 @@ export class CommitteeMeetingsComponent {
   // Convenience computed signals — avoids repeating viewMode() === '...' in template
   public isListView = computed(() => this.viewMode() === 'list');
   public isCalendarView = computed(() => this.viewMode() === 'calendar');
+
+  // Query params for the create-meeting route. Includes project slug so writerGuard
+  // can resolve write access — without it the guard redirects to the lens overview.
+  public createMeetingQueryParams: Signal<Record<string, string>> = this.initCreateMeetingQueryParams();
 
   // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
@@ -100,7 +104,14 @@ export class CommitteeMeetingsComponent {
       filter(({ time, uid }) => time === 'past' && !!uid),
       distinctUntilChanged((a, b) => a.uid === b.uid),
       tap(() => this.pastMeetingsLoading.set(true)),
-      switchMap(({ uid }) => this.meetingService.getPastMeetingsByCommittee(uid!).pipe(finalize(() => this.pastMeetingsLoading.set(false))))
+      // Sort client-side: the query-service can't sort past meetings by start_time (only name/updated),
+      // so the descending date order must be applied here to render most-recent-first. (LFXV2-2053)
+      switchMap(({ uid }) =>
+        this.meetingService.getPastMeetingsByCommittee(uid!).pipe(
+          map((meetings) => sortPastMeetingsDescending(meetings)),
+          finalize(() => this.pastMeetingsLoading.set(false))
+        )
+      )
     ),
     { initialValue: [] }
   );
@@ -163,7 +174,44 @@ export class CommitteeMeetingsComponent {
     }
   }
 
+  /** Checks committee write permission fresh before navigating to the create-meeting route.
+   * If the permission has been revoked since the page loaded (e.g. Manager demoted to Member),
+   * redirects to the project overview with _notice=meetings so AppComponent shows the toast —
+   * consistent with the writerGuard denial flow. */
+  public onScheduleMeeting(): void {
+    const committee = this.committee();
+    const slug = committee.project_slug;
+    const denyParams: Record<string, string> = { _notice: 'meetings' };
+    if (slug) denyParams['project'] = slug;
+    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: denyParams });
+
+    this.committeeService
+      .getCommittee(committee.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
+        },
+        error: () => deny(),
+      });
+  }
+
   // Private initializer functions
+
+  private initCreateMeetingQueryParams(): Signal<Record<string, string>> {
+    return computed(() => {
+      const committee = this.committee();
+      const params: Record<string, string> = { committee_uid: committee.uid };
+      if (committee.project_slug) {
+        params['project'] = committee.project_slug;
+      }
+      return params;
+    });
+  }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
     return toSignal(

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -16,6 +16,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -41,6 +42,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     DueDateLabelPipe,
+    DueDateLabelColorPipe,
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
@@ -59,11 +61,6 @@ export class VotesTableComponent {
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
-  protected readonly statusTabOptions: FilterPillOption[] = [
-    { id: 'all', label: 'All' },
-    { id: PollStatus.ACTIVE, label: 'Active' },
-    { id: PollStatus.ENDED, label: 'Ended' },
-  ];
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
@@ -78,6 +75,8 @@ export class VotesTableComponent {
   public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
+  // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
+  public readonly showDraftTab = input<boolean>(true);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -102,6 +101,7 @@ export class VotesTableComponent {
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<Vote[]> = this.initDisplayedVotes();
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return false;
@@ -117,6 +117,11 @@ export class VotesTableComponent {
   // === Constructor ===
   public constructor() {
     this.initFormSubscriptions();
+    effect(() => {
+      if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
+        untracked(() => this.statusTab.set('all'));
+      }
+    });
   }
 
   // === Protected Methods ===
@@ -195,6 +200,20 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initStatusTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const base: FilterPillOption[] = [
+        { id: 'all', label: 'All' },
+        { id: PollStatus.ACTIVE, label: 'Active' },
+      ];
+      if (this.showDraftTab()) {
+        base.push({ id: PollStatus.DISABLED, label: 'Draft' });
+      }
+      base.push({ id: PollStatus.ENDED, label: 'Ended' });
+      return base;
+    });
+  }
+
   private initFormSubscriptions(): void {
     combineLatest([
       this.searchForm.valueChanges.pipe(

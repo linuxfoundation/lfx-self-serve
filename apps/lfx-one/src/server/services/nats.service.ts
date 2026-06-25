@@ -20,6 +20,8 @@ import { logger } from './logger.service';
  * This service handles only infrastructure concerns, not business logic
  */
 export class NatsService {
+  private static readonly instances = new Set<NatsService>();
+
   private connection: NatsConnection | null = null;
   private connectionPromise: Promise<NatsConnection> | null = null;
   private natsHostname: string;
@@ -30,6 +32,11 @@ export class NatsService {
     const parsedUrl = new URL(natsUrl.replace(/^nats:/, 'http:'));
     this.natsHostname = parsedUrl.hostname;
     this.natsPort = parseInt(parsedUrl.port, 10) || 4222;
+    NatsService.instances.add(this);
+  }
+
+  public static async shutdownAll(): Promise<void> {
+    await Promise.allSettled([...NatsService.instances].map((i) => i.shutdown()));
   }
 
   /**
@@ -93,6 +100,46 @@ export class NatsService {
     );
   }
 
+  /** Publish a fire-and-forget NATS message (no reply expected). */
+  public async publish(subject: string, data: Uint8Array): Promise<void> {
+    const connection = await this.ensureConnection();
+
+    return tracer.startActiveSpan(
+      `NATS publish ${subject}`,
+      {
+        kind: SpanKind.CLIENT,
+        attributes: {
+          [ATTR_MESSAGING_SYSTEM]: 'nats',
+          [ATTR_MESSAGING_OPERATION_TYPE]: 'publish',
+          [ATTR_MESSAGING_DESTINATION_NAME]: subject,
+          [ATTR_NETWORK_PROTOCOL_NAME]: 'nats',
+          [ATTR_SERVER_ADDRESS]: this.natsHostname,
+          [ATTR_SERVER_PORT]: this.natsPort,
+        },
+      },
+      async (span) => {
+        const startTime = Date.now();
+        logger.debug(undefined, 'nats_publish', 'Publishing NATS message', { subject });
+        try {
+          connection.publish(subject, data);
+          await connection.flush();
+          span.setStatus({ code: SpanStatusCode.OK });
+          span.setAttribute(ATTR_MESSAGING_MESSAGE_BODY_SIZE, data.length);
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          span.recordException(error instanceof Error ? error : new Error(String(error)));
+          logger.error(undefined, 'nats_publish', startTime, error, { subject });
+          throw error;
+        } finally {
+          span.end();
+        }
+      }
+    );
+  }
+
   /**
    * Check if NATS connection is active
    */
@@ -104,17 +151,20 @@ export class NatsService {
    * Gracefully shutdown NATS connection
    */
   public async shutdown(): Promise<void> {
-    if (this.connection && !this.connection.isClosed()) {
-      const startTime = logger.startOperation(undefined, 'nats_shutdown', {});
-
-      try {
-        await this.connection.drain();
-        logger.success(undefined, 'nats_shutdown', startTime, {});
-      } catch (error) {
-        logger.error(undefined, 'nats_shutdown', startTime, error, {});
+    try {
+      if (this.connection && !this.connection.isClosed()) {
+        const startTime = logger.startOperation(undefined, 'nats_shutdown', {});
+        try {
+          await this.connection.drain();
+          logger.success(undefined, 'nats_shutdown', startTime, {});
+        } catch (error) {
+          logger.error(undefined, 'nats_shutdown', startTime, error, {});
+        }
       }
+      this.connection = null;
+    } finally {
+      NatsService.instances.delete(this);
     }
-    this.connection = null;
   }
 
   /**

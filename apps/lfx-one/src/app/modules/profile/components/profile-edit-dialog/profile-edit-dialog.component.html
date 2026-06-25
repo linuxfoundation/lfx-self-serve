@@ -72,16 +72,37 @@
             </lfx-input-text>
           </div>
           <div>
-            <label for="edit-organization" class="block text-sm text-slate-900 mb-2">Organization</label>
-            <lfx-input-text
-              size="small"
-              [form]="profileForm"
-              control="organization"
-              id="edit-organization"
-              placeholder="Enter your organization"
-              styleClass="w-full"
-              data-testid="profile-edit-dialog-organization">
-            </lfx-input-text>
+            <label
+              [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'edit-organization' : 'edit-organization-readonly'"
+              class="block text-sm text-slate-900 mb-2">
+              Organization
+            </label>
+            @if (hasOrganizationOptions() || loadingWorkExperiences()) {
+              <lfx-select
+                size="small"
+                [form]="profileForm"
+                control="organization"
+                id="edit-organization"
+                [options]="organizationOptions()"
+                placeholder="Select your organization"
+                [filter]="true"
+                [loading]="loadingWorkExperiences()"
+                styleClass="w-full"
+                data-testid="profile-edit-dialog-organization">
+              </lfx-select>
+            } @else {
+              <lfx-select
+                size="small"
+                [form]="profileForm"
+                control="organization"
+                id="edit-organization-readonly"
+                [options]="organizationOptions()"
+                placeholder="No work experience added"
+                styleClass="w-full"
+                data-testid="profile-edit-dialog-organization">
+              </lfx-select>
+              <p class="text-sm text-gray-500 mt-1">Add a work experience to set your organization.</p>
+            }
           </div>
         </div>
       </div>

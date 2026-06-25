@@ -1,6 +1,7 @@
 # Copyright The Linux Foundation and each contributor to LFX.
 # SPDX-License-Identifier: MIT
 
+{{- include "lfx-self-serve.staticConfigMaps.rootValidate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,6 +14,10 @@ metadata:
   {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- with .Values.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "lfx-self-serve.selectorLabels" . | nindent 6 }}
@@ -20,17 +25,29 @@ spec:
     metadata:
       annotations:
         {{- include "lfx-self-serve.podAnnotations" . | nindent 8 }}
+        {{- if .Values.staticConfigMaps }}
+        # Force a rolling restart whenever any staticConfigMaps content changes,
+        # so the chart works correctly even in clusters without Stakater Reloader.
+        checksum/staticConfigMaps: {{ toJson .Values.staticConfigMaps | sha256sum }}
+        {{- end }}
       labels:
         {{- include "lfx-self-serve.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- if not (eq .Values.terminationGracePeriodSeconds nil) }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ .Values.serviceAccount.name | default (include "lfx-self-serve.serviceAccountName" .) }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: {{ include "lfx-self-serve.image" . }}
@@ -53,6 +70,10 @@ spec:
               {{- toYaml $config.valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
@@ -65,3 +86,21 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.staticConfigMaps }}
+          volumeMounts:
+            {{- range $name, $cfg := .Values.staticConfigMaps }}
+            {{- include "lfx-self-serve.staticConfigMaps.validate" (dict "name" $name "cfg" $cfg "root" $) }}
+            - name: {{ $name }}
+              mountPath: {{ $cfg.mountPath }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if .Values.staticConfigMaps }}
+      volumes:
+        {{- range $name, $cfg := .Values.staticConfigMaps }}
+        {{- include "lfx-self-serve.staticConfigMaps.validate" (dict "name" $name "cfg" $cfg "root" $) }}
+        - name: {{ $name }}
+          configMap:
+            name: {{ include "lfx-self-serve.fullname" $ }}-{{ $name }}
+        {{- end }}
+      {{- end }}

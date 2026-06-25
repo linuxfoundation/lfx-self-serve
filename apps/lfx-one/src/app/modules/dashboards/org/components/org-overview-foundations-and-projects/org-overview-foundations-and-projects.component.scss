@@ -1,0 +1,9 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Layout intentionally Tailwind-utility-driven.
+// This file is a placeholder so the @Component { styleUrls } reference
+// resolves cleanly; per-element styles live in the template.
+:host {
+  display: block;
+}

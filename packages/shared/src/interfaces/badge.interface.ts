@@ -56,6 +56,9 @@ export interface EnrichedBadge extends Badge {
   isExpired: boolean;
 }
 
+/** Channel the badge was shared through; emitted on the badge_shared analytics event (LFXV2-1925). */
+export type ShareChannel = 'linkedin' | 'native_share' | 'copy_link';
+
 /** State container for badge data loading */
 export interface BadgeState {
   loading: boolean;

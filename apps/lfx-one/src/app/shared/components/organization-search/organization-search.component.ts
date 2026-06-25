@@ -29,6 +29,10 @@ export class OrganizationSearchComponent {
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
   public disabled = input<boolean>(false);
+  /** When false, the field keeps the user-selected name instead of being overwritten with the
+   *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
+   *  compatibility with forms where canonical normalization is desired. */
+  public resolveToCdpName = input<boolean>(true);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -203,6 +207,8 @@ export class OrganizationSearchComponent {
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
+          // Uses cdpOrg.logo unconditionally — this method resolves from form values rather
+          // than an autocomplete suggestion, so no suggestion logo is available as a fallback.
           logo: cdpOrg.logo,
           originalName: name || '',
           nameChanged: cdpOrg.name.toLowerCase() !== (name || '').toLowerCase(),
@@ -211,12 +217,10 @@ export class OrganizationSearchComponent {
         this.resolvingOrg.set(false);
         this.onOrganizationResolved.emit(result);
 
-        // Update field text to the resolved name
-        this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-        const nameCtrl = this.nameControl();
-        if (nameCtrl && this.form().get(nameCtrl)) {
-          this.form().get(nameCtrl)?.setValue(cdpOrg.name);
+        if (this.resolveToCdpName()) {
+          this.applyCdpName(cdpOrg.name);
         }
+
         return result;
       }),
       catchError(() => {
@@ -239,7 +243,10 @@ export class OrganizationSearchComponent {
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
-            logo: cdpOrg.logo,
+            // When not resolving to CDP canonical, prefer the suggestion's non-empty logo so
+            // the displayed logo matches what the user selected rather than the CDP entity's logo.
+            // Empty-string suggestion logos fall back to cdpOrg.logo (same as the =true path).
+            logo: this.resolveToCdpName() ? cdpOrg.logo : logo || cdpOrg.logo,
             originalName: name,
             nameChanged: cdpOrg.name.toLowerCase() !== name.toLowerCase(),
           };
@@ -247,11 +254,8 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
           this.onOrganizationResolved.emit(result);
 
-          // Update field text to the resolved name
-          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-          const nameControlName = this.nameControl();
-          if (nameControlName && this.form().get(nameControlName)) {
-            this.form().get(nameControlName)?.setValue(cdpOrg.name);
+          if (this.resolveToCdpName()) {
+            this.applyCdpName(cdpOrg.name);
           }
         },
         error: () => {
@@ -259,6 +263,14 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
         },
       });
+  }
+
+  private applyCdpName(name: string): void {
+    this.organizationForm.get('organizationSearch')?.setValue(name, { emitEvent: false });
+    const nameControlName = this.nameControl();
+    if (nameControlName && this.form().get(nameControlName)) {
+      this.form().get(nameControlName)?.setValue(name);
+    }
   }
 
   private clearResolveState(): void {

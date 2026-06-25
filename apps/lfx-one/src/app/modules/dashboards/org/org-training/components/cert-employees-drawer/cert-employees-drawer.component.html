@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  data-testid="cert-employees-drawer">
+  <ng-template #header>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+        <i class="fa-light fa-award text-lg" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="cert-employees-drawer-title">{{ heading() }}</h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="cert-employees-drawer-subtitle">
+          {{ certificationName() }} &middot; {{ count() }} {{ statusLabel() }}
+        </p>
+      </div>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4 h-full">
+    <!-- Search -->
+    <div class="relative">
+      <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden="true"></i>
+      <input
+        pInputText
+        type="text"
+        placeholder="Search people..."
+        aria-label="Search employees"
+        class="w-full pl-9"
+        data-testid="cert-employees-search"
+        [ngModel]="searchTerm()"
+        (ngModelChange)="searchTerm.set($event)" />
+    </div>
+
+    <!-- List -->
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (filteredEmployees().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-center">
+        <i class="fa-light fa-users text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">
+          @if (searchTerm()) {
+            No employees match your search.
+          } @else {
+            No employees found for this certification.
+          }
+        </p>
+      </div>
+    } @else {
+      @if (isRosterCapped()) {
+        <p class="text-xs text-gray-500" data-testid="cert-employees-cap-note">
+          Showing first {{ rosterCap | number }} of {{ count() | number }} {{ statusLabel() }}.
+        </p>
+      }
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="cert-employees-list">
+        @for (employee of filteredEmployees(); track employee.contactId) {
+          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'cert-employee-' + employee.contactId">
+            <!-- Avatar -->
+            <div
+              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ employee.avatarColorClass }}"
+              aria-hidden="true">
+              {{ employee.initials }}
+            </div>
+            <!-- Name + title -->
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span class="text-sm font-medium text-gray-900 truncate">{{ employee.name }}</span>
+              @if (employee.jobTitle) {
+                <span class="text-xs text-gray-500 truncate">{{ employee.jobTitle }}</span>
+              }
+            </div>
+            <!-- Status badge -->
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 {{ statusBadgeClass() }}">{{ statusLabel() }}</span>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</p-drawer>

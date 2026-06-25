@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -10,8 +11,16 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { APPOINTED_BY_OPTIONS, COMMITTEE_PERMISSION_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { Committee, CommitteeMember, CommitteePermissionLevel, CommitteeUser, CreateCommitteeMemberRequest, MemberFormValue } from '@lfx-one/shared/interfaces';
-import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
+import {
+  Committee,
+  CommitteeMember,
+  CommitteePermissionLevel,
+  CommitteeUser,
+  CreateCommitteeMemberRequest,
+  MemberFormValue,
+  OrganizationResolveResult,
+} from '@lfx-one/shared/interfaces';
+import { buildCommitteeOrganizationPayload, formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -51,6 +60,8 @@ export class MemberFormComponent {
   public appointedByOptions = APPOINTED_BY_OPTIONS;
   public permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
+  private resolvedOrganizationName: string | null = null;
+
   public constructor() {
     // Initialize config-based properties
     this.isEditing = this.config.data?.isEditing || false;
@@ -64,6 +75,18 @@ export class MemberFormComponent {
 
     // Initialize form with data when component is created
     this.initializeForm();
+
+    // Reset organization_id whenever org name diverges from the last CDP-resolved
+    // name, preventing a stale id when the user edits to a different non-empty value.
+    this.form()
+      .get('organization')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((name) => {
+        const normalizedName = (name ?? '').trim();
+        if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
+          this.form().patchValue({ organization_id: null }, { emitEvent: false });
+        }
+      });
   }
 
   public clearRoleDates(): void {
@@ -81,6 +104,11 @@ export class MemberFormComponent {
   public onCancel(): void {
     this.config.data?.onCancel?.();
     this.dialogRef.close();
+  }
+
+  public onOrgResolved(result: OrganizationResolveResult): void {
+    this.resolvedOrganizationName = result.name;
+    this.form().patchValue({ organization_id: result.id || null });
   }
 
   public onSubmit(): void {
@@ -263,13 +291,7 @@ export class MemberFormComponent {
   }
 
   private buildOrganizationPayload(formValue: MemberFormValue): CreateCommitteeMemberRequest['organization'] {
-    if (formValue.organization || formValue.organization_url) {
-      return {
-        name: formValue.organization || null,
-        website: formValue.organization_url || null,
-      };
-    }
-    return null;
+    return buildCommitteeOrganizationPayload(formValue);
   }
 
   private createMemberFormGroup(): FormGroup {
@@ -280,8 +302,9 @@ export class MemberFormComponent {
         email: new FormControl('', [Validators.required, Validators.email]),
         job_title: new FormControl(''),
         linkedin_profile: new FormControl('', [Validators.pattern(LINKEDIN_PROFILE_PATTERN)]),
-        organization: new FormControl(''),
+        organization: new FormControl('', this.committee?.business_email_required || this.committee?.enable_voting ? [Validators.required] : []),
         organization_url: new FormControl(''),
+        organization_id: new FormControl<string | null>(null),
         role: new FormControl('', this.committee?.enable_voting ? [Validators.required] : []),
         voting_status: new FormControl('', this.committee?.enable_voting ? [Validators.required] : []),
         appointed_by: new FormControl(''),
@@ -292,10 +315,12 @@ export class MemberFormComponent {
         permission: new FormControl<CommitteePermissionLevel>('member'),
       },
       {
-        validators: [
-          MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
-          MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
-        ],
+        validators: this.committee?.enable_voting
+          ? [
+              MemberFormComponent.dateRangeValidator('role_start', 'role_end'),
+              MemberFormComponent.dateRangeValidator('voting_status_start', 'voting_status_end'),
+            ]
+          : [],
       }
     );
   }

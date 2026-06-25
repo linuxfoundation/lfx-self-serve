@@ -70,12 +70,25 @@ export const CHANGELOG_CONFIG = {
 export const CDP_CONFIG = {
   DEFAULT_STAGING_URL: 'https://lf-staging.crowd.dev/api',
   DEFAULT_PRODUCTION_URL: 'https://cm.lfx.dev/api',
+  /** Hard cap enforced by the CDP packages list endpoint (400 above this). */
+  MAX_PAGE_SIZE: 100,
   ENDPOINTS: {
     RESOLVE_MEMBER: '/v1/members/resolve',
+    CREATE_MEMBER: '/v1/members',
     MEMBER_IDENTITIES: (memberId: string) => `/v1/members/${memberId}/identities`,
     MEMBER_WORK_EXPERIENCES: (memberId: string) => `/v1/members/${memberId}/work-experiences`,
     MEMBER_PROJECT_AFFILIATIONS: (memberId: string) => `/v1/members/${memberId}/project-affiliations`,
     MEMBER_PROJECT_AFFILIATION: (memberId: string, projectId: string) => `/v1/members/${memberId}/project-affiliations/${projectId}`,
     ORGANIZATIONS: '/v1/organizations',
+    PACKAGES_LIST: '/v1/akrites/packages',
+    PACKAGES_SCATTER: '/v1/akrites/packages/scatter',
+    PACKAGES_METRICS: '/v1/akrites/metrics',
+    PACKAGE_DETAIL: '/v1/akrites/packages/detail',
+    PACKAGE_ADVISORIES: '/v1/akrites/packages/advisories',
+    ACTIVITY: '/v1/akrites/activity',
+    STEWARDSHIPS_OPEN: '/v1/akrites/stewardships/open',
+    STEWARDSHIP_ASSIGN: (id: number) => `/v1/akrites/stewardships/${id}/assign`,
+    STEWARDSHIP_ESCALATE: (id: number) => `/v1/akrites/stewardships/${id}/escalate`,
+    STEWARDSHIP_STATUS: (id: number) => `/v1/akrites/stewardships/${id}/status`,
   },
 } as const;

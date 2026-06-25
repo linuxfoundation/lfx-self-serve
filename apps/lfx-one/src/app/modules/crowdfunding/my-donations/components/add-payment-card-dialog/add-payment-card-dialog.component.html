@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form class="flex flex-col gap-5" (submit)="$event.preventDefault(); onSubmit()" novalidate data-testid="add-card-form">
+  @if (isStripeKeySet()) {
+    <p class="text-sm font-medium text-gray-700">Add a payment card to your account.</p>
+  } @else {
+    <p class="text-sm font-medium text-gray-700">Stripe is not available. Please try again later.</p>
+  }
+  <!-- Card number -->
+  <div class="flex flex-col gap-1.5" data-testid="add-card-field-number">
+    <label id="card-number-label" class="text-sm font-medium text-gray-700"> Card number <span class="text-red-500" aria-hidden="true">*</span> </label>
+    <div
+      class="flex items-center border rounded-md shadow-sm transition-all"
+      [class.border-neutral-900]="cardNumberFocused()"
+      [class.border-red-500]="!cardNumberFocused() && cardNumberError()"
+      [class.border-gray-200]="!cardNumberFocused() && !cardNumberError()">
+      <div #cardNumberContainer class="w-full py-2 px-2" aria-labelledby="card-number-label" data-testid="add-card-number-input"></div>
+    </div>
+    @if (cardNumberError()) {
+      <p class="text-xs text-red-500" role="alert">{{ cardNumberError() }}</p>
+    }
+  </div>
+
+  <!-- Expiry + CVC -->
+  <div class="grid grid-cols-3 gap-4">
+    <!-- Expiry -->
+    <div class="col-span-2 flex flex-col gap-1.5" data-testid="add-card-field-expiry">
+      <label id="card-expiry-label" class="text-sm font-medium text-gray-700"> Expiry <span class="text-red-500" aria-hidden="true">*</span> </label>
+      <div
+        class="flex items-center border rounded-md shadow-sm transition-all"
+        [class.border-neutral-900]="cardExpiryFocused()"
+        [class.border-red-500]="!cardExpiryFocused() && cardExpiryError()"
+        [class.border-gray-200]="!cardExpiryFocused() && !cardExpiryError()">
+        <div #cardExpiryContainer class="w-full py-2 px-2" aria-labelledby="card-expiry-label" data-testid="add-card-expiry-input"></div>
+      </div>
+      @if (cardExpiryError()) {
+        <p class="text-xs text-red-500" role="alert">{{ cardExpiryError() }}</p>
+      }
+    </div>
+
+    <!-- CVC -->
+    <div class="flex flex-col gap-1.5" data-testid="add-card-field-cvc">
+      <label id="card-cvc-label" class="text-sm font-medium text-gray-700"> CVC <span class="text-red-500" aria-hidden="true">*</span> </label>
+      <div
+        class="flex items-center border rounded-md shadow-sm transition-all"
+        [class.border-neutral-900]="cardCvcFocused()"
+        [class.border-red-500]="!cardCvcFocused() && cardCvcError()"
+        [class.border-gray-200]="!cardCvcFocused() && !cardCvcError()">
+        <div #cardCvcContainer class="w-full py-2 px-2" aria-labelledby="card-cvc-label" data-testid="add-card-cvc-input"></div>
+      </div>
+      @if (cardCvcError()) {
+        <p class="text-xs text-red-500" role="alert">{{ cardCvcError() }}</p>
+      }
+    </div>
+  </div>
+
+  <!-- Stripe / general error -->
+  @if (stripeError()) {
+    <p class="text-xs text-red-500" role="alert" data-testid="add-card-stripe-error">{{ stripeError() }}</p>
+  }
+
+  <!-- Footer actions -->
+  <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+    <lfx-button label="Cancel" severity="secondary" type="button" (click)="onCancel()" data-testid="add-card-cancel-btn" />
+    <lfx-button label="Add card" severity="primary" type="submit" [loading]="submitting()" [disabled]="!formReady()" data-testid="add-card-submit-btn" />
+  </div>
+</form>

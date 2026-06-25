@@ -7,14 +7,22 @@
   </div>
 } @else {
   <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+    @if (!canWrite()) {
+      <div class="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <i class="fa-light fa-lock text-amber-500" aria-hidden="true"></i>
+        <span>You have view-only access to this project's settings. Contact a project manager to make changes.</span>
+      </div>
+    }
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
       <div class="lg:col-span-3">
-        <lfx-user-permissions-table [users]="users()" [loading]="loading()" (refresh)="refreshUsers()"></lfx-user-permissions-table>
+        <lfx-user-permissions-table [users]="users()" [loading]="loading()" [canWrite]="canWrite()" (refresh)="refreshUsers()"></lfx-user-permissions-table>
       </div>
       <div class="lg:col-span-1 flex flex-col gap-6">
-        <lfx-card header="Quick Actions">
-          <lfx-menu [model]="menuItems" styleClass="border-none"></lfx-menu>
-        </lfx-card>
+        @if (canWrite()) {
+          <lfx-card header="Quick Actions">
+            <lfx-menu [model]="menuItems" styleClass="border-none"></lfx-menu>
+          </lfx-card>
+        }
 
         <!-- Permissions Matrix -->
         <lfx-permissions-matrix></lfx-permissions-matrix>

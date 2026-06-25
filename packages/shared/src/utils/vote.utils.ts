@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { addDays } from 'date-fns';
+import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION } from '../constants/poll.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { CommitteeReference } from '../interfaces/committee.interface';
 import { CreatePollQuestion, CreateVoteRequest, PollQuestion, QuestionFormValue, UpdateVoteRequest, Vote, VoteFormValue } from '../interfaces/poll.interface';
@@ -51,6 +53,18 @@ export function mapFiltersToEligibility(filters: string[] | undefined): string {
   return 'voting_rep';
 }
 
+// Exact match only — user content identical to our placeholder is treated as empty on re-open.
+function isDraftPlaceholderPollQuestion(question: PollQuestion): boolean {
+  const placeholder = DRAFT_VOTE_PLACEHOLDER_QUESTION;
+  if (question.prompt.trim() !== placeholder.prompt || question.type !== placeholder.type) {
+    return false;
+  }
+
+  const choiceTexts = question.choices.map((choice) => choice.choice_text.trim());
+  const placeholderTexts = placeholder.choices.map((choice) => choice.choice_text);
+  return choiceTexts.length === placeholderTexts.length && placeholderTexts.every((text, index) => choiceTexts[index] === text);
+}
+
 /**
  * Maps an API PollQuestion back to the form's QuestionFormValue
  * @param question - PollQuestion from the API response
@@ -78,7 +92,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: vote.end_time ? new Date(vote.end_time) : null,
-    questions: vote.poll_questions?.map(mapApiQuestionToFormValue) || [],
+    questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
   };
 }
 
@@ -89,10 +103,43 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  */
 export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQuestion {
   return {
-    prompt: question.question,
+    prompt: question.question.trim(),
     type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
-    choices: question.options.filter((option) => option.trim() !== '').map((option) => ({ choice_text: option })),
+    choices: question.options
+      .map((option) => option.trim())
+      .filter((option) => option !== '')
+      .map((option) => ({ choice_text: option })),
   };
+}
+
+const DRAFT_OPTION_PAD_LABELS = DRAFT_VOTE_PLACEHOLDER_QUESTION.choices.map((choice) => choice.choice_text);
+
+function hasDraftQuestionInput(question: QuestionFormValue): boolean {
+  const hasPrompt = (question.question?.trim().length ?? 0) > 0;
+  const hasOption = (question.options ?? []).some((option) => (option?.trim().length ?? 0) > 0);
+  return hasPrompt || hasOption;
+}
+
+/** Preserves in-progress draft work by padding missing prompt/options instead of dropping partial questions. */
+function normalizeDraftQuestion(question: QuestionFormValue): CreatePollQuestion {
+  const trimmedPrompt = question.question?.trim() ?? '';
+  const nonEmptyOptions = (question.options ?? []).map((option) => option?.trim() ?? '').filter((option) => option !== '');
+  const paddedOptions = [...nonEmptyOptions];
+
+  while (paddedOptions.length < 2) {
+    const nextPad = DRAFT_OPTION_PAD_LABELS.find((label) => !paddedOptions.includes(label))!;
+    paddedOptions.push(nextPad);
+  }
+
+  return {
+    prompt: trimmedPrompt.length > 0 ? trimmedPrompt : DRAFT_VOTE_PLACEHOLDER_QUESTION.prompt,
+    type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
+    choices: paddedOptions.map((option) => ({ choice_text: option })),
+  };
+}
+
+function prepareDraftQuestions(questions: QuestionFormValue[]): CreatePollQuestion[] {
+  return questions.filter(hasDraftQuestionInput).map(normalizeDraftQuestion);
 }
 
 /**
@@ -103,13 +150,29 @@ export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQ
  */
 export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
   return {
-    name: formValue.title,
-    description: formValue.description || '',
+    name: formValue.title.trim(),
+    description: formValue.description?.trim() || '',
     end_time: formValue.close_date ? formValue.close_date.toISOString() : '',
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+  };
+}
+
+/** Fills upstream-required fields with sensible defaults so a partial form can be saved as a draft. */
+export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
+  const preparedQuestions = prepareDraftQuestions(formValue.questions);
+  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
+
+  return {
+    name: formValue.title.trim(),
+    description: formValue.description?.trim() || '',
+    end_time: formValue.close_date?.toISOString() ?? addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    project_uid: projectUid,
+    committee_uid: formValue.committee?.uid || '',
+    committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    poll_questions,
   };
 }
 
@@ -121,12 +184,28 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
  */
 export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
   return {
-    name: formValue.title,
-    description: formValue.description || '',
+    name: formValue.title.trim(),
+    description: formValue.description?.trim() || '',
     end_time: formValue.close_date ? formValue.close_date.toISOString() : '',
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+  };
+}
+
+/** Update-mode counterpart to buildDraftVoteRequest — fills upstream-required fields when the user clears them while editing an existing draft. */
+export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
+  const preparedQuestions = prepareDraftQuestions(formValue.questions);
+  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
+
+  return {
+    name: formValue.title.trim(),
+    description: formValue.description?.trim() || '',
+    end_time: formValue.close_date?.toISOString() ?? addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    project_uid: projectUid,
+    committee_uid: formValue.committee?.uid || '',
+    committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    poll_questions,
   };
 }

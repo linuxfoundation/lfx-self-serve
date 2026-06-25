@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-2 border-l border-gray-200 pl-4" [attr.data-testid]="'kpi-card-' + kpi().id">
+<div class="flex flex-col gap-2 border-l border-gray-200 pl-4" [attr.data-testid]="testId()">
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-1.5">
       <span class="inline-flex h-6 w-6 items-center justify-center rounded-md" [ngClass]="kpi().iconClass">
@@ -10,7 +10,7 @@
       <span class="text-xs font-medium text-gray-500">{{ kpi().label }}</span>
     </div>
     @if (kpi().badge) {
-      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600" [attr.data-testid]="'kpi-card-badge-' + kpi().id">
+      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600" [attr.data-testid]="testId() + '-badge'">
         {{ kpi().badge }}
       </span>
     }

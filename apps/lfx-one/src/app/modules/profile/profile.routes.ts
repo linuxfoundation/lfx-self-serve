@@ -23,6 +23,15 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
 
+      // Individual Enrollment tab
+      {
+        path: 'individual-enrollment',
+        loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+      },
+
+      // linux-email is now embedded in the Identities tab — redirect for backward compat
+      { path: 'linux-email', redirectTo: 'identities' },
+
       // Direct-URL-only routes (no tab, but still accessible)
       {
         path: 'password',

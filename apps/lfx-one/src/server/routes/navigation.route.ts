@@ -10,4 +10,7 @@ const navigationController = new NavigationController();
 
 router.get('/lens-items', (req, res, next) => navigationController.getLensItems(req, res, next));
 
+// Spec 020 — paginated, FGA-filtered org list mirroring the lens-items contract for orgs.
+router.get('/org-items', (req, res, next) => navigationController.getOrgItems(req, res, next));
+
 export default router;

@@ -1,0 +1,179 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="org-events-page">
+  <!-- Page Header -->
+  <header class="flex items-start justify-between" data-testid="org-events-header">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-events-title">
+        @if (companyName()) {
+          Events &mdash; {{ companyName() }}
+        } @else {
+          Events
+        }
+      </h1>
+      <p class="text-sm text-gray-500" data-testid="org-events-subtitle">Your organization's event footprint across LF events.</p>
+    </div>
+    <lfx-discover-events-button testId="org-events-discover-button" />
+  </header>
+
+  <!-- Stat Strip -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-events-stat-strip">
+    <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+      <!-- Upcoming Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        [class.bg-blue-50]="activeTab() === 'upcoming'"
+        [class.ring-2]="activeTab() === 'upcoming'"
+        [class.ring-inset]="activeTab() === 'upcoming'"
+        [class.ring-blue-500]="activeTab() === 'upcoming'"
+        [attr.aria-pressed]="activeTab() === 'upcoming'"
+        (click)="onStatCardClick('upcoming')"
+        data-testid="org-events-stat-upcoming"
+        aria-label="Show upcoming events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+          <i class="fa-light fa-calendar-plus text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.upcomingEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Upcoming Events</p>
+        </div>
+      </button>
+
+      <!-- Past Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        [class.bg-blue-50]="activeTab() === 'past'"
+        [class.ring-2]="activeTab() === 'past'"
+        [class.ring-inset]="activeTab() === 'past'"
+        [class.ring-blue-500]="activeTab() === 'past'"
+        [attr.aria-pressed]="activeTab() === 'past'"
+        (click)="onStatCardClick('past')"
+        data-testid="org-events-stat-past"
+        aria-label="Show past events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+          <i class="fa-light fa-calendar-check text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.pastEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Past Events</p>
+        </div>
+      </button>
+
+      <!-- Total Events -->
+      <button
+        type="button"
+        class="flex items-center gap-3 p-4 text-left w-full transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        (click)="onStatCardClick('total')"
+        data-testid="org-events-stat-total"
+        aria-label="Show upcoming events">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+          <i class="fa-light fa-ticket text-xl" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="text-xl font-medium" [class.text-gray-400]="eventsSummary() === null" [class.text-gray-900]="eventsSummary() !== null">
+            {{ eventsSummary()?.totalEvents ?? '—' }}
+          </p>
+          <p class="text-sm font-normal text-gray-900">Total Events</p>
+        </div>
+      </button>
+    </div>
+  </lfx-card>
+
+  <!-- Events Card: tabs + search + table all in one -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-events-main-card">
+    <!-- Tab Pills Bar -->
+    <lfx-card-tabs-bar [options]="tabPillOptions()" [selectedFilter]="activeTab()" (filterChange)="switchTab($event)" data-testid="org-events-tab-pills" />
+
+    <!-- Search and Filters -->
+    <div class="px-5 pt-4 pb-3">
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex-1 relative">
+          <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
+          <label for="org-events-search-id" class="sr-only">Search events</label>
+          <input
+            id="org-events-search-id"
+            pInputText
+            type="text"
+            placeholder="Search events..."
+            class="w-full pl-9"
+            data-testid="org-events-search-input"
+            [ngModel]="searchTerm()"
+            (ngModelChange)="searchTerm.set($event)" />
+        </div>
+        <div class="w-full sm:w-48" data-testid="org-events-status-filter">
+          <label for="org-events-status-id" class="sr-only">Filter by status</label>
+          <p-select
+            inputId="org-events-status-id"
+            ariaLabel="Filter by status"
+            [options]="statusOptions"
+            optionLabel="label"
+            optionValue="value"
+            styleClass="w-full"
+            [ngModel]="selectedStatus()"
+            (ngModelChange)="selectedStatus.set($event)" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Panels -->
+    <div class="px-5 pb-5">
+      @if (activeTab() === 'upcoming') {
+        <section id="org-events-panel-upcoming" data-testid="org-events-panel-upcoming">
+          <lfx-org-events-table
+            [eventsResponse]="upcomingEvents()"
+            [loading]="upcomingEventsLoading()"
+            [sortField]="upcomingSortField()"
+            [sortOrder]="upcomingSortOrder()"
+            (pageChange)="onUpcomingPageChange($event)"
+            (sortChange)="onUpcomingSortChange($event)"
+            (attendeesClick)="onAttendeesClick($event)"
+            (speakersClick)="onSpeakersClick($event)"
+            data-testid="org-events-upcoming-table" />
+        </section>
+      }
+
+      @if (activeTab() === 'past') {
+        <section id="org-events-panel-past" data-testid="org-events-panel-past">
+          <lfx-org-events-table
+            [eventsResponse]="pastEvents()"
+            [loading]="pastEventsLoading()"
+            [sortField]="pastSortField()"
+            [sortOrder]="pastSortOrder()"
+            [showAction]="false"
+            emptyStateTitle="No past events"
+            emptyStateSubtitle="No past events were found for your organization."
+            emptyStateIcon="fa-light fa-calendar-check"
+            (pageChange)="onPastPageChange($event)"
+            (sortChange)="onPastSortChange($event)"
+            (attendeesClick)="onAttendeesClick($event)"
+            (speakersClick)="onSpeakersClick($event)"
+            data-testid="org-events-past-table" />
+        </section>
+      }
+    </div>
+  </lfx-card>
+
+  <!-- Drawers -->
+  <lfx-event-attendees-drawer
+    [visible]="attendeesDrawerVisible()"
+    (visibleChange)="attendeesDrawerVisible.set($event)"
+    [eventId]="activeDrawerEvent()?.eventId ?? ''"
+    [eventName]="activeDrawerEvent()?.eventName ?? ''"
+    [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
+    data-testid="org-events-attendees-drawer" />
+  <lfx-event-speakers-drawer
+    [visible]="speakersDrawerVisible()"
+    (visibleChange)="speakersDrawerVisible.set($event)"
+    [eventId]="activeDrawerEvent()?.eventId ?? ''"
+    [eventName]="activeDrawerEvent()?.eventName ?? ''"
+    [acceptedCount]="activeDrawerEvent()?.orgSpeakerAcceptedCount ?? 0"
+    [submittedCount]="activeDrawerEvent()?.orgSpeakerSubmittedCount ?? 0"
+    data-testid="org-events-speakers-drawer" />
+</main>

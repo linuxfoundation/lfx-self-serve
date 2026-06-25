@@ -1,0 +1,496 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+export interface OrgMembershipsSummary {
+  activeMemberships: number;
+  renewingWithin90Days: number;
+  governanceRoles: number;
+}
+
+export interface OrgActiveMembership {
+  foundationId: string;
+  foundationName: string;
+  /** Spec 024: foundation URL slug from ORG_LENS_MEMBERSHIPS_SUMMARY; bridges to the indexer's project_membership.project_slug (D-002). */
+  foundationSlug: string;
+  foundationLogo: string | null;
+  projectCount: number;
+  memberCount: number;
+  membershipTier: string;
+  tierStartDate: string | null;
+  tierEndDate: string | null;
+  memberSince: string | null;
+  boardMembers: number;
+  committeeMembers: number;
+  orgProjects: number;
+}
+
+export interface OrgActiveMembershipsResponse {
+  accountId: string;
+  summary: OrgMembershipsSummary;
+  memberships: OrgActiveMembership[];
+}
+
+export interface OrgExpiredMembership {
+  foundationId: string;
+  foundationName: string;
+  foundationSlug: string;
+  foundationLogo: string | null;
+  membershipTier: string;
+  tierStartDate: string | null;
+  tierEndDate: string | null;
+  expirationDate: string | null;
+  actionType: 'renew' | 'contact';
+}
+
+export interface OrgExpiredMembershipsResponse {
+  accountId: string;
+  memberships: OrgExpiredMembership[];
+}
+
+export interface OrgDiscoverOpportunity {
+  foundationId: string;
+  foundationName: string;
+  foundationSlug: string;
+  foundationLogo: string | null;
+  category: string;
+  suggestedTier: string;
+  relevantProjects: number;
+  contributors: number;
+  contributions: number;
+}
+
+export interface OrgDiscoverOpportunitiesResponse {
+  accountId: string;
+  opportunities: OrgDiscoverOpportunity[];
+}
+
+// Membership Detail page (spec 015) ---------------------------------------------------------
+
+// Spec 024: full 9-role catalog (was a 6-type mock in spec 015). Each value maps 1:1 to a
+// member-service key-contact role string via KEY_CONTACT_ROLE_CATALOG (see org-memberships.constants.ts).
+export type OrgMembershipKeyContactType =
+  | 'representative'
+  | 'technical'
+  | 'marketing'
+  | 'pr'
+  | 'legal'
+  | 'billing'
+  | 'po'
+  | 'event-sponsorship'
+  | 'authorized-signatory';
+
+export interface OrgMembershipKeyContactPerson {
+  /**
+   * Spec 024: the member-service key_contact UID (Project_Role__c-derived). Used as the
+   * `:contactUid` path segment on the PUT/DELETE write proxy. (In the spec-015 mock this was a
+   * fabricated id.) For not-yet-persisted optimistic placeholders it may carry a `temp-` prefix.
+   */
+  personId: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  jobTitle: string | null;
+  initials: string;
+}
+
+/**
+ * Spec 024: one row of the canonical 9-role key-contact catalog. Single source of truth for the
+ * upstream role string ↔ UI `contactType` ↔ display label ↔ requiredness ↔ min/max limits.
+ * Materialised as `KEY_CONTACT_ROLE_CATALOG` in org-memberships.constants.ts.
+ */
+export interface KeyContactRoleConfig {
+  /** Canonical upstream role string (member-service KeyContactRoles), used on read grouping and write bodies. */
+  role: string;
+  contactType: OrgMembershipKeyContactType;
+  contactTypeLabel: string;
+  /** True when the role must retain ≥1 contact (minContacts = 1); false ⇒ minContacts = 0. */
+  required: boolean;
+  minContacts: number;
+  /** Maximum active contacts (member-service KeyContactRoleLimits). */
+  maxContacts: number;
+  /** Short role-purpose description for the per-row tooltip (FR-013). */
+  tooltip: string;
+}
+
+/** Spec 024 (FR-023/§4.2): a distinct person surfaced in the Edit Key Contact modal's employee search. */
+export interface KeyContactEmployee {
+  /** Canonical identity — lowercased email (FR-024). */
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  jobTitle: string | null;
+  initials: string;
+  /** Optional avatar/photo URL; the picker falls back to initials when absent. */
+  avatarUrl?: string | null;
+}
+
+/** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */
+export interface KeyContactEmployeesResponse {
+  /** The org's canonical account id (SFID, the route identifier) echoed back. */
+  orgUid: string;
+  /** Deduped by lowercased email, across all of the org's foundation memberships. */
+  employees: KeyContactEmployee[];
+}
+
+/** Response envelope for `GET /api/orgs/:orgUid/lens/employees` (spec 026) — key contacts + committee members, deduped by email. */
+export interface OrgLensEmployeesResponse {
+  /** The org's canonical account id (SFID, the route identifier) echoed back. */
+  orgUid: string;
+  /** Deduped by lowercased email, merging key contacts + committee members across the org. */
+  employees: KeyContactEmployee[];
+}
+
+/** Spec 024 (FR-014): body for `POST …/key-contacts`. */
+export interface AddKeyContactRequest {
+  contactType: OrgMembershipKeyContactType;
+  email: string;
+  firstName: string;
+  lastName: string;
+  jobTitle?: string | null;
+}
+
+/** Spec 024 (FR-015): body for `PUT …/key-contacts/:contactUid` (single-slot replace). */
+export interface ReplaceKeyContactRequest {
+  contactType: OrgMembershipKeyContactType;
+  email: string;
+  firstName: string;
+  lastName: string;
+  jobTitle?: string | null;
+}
+
+/** Spec 024 (FR-020): write-proxy response — the affected role row, re-read/echoed post-persist. */
+export interface KeyContactMutationResponse {
+  contact: OrgMembershipKeyContact;
+}
+
+/** LFXV2-2067: slug-keyed catalog response for the People → Key Contacts edit modal. */
+export interface KeyContactCatalogResponse {
+  contacts: OrgMembershipKeyContact[];
+}
+
+export interface OrgMembershipKeyContact {
+  contactType: OrgMembershipKeyContactType;
+  contactTypeLabel: string;
+  minContacts: number;
+  maxContacts: number;
+  people: OrgMembershipKeyContactPerson[];
+}
+
+export interface OrgMembershipFoundationHeader {
+  foundationId: string;
+  foundationName: string;
+  foundationLogo: string | null;
+  membershipTier: string;
+  tierStartDate: string | null;
+  tierEndDate: string | null;
+  memberSince: string | null;
+  status: 'active' | 'expired';
+}
+
+export interface OrgMembershipDetailResponse {
+  foundation: OrgMembershipFoundationHeader | null;
+  keyContacts: OrgMembershipKeyContact[];
+}
+
+// Membership Detail page — Board & Committee tab (spec 016) ----------------------------------
+
+/**
+ * One row in the Board Seats table. Carries an embedded `person` (reuses the
+ * spec 015 `OrgMembershipKeyContactPerson`), the seat name, a categorical
+ * `tagLabel` (distinct from seat name — e.g., "Voting Rep"), and the
+ * `isOrgEditable` boolean that drives whether the Actions cell renders a pencil
+ * OR a "Why can't I edit?" link.
+ *
+ * Spec 026 (live data): `votingPercentage` is removed (live `committee_member`
+ * has no percentage) in favour of the upstream `voting.status` string
+ * (`votingStatus`); `appointedBy`/`committeeCategory`/`committeeUid`/`memberUid`
+ * mirror the upstream seat for edit-gating, grouping, and reassignment.
+ */
+export interface BoardSeat {
+  seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
+  person: OrgMembershipKeyContactPerson;
+  seatName: string;
+  tagLabel: string;
+  /** Upstream committee category — "Board" rows render in the Board subsection (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string, e.g. "Voting Rep" / "Non-voting" (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
+  isOrgEditable: boolean;
+  reason: string | null;
+}
+
+/**
+ * One row in the Committee Seats table. Asymmetric with `BoardSeat`:
+ * `seatName` is replaced by `committeeName`, a `role` field is added (the
+ * person's role within the committee — e.g., "Chair", "Member"), and
+ * `tagLabel` is OMITTED (the Role column AND the Reassign modal pill both
+ * source from `role` directly per spec 016 Q1 round 3 clarification).
+ *
+ * Spec 026 (live data): same field changes as `BoardSeat` —
+ * `votingPercentage` → `votingStatus`, plus `appointedBy`/`committeeCategory`/
+ * `committeeUid`/`memberUid`.
+ */
+export interface CommitteeSeat {
+  seatId: string;
+  /** committee_member uid — the reassignment subject (spec 026). */
+  memberUid: string;
+  /** Reassignment target committee uid (spec 026). */
+  committeeUid: string;
+  person: OrgMembershipKeyContactPerson;
+  committeeName: string;
+  role: string;
+  /** Upstream committee category (Board vs other) (spec 026). */
+  committeeCategory: string;
+  /** Upstream `voting.status` string (spec 026; replaces votingPercentage). */
+  votingStatus: string;
+  /** Upstream `appointed_by`; drives `isOrgEditable` + search/CSV (spec 026). */
+  appointedBy: string;
+  isOrgEditable: boolean;
+  reason: string | null;
+}
+
+/** One row in the read-only Voting History table. No Action affordance. */
+export interface VotingRecord {
+  voteId: string;
+  /** ISO 8601 date (`YYYY-MM-DD`). */
+  date: string;
+  resolution: string;
+  vote: 'Yes' | 'No' | 'Abstain';
+  outcome: string;
+}
+
+/** Spec 026: one seat row as returned by committee-service `GET /committees/b2b-org/{uid}/seats` (flat upstream DTO). */
+export interface CommitteeServiceOrgSeat {
+  uid: string;
+  committee_uid: string;
+  committee_name: string;
+  committee_category: string;
+  /**
+   * Spec 027 (committee-service additive DTO fields): the foundation (project) the seat's committee
+   * belongs to. Optional — a member may predate project tagging. Used by the org-wide People →
+   * Committee tab to group/filter/stat by foundation.
+   */
+  project_uid?: string | null;
+  project_slug?: string | null;
+  first_name: string;
+  last_name: string;
+  email: string;
+  job_title?: string | null;
+  role_name: string;
+  voting_status: string;
+  appointed_by: string;
+  organization_id: string;
+  is_org_editable: boolean;
+  reason?: string | null;
+}
+
+/** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */
+export interface CommitteeServiceOrgSeatPage {
+  seats: CommitteeServiceOrgSeat[];
+  page_token?: string | null;
+}
+
+/** Spec 026: combined board + committee seats for one membership (single committee-service read, split client-side) — envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/seats`. */
+export interface OrgMembershipSeatsResponse {
+  accountId: string;
+  foundationId: string;
+  boardSeats: BoardSeat[];
+  committeeSeats: CommitteeSeat[];
+}
+
+/** Spec 026: body for the BFF reassign proxy `PATCH …/committee-seats/:seatId/reassign`. */
+export interface ReassignCommitteeSeatRequest {
+  committeeUid: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+/** Spec 026: response envelope for the reassign proxy — the reassigned seat (board or committee). */
+export interface OrgMembershipReassignSeatResponse {
+  accountId: string;
+  foundationId: string;
+  seat: BoardSeat | CommitteeSeat;
+}
+
+/** Response envelope for `GET /api/orgs/:accountId/lens/memberships/:foundationId/voting-history`. */
+export interface OrgMembershipVotingHistoryResponse {
+  accountId: string;
+  foundationId: string;
+  /** Default order: reverse-chronological (newest first). */
+  votingHistory: VotingRecord[];
+}
+
+/**
+ * Body shape for the future `PATCH /…/board-seats/:seatId` and
+ * `PATCH /…/committee-seats/:seatId` write proxy endpoints (FR-009g). Pinned
+ * now so the Reassign modal output event can use the canonical type even
+ * though no HTTP call is made in v1.
+ *
+ * Note: `jobTitle` is intentionally NOT included — it is upstream-authoritative
+ * (FR-009g / round 5 Q5).
+ */
+export interface ReassignSeatBody {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+// Org Memberships list page — view-model types -----------------------------------------------
+
+export type OrgMembershipsPageState = 'loading' | 'error' | 'ready' | 'empty';
+export type OrgMembershipTab = 'active' | 'expired' | 'discover';
+
+export interface OrgDropdownOption {
+  label: string;
+  value: string;
+}
+
+export interface ActiveMembershipRow extends OrgActiveMembership {
+  initials: string;
+  tierRange: string;
+  memberSinceFormatted: string;
+}
+
+export interface ExpiredMembershipRow extends OrgExpiredMembership {
+  initials: string;
+  logoClasses: string;
+  expirationDateFormatted: string;
+  tierStartFormatted: string;
+  tierEndFormatted: string;
+  renewUrl: string;
+}
+
+export interface DiscoverOpportunityRow extends OrgDiscoverOpportunity {
+  initials: string;
+  logoClasses: string;
+  joinUrl: string;
+}
+
+// Membership Detail page — component types ---------------------------------------------------
+
+export type OrgMembershipDetailPageState = 'loading' | 'error' | 'ready' | 'empty' | 'notFound';
+export type MembershipDetailTab = 'key-contacts' | 'board' | 'docs' | 'governance';
+
+export interface ModalOpenState {
+  contact: OrgMembershipKeyContact;
+  editingPersonId: string | null;
+}
+
+export type ModalKind = 'closed' | 'replace-form' | 'chooser' | 'add-form' | 'remove-list' | 'single-add-form';
+
+export interface EditKeyContactSubmitEvent {
+  contactType: OrgMembershipKeyContactType;
+  contactTypeLabel: string;
+  editingPersonId: string | null;
+  person: OrgMembershipKeyContactPerson;
+}
+
+export interface EditKeyContactRemoveEvent {
+  contactType: OrgMembershipKeyContactType;
+  contactTypeLabel: string;
+  personId: string;
+}
+
+export interface ReassignSubmitEvent {
+  seatId: string;
+  seatKind: 'board' | 'committee';
+  body: ReassignSeatBody;
+}
+
+export type SectionLoadState = 'idle' | 'loading' | 'success' | 'error';
+
+export interface VotingRecordRow extends VotingRecord {
+  formattedDate: string;
+  chipClass: string;
+}
+
+// Membership Detail page — Dialog contracts (centralised per coderabbitai review) --------------
+
+export interface EditKeyContactDialogData {
+  contact: OrgMembershipKeyContact;
+  foundationName: string;
+  editingPersonId: string | null;
+  /** Spec 002: selected org account id (SFID), used by the modal to load the org-wide employee-search list (FR-023). */
+  orgUid: string;
+  /** Parent performs the pessimistic write + table reconcile; resolves on success, rejects with Error(message) on failure. */
+  submit: (intent: Exclude<EditKeyContactDialogResult, null>) => Promise<void>;
+}
+
+export type EditKeyContactDialogResult =
+  | { kind: 'replace'; event: EditKeyContactSubmitEvent }
+  | { kind: 'add'; event: EditKeyContactSubmitEvent }
+  | { kind: 'remove'; event: EditKeyContactRemoveEvent }
+  | null;
+
+export interface ReassignBoardRolesDialogData {
+  seat: BoardSeat | CommitteeSeat;
+  seatKind: 'board' | 'committee';
+  foundationName: string;
+  /** Org SFID — used to load the employee picker (`GET /api/orgs/:orgUid/lens/employees`). */
+  orgUid: string;
+}
+
+export type ReassignBoardRolesDialogResult = ReassignSubmitEvent | null;
+
+export interface WhyCantEditDialogData {
+  reason: string | null;
+  seatId: string;
+}
+
+export type WhyCantEditDialogResult = { contactFoundation: boolean } | null;
+
+// Membership Detail page — Documentation tab (spec 017 baseline + spec 018 Snowflake extension)
+
+/** One agreement document in the Documentation tab list. */
+export interface OrgMembershipAgreement {
+  id: string;
+  name: string;
+  signedDate: string;
+  format: string;
+  fileSizeKb: number | null;
+  isCurrent: boolean;
+  downloadUrl: string | null;
+  statusRaw: string;
+  tier: string;
+}
+
+/** TLF Certificate of Membership card payload — per-accountId, sourced from ORG_LENS_TLF_CERTIFICATE (spec 019). */
+export interface OrgMembershipCertificateTemplate {
+  /** Pre-formatted card title. E.g. "Linux Foundation Gold Membership Certificate". */
+  title: string;
+  /** Pre-formatted card subtitle. E.g. "Member since Jul 2011 · Issued to TOYOTA MOTOR CORPORATION". */
+  subtitle: string;
+  /** Verbatim membership tier including " Membership" suffix. E.g. "Gold Membership". */
+  membershipTier: string;
+  /** Verbatim Salesforce account name. */
+  issuedTo: string;
+  /** Pre-formatted "Mon YYYY" date string. E.g. "Jul 2011". */
+  memberSinceFormatted: string;
+  /** ISO YYYY-MM-DD date string for downstream re-formatting if needed. */
+  memberSinceDate: string;
+  /** Membership-agreement PDF URL. NULL when the upstream Opportunity has no URL recorded. */
+  downloadUrl: string | null;
+}
+
+/** Response envelope for GET /api/orgs/:accountId/lens/memberships/:foundationId/documents. */
+export interface OrgMembershipDocumentsResponse {
+  accountId: string;
+  foundationId: string;
+  agreements: OrgMembershipAgreement[];
+  certificateTemplate: OrgMembershipCertificateTemplate | null;
+}
+
+/** Internal service result: wire response plus non-wire degraded flag for observability (spec 019 SC-015). */
+export interface OrgMembershipDocumentsResult {
+  response: OrgMembershipDocumentsResponse;
+  certificateDegraded: boolean;
+}

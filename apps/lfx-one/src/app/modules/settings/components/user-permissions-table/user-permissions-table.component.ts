@@ -32,6 +32,7 @@ export class UserPermissionsTableComponent {
   // State signals
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
+  public canWrite = input<boolean>(false);
   public project = computed(() => this.projectContextService.activeContext());
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
@@ -104,10 +105,11 @@ export class UserPermissionsTableComponent {
   private removeUser(user: ProjectPermissionUser): void {
     if (!this.project()) return;
 
-    this.isRemoving.set(user.username);
+    const removeIdentifier = user.username || user.email;
+    this.isRemoving.set(removeIdentifier);
 
     this.permissionsService
-      .removeUserFromProject(this.project()!.uid, user.username)
+      .removeUserFromProject(this.project()!.uid, removeIdentifier)
       .pipe(take(1))
       .subscribe({
         next: () => {

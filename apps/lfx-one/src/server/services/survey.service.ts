@@ -3,7 +3,7 @@
 
 import { SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -87,22 +87,19 @@ export class SurveyService {
   }
 
   /**
-   * Fetches a single survey by UID
-   * Resolves project UUID to v1 SFID via NATS before passing as project_id
+   * Fetches a single survey by UID.
+   * Passes project_uid (V2 UUID) directly to upstream — no SFID translation needed.
    */
   public async getSurveyById(req: Request, surveyUid: string, projectId?: string): Promise<Survey> {
     logger.debug(req, 'get_survey_by_id', 'Fetching survey by ID', {
       survey_uid: surveyUid,
-      project_id: projectId,
+      project_uid: projectId,
     });
 
     const params: Record<string, string> = {};
 
     if (projectId) {
-      const sfid = await this.projectService.getProjectSfidByUid(req, projectId);
-      if (sfid) {
-        params['project_id'] = sfid;
-      }
+      params['project_uid'] = projectId;
     }
 
     const survey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET', params);
@@ -123,6 +120,46 @@ export class SurveyService {
   }
 
   /**
+   * Fetches a paginated page of individual per-recipient responses for a survey.
+   * Thin passthrough to the upstream survey service — forwards only the supported
+   * query params (pagination + project scoping) and returns the page as-is.
+   * The upstream maps V2 project UUIDs to V1 identifiers before forwarding to ITX.
+   */
+  public async getSurveyResponses(req: Request, surveyUid: string, query: Record<string, any> = {}): Promise<SurveyResponsesPage> {
+    logger.debug(req, 'get_survey_responses', 'Fetching survey responses', {
+      survey_uid: surveyUid,
+      query_params: Object.keys(query),
+    });
+
+    // Forward only the params the upstream endpoint supports; ignore anything else
+    // the client may append so a stray param can't change upstream behavior.
+    // per_page is capped at 200 to prevent accidental or abusive large-page requests.
+    const params: Record<string, any> = {};
+    if (query['page_token'] !== undefined) params['page_token'] = query['page_token'];
+    if (query['per_page'] !== undefined) {
+      const perPage = parseInt(query['per_page'], 10);
+      if (!isNaN(perPage) && perPage > 0) params['per_page'] = Math.min(perPage, 200);
+    }
+    if (query['project_uid'] !== undefined) params['project_uid'] = query['project_uid'];
+    if (query['project_uids'] !== undefined) params['project_uids'] = query['project_uids'];
+
+    const page = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params);
+
+    // Defensive normalization: upstream is contractually { data, meta }, but guard
+    // against a malformed body so the frontend always receives a consumable shape.
+    // Upstream signals the last page with an empty-string page_token — normalize it
+    // to undefined here so consumers can treat "no more pages" as a falsy token.
+    const pageToken = page?.meta?.page_token;
+    return {
+      data: Array.isArray(page?.data) ? page.data : [],
+      meta: {
+        ...(page?.meta ?? {}),
+        page_token: pageToken && pageToken.trim() !== '' ? pageToken : undefined,
+      },
+    };
+  }
+
+  /**
    * Creates a new survey
    */
   public async createSurvey(req: Request, surveyData: CreateSurveyRequest): Promise<Survey> {
@@ -130,7 +167,7 @@ export class SurveyService {
     const user = req.oidc?.user;
     const enrichedData: CreateSurveyRequest = {
       ...surveyData,
-      creator_id: (user?.['sub'] as string) || '',
+      creator_id: (user?.['https://sso.linuxfoundation.org/claims/username'] as string) || '',
       creator_username: (user?.['nickname'] as string) || (user?.['name'] as string) || '',
       creator_name: (user?.['name'] as string) || '',
     };

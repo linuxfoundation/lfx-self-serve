@@ -17,12 +17,14 @@ import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants
 import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
@@ -42,6 +44,7 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
     DatePipe,
     MyDocumentSourceTagPipe,
     EmptyStateComponent,
+    SkeletonModule,
     TooltipModule,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
@@ -56,6 +59,7 @@ export class DocumentsDashboardComponent {
   private readonly documentService = inject(DocumentService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
+  private readonly personaService = inject(PersonaService);
   private readonly dialogService = inject(DialogService);
   private readonly projectService = inject(ProjectService);
 
@@ -97,6 +101,7 @@ export class DocumentsDashboardComponent {
   // === Computed Signals ===
   protected readonly project = this.projectContextService.activeContext;
   protected readonly activeLens = this.lensService.activeLens;
+  protected readonly personaLoaded = this.personaService.personaLoaded;
   // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
   protected readonly canUpload = computed(() => this.useProjectSource());
   /** True when the dashboard is project-scoped (Project / Foundation lens with active context). */

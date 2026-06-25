@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
-import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
@@ -20,6 +20,7 @@ import { routes } from './app.routes';
 import { provideDataDogRum } from './shared/providers/datadog-rum.provider';
 import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
 import { provideRuntimeConfig } from './shared/providers/runtime-config.provider';
+import { ChunkLoadErrorHandler } from './shared/utils/chunk-load-error.handler';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
 
 const customPreset = definePreset(Aura, {
@@ -35,6 +36,7 @@ const customPreset = definePreset(Aura, {
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
+    { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
     provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
     provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({ includeHeaders: ['Authorization'] })),
     provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor, ssrBaseUrlInterceptor])),

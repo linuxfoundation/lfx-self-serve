@@ -37,3 +37,6 @@ export const BADGE_VISIBILITY_FILTER_OPTIONS: FilterPillOption[] = [
 export const BADGE_STATUS_SELECT_OPTIONS = BADGE_STATUS_FILTER_OPTIONS.map((o) => ({ label: o.label, value: o.id }));
 
 export const BADGE_VISIBILITY_SELECT_OPTIONS = BADGE_VISIBILITY_FILTER_OPTIONS.map((o) => ({ label: o.label, value: o.id }));
+
+/** Issuer-name → LinkedIn organization ID; empty until canonical IDs are confirmed (LFXV2-1925). Unknown issuers fall back to organizationName in the deep link. */
+export const LINKEDIN_ISSUER_ORG_IDS: Readonly<Partial<Record<string, number>>> = {};

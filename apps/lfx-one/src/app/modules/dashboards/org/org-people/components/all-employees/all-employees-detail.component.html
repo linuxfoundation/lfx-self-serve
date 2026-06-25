@@ -1,0 +1,229 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="bg-gray-50 px-4 pb-4 pt-3 sm:pl-14" data-testid="org-people-all-employees-detail">
+  @if (loading()) {
+    <div class="text-xs italic text-gray-400" data-testid="org-people-all-employees-detail-loading">Loading details…</div>
+  } @else if (error()) {
+    <div class="flex items-center justify-between gap-3 py-2" role="alert" aria-live="assertive" data-testid="org-people-all-employees-detail-error">
+      <span class="text-sm text-red-600">
+        <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>
+        Failed to load activity detail.
+      </span>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+        data-testid="org-people-all-employees-detail-retry"
+        (click)="retry.emit()">
+        <i class="fa-light fa-arrow-rotate-left" aria-hidden="true"></i>
+        Retry
+      </button>
+    </div>
+  } @else if (!hasAnyDetail()) {
+    <p class="py-2 text-sm italic text-gray-400" data-testid="org-people-all-employees-detail-empty">No LF activity detail recorded for this employee.</p>
+  } @else {
+    <div class="flex flex-col gap-4">
+      @if (boardSeats().length > 0) {
+        <section data-testid="org-people-all-employees-detail-board">
+          <header class="mb-2 flex items-center gap-2">
+            <i class="fa-light fa-user-tie text-xs text-blue-700" aria-hidden="true"></i>
+            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Governance — Board Seats</h3>
+          </header>
+          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Role</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Voting</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (seat of boardSeats(); track seat.committeeId + '-' + $index) {
+                  <tr class="border-b border-gray-100 last:border-b-0">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ seat.foundationName }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ seat.committeeRole }}</td>
+                    <td class="px-3 py-2">
+                      @if (seat.votingStatus === 'Voting') {
+                        <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">Voting</span>
+                      } @else {
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">{{ seat.votingStatus }}</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      @if (committeeSeats().length > 0) {
+        <section data-testid="org-people-all-employees-detail-committees">
+          <header class="mb-2 flex items-center gap-2">
+            <i class="fa-light fa-users-rectangle text-xs text-emerald-700" aria-hidden="true"></i>
+            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Meetings — Committee Seats</h3>
+          </header>
+          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  <th class="border-b border-gray-200 px-3 py-2">Committee</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Role</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Participation</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (seat of committeeSeats(); track seat.committeeId + '-' + $index) {
+                  <tr class="border-b border-gray-100 last:border-b-0">
+                    <td class="px-3 py-2 text-gray-800">{{ seat.committeeName }}</td>
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ seat.foundationName }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ seat.committeeRole }}</td>
+                    <td class="px-3 py-2">
+                      @if (seat.votingStatus === 'Voting') {
+                        <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Voting</span>
+                      } @else {
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">{{ seat.votingStatus }}</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      @if (code().length > 0) {
+        <section data-testid="org-people-all-employees-detail-code">
+          <header class="mb-2 flex items-center gap-2">
+            <i class="fa-light fa-code text-xs text-emerald-800" aria-hidden="true"></i>
+            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Code Contributions</h3>
+          </header>
+          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  <th class="border-b border-gray-200 px-3 py-2">Project</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Role</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Commits</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Last Active</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of code(); track row.projectId + '-' + $index) {
+                  <tr class="border-b border-gray-100 last:border-b-0">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.projectName }}</td>
+                    <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
+                    <td class="px-3 py-2">
+                      @if (row.isMaintainer) {
+                        <span
+                          class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          Maintainer
+                        </span>
+                      } @else {
+                        <span
+                          class="inline-flex items-center rounded-full border border-blue-200 bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                          Contributor
+                        </span>
+                      }
+                    </td>
+                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.totalCommits | number }}</td>
+                    <td class="px-3 py-2 text-gray-500">{{ row.lastActivityDate ?? '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      @if (events().length > 0) {
+        <section data-testid="org-people-all-employees-detail-events">
+          <header class="mb-2 flex items-center gap-2">
+            <i class="fa-light fa-calendar text-xs text-amber-700" aria-hidden="true"></i>
+            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">
+              Events
+              <span class="ml-1 font-normal normal-case text-gray-500" data-testid="org-people-all-employees-detail-events-total"
+                >({{ eventsTotal() }} total)</span
+              >
+            </h3>
+          </header>
+          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  <th class="border-b border-gray-200 px-3 py-2">Event</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Role</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Last Attended</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of events(); track row.eventId + '-' + $index) {
+                  <tr class="border-b border-gray-100 last:border-b-0">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.eventName }}</td>
+                    <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
+                    <td class="px-3 py-2">
+                      @if (row.isSpeaker) {
+                        <span
+                          class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          Speaker
+                        </span>
+                      } @else {
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">Attendee</span>
+                      }
+                    </td>
+                    <td class="px-3 py-2 text-gray-500">{{ row.lastEventEndDate ?? '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      @if (training().length > 0) {
+        <section data-testid="org-people-all-employees-detail-training">
+          <header class="mb-2 flex items-center gap-2">
+            <i class="fa-light fa-graduation-cap text-xs text-violet-700" aria-hidden="true"></i>
+            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Training &amp; Certifications</h3>
+          </header>
+          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  <th class="border-b border-gray-200 px-3 py-2">Course</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Status</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Certifications</th>
+                  <th class="border-b border-gray-200 px-3 py-2">Courses Taken</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of training(); track row.courseId + '-' + $index) {
+                  <tr class="border-b border-gray-100 last:border-b-0">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.courseName }}</td>
+                    <td class="px-3 py-2">
+                      @if (row.status === 'Certified') {
+                        <span
+                          class="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                          Certified
+                        </span>
+                      } @else {
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">Enrolled</span>
+                      }
+                    </td>
+                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.certificationsCount }}</td>
+                    <td class="px-3 py-2 text-gray-500">{{ row.coursesCount }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+    </div>
+  }
+</div>

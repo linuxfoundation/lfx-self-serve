@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -14,6 +14,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
@@ -22,7 +23,16 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
 
 @Component({
   selector: 'lfx-votes-dashboard',
-  imports: [LowerCasePipe, ButtonComponent, VotesTableComponent, VoteResultsDrawerComponent, VoteCastDrawerComponent, RouterLink, EmptyStateComponent],
+  imports: [
+    LowerCasePipe,
+    ButtonComponent,
+    VotesTableComponent,
+    VoteResultsDrawerComponent,
+    VoteCastDrawerComponent,
+    RouterLink,
+    EmptyStateComponent,
+    SkeletonModule,
+  ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
 })
@@ -33,6 +43,7 @@ export class VotesDashboardComponent {
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
@@ -59,6 +70,7 @@ export class VotesDashboardComponent {
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  protected readonly personaLoaded = this.personaService.personaLoaded;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
@@ -87,6 +99,18 @@ export class VotesDashboardComponent {
     return !!(f.search?.trim() || f.status || f.group);
   });
 
+  // Lens-change pagination reset is independent of the data-fetch pipelines so it fires for every lens emission, not just Me-lens loads.
+  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and stop at the page-token guard.
+  public constructor() {
+    toObservable(this.lensService.activeLens)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.pageTokens = [];
+        this.currentFirst.set(0);
+        this.fetch$.next();
+      });
+  }
+
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
 
@@ -107,6 +131,12 @@ export class VotesDashboardComponent {
     this.selectedVoteId.set(voteId);
     this.castDrawerVisible.set(false);
     this.resultsDrawerVisible.set(true);
+  }
+
+  protected onCastFromResults(voteId: string): void {
+    this.selectedVoteId.set(voteId);
+    this.resultsDrawerVisible.set(false);
+    this.castDrawerVisible.set(true);
   }
 
   // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
@@ -136,11 +166,15 @@ export class VotesDashboardComponent {
   }
 
   protected onFoundationFilterChange(value: string | null): void {
+    this.pageTokens = [];
+    this.currentFirst.set(0);
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
   }
 
   protected onProjectFilterChange(value: string | null): void {
+    this.pageTokens = [];
+    this.currentFirst.set(0);
     this.projectFilter.set(value);
   }
 

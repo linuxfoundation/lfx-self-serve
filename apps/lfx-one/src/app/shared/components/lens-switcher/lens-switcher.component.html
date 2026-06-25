@@ -4,7 +4,7 @@
 @if (mobile()) {
   <div class="flex items-center gap-1 px-3 py-2" data-testid="lens-switcher-mobile">
     @for (lens of lenses(); track lens.id) {
-      @let isActive = activeLensId() === lens.id;
+      @let isActive = !isDocsActive() && activeLensId() === lens.id;
       <button
         type="button"
         (click)="setLens(lens.id)"
@@ -18,6 +18,13 @@
 
     <!-- Mobile account actions -->
     <div class="ml-auto flex items-center gap-2">
+      <a
+        routerLink="/docs"
+        data-testid="lens-mobile-docs"
+        aria-label="Documentation"
+        class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+        <i class="fa-light fa-book text-sm"></i>
+      </a>
       @if (canImpersonate() && !isImpersonating()) {
         <lfx-button
           icon="fa-light fa-user-secret"
@@ -33,14 +40,14 @@
         class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
         <i class="fa-light fa-user text-sm"></i>
       </a>
-      <a
-        href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        lfxOpenIntercom
+        aria-label="Open support chat"
         data-testid="lens-mobile-support"
         class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
         <i class="fa-light fa-question-circle text-sm"></i>
-      </a>
+      </button>
       <a
         href="/logout"
         data-testid="lens-mobile-logout"
@@ -66,7 +73,7 @@
     <!-- Lens Buttons -->
     <div class="flex flex-col items-center gap-3 flex-1">
       @for (lens of lenses(); track lens.id) {
-        @let isActive = activeLensId() === lens.id;
+        @let isActive = !isDocsActive() && activeLensId() === lens.id;
         <button
           type="button"
           (click)="setLens(lens.id)"
@@ -99,6 +106,25 @@
 
     <!-- Footer -->
     <div class="flex flex-col items-center gap-3 mt-auto">
+      <!-- Documentation (LFXV2-2001) -->
+      <a
+        routerLink="/docs"
+        data-testid="lens-docs-button"
+        aria-label="Documentation"
+        pTooltip="Documentation"
+        tooltipPosition="right"
+        class="group flex flex-col items-center gap-1 w-full transition-colors"
+        [ngClass]="isDocsActive() ? 'text-white' : 'text-blue-200/75 hover:text-white'">
+        <div
+          class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
+          [ngClass]="{
+            'bg-blue-500': isDocsActive(),
+            'group-hover:bg-white/10': !isDocsActive(),
+          }">
+          <i [ngClass]="isDocsActive() ? 'fa-solid fa-book' : 'fa-light fa-book'" class="text-xl"></i>
+        </div>
+      </a>
+
       <!-- Changelog (What's New) -->
       <button
         type="button"
@@ -184,15 +210,15 @@
           <i class="fa-light fa-user w-4 text-gray-400"></i>
           <span>My profile</span>
         </button>
-        <a
-          href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          lfxOpenIntercom
+          (click)="userMenu.hide()"
           data-testid="lens-support"
-          class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
           <i class="fa-light fa-question-circle w-4 text-gray-400"></i>
           <span>Support</span>
-        </a>
+        </button>
       </div>
 
       <!-- Sign out -->

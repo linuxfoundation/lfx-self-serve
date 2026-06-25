@@ -2,15 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { AttributionModelOption, MarketingImpactTabOption } from '../interfaces/marketing-impact.interface';
+import type {
+  AttributionModelOption,
+  MarketingImpactFocusProgram,
+  MarketingImpactTab,
+  MarketingImpactTabOption,
+} from '../interfaces/marketing-impact.interface';
 
-/** Focus program filter options for the Marketing Impact FOCUS bar. */
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+
+/** Focus program filter options for the Marketing Impact FOCUS bar. Labels match Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All programs' },
-  { id: 'events', label: 'Events' },
-  { id: 'newsletters', label: 'Newsletters' },
-  { id: 'surveys', label: 'Surveys' },
-  { id: 'trainings', label: 'Trainings' },
+  { id: 'lfCorporate', label: 'LF Corporate' },
+  { id: 'lfEvents', label: 'LF Events' },
+  { id: 'lfTraining', label: 'LF Training' },
+  { id: 'projectWebsites', label: 'Project Websites' },
 ];
 
 /** Tab definitions for the Marketing Impact section tabs. */
@@ -31,6 +38,26 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
   { label: 'Last Touch', value: 'lastTouch' },
   { label: 'Time Decay', value: 'timeDecay' },
 ];
+
+/** Maps MarketingImpactFocusProgram IDs to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. 'all' maps to undefined (no filter). */
+export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string | undefined> = {
+  all: undefined,
+  lfCorporate: 'LF Corporate',
+  lfEvents: 'LF Events',
+  lfTraining: 'LF Training',
+  projectWebsites: 'Project Websites',
+};
+
+export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));
+
+/** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering); Email is additionally hidden for projectWebsites (no email campaign data). */
+export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
+  all: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
+  lfCorporate: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfEvents: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  lfTraining: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
+  projectWebsites: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'web-activity']),
+};
 
 /** Funnel stage filter options for the Performance Marketing tab. */
 export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [

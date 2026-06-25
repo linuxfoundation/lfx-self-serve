@@ -15,16 +15,19 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
+  CommitteeMemberPermissionInfo,
   CommitteePermissionLevel,
   CommitteeUser,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
+import { canManageCommitteeMembers, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -53,7 +56,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     DynamicDialogModule,
     Skeleton,
   ],
-  providers: [DialogService],
+  providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members.component.html',
   styleUrl: './committee-members.component.scss',
 })
@@ -68,24 +71,34 @@ export class CommitteeMembersComponent implements OnInit {
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
+  public invites = input<CommitteeInvite[]>([]);
+  public invitesLoading = input<boolean>(false);
 
   public readonly refresh = output<void>();
 
   // Simple writable signals
   public selectedMember = signal<CommitteeMember | null>(null);
   public isDeleting = signal<boolean>(false);
+  public revokingInviteUid = signal<string | null>(null);
   public memberFilterChip = signal<CommitteeMemberFilterChip>('all');
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
+  // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
+  public readonly noRoleSentinel = CommitteeMemberRole.NONE;
 
   // Computed signals — inline per component-organization.md
-  // Permission is solely driven by the API's writer flag
-  public readonly canManageMembers = computed(() => !!this.committee()?.writer);
-  // Default to hidden while committee is loading (fail closed for privacy)
+  // Driven by the API's effective `writer` flag, which already reflects access inherited
+  // from the parent/foundation project (authz model: committee#writer derives from
+  // `writer from project`). No separate inherited check is needed here — a foundation-level
+  // manager's `writer` flag is already true (LFXV2-2059).
+  public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
+  // Fail-closed: only show members when visibility is explicitly set to basic_profile.
+  // Undefined/null/unknown values default to hidden so committees without a persisted
+  // setting don't inadvertently expose the member list.
   public readonly isMembersVisible = computed(() => {
     const committee = this.committee();
     if (!committee) return false;
-    return committee.member_visibility !== 'hidden' || this.canManageMembers();
+    return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
   });
   public readonly votingRepCount: Signal<number> = computed(
     () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length
@@ -137,14 +150,13 @@ export class CommitteeMembersComponent implements OnInit {
     menuComponent.toggle(event);
   }
 
-  public getMemberPermission(member: CommitteeMember): CommitteePermissionLevel {
-    const committee = this.committee();
-    if (!committee) return 'member';
-    const memberEmail = member.email?.toLowerCase();
-    const matches = (u: { username: string; email: string }) => (member.username && u.username === member.username) || u.email?.toLowerCase() === memberEmail;
-    if (committee.writers?.some(matches)) return 'manage';
-    if (committee.auditors?.some(matches)) return 'review';
-    return 'member';
+  /**
+   * Resolve a member's roster permission (committee-scoped role, else inherited project/foundation
+   * grant) plus whether it was inherited. Delegates to the shared pure resolver so the logic is
+   * unit-testable in isolation (LFXV2-2059).
+   */
+  public getMemberPermissionInfo(member: CommitteeMember): CommitteeMemberPermissionInfo {
+    return resolveCommitteeMemberPermission(this.committee(), member);
   }
 
   public getMemberPermissionSeverity(permission: CommitteePermissionLevel): TagSeverity {
@@ -153,9 +165,11 @@ export class CommitteeMembersComponent implements OnInit {
     return 'secondary';
   }
 
-  public getMemberPermissionLabel(permission: CommitteePermissionLevel): string {
-    if (permission === 'manage') return 'Manage';
-    if (permission === 'review') return 'Reviewer';
+  public getMemberPermissionLabel(permission: CommitteePermissionLevel, inherited = false): string {
+    // Inherited grants only apply to manage/review; 'member' never carries the suffix.
+    const suffix = inherited ? ' (inherited)' : '';
+    if (permission === 'manage') return `Manage${suffix}`;
+    if (permission === 'review') return `Reviewer${suffix}`;
     return 'Member';
   }
 
@@ -173,34 +187,50 @@ export class CommitteeMembersComponent implements OnInit {
       data: {
         committee: this.committee(),
         existingMembers: this.members(),
-      },
-    });
-
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | string | undefined) => {
-      if (result === true) {
-        this.refreshMembers();
-      } else if (result === 'manual') {
-        this.openManualMemberForm();
-      }
-    });
-  }
-
-  private openManualMemberForm(): void {
-    const dialogRef = this.dialogService.open(MemberFormComponent, {
-      header: 'Add Member',
-      width: '700px',
-      modal: true,
-      closable: true,
-      data: {
-        isEditing: false,
-        committee: this.committee(),
+        existingInvites: this.invites(),
       },
     });
 
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      if (result) {
+      if (result === true) {
         this.refreshMembers();
       }
+    });
+  }
+
+  public revokeInvite(invite: CommitteeInvite): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.revokingInviteUid()) return;
+
+    this.confirmationService.confirm({
+      message: `Revoke the pending invitation for ${invite.invitee_email}?`,
+      header: 'Revoke Invitation',
+      acceptLabel: 'Revoke',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        this.revokingInviteUid.set(invite.uid);
+        this.committeeService.revokeCommitteeInvite(committee.uid, invite.uid).subscribe({
+          next: () => {
+            this.revokingInviteUid.set(null);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Invitation Revoked',
+              detail: `The invitation for ${invite.invitee_email} has been revoked.`,
+            });
+            this.refreshMembers();
+          },
+          error: (err: HttpErrorResponse) => {
+            this.revokingInviteUid.set(null);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to Revoke',
+              detail: getHttpErrorDetail(err, 'Failed to revoke the invitation. Please try again.'),
+            });
+          },
+        });
+      },
     });
   }
 

@@ -3,21 +3,30 @@
 
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
+  AcceptCommitteeInviteRequest,
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
+  CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeSettingsData,
   CommitteeUpdateData,
+  CommitteeUser,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
+  PendingCommitteeInviteForOrg,
+  PendingInvitation,
+  Project,
+  ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -227,11 +236,27 @@ export class CommitteeService {
    *   that need slug-based navigation (e.g. the GET /committees/:id controller for the
    *   detail page's Parent Project link). Internal callers (existence checks, meeting
    *   fan-out, member CRUD) should leave this off — they don't use these fields.
+   * @param options.includeInheritedPermissions When true, enriches the response with
+   *   `inherited_writers` / `inherited_auditors` — the manage/review grants the committee
+   *   inherits from its project/foundation ancestry, so the members roster can label
+   *   inherited managers correctly (see LFXV2-2059). Walks the project ancestry (up to
+   *   `MAX_DEPTH` levels) making two parallel upstream reads per level — 2-4 calls for the
+   *   typical 1-2-level hierarchy. Best-effort (a level the caller can't read contributes
+   *   nothing and never blocks the fetch), so default is `false`. Enable only on the
+   *   user-facing detail read (GET /committees/:id).
    */
   public async getCommitteeById(
     req: Request,
     committeeId: string,
-    options: { includeMembership?: boolean; includeProjectMetadata?: boolean } = {}
+    options: {
+      includeMembership?: boolean;
+      includeProjectMetadata?: boolean;
+      includeInheritedPermissions?: boolean;
+      /** When true, a settings-service failure throws instead of silently returning {}. Use on
+       *  write paths (e.g. accept invite) where an unknown business_email_required must not
+       *  be treated as false (fail-closed). */
+      throwOnSettingsError?: boolean;
+    } = {}
   ): Promise<Committee> {
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
@@ -243,17 +268,20 @@ export class CommitteeService {
       });
     }
 
-    // Fetch settings, optional caller membership, and access in parallel
-    const [settings, membership, withAccess] = await Promise.all([
-      this.getCommitteeSettings(req, committeeId),
+    // Fetch settings, optional caller membership, access, and optional inherited
+    // (parent-project) permissions in parallel.
+    const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
+      this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
+      options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
     ]);
 
     const merged = {
       ...withAccess,
       ...settings,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
+      ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
     };
 
     if (!options.includeProjectMetadata) {
@@ -547,6 +575,279 @@ export class CommitteeService {
       committee_uid: committeeId,
       member_uid: memberId,
     });
+  }
+
+  // ── Committee Invites ───────────────────────────────────────────────────
+  // Invite-by-email is the add-member primitive for people who may not yet have
+  // an LF account. Pending/resolved invites are read from the query index
+  // (committee_invite resource); create/revoke go through the committee-service.
+
+  /**
+   * Fetches all invites for a committee from the query index. Callers filter by
+   * status (e.g. pending) client-side; the roster only surfaces pending ones.
+   */
+  public async getCommitteeInvites(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeInvite[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_invite',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+  }
+
+  /**
+   * Creates a single committee invite. The committee-service has no bulk endpoint,
+   * so bulk invite is the frontend fanning out one call per email.
+   */
+  public async createCommitteeInvite(req: Request, committeeId: string, data: CreateCommitteeInviteRequest): Promise<CommitteeInvite> {
+    const invite = await this.microserviceProxy.proxyRequest<CommitteeInvite>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites`, 'POST', {}, data);
+
+    logger.debug(req, 'create_committee_invite', 'Committee invite created successfully', {
+      committee_uid: committeeId,
+      invite_uid: invite.uid,
+    });
+
+    return invite;
+  }
+
+  /**
+   * Revokes a pending committee invite. The upstream revoke-invite endpoint is a
+   * plain DELETE (no ETag concurrency control).
+   */
+  public async revokeCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}`, 'DELETE');
+
+    logger.debug(req, 'revoke_committee_invite', 'Committee invite revoked successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
+    });
+  }
+
+  // ── My Pending Invitations (invitee-facing) ───────────────────────────────
+  // The invitee side of invite-by-email: surface the committee_invite resources
+  // addressed to the current user's email, enriched with committee/project display
+  // context for the dashboard and My Groups. Accept/decline are invitee-authenticated
+  // committee-service calls (upstream enforces principal == invitee_email).
+
+  /**
+   * Returns the current user's pending committee invitations, enriched for display.
+   *
+   * Reads `committee_invite` resources tagged with the user's email from the query
+   * index, filters to `status === 'pending'` client-side, then batch-enriches the
+   * distinct committees (name, category) and their projects (project_name) so each
+   * row can render without further round-trips. Enrichment is best-effort: if a
+   * committee/project lookup fails, the row is still returned with `committee_name`
+   * falling back to the committee UID — the list is never dropped wholesale.
+   *
+   * `inviter_name` / `expires_at` are left undefined — the committee-service contract
+   * does not provide them today.
+   */
+  public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
+    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+    if (pendingInvites.length === 0) {
+      return [];
+    }
+
+    logger.info(req, 'get_my_pending_invitations', 'Found pending invitations, enriching with committee data', {
+      pending_count: pendingInvites.length,
+    });
+
+    // Enrich committee context (category, project_name) for the distinct committees once.
+    // committee_name and organization_required are sourced directly from the invite itself
+    // (committee-service ≥ v1.1) so no committee/settings fetch is required to decide org
+    // requirement — those endpoints fail the access check for invitees who are not yet viewers.
+    // Best-effort: a failed lookup degrades gracefully; category/project_name become null.
+    const committeeUids = Array.from(new Set(pendingInvites.map((invite) => invite.committee_uid).filter(Boolean)));
+    const committeeContext = new Map<
+      string,
+      {
+        committee_name: string;
+        category?: string | null;
+        project_name?: string | null;
+      }
+    >();
+
+    try {
+      const committees = await this.getCommitteesByIds(req, committeeUids);
+      const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
+      const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
+
+      for (const uid of committeeUids) {
+        const committee = committees.get(uid);
+        if (committee) {
+          committeeContext.set(uid, {
+            committee_name: committee.name || uid,
+            category: committee.category ?? null,
+            project_name: projectNameByCommittee.get(uid) || null,
+          });
+        }
+      }
+    } catch (error) {
+      logger.warning(req, 'get_my_pending_invitations', 'Committee enrichment failed, returning invitations with UID fallback', {
+        committee_count: committeeUids.length,
+        err: error,
+      });
+    }
+
+    return pendingInvites.map((invite) => {
+      const context = committeeContext.get(invite.committee_uid);
+      // Prefer the invite's own committee_name (access-safe, set at invite-creation time),
+      // fall back to the enriched committee resource name, then the UID.
+      const committeeName = invite.committee_name?.trim() || context?.committee_name || invite.committee_uid;
+      return {
+        uid: invite.uid,
+        committee_uid: invite.committee_uid,
+        committee_name: committeeName,
+        project_name: context?.project_name ?? null,
+        category: context?.category ?? null,
+        role: invite.role ?? null,
+        invitee_email: invite.invitee_email,
+        status: invite.status,
+        created_at: invite.created_at,
+        organization: invite.organization ?? null,
+        organization_required: invite.organization_required ?? null,
+        // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
+        // optional fields not in the committee-service contract yet, so JSON drops them rather than
+        // sending an explicit null that consumers would have to disambiguate from "set".
+      } satisfies PendingInvitation;
+    });
+  }
+
+  /**
+   * After LFID invite acceptance, auto-accept pending committee invitations addressed to
+   * {@link invitedEmail}. Callers must verify the session email matches the invite token
+   * email before invoking. {@link resourceUid} (from the LFID invite JWT) disambiguates
+   * when multiple pending invites exist — matched against committee_invite UID first, then
+   * committee UID; if no match and exactly one pending invite remains, that one is accepted.
+   *
+   * Returns the first invite that requires an organization but had none pre-filled — the
+   * caller must surface this to the user to collect their organization and complete acceptance.
+   * Other invites (those that can be auto-accepted) are still processed before returning.
+   *
+   * Other failures are logged and swallowed so LFID acceptance still succeeds.
+   */
+  public async acceptPendingCommitteeInvitesAfterLfidAccept(
+    req: Request,
+    params: { invitedEmail: string; resourceUid?: string }
+  ): Promise<PendingCommitteeInviteForOrg | null> {
+    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
+    if (pendingInvites.length === 0) {
+      logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
+      return null;
+    }
+
+    const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
+    if (toAccept.length === 0) {
+      logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
+        pending_count: pendingInvites.length,
+        resource_uid: params.resourceUid,
+      });
+      return null;
+    }
+
+    logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
+      accept_count: toAccept.length,
+      resource_uid: params.resourceUid,
+    });
+
+    let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
+
+    for (const invite of toAccept) {
+      try {
+        // organization_required is carried on the invite itself (committee-service ≥ v1.1) so no
+        // committee/settings fetch is needed — those fail the access check for non-viewer invitees.
+        // Fail-closed when the field is absent: treat as org-required so we skip rather than
+        // auto-accept without the required organization.
+        const requiresOrganization = invitationRequiresOrganization({ organization_required: invite.organization_required });
+
+        if (requiresOrganization) {
+          const orgName = invite.organization?.name?.trim() || null;
+          if (!orgName) {
+            // Return the first such invite so the client can collect the org and complete acceptance.
+            // Keep processing other invites — those that don't need org can still be auto-accepted.
+            if (!pendingForOrg) {
+              logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+              });
+              pendingForOrg = {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+                committee_name: invite.committee_name?.trim() || invite.committee_uid,
+                organization: invite.organization ?? null,
+              };
+            }
+            continue;
+          }
+          // Build an explicit allowlist payload — trim fields and coerce empty strings to null
+          // rather than forwarding the raw query-service organization reference upstream.
+          const orgPayload = {
+            name: orgName,
+            id: invite.organization?.id?.trim() || null,
+            website: invite.organization?.website?.trim() || null,
+          };
+          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
+        } else {
+          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
+        }
+      } catch (error) {
+        logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
+          committee_uid: invite.committee_uid,
+          invite_uid: invite.uid,
+          err: error,
+        });
+      }
+    }
+
+    return pendingForOrg;
+  }
+
+  /**
+   * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
+   * invitee-authenticated (committee-service enforces principal == invitee_email).
+   */
+  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string, body?: AcceptCommitteeInviteRequest): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST', {}, body ?? {});
+
+    logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
+    });
+  }
+
+  /**
+   * Declines a committee invitation on behalf of the invitee. The upstream endpoint is
+   * invitee-authenticated (committee-service enforces principal == invitee_email).
+   */
+  public async declineCommitteeInvite(req: Request, committeeId: string, inviteId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/decline`, 'POST');
+
+    logger.debug(req, 'decline_committee_invite', 'Committee invite declined successfully', {
+      committee_uid: committeeId,
+      invite_uid: inviteId,
+    });
+  }
+
+  /**
+   * Returns the specific pending committee invite for {@link email} that matches
+   * {@link committeeUid} + {@link inviteUid}, or `null` when not found.
+   *
+   * Uses the email-scoped query index — accessible to the invitee regardless of whether they
+   * are a committee viewer — so this is safe to call before the invite is accepted.
+   */
+  public async getPendingInviteForUser(req: Request, email: string, committeeUid: string, inviteUid: string): Promise<CommitteeInvite | null> {
+    const pending = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+    return pending.find((invite) => invite.committee_uid === committeeUid && invite.uid === inviteUid) ?? null;
   }
 
   // ── Persona Helper ──────────────────────────────────────────────────────
@@ -1202,20 +1503,130 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches committee settings by ID
-   * @returns Committee settings or empty object if not found/error
+   * Fetches committee settings by ID.
+   * By default returns {} on error so callers that display settings can degrade gracefully.
+   * Pass { throwOnError: true } on write paths where an unknown setting must not silently
+   * default to false (e.g. accept-invite org enforcement).
    */
-  private async getCommitteeSettings(req: Request, committeeId: string): Promise<CommitteeSettingsData> {
+  private async getCommitteeSettings(req: Request, committeeId: string, options: { throwOnError?: boolean } = {}): Promise<CommitteeSettingsData> {
     try {
       const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET');
 
       return settings || {};
-    } catch {
-      logger.debug(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
+    } catch (error) {
+      if (options.throwOnError) {
+        throw error;
+      }
+      logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });
       return {};
     }
+  }
+
+  /**
+   * Collects the manage/review grants the committee inherits from its project ancestry so the
+   * members roster can label users who hold a "Manage" / "Reviewer" grant at the project or
+   * foundation level rather than directly on the committee (LFXV2-2059).
+   *
+   * Walks the chain `committee's project_uid -> parent -> ... -> foundation root`, reading each
+   * level's project settings and unioning the writers/auditors. This mirrors the authorization
+   * model, which inherits at every hop (`committee#writer` derives from `writer from project`,
+   * and `project#writer` from `writer from parent`), so a grant anywhere up the chain — most
+   * importantly a foundation-level "Manage" — is an effective committee grant. Reading only the
+   * immediate project (the round-1 behaviour) missed grants stored higher up, which is why a
+   * foundation manager still showed as a plain member.
+   *
+   * Best-effort and never throws — inherited labels are display-only and must not break the
+   * committee fetch. A level the caller cannot read (or a missing project) simply contributes no
+   * grants. The walk is depth-capped and visited-guarded so a malformed parent link cannot loop.
+   *
+   * @returns Deduped writers/auditors mapped to `CommitteeUser`, matching the shape of the
+   *   committee-scoped `writers` / `auditors` lists.
+   */
+  private async getInheritedPermissions(req: Request, projectUid?: string): Promise<{ writers: CommitteeUser[]; auditors: CommitteeUser[] }> {
+    if (!projectUid) {
+      return { writers: [], auditors: [] };
+    }
+
+    // Project UserInfo -> CommitteeUser (username is optional upstream; default to '' so roster
+    // matching falls back to email, mirroring how committee writers/auditors match).
+    const toCommitteeUser = (u: { name: string; email: string; username?: string; avatar?: string }): CommitteeUser => ({
+      username: u.username ?? '',
+      email: u.email,
+      name: u.name,
+      avatar: u.avatar,
+    });
+    // Dedup key: prefer the Auth0 username, fall back to email — the same identity keys the
+    // roster matches on, so a user granted at two levels collapses to one entry.
+    const keyOf = (u: CommitteeUser): string => (u.username || u.email || '').toLowerCase();
+
+    const writersByKey = new Map<string, CommitteeUser>();
+    const auditorsByKey = new Map<string, CommitteeUser>();
+    const visited = new Set<string>();
+    // The documented use case is a foundation-level grant 1-2 levels above the committee, so cap
+    // the walk at 3 levels (<=6 upstream calls) — enough to cover the known hierarchy with a small
+    // margin while bounding the per-request cost. Truncation is logged below (never silent), and
+    // the constant can be raised if deeper trees need support.
+    const MAX_DEPTH = 3;
+
+    let currentUid: string | undefined = projectUid;
+    while (currentUid && !visited.has(currentUid) && visited.size < MAX_DEPTH) {
+      const levelUid: string = currentUid;
+      visited.add(levelUid);
+
+      // This level's grants and the project record (to find the parent) in parallel; both are
+      // best-effort so an unreadable level contributes nothing and the walk still continues.
+      // Capture the error at debug — a caller lacking read access to an ancestor is an expected
+      // outcome (not a system fault), but the failure must remain diagnosable since it silently
+      // shrinks the inherited lists this feature surfaces.
+      const [settings, project]: [ProjectSettings | null, Project | null] = await Promise.all([
+        this.projectService.getProjectSettings(req, levelUid).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project settings; skipping level', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+        this.projectService.getProjectById(req, levelUid, false).catch((error) => {
+          logger.debug(req, 'get_inherited_permissions', 'Failed to read project record; stopping ancestry walk', {
+            project_uid: levelUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+      ]);
+
+      for (const u of settings?.writers ?? []) {
+        const cu = toCommitteeUser(u);
+        writersByKey.set(keyOf(cu), cu);
+      }
+      for (const u of settings?.auditors ?? []) {
+        const cu = toCommitteeUser(u);
+        auditorsByKey.set(keyOf(cu), cu);
+      }
+
+      currentUid = project?.parent_uid || undefined;
+    }
+
+    // Surface a truncated walk (more ancestry remained when the depth cap was hit) so a missed
+    // deep-hierarchy grant is diagnosable rather than a silent cap.
+    if (currentUid && !visited.has(currentUid)) {
+      logger.debug(req, 'get_inherited_permissions', 'Ancestry walk truncated at MAX_DEPTH; deeper grants not collected', {
+        project_uid: projectUid,
+        max_depth: MAX_DEPTH,
+        next_unvisited_project_uid: currentUid,
+      });
+    }
+
+    logger.debug(req, 'get_inherited_permissions', 'Collected inherited committee permissions from project ancestry', {
+      project_uid: projectUid,
+      levels_visited: visited.size,
+      inherited_writers: writersByKey.size,
+      inherited_auditors: auditorsByKey.size,
+    });
+
+    return { writers: [...writersByKey.values()], auditors: [...auditorsByKey.values()] };
   }
 
   /**
@@ -1271,5 +1682,51 @@ export class CommitteeService {
       });
       return 0;
     }
+  }
+
+  /**
+   * Returns pending committee_invite resources for {@link email}, without display enrichment.
+   */
+  private async fetchPendingCommitteeInvitesByEmail(req: Request, email: string): Promise<CommitteeInvite[]> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return [];
+    }
+
+    // Don't log the invitee email — it's PII and the request is already correlated by req.id and
+    // the authenticated session. The upstream query is still scoped to normalizedEmail.
+    logger.debug(req, 'fetch_pending_committee_invites', 'Fetching pending committee invitations for user');
+
+    const invites = await fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_invite',
+        tags: `invitee_email:${normalizedEmail}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    return invites.filter((invite) => invite.status === 'pending');
+  }
+
+  /**
+   * Narrows pending committee invites using the LFID invite JWT {@link resourceUid} when present.
+   */
+  private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid?: string): CommitteeInvite[] {
+    const trimmedResourceUid = resourceUid?.trim();
+    if (!trimmedResourceUid) {
+      return pending;
+    }
+
+    const byInviteUid = pending.filter((invite) => invite.uid === trimmedResourceUid);
+    if (byInviteUid.length > 0) {
+      return byInviteUid;
+    }
+
+    const byCommitteeUid = pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
+    if (byCommitteeUid.length > 0) {
+      return byCommitteeUid;
+    }
+
+    return pending.length === 1 ? pending : [];
   }
 }

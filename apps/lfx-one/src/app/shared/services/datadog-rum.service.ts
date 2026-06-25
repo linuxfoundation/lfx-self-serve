@@ -22,7 +22,7 @@ export class DataDogRumService {
     }
 
     datadogRum.setUser({
-      id: user.sub,
+      id: user['https://sso.linuxfoundation.org/claims/username'],
       name: user.name || '',
       email: user.email || '',
     });
@@ -37,5 +37,17 @@ export class DataDogRumService {
     }
 
     datadogRum.clearUser();
+  }
+
+  /**
+   * Emit a custom error to RUM with optional context tags.
+   * No-op on the server.
+   */
+  public addError(error: Error, context?: Record<string, unknown>): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    datadogRum.addError(error, context);
   }
 }

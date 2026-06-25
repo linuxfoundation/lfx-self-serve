@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
@@ -14,7 +15,7 @@ import { catchError, combineLatest, debounceTime, EMPTY, filter, finalize, map, 
 import { EVENT_SELECTION_PAGE_SIZE } from '@lfx-one/shared/constants/events.constants';
 @Component({
   selector: 'lfx-event-selection',
-  imports: [ButtonComponent, ReactiveFormsModule, SelectComponent, InputTextComponent],
+  imports: [ButtonComponent, ReactiveFormsModule, SelectComponent, InputTextComponent, DatePipe],
   templateUrl: './event-selection.component.html',
   styleUrl: './event-selection.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,6 +70,7 @@ export class EventSelectionComponent {
     country: this.filtersValue().locationFilter !== 'any' ? (this.filtersValue().locationFilter ?? undefined) : undefined,
     isVisaRequestAccepted: this.requestType() === 'visa' ? true : undefined,
     isTravelFundRequestAccepted: this.requestType() === 'travel-fund' ? true : undefined,
+    excludePastTravelFundDeadline: this.requestType() === 'travel-fund' ? true : undefined,
   }));
 
   // Initial events loaded reactively from activeFilters

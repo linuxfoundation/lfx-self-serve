@@ -28,5 +28,10 @@ export class VoteBasicsComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
   public readonly voteLabel = VOTE_LABEL;
   public readonly eligibleParticipantsOptions = [...VOTE_ELIGIBLE_PARTICIPANTS];
-  public readonly minDate = new Date();
+  public readonly minDate = (() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    return tomorrow;
+  })();
 }

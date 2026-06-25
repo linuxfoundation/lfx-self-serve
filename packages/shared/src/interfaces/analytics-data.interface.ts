@@ -3,6 +3,9 @@
 
 import type { ProjectTableRow } from './dashboard-metric.interface';
 
+/** Performance rating for paid project campaigns. */
+export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'EMERGING';
+
 /**
  * Active Weeks Streak row from Snowflake ACTIVE_WEEKS_STREAK table
  * Represents a single week's activity data for a user
@@ -851,41 +854,19 @@ export interface FoundationValueConcentrationResponse {
   allOtherPercentage: number;
 }
 
-/**
- * Foundation maintainers daily row from Snowflake
- * Raw response from FOUNDATION_MAINTAINERS_YEARLY table (despite name, contains daily data)
- */
+/** Full schema of ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_DAILY. */
 export interface FoundationMaintainersDailyRow {
-  /**
-   * Foundation ID
-   */
   FOUNDATION_ID: string;
-
-  /**
-   * Foundation name
-   */
   FOUNDATION_NAME: string;
-
-  /**
-   * Foundation URL slug
-   */
   FOUNDATION_SLUG: string;
-
-  /**
-   * Metric date (daily granularity)
-   */
-  METRIC_DATE: string;
-
-  /**
-   * Number of active maintainers on this date
-   */
+  /** Snowflake Node SDK returns DATE columns as JS Date; some paths parse strings. */
+  METRIC_DATE: Date | string;
   ACTIVE_MAINTAINERS: number;
-
-  /**
-   * Average maintainers yearly (calculated aggregate)
-   */
   AVG_MAINTAINERS_YEARLY: number;
 }
+
+/** Projection used by getFoundationMaintainers (METRIC_DATE + ACTIVE_MAINTAINERS only) — LFXV2-1625. */
+export type FoundationMaintainersDailySnapshotRow = Pick<FoundationMaintainersDailyRow, 'METRIC_DATE' | 'ACTIVE_MAINTAINERS'>;
 
 /**
  * Weekly aggregated maintainers result from Snowflake query
@@ -907,25 +888,15 @@ export interface WeeklyMaintainersRow {
   AVG_MAINTAINERS_YEARLY: number;
 }
 
-/**
- * API response for foundation maintainers query
- * Contains average maintainers and weekly trend data
- */
+/** Latest-day distinct-maintainer snapshot + daily trend for a foundation. */
 export interface FoundationMaintainersResponse {
-  /**
-   * Average number of maintainers (from AVG_MAINTAINERS_YEARLY)
-   */
-  avgMaintainers: number;
-
-  /**
-   * Daily or aggregated maintainer count data for trend visualization
-   */
+  /** Distinct active maintainers as of asOfDate (latest row of FOUNDATION_MAINTAINERS_DAILY). */
+  currentMaintainers: number;
+  /** ISO yyyy-mm-dd, or null when no rows returned. */
+  asOfDate: string | null;
+  /** Daily maintainer count data for trend visualization. */
   trendData: number[];
-
-  /**
-   * Date labels for chart visualization
-   * Array of date strings matching trendData
-   */
+  /** Date labels matching trendData (UTC-anchored, formatted server-side). */
   trendLabels: string[];
 }
 
@@ -2249,6 +2220,7 @@ export interface FoundationProjectsDetailRow {
   CONTRIBUTORS_12M_COUNT: number;
   MAINTAINERS_YTD_COUNT: number;
   MAINTAINERS_12M_COUNT: number;
+  MAINTAINERS_CURRENT_COUNT: number;
   STARS_YTD_COUNT: number;
   STARS_12M_COUNT: number;
   LAST_UPDATED_TS: Date | string | null;
@@ -2567,12 +2539,24 @@ export interface WebActivitiesSummaryRow {
 }
 
 /**
+ * Individual domain within a classification group (from WEB_ACTIVITIES_BY_DOMAIN)
+ */
+export interface WebActivityDomainDetail {
+  host: string;
+  sessions: number;
+  pageViews: number;
+  newUsers: number;
+  returningUsers: number;
+}
+
+/**
  * Domain group breakdown in the API response
  */
 export interface WebActivitiesDomainGroup {
   domainGroup: string;
   totalSessions: number;
   totalPageViews: number;
+  domains: WebActivityDomainDetail[];
 }
 
 /**
@@ -2675,9 +2659,7 @@ export interface PaidCampaignPerformance {
   clicks: number;
 }
 
-/**
- * Project-level paid performance breakdown
- */
+/** Project-level paid performance breakdown. */
 export interface PaidProjectBreakdown {
   projectName: string;
   funnelStage: string;
@@ -2690,7 +2672,23 @@ export interface PaidProjectBreakdown {
   sessions: number;
   impressions: number;
   clicks: number;
-  performance: string;
+  performance: PaidProjectPerformance;
+  campaigns: PaidCampaignPerformance[];
+}
+
+/** Platform-level paid performance breakdown aggregated by ad channel. */
+export interface PaidPlatformBreakdown {
+  platform: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  convRate: number;
+  conversions: number;
+  performance: PaidProjectPerformance;
   campaigns: PaidCampaignPerformance[];
 }
 
@@ -2709,6 +2707,7 @@ export interface SocialReachResponse {
   monthlyRoas: number[];
   channelGroups: SocialReachChannelGroup[];
   projectBreakdown?: PaidProjectBreakdown[];
+  platformBreakdown?: PaidPlatformBreakdown[];
 }
 
 // ============================================
@@ -2744,6 +2743,29 @@ export interface SocialMediaResponse {
   trend: 'up' | 'down';
   platforms: SocialMediaPlatform[];
   monthlyData: SocialMediaMonthlyData[];
+}
+
+/** Per-platform monthly row for the social media monthly growth table. */
+export interface SocialMediaPlatformMonthlyRow {
+  month: string;
+  followers: number;
+  newFollowers: number;
+  impressions: number;
+  engagementRate: number;
+  posts: number;
+  momChangeFollowers: number | null;
+}
+
+/** A single platform's monthly breakdown for the social media monthly growth table. */
+export interface SocialMediaPlatformMonthly {
+  platform: string;
+  months: SocialMediaPlatformMonthlyRow[];
+}
+
+/** API response for the social media monthly growth endpoint. */
+export interface SocialMediaMonthlyResponse {
+  year: number;
+  platforms: SocialMediaPlatformMonthly[];
 }
 
 // ============================================
@@ -2817,6 +2839,7 @@ export interface EmailTypeBreakdown {
 export interface EmailCtrResponse {
   currentCtr: number;
   changePercentage: number;
+  momChangePercentage: number | null;
   trend: 'up' | 'down';
   monthlyData: number[];
   monthlyLabels: string[];
@@ -3343,4 +3366,83 @@ export interface EdEvolutionData {
   emailCtr: EmailCtrResponse;
   paidCampaign: SocialReachResponse;
   attribution?: MarketingAttributionResponse;
+}
+
+// ============================================
+// Keyword Performance (Marketing Impact Dashboard)
+// ============================================
+
+/**
+ * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
+ * One row per keyword/search-term per day.
+ */
+export interface KeywordPerformanceRow {
+  RECORD_TYPE: 'keyword' | 'search_term';
+  KEYWORD_TEXT: string;
+  KEYWORD_MATCH_TYPE: string;
+  SEARCH_TERM: string | null;
+  SEARCH_TERM_MATCH_TYPE: string | null;
+  CLICKS: number;
+  SPEND: number;
+  IMPRESSIONS: number;
+  CONVERSIONS: number;
+  CONVERSIONS_VALUE: number;
+  CTR: number;
+  CPC: number;
+  CONVERSION_RATE: number;
+}
+
+/**
+ * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_ATTRIBUTION (monthly grain).
+ * One row per keyword per month with attributed revenue.
+ */
+export interface KeywordAttributionRow {
+  KEYWORD_TEXT: string;
+  KEYWORD_MATCH_TYPE: string;
+  KEYWORD_CLICKS: number;
+  KEYWORD_SPEND: number;
+  KEYWORD_IMPRESSIONS: number;
+  ATTRIBUTED_LT_REVENUE: number;
+  ATTRIBUTED_LT_CONVERSIONS: number;
+  ATTRIBUTED_LT_ROAS: number;
+}
+
+/** Aggregated keyword row for the UI table. */
+export interface KeywordSummary {
+  keyword: string;
+  matchType: string;
+  clicks: number;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+  conversionRate: number;
+  attributedRevenue: number;
+  roas: number;
+  searchTerms: SearchTermSummary[];
+}
+
+/** Aggregated search term row nested under a keyword. */
+export interface SearchTermSummary {
+  searchTerm: string;
+  matchType: string;
+  clicks: number;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+}
+
+/** API response for the keyword performance endpoint. */
+export interface KeywordPerformanceResponse {
+  keywords: KeywordSummary[];
+  totals: {
+    clicks: number;
+    spend: number;
+    impressions: number;
+    conversions: number;
+    attributedRevenue: number;
+  };
 }

@@ -21,6 +21,7 @@ import { catchError, filter, Observable, of, switchMap, tap, throwError } from '
 
 import { MailingListBasicInfoComponent } from '../components/mailing-list-basic-info/mailing-list-basic-info.component';
 import { MailingListSettingsComponent } from '../components/mailing-list-settings/mailing-list-settings.component';
+import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
   selector: 'lfx-mailing-list-manage',
@@ -77,6 +78,10 @@ export class MailingListManageComponent {
   public readonly initialPublicValue: Signal<boolean | null> = this.initInitialPublicValue();
   public currentStep: Signal<number> = this.initCurrentStep();
 
+  public constructor() {
+    evictOnWriteAccessLoss();
+  }
+
   public nextStep(): void {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
@@ -124,13 +129,16 @@ export class MailingListManageComponent {
     this.submitting.set(true);
 
     // Determine if we need to create a shared service first
-    const serviceCreation$: Observable<GroupsIOService | null> =
-      this.needsSharedServiceCreation() && !this.isEditMode() ? this.createSharedService() : of(null);
+    const isCreatingService = this.needsSharedServiceCreation() && !this.isEditMode();
+    const serviceCreation$: Observable<GroupsIOService | null> = isCreatingService ? this.createSharedService() : of(null);
 
     serviceCreation$
       .pipe(
         switchMap((newService: GroupsIOService | null) => {
           const service = newService ?? this.selectedService();
+          if (!service?.uid) {
+            return throwError(() => new Error('Parent service is required'));
+          }
           const data = this.prepareMailingListData(service);
 
           return this.isEditMode() ? this.mailingListService.updateMailingList(this.mailingListId()!, data) : this.mailingListService.createMailingList(data);
@@ -146,7 +154,7 @@ export class MailingListManageComponent {
           this.router.navigate(['/mailing-lists']);
         },
         error: (error: Error) => {
-          const isServiceError = error?.message?.includes('service');
+          const isServiceError = isCreatingService && error?.message?.includes('service');
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -412,10 +420,10 @@ export class MailingListManageComponent {
     }
   }
 
-  private prepareMailingListData(service: GroupsIOService | null): CreateMailingListRequest {
+  private prepareMailingListData(service: GroupsIOService): CreateMailingListRequest {
     const formValue = this.form().value;
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
-    const groupName = service?.type === 'primary' ? formValue.group_name : `${prefix}-${formValue.group_name}`;
+    const groupName = service.type === 'primary' ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
     return {
       group_name: groupName,
@@ -423,7 +431,7 @@ export class MailingListManageComponent {
       type: formValue.type,
       audience_access: formValue.audience_access,
       description: formValue.description || '',
-      service_uid: service?.uid ?? '',
+      service_id: service.uid,
       committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
       title: formValue.group_name,
     };

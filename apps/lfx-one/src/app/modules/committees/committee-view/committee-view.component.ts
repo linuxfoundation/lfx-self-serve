@@ -1,20 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
+import { ToastModule } from 'primeng/toast';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberVisibility,
   CommitteePermissionLevel,
@@ -22,22 +24,34 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
-import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
+import {
+  canManageCommitteeMembers,
+  findPendingInvitationForCommittee,
+  invitationRequiresOrganization,
+  getChatPlatformIcon,
+  getChatPlatformLabel,
+  getRepoPlatformIcon,
+  getRepoPlatformLabel,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
+import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
+import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
@@ -50,6 +64,12 @@ import { CommitteeSettingsTabComponent } from '../components/committee-settings-
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
 
+/** Window before a declined invite is actually sent upstream, during which the user can undo. */
+const INVITE_DECLINE_UNDO_MS = 5000;
+
+/** Dedicated toast key so the inline undo template renders only for this component's decline toast. */
+const INVITE_TOAST_KEY = 'committee-view-invite';
+
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -61,8 +81,10 @@ import { CommitteeVotesComponent } from '../components/committee-votes/committee
     NgClass,
     PopoverModule,
     SkeletonModule,
+    ToastModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
+    InvitationSubtextPipe,
     JoinModeLabelPipe,
     MailingListEmailPipe,
     SafeUrlPipe,
@@ -90,6 +112,10 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
 
@@ -105,15 +131,18 @@ export class CommitteeViewComponent {
   // `loading`, which only gates the full-page spinner on the initial fetch.
   public committeeRefreshing = signal<boolean>(false);
   public error = signal<boolean>(false);
-  public errorType = signal<'not-found' | 'server-error' | null>(null);
+  public errorType = signal<'not-found' | 'access-denied' | 'server-error' | null>(null);
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
+  public invitesLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
+  // Pending invites share the members refresh trigger so adding/revoking refreshes both.
+  public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
 
   // Membership identity comes from server-enriched fields on the committee record,
   // resolved via the username-tagged membership query so visibility doesn't depend
@@ -125,6 +154,27 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+
+  // Pending invitation for THIS committee, surfaced from the shared cross-surface cache so a user
+  // landing on a group they were invited to can accept/decline right here. Excludes invites already
+  // resolved this session, and is suppressed once the user is a member (my_role populated).
+  public readonly inviteToastKey = INVITE_TOAST_KEY;
+  public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
+    const committee = this.committee();
+    if (!committee?.uid || !this.isVisitor()) {
+      return null;
+    }
+    return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
+  });
+
+  // When the committee 403s and committee() is null, pendingInvitation() returns null because it
+  // requires committee.uid. This signal resolves the same invite using the route :id directly so
+  // the error state can surface the accept flow without a loaded committee record.
+  public pendingInvitationFromRoute: Signal<PendingInvitation | null> = this.initPendingInvitationFromRoute();
+
+  // Deferred-decline timers keyed by invite UID (committee UID stored alongside since the invite is
+  // out of the cache by the time the timer/destroy flush fires). Mirrors the dashboard/My Groups UX.
+  private readonly pendingDeclines = new Map<string, { committeeUid: string; timerId: ReturnType<typeof setTimeout> }>();
 
   public categorySeverity: Signal<TagSeverity> = computed(() => {
     const category = this.committee()?.category;
@@ -173,7 +223,9 @@ export class CommitteeViewComponent {
   public parentGroup: Signal<Committee | null> = this.initParentGroup();
 
   // -- Tab visibility signals --
-  public isMembersTabVisible: Signal<boolean> = computed(() => this.committee()?.member_visibility !== CommitteeMemberVisibility.HIDDEN || this.canEdit());
+  public isMembersTabVisible: Signal<boolean> = computed(
+    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit()
+  );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
   // -- Visitor gating --
@@ -214,6 +266,22 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+
+    // Populate the shared invitation cache once in the browser so a direct landing on an invited
+    // group (e.g. via the email link) can surface the Accept/Decline banner. Browser-only: the
+    // banner is an interactive surface and the list is per-user.
+    if (isPlatformBrowser(this.platformId)) {
+      this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
+    }
+
+    syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+
+    // Flush any deferred decline on destroy so navigating away still commits it.
+    this.destroyRef.onDestroy(() => {
+      for (const inviteUid of [...this.pendingDeclines.keys()]) {
+        this.flushDecline(inviteUid);
+      }
+    });
   }
 
   // -- Public methods --
@@ -309,8 +377,7 @@ export class CommitteeViewComponent {
         .subscribe({
           next: () => {
             this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-            this.refreshCommittee();
-            this.membersRefresh.update((v) => v + 1);
+            this.refreshCommitteeAfterMembershipChange();
           },
           error: (err: HttpErrorResponse) => {
             const detail = this.getJoinErrorMessage(err, committee.name);
@@ -346,6 +413,81 @@ export class CommitteeViewComponent {
           this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail, life: 6000 });
         },
       });
+  }
+
+  public onAcceptInvite(invite: PendingInvitation): void {
+    const committeeName = this.committee()?.name ?? invite.committee_name ?? 'this group';
+    const requiresOrganization = invitationRequiresOrganization(invite);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(invite.uid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invite.committee_uid,
+        inviteUid: invite.uid,
+        committeeName,
+        organization: invite.organization,
+        enable_voting: invite.enable_voting,
+        business_email_required: invite.business_email_required,
+        inviteRequiresOrganization: requiresOrganization,
+      })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(invite.uid);
+          }
+          this.invitationService.forgetResolved(invite.uid);
+          this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You've joined "${committeeName}"` });
+          this.refreshCommitteeAfterMembershipChange();
+        },
+        error: () => {
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(invite.uid);
+          }
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Accept',
+            detail: `Couldn't accept the invitation to "${committeeName}". Please try again.`,
+            life: 6000,
+          });
+        },
+      });
+  }
+
+  public onDeclineInvite(invite: PendingInvitation): void {
+    // Optimistic + deferred-undo: hide the banner now, only send the decline after the undo window.
+    this.invitationService.markResolved(invite.uid);
+
+    const timerId = setTimeout(() => {
+      this.pendingDeclines.delete(invite.uid);
+      this.sendDecline(invite.committee_uid, invite.uid);
+    }, INVITE_DECLINE_UNDO_MS);
+    this.pendingDeclines.set(invite.uid, { committeeUid: invite.committee_uid, timerId });
+
+    this.messageService.add({
+      key: INVITE_TOAST_KEY,
+      severity: 'info',
+      summary: 'Invitation declined',
+      data: { uid: invite.uid },
+      life: INVITE_DECLINE_UNDO_MS,
+      closable: true,
+    });
+  }
+
+  public onUndoDecline(inviteUid: string): void {
+    const pending = this.pendingDeclines.get(inviteUid);
+    // Timer already fired -> the decline is committed upstream; restoring would lie to the user.
+    if (!pending) {
+      this.messageService.clear(INVITE_TOAST_KEY);
+      return;
+    }
+    clearTimeout(pending.timerId);
+    this.pendingDeclines.delete(inviteUid);
+    this.invitationService.unmarkResolved(inviteUid);
+    this.messageService.clear(INVITE_TOAST_KEY);
   }
 
   public navigateToParentGroup(): void {
@@ -385,6 +527,76 @@ export class CommitteeViewComponent {
   }
 
   // -- Private methods --
+
+  /**
+   * Refreshes committee + members after join/accept. The membership query index can lag
+   * the upstream write, so poll until `my_role` surfaces before giving up.
+   */
+  private refreshCommitteeAfterMembershipChange(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+    this.refreshMembers();
+
+    if (!committeeId) {
+      return;
+    }
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
+        filter((committee) => !!committee?.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        error: () => {
+          if (!pollSucceeded && !this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+        complete: () => {
+          if (!pollSucceeded && !this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
+  private flushDecline(inviteUid: string): void {
+    const pending = this.pendingDeclines.get(inviteUid);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timerId);
+    this.pendingDeclines.delete(inviteUid);
+    this.sendDecline(pending.committeeUid, inviteUid);
+  }
+
+  private sendDecline(committeeUid: string, inviteUid: string): void {
+    this.invitationService
+      .declineInvitation(committeeUid, inviteUid)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.invitationService.forgetResolved(inviteUid),
+        error: () => {
+          this.invitationService.unmarkResolved(inviteUid);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Decline',
+            detail: `Couldn't decline the invitation. Please try again.`,
+            life: 6000,
+          });
+        },
+      });
+  }
+
   private openApplicationDialog(committeeUid: string, committeeName: string, mode: 'application' | 'invite_only'): void {
     const isApplication = mode === 'application';
 
@@ -433,6 +645,15 @@ export class CommitteeViewComponent {
   }
 
   // -- Private initializer functions --
+  private initPendingInvitationFromRoute(): Signal<PendingInvitation | null> {
+    return computed(() => {
+      if (this.errorType() !== 'access-denied') {
+        return null;
+      }
+      return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), this.committeeId());
+    });
+  }
+
   private initCommitteeId(): Signal<string | null> {
     return toSignal(this.route.paramMap.pipe(map((params) => params.get('id'))), { requireSync: true });
   }
@@ -451,11 +672,14 @@ export class CommitteeViewComponent {
 
   private initAutoSelectInitialTab(): void {
     const navigationKey = computed(() => ({ id: this.committeeId(), tab: this.initialTab() }));
+    // toObservable must run in an injection context; build the streams here, not inside switchMap.
+    const visibleTabs$ = toObservable(this.visibleTabs);
+    const membersLoading$ = toObservable(this.membersLoading);
     toObservable(navigationKey)
       .pipe(
         switchMap(({ tab }) => {
           if (!tab) return EMPTY;
-          return combineLatest([toObservable(this.visibleTabs), toObservable(this.membersLoading)]).pipe(
+          return combineLatest([visibleTabs$, membersLoading$]).pipe(
             filter(([, loading]) => !loading),
             take(1),
             filter(([tabs]) => tabs.some((t) => t.key === tab)),
@@ -497,7 +721,9 @@ export class CommitteeViewComponent {
           return this.committeeService.getCommittee(committeeId).pipe(
             catchError((err) => {
               const status = err?.status;
-              if (status === 404 || status === 403) {
+              if (status === 403) {
+                this.errorType.set('access-denied');
+              } else if (status === 404) {
                 this.errorType.set('not-found');
               } else {
                 this.errorType.set('server-error');
@@ -539,6 +765,33 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initializeInvites(): Signal<CommitteeInvite[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only managers can see pending invites — gate the fetch (not just the display) so
+          // non-managers never request invitee emails and we don't rely on upstream authz to reject.
+          if (!committee?.uid || !canManageCommitteeMembers(committee)) {
+            this.invitesLoading.set(false);
+            return of([] as CommitteeInvite[]);
+          }
+
+          this.invitesLoading.set(true);
+
+          return this.committeeService.getCommitteeInvites(committee.uid).pipe(
+            // Only pending invites belong on the roster — accepted ones are already members,
+            // and declined/revoked ones shouldn't block re-inviting. Status casing varies
+            // upstream, so compare case-insensitively.
+            map((invites) => invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')),
+            catchError(() => of([] as CommitteeInvite[])),
+            finalize(() => this.invitesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as CommitteeInvite[] }
     );
   }
 

@@ -17,10 +17,10 @@
     "watch": "turbo run watch",
     "start:server": "turbo run start:server",
     "start:prod": "pm2 start ecosystem.config.js",
-    "stop:prod": "pm2 stop lfx-one",
-    "restart:prod": "pm2 restart lfx-one",
-    "reload:prod": "pm2 reload lfx-one",
-    "logs:prod": "pm2 logs lfx-one",
+    "stop:prod": "pm2 stop lfx-self-serve",
+    "restart:prod": "pm2 restart lfx-self-serve",
+    "reload:prod": "pm2 reload lfx-self-serve",
+    "logs:prod": "pm2 logs lfx-self-serve",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,html,css,scss,md,mdx,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,html,css,scss,md,mdx,json}\"",
     "lint:check": "turbo run lint:check",
@@ -63,6 +63,7 @@
     ]
   },
   "dependencies": {
+    "@stripe/stripe-js": "^9.7.0",
     "chart.js": "^4.5.1"
   }
 }

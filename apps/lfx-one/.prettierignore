@@ -4,6 +4,10 @@
 # Ignore everything
 *.*
 
+# Email + PDF templates use mustache placeholders that prettier can't parse as Angular HTML
+src/server/pdf-templates/
+src/server/email-templates/
+
 # Don't ignore these file types
 !*.html
 !*.tsx

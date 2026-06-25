@@ -1,0 +1,215 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (person; as currentPerson) {
+  <div class="flex max-h-[80vh] flex-col gap-5 p-5" data-testid="reassign-key-contact-modal">
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-lg font-semibold text-gray-900" id="reassign-key-contact-title" data-testid="reassign-key-contact-title">Reassign Key Contact Roles</h3>
+        <p class="text-xs text-gray-500" data-testid="reassign-key-contact-subtitle">{{ subtitle() }}</p>
+      </div>
+      <button
+        type="button"
+        class="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+        [disabled]="isSaving()"
+        data-testid="reassign-key-contact-close"
+        aria-label="Close"
+        (click)="onCancel()">
+        <i class="fa-light fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Current Contact card -->
+    <div class="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="reassign-key-contact-current">
+      <div class="text-xs font-semibold uppercase tracking-wide text-amber-800">Current Contact &middot; Will Be Removed From Selected Roles</div>
+      <div class="flex items-center gap-3">
+        <div
+          class="flex h-9 w-9 items-center justify-center rounded-full bg-purple-500 text-sm font-semibold text-white"
+          data-testid="reassign-key-contact-current-avatar">
+          {{ currentPerson.initials }}
+        </div>
+        <div class="flex flex-col">
+          <span class="text-sm font-semibold text-gray-900" data-testid="reassign-key-contact-current-name">{{ currentPerson.fullName }}</span>
+          <span class="text-xs text-gray-600" data-testid="reassign-key-contact-current-email">{{ currentPerson.email }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Select roles to reassign -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between gap-3">
+        <h4 class="text-sm font-semibold text-gray-900">Select roles to reassign</h4>
+        <label class="flex cursor-pointer items-center gap-2 text-xs text-blue-600">
+          <p-checkbox
+            [binary]="true"
+            [ngModel]="allChecked()"
+            (ngModelChange)="toggleSelectAll()"
+            [disabled]="isSaving()"
+            inputId="reassign-key-contact-select-all"
+            data-testid="reassign-key-contact-select-all" />
+          <span>Select all</span>
+        </label>
+      </div>
+
+      <div class="flex max-h-[260px] flex-col gap-2 overflow-y-auto pr-1" data-testid="reassign-key-contact-roles-list">
+        @let checkedMap = checkedKeyMap();
+        @for (role of roles; track role.key) {
+          <div class="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2" [attr.data-testid]="'reassign-key-contact-role-row-' + role.key">
+            <p-checkbox
+              [binary]="true"
+              [ngModel]="checkedMap[role.key]"
+              (ngModelChange)="toggleRole(role.key)"
+              [disabled]="isSaving()"
+              [attr.data-testid]="'reassign-key-contact-role-checkbox-' + role.key" />
+            <span class="inline-block rounded-full border px-2 py-0.5 text-xs font-medium" [class]="role.pillClass">{{ role.role }}</span>
+            <span class="flex-1 text-sm text-gray-700">&middot; {{ role.foundationName }}</span>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Info banner -->
+    <div
+      class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+      role="status"
+      data-testid="reassign-key-contact-info-banner">
+      <i class="fa-light fa-circle-info mt-0.5 text-blue-600"></i>
+      <span>The person you assign below will replace the current contact in every role you've checked above.</span>
+    </div>
+
+    <!-- Assign to -->
+    <div class="flex flex-col gap-3" data-testid="reassign-key-contact-assign-form" (keydown)="onFormKeydown($event)">
+      <h4 class="text-sm font-semibold text-gray-900">Assign to</h4>
+
+      <div class="relative flex flex-col gap-1">
+        <label for="reassign-key-contact-email" class="text-xs font-medium text-gray-700">Email <span class="text-red-500">*</span></label>
+        <span class="relative">
+          <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" aria-hidden="true"></i>
+          <input
+            id="reassign-key-contact-email"
+            pInputText
+            type="email"
+            placeholder="Enter the employee's email address..."
+            class="w-full pl-8"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-controls="reassign-key-contact-employee-suggestions-id"
+            [attr.aria-expanded]="suggestionsOpen() && filteredEmployees().length > 0"
+            [attr.aria-describedby]="
+              (emailFormatError() ? 'reassign-key-contact-email-error-id' : null) || (duplicateError() ? 'reassign-key-contact-duplicate-error-id' : null)
+            "
+            [attr.aria-invalid]="!!emailFormatError() || !!duplicateError()"
+            data-testid="reassign-key-contact-email-input"
+            [disabled]="isSaving()"
+            [ngModel]="emailField()"
+            (ngModelChange)="onEmailChange($event)"
+            (focus)="onEmailFocus()"
+            (blur)="onEmailBlur()"
+            autocomplete="off" />
+        </span>
+        @if (suggestionsOpen() && filteredEmployees().length > 0) {
+          <ul
+            id="reassign-key-contact-employee-suggestions-id"
+            role="listbox"
+            aria-label="Employee suggestions"
+            class="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+            data-testid="reassign-key-contact-employee-suggestions">
+            @for (emp of filteredEmployees(); track emp.email) {
+              <li role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  [attr.aria-label]="emp.fullName + ' (' + emp.email + ')'"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+                  [attr.data-testid]="'reassign-key-contact-employee-option-' + emp.email"
+                  (mousedown)="$event.preventDefault()"
+                  (click)="onSelectEmployee(emp)">
+                  <lfx-employee-avatar [initials]="emp.initials" [avatarUrl]="emp.avatarUrl ?? null" />
+                  <div class="flex min-w-0 flex-col">
+                    <span class="truncate text-sm font-medium text-gray-900">{{ emp.fullName }}</span>
+                    <span class="truncate text-xs text-gray-500">{{ emp.email }}</span>
+                  </div>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+        @if (employeeSearchUnavailable()) {
+          <p class="text-xs text-gray-500" data-testid="reassign-key-contact-search-unavailable">
+            Employee search is unavailable. You can still enter the contact's details manually.
+          </p>
+        }
+        @if (emailFormatError()) {
+          <p id="reassign-key-contact-email-error-id" class="text-xs text-red-600" data-testid="reassign-key-contact-email-error">
+            {{ emailFormatError() }}
+          </p>
+        }
+        @if (duplicateError()) {
+          <p id="reassign-key-contact-duplicate-error-id" class="text-xs text-red-600" data-testid="reassign-key-contact-duplicate-error">
+            {{ duplicateError() }}
+          </p>
+        }
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label for="reassign-key-contact-first-name" class="text-xs font-medium text-gray-700">First Name <span class="text-red-500">*</span></label>
+          <input
+            id="reassign-key-contact-first-name"
+            pInputText
+            type="text"
+            placeholder="First name"
+            [ngModel]="firstNameField()"
+            (ngModelChange)="firstNameField.set($event)"
+            [disabled]="isSaving()"
+            data-testid="reassign-key-contact-first-name-input"
+            autocomplete="off" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label for="reassign-key-contact-last-name" class="text-xs font-medium text-gray-700">Last Name <span class="text-red-500">*</span></label>
+          <input
+            id="reassign-key-contact-last-name"
+            pInputText
+            type="text"
+            placeholder="Last name"
+            [ngModel]="lastNameField()"
+            (ngModelChange)="lastNameField.set($event)"
+            [disabled]="isSaving()"
+            data-testid="reassign-key-contact-last-name-input"
+            autocomplete="off" />
+        </div>
+      </div>
+    </div>
+
+    @if (saveError()) {
+      <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert" data-testid="reassign-key-contact-save-error">
+        {{ saveError() }}
+      </div>
+    }
+
+    <!-- Footer -->
+    <div class="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+        [disabled]="isSaving()"
+        data-testid="reassign-key-contact-cancel"
+        (click)="onCancel()">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+        [disabled]="!saveEnabled()"
+        data-testid="reassign-key-contact-primary-button"
+        (click)="onSave()">
+        @if (isSaving()) {
+          <i class="fa-light fa-spinner fa-spin" data-testid="reassign-key-contact-primary-spinner"></i>
+        }
+        {{ primaryButtonLabel() }}
+      </button>
+    </div>
+  </div>
+}

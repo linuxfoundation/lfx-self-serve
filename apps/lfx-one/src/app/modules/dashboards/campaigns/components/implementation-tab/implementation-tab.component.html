@@ -1,0 +1,508 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Form Step -->
+@if (step() === 'form') {
+  <div class="flex flex-col gap-6" data-testid="implementation-form-step">
+    <form [formGroup]="campaignForm" class="flex flex-col gap-6">
+      <!-- Campaign Details -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-details-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Campaign Details</h3>
+        @if (campaignName()) {
+          <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+            <span class="text-xs font-medium text-gray-500">Campaign Name: </span>
+            <span class="font-mono text-xs text-gray-700">{{ campaignName() }}</span>
+          </div>
+        }
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Event Name</label>
+            <input
+              type="text"
+              formControlName="eventName"
+              placeholder="e.g., KubeCon NA 2026"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-event-name" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Registration URL</label>
+            <input
+              type="url"
+              formControlName="registrationUrl"
+              placeholder="https://events.linuxfoundation.org/..."
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-reg-url" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Country Code</label>
+            <input
+              type="text"
+              formControlName="countryCode"
+              maxlength="2"
+              class="w-20 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-country" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Budget & Schedule -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-budget-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget &amp; Schedule</h3>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Total Budget (USD)</label>
+            <input
+              type="number"
+              formControlName="budgetUsd"
+              min="1"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-budget" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">Start Date</label>
+            <input
+              type="date"
+              formControlName="startDate"
+              [min]="todayDate"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-start-date" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-gray-700">End Date</label>
+            <input
+              type="date"
+              formControlName="endDate"
+              [min]="todayDate"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-end-date" />
+          </div>
+        </div>
+
+        @if (showGoogleSection()) {
+          <!-- Budget Split -->
+          <div class="mt-4 flex flex-col gap-2">
+            <label class="text-xs font-medium text-gray-700">Budget Split: Search {{ 100 - displayBudgetPct() }}% / Display {{ displayBudgetPct() }}%</label>
+            <input type="range" formControlName="searchBudgetPct" min="0" max="100" class="w-full accent-blue-600" data-testid="implementation-budget-split" />
+          </div>
+
+          <!-- Campaign Types -->
+          <div class="mt-4 flex items-center gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              Search Campaign
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              Demand Gen Campaign
+            </label>
+          </div>
+        }
+      </div>
+
+      <!-- Google Ads: Headlines -->
+      @if (showGoogleSection()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-headlines-section">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">Headlines</h3>
+            <lfx-button
+              label="Add"
+              icon="fa-light fa-plus"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="addHeadline()"
+              ariaLabel="Add headline"
+              data-testid="implementation-add-headline" />
+          </div>
+          <div class="flex flex-col gap-2" formArrayName="headlines">
+            @for (control of headlinesArray.controls; track $index; let i = $index) {
+              <div class="flex items-center gap-2">
+                <input
+                  type="text"
+                  [formControlName]="i"
+                  [maxlength]="charLimits.searchHeadline"
+                  placeholder="Headline (max {{ charLimits.searchHeadline }} chars)"
+                  class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  [attr.data-testid]="'implementation-headline-' + i" />
+                <span class="text-xs text-gray-400">{{ control.value?.length || 0 }}/{{ charLimits.searchHeadline }}</span>
+                @if (headlinesArray.length > 1) {
+                  <button type="button" (click)="removeHeadline(i)" class="text-gray-400 hover:text-red-500" [attr.aria-label]="'Remove headline ' + (i + 1)">
+                    <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Google Ads: Descriptions -->
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-descriptions-section">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">Descriptions</h3>
+            <lfx-button
+              label="Add"
+              icon="fa-light fa-plus"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="addDescription()"
+              ariaLabel="Add description"
+              data-testid="implementation-add-description" />
+          </div>
+          <div class="flex flex-col gap-2" formArrayName="descriptions">
+            @for (control of descriptionsArray.controls; track $index; let i = $index) {
+              <div class="flex items-center gap-2">
+                <textarea
+                  [formControlName]="i"
+                  [maxlength]="charLimits.searchDescription"
+                  placeholder="Description (max {{ charLimits.searchDescription }} chars)"
+                  rows="2"
+                  class="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  [attr.data-testid]="'implementation-description-' + i"></textarea>
+                <span class="text-xs text-gray-400">{{ control.value?.length || 0 }}/{{ charLimits.searchDescription }}</span>
+                @if (descriptionsArray.length > 1) {
+                  <button
+                    type="button"
+                    (click)="removeDescription(i)"
+                    class="text-gray-400 hover:text-red-500"
+                    [attr.aria-label]="'Remove description ' + (i + 1)">
+                    <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- LinkedIn Ads Section -->
+      @if (showLinkedInSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-linkedin-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-linkedin text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">LinkedIn Sponsored Content</h3>
+          </div>
+
+          <!-- Ad Account Selector -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
+            <select
+              [value]="linkedInAccountId()"
+              (change)="onLinkedInAccountChange($event)"
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="implementation-linkedin-account">
+              @for (account of linkedInAccounts(); track account.accountId) {
+                <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+              }
+            </select>
+            @if (selectedLinkedInAccount()) {
+              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
+            }
+          </div>
+
+          <!-- Geo Targets -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
+            <div class="flex flex-wrap gap-2">
+              @for (geo of linkedInGeoTargets(); track geo.urn; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo.label }}
+                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-400 hover:text-blue-600" [attr.aria-label]="'Remove ' + geo.label">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              @if (availableGeoTargets().length > 0) {
+                <select
+                  class="rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs text-blue-600"
+                  (change)="onGeoTargetChange($event)"
+                  aria-label="Add geo target">
+                  <option value="">+ Add geo</option>
+                  @for (geo of availableGeoTargets(); track geo.urn) {
+                    <option [value]="geo.urn">{{ geo.label }}</option>
+                  }
+                </select>
+              }
+              @if (linkedInGeoTargets().length === 0) {
+                <span class="text-xs text-gray-400">No geo targets selected — add from the dropdown above</span>
+              }
+            </div>
+          </div>
+
+          <!-- Targeting Profile -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700">Targeting Profile</label>
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                (click)="setLinkedInTargetingProfile('cloud-native')"
+                [attr.aria-pressed]="linkedInTargetingProfile() === 'cloud-native'"
+                [class]="
+                  linkedInTargetingProfile() === 'cloud-native'
+                    ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
+                    : 'rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-300'
+                "
+                data-testid="implementation-linkedin-profile-cloud-native">
+                Cloud Native / CNCF
+              </button>
+              <button
+                type="button"
+                (click)="setLinkedInTargetingProfile('mcp')"
+                [attr.aria-pressed]="linkedInTargetingProfile() === 'mcp'"
+                [class]="
+                  linkedInTargetingProfile() === 'mcp'
+                    ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700'
+                    : 'rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-300'
+                "
+                data-testid="implementation-linkedin-profile-mcp">
+                AI / MCP
+              </button>
+            </div>
+          </div>
+
+          <!-- LinkedIn Budget -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700">LinkedIn Budget (USD)</label>
+              <input
+                type="number"
+                [value]="linkedInBudgetUsd()"
+                (input)="onLinkedInBudgetInput($event)"
+                min="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-linkedin-budget" />
+            </div>
+            <div class="flex items-end gap-2 pb-1">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  [checked]="linkedInLifetimeBudget()"
+                  (change)="onLinkedInLifetimeBudgetChange($event)"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Lifetime budget
+              </label>
+            </div>
+          </div>
+
+          <!-- Variant Preview -->
+          @if (linkedInVariants().length > 0) {
+            <div>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ linkedInVariants().length }})</label>
+              <div class="flex flex-col gap-2">
+                @for (variant of linkedInVariants(); track $index; let i = $index) {
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-linkedin-variant-' + i">
+                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.introText | slice: 0 : 120 }}{{ variant.introText.length > 120 ? '...' : '' }}</p>
+                    <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline }}</p>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Meta Ads Section -->
+      @if (showMetaSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-meta-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-meta text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Meta Ads</h3>
+          </div>
+
+          <!-- Meta Budget -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700">Meta Budget (USD)</label>
+              <input
+                type="number"
+                [value]="metaBudgetUsd()"
+                (input)="onMetaBudgetInput($event)"
+                min="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-meta-budget" />
+            </div>
+            <div class="flex items-end gap-2 pb-1">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  [checked]="metaLifetimeBudget()"
+                  (change)="onMetaLifetimeBudgetChange($event)"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Lifetime budget
+              </label>
+            </div>
+          </div>
+
+          <!-- Geo Targets -->
+          @if (metaGeoTargets().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
+              <div class="flex flex-wrap gap-2">
+                @for (geo of metaGeoTargets(); track geo) {
+                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    {{ geo }}
+                  </span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Variant Preview -->
+          @if (metaVariants().length > 0) {
+            <div>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ metaVariants().length }})</label>
+              <div class="flex flex-col gap-2">
+                @for (variant of metaVariants(); track $index; let i = $index) {
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
+                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
+                    <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
+                    @if (variant.description) {
+                      <p class="text-xs text-gray-500">{{ variant.description | slice: 0 : metaCharLimits.description }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Submit -->
+      <div class="flex items-center gap-3">
+        <lfx-button
+          label="Create Campaign"
+          icon="fa-light fa-rocket"
+          severity="primary"
+          [disabled]="!canSubmit()"
+          (onClick)="submit()"
+          ariaLabel="Create campaign"
+          data-testid="implementation-submit-btn" />
+        @if (errors().length > 0) {
+          <p class="text-sm text-red-600">{{ errors()[0] }}</p>
+        }
+      </div>
+    </form>
+  </div>
+}
+
+<!-- Creating Step -->
+@if (step() === 'creating') {
+  <div class="flex flex-col gap-4" data-testid="implementation-creating-step">
+    <div class="rounded-lg border border-gray-200 bg-white p-5">
+      <div class="mb-3 flex items-center gap-2">
+        <div class="h-2 w-2 animate-pulse rounded-full bg-blue-500"></div>
+        <h3 class="text-sm font-semibold text-gray-900">Creating campaign...</h3>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        @for (msg of creationProgress(); track $index) {
+          <div class="flex items-center gap-2 text-sm text-gray-600">
+            <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
+            {{ msg }}
+          </div>
+        }
+        <div class="flex items-center gap-2 text-sm text-gray-400">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Waiting for campaign APIs...
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Results Step -->
+@if (step() === 'results') {
+  <div class="flex flex-col gap-4" data-testid="implementation-results-step">
+    @if (results().length > 0) {
+      <div class="rounded-lg border border-green-200 bg-green-50 p-5">
+        <div class="mb-3 flex items-center gap-2">
+          <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+          <h3 class="text-sm font-semibold text-gray-900">Campaigns Created</h3>
+        </div>
+        <div class="flex flex-col gap-3">
+          @for (campaign of results(); track campaign.campaignId) {
+            <div class="rounded-md border border-green-200 bg-white p-4" [attr.data-testid]="'implementation-result-' + campaign.campaignId">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-900">{{ campaign.campaignName }}</p>
+                  <p class="text-xs text-gray-500">
+                    @switch (campaign.platform) {
+                      @case ('linkedin-ads') {
+                        linkedin · {{ campaign.adCount }} creatives
+                      }
+                      @case ('reddit-ads') {
+                        reddit · {{ campaign.adGroupCount }} ad groups · {{ campaign.adCount }} ads
+                      }
+                      @case ('meta-ads') {
+                        meta · {{ campaign.adCount }} ads
+                      }
+                      @default {
+                        {{ campaign.type }} · {{ campaign.adGroupCount }} ad groups · {{ campaign.keywordCount }} keywords · {{ campaign.adCount }} ads
+                      }
+                    }
+                  </p>
+                </div>
+                <a
+                  [href]="campaign.campaignUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  @switch (campaign.platform) {
+                    @case ('linkedin-ads') {
+                      Open in LinkedIn
+                    }
+                    @case ('reddit-ads') {
+                      Open in Reddit Ads
+                    }
+                    @case ('meta-ads') {
+                      Open in Meta Ads Manager
+                    }
+                    @default {
+                      Open in Google Ads
+                    }
+                  }
+                  <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                </a>
+              </div>
+              @if (campaign.platform === 'reddit-ads' && campaign.adCount === 0) {
+                <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p class="text-xs font-medium text-amber-800">
+                    <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+                    Ads require a Reddit post — submit a promoted post in Reddit Ads Manager, then attach it to this campaign.
+                  </p>
+                </div>
+              }
+              @if (campaign.steps && campaign.steps.length > 0) {
+                <details class="mt-3">
+                  <summary class="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-800">Creation steps ({{ campaign.steps.length }})</summary>
+                  <ul class="mt-2 flex flex-col gap-1 pl-4">
+                    @for (s of campaign.steps; track $index) {
+                      <li class="text-xs text-gray-600">{{ s }}</li>
+                    }
+                  </ul>
+                </details>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (errors().length > 0) {
+      <div class="rounded-lg border border-red-200 bg-red-50 p-5">
+        <h3 class="mb-2 text-sm font-semibold text-red-800">Errors</h3>
+        @for (err of errors(); track $index) {
+          <p class="text-sm text-red-700">{{ err }}</p>
+        }
+      </div>
+    }
+
+    <lfx-button
+      label="Create Another"
+      icon="fa-light fa-plus"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="reset()"
+      ariaLabel="Create another campaign"
+      data-testid="implementation-new-btn" />
+  </div>
+}

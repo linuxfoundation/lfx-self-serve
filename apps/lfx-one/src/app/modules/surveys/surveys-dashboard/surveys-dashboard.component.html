@@ -2,64 +2,71 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-  <!-- Page Header -->
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="font-display font-light text-2xl" data-testid="surveys-dashboard-title">{{ isMeLens() ? 'My ' + surveyLabelPlural : surveyLabelPlural }}</h1>
-      <p class="mt-1 text-sm text-gray-500" data-testid="surveys-dashboard-description">
-        {{
-          isMeLens()
-            ? surveyLabelPlural + ' you have been invited to across all foundations and projects.'
-            : 'Create and manage surveys to gather feedback from your community.'
-        }}
-      </p>
+  @if (!personaLoaded()) {
+    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+      <p-skeleton width="12rem" height="2rem" />
+      <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
-    @if (!isMeLens() && canWrite()) {
-      <lfx-button
-        [label]="'Create ' + surveyLabel"
-        size="small"
-        icon="fa-light fa-clipboard-list"
-        severity="primary"
-        [routerLink]="['/surveys', 'create']"
-        data-testid="surveys-create-button">
-      </lfx-button>
-    }
-  </div>
-
-  <!-- Loading State (non-Me lens only) -->
-  @if (!isMeLens() && loading()) {
-    <div class="flex justify-center items-center min-h-96">
-      <div class="text-center">
-        <i class="fa-light fa-spinner-third fa-spin text-3xl text-violet-600 mb-4"></i>
-        <p class="text-gray-600">Loading {{ surveyLabel | lowercase }} details...</p>
-      </div>
-    </div>
-  } @else if (!isMeLens() && surveys().length === 0) {
-    <lfx-empty-state
-      icon="fa-light fa-clipboard-list"
-      [title]="'No ' + (surveyLabelPlural | lowercase) + ' yet'"
-      [subtitle]="'Create a ' + (surveyLabel | lowercase) + ' to gather feedback from your project community.'"
-      [ctaLabel]="canWrite() ? 'Create ' + surveyLabel : undefined"
-      [ctaRoute]="canWrite() ? ['/surveys', 'create'] : undefined"
-      data-testid="surveys-empty-state-card">
-    </lfx-empty-state>
   } @else {
-    <lfx-surveys-table
-      [surveys]="isMeLens() ? filteredMySurveys() : surveys()"
-      [hasPMOAccess]="!isMeLens() && canWrite()"
-      [loading]="isMeLens() ? mySurveysLoading() : loading()"
-      [isMeLens]="isMeLens()"
-      [foundationOptions]="foundationOptions()"
-      [projectOptions]="projectOptions()"
-      [showFoundationFilter]="showFoundationFilter()"
-      [showProjectFilter]="showProjectFilter()"
-      (foundationFilterChange)="onFoundationFilterChange($event)"
-      (projectFilterChange)="onProjectFilterChange($event)"
-      (viewResults)="onViewResults($event)"
-      (rowClick)="onRowClick($event)"
-      (refresh)="refreshSurveys()"
-      data-testid="surveys-table-container">
-    </lfx-surveys-table>
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="surveys-dashboard-title">{{ isMeLens() ? 'My ' + surveyLabelPlural : surveyLabelPlural }}</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="surveys-dashboard-description">
+          {{
+            isMeLens()
+              ? surveyLabelPlural + ' you have been invited to across all foundations and projects.'
+              : 'Create and manage surveys to gather feedback from your community.'
+          }}
+        </p>
+      </div>
+      @if (!isMeLens() && canWrite()) {
+        <lfx-button
+          [label]="'Create ' + surveyLabel"
+          size="small"
+          icon="fa-light fa-clipboard-list"
+          severity="primary"
+          [routerLink]="['/surveys', 'create']"
+          data-testid="surveys-create-button">
+        </lfx-button>
+      }
+    </div>
+
+    <!-- Loading State (non-Me lens only) -->
+    @if (!isMeLens() && loading()) {
+      <div class="flex justify-center items-center min-h-96">
+        <div class="text-center">
+          <i class="fa-light fa-spinner-third fa-spin text-3xl text-violet-600 mb-4"></i>
+          <p class="text-gray-600">Loading {{ surveyLabel | lowercase }} details...</p>
+        </div>
+      </div>
+    } @else if (!isMeLens() && surveys().length === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-clipboard-list"
+        [title]="'No ' + (surveyLabelPlural | lowercase) + ' yet'"
+        [subtitle]="'Create a ' + (surveyLabel | lowercase) + ' to gather feedback from your project community.'"
+        [ctaLabel]="canWrite() ? 'Create ' + surveyLabel : undefined"
+        [ctaRoute]="canWrite() ? ['/surveys', 'create'] : undefined"
+        data-testid="surveys-empty-state-card">
+      </lfx-empty-state>
+    } @else {
+      <lfx-surveys-table
+        [surveys]="isMeLens() ? filteredMySurveys() : surveys()"
+        [hasPMOAccess]="!isMeLens() && canWrite()"
+        [loading]="isMeLens() ? mySurveysLoading() : loading()"
+        [isMeLens]="isMeLens()"
+        [foundationOptions]="foundationOptions()"
+        [projectOptions]="projectOptions()"
+        [showFoundationFilter]="showFoundationFilter()"
+        [showProjectFilter]="showProjectFilter()"
+        (foundationFilterChange)="onFoundationFilterChange($event)"
+        (projectFilterChange)="onProjectFilterChange($event)"
+        (viewResults)="onViewResults($event)"
+        (rowClick)="onRowClick($event)"
+        (refresh)="refreshSurveys()"
+        data-testid="surveys-table-container">
+      </lfx-surveys-table>
+    }
   }
 </div>
 

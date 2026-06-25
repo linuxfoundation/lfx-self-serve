@@ -5,6 +5,7 @@ import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
+import { UserSearchResult } from './search.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -41,6 +42,19 @@ export interface BehavioralClassDisplayConfig {
 // ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
 
 /**
+ * Organization reference carried on committee invites and member records.
+ * Mirrors the committee-service organization object: `id`, `name`, and `website`.
+ */
+export interface CommitteeOrganizationReference {
+  /** CDP organization ID */
+  id?: string | null;
+  /** Organization display name */
+  name?: string | null;
+  /** Organization website URL */
+  website?: string | null;
+}
+
+/**
  * How users can join this group.
  *  - open:        Anyone can self-join; no approval required.
  *  - invite_only: Members / admins send invite links; invitee clicks to accept.
@@ -49,49 +63,221 @@ export interface BehavioralClassDisplayConfig {
  */
 export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
-/** Status of a member invite */
-export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
+/**
+ * Status of a committee invite. Mirrors the committee-service `committee_invite`
+ * resource status enum (lfx-v2-committee-service): an invite is `pending` until the
+ * invitee accepts/declines, or an admin revokes it.
+ */
+export type CommitteeInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
 
 /**
- * A colleague-to-colleague or admin-to-user invitation to join a group.
+ * A pending/resolved invitation for a person (by email) to join a committee.
+ *
+ * Mirrors the committee-service `committee_invite` resource — the invite-and-forget
+ * primitive for adding people who may not yet have an LF account (LFID). The v2 query
+ * index has no identity/user resource type, so accounts can't be looked up directly;
+ * inviting by email is how anyone outside the existing committee/registrant corpus is
+ * added. On accept, the invite is reconciled into a `committee_member` with the
+ * person's LFID populated.
  */
-export interface GroupInvite {
-  /** Unique invite ID */
+export interface CommitteeInvite {
+  /** Invite UID */
   uid: string;
-  /** Committee this invite is for */
+  /** Committee this invite belongs to */
   committee_uid: string;
-  /** Email address of the invitee */
+  /** Email address the invite was delivered to */
   invitee_email: string;
-  /** Display name of the invitee (optional) */
-  invitee_name?: string;
-  /** UID of the user who sent the invite */
-  invited_by_uid: string;
-  /** Name of the person who sent the invite */
-  invited_by_name?: string;
-  /** Current status */
-  status: InviteStatus;
-  /** Optional personal message from inviter */
-  message?: string;
-  /** Role to assign on acceptance (default: 'Member') */
-  suggested_role?: string;
-  /** When the invite was created */
+  /** Suggested committee role for the invitee on acceptance (optional) */
+  role?: string | null;
+  /** Current invite status */
+  status: CommitteeInviteStatus;
+  /** Creation timestamp (RFC3339) */
   created_at: string;
-  /** When the invite expires (default: 14 days) */
-  expires_at: string;
-  /** When the invite was accepted / declined */
-  responded_at?: string;
+  /** Suggested organization for the invitee (optional) */
+  organization?: CommitteeOrganizationReference | null;
+  /** Committee display name captured at invite-creation time (committee-service ≥ v1.1) */
+  committee_name?: string | null;
+  /**
+   * Whether the invitee must supply an organization when accepting. True when the committee
+   * has voting enabled or requires a business email (committee-service ≥ v1.1). Carried on
+   * the invite so the accept flow does not need to fetch the access-controlled committee/settings
+   * endpoints — those fail for invitees who are not yet committee viewers.
+   */
+  organization_required?: boolean | null;
 }
 
 /**
- * Payload to create one or more invites.
+ * Enriched, person-facing view model for a committee invitation surfaced to the
+ * invitee (dashboard pending-actions + My Groups). Built server-side by joining a
+ * committee-service `committee_invite` resource with its `committee` resource for
+ * display context (committee name, project name, category).
+ *
+ * `committee_name` is sourced from the invite's own `committee_name` field when
+ * available (committee-service ≥ v1.1), falling back to the enriched committee resource
+ * name, then the committee UID. `organization_required` is sourced from the invite's own
+ * field when available; legacy `enable_voting` / `business_email_required` are kept for
+ * backwards compat but are no longer fetched in the accept path.
+ *
+ * `inviter_name` / `expires_at` are reserved, optional fields that stay `undefined`
+ * until/unless the committee-service starts emitting them. Do NOT fabricate either on the BFF.
  */
-export interface CreateGroupInviteRequest {
-  /** Email addresses to invite */
-  emails: string[];
-  /** Optional personal message included in the invite email */
-  message?: string;
-  /** Role to assign on acceptance */
-  suggested_role?: string;
+export interface PendingInvitation {
+  /** committee_invite UID — used for accept/decline */
+  uid: string;
+  /** Committee this invitation is for */
+  committee_uid: string;
+  /** Committee display name */
+  committee_name: string;
+  /** Project display name — enriched (optional) */
+  project_name?: string | null;
+  /** Committee category, for the My Groups class badge (optional) */
+  category?: string | null;
+  /** Suggested role on acceptance (from the invite) */
+  role?: string | null;
+  /** Email address the invitation was delivered to */
+  invitee_email: string;
+  /** Current invite status (surfaced rows are `pending`) */
+  status: CommitteeInviteStatus;
+  /** Creation timestamp (RFC3339) */
+  created_at: string;
+  /**
+   * Name of the person who sent the invitation. NOT in the current committee-service
+   * contract — populated only if upstream adds it. Stays `undefined` otherwise.
+   */
+  inviter_name?: string | null;
+  /**
+   * Expiration timestamp (RFC3339). NOT in the current committee-service contract —
+   * populated only if upstream adds it. Stays `undefined` otherwise.
+   */
+  expires_at?: string | null;
+  /** Suggested organization from the invite (pre-fills the accept modal) */
+  organization?: CommitteeOrganizationReference | null;
+  /**
+   * Whether the invitee must supply an organization when accepting. Sourced from the
+   * invite's own `organization_required` field (committee-service ≥ v1.1) so the accept
+   * flow does not require committee-viewer access.
+   */
+  organization_required?: boolean | null;
+  /** Whether the committee has voting enabled — enriched from the committee resource (legacy) */
+  enable_voting?: boolean;
+  /** Whether the committee requires a business email — enriched from the committee resource (legacy) */
+  business_email_required?: boolean;
+}
+
+/**
+ * A decline that has been optimistically applied but not yet committed upstream — held while the
+ * deferred-undo timer runs so the dashboard can either fire the real decline when the timer elapses
+ * (or on component destroy) or roll it back if the user hits Undo.
+ */
+export interface PendingDecline {
+  /** committee_invite UID being declined */
+  inviteUid: string;
+  /** committee_uid the invite belongs to */
+  committeeUid: string;
+}
+
+/**
+ * Payload to create a single committee invite (committee-service create-invite).
+ * Only the invitee email is required; role is an optional suggestion.
+ */
+export interface CreateCommitteeInviteRequest {
+  /** Email of the person to invite (required) */
+  invitee_email: string;
+  /** Suggested role for the invitee (optional) */
+  role?: string | null;
+  /** Suggested default organization for the invitee (optional; pre-fills the accept flow when committee has voting or business-email rules) */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/**
+ * Payload for accepting a committee invite (committee-service accept-invite).
+ */
+export interface AcceptCommitteeInviteRequest {
+  /** Organization the invitee confirms on acceptance */
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Raw organization form values shared by invite-create and invite-accept dialogs. */
+export interface CommitteeOrganizationFormValue {
+  organization: string;
+  organization_url: string;
+  organization_id: string | null;
+}
+
+/** Data passed into the accept-invite organization dialog. */
+export interface AcceptInviteOrganizationDialogData {
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+}
+
+/** Result returned by the accept-invite organization dialog on confirm. */
+export interface AcceptInviteOrganizationDialogResult {
+  organization: CommitteeOrganizationReference;
+}
+
+/** Context needed to accept a committee invitation from any surface. */
+export interface InvitationAcceptContext {
+  committeeUid: string;
+  inviteUid: string;
+  committeeName: string;
+  organization?: CommitteeOrganizationReference | null;
+  organization_required?: boolean | null;
+  enable_voting?: boolean;
+  business_email_required?: boolean;
+  inviteRequiresOrganization?: boolean;
+}
+
+/**
+ * Per-email outcome of one create-invite call within a bulk-invite batch.
+ *
+ * The committee-service exposes no bulk endpoint, so the client fans out one
+ * create-invite request per email and aggregates the individual outcomes here
+ * to drive a partial-success summary.
+ */
+export interface CommitteeInviteResult {
+  /** The normalized email this result is for */
+  email: string;
+  /** Whether the invite was created successfully */
+  success: boolean;
+  /** Human-readable failure reason when `success` is false */
+  reason?: string;
+}
+
+/**
+ * Result of parsing a free-text blob of email addresses (bulk invite input).
+ * Emails are normalized (trimmed + lowercased) and de-duplicated.
+ */
+export interface EmailListParseResult {
+  /** Unique, valid, normalized email addresses, in first-seen order */
+  valid: string[];
+  /** Non-empty tokens that failed email validation (original casing preserved) */
+  invalid: string[];
+  /** Normalized emails that appeared more than once (reported once each) */
+  duplicates: string[];
+}
+
+/**
+ * A committee user-search hit decorated for the add-member typeahead: whether its
+ * email is already added to the input, already a member, already invited, and
+ * whether the person has an LF account (LFID).
+ */
+export type DecoratedCommitteeSearchResult = UserSearchResult & {
+  added: boolean;
+  alreadyMember: boolean;
+  alreadyInvited: boolean;
+  lfAccount: boolean;
+};
+
+/**
+ * Parsed valid invite emails partitioned by what the add-member submit will do with each.
+ */
+export interface CategorizedCommitteeEmails {
+  /** Emails that will be invited (not already a member or pending invite). */
+  toInvite: string[];
+  /** Emails skipped because the person is already a member. */
+  alreadyMembers: string[];
+  /** Emails skipped because a pending invite already exists. */
+  alreadyInvited: string[];
 }
 
 /**
@@ -216,6 +402,21 @@ export interface Committee {
   writers?: CommitteeUser[];
   /** Users with audit (review) access to this committee */
   auditors?: CommitteeUser[];
+
+  /**
+   * Users with write (manage) access *inherited* from the committee's project/foundation
+   * ancestry (e.g. a foundation-level "Manage" grant). Populated by the BFF, which walks the
+   * project ancestry (`project_uid → parent → … → foundation`) and unions each level's
+   * permission list — response-only, display purposes only. The committee's effective `writer`
+   * boolean already reflects this inheritance via the authorization model (`committee#writer`
+   * derives from `writer from project`, and `project#writer` from `writer from parent`); this
+   * field exists so the per-member roster can label such users "Manage" even though they are
+   * absent from the committee-scoped `writers` list. Empty/absent for the levels the caller
+   * cannot read (best-effort).
+   */
+  inherited_writers?: CommitteeUser[];
+  /** Users with audit (review) access inherited from the committee's project/foundation ancestry. See {@link inherited_writers}. */
+  inherited_auditors?: CommitteeUser[];
 
   /**
    * Caller's role in this committee, when they are a member. Absent for non-members.
@@ -735,3 +936,11 @@ export interface TabConfigEntry {
 
 /** Permission level for a committee member. */
 export type CommitteePermissionLevel = 'manage' | 'review' | 'member';
+
+/** A committee member's resolved roster permission, plus whether it was inherited rather than direct. */
+export interface CommitteeMemberPermissionInfo {
+  /** Resolved permission level shown on the roster. */
+  level: CommitteePermissionLevel;
+  /** True when `level` comes only from an inherited (project/foundation) grant, not a committee-scoped role. */
+  inherited: boolean;
+}

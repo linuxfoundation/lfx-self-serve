@@ -12,9 +12,14 @@ import {
   GetEventRequestsParams,
   GetEventsParams,
   GetMyEventsParams,
+  GetOrgEventsParams,
   GetUpcomingCountriesResponse,
   MyEventOrganizationsResponse,
   MyEventsResponse,
+  OrgEventAttendeesDrawerResponse,
+  OrgEventSpeakersResponse,
+  OrgEventsResponse,
+  OrgEventsSummary,
   OrgSearchResponse,
   TravelFundApplication,
   TravelFundApplicationResponse,
@@ -50,6 +55,7 @@ export class EventsService {
     if (params.country) httpParams = httpParams.set('country', params.country);
     if (params.isVisaRequestAccepted) httpParams = httpParams.set('isVisaRequestAccepted', 'true');
     if (params.isTravelFundRequestAccepted) httpParams = httpParams.set('isTravelFundRequestAccepted', 'true');
+    if (params.excludePastTravelFundDeadline) httpParams = httpParams.set('excludePastTravelFundDeadline', 'true');
 
     return this.http.get<MyEventsResponse>('/api/events', { params: httpParams });
   }
@@ -125,6 +131,41 @@ export class EventsService {
     const params = new HttpParams().set('name', name);
 
     return this.http.get<OrgSearchResponse>('/api/events/search-organizations', { params });
+  }
+
+  public getOrgEventsSummary(accountId: string): Observable<OrgEventsSummary> {
+    return this.http.get<OrgEventsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/summary`);
+  }
+
+  public getEventAttendees(accountId: string, eventId: string, searchQuery?: string): Observable<OrgEventAttendeesDrawerResponse> {
+    let httpParams = new HttpParams();
+    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
+    return this.http.get<OrgEventAttendeesDrawerResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/${encodeURIComponent(eventId)}/attendees`, {
+      params: httpParams,
+    });
+  }
+
+  public getEventSpeakers(accountId: string, eventId: string, searchQuery?: string): Observable<OrgEventSpeakersResponse> {
+    let httpParams = new HttpParams();
+    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
+    return this.http.get<OrgEventSpeakersResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/${encodeURIComponent(eventId)}/speakers`, {
+      params: httpParams,
+    });
+  }
+
+  // Called by the upcoming/past events table — wired in LFXV2-1899.
+  public getOrgEvents(accountId: string, params: GetOrgEventsParams = {}): Observable<OrgEventsResponse> {
+    let httpParams = new HttpParams();
+
+    if (params.isPast !== undefined) httpParams = httpParams.set('isPast', String(params.isPast));
+    if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
+    if (params.status) httpParams = httpParams.set('status', params.status);
+    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    if (params.sortField) httpParams = httpParams.set('sortField', params.sortField);
+    if (params.sortOrder) httpParams = httpParams.set('sortOrder', params.sortOrder);
+
+    return this.http.get<OrgEventsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events`, { params: httpParams });
   }
 
   public getCertificate(params: GetCertificateParams): Observable<Blob> {

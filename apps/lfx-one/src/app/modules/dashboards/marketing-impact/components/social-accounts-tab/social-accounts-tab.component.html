@@ -1,0 +1,159 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="social-accounts-tab">
+  <!-- Header -->
+  <div class="flex flex-col gap-1">
+    <h3 class="text-base font-semibold text-gray-900">Social accounts</h3>
+    <p class="text-xs text-gray-500">Social media performance · {{ foundationName() || 'All foundations' }}</p>
+  </div>
+
+  @if (focusProgram() !== 'all') {
+    <div
+      class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
+      role="status"
+      aria-live="polite"
+      data-testid="social-accounts-focus-info">
+      <i class="fa-light fa-circle-info text-blue-500" aria-hidden="true"></i>
+      <p class="text-xs text-blue-700">Showing all programs — social data is not yet available at the program level.</p>
+    </div>
+  }
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="social-accounts-kpi-grid">
+    @if (loading()) {
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="social-accounts-kpi-skeleton">
+          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    } @else {
+      @for (kpi of kpiCards(); track kpi.id) {
+        <lfx-sparkline-kpi-card [kpi]="kpi" section="social-accounts" />
+      }
+    }
+  </div>
+
+  <!-- Platform breakdown table -->
+  @if (!loading()) {
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="social-accounts-platforms">
+      <h4 class="text-sm font-semibold text-gray-900">Social accounts performance</h4>
+
+      @if (hasPlatforms()) {
+        <div class="flex flex-col gap-0" role="table" aria-label="Social accounts performance" data-testid="social-accounts-table">
+          <!-- Table header -->
+          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+            <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PLATFORM</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">FOLLOWERS</span>
+            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+            <span class="w-28 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ENGAGEMENT</span>
+            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">POSTS (30D)</span>
+          </div>
+
+          <!-- Rows -->
+          @for (row of platformRows(); track row.platform) {
+            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'social-account-row-' + row.platform">
+              <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.platform }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.followers }}</span>
+              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.impressions }}</span>
+              <span class="w-28 text-right text-xs text-gray-500" role="cell">{{ row.engagementRate }}</span>
+              <span class="flex-1 text-right text-xs text-gray-500" role="cell">{{ row.posts }}</span>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="social-accounts-empty">
+          <p class="text-sm text-gray-500">No social account data available.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Monthly growth by platform -->
+  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="social-monthly-growth">
+    <div class="flex items-center justify-between">
+      <h4 class="text-sm font-semibold text-gray-900">Monthly growth by platform</h4>
+      <select
+        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        [value]="selectedYear()"
+        (change)="onYearChange($event)"
+        data-testid="social-monthly-year-selector"
+        aria-label="Select year">
+        @for (yr of availableYears(); track yr) {
+          <option [value]="yr">{{ yr }}</option>
+        }
+      </select>
+    </div>
+
+    @if (monthlyLoading()) {
+      <div class="flex flex-col gap-2" data-testid="social-monthly-skeleton">
+        @for (i of [1, 2, 3]; track i) {
+          <div class="h-10 w-full animate-pulse rounded bg-gray-100"></div>
+        }
+      </div>
+    } @else if (hasMonthlyData()) {
+      <div class="flex flex-col gap-0" role="table" aria-label="Monthly growth by platform" data-testid="social-monthly-table">
+        <!-- Column headers -->
+        <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+          <span class="w-6" role="columnheader" aria-hidden="true"></span>
+          <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PLATFORM</span>
+          <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">FOLLOWERS</span>
+          <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">MOM %</span>
+        </div>
+
+        @for (platform of monthlyPlatforms(); track platform.platform) {
+          <!-- Platform row (expandable) -->
+          <div
+            class="flex cursor-pointer items-center gap-3 border-b border-gray-200 py-2.5 hover:bg-gray-50"
+            role="row"
+            tabindex="0"
+            [attr.aria-expanded]="platform.expanded"
+            (click)="togglePlatform(platform.platform)"
+            (keydown.enter)="togglePlatform(platform.platform)"
+            (keydown.space)="$event.preventDefault(); togglePlatform(platform.platform)"
+            [attr.data-testid]="'social-monthly-platform-' + platform.platform">
+            <span class="w-6 text-center text-gray-400" aria-hidden="true">
+              <i class="fa-light fa-chevron-right text-xs transition-transform duration-200" [class.rotate-90]="platform.expanded"></i>
+            </span>
+            <span class="w-36 text-xs font-medium text-gray-700" role="cell">{{ platform.platform }}</span>
+            <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ platform.latestFollowers }}</span>
+            <span class="flex-1 text-right text-xs" [ngClass]="platform.latestMomChangeClass" role="cell">{{ platform.latestMomChange }}</span>
+          </div>
+
+          <!-- Expanded monthly rows -->
+          @if (platform.expanded) {
+            <!-- Sub-header -->
+            <div class="flex items-center gap-3 border-b border-gray-100 bg-gray-50 py-1.5 pl-9" role="row">
+              <span class="w-36 text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">MONTH</span>
+              <span class="w-24 text-right text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+              <span class="w-24 text-right text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">ENG. RATE</span>
+              <span class="w-24 text-right text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">FOLLOWERS</span>
+              <span class="w-24 text-right text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">NEW</span>
+              <span class="flex-1 text-right text-[10px] font-semibold tracking-wide text-gray-400" role="columnheader">MOM % (FOLLOWERS)</span>
+            </div>
+
+            @for (month of platform.months; track month.month) {
+              <div
+                class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2 pl-9"
+                role="row"
+                [attr.data-testid]="'social-monthly-row-' + platform.platform + '-' + month.month">
+                <span class="w-36 text-xs text-gray-600" role="cell">{{ month.month }}</span>
+                <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ month.impressions }}</span>
+                <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ month.engagementRate }}</span>
+                <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ month.followers }}</span>
+                <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ month.newFollowers }}</span>
+                <span class="flex-1 text-right text-xs" [ngClass]="month.momChangeClass" role="cell">{{ month.momChange }}</span>
+              </div>
+            }
+          }
+        }
+      </div>
+    } @else {
+      <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="social-monthly-empty">
+        <p class="text-sm text-gray-500">No monthly growth data available.</p>
+      </div>
+    }
+  </div>
+</div>

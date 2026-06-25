@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 
 import type { PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 
@@ -14,4 +14,9 @@ import type { PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 })
 export class SparklineKpiCardComponent {
   public readonly kpi = input.required<PerformanceSummaryKpi>();
+  public readonly section = input<string>('');
+  protected readonly testId = computed(() => {
+    const prefix = this.section();
+    return prefix ? `${prefix}-kpi-card-${this.kpi().id}` : `kpi-card-${this.kpi().id}`;
+  });
 }

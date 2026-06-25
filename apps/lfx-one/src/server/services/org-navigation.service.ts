@@ -1,0 +1,135 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { B2bOrgIndexedDoc, GetOrgItemsParams, OrgItem, OrgItemsResponse, ResolvedOrgRole } from '@lfx-one/shared/interfaces';
+import { Request } from 'express';
+
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { logger } from './logger.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
+
+/** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
+export class OrgNavigationService {
+  private readonly orgRoleGrants: OrgRoleGrantsService;
+
+  public constructor() {
+    this.orgRoleGrants = new OrgRoleGrantsService();
+  }
+
+  public async getOrgItems(req: Request, params: GetOrgItemsParams): Promise<OrgItemsResponse> {
+    const { pageToken, name } = params;
+    let { selectedUid } = params;
+
+    // Defense-in-depth: the navigation controller already rejects this combination at the
+    // HTTP layer (selected_uid + page_token are mutually exclusive per FR-013). Direct
+    // service callers — present and future — get the same safe behaviour by silently
+    // dropping the selected_uid hint on continuation pages.
+    if (pageToken && selectedUid) {
+      logger.warning(req, 'get_org_items', 'page_token and selected_uid both set — ignoring selected_uid', {
+        has_page_token: true,
+        has_selected_uid: true,
+      });
+      selectedUid = undefined;
+    }
+
+    const username = getEffectiveUsername(req);
+    if (!username) {
+      logger.warning(req, 'get_org_items', 'No authenticated username — returning empty access-aware list');
+      return { items: [], next_page_token: null, upstream_failed: true };
+    }
+
+    const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
+
+    if (access.resolved.size === 0 && access.orgDocByUid.size === 0) {
+      return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
+    }
+
+    // Spec 002: the b2b_org uid IS the 18-char SFID (member-service v0.7.0), so the account id is the
+    // uid itself — no NATS UUID→SFID resolution, and no rows dropped for a missing sfid.
+    const items = this.buildOrgItems(req, access.resolved, access.orgDocByUid);
+
+    const filteredItems = this.applySearch(items, name);
+    const sortedItems = this.applySort(filteredItems, name);
+    const pinnedItems = this.applySelectedUidPin(sortedItems, items, selectedUid, pageToken);
+
+    logger.debug(req, 'build_org_items', 'Built access-aware org items', {
+      item_count: pinnedItems.length,
+      direct_count: this.countByPrefix(access.resolved, 'direct-'),
+      cascading_count: this.countByPrefix(access.resolved, 'inherited-'),
+    });
+
+    return {
+      items: pinnedItems,
+      next_page_token: null,
+      upstream_failed: false,
+      total: pinnedItems.length,
+    };
+  }
+
+  /** One omission branch (FR-005 + spec Edge Cases): missing org doc → skip+warn `missing_org_doc`. Spec 002: the uid IS the account id (SFID), so there is no `missing_sfid` omission. */
+  private buildOrgItems(req: Request, resolved: Map<string, ResolvedOrgRole>, orgDocByUid: Map<string, B2bOrgIndexedDoc>): OrgItem[] {
+    const items: OrgItem[] = [];
+
+    for (const [uid, role] of resolved) {
+      const doc = orgDocByUid.get(uid);
+      if (!doc) {
+        logger.warning(req, 'build_org_items', 'omitting row', {
+          uid,
+          source: role.roleSource,
+          reason: 'missing_org_doc',
+        });
+        continue;
+      }
+
+      // Spec 002: the b2b_org uid is the canonical 18-char SFID; it IS the account id.
+      const isInherited = role.roleSource.startsWith('inherited-');
+      items.push({
+        uid,
+        accountId: uid,
+        name: doc.name ?? '',
+        logoUrl: doc.logo_url ?? null,
+        primaryDomain: doc.primary_domain ?? null,
+        isMember: doc.is_member ?? false,
+        parentName: isInherited ? (role.parentName ?? null) : null,
+      });
+    }
+
+    return items;
+  }
+
+  private applySearch(items: OrgItem[], name: string | undefined): OrgItem[] {
+    const trimmed = name?.trim().toLowerCase();
+    if (!trimmed) return items;
+    return items.filter((item) => item.name.toLowerCase().includes(trimmed));
+  }
+
+  /** `best_match` when searching (prefix-rank first), alphabetical otherwise. */
+  private applySort(items: OrgItem[], name: string | undefined): OrgItem[] {
+    const trimmed = name?.trim().toLowerCase();
+    if (trimmed) {
+      return [...items].sort((a, b) => {
+        const aStarts = a.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
+        const bStarts = b.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
+        return aStarts - bStarts || a.name.localeCompare(b.name);
+      });
+    }
+    return [...items].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** FR-013 — pin a previously-selected row at the top when it falls outside the natural list. Skipped on continuation pages. */
+  private applySelectedUidPin(sortedItems: OrgItem[], allItems: OrgItem[], selectedUid: string | undefined, pageToken: string | undefined): OrgItem[] {
+    if (!selectedUid || pageToken) return sortedItems;
+    if (sortedItems.some((item) => item.uid === selectedUid)) return sortedItems;
+    const pinned = allItems.find((item) => item.uid === selectedUid);
+    if (!pinned) return sortedItems;
+    return [pinned, ...sortedItems];
+  }
+
+  private countByPrefix(resolved: Map<string, ResolvedOrgRole>, prefix: string): number {
+    let count = 0;
+    for (const [, role] of resolved) {
+      if (role.roleSource.startsWith(prefix)) count += 1;
+    }
+    return count;
+  }
+}

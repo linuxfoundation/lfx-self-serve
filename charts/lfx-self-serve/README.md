@@ -2,6 +2,15 @@
 
 This Helm chart deploys the LFX One UI application, which is an Angular SSR application with Express backend for LFX One.
 
+> **Agents:** Self Serve is an Angular/Express SSR app, not a Go service, so
+> the chart pattern differs from the V2 Go services. The V2 Go cross-service
+> chart conventions (HTTPRoute, Heimdall RuleSet, NATS KV, ExternalSecret
+> wrapper-vs-native split) are documented in
+> `lfx-v2-helm/docs/service-chart-patterns.md`; only the
+> ExternalSecrets section below maps to the same pattern. Deployed image
+> tags, chart pins, and environment values live in `lfx-v2-argocd` (note
+> that current deployment artifacts may still be named `lfx-v2-ui`).
+
 ## Configuration
 
 ### Required Configuration
@@ -99,14 +108,17 @@ environment:
 
 ### Application Parameters
 
-| Parameter           | Description        | Default                                  |
-| ------------------- | ------------------ | ---------------------------------------- |
-| `replicaCount`      | Number of replicas | `1`                                      |
-| `image.registry`    | Image registry     | `""`                                     |
-| `image.repository`  | Image repository   | `ghcr.io/linuxfoundation/lfx-self-serve` |
-| `image.tag`         | Image tag          | `"latest"`                               |
-| `image.pullPolicy`  | Image pull policy  | `IfNotPresent`                           |
-| `image.pullSecrets` | Image pull secrets | `[]`                                     |
+| Parameter                        | Description                                                                                                    | Default                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `replicaCount`                   | Number of replicas                                                                                             | `3`                                                                           |
+| `strategy`                       | Kubernetes rolling update strategy. Default spins up a full new replica set before terminating any old pods.   | `{type: RollingUpdate, rollingUpdate: {maxSurge: "100%", maxUnavailable: 0}}` |
+| `terminationGracePeriodSeconds`  | Seconds Kubernetes waits before SIGKILL after SIGTERM. Must exceed `preStop.sleep` + PM2 `kill_timeout` (70s). | `75`                                                                          |
+| `lifecycle.preStop.exec.command` | Command run inside the container before SIGTERM. Allows kube-proxy/Traefik to deregister the endpoint.         | `["/bin/sh", "-c", "sleep 10"]`                                               |
+| `image.registry`                 | Image registry                                                                                                 | `""`                                                                          |
+| `image.repository`               | Image repository                                                                                               | `ghcr.io/linuxfoundation/lfx-self-serve`                                      |
+| `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
+| `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
+| `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
 
 ### Environment Variables
 
@@ -172,6 +184,12 @@ environment:
 | -------------------------- | ---------------------------------------- | -------- | ------- |
 | `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
 | `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
+
+#### Runtime Client Configuration
+
+| Parameter                     | Description                                                                                                                                                             | Required | Default           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------- |
+| `environment.INTERCOM_APP_ID` | Public Intercom Messenger workspace App ID. Messenger loads only when set; identity verification uses the `http://lfx.dev/claims/intercom` Auth0 claim, not this value. | No       | - (Messenger off) |
 
 #### Snowflake Analytics Configuration
 

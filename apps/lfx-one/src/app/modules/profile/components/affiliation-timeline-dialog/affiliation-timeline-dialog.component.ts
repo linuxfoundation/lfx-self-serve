@@ -8,7 +8,9 @@ import { MONTH_ABBREV_OPTIONS, YEAR_OPTIONS } from '@lfx-one/shared/constants';
 import {
   AffiliationEditOrg,
   AffiliationEditPeriod,
+  AffiliationPeriodErrors,
   AffiliationSegment,
+  AffiliationWorkWindow,
   DisabledOrgSuggestion,
   TimelineProjectData,
   WorkExperienceEntry,
@@ -44,9 +46,9 @@ export class AffiliationTimelineDialogComponent {
   public readonly hasNoWorkExperience: Signal<boolean> = computed(() => this.companyOrgs().length === 0);
   public readonly hasUnverifiedWorkExperienceOnly: Signal<boolean> = computed(() => this.workExperience().length > 0 && this.companyOrgs().length === 0);
   public readonly hasValidationErrors: Signal<boolean> = this.initHasValidationErrors();
+  public readonly hasIncompletePeriods: Signal<boolean> = computed(() => this.organizations().some((org) => org.enabled && !this.periodsComplete(org)));
   public readonly availableYearsMap: Signal<Map<string, { label: string; value: string }[]>> = this.initAvailableYearsMap();
-  public readonly periodErrorsMap: Signal<Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>> =
-    this.initPeriodErrorsMap();
+  public readonly periodErrorsMap: Signal<Map<string, AffiliationPeriodErrors>> = this.initPeriodErrorsMap();
 
   public constructor() {
     this.organizations.set(this.buildInitialState());
@@ -62,7 +64,7 @@ export class AffiliationTimelineDialogComponent {
         return {
           ...org,
           enabled: nowEnabled,
-          periods: nowEnabled && org.periods.length === 0 ? [this.createDefaultPeriod(org)] : org.periods,
+          periods: nowEnabled && org.periods.length === 0 ? this.createDefaultPeriods(org) : org.periods,
         };
       })
     );
@@ -121,10 +123,7 @@ export class AffiliationTimelineDialogComponent {
 
   public areAllPeriodsComplete(orgName: string): boolean {
     const org = this.organizations().find((o) => o.organization === orgName);
-    if (!org || org.periods.length === 0) {
-      return false;
-    }
-    return org.periods.every((p) => p.startMonth && p.startYear && (p.isPresent || (p.endMonth && p.endYear)));
+    return !!org && this.periodsComplete(org);
   }
 
   public save(): void {
@@ -171,33 +170,55 @@ export class AffiliationTimelineDialogComponent {
     this.ref.close(null);
   }
 
+  // Every period has a start (month + year) and either is "Present" or has a complete end.
+  private periodsComplete(org: AffiliationEditOrg): boolean {
+    return org.periods.length > 0 && org.periods.every((p) => p.startMonth && p.startYear && (p.isPresent || (p.endMonth && p.endYear)));
+  }
+
   private buildInitialState(): AffiliationEditOrg[] {
     const project = this.project();
     const weEntries = this.workExperience();
     const orgMap = new Map<string, AffiliationEditOrg>();
 
+    // Each work-history entry contributes one window. The same org can appear in several
+    // entries (multiple stints), so accumulate windows instead of overwriting by org name.
     for (const we of weEntries) {
-      orgMap.set(we.organization, {
-        organization: we.organization,
-        organizationLogo: we.organizationLogo,
-        enabled: false,
-        periods: [],
-        weStartDate: we.startDate,
-        weEndDate: we.endDate,
-      });
+      const window: AffiliationWorkWindow = { startDate: we.startDate, endDate: we.endDate };
+      const existing = orgMap.get(we.organization);
+      if (existing) {
+        existing.weWindows.push(window);
+        if (we.organizationLogo && !existing.organizationLogo) {
+          existing.organizationLogo = we.organizationLogo;
+        }
+      } else {
+        orgMap.set(we.organization, {
+          organization: we.organization,
+          organizationLogo: we.organizationLogo,
+          enabled: false,
+          periods: [],
+          weWindows: [window],
+        });
+      }
     }
 
     const suggestions: DisabledOrgSuggestion[] = project.disabledOrgSuggestions ?? [];
     for (const suggestion of suggestions) {
       if (!orgMap.has(suggestion.organizationName)) {
-        const matchingWe = weEntries.find((we) => we.organizationId === suggestion.organizationId);
+        // Preserve every matching stint, not just the first — several work-history rows can share
+        // the suggestion's organizationId. Fall back to the suggestion's aggregated range otherwise.
+        const matchingWindows = weEntries
+          .filter((we) => we.organizationId === suggestion.organizationId)
+          .map((we): AffiliationWorkWindow => ({ startDate: we.startDate, endDate: we.endDate }));
+        const fallbackWindow: AffiliationWorkWindow = {
+          startDate: isoDateToMonthYear(suggestion.earliestStartDate),
+          endDate: suggestion.latestEndDate ? isoDateToMonthYear(suggestion.latestEndDate) : undefined,
+        };
         orgMap.set(suggestion.organizationName, {
           organization: suggestion.organizationName,
           organizationLogo: suggestion.organizationLogo,
           enabled: false,
           periods: [],
-          weStartDate: matchingWe?.startDate ?? isoDateToMonthYear(suggestion.earliestStartDate),
-          weEndDate: this.resolveEndDate(matchingWe, suggestion),
+          weWindows: matchingWindows.length > 0 ? matchingWindows : [fallbackWindow],
         });
       }
     }
@@ -217,11 +238,30 @@ export class AffiliationTimelineDialogComponent {
           organizationLogo: seg.organizationLogo,
           enabled: true,
           periods: [period],
+          weWindows: [],
         });
       }
     }
 
-    return Array.from(orgMap.values());
+    // weWindows are final here. Sort each org's stints chronologically so seeded period rows
+    // (and their windowIndex) are deterministic, then precompute the header range label once.
+    const orgs = Array.from(orgMap.values());
+    for (const org of orgs) {
+      org.weWindows.sort((a, b) => this.parseWeDate(a.startDate) - this.parseWeDate(b.startDate));
+      org.rangeLabel = this.buildRangeLabel(org.weWindows);
+    }
+    return orgs;
+  }
+
+  private buildRangeLabel(windows: AffiliationWorkWindow[]): string | undefined {
+    if (windows.length === 0) {
+      return undefined;
+    }
+    const earliestStart = [...windows].sort((a, b) => this.parseWeDate(a.startDate) - this.parseWeDate(b.startDate))[0].startDate;
+    const endedWindows = windows.filter((w): w is Required<AffiliationWorkWindow> => !!w.endDate);
+    const ongoing = endedWindows.length < windows.length;
+    const latestEnd = ongoing ? 'Present' : [...endedWindows].sort((a, b) => this.parseWeDate(b.endDate) - this.parseWeDate(a.endDate))[0].endDate;
+    return `${earliestStart} – ${latestEnd}`;
   }
 
   private segmentToPeriod(seg: AffiliationSegment): AffiliationEditPeriod {
@@ -238,16 +278,24 @@ export class AffiliationTimelineDialogComponent {
     };
   }
 
-  private createDefaultPeriod(org: AffiliationEditOrg): AffiliationEditPeriod {
-    const startParts = org.weStartDate ? org.weStartDate.split(' ') : [];
-    const endParts = org.weEndDate ? org.weEndDate.split(' ') : [];
+  private createDefaultPeriods(org: AffiliationEditOrg): AffiliationEditPeriod[] {
+    if (org.weWindows.length === 0) {
+      return [this.createEmptyPeriod()];
+    }
+    return org.weWindows.map((window, index) => this.windowToPeriod(window, index));
+  }
+
+  private windowToPeriod(window: AffiliationWorkWindow, index: number): AffiliationEditPeriod {
+    const startParts = window.startDate ? window.startDate.split(' ') : [];
+    const endParts = window.endDate ? window.endDate.split(' ') : [];
     return {
-      id: `period-${Date.now()}`,
+      id: `period-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
       startMonth: startParts[0] || '',
       startYear: startParts[1] || '',
       endMonth: endParts[0] || '',
       endYear: endParts[1] || '',
-      isPresent: !org.weEndDate,
+      isPresent: !window.endDate,
+      windowIndex: index,
     };
   }
 
@@ -262,11 +310,8 @@ export class AffiliationTimelineDialogComponent {
     };
   }
 
-  private computePeriodErrors(
-    org: AffiliationEditOrg,
-    period: AffiliationEditPeriod
-  ): { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean } {
-    const errors = { startBeforeWeStart: false, endAfterWeEnd: false, startAfterEnd: false };
+  private computePeriodErrors(org: AffiliationEditOrg, period: AffiliationEditPeriod): AffiliationPeriodErrors {
+    const errors = { outsideWorkExperience: false, startAfterEnd: false, incompleteEnd: false };
 
     const hasStart = period.startMonth && period.startYear;
     const hasEnd = !period.isPresent && period.endMonth && period.endYear;
@@ -275,51 +320,112 @@ export class AffiliationTimelineDialogComponent {
       return errors;
     }
 
-    const startTs = this.periodToTimestamp(period.startMonth, period.startYear);
+    // Not "Present" but missing a complete end date: save() would persist this open-ended
+    // (endDate undefined), so flag it to keep Save disabled until an end date or Present is set.
+    errors.incompleteEnd = !period.isPresent && !(period.endMonth && period.endYear);
 
-    if (org.weStartDate) {
-      const weStartTs = this.parseWeDate(org.weStartDate);
-      errors.startBeforeWeStart = startTs < weStartTs;
+    const startTs = this.periodToTimestamp(period.startMonth, period.startYear);
+    const endTs = hasEnd ? this.periodToTimestamp(period.endMonth, period.endYear) : null;
+
+    if (endTs !== null) {
+      errors.startAfterEnd = startTs > endTs;
     }
 
-    if (hasEnd) {
-      const endTs = this.periodToTimestamp(period.endMonth, period.endYear);
-      errors.startAfterEnd = startTs > endTs;
-
-      if (org.weEndDate) {
-        const weEndTs = this.parseWeDate(org.weEndDate);
-        errors.endAfterWeEnd = endTs > weEndTs;
-      }
+    // Only constrain to work history when the org has windows. Orgs known solely from existing
+    // confirmed affiliations (or "Independent") carry no windows and remain unrestricted.
+    if (org.weWindows.length > 0) {
+      const periodEndTs = period.isPresent ? Date.now() : endTs;
+      errors.outsideWorkExperience = !org.weWindows.some((window) => this.periodWithinWindow(startTs, periodEndTs, window));
     }
 
     return errors;
   }
 
+  private periodWithinWindow(startTs: number, endTs: number | null, window: AffiliationWorkWindow): boolean {
+    const windowStartTs = this.parseWeDate(window.startDate);
+    const windowEndTs = window.endDate ? this.parseWeDate(window.endDate) : Date.now();
+    if (startTs < windowStartTs || startTs > windowEndTs) {
+      return false;
+    }
+    if (endTs === null) {
+      return true;
+    }
+    return endTs >= windowStartTs && endTs <= windowEndTs;
+  }
+
   private initAvailableYearsMap(): Signal<Map<string, { label: string; value: string }[]>> {
     return computed(() => {
       const map = new Map<string, { label: string; value: string }[]>();
+      const currentYear = new Date().getFullYear();
       for (const org of this.organizations()) {
-        if (org.organization === 'Independent' || !org.weStartDate) {
-          map.set(org.organization, this.yearOptions);
-        } else {
-          const startYear = parseInt(org.weStartDate.split(' ')[1], 10) || 2000;
-          const endYear = org.weEndDate ? parseInt(org.weEndDate.split(' ')[1], 10) || new Date().getFullYear() : new Date().getFullYear();
-          map.set(
-            org.organization,
-            this.yearOptions.filter((y) => {
-              const yr = parseInt(y.value, 10);
-              return yr >= startYear && yr <= endYear;
-            })
-          );
+        const unrestricted = org.organization === 'Independent' || org.weWindows.length === 0;
+        // Fallback for manually-added / segment-derived periods on an org that has windows:
+        // the union of every stint's years (gap years between stints fall out naturally).
+        const unionYears = unrestricted ? null : this.windowsToYearOptions(org.weWindows, currentYear);
+
+        for (const period of org.periods) {
+          if (unrestricted) {
+            map.set(period.id, this.yearOptions);
+            continue;
+          }
+          // Seeded rows stay bound to their stint. Un-bound rows (manually added) show the full
+          // range until a start/end year is picked, then snap to the stint that year belongs to.
+          const window = period.windowIndex !== undefined ? org.weWindows[period.windowIndex] : this.inferWindowForPeriod(period, org.weWindows, currentYear);
+          map.set(period.id, window ? this.windowsToYearOptions([window], currentYear) : (unionYears ?? this.yearOptions));
         }
       }
       return map;
     });
   }
 
-  private initPeriodErrorsMap(): Signal<Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>> {
+  // Derive a stint window's [startYear, endYear] bounds, defaulting an open-ended stint to the current year.
+  private windowYearBounds(window: AffiliationWorkWindow, currentYear: number): { startYear: number; endYear: number } {
+    const startYear = parseInt(window.startDate.split(' ')[1], 10) || 2000;
+    const endYear = window.endDate ? parseInt(window.endDate.split(' ')[1], 10) || currentYear : currentYear;
+    return { startYear, endYear };
+  }
+
+  private windowsToYearOptions(windows: AffiliationWorkWindow[], currentYear: number): { label: string; value: string }[] {
+    const allowedYears = new Set<number>();
+    for (const window of windows) {
+      const { startYear, endYear } = this.windowYearBounds(window, currentYear);
+      for (let yr = startYear; yr <= endYear; yr++) {
+        allowedYears.add(yr);
+      }
+    }
+    return this.yearOptions.filter((y) => allowedYears.has(parseInt(y.value, 10)));
+  }
+
+  // Infer which stint window a manually-added period belongs to, from the point the user picks
+  // (start, else end). Matches on the month+year timestamp when a month is set, otherwise on the
+  // year span. If the point is ambiguous (matches multiple stints, e.g. two stints sharing a
+  // calendar year), stay unrestricted until the user provides a disambiguating month/year.
+  private inferWindowForPeriod(period: AffiliationEditPeriod, windows: AffiliationWorkWindow[], currentYear: number): AffiliationWorkWindow | undefined {
+    const usingStart = !!period.startYear;
+    const selectedYear = usingStart ? period.startYear : period.endYear;
+    if (!selectedYear) {
+      return undefined;
+    }
+    const selectedMonth = usingStart ? period.startMonth : period.endMonth;
+    const yr = parseInt(selectedYear, 10);
+    const ts = selectedMonth ? this.periodToTimestamp(selectedMonth, selectedYear) : null;
+
+    const matches = windows.filter((window) => {
+      if (ts !== null) {
+        const windowStartTs = this.parseWeDate(window.startDate);
+        const windowEndTs = window.endDate ? this.parseWeDate(window.endDate) : Date.now();
+        return ts >= windowStartTs && ts <= windowEndTs;
+      }
+      const { startYear, endYear } = this.windowYearBounds(window, currentYear);
+      return yr >= startYear && yr <= endYear;
+    });
+
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+
+  private initPeriodErrorsMap(): Signal<Map<string, AffiliationPeriodErrors>> {
     return computed(() => {
-      const map = new Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>();
+      const map = new Map<string, AffiliationPeriodErrors>();
       for (const org of this.organizations()) {
         for (const period of org.periods) {
           map.set(period.id, this.computePeriodErrors(org, period));
@@ -339,7 +445,7 @@ export class AffiliationTimelineDialogComponent {
       return enabledOrgs.some((org) =>
         org.periods.some((period) => {
           const errors = this.computePeriodErrors(org, period);
-          return errors.startBeforeWeStart || errors.endAfterWeEnd || errors.startAfterEnd;
+          return errors.outsideWorkExperience || errors.startAfterEnd || errors.incompleteEnd;
         })
       );
     });
@@ -498,16 +604,6 @@ export class AffiliationTimelineDialogComponent {
       return { month: MONTH_ABBREV_OPTIONS[11].value, year: String(parseInt(year, 10) - 1) };
     }
     return { month: MONTH_ABBREV_OPTIONS[idx - 1].value, year };
-  }
-
-  private resolveEndDate(matchingWe: WorkExperienceEntry | undefined, suggestion: DisabledOrgSuggestion): string | undefined {
-    if (matchingWe) {
-      return matchingWe.endDate;
-    }
-    if (suggestion.latestEndDate) {
-      return isoDateToMonthYear(suggestion.latestEndDate);
-    }
-    return undefined;
   }
 
   private getNextMonth(month: string, year: string): { month: string; year: string } {

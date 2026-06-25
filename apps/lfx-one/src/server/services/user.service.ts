@@ -9,7 +9,7 @@ import {
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
-import { NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
@@ -23,6 +23,7 @@ import {
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
+  PendingInvitation,
   QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
@@ -33,13 +34,14 @@ import {
   UserPullRequestsRow,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { getCurrentOrNextOccurrence, hasMeetingEnded, parseToInt } from '@lfx-one/shared/utils';
+import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, normalizeIndexedMeetingAiSummary, parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -60,6 +62,7 @@ export class UserService {
   private projectService: ProjectService;
   private microserviceProxy: MicroserviceProxyService;
   private accessCheckService: AccessCheckService;
+  private committeeService: CommitteeService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
   private readonly bufferMinutes = 40;
@@ -71,6 +74,7 @@ export class UserService {
     this.projectService = new ProjectService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.accessCheckService = new AccessCheckService();
+    this.committeeService = new CommitteeService();
   }
 
   /**
@@ -394,6 +398,18 @@ export class UserService {
   }
 
   /**
+   * Returns the current user's pending committee invitations (enriched), for the dashboard
+   * and My Groups surfaces. Thin passthrough to the committee service so both surfaces share a
+   * single BFF endpoint and the frontend can keep one shared signal in sync.
+   * @param req - Express request object
+   * @param email - User email (impersonation-aware, resolved by the controller)
+   * @returns Array of enriched pending invitations
+   */
+  public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
+    return this.committeeService.getMyPendingInvitations(req, email);
+  }
+
+  /**
    * Fetches meetings for the current user, optionally filtered by project.
    * Uses the query service's `filter_grants=direct` parameter: the query service performs
    * an FGA `lfx.access_check.read_tuples` lookup server-side using the user's bearer token,
@@ -463,6 +479,8 @@ export class UserService {
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
+    const normalizedMeetings = meetings.map(normalizeIndexedMeetingAiSummary);
+
     // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
     // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
@@ -473,7 +491,7 @@ export class UserService {
       const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
       const email = getEffectiveEmail(req) ?? '';
 
-      if ((email || username) && meetings.length > 0) {
+      if ((email || username) && normalizedMeetings.length > 0) {
         try {
           const [userRsvps, activeRegistrants] = await Promise.all([
             this.fetchAllUserRsvps(req, email, username),
@@ -494,7 +512,7 @@ export class UserService {
             }
           }
 
-          for (const meeting of meetings) {
+          for (const meeting of normalizedMeetings) {
             if (meeting.id) {
               meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
             }
@@ -511,7 +529,7 @@ export class UserService {
     // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
     // actionable RSVP/agenda nag — so the 40-minute grace `hasMeetingEnded` allows doesn't apply.
     const upcomingMeetings = options?.basic
-      ? meetings.filter((meeting) => {
+      ? normalizedMeetings.filter((meeting) => {
           const now = Date.now();
           if (meeting.occurrences && meeting.occurrences.length > 0) {
             return meeting.occurrences.some((occ) => {
@@ -525,7 +543,7 @@ export class UserService {
           const durationMinutes = parseToInt(meeting.duration) ?? 0;
           return now < startMs + durationMinutes * 60 * 1000;
         })
-      : meetings.filter((meeting) => {
+      : normalizedMeetings.filter((meeting) => {
           if (meeting.occurrences && meeting.occurrences.length > 0) {
             return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
           }
@@ -1018,8 +1036,15 @@ export class UserService {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
 
-    // Phase 1: surveys, meetings, and pending votes are independent — issue them in parallel.
-    const [surveys, meetings, pendingVotes] = await Promise.all([
+    // Pending committee invitations only belong on the unscoped Me-lens path — they're personal
+    // to the user (by email) and not tied to a project lens. On a project/foundation lens, skip
+    // the lookup entirely.
+    const isMeLens = !projectUid && !projectSlug;
+
+    // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
+    // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
+    // can't wipe the whole list.
+    const [surveys, meetings, pendingVotes, pendingInvitations] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
@@ -1034,11 +1059,19 @@ export class UserService {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending votes', { err: error });
         return [] as Vote[];
       }),
+
+      isMeLens
+        ? this.committeeService.getMyPendingInvitations(req, email).catch((error) => {
+            logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending invitations', { err: error });
+            return [] as PendingInvitation[];
+          })
+        : Promise.resolve([] as PendingInvitation[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
+    const invitationActions = this.transformInvitationsToActions(pendingInvitations);
 
     // Phase 2: RSVP + registrant lookups are only meaningful when there are in-window meetings
     // to evaluate. Skip them otherwise — avoids two full paginated per-user scans per request
@@ -1060,11 +1093,12 @@ export class UserService {
       }
     }
 
-    // Order by actionability: someone is waiting on RSVPs and votes have closing windows, so
-    // those go first. Surveys are time-bounded by their cutoff. Review Agenda is informational
-    // (read-before-meeting) and goes last — with the 5-item display cap, plentiful meetings
-    // shouldn't crowd out the rows the user actually has to respond to.
-    return [...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    // Order by actionability: pending invitations are the most actionable (someone is waiting on
+    // the user to join) and only ever appear on the Me lens, so they lead. RSVPs and votes have
+    // closing windows next. Surveys are time-bounded by their cutoff. Review Agenda is
+    // informational (read-before-meeting) and goes last — with the 5-item display cap, plentiful
+    // meetings shouldn't crowd out the rows the user actually has to respond to.
+    return [...invitationActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
   }
 
   /**
@@ -1079,7 +1113,7 @@ export class UserService {
    * OpenSearch to exactly this user's rows. When `projectUid` is provided it is pushed
    * server-side to drop out-of-scope rows before pagination; when omitted, the unscoped Me-lens
    * call already gets exactly the user's vote_response rows across all their projects via
-   * `filter_grants=direct`. The remaining `vote_status !== 'submitted'` and `!voter_removed`
+   * `filter_grants=direct`. The remaining `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`
    * checks stay client-side. Caveat: the FGA tuple is only emitted when the invitee has a
    * non-empty `Username`, so users invited by email but without an Auth0 username won't appear
    * here. We accept this trade-off — meetings already work the same way and FGA is the source
@@ -1109,7 +1143,7 @@ export class UserService {
     const pendingVoteUids = Array.from(
       new Set(
         responses
-          .filter((r) => r.vote_status !== 'submitted' && !r.voter_removed)
+          .filter((r) => r.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !r.voter_removed)
           .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
           .filter((uid): uid is string => !!uid)
       )
@@ -1292,6 +1326,17 @@ export class UserService {
       actions.push(this.createRsvpAction(meeting));
     }
     return actions;
+  }
+
+  /**
+   * Transform pending committee invitations into pending action rows. Invitations carry no
+   * closing window in the current committee-service contract, so the `date` field is only set
+   * when `expires_at` is (reserved for a future upstream that emits it). The badge prefers the
+   * project name and falls back to the committee name. `inviteUid` / `committeeUid` are carried
+   * through so the dashboard can call accept/decline inline.
+   */
+  private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
+    return buildInvitationActions(invitations);
   }
 
   /**

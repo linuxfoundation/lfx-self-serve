@@ -16,11 +16,17 @@ export * from './organization.interface';
 // Component interfaces
 export * from './components.interface';
 
+// Rich editor interfaces
+export * from './rich-editor.interface';
+
 // Auth interfaces
 export * from './auth.interface';
 
 // API interfaces
 export * from './api.interface';
+
+// Campaign interfaces
+export * from './campaign.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';
@@ -63,8 +69,14 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
+
+// Org Lens (per-account TLF membership tier + cdev org mapping) interfaces
+export * from './org-lens.interface';
 
 // Mailing list interfaces
 export * from './mailing-list.interface';
@@ -90,6 +102,9 @@ export * from './sse.interface';
 // Copilot interfaces
 export * from './copilot.interface';
 
+// Akrites admin dashboard interfaces
+export * from './akrites.interface';
+
 // Committee application interfaces
 export * from './committee-application.interface';
 
@@ -102,11 +117,17 @@ export * from './lens.interface';
 // Navigation interfaces
 export * from './navigation.interface';
 
+// Org selector (spec 020) — paginated FGA-filtered org list + role grants + canonical record
+export * from './org-selector.interface';
+
 // Persona detection interfaces
 export * from './persona-detection.interface';
 
 // Events interfaces (my events, foundation events, travel fund, visa request)
 export * from './events.interface';
+
+// Meetups interfaces
+export * from './meetups.interface';
 
 // Badge interfaces
 export * from './badge.interface';
@@ -145,6 +166,12 @@ export * from './supabase.interface';
 // Stat card interfaces
 export * from './stat-card.interface';
 
+// Intercom interfaces
+export * from './intercom.interface';
+
+// Org involvement interfaces (cross-foundation org overview)
+export * from './org-involvement.interface';
+
 // Changelog interfaces
 export * from './changelog.interface';
 
@@ -153,3 +180,69 @@ export * from './object.interface';
 
 // Marketing Impact interfaces
 export * from './marketing-impact.interface';
+
+// Enrollment interfaces
+export * from './enrollment.interface';
+
+// Org Memberships interfaces
+export * from './org-memberships.interface';
+export * from './org-key-contacts.internal.interface';
+
+// Org People interfaces
+export * from './org-people.interface';
+
+// Org Lens Access tab (spec 025)
+export * from './org-lens-access.interface';
+
+// Org People — Key Contacts tab (spec 005)
+export * from './org-people-key-contacts.interface';
+export * from './org-people-key-contacts.internal.interface';
+
+// Org People — Board tab
+export * from './org-people-board-members.interface';
+
+// Org People — Committee tab
+export * from './org-people-committee-members.interface';
+export * from './org-people-committee-members.internal.interface';
+
+// Org People — Trainees tab (LFXV2-1876)
+export * from './org-people-trainees.interface';
+
+// Org People — Event Attendees tab (LFXV2-1875)
+export * from './org-people-event-attendees.interface';
+
+// Org People — Contributors tab (LFXV2-1874)
+export * from './org-people-contributors.interface';
+
+// Shared person-detail drawer (LFXV2-2195)
+export * from './person-detail-drawer.interface';
+
+// Org Lens — Code Contributions page (LFXV2-1894)
+export * from './org-contributions.interface';
+
+// Org Events interfaces
+export * from './org-events.interface';
+
+// Org Events internal backend query-row shapes
+export * from './org-events-internal.interface';
+
+// Newsletter interfaces
+export * from './newsletter.interface';
+
+// Invite interfaces
+export * from './invite.interface';
+
+// Docs portal interfaces (build artifacts + runtime models for /docs)
+export * from './docs.interface';
+
+// Linux.com email alias interfaces
+export * from './linux-email.interface';
+
+// Crowdfunding interfaces
+export * from './crowdfunding.interface';
+
+// Donut chart interfaces
+export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';

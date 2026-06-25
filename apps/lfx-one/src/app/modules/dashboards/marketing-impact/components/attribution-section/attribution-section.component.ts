@@ -7,12 +7,18 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ATTRIBUTION_MODEL_OPTIONS } from '@lfx-one/shared/constants';
+import { ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
-import type { AttributionChannelRow, AttributionModel, AttributionModelOption, MarketingAttributionResponse } from '@lfx-one/shared/interfaces';
+import type {
+  AttributionChannelRow,
+  AttributionModel,
+  AttributionModelOption,
+  MarketingAttributionResponse,
+  MarketingImpactFocusProgram,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-attribution-section',
@@ -34,7 +40,9 @@ export class AttributionSectionComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === Forms ===
   protected readonly modelForm = this.fb.nonNullable.group({
@@ -56,16 +64,19 @@ export class AttributionSectionComponent {
   // === Private Initializers ===
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$, period$]).pipe(
+        switchMap(([slug, focus, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getMarketingAttribution(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getMarketingAttribution(slug, classification, period || undefined).pipe(
             catchError(() => of(null)),
             finalize(() => this.loading.set(false))
           );

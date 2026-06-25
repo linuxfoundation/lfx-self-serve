@@ -77,6 +77,8 @@ export interface RuntimeConfig {
   launchDarklyClientId: string;
   dataDogRumClientId: string;
   dataDogRumApplicationId: string;
+  allowedTracingUrls: string[];
+  intercomAppId: string;
 }
 ```
 
@@ -92,6 +94,8 @@ const runtimeConfig: RuntimeConfig = {
   launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
   dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
   dataDogRumApplicationId: process.env['DD_RUM_APPLICATION_ID'] || '',
+  allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
+  intercomAppId: process.env['INTERCOM_APP_ID'] || '',
 };
 
 angularApp.handle(req, {
@@ -157,6 +161,16 @@ async function initializeOpenFeature(): Promise<void> {
 | `LD_CLIENT_ID`          | LaunchDarkly client-side ID         | `691b727361cbf309e9d74468` |
 | `DD_RUM_CLIENT_ID`      | DataDog RUM client token (future)   | `pub123456789`             |
 | `DD_RUM_APPLICATION_ID` | DataDog RUM application ID (future) | `app-uuid-here`            |
+| `INTERCOM_APP_ID`       | Intercom Messenger workspace App ID | `mxl90k6y`                 |
+
+### Server-Side Cache Variables
+
+These configure the shared Valkey read-through cache (read by the Express server only; not exposed to the browser):
+
+| Variable               | Description                                                                                                                                                                                                                                                       | Example              |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `VALKEY_URL`           | Shared Valkey connection URL (`rediss://` enables TLS). Unset disables caching (direct-fetch fallback).                                                                                                                                                           | `rediss://host:6379` |
+| `VALKEY_KEY_NAMESPACE` | Optional per-deployment cache-key namespace woven into the key prefix. When multiple deployments share one Valkey instance, set a distinct value per deployment so they never collide on cache keys. Leave unset when the cache is not shared across deployments. | `ui-pr-914`          |
 
 ### Local Development
 
@@ -167,6 +181,7 @@ Add to your `.env` file (already gitignored):
 LD_CLIENT_ID=your-launchdarkly-dev-client-id
 DD_RUM_CLIENT_ID=your-datadog-rum-client-token
 DD_RUM_APPLICATION_ID=your-datadog-rum-app-id
+INTERCOM_APP_ID=your-intercom-app-id
 ```
 
 The server reads these via `dotenv` in development mode:
@@ -186,6 +201,7 @@ docker run \
   -e LD_CLIENT_ID=prod-client-id \
   -e DD_RUM_CLIENT_ID=prod-rum-token \
   -e DD_RUM_APPLICATION_ID=prod-rum-app-id \
+  -e INTERCOM_APP_ID=your-intercom-app-id \
   ghcr.io/linuxfoundation/lfx-self-serve:latest
 ```
 
@@ -205,6 +221,11 @@ env:
       secretKeyRef:
         name: lfx-one-secrets
         key: datadog-rum-client-id
+  - name: INTERCOM_APP_ID
+    valueFrom:
+      secretKeyRef:
+        name: lfx-one-secrets
+        key: intercom-app-id
 ```
 
 ## Benefits
@@ -373,5 +394,5 @@ If migrating from the previous build-time approach:
 ## Related Documentation
 
 - [Feature Flags](./architecture/frontend/feature-flags.md) - LaunchDarkly integration details
-- [Deployment Guide](./deployment.md) - Deployment processes and environments
+- Deployment - Chart README at `charts/lfx-self-serve/README.md`; deployed values, image tags, ApplicationSets in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 - [SSR Server](./architecture/backend/ssr-server.md) - Server-side rendering architecture

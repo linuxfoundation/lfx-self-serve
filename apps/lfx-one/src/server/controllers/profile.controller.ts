@@ -7,17 +7,22 @@ import {
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_REGEX,
+  PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   CdpIdentity,
   CdpWorkExperienceRequest,
+  ClaimAliasRequest,
   CombinedProfile,
   EmailManagementData,
   EnrichedIdentity,
   IdentityDisplayState,
+  LinuxAliasData,
   ProfileAuthStatus,
   ProfileUpdateRequest,
+  UpdateForwardRequest,
   UserEmail,
   UserMetadata,
   UserMetadataUpdateRequest,
@@ -27,9 +32,12 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
 import { Auth0Service } from '../services/auth0.service';
 import { CdpService } from '../services/cdp.service';
 import { EmailVerificationService } from '../services/email-verification.service';
+import { EnrollmentService } from '../services/enrollment.service';
+import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
@@ -76,12 +84,15 @@ export class ProfileController {
     '/profile/emails',
     '/profile/identities',
     '/profile/password',
+    '/profile/linux-email',
     '/settings',
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
   private cdpService: CdpService = new CdpService();
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
+  private enrollmentService: EnrollmentService = new EnrollmentService();
+  private forwardsService: ForwardsService = new ForwardsService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
   private userService: UserService = new UserService();
@@ -161,6 +172,15 @@ export class ProfileController {
         user_id: userProfile.id,
         username,
         has_metadata: !!natsUserData,
+      });
+
+      // Per-user profile data must never be served from a cache — otherwise the client
+      // refetch right after a profile save can return the pre-save body from the browser
+      // HTTP cache, leaving the header card / edit dialog showing stale values until a full reload.
+      res.set({
+        ['Cache-Control']: 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
       });
 
       res.json(combinedProfile);
@@ -417,8 +437,7 @@ export class ProfileController {
         );
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailAddress)) {
+      if (!EMAIL_REGEX.test(emailAddress)) {
         return next(
           ServiceValidationError.forField('email', 'Invalid email format', {
             operation: 'set_primary_email',
@@ -460,6 +479,245 @@ export class ProfileController {
       logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/linux-email - Resolve the user's Linux.com alias state.
+   *
+   * Composes three signals into one of four states: the claimed alias (from
+   * auth-service `user_emails.read`), the forwarding target (from
+   * forwards-service `get_forward`), and the add-on purchase (from
+   * member-service). Alias presence wins — a claimed alias short-circuits the
+   * purchase lookup.
+   */
+  public async getLinuxAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_linux_alias');
+
+    try {
+      const domain = getLinuxForwardDomain('get_linux_alias', 'profile_controller');
+      const userSub = req.oidc?.user?.['sub'] as string | undefined;
+      if (!userSub) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'get_linux_alias',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const emails = await this.emailVerificationService.getUserEmails(req, userSub);
+      if (emails === null) {
+        logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
+        res.json(this.linuxAliasState('service_unavailable', domain));
+        return;
+      }
+
+      const suffix = `@${domain}`;
+      // Scan alternate emails first; also cover the edge case where the claimed alias is the
+      // user's primary email, which would otherwise be missed and read as unclaimed.
+      const aliasEmail =
+        emails.alternate_emails.find((e) => e.email.toLowerCase().trim().endsWith(suffix)) ??
+        (emails.primary_email?.toLowerCase().trim().endsWith(suffix) ? { email: emails.primary_email } : undefined);
+
+      if (aliasEmail) {
+        const email = aliasEmail.email.toLowerCase().trim();
+        const alias = email.slice(0, -suffix.length);
+        // forwards-service requires a Management-API-audience JWT (Flow C token), same as add_alias.
+        // Read the current target best-effort: without a management token in session we still report
+        // the claimed state from user_emails.read; forwardTo stays null until the user re-authorizes.
+        const managementToken = this.profileAuthService.getManagementToken(req);
+        const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
+
+        // A claimed alias always has a forward target. If we had a management token but the read
+        // still came back null, the forwards-service was unreachable (timeout/no-responder) — degrade
+        // to service_unavailable (retry panel) rather than emitting a claimed state with a null
+        // forward, which the client could misread and overwrite on Save.
+        if (managementToken && forward === null) {
+          logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
+          res.json(this.linuxAliasState('service_unavailable', domain));
+          return;
+        }
+
+        // A claimed alias always has a forward target, but reading it needs the Flow C
+        // management token. When it's absent (and the flow is configured), tell the client
+        // to re-authorize so it can load the real target instead of defaulting to primary.
+        const forwardAuthRequired = !managementToken && this.profileAuthService.isProfileAuthConfigured();
+
+        logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
+        res.json({
+          state: 'claimed',
+          domain,
+          alias,
+          email,
+          forwardTo: forward?.target_email ?? null,
+          ...(forwardAuthRequired
+            ? {
+                forwardAuthRequired: true,
+                authorizeUrl: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}`,
+              }
+            : {}),
+        } satisfies LinuxAliasData);
+        return;
+      }
+
+      // Degrade to service_unavailable if the purchase lookup fails, so the tab keeps its
+      // 4-state contract (renders the retry panel) instead of erroring out via next(error).
+      let purchased: boolean;
+      try {
+        purchased = await this.enrollmentService.hasLinuxComAddon(req);
+      } catch {
+        logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
+        res.json(this.linuxAliasState('service_unavailable', domain));
+        return;
+      }
+      const state = purchased ? 'purchased_unclaimed' : 'not_purchased';
+
+      logger.success(req, 'get_linux_alias', startTime, { state });
+      res.json(this.linuxAliasState(state, domain));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/profile/linux-email/claim - Claim an alias and set its forward.
+   *
+   * Two-step, non-atomic by design (mirrors the legacy flow): `add_alias`
+   * (auth-service, Flow C token) then `set_target` (forwards-service). If the
+   * forward step fails after a successful claim, we surface a 502 — the next GET
+   * returns `claimed` with no forward, and the user completes it via the edit
+   * path.
+   */
+  public async claimLinuxAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'claim_linux_alias');
+
+    try {
+      const domain = getLinuxForwardDomain('claim_linux_alias', 'profile_controller');
+      const body = (req.body ?? {}) as Partial<ClaimAliasRequest>;
+      const alias = typeof body.alias === 'string' ? body.alias.trim().toLowerCase() : '';
+      const forwardTo = typeof body.forwardTo === 'string' ? body.forwardTo.trim() : '';
+
+      if (!alias) {
+        return next(ServiceValidationError.forField('alias', 'Alias is required', { operation: 'claim_linux_alias', service: 'profile_controller' }));
+      }
+      if (!EMAIL_REGEX.test(forwardTo)) {
+        return next(
+          ServiceValidationError.forField('forwardTo', 'A valid forwarding email address is required', {
+            operation: 'claim_linux_alias',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      // Enforce the purchase gate server-side: a direct call must not bypass the
+      // add-on requirement the UI gates on (mirrors the not_purchased state in getLinuxAlias).
+      const purchased = await this.enrollmentService.hasLinuxComAddon(req);
+      if (!purchased) {
+        res.status(403).json({ error: 'addon_required', message: 'A Linux.com email add-on is required to claim an alias.' });
+        return;
+      }
+
+      // Availability pre-check (best-effort; add_alias is authoritative).
+      const availability = await this.forwardsService.checkAlias(req, alias, domain);
+      if (availability?.exists) {
+        res.status(409).json({ error: 'alias_not_available', message: 'That alias is already taken. Please choose another.' });
+        return;
+      }
+
+      const managementToken = this.profileAuthService.getManagementToken(req);
+      if (!managementToken) {
+        if (!this.profileAuthService.isProfileAuthConfigured()) {
+          res.status(501).json({ error: 'profile_auth_not_configured', message: 'Claiming a Linux.com alias is not available in this environment.' });
+          return;
+        }
+        res.status(403).json({
+          error: 'management_token_required',
+          message: 'Profile authorization required to claim a Linux.com alias',
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}`,
+        });
+        return;
+      }
+
+      const claim = await this.emailVerificationService.addAlias(req, managementToken, alias, domain);
+      if (!claim.success) {
+        const { status, message } = this.mapAddAliasError(claim.error);
+        res.status(status).json({ error: claim.error ?? 'add_alias_failed', message });
+        return;
+      }
+
+      const email = claim.email ?? `${alias}@${domain}`;
+
+      // forwards-service requires the same Management-API-audience token as add_alias.
+      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      if (!forward || forward.error) {
+        // Alias is claimed but forwarding could not be set — recoverable via the edit path.
+        return next(
+          new MicroserviceError('Alias claimed, but forwarding could not be set. Please set your forwarding address again.', 502, 'FORWARD_SET_FAILED', {
+            operation: 'claim_linux_alias',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      logger.success(req, 'claim_linux_alias', startTime, { domain });
+      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies LinuxAliasData);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/profile/linux-email/forward - Update the forwarding target for an
+   * already-claimed alias (idempotent set_target).
+   */
+  public async updateLinuxForward(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_linux_forward');
+
+    try {
+      const domain = getLinuxForwardDomain('update_linux_forward', 'profile_controller');
+      const body = (req.body ?? {}) as Partial<UpdateForwardRequest>;
+      const forwardTo = typeof body.forwardTo === 'string' ? body.forwardTo.trim() : '';
+
+      if (!EMAIL_REGEX.test(forwardTo)) {
+        return next(
+          ServiceValidationError.forField('forwardTo', 'A valid forwarding email address is required', {
+            operation: 'update_linux_forward',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      // forwards-service requires a Management-API-audience JWT (Flow C token), same as add_alias.
+      const managementToken = this.profileAuthService.getManagementToken(req);
+      if (!managementToken) {
+        if (!this.profileAuthService.isProfileAuthConfigured()) {
+          res.status(501).json({ error: 'profile_auth_not_configured', message: 'Updating your forwarding address is not available in this environment.' });
+          return;
+        }
+        res.status(403).json({
+          error: 'management_token_required',
+          message: 'Profile authorization required to update your forwarding address',
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}`,
+        });
+        return;
+      }
+
+      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      if (!forward || forward.error) {
+        return next(
+          new MicroserviceError(forward?.error || 'Failed to update forwarding address', 502, 'FORWARD_SET_FAILED', {
+            operation: 'update_linux_forward',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      logger.success(req, 'update_linux_forward', startTime, { domain });
+      res.status(200).json({ forwardTo: forward.target_email ?? forwardTo });
     } catch (error) {
       next(error);
     }
@@ -1503,8 +1761,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!EMAIL_REGEX.test(email)) {
         const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
           operation: 'send_email_verification',
           service: 'profile_controller',
@@ -1880,6 +2137,38 @@ export class ProfileController {
     }
 
     return { enriched, cdpPostsQueued };
+  }
+
+  /** Build a LinuxAliasData for a non-claimed state (no alias/forward yet). */
+  private linuxAliasState(state: 'not_purchased' | 'purchased_unclaimed' | 'service_unavailable', domain: string): LinuxAliasData {
+    return {
+      state,
+      domain,
+      alias: null,
+      email: null,
+      forwardTo: null,
+      ...(state === 'not_purchased' ? { purchaseUrl: PURCHASE_LINUX_URL } : {}),
+    };
+  }
+
+  /** Map an auth-service add_alias error code to an HTTP status + user message. */
+  private mapAddAliasError(code: string | undefined): { status: number; message: string } {
+    switch (code) {
+      case 'already_claimed':
+        return { status: 409, message: 'You already have a Linux.com alias on your account.' };
+      case 'alias_not_available':
+        return { status: 409, message: 'That alias is already taken. Please choose another.' };
+      case 'alias_reserved':
+        return { status: 400, message: 'That alias is reserved. Please choose another.' };
+      case 'alias_invalid':
+        return { status: 400, message: 'That alias is not valid. Use letters, numbers, dots, and hyphens only.' };
+      case 'domain_not_allowed':
+        return { status: 400, message: 'Linux.com aliases are not available in this environment.' };
+      case 'alias_service_unavailable':
+        return { status: 503, message: 'The alias service is temporarily unavailable. Please try again later.' };
+      default:
+        return { status: 502, message: 'Failed to claim the alias. Please try again.' };
+    }
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {

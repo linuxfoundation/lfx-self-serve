@@ -22,14 +22,14 @@
         data-testid="marketing-impact-export-pdf" />
       <lfx-select
         [form]="headerForm"
-        control="month"
-        [options]="monthOptions"
+        control="period"
+        [options]="periodOptions"
         optionLabel="label"
         optionValue="value"
-        placeholder="Select month"
-        ariaLabel="Select reporting month"
+        placeholder="Select period"
+        ariaLabel="Select reporting period"
         styleClass="w-[180px]"
-        data-testid="marketing-impact-month-picker" />
+        data-testid="marketing-impact-period-picker" />
     </div>
   </div>
 
@@ -50,7 +50,7 @@
 
     <!-- Section tabs -->
     <div class="flex gap-6 border-b border-gray-200" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
-      @for (tab of tabs; track tab.id) {
+      @for (tab of visibleTabs(); track tab.id) {
         <button
           type="button"
           role="tab"
@@ -75,27 +75,59 @@
       @if (selectedTab() === 'overview') {
         <lfx-overview-tab
           [foundationSlug]="foundationSlug()"
-          [selectedMonth]="selectedMonth()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-overview-tab" />
       } @else if (selectedTab() === 'attribution') {
-        <lfx-attribution-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-attribution-tab" />
+        <lfx-attribution-section
+          [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-attribution-tab" />
       } @else if (selectedTab() === 'performance-marketing') {
         <lfx-performance-marketing-tab
           [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-performance-marketing-tab" />
       } @else if (selectedTab() === 'email') {
-        <lfx-email-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-email-tab" />
+        <lfx-email-tab
+          [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-email-tab" />
       } @else if (selectedTab() === 'web-activity') {
-        <lfx-web-activity-tab [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="marketing-impact-web-activity-tab" />
+        <lfx-web-activity-tab
+          [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-web-activity-tab" />
+      } @else if (selectedTab() === 'social-accounts') {
+        <lfx-social-accounts-tab
+          [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-social-accounts-tab" />
+      } @else if (selectedTab() === 'social-listening') {
+        <lfx-social-listening-tab
+          [foundationSlug]="foundationSlug()"
+          [selectedPeriod]="selectedPeriod()"
+          [foundationName]="foundationName()"
+          [focusProgram]="selectedFocus()"
+          data-testid="marketing-impact-social-listening-tab" />
       } @else {
         <div
           class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-16"
           data-testid="marketing-impact-tab-placeholder">
           <div class="flex flex-col items-center gap-2 text-center">
             <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-            <p class="text-sm text-gray-500">{{ selectedTabLabel() }} data coming soon.</p>
+            <p class="text-sm text-gray-500">This section is coming soon.</p>
           </div>
         </div>
       }

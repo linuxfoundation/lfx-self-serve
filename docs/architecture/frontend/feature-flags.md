@@ -1547,7 +1547,7 @@ console.log('Flag value:', value);
 - **[Angular Patterns](./angular-patterns.md)** - Zoneless change detection and modern Angular
 - **[Component Architecture](./component-architecture.md)** - Component design and organization
 - **[Authentication](../backend/authentication.md)** - User context and Auth0 integration
-- **[Deployment Guide](../../deployment.md)** - Environment variables and deployment
+- **Deployment** - Chart README at `charts/lfx-self-serve/README.md`; deployed values in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 
 ### External Resources
 

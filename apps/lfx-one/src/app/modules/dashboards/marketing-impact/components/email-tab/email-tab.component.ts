@@ -3,11 +3,12 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
-import type { EmailCtrResponse, EmailTypeRow, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
+import type { EmailCtrResponse, EmailTypeRow, MarketingImpactFocusProgram, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
 
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
@@ -23,7 +24,9 @@ export class EmailTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
+  public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
@@ -39,16 +42,19 @@ export class EmailTabComponent {
   // === Private Initializers ===
   private initEmailData(): Signal<EmailCtrResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
+    const focus$ = toObservable(this.focusProgram);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      slug$.pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, focus$, period$]).pipe(
+        switchMap(([slug, focus, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getEmailCtr(slug).pipe(
+          const classification = FOCUS_TO_CLASSIFICATION[focus];
+          return this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );
@@ -65,17 +71,18 @@ export class EmailTabComponent {
 
       const totalSends = data.monthlySends?.reduce((s, v) => s + v, 0) ?? 0;
       const totalOpens = data.monthlyOpens?.reduce((s, v) => s + v, 0) ?? 0;
-      const changePct = data.changePercentage;
+      const changePct = data.momChangePercentage;
 
-      const sendsMom = this.computeMomPct(data.monthlySends);
-      const opensMom = this.computeMomPct(data.monthlyOpens);
+      const sendsMom = computeMomPct(data.monthlySends);
+      const opensMom = computeMomPct(data.monthlyOpens);
 
       const sends = data.monthlySends ?? [];
       const opens = data.monthlyOpens ?? [];
-      const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
-      const prevSends = sends.length > 1 ? sends[sends.length - 2] : undefined;
-      const lastOpens = sends.length > 0 ? (opens[opens.length - 1] ?? 0) : 0;
-      const prevOpens = sends.length > 1 ? (opens[opens.length - 2] ?? 0) : 0;
+      const minLen = Math.min(sends.length, opens.length);
+      const lastSends = minLen > 0 ? sends[minLen - 1] : undefined;
+      const prevSends = minLen > 1 ? sends[minLen - 2] : undefined;
+      const lastOpens = minLen > 0 ? (opens[minLen - 1] ?? 0) : 0;
+      const prevOpens = minLen > 1 ? (opens[minLen - 2] ?? 0) : 0;
 
       const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : 0;
       const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : 0;
@@ -129,8 +136,8 @@ export class EmailTabComponent {
           label: 'Click-Through Rate',
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
-          value: `${data.currentCtr.toFixed(2)}%`,
-          momChange: formatChangePct(changePct, 'vs avg'),
+          value: `${(data.currentCtr ?? 0).toFixed(2)}%`,
+          momChange: formatChangePct(changePct, 'MoM'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),
           yoyChange: null,
@@ -180,14 +187,5 @@ export class EmailTabComponent {
           })
         );
     });
-  }
-
-  // === Private Helpers ===
-  private computeMomPct(arr: number[] | undefined): number | null {
-    if (!arr || arr.length < 2) return null;
-    const current = arr.at(-1) ?? 0;
-    const previous = arr.at(-2) ?? 0;
-    if (previous === 0) return null;
-    return ((current - previous) / previous) * 100;
   }
 }

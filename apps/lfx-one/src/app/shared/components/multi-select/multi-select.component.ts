@@ -17,6 +17,10 @@ export class MultiSelectComponent {
   public readonly options = input.required<any[]>();
   public readonly optionLabel = input<string>('label');
   public readonly optionValue = input<string>('value');
+  // Optional secondary label shown beneath the main label in the dropdown
+  // list. Selected chips still show only optionLabel. When undefined the
+  // dropdown renders default p-multiSelect items.
+  public readonly optionSubLabel = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
   public readonly appendTo = input<any>('body');

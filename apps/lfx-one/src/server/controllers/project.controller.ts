@@ -13,7 +13,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
@@ -110,16 +110,18 @@ export class ProjectController {
         return;
       }
 
+      const includeMeetingCoordinator = req.query['meeting_coordinator'] === 'true';
+
       // Check if slug is a uuid
       if (isUuid(slug)) {
         // If the slug is a uuid, get the project by id
-        const project = await this.projectService.getProjectById(req, slug);
+        const project = await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator);
         res.json(project);
         return;
       }
 
       // If the slug is not a uuid, get the project by slug
-      const project = await this.projectService.getProjectBySlug(req, slug);
+      const project = await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator);
 
       // Log the success
       logger.success(req, 'get_project_by_slug', startTime, {
@@ -131,6 +133,39 @@ export class ProjectController {
       res.json(project);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /projects/:uid/sfid — UUID → Salesforce 18-char ID translation via NATS.
+   * Returns `{ sfid: string | null }`; null on lookup failure so callers can hide cleanly.
+   * Project access is enforced via getProjectById before the NATS mapping (FGA on upstream).
+   */
+  public async getProjectSfid(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_project_sfid', { project_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_project_sfid',
+          service: 'project_controller',
+        })
+      ) {
+        return;
+      }
+
+      await this.projectService.getProjectById(req, uid, false);
+      const sfid = await this.projectService.getProjectSfidByUid(req, uid);
+
+      logger.success(req, 'get_project_sfid', startTime, {
+        project_uid: uid,
+        resolved: sfid != null,
+      });
+
+      res.json({ sfid });
+    } catch (error) {
       next(error);
     }
   }
@@ -199,9 +234,13 @@ export class ProjectController {
 
       const userData: AddUserToProjectRequest = req.body;
 
-      // Validate required fields
-      if (!userData.username || !userData.role) {
-        const validationError = ServiceValidationError.forField('body', 'Username and role are required', {
+      // For the manual-add flow the frontend may omit username (users without a known
+      // username are valid). Fall back to the email field as the routing identifier.
+      const identifier = (userData.username || userData.email || '').trim();
+
+      // Validate required fields — role is always required; at least one of username/email must be present
+      if (!identifier || !userData.role) {
+        const validationError = ServiceValidationError.forField('body', 'Username (or email) and role are required', {
           operation: 'add_user_project_permissions',
           service: 'project_controller',
           path: req.path,
@@ -223,32 +262,31 @@ export class ProjectController {
         return;
       }
 
-      // Detect if input is email or username
-      const isEmail = userData.username.includes('@');
-
-      // Check if manual user data is provided (for users not found in directory)
-      let manualUserInfo: { name: string; email: string; username: string; avatar?: string } | undefined;
-      if (userData.name || userData.email || userData.avatar) {
+      // Check if manual user data is provided (for users not found in directory).
+      // name is always present for manual adds and never present for directory email lookups,
+      // so it's the correct discriminator — using email alone would misclassify a plain
+      // { email, role } directory-lookup request as a manual add.
+      let manualUserInfo: { name: string; email: string; username?: string; avatar?: string } | undefined;
+      if (userData.name) {
         manualUserInfo = {
-          name: userData.name || '',
+          name: userData.name,
           email: userData.email || '',
-          username: userData.username, // Keep the original input for manual user info
+          // username is optional for manually-added users — preserve whatever was provided
+          username: userData.username || undefined,
         };
-        // Only include avatar if it's not empty
         if (userData.avatar) {
           manualUserInfo.avatar = userData.avatar;
         }
       }
 
-      // Pass the original input (email or username) to updateProjectPermissions
-      // The service will handle the email_to_sub -> email_to_username flow internally
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', userData.username, userData.role, manualUserInfo);
+      // Pass the identifier (username or email fallback) to updateProjectPermissions
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', identifier, userData.role, manualUserInfo);
 
       logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
-        username: userData.username,
+        identifier,
         role: userData.role,
-        is_email: isEmail,
+        is_manual: !!manualUserInfo,
       });
 
       res.status(201).json(result);

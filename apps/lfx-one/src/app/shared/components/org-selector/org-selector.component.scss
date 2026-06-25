@@ -1,0 +1,29 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: block;
+  width: 100%;
+}
+
+.sidebar-org-name {
+  @apply font-medium leading-5 relative text-base text-gray-900 tracking-tight truncate w-full text-left;
+}
+
+::ng-deep .org-selector-panel.p-popover {
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  @media (min-width: 1024px) {
+    // stylelint-disable-next-line declaration-no-important
+    position: fixed !important;
+    left: 344px !important;
+    top: 4px !important;
+
+    &.org-selector-panel--with-banner {
+      top: 52px !important;
+    }
+  }
+}

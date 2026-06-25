@@ -1,6 +1,137 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OffsetPaginatedResponse } from './api.interface';
+
+/** Active tab on the org training & certifications page */
+export type OrgTrainingTabId = 'certifications' | 'trainings';
+
+// ─── Org Certifications tab (LFXV2-1896) ─────────────────────────────────────
+
+/** One row in the org Certifications table — a distinct course/cert the org's people have engaged with. */
+export interface OrgCertification {
+  /** Stable grouping key — COALESCE(COURSE_ID, COURSE_OR_CERT_ID) */
+  readonly courseId: string;
+  /** Course / certification name */
+  readonly name: string;
+  /** Issuing foundation/project name; null when unknown */
+  readonly foundation: string | null;
+  /** Difficulty level (e.g. Beginner/Intermediate/Advanced); null when unknown */
+  readonly level: string | null;
+  /** Logo/seal image URL; null when unavailable */
+  readonly imageUrl: string | null;
+  /** Count of org employees who hold this certification (STATUS = 'Certified') */
+  readonly certifiedCount: number;
+  /** Count of org employees in progress (STATUS IS DISTINCT FROM 'Certified', including NULL) */
+  readonly inProgressCount: number;
+}
+
+export type OrgCertificationsResponse = OffsetPaginatedResponse<OrgCertification>;
+
+/** Which roster a certification drill-down drawer shows. */
+export type OrgCertEmployeeStatus = 'certified' | 'in-progress';
+
+/** One employee in a certification drill-down drawer. */
+export interface OrgCertEmployee {
+  readonly contactId: string;
+  readonly name: string;
+  readonly jobTitle: string | null;
+}
+
+/** Cert employee row with presentation fields pre-baked for template rendering (avoids method calls in template). */
+export interface OrgCertEmployeeVm extends OrgCertEmployee {
+  readonly initials: string;
+  readonly avatarColorClass: string;
+}
+
+/** Drill-down roster of org employees for a single certification + status. */
+export interface OrgCertEmployeesResponse {
+  readonly courseId: string;
+  readonly certificationName: string;
+  readonly status: OrgCertEmployeeStatus;
+  readonly total: number;
+  readonly data: readonly OrgCertEmployee[];
+}
+
+/** Frontend query params for the org certifications list (all optional). */
+export interface GetOrgCertificationsParams {
+  searchQuery?: string;
+  level?: string | null;
+  pageSize?: number;
+  offset?: number;
+  sortField?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+/** Backend-resolved (validated/clamped) options for the org certifications query. */
+export interface GetOrgCertificationsOptions {
+  searchQuery?: string;
+  level: string | null;
+  pageSize: number;
+  offset: number;
+  sortField: string;
+  sortOrder: 'ASC' | 'DESC';
+}
+
+// ─── Org Trainings tab (LFXV2-1897) ────────────────────────────────────────────
+
+/** One row in the org Trainings table — a distinct training course the org's people engaged with. */
+export interface OrgTraining {
+  readonly courseId: string;
+  readonly name: string;
+  readonly foundation: string | null;
+  readonly level: string | null;
+  readonly imageUrl: string | null;
+  readonly inProgressCount: number;
+  readonly completedCount: number;
+}
+
+export type OrgTrainingsResponse = OffsetPaginatedResponse<OrgTraining>;
+
+/** Which roster a training drill-down drawer shows. */
+export type OrgTrainingEmployeeStatus = 'in-progress' | 'completed';
+
+/** Drill-down roster of org employees for a single training course + status. */
+export interface OrgTrainingEmployeesResponse {
+  readonly courseId: string;
+  readonly trainingName: string;
+  readonly status: OrgTrainingEmployeeStatus;
+  readonly total: number;
+  readonly data: readonly OrgCertEmployee[];
+}
+
+/** Frontend query params for the org trainings list (all optional). */
+export interface GetOrgTrainingsParams {
+  searchQuery?: string;
+  level?: string | null;
+  pageSize?: number;
+  offset?: number;
+  sortField?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+/** Backend-resolved options for the org trainings query. */
+export interface GetOrgTrainingsOptions {
+  searchQuery?: string;
+  level: string | null;
+  pageSize: number;
+  offset: number;
+  sortField: string;
+  sortOrder: 'ASC' | 'DESC';
+}
+
+/** Summary statistics for the org training & certifications stat strip */
+export interface OrgTrainingStats {
+  /** Count of distinct employees who completed at least one certification (STATUS = 'Certified') */
+  certifiedEmployees: number;
+  /** Total count of certification records (STATUS = 'Certified'), regardless of how many employees earned them */
+  certificationsEarned: number;
+  /** Distinct employees with at least one in-progress training enrollment (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
+  employeesInTraining: number;
+  /** Total in-progress training enrollment rows (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
+  trainingCoursesEnrolled: number;
+}
+
 /**
  * Certification status derived from expiration date
  */

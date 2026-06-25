@@ -148,8 +148,8 @@ export interface ProjectPermissionUser {
   name: string;
   /** User's email address */
   email: string;
-  /** Username identifier */
-  username: string;
+  /** Username identifier (optional — users added manually may not have one) */
+  username?: string;
   /** URL to user's avatar image (optional) */
   avatar?: string;
   /** Permission role - 'view' for auditors, 'manage' for writers */
@@ -162,8 +162,10 @@ export interface ProjectPermissionUser {
  * Can include optional manual entry fields when user is not found in directory
  */
 export interface AddUserToProjectRequest {
-  /** Username to add */
-  username: string;
+  /** Username or email address to add. Email triggers a directory lookup.
+   *  May be omitted for manual adds (user not found in directory), but then
+   *  `email` must be provided so the server has a usable routing identifier. */
+  username?: string;
   /** Role to assign - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
   /** User's full name (optional, for manual entry when user not found) */

@@ -319,6 +319,65 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
+// Org Overview Involvement Metrics (cross-foundation, non-clickable)
+// ============================================
+
+/**
+ * Engagement card configuration for the /org/overview involvement section.
+ * 6 cards aggregated across all LF foundations. Cards are NOT clickable — no drawerType.
+ */
+export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
+  {
+    title: 'Active Contributors',
+    icon: 'fa-light fa-code',
+    chartType: 'bar',
+    category: 'contributors',
+    testId: 'org-overview-involvement-card-active-contributors',
+    chartData: EMPTY_CHART_DATA,
+  },
+  {
+    title: 'Maintainers',
+    icon: 'fa-light fa-user-check',
+    chartType: 'bar',
+    category: 'contributors',
+    testId: 'org-overview-involvement-card-maintainers',
+    chartData: EMPTY_CHART_DATA,
+  },
+  {
+    title: 'Event Attendees',
+    icon: 'fa-light fa-user-group',
+    chartType: 'line',
+    category: 'events',
+    testId: 'org-overview-involvement-card-event-attendees',
+    chartData: EMPTY_CHART_DATA,
+  },
+  {
+    title: 'Event Speakers',
+    icon: 'fa-light fa-award-simple',
+    chartType: 'line',
+    category: 'events',
+    testId: 'org-overview-involvement-card-event-speakers',
+    chartData: EMPTY_CHART_DATA,
+  },
+  {
+    title: 'Certified Employees',
+    icon: 'fa-light fa-graduation-cap',
+    chartType: 'line',
+    category: 'education',
+    testId: 'org-overview-involvement-card-certified-employees',
+    chartData: EMPTY_CHART_DATA,
+  },
+  {
+    title: 'Training Enrollments',
+    icon: 'fa-light fa-graduation-cap',
+    chartType: 'line',
+    category: 'education',
+    testId: 'org-overview-involvement-card-training-enrollments',
+    chartData: EMPTY_CHART_DATA,
+  },
+];
+
+// ============================================
 // Marketing Overview Metrics (Executive Director)
 // ============================================
 
@@ -628,6 +687,8 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
   nonResponses: 0,
   responses: 0,
   lastUpdatedLabel: 'N/A',
+  range: 'YTD',
+  periodLabel: '',
 };
 
 export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {

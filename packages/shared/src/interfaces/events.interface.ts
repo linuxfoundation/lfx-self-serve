@@ -37,6 +37,8 @@ export interface MyEvent {
   status: string;
   /** Whether the current user has registered for this event */
   isRegistered: boolean;
+  /** ISO 8601 absolute timestamp (with offset) for the cutoff after which travel fund applications are no longer accepted; null when not set */
+  travelFundEnd: string | null;
 }
 
 /**
@@ -75,6 +77,8 @@ export interface MyEventRow {
   /** True when the user has registered for this event */
   IS_REGISTERED: boolean;
   TOTAL_RECORDS: number;
+  /** Cutoff timestamp (TIMESTAMP) after which travel fund applications are no longer accepted for this event; null when not set */
+  TRAVEL_FUND_END_TS: Date | string | null;
 }
 
 /**
@@ -238,6 +242,8 @@ export interface GetMyEventsParams {
   country?: string;
   isVisaRequestAccepted?: boolean;
   isTravelFundRequestAccepted?: boolean;
+  /** When true, events whose travel fund deadline timestamp has already passed (server-side `CURRENT_TIMESTAMP()` comparison) are excluded */
+  excludePastTravelFundDeadline?: boolean;
 }
 
 /**
@@ -314,6 +320,8 @@ export interface VisaRequestRow {
   /** Visa letter request status. Actual Snowflake values: "Submitted", "Approved", "Denied", "Expired" */
   REQUEST_STATUS: string;
   TOTAL_RECORDS: number;
+  /** Cutoff timestamp (TIMESTAMP) after which travel fund applications are no longer accepted for this event; null when not set. Carried on visa request rows for shape parity but suppressed in rendering (travel-fund only). */
+  TRAVEL_FUND_END_TS: Date | string | null;
 }
 
 /**
@@ -332,6 +340,8 @@ export interface VisaRequest {
   applicationDate: string;
   /** Visa letter request status (e.g. "Submitted", "Approved", "Denied", "Expired") */
   status: string;
+  /** ISO 8601 absolute timestamp (with offset) for the cutoff after which travel fund applications are no longer accepted; null when not set. Present on visa request rows but suppressed in rendering (travel-fund only). */
+  travelFundEnd: string | null;
 }
 
 /**
@@ -396,6 +406,8 @@ export interface GetMyEventsOptions {
   isVisaRequestAccepted?: boolean;
   /** When true, only events where the user's travel fund request was accepted are returned */
   isTravelFundRequestAccepted?: boolean;
+  /** When true, events whose travel fund deadline timestamp has already passed (server-side `CURRENT_TIMESTAMP()` comparison) are excluded */
+  excludePastTravelFundDeadline?: boolean;
 }
 
 /**

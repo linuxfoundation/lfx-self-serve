@@ -33,6 +33,7 @@
         [items]="sidebarItems()"
         [showMeSelector]="activeLens() === 'me'"
         [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+        [showOrgSelector]="activeLens() === 'org'"
         [(selectorPanelOpen)]="selectorPanelOpen"></lfx-sidebar>
     </div>
   </div>
@@ -64,6 +65,7 @@
           [items]="sidebarItems()"
           [showMeSelector]="activeLens() === 'me'"
           [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+          [showOrgSelector]="activeLens() === 'org'"
           [(selectorPanelOpen)]="selectorPanelOpen"
           [mobile]="true"></lfx-sidebar>
       </div>

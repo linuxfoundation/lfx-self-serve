@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
+import { writerGuard } from '@shared/guards/writer.guard';
 
 export const MAILING_LIST_ROUTES: Routes = [
   {
@@ -14,7 +15,8 @@ export const MAILING_LIST_ROUTES: Routes = [
   {
     path: 'create',
     loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { preload: true, preloadDelay: 2000, writeFeature: 'mailing-lists' },
   },
   {
     path: ':id',
@@ -24,6 +26,7 @@ export const MAILING_LIST_ROUTES: Routes = [
   {
     path: ':id/edit',
     loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'mailing-lists' },
   },
 ];

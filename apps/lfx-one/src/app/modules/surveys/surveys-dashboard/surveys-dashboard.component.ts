@@ -13,6 +13,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyResponseDrawerComponent } from '../components/my-response-drawer/my-response-drawer.component';
@@ -21,7 +22,16 @@ import { SurveysTableComponent } from '../components/surveys-table/surveys-table
 
 @Component({
   selector: 'lfx-surveys-dashboard',
-  imports: [LowerCasePipe, ButtonComponent, SurveysTableComponent, RouterLink, SurveyResultsDrawerComponent, MyResponseDrawerComponent, EmptyStateComponent],
+  imports: [
+    LowerCasePipe,
+    ButtonComponent,
+    SurveysTableComponent,
+    RouterLink,
+    SurveyResultsDrawerComponent,
+    MyResponseDrawerComponent,
+    EmptyStateComponent,
+    SkeletonModule,
+  ],
   templateUrl: './surveys-dashboard.component.html',
   styleUrl: './surveys-dashboard.component.scss',
 })
@@ -52,6 +62,7 @@ export class SurveysDashboardComponent {
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  protected readonly personaLoaded = this.personaService.personaLoaded;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 

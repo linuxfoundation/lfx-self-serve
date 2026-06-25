@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COUNTRIES, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
-import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
@@ -48,6 +48,12 @@ export class ProfileEditDialogComponent {
   public readonly hasManagedEmails: Signal<boolean> = computed(() => this.verifiedEmails().length > 0);
   public readonly authEmail = this.combinedProfile.user.email;
 
+  // Organization (work-history-derived) signals
+  public readonly loadingWorkExperiences = signal(true);
+  private readonly workExperiences = signal<WorkExperienceEntry[]>([]);
+  public readonly organizationOptions: Signal<{ label: string; value: string }[]> = this.initOrganizationOptions();
+  public readonly hasOrganizationOptions: Signal<boolean> = computed(() => this.organizationOptions().length > 0);
+
   // Country/state options
   public readonly countryOptions = COUNTRIES.map((country: { label: string; value: string }) => ({
     label: country.label,
@@ -81,7 +87,9 @@ export class ProfileEditDialogComponent {
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
     job_title: ['', [Validators.maxLength(100)]],
-    organization: ['', [Validators.maxLength(100)]],
+    // Organization is selected from work-history orgs (a constrained list); the only remaining
+    // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
+    organization: ['', [Validators.maxLength(200)]],
   });
 
   public constructor() {
@@ -123,6 +131,21 @@ export class ProfileEditDialogComponent {
           });
         },
       });
+
+    // Load work-history organizations to populate the Organization dropdown.
+    this.userService
+      .getWorkExperiences()
+      .pipe(
+        takeUntilDestroyed(),
+        finalize(() => this.loadingWorkExperiences.set(false))
+      )
+      // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
+      // so a dedicated error handler here would be unreachable. A currently-saved organization
+      // still shows as a selectable option via organizationOptions() when the list is empty.
+      .subscribe((experiences) => {
+        this.workExperiences.set(experiences);
+        this.syncOrganizationControl();
+      });
   }
 
   public onSubmit(): void {
@@ -162,7 +185,9 @@ export class ProfileEditDialogComponent {
             summary: 'Success',
             detail: 'Profile updated successfully!',
           });
-          this.ref.close(true);
+          // Return the saved metadata so the parent can update its cached profile optimistically.
+          // The profile GET is eventually consistent, so an immediate refetch can read stale data.
+          this.ref.close(userMetadata);
         },
         error: (error: HttpErrorResponse) => {
           // Flow C: Management token required — save form state and redirect to authorize
@@ -231,7 +256,9 @@ export class ProfileEditDialogComponent {
       phone_number: profile.profile?.phone_number || '',
       t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
       job_title: profile.profile?.job_title || '',
-      organization: profile.profile?.organization || '',
+      // Trim so the form value matches the trimmed option values — otherwise a legacy saved
+      // org with stray whitespace would fail to match any option and render an empty selection.
+      organization: (profile.profile?.organization || '').trim(),
     });
 
     this.selectedCountrySignal.set(countryValue);
@@ -239,5 +266,68 @@ export class ProfileEditDialogComponent {
 
   private initVerifiedEmails(): Signal<UserEmail[]> {
     return computed(() => this.emails().filter((e) => e.verified));
+  }
+
+  /**
+   * Once work-history options are known, align the organization control to them:
+   * - if there are options, enable the control and reconcile the saved value's casing to the
+   *   matching option (the saved value may differ only in case, which would otherwise leave the
+   *   select with no matching option and render blank);
+   * - if there are none, disable the control via the reactive form (rather than a [disabled]
+   *   attribute, which warns when combined with formControlName).
+   */
+  private syncOrganizationControl(): void {
+    const control = this.profileForm.get('organization');
+    if (!control) {
+      return;
+    }
+
+    if (!this.hasOrganizationOptions()) {
+      control.disable({ emitEvent: false });
+      return;
+    }
+
+    control.enable({ emitEvent: false });
+
+    const current = control.value;
+    if (current) {
+      const match = this.organizationOptions().find((option) => option.value.toLowerCase() === current.toLowerCase());
+      if (match && match.value !== current) {
+        control.setValue(match.value, { emitEvent: false });
+      }
+    }
+  }
+
+  private initOrganizationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const seen = new Set<string>();
+      const options: { label: string; value: string }[] = [];
+
+      for (const entry of this.workExperiences()) {
+        const name = entry.organization?.trim();
+        if (!name) {
+          continue;
+        }
+        const key = name.toLowerCase();
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        options.push({ label: name, value: name });
+      }
+
+      // Keep the currently-saved organization selectable even if it's no longer backed by a
+      // work-history entry (e.g. the entry was deleted). value matches the form control value
+      // (patched from the saved metadata) so it stays selected. savedOrg is captured from the
+      // CombinedProfile at dialog open and doesn't change during the session, so this option
+      // persists for the dialog's lifetime; it's dropped on the next open once the saved org is
+      // one of the work-history entries.
+      const savedOrg = (this.combinedProfile.profile?.organization ?? '').trim();
+      if (savedOrg && !seen.has(savedOrg.toLowerCase())) {
+        options.unshift({ label: savedOrg, value: savedOrg });
+      }
+
+      return options;
+    });
   }
 }

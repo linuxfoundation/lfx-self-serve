@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="mx-auto flex max-w-[1024px] flex-col gap-8 pt-[32px]" data-testid="docs-landing">
+  <header class="flex flex-col gap-4">
+    <div>
+      <h1 class="font-display text-3xl font-light">LFX Documentation</h1>
+      <p class="mt-1 text-sm text-gray-500">Browse user guides, FAQs, and how-tos. Pick a topic below to dive in.</p>
+    </div>
+
+    <lfx-docs-search [fullWidth]="true" data-testid="docs-landing-search" />
+  </header>
+
+  @if (topics.length > 0) {
+    <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="docs-topics-grid">
+      @for (topic of topics; track topic.slug) {
+        <li>
+          <lfx-docs-topic-card [topic]="topic" />
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="text-sm text-gray-500" data-testid="docs-landing-empty">No topics are available yet. Please check back later.</p>
+  }
+</div>

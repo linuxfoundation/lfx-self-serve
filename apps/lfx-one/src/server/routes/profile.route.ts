@@ -41,6 +41,17 @@ router.put('/emails/:emailId/primary', (req, res, next) => profileController.set
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
 
+// Linux.com email alias routes (backed by auth-service + forwards-service via NATS)
+
+// GET /api/profile/linux-email - Resolve the user's Linux.com alias state
+router.get('/linux-email', (req, res, next) => profileController.getLinuxAlias(req, res, next));
+
+// POST /api/profile/linux-email/claim - Claim an alias and set its forwarding target
+router.post('/linux-email/claim', (req, res, next) => profileController.claimLinuxAlias(req, res, next));
+
+// PUT /api/profile/linux-email/forward - Update the forwarding target for a claimed alias
+router.put('/linux-email/forward', (req, res, next) => profileController.updateLinuxForward(req, res, next));
+
 // POST /api/profile/reset-password - Send password reset email via LF Login service
 router.post('/reset-password', (req, res, next) => profileController.sendPasswordResetEmail(req, res, next));
 

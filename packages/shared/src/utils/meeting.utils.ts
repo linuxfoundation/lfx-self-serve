@@ -8,9 +8,14 @@ import {
   CustomRecurrencePattern,
   Meeting,
   MeetingOccurrence,
+  MeetingRecurrence,
+  PastMeeting,
   PastMeetingSummary,
+  PastMeetingTranscript,
+  QueryServiceItem,
   RecurrenceSummary,
   SummaryData,
+  TranscriptCue,
   User,
   V1PastMeetingSummary,
   V1SummaryDetail,
@@ -103,7 +108,25 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     }
 
     case 'monthly': {
-      const monthText = interval === 1 ? 'Monthly' : `Every ${interval} months`;
+      // Quarterly is represented upstream as MONTHLY (type=3) with repeat_interval=3
+      // (the meeting-service has no distinct QUARTERLY type), so surface that cadence
+      // by name rather than the literal "Every 3 months".
+      //
+      // NOTE (LFXV2-2066/LFXV2-2112): the cadence label is derived from whichever recurrence
+      // RULE the caller feeds in. When a meeting's cadence changes from a given occurrence
+      // onwards, the meeting's top-level `recurrence` is intentionally left as the original
+      // rule and the new cadence (e.g. repeat_interval=3 for quarterly) is carried on the
+      // affected occurrence's own `recurrence`. Callers must therefore resolve the
+      // occurrence-level override first (see `resolveOccurrenceRecurrence`); a quarterly
+      // meeting still showing "Monthly" is a UI lookup bug, not an upstream sync problem.
+      let monthText: string;
+      if (interval === 1) {
+        monthText = 'Monthly';
+      } else if (interval === 3) {
+        monthText = 'Quarterly';
+      } else {
+        monthText = `Every ${interval} months`;
+      }
       if (pattern.monthlyType === 'dayOfMonth' && pattern.monthly_day) {
         description = `${monthText} on day ${pattern.monthly_day}`;
       } else if (pattern.monthlyType === 'dayOfWeek' && pattern.monthly_week && pattern.monthly_week_day) {
@@ -154,12 +177,38 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
 }
 
 /**
- * Filter out cancelled occurrences from a list
+ * Filter out cancelled occurrences from a list.
+ *
+ * Cancellation is signalled two different ways depending on the endpoint (LFXV2-2057):
+ * the single-meeting endpoint sets `occurrence.status === 'cancel'`, while the meetings
+ * LIST endpoint leaves `status` unset and instead lists the cancelled occurrence IDs in
+ * `Meeting.cancelled_occurrences`. Pass that array so a cancelled occurrence is dropped
+ * consistently regardless of which endpoint produced the data — otherwise the card (list)
+ * and detail (single) views select different "next" occurrences for the same meeting.
+ *
+ * Both arrays key off the canonical `occurrence_id` (the occurrence start as a Unix-second
+ * timestamp — a 10-digit value per the upstream meeting-service contract), so we compare IDs
+ * directly rather than re-deriving seconds from `start_time`; that also sidesteps the list
+ * endpoint returning `start_time` with a timezone offset vs the detail endpoint's UTC form.
+ * Note this is distinct from the 13-digit Unix-*millisecond* timestamps the UI constructs via
+ * `new Date(start_time).getTime()` elsewhere (past-meeting URLs, `meeting_and_occurrence_id`) —
+ * those are never compared against `occurrence_id` / `cancelled_occurrences`.
+ *
  * @param occurrences Array of meeting occurrences
+ * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
-export function getActiveOccurrences(occurrences: MeetingOccurrence[]): MeetingOccurrence[] {
-  return occurrences.filter((occurrence) => occurrence.status !== 'cancel');
+export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
+  const cancelledIds = new Set(cancelledOccurrences ?? []);
+  return occurrences.filter((occurrence) => {
+    if (occurrence.status === 'cancel') {
+      return false;
+    }
+    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
@@ -175,8 +224,9 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const now = new Date();
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
-  // Filter out cancelled occurrences
-  const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+  // Filter out cancelled occurrences (honouring both the per-occurrence status and the
+  // list endpoint's cancelled_occurrences IDs — see getActiveOccurrences).
+  const activeOccurrences = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
 
   if (activeOccurrences.length === 0) {
     return null;
@@ -201,6 +251,55 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Returns the recurrence that should drive the displayed cadence label for a given occurrence:
+ * the occurrence's own recurrence override when present (the cadence changed at/after this
+ * occurrence — LFXV2-2112), otherwise the meeting's top-level recurrence.
+ *
+ * Background: when a recurring meeting's cadence changes from a specific occurrence onwards,
+ * Zoom records it as an `all_following` update and the meeting-service's occurrence calculator
+ * stamps the new pattern onto that occurrence's `recurrence` (LFXV2-2066). The meeting's
+ * top-level `recurrence` is intentionally left as the original rule, so the occurrence-level
+ * override — when present — is the source of truth for the cadence label. Centralised here so
+ * every surface that renders a recurrence label shares one priority rule.
+ *
+ * @param meeting The meeting (only its top-level `recurrence` is read)
+ * @param occurrence The occurrence being displayed (its `recurrence` override wins when set)
+ * @returns The recurrence to feed the label formatter, or null when neither is available
+ */
+export function resolveOccurrenceRecurrence(meeting: Pick<Meeting, 'recurrence'>, occurrence?: MeetingOccurrence | null): MeetingRecurrence | null {
+  return occurrence?.recurrence ?? meeting.recurrence ?? null;
+}
+
+/**
+ * Resolves the start time a card/list should display for an upcoming meeting — the next
+ * scheduled occurrence, not the recurring series origin.
+ *
+ * Order of preference:
+ * 1. `occurrence.start_time` — an already-resolved occurrence (an explicit selection, or the
+ *    current/next occurrence from {@link getCurrentOrNextOccurrence} when the `occurrences`
+ *    array is present and usable, e.g. on the ITX-backed detail view).
+ * 2. `meeting.next_occurrence_start_time` — the upstream-computed next-occurrence start. Present
+ *    on both the query-service list payload and the ITX detail payload; empty when no future
+ *    occurrence exists. This is what keeps a recurring card from falling back to the series
+ *    origin when the list payload's `occurrences` array isn't usable (it carries `is_cancelled`
+ *    rather than `status`, and isn't guaranteed to be projected on every list response).
+ * 3. `meeting.start_time` — one-time meetings and the final fallback.
+ *
+ * @param meeting The meeting object
+ * @param occurrence Optional already-resolved occurrence (explicit or current/next)
+ * @returns The start time to display, or null when none is available
+ */
+export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: MeetingOccurrence | null): string | null {
+  if (occurrence?.start_time) {
+    return occurrence.start_time;
+  }
+  if (meeting?.next_occurrence_start_time) {
+    return meeting.next_occurrence_start_time;
+  }
+  return meeting?.start_time ?? null;
 }
 
 /**
@@ -268,6 +367,22 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   const startTime = new Date(meeting.start_time);
   const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
   return now > endTime;
+}
+
+/**
+ * Sorts past meetings most-recent-first (descending by `scheduled_start_time`, falling back to
+ * `start_time` when absent).
+ *
+ * The upstream query-service only supports name/updated sorts — there is no `start_time` sort — so
+ * past-meeting date ordering must be applied client-side (see LFXV2-2053). Returns a new array; the
+ * input is not mutated.
+ */
+export function sortPastMeetingsDescending<T extends PastMeeting>(meetings: T[]): T[] {
+  return [...meetings].sort((a, b) => {
+    const timeA = new Date(a.scheduled_start_time ?? a.start_time).getTime();
+    const timeB = new Date(b.scheduled_start_time ?? b.start_time).getTime();
+    return timeB - timeA;
+  });
 }
 
 /**
@@ -430,5 +545,130 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
 
     created_at: summary.created_at || raw.summary_created_time || '',
     updated_at: summary.updated_at || raw.summary_last_modified_time || raw.modified_at || '',
+  };
+}
+
+function summaryRecency(summary: PastMeetingSummary): number {
+  // Try updated_at first, but fall back to created_at when it's missing or unparsable
+  const updated = summary.updated_at ? Date.parse(summary.updated_at) : NaN;
+  if (!Number.isNaN(updated)) {
+    return updated;
+  }
+  const created = summary.created_at ? Date.parse(summary.created_at) : NaN;
+  return Number.isNaN(created) ? 0 : created;
+}
+
+function summaryHasContent(summary: PastMeetingSummary): boolean {
+  const editedContent = summary.summary_data?.edited_content?.trim();
+  const content = summary.summary_data?.content?.trim();
+  return Boolean(editedContent || content);
+}
+
+/** Picks the best summary when multiple v1_past_meeting_summary records share one occurrence (LFXV2-2222). */
+export function selectPrimaryPastMeetingSummary(resources: QueryServiceItem<PastMeetingSummary>[] | undefined | null): PastMeetingSummary | null {
+  if (!resources || resources.length === 0) {
+    return null;
+  }
+
+  const transformed = resources.map((resource) => transformV1SummaryToV2(resource.data));
+  const withContent = transformed.filter(summaryHasContent);
+
+  // No content-bearing record: preserve input (query-service UID) order — legacy resources[0] behavior.
+  if (withContent.length === 0) {
+    return transformed[0];
+  }
+
+  return withContent.reduce((best, current) => (summaryRecency(current) > summaryRecency(best) ? current : best));
+}
+
+/**
+ * Resolves the viewable download URL for a past meeting transcript.
+ *
+ * Only an actual transcript file counts — Zoom's audio transcript (`TRANSCRIPT`)
+ * or closed captions (`CC`), matched case-insensitively. The session `share_url`
+ * is deliberately NOT used (it points to the recording, so falling back to it
+ * makes "View Transcript" open the recording), and a `TIMELINE` file is a speaker
+ * timeline, not a transcript, so it's excluded too.
+ *
+ * @param transcript - The past meeting transcript resource (may be null/undefined).
+ * @returns The transcript file's `download_url`, or `null` when no transcript file
+ *   exists (which the UI renders as "Transcript Unavailable").
+ */
+export function getPastMeetingTranscriptUrl(transcript: PastMeetingTranscript | null | undefined): string | null {
+  const file = transcript?.recording_files?.find((f) => {
+    const type = f.file_type?.toUpperCase();
+    return type === 'TRANSCRIPT' || type === 'CC';
+  });
+  return file?.download_url || null;
+}
+
+/**
+ * Parses a WebVTT transcript into ordered cues so it can be rendered inline.
+ *
+ * Each VTT block is `index / start --> end / "Speaker: text"`. The `WEBVTT` header
+ * and any NOTE/metadata blocks (no `-->` line) are skipped; the cue timestamp is
+ * trimmed to `HH:MM:SS` and a short prefix before the first `": "` is treated as
+ * the speaker (otherwise `speaker` is `''`).
+ *
+ * @param vtt - The raw WebVTT transcript string (may be null/undefined).
+ * @returns The parsed {@link TranscriptCue} list in document order, or `[]` for
+ *   empty or unparseable input.
+ */
+export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCue[] {
+  if (!vtt) {
+    return [];
+  }
+
+  const cues: TranscriptCue[] = [];
+  const blocks = vtt.split(/\r?\n\r?\n/);
+
+  for (const block of blocks) {
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const tsIndex = lines.findIndex((line) => line.includes('-->'));
+    if (tsIndex === -1) {
+      continue;
+    }
+
+    const timestamp = lines[tsIndex].split('-->')[0].trim().split('.')[0];
+    const body = lines
+      .slice(tsIndex + 1)
+      .join(' ')
+      .trim();
+    if (!body) {
+      continue;
+    }
+
+    // Split "Speaker: text" without a regex — a backtracking pattern over the
+    // external transcript content is a ReDoS risk (flagged by CodeQL). A short
+    // prefix before the first ": " is treated as the speaker.
+    const separatorIndex = body.indexOf(': ');
+    if (separatorIndex > 0 && separatorIndex <= 60) {
+      cues.push({ timestamp, speaker: body.slice(0, separatorIndex).trim(), text: body.slice(separatorIndex + 2).trim() });
+    } else {
+      cues.push({ timestamp, speaker: '', text: body });
+    }
+  }
+
+  return cues;
+}
+
+/**
+ * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
+ * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
+ */
+export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_summary_enabled' | 'require_ai_summary_approval' | 'zoom_config'>>(meeting: T): T {
+  const zoom = meeting.zoom_config;
+  if (!zoom) {
+    return meeting;
+  }
+
+  return {
+    ...meeting,
+    ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled,
+    require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval,
   };
 }

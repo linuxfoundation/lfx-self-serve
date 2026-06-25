@@ -8,7 +8,7 @@
 # Exits with a 1 if one or more source files are missing a license header
 
 # These are the file patterns we should exclude - these are typically transient files not checked into source control
-exclude_pattern='node_modules|.vendor|.idea|gen|.venv|.ruff_cache|.pytest_cache|.angular|dist|playwright-report|test-results'
+exclude_pattern='node_modules|.vendor|.idea|gen|.venv|.ruff_cache|.pytest_cache|.angular|dist|playwright-report|test-results|design|.playwright-mcp'
 
 files=()
 echo "Scanning source code..."

@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -29,10 +29,11 @@ export class ProjectService {
     return this.projectsCache.get(cacheKey)!;
   }
 
-  public getProject(slug: string, current: boolean = true): Observable<Project | null> {
-    const cacheKey = `${slug}:${current}`;
+  public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
-      const project$ = this.http.get<Project>(`/api/projects/${slug}`).pipe(
+      const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
+      const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
         catchError(() => of(null)),
         shareReplay(1),
         tap((project) => {
@@ -45,6 +46,16 @@ export class ProjectService {
       this.projectCache.set(cacheKey, project$);
     }
     return this.projectCache.get(cacheKey)!;
+  }
+
+  public getProjectSfid(uid: string): Observable<string | null> {
+    return this.http.get<{ sfid: string | null }>(`/api/projects/${encodeURIComponent(uid)}/sfid`).pipe(
+      map((res) => res.sfid ?? null),
+      catchError((error) => {
+        console.error('Failed to fetch project sfid:', error);
+        return of(null);
+      })
+    );
   }
 
   public searchProjects(query: string): Observable<Project[]> {

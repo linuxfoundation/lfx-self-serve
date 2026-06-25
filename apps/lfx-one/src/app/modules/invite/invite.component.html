@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<lfx-header></lfx-header>
+
+<div class="bg-gray-50 min-h-screen flex items-center justify-center">
+  @if (isProcessing()) {
+    <div class="flex flex-col items-center gap-4 text-center">
+      <i class="fa-light fa-spinner-third fa-spin text-4xl text-blue-500"></i>
+      <p class="text-gray-600 text-sm">Accepting your invitation&hellip;</p>
+    </div>
+  }
+</div>

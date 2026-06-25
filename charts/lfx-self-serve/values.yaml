@@ -3,6 +3,35 @@
 
 replicaCount: 3
 
+# strategy controls the Kubernetes rolling update behavior.
+# maxSurge: "100%" spins up a full new replica set before terminating any old pods (zero disruption).
+# maxUnavailable: 0 ensures the ready count never drops below the desired replica count.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: "100%"
+    maxUnavailable: 0
+
+# terminationGracePeriodSeconds must exceed preStop.sleep + PM2 kill_timeout.
+# IMPORTANT: preStop runs *inside* the grace period — the clock starts when the pod enters
+# Terminating (before preStop executes), not after it finishes.
+# Timing breakdown after pod enters Terminating:
+#   10s  preStop sleep    — kube-proxy / Traefik endpoint removal propagation (inside grace period)
+#   15s  LB drain sleep   — in-process wait (1.5× readyz periodSeconds) for LB to act on 503
+#   25s  HTTP drain       — in-flight requests complete (httpServer.close 25s window)
+#   15s  service drain    — NATS + Snowflake pool drain in parallel (budget-capped)
+#    5s  margin
+# Active time = 10s + 60s (PM2 kill_timeout) = 70s. 75s provides a 5s safety margin.
+terminationGracePeriodSeconds: 75
+
+# lifecycle hooks run inside the container before SIGTERM is sent.
+# The preStop sleep gives kube-proxy / Traefik time to propagate endpoint removal
+# so no new requests arrive on a pod that is about to be terminated.
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 10"]
+
 # podDisruptionBudget configures a PodDisruptionBudget for the deployment.
 # Only one of minAvailable or maxUnavailable may be set (not both).
 podDisruptionBudget:
@@ -199,6 +228,40 @@ readinessProbe:
   failureThreshold: 3
   successThreshold: 1
 
+# Static ConfigMaps rendered by the chart and mounted as files into the container.
+# Use for non-secret structured data that should not live in source (vendor IDs,
+# allowlists, profile definitions, etc.). Each entry produces one ConfigMap named
+# "<release-fullname>-<key>" and one volume + volumeMount.
+#
+# Constraints:
+#   - Each map key must be a valid DNS-1123 label (lowercase, [a-z0-9-], <=63 chars).
+#     The rendered name "<release-fullname>-<key>" must also stay <=253 chars.
+#   - data values must be strings (use a YAML literal block scalar like '|' for
+#     multi-line content). Nested maps/numbers/booleans will be rejected at
+#     render time by the chart's `kindIs "string"` guard.
+#
+# Example:
+#   staticConfigMaps:
+#     linkedin-config:
+#       mountPath: /etc/lfx-self-serve/linkedin
+#       data:
+#         linkedin.json: |
+#           { "defaultAccountId": "...", "accounts": [...] }
+#
+# Application override: services that read from a static-config mount typically
+# expose an env var to point at a different path during local dev. The
+# lfx-one server reads the LinkedIn config from /etc/lfx-self-serve/linkedin/linkedin.json
+# by default; set LINKEDIN_CONFIG_PATH to override (handy if you change `mountPath`
+# above, or want to swap in a fixture for tests).
+#
+# Reload-on-change is handled in two layers:
+#   1. The existing reloader.stakater.com/auto annotation (when Reloader is
+#      installed in the cluster), and
+#   2. A `checksum/staticConfigMaps` annotation on the Deployment pod template,
+#      which forces a rolling restart whenever the rendered ConfigMap content
+#      changes — even if Reloader isn't installed.
+staticConfigMaps: {}
+
 # Environment variables for the application
 # Uses map/object format for deep merging support
 environment:
@@ -283,6 +346,18 @@ environment:
   AI_API_KEY:
     value:
 
+  # Public Intercom Messenger workspace App ID. Identity verification rides on the
+  # `http://lfx.dev/claims/intercom` Auth0 claim — not on this value.
+  INTERCOM_APP_ID:
+    value:
+
+  # Invite JWT signing secret (HS256) — used to verify signed invite tokens.
+  # Must match the INVITE_JWT_SECRET configured in lfx-v2-invite-service.
+  # The value is used as raw UTF-8 bytes (not base64-decoded) to match how
+  # the Go invite service derives the HMAC key ([]byte(secret)).
+  INVITE_SERVICE_JWT_SECRET:
+    value:
+
   # Snowflake Analytics Configuration
   # Required for analytics endpoints: active-weeks-streak, pull-requests-merged, code-commits
   SNOWFLAKE_ACCOUNT:
@@ -310,8 +385,49 @@ environment:
   SNOWFLAKE_LOCK_STRATEGY:
     value: "memory"
 
+  # Shared Valkey cache connection URL (rediss:// enables TLS in transit; credentials, if any,
+  # are embedded in the URL). Unset disables caching (direct-fetch fallback).
+  VALKEY_URL:
+    value:
+
+  # Optional per-deployment cache-key namespace (e.g. a feature-branch id) so deployments sharing one
+  # Valkey instance never collide on cache keys. Unset in cluster-isolated environments.
+  VALKEY_KEY_NAMESPACE:
+    value:
+
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"
 
   SNOWFLAKE_MAX_CONNECTIONS:
     value: "10"
+
+  # Google Ads API Configuration (Campaign Management)
+  GADS_DEVELOPER_TOKEN:
+    value:
+
+  GADS_CLIENT_ID:
+    value:
+
+  GADS_CLIENT_SECRET:
+    value:
+
+  GADS_REFRESH_TOKEN:
+    value:
+
+  GADS_LOGIN_CUSTOMER_ID:
+    value:
+
+  GADS_CUSTOMER_ID:
+    value:
+
+  # Campaign Brief Scrape — SSRF host allowlist (comma-separated)
+  CAMPAIGN_BRIEF_SCRAPE_HOST_ALLOWLIST:
+    value: "events.linuxfoundation.org,lfevents.linuxfoundation.org,www.linuxfoundation.org"
+
+  # HubSpot Configuration (Campaign UTM Tracking)
+  HUBSPOT_ACCESS_TOKEN:
+    value:
+
+  # Stripe publishable key
+  STRIPE_PUBLISHABLE_KEY:
+    value:

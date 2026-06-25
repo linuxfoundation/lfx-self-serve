@@ -9,7 +9,8 @@ export const environment = {
     pcc: 'https://projectadmin.lfx.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
-    crowdfunding: 'https://crowdfunding.lfx.linuxfoundation.org/',
+    crowdfunding: 'https://crowdfunding.linuxfoundation.org/',
+    enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',
@@ -20,7 +21,7 @@ export const environment = {
   },
   datadog: {
     site: 'datadoghq.com',
-    service: 'lfx-one',
-    env: 'prod',
+    service: 'lfx-self-serve',
+    env: 'production',
   },
 };

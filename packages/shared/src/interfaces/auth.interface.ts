@@ -15,6 +15,8 @@ export interface User {
   sid: string;
   /** LFX SSO username claim (namespaced) */
   'https://sso.linuxfoundation.org/claims/username': string;
+  /** Intercom user JWT minted by Auth0 for identity verification (namespaced claim) */
+  'http://lfx.dev/claims/intercom'?: string;
   /** User's first name from profile */
   given_name: string;
   /** User's last name from profile */
@@ -183,6 +185,36 @@ export interface AuthConfig {
   defaultAuth: AuthLevel;
   /** Default route type for unmatched routes */
   defaultType: RouteType;
+}
+
+/**
+ * Parameters passed to the provider-specific token request builder functions.
+ */
+export interface TokenRequestParams {
+  issuerBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  audience: string;
+  scope?: string;
+}
+
+/**
+ * Options for exchanging a refresh token for an audience-scoped access token.
+ * @description Configuration for the OIDC refresh token exchange flow.
+ */
+export interface RefreshTokenExchangeOptions {
+  issuerBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  audience: string;
+  /** Requested scope(s) to include in the token exchange body. */
+  scope?: string;
+  /**
+   * When provided, the token is cached in req.appSession under
+   * `<sessionKey>` (token) and `<sessionKey>ExpiresAt` (unix seconds).
+   */
+  sessionKey?: string;
 }
 
 /**

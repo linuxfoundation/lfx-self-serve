@@ -6,6 +6,10 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 ## 📖 Architecture Documentation Guide
 
+### 🧭 Placement Decisions
+
+- **[Placement Decision Trees](./placement.md)** — where new components, modules, types, backend services go; user-token vs M2M; when to push work upstream first.
+
 ### 🎨 Frontend Architecture
 
 - **[Frontend Overview](./frontend/README.md)** - Angular 20 architecture with zoneless change detection
@@ -18,6 +22,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
+- **[Public Meeting Join](./frontend/public-meeting-join.md)** - Anonymous and authenticated join flows, access model, attachment gating
 
 ### 🖥 Backend Architecture
 
@@ -78,7 +83,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 ### DevOps & Deployment
 
-1. **[Deployment Guide](../deployment.md)** - Production deployment with PM2
+1. **Deployment** — Chart source: `charts/lfx-self-serve/README.md` (in the repo root, outside this docs site). Deployed values, environment promotion, image tags, and ApplicationSets: `lfx-v2-argocd` (`values/dev/lfx-v2-ui.yaml`, staging, prod).
 2. **[Logging & Monitoring](./backend/logging-monitoring.md)** - Production monitoring
 3. **[Error Handling](./backend/error-handling-architecture.md)** - Error management
 

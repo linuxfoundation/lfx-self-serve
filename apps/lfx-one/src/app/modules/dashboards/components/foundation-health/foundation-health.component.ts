@@ -28,6 +28,7 @@ import type {
   CompanyBusFactor,
   DashboardMetricCard,
   FoundationCompanyBusFactorResponse,
+  FoundationMaintainersResponse,
   FoundationValueConcentrationResponse,
   HealthEventsMonthlyResponse,
   UniqueContributorsDailyResponse,
@@ -443,12 +444,15 @@ export class FoundationHealthComponent {
 
   private transformMaintainers(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.maintainersData();
+    const asOfLabel = data.asOfDate
+      ? new Date(`${data.asOfDate}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+      : null;
 
     return {
       ...metric,
       loading: this.maintainersLoading(),
-      value: data.avgMaintainers.toString(),
-      subtitle: 'Average maintainers over the past year',
+      value: data.currentMaintainers.toLocaleString(),
+      subtitle: asOfLabel ? `As of ${asOfLabel}` : 'Distinct active maintainers',
       chartData: {
         labels: data.trendLabels,
         datasets: [
@@ -473,7 +477,7 @@ export class FoundationHealthComponent {
               title: (context) => context[0]?.label ?? '',
               label: (context) => {
                 const count = context.parsed.y ?? 0;
-                return `Active maintainers: ${count}`;
+                return `Active maintainers: ${count.toLocaleString()}`;
               },
             },
           },
@@ -646,10 +650,11 @@ export class FoundationHealthComponent {
   }
 
   private initializeMaintainersData() {
-    const defaultValue = {
-      avgMaintainers: 0,
-      trendData: [] as number[],
-      trendLabels: [] as string[],
+    const defaultValue: FoundationMaintainersResponse = {
+      currentMaintainers: 0,
+      asOfDate: null,
+      trendData: [],
+      trendLabels: [],
     };
 
     return toSignal(

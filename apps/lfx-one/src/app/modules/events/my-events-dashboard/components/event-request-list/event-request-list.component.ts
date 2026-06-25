@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Type, computed, inject, input, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
@@ -17,7 +18,7 @@ import { TravelFundApplicationDialogComponent } from '../travel-fund-application
 import { VisaRequestApplicationDialogComponent } from '../visa-request-application-dialog/visa-request-application-dialog.component';
 @Component({
   selector: 'lfx-event-request-list',
-  imports: [TableComponent, TagComponent, DynamicDialogModule, EventRequestStatusSeverityPipe, EmptyStateComponent],
+  imports: [TableComponent, TagComponent, DynamicDialogModule, EventRequestStatusSeverityPipe, EmptyStateComponent, DatePipe],
   providers: [DialogService],
   templateUrl: './event-request-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

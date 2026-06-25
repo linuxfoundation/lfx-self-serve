@@ -25,6 +25,13 @@ router.post('/:id/members', (req, res, next) => committeeController.createCommit
 router.put('/:id/members/:memberId', (req, res, next) => committeeController.updateCommitteeMember(req, res, next));
 router.delete('/:id/members/:memberId', (req, res, next) => committeeController.deleteCommitteeMember(req, res, next));
 
+// ── Invite routes (invite-by-email add-member) ───────────────────────────────
+router.get('/:id/invites', (req, res, next) => committeeController.getCommitteeInvites(req, res, next));
+router.post('/:id/invites', (req, res, next) => committeeController.createCommitteeInvite(req, res, next));
+router.delete('/:id/invites/:inviteId', (req, res, next) => committeeController.revokeCommitteeInvite(req, res, next));
+router.post('/:id/invites/:inviteId/accept', (req, res, next) => committeeController.acceptCommitteeInvite(req, res, next));
+router.post('/:id/invites/:inviteId/decline', (req, res, next) => committeeController.declineCommitteeInvite(req, res, next));
+
 // ── Sub-groups route ───────────────────────────────────────────────────────
 router.get('/:id/children', (req, res, next) => committeeController.getCommitteeChildren(req, res, next));
 

@@ -3,24 +3,27 @@
 
 import { NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, inject, input, signal, Signal, viewChild } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, isDocsPath } from '@lfx-one/shared/utils';
 import { ChangelogService } from '@services/changelog.service';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
+import { filter, map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-lens-switcher',
-  imports: [NgClass, RouterLink, TooltipModule, PopoverModule, AvatarComponent, ButtonComponent, ChangelogDrawerComponent],
+  imports: [NgClass, RouterLink, TooltipModule, PopoverModule, AvatarComponent, ButtonComponent, ChangelogDrawerComponent, OpenIntercomDirective],
   providers: [DialogService],
   templateUrl: './lens-switcher.component.html',
   styleUrl: './lens-switcher.component.scss',
@@ -46,6 +49,14 @@ export class LensSwitcherComponent {
   protected readonly insightsUrl = buildInsightsUrl();
   protected readonly userMenu = viewChild<Popover>('userMenu');
 
+  /**
+   * Tracks whether the active route is anywhere under `/docs/*` so the docs
+   * icon can render its active-pill state. Subscribes to NavigationEnd and
+   * seeds the initial value from `router.url` so SSR and the first render
+   * agree.
+   */
+  protected readonly isDocsActive = this.initIsDocsActive();
+
   protected readonly userInitials = this.userService.userInitials;
   protected readonly canImpersonate = this.userService.canImpersonate;
   protected readonly isImpersonating = this.userService.impersonating;
@@ -69,8 +80,11 @@ export class LensSwitcherComponent {
 
   protected setLens(lens: Lens): void {
     this.userMenu()?.hide();
-    this.lensService.setLens(lens);
-    this.router.navigate([LENS_DEFAULT_ROUTES[lens]]);
+    // Hybrid personas merge foundation + project into the 'Projects' button — return to the last
+    // viewed nav lens so a previously selected foundation isn't reset to the project lens.
+    const target = this.isHybrid() && lens === 'project' ? this.lensService.lastNavLens() : lens;
+    this.lensService.setLens(target);
+    this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
   }
 
   protected toggleUserMenu(event: Event): void {
@@ -95,5 +109,16 @@ export class LensSwitcherComponent {
 
   protected openChangelogDrawer(): void {
     this.changelogDrawerVisible.set(true);
+  }
+
+  private initIsDocsActive() {
+    return toSignal(
+      this.router.events.pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        map((event) => isDocsPath(event.urlAfterRedirects)),
+        startWith(isDocsPath(this.router.url))
+      ),
+      { requireSync: true }
+    );
   }
 }
