@@ -369,9 +369,10 @@ export class OrgProjectDetailComponent {
     return raw && VALID_TIME_RANGES.has(raw) ? (raw as OrgLensLeaderboardTimeRange) : DEFAULT_TIME_RANGE;
   }
 
-  /** Per-dimension activity count (12mo) derived from that dimension's score, so the two boards differ. */
+  /** Per-dimension activity count derived from that dimension's score, so the two boards differ. */
   private activityFor(score: number): number {
-    return Math.round(score * 46);
+    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    return Math.round(score * 46 * (months / 12));
   }
 
   /**
