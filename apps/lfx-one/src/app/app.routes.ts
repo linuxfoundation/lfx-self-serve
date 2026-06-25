@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -212,7 +213,7 @@ export const routes: Routes = [
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
-        path: 'foundation/mktg-os-agents',
+        path: `foundation/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
         data: { lens: 'foundation' },
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
@@ -269,7 +270,7 @@ export const routes: Routes = [
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
-        path: 'project/mktg-os-agents',
+        path: `project/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
         data: { lens: 'project' },
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
