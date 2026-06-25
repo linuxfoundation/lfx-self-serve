@@ -16,10 +16,10 @@ export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'at-risk';
 /** Leaderboard band per the markup-mu methodology (Boysel et al.). Strongest → weakest. */
 export type OrgLensProjectBand = 'leading' | 'contributing' | 'participating' | 'non-lf';
 
-/** Leaderboard score-type segmented control (`?score=`). */
+/** Leaderboard score-type dimension. Reserved for a future toggle — not yet persisted as a URL param. */
 export type OrgLensScoreType = 'combined' | 'technical' | 'ecosystem';
 
-/** Leaderboard metric toggle (`?metric=`). Activity Count mode hides the Trend + Band columns. */
+/** Leaderboard metric toggle (`?metric=`). Activity Count mode hides the Band column. */
 export type OrgLensLeaderboardMetric = 'influence' | 'activity';
 
 /** Time range selector (`?range=`) for the leaderboards tab — affects the stacked trend chart and leaderboard period labels. */

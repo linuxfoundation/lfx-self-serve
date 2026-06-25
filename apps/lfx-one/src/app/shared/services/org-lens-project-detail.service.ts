@@ -21,8 +21,8 @@ export class OrgLensProjectDetailService {
 
   public getProjectDetail(orgUid: string, orgName: string, projectSlug: string): Observable<OrgLensProjectDetailResponse | null> {
     const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/projects/${encodeURIComponent(projectSlug)}`;
-    return this.http.get<OrgLensProjectDetailResponse>(url, { params: { orgName } }).pipe(
-      catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err)))
-    );
+    return this.http
+      .get<OrgLensProjectDetailResponse>(url, { params: { orgName } })
+      .pipe(catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err))));
   }
 }
