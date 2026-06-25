@@ -33,7 +33,19 @@ export class ProjectDashboardComponent {
   public readonly pendingActions: Signal<PendingActionItem[]>;
 
   public constructor() {
-    this.pendingActions = toSignal(
+    this.pendingActions = this.initPendingActions();
+  }
+
+  public handleActionClick(): void {
+    this.refresh$.next();
+  }
+
+  protected handleVoteSubmitted(): void {
+    this.refresh$.next();
+  }
+
+  private initPendingActions(): Signal<PendingActionItem[]> {
+    return toSignal(
       combineLatest([this.refresh$, toObservable(this.selectedProject)]).pipe(
         switchMap(([, project]) => {
           if (!project?.slug || !project?.uid) {
@@ -45,13 +57,5 @@ export class ProjectDashboardComponent {
       ),
       { initialValue: [] }
     );
-  }
-
-  public handleActionClick(): void {
-    this.refresh$.next();
-  }
-
-  protected handleVoteSubmitted(): void {
-    this.refresh$.next();
   }
 }

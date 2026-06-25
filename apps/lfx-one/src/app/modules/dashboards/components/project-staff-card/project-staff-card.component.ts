@@ -28,7 +28,6 @@ export class ProjectStaffCardComponent {
   private readonly permissionsService = inject(PermissionsService);
 
   public readonly projectUid = input.required<string>();
-  public readonly layout = input<'carousel' | 'sidebar'>('carousel');
   public readonly heading = input<string>('Project Staff');
 
   // `loading` and `hasError` are tracked separately from `settings` so the template can tell the
