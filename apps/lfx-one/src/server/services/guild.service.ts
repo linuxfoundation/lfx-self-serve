@@ -17,7 +17,9 @@ const GUILD_REQUEST_TIMEOUT_MS = 30_000;
 const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_message';
 
 // Max events fetched per history request. MVP cap — sessions with more than this
-// many events are truncated to the most recent page. TODO(LFXAI-99): paginate.
+// many events are truncated to the most recent page. History pagination is a
+// future enhancement tracked under the Mktg OS epic (LFXAI-95), separate from the
+// per-viewer timestamp localization deferred to LFXAI-99.
 const GUILD_HISTORY_LIMIT = 100;
 
 /** Minimal shape of a Guild session event (only the fields we consume). */
