@@ -69,12 +69,9 @@ export interface OrgLensProjectInfluenceCard {
 }
 
 /** One cell in a card-specific detail table row. Exactly one of `person` or `text` should be set. */
-export interface OrgLensCardDetailCell {
-  /** Renders as avatar initials + name when set. */
-  person?: { name: string; avatarUrl?: string };
-  /** Plain text value when not a person cell. */
-  text?: string;
-}
+export type OrgLensCardDetailCell =
+  | { person: { name: string; avatarUrl?: string }; text?: never }
+  | { text: string; person?: never };
 
 /** One row in the card-specific data table shown in the influence card detail drawer. */
 export interface OrgLensCardDetailRow {
