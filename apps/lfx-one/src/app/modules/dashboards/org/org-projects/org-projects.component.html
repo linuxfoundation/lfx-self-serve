@@ -122,7 +122,7 @@
                   tooltipStyleClass="lfx-tooltip-wide"
                   data-testid="org-projects-sort-name">
                   Project
-                  <i class="text-xs" [class]="sortIcon('name')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['name']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[10%]">
@@ -134,7 +134,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
                   Health
-                  <i class="text-xs" [class]="sortIcon('health')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['health']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[15%]">
@@ -147,7 +147,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
                   Technical influence
-                  <i class="text-xs" [class]="sortIcon('technicalInfluence')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['technicalInfluence']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[15%]">
@@ -160,7 +160,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
                   Ecosystem influence
-                  <i class="text-xs" [class]="sortIcon('ecosystemInfluence')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['ecosystemInfluence']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[14%]">
@@ -173,7 +173,7 @@
                   tooltipStyleClass="lfx-tooltip-wide"
                   data-testid="org-projects-sort-trend">
                   Influence Trend
-                  <i class="text-xs" [class]="sortIcon('influenceTrend')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['influenceTrend']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[10%]">
@@ -186,7 +186,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
                   Contributors
-                  <i class="text-xs" [class]="sortIcon('contributors')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['contributors']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[10%]">
@@ -201,7 +201,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-wide">
                   Participants
-                  <i class="text-xs" [class]="sortIcon('participants')" aria-hidden="true"></i>
+                  <i class="text-xs" [class]="sortIconMap()['participants']" aria-hidden="true"></i>
                 </button>
               </th>
               <th class="w-[4%] text-right"><span class="sr-only">Actions</span></th>
@@ -227,7 +227,7 @@
                   (mouseenter)="openHealth($event, project, healthPop)"
                   (mouseleave)="scheduleHealthHide(healthPop)"
                   [attr.data-testid]="'org-projects-health-' + project.slug">
-                  <lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" />
+                  <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" />
                 </span>
               </td>
               <!-- Technical Influence (signal-strength bars + band label) -->
@@ -243,7 +243,7 @@
                       <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                     }
                   </svg>
-                  <span class="text-sm text-gray-900">{{ bandLabel(project.technicalInfluence) }}</span>
+                  <span class="text-sm text-gray-900">{{ project.technicalBandLabel }}</span>
                 </span>
               </td>
               <!-- Ecosystem Influence (signal-strength bars + band label) -->
@@ -259,7 +259,7 @@
                       <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                     }
                   </svg>
-                  <span class="text-sm text-gray-900">{{ bandLabel(project.ecosystemInfluence) }}</span>
+                  <span class="text-sm text-gray-900">{{ project.ecosystemBandLabel }}</span>
                 </span>
               </td>
               <!-- Influence Trend (sparkline; hover/focus reveals combined/technical/ecosystem 1y deltas) -->
@@ -274,7 +274,7 @@
                   tooltipPosition="top"
                   tooltipStyleClass="lfx-tooltip-nowrap"
                   [attr.data-testid]="'org-projects-trend-' + project.slug">
-                  <lfx-chart type="line" [data]="sparklineData(project)" [options]="sparklineOptions" height="32px" width="80px" />
+                  <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
                 </span>
               </td>
               <!-- Contributors / Participants (counts only) -->
@@ -322,7 +322,7 @@
           LFX Insights
         </a>
       </div>
-      <lfx-tag [value]="healthLabel(project.health)" [severity]="healthSeverity(project.health)" [dot]="true" />
+      <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" [dot]="true" />
       <p class="text-sm leading-relaxed text-gray-500">{{ project.description }}</p>
       <div class="flex flex-col gap-2.5">
         @for (metric of project.healthMetrics; track metric.label) {

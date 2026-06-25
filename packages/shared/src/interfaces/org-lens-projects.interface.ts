@@ -11,6 +11,8 @@
  * it is built in the component and must never be populated from API data.
  */
 
+import { TagSeverity } from './components.interface';
+
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
@@ -156,6 +158,16 @@ export interface OrgProjectsSignalBar {
 export interface OrgProjectsTableRow extends OrgLensProject {
   technicalBars: OrgProjectsSignalBar[];
   ecosystemBars: OrgProjectsSignalBar[];
+  /** Display label for the technical influence band (e.g. "Leading"). */
+  technicalBandLabel: string;
+  /** Display label for the ecosystem influence band (e.g. "Contributing"). */
+  ecosystemBandLabel: string;
+  /** Health badge display label (e.g. "Excellent"). */
+  healthLabel: string;
+  /** Health badge severity token for lfx-tag. */
+  healthSeverity: TagSeverity;
+  /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
+  sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
   /** Pre-rendered HTML for the Influence Trend hover tooltip. */
   trendTooltipHtml: string;
   /** Plain-text trend summary for screen readers / keyboard focus. */

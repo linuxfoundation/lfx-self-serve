@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -24,7 +22,6 @@ import {
   VALID_ORG_PROJECTS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
-  HealthScore,
   InfluenceBand,
   OrgLensProject,
   OrgLensProjectsResponse,
@@ -34,7 +31,6 @@ import type {
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
   SortDirection,
-  TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import { downloadCsv } from '@lfx-one/shared/utils';
 import { MenuItem } from 'primeng/api';
@@ -87,8 +83,6 @@ export class OrgProjectsComponent {
   private readonly projectsService = inject(OrgLensProjectsService);
   /** Pending hide timer for the health popover (lets the cursor cross into the popover). */
   private healthHideTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Stable chart-data cache keyed by project reference — avoids reallocating on every template call. */
-  private readonly sparklineCache = new WeakMap<OrgLensProject, { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] }>();
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
@@ -146,13 +140,29 @@ export class OrgProjectsComponent {
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   /** Project whose health detail is shown in the shared hover popover. */
-  protected readonly activeHealthProject = signal<OrgLensProject | null>(null);
+  protected readonly activeHealthProject = signal<OrgProjectsTableRow | null>(null);
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => {
     const raw = this.queryParamMap().get('sort');
     return raw && VALID_ORG_PROJECTS_SORT_FIELDS.has(raw as OrgProjectsSortField) ? (raw as OrgProjectsSortField) : DEFAULT_ORG_PROJECTS_SORT_FIELD;
   });
   protected readonly sortDir = computed<SortDirection>(() => (this.queryParamMap().get('dir') === 'asc' ? 'asc' : DEFAULT_ORG_PROJECTS_SORT_DIR));
+  /** Pre-computed sort icon class per column — avoids repeated method calls in the template on every CD cycle. */
+  protected readonly sortIconMap = computed<Record<OrgProjectsSortField, string>>(() => {
+    const field = this.sortField();
+    const dir = this.sortDir();
+    const active = dir === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
+    const inactive = 'fa-light fa-sort text-gray-300';
+    return {
+      name: field === 'name' ? active : inactive,
+      health: field === 'health' ? active : inactive,
+      technicalInfluence: field === 'technicalInfluence' ? active : inactive,
+      ecosystemInfluence: field === 'ecosystemInfluence' ? active : inactive,
+      influenceTrend: field === 'influenceTrend' ? active : inactive,
+      contributors: field === 'contributors' ? active : inactive,
+      participants: field === 'participants' ? active : inactive,
+    };
+  });
   protected readonly pageSize = computed<number>(() => {
     const raw = Number(this.queryParamMap().get('size'));
     return ORG_PROJECTS_PAGE_SIZE_OPTIONS.includes(raw) ? raw : DEFAULT_ORG_PROJECTS_PAGE_SIZE;
@@ -239,14 +249,6 @@ export class OrgProjectsComponent {
   protected resetFilters(): void {
     this.filterForm.reset({ foundation: ALL_FOUNDATIONS, employees: [] });
     this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
-  }
-
-  // Active sort column shows a solid blue arrow (LFX self-serve pattern); inactive columns a faint grey double-arrow.
-  protected sortIcon(field: OrgProjectsSortField): string {
-    if (this.sortField() !== field) {
-      return 'fa-light fa-sort text-gray-300';
-    }
-    return this.sortDir() === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
   }
 
   protected openAddProjects(): void {
@@ -349,10 +351,6 @@ export class OrgProjectsComponent {
     downloadCsv(`org-lens-projects-${slug}-${date}.csv`, [header, ...body]);
   }
 
-  // Template display helpers
-  protected bandLabel(band: InfluenceBand): string {
-    return INFLUENCE_BAND_LABELS[band];
-  }
   // Signal-strength bars for an influence band: filled count = rank (Leading 4 → Silent 1 → Non-LF 0),
   // colored by band; remaining bars faded. Non-LF (0 filled) gets a diagonal slash from the template.
   // Geometry mirrors the LFX Insights signal-bar icon: 4 evenly spaced, ascending, rounded bars in a 16×16 box.
@@ -370,7 +368,7 @@ export class OrgProjectsComponent {
       colorClass: i < filled ? INFLUENCE_BAND_BAR_FILL_CLASS[band] : INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT[band],
     }));
   }
-  protected openHealth(event: Event, project: OrgLensProject, popover: Popover): void {
+  protected openHealth(event: Event, project: OrgProjectsTableRow, popover: Popover): void {
     this.cancelHealthHide();
     this.activeHealthProject.set(project);
     popover.show(event, event.currentTarget as HTMLElement);
@@ -385,12 +383,6 @@ export class OrgProjectsComponent {
       clearTimeout(this.healthHideTimer);
       this.healthHideTimer = null;
     }
-  }
-  protected healthLabel(health: HealthScore): string {
-    return HEALTH_SCORE_LABELS[health];
-  }
-  protected healthSeverity(health: HealthScore): TagSeverity {
-    return HEALTH_SCORE_SEVERITY[health];
   }
   // Hover tooltip for the Influence Trend sparkline: combined / technical / ecosystem 1y deltas.
   protected trendTooltip(project: OrgLensProject): string {
@@ -421,19 +413,6 @@ export class OrgProjectsComponent {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
     return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
   }
-  protected sparklineData(project: OrgLensProject): { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] } {
-    const cached = this.sparklineCache.get(project);
-    if (cached) {
-      return cached;
-    }
-    const data = {
-      labels: project.trend.series.map((_, i) => String(i)),
-      datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
-    };
-    this.sparklineCache.set(project, data);
-    return data;
-  }
-
   // Private initializers
   private initResponse(): Signal<OrgLensProjectsResponse | null> {
     const account$ = toObservable(computed(() => ({ account: this.accountContext.selectedAccount(), _reload: this.reload() })));
@@ -517,6 +496,14 @@ export class OrgProjectsComponent {
         ...project,
         technicalBars: this.bandBars(project.technicalInfluence),
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
+        technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
+        ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
+        healthLabel: HEALTH_SCORE_LABELS[project.health],
+        healthSeverity: HEALTH_SCORE_SEVERITY[project.health],
+        sparklineDataset: {
+          labels: project.trend.series.map((_, i) => String(i)),
+          datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
+        },
         trendTooltipHtml: this.trendTooltip(project),
         trendAriaLabel: this.trendAriaLabel(project),
         healthAriaLabel: this.healthAriaLabel(project),
@@ -556,7 +543,7 @@ export class OrgProjectsComponent {
     }
   }
 
-  private healthRank(health: HealthScore): number {
+  private healthRank(health: OrgLensProject['health']): number {
     if (health === 'excellent') {
       return 2;
     }
