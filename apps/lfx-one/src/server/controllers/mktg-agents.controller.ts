@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_AGENTS } from '@lfx-one/shared/constants';
-import { MktgChatRequest } from '@lfx-one/shared/interfaces';
+import { MktgChatRequest, MktgChatResponse, MktgHistoryResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -61,13 +61,15 @@ export class MktgAgentsController {
       if (!validSessionId) {
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
         logger.success(req, 'mktg_agents_chat', startTime, { agent_id: agentId, session_created: true });
-        res.json({ sessionId: newSessionId });
+        const response: MktgChatResponse = { sessionId: newSessionId };
+        res.json(response);
         return;
       }
 
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       logger.success(req, 'mktg_agents_chat', startTime, { agent_id: agentId, session_created: false });
-      res.json({ success: true });
+      const response: MktgChatResponse = { success: true };
+      res.json(response);
     } catch (error) {
       next(error);
     }
@@ -97,7 +99,8 @@ export class MktgAgentsController {
     try {
       const messages = await this.guildService.getHistory(req, sessionId);
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
-      res.json({ messages });
+      const response: MktgHistoryResponse = { messages };
+      res.json(response);
     } catch (error) {
       next(error);
     }

@@ -12,7 +12,11 @@ export interface MktgChatMessage {
   sender: 'user' | 'agent';
   /** Display text (routing prefix stripped for user messages). */
   text: string;
-  /** Pre-formatted `HH:MM` timestamp (viewer locale). */
+  /**
+   * Pre-formatted `HH:MM` timestamp. Formatted server-side, so it reflects the
+   * server's timezone (UTC in deployed envs), not the viewer's. Per-viewer
+   * localization is deferred to the client chat panel (LFXAI-99).
+   */
   timestamp: string;
 }
 

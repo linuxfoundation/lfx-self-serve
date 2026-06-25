@@ -16,6 +16,10 @@ const GUILD_REQUEST_TIMEOUT_MS = 30_000;
 /** Session event types we request and map into chat messages. */
 const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_message';
 
+// Max events fetched per history request. MVP cap — sessions with more than this
+// many events are truncated to the most recent page. TODO(LFXAI-99): paginate.
+const GUILD_HISTORY_LIMIT = 100;
+
 /** Minimal shape of a Guild session event (only the fields we consume). */
 interface GuildSessionEvent {
   id: string;
@@ -63,13 +67,17 @@ export class GuildService {
 
     logger.debug(req, 'guild_create_session', 'Creating Guild session', { has_handle: !!params.handle });
 
-    const response = await this.fetchGuild(path, {
-      method: 'POST',
-      body: JSON.stringify({
-        session_type: 'api_trigger',
-        agent_input: { type: 'text', text: apiMessage },
-      }),
-    });
+    const response = await this.fetchGuild(
+      path,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          session_type: 'api_trigger',
+          agent_input: { type: 'text', text: apiMessage },
+        }),
+      },
+      'guild_create_session'
+    );
 
     await this.assertOk(response, 'guild_create_session', path);
 
@@ -96,10 +104,7 @@ export class GuildService {
 
     logger.debug(req, 'guild_send_follow_up', 'Posting follow-up to Guild session', { has_handle: !!params.handle });
 
-    const response = await this.fetchGuild(path, {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'text', content: apiMessage }),
-    });
+    const response = await this.fetchGuild(path, { method: 'POST', body: JSON.stringify({ mode: 'text', content: apiMessage }) }, 'guild_send_follow_up');
 
     await this.assertOk(response, 'guild_send_follow_up', path);
   }
@@ -111,11 +116,11 @@ export class GuildService {
   public async getHistory(req: Request, sessionId: string): Promise<MktgChatMessage[]> {
     this.assertConfigured('guild_get_history');
 
-    const path = `/api/sessions/${sessionId}/events?limit=100&types=${GUILD_EVENT_TYPES}`;
+    const path = `/api/sessions/${sessionId}/events?limit=${GUILD_HISTORY_LIMIT}&types=${GUILD_EVENT_TYPES}`;
 
     logger.debug(req, 'guild_get_history', 'Fetching Guild session history', {});
 
-    const response = await this.fetchGuild(path, { method: 'GET' });
+    const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_history');
     await this.assertOk(response, 'guild_get_history', path);
 
     const data = (await response.json()) as { items?: GuildSessionEvent[] };
@@ -178,17 +183,32 @@ export class GuildService {
     return handle ? `@${handle} ${message}` : message;
   }
 
-  /** Perform a Guild API request with auth, JSON headers, and a timeout. */
-  private fetchGuild(path: string, init: { method: string; body?: string }): Promise<globalThis.Response> {
-    return fetch(`${this.apiUrl}${path}`, {
-      method: init.method,
-      headers: {
-        Authorization: `Basic ${Buffer.from(this.apiKey).toString('base64')}`,
-        'Content-Type': 'application/json',
-      },
-      body: init.body,
-      signal: AbortSignal.timeout(GUILD_REQUEST_TIMEOUT_MS),
-    });
+  /**
+   * Perform a Guild API request with auth, JSON headers, and a timeout.
+   * Transport failures (timeout, DNS, connection refused) are wrapped in a
+   * MicroserviceError so they carry `service: 'guild'` context instead of
+   * surfacing as a contextless 500. HTTP-status errors are handled by assertOk.
+   */
+  private async fetchGuild(path: string, init: { method: string; body?: string }, operation: string): Promise<globalThis.Response> {
+    try {
+      return await fetch(`${this.apiUrl}${path}`, {
+        method: init.method,
+        headers: {
+          Authorization: `Basic ${Buffer.from(this.apiKey).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+        body: init.body,
+        signal: AbortSignal.timeout(GUILD_REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const isTimeout = error instanceof Error && error.name === 'TimeoutError';
+      throw new MicroserviceError(isTimeout ? 'Guild API request timed out.' : 'Failed to reach the Guild API.', isTimeout ? 504 : 502, isTimeout ? 'guild_timeout' : 'guild_unreachable', {
+        service: 'guild',
+        path,
+        operation,
+        originalError: error instanceof Error ? error : undefined,
+      });
+    }
   }
 
   /** Throw a clear 500 when required Guild configuration is missing. */
