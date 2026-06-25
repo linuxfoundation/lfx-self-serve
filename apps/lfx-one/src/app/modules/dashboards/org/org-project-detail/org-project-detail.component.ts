@@ -263,8 +263,10 @@ export class OrgProjectDetailComponent {
 
   // After cards populate (async data load), check whether each track is actually scrollable.
   private readonly _scrollEffect = effect(() => {
+    const tab = this.activeTab();
     const techLen = this.technicalCards().length;
     const ecoLen = this.ecosystemCards().length;
+    if (tab !== 'pd-influence') return;
     if (techLen === 0 && ecoLen === 0) return;
     Promise.resolve().then(() => {
       this.refreshArrows(this.techTrackRef?.nativeElement, true);
