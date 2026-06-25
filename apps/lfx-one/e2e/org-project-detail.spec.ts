@@ -8,7 +8,7 @@
  * - data-testid resolution smoke test (breadcrumb, hero, tabs, card groups, trend)
  * - tab strip switching (click + keyboard) with ?tab= URL persistence
  * - leaderboard ranking, score/metric toggles with ?metric= persistence,
- *   Activity Count hiding the Trend + Band columns, and Show more pagination
+ *   Activity Count hiding the band tags, and Show more pagination
  * - not-found (404) panel for an unknown slug
  *
  * Prerequisites:
