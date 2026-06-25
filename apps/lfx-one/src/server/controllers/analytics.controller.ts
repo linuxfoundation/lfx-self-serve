@@ -2140,6 +2140,62 @@ export class AnalyticsController {
     }
   }
 
+  /**
+   * GET /api/analytics/social-media/monthly
+   * Get per-platform monthly social media growth data
+   */
+  public async getSocialMediaMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_social_media_monthly');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      if (foundationSlug.length > NAME_MAX_LENGTH) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug exceeds maximum length', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      const yearParam = getStringQueryParam(req, 'year');
+      if (yearParam && !/^\d{4}$/.test(yearParam)) {
+        throw ServiceValidationError.forField('year', 'year must be a 4-digit number', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+      const year = yearParam ? Number(yearParam) : new Date().getUTCFullYear();
+
+      if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+        throw ServiceValidationError.forField('year', 'year must be between 2020 and 2100', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      const response = await this.projectService.getSocialMediaMonthly(foundationSlug, year);
+
+      logger.success(req, 'get_social_media_monthly', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        platforms_count: response.platforms.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // North Star Metrics Endpoints
   // All North Star views use `foundationSlug` (FOUNDATION_SLUG column in NORTH_STAR_* tables)
 

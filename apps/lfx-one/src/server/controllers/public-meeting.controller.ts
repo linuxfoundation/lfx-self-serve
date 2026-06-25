@@ -139,6 +139,49 @@ export class PublicMeetingController {
         return;
       }
 
+      // Authenticated registered participants and organizers can access private/restricted
+      // meeting details without a password in the URL — their registrant record is the gate.
+      if (meeting.invited || meeting.organizer) {
+        // host_key grants Zoom host privileges — only organizers should receive it.
+        if (!meeting.organizer) {
+          delete (meeting as Partial<Meeting>).host_key;
+        }
+        res.json({
+          meeting,
+          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        });
+        return;
+      }
+
+      // Fallback for authenticated users: the invited flag can miss someone if the query
+      // service OR lookup had a false negative. Re-check directly by email with M2M.
+      if (isAuthenticated) {
+        const userEmail = getEffectiveEmail(req);
+        if (userEmail) {
+          try {
+            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
+            if (registrantsByEmail.length > 0) {
+              logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
+                meeting_id: id,
+                email: userEmail,
+              });
+              meeting.invited = true;
+              delete (meeting as Partial<Meeting>).host_key;
+              res.json({
+                meeting,
+                project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+              });
+              return;
+            }
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
+            });
+          }
+        }
+      }
+
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {

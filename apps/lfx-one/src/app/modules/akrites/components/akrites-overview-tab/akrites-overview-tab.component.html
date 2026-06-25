@@ -82,28 +82,42 @@
                       </span>
                     </div>
                     <!-- Activity description -->
-                    <div class="text-[14px] text-gray-500 mt-1">
-                      <b class="text-slate-900 font-semibold">{{ row.formattedActivityLabel }}</b>
-                      &nbsp;·&nbsp;{{ row.relativeTime }}
-                      @if (row.actorName) {
-                        &nbsp;·&nbsp;by {{ row.actorName }}
+                    <div class="flex items-center gap-2 mt-1 min-w-0">
+                      <span class="text-[14px] text-gray-500 truncate">
+                        <b class="text-slate-900 font-semibold">{{ row.formattedActivityLabel }}</b>
+                        &nbsp;·&nbsp;{{ row.relativeTime }}
+                      </span>
+                      @if (row.actorDisplay) {
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                          <span class="text-gray-300 text-[13px]">·</span>
+                          @if (row.actorAvatarUrl) {
+                            <img [src]="row.actorAvatarUrl" [alt]="row.actorDisplay" class="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                          } @else {
+                            <span class="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                              {{ row.actorInitials }}
+                            </span>
+                          }
+                          <span class="text-[12.5px] text-gray-500">{{ row.actorDisplay }}</span>
+                        </span>
                       }
                     </div>
                   </div>
 
-                  <!-- Action button -->
-                  @if (row.action; as action) {
-                    <button
-                      type="button"
-                      class="flex-shrink-0 h-8 px-3.5 rounded-full border text-[12.5px] font-medium transition-colors"
-                      [class]="{
-                        'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400': action.variant === 'default',
-                        'border-blue-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-400': action.variant === 'blue',
-                        'border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-400': action.variant === 'red',
-                      }"
-                      (click)="$event.stopPropagation(); onActionButtonClick(row, action.variant)">
-                      {{ action.label }}
-                    </button>
+                  <!-- Action button — writer-only -->
+                  @if (canWrite()) {
+                    @if (row.action; as action) {
+                      <button
+                        type="button"
+                        class="flex-shrink-0 h-8 px-3.5 rounded-full border text-[12.5px] font-medium transition-colors"
+                        [class]="{
+                          'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400': action.variant === 'default',
+                          'border-blue-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-400': action.variant === 'blue',
+                          'border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-400': action.variant === 'red',
+                        }"
+                        (click)="$event.stopPropagation(); onActionButtonClick(row, action.variant)">
+                        {{ action.label }}
+                      </button>
+                    }
                   }
                 </div>
               }
@@ -222,3 +236,9 @@
     </button>
   </div>
 </div>
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignModalVisible"
+  [packageName]="assignTargetRow()?.packageName ?? null"
+  [loading]="assignActionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />

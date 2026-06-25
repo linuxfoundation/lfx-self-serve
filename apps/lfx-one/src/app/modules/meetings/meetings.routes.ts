@@ -16,11 +16,13 @@ export const MEETING_ROUTES: Routes = [
     path: 'create',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
     canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'meetings' },
   },
   {
     path: ':id/edit',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
     canActivate: [authGuard, writerGuard],
+    data: { writeFeature: 'meetings' },
   },
   {
     path: ':id/details',

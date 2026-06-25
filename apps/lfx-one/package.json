@@ -70,6 +70,7 @@
     "express-openid-connect": "^2.19.2",
     "express-rate-limit": "^8.3.2",
     "form-data": "^4.0.4",
+    "gaxios": "^6.1.1",
     "google-ads-api": "^23.0.0",
     "html-to-image": "^1.11.13",
     "ioredis": "^5.11.1",

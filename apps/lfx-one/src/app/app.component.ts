@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { isPlatformBrowser, Location } from '@angular/common';
+import { Component, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
+import { filter } from 'rxjs';
 
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
@@ -14,6 +18,14 @@ import { IntercomService } from './shared/services/intercom.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
+
+const ACCESS_DENIED_MESSAGES: Record<string, string> = {
+  meetings: "You don't have permission to schedule meetings for this project.",
+  'mailing-lists': "You don't have permission to manage mailing lists for this project.",
+  votes: "You don't have permission to manage votes for this project.",
+  surveys: "You don't have permission to manage surveys for this project.",
+  committees: "You don't have permission to manage committees for this project.",
+};
 
 @Component({
   selector: 'lfx-root',
@@ -93,6 +105,8 @@ export class AppComponent {
       // Set DataDog RUM user context for session tracking
       this.dataDogRumService.setUser(this.auth.user);
     }
+
+    this.initAccessDeniedToast();
   }
 
   // Fails closed: missing JWT or App ID skips boot.
@@ -133,5 +147,48 @@ export class AppComponent {
       name: user.name,
       email: user.email,
     });
+  }
+
+  // Detects _notice query param placed by writerGuard on denial and shows the "Access
+  // Denied" toast. Using a URL param rather than calling MessageService directly in the
+  // guard is necessary because the guard runs server-side under RenderMode.Server —
+  // MessageService.add() on the server has no DOM to render into. The param survives the
+  // SSR redirect so the client always sees it on NavigationEnd regardless of how the user
+  // arrived (SPA click or copy-paste full-page-load).
+  private initAccessDeniedToast(): void {
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
+
+    const router = inject(Router);
+    const location = inject(Location);
+    const messageService = inject(MessageService);
+    const destroyRef = inject(DestroyRef);
+
+    const validNoticeKeys = new Set([...Object.keys(ACCESS_DENIED_MESSAGES), 'access']);
+
+    router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(destroyRef)
+      )
+      .subscribe(() => {
+        const parsed = router.parseUrl(router.url);
+        const raw = parsed.queryParams['_notice'];
+        if (!raw) return;
+
+        const noticeKey = String(raw);
+
+        // Strip _notice unconditionally — even invalid values must not linger
+        // and re-trigger this subscriber on subsequent NavigationEnd events.
+        delete parsed.queryParams['_notice'];
+        location.replaceState(router.serializeUrl(parsed));
+
+        if (!validNoticeKeys.has(noticeKey)) return;
+
+        messageService.add({
+          severity: 'warn',
+          summary: 'Access Denied',
+          detail: ACCESS_DENIED_MESSAGES[noticeKey] ?? "You don't have permission to perform this action for this project.",
+        });
+      });
   }
 }

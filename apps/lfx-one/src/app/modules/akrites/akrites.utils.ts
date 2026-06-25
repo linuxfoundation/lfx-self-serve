@@ -42,13 +42,14 @@ export function getAdvisoryTagSeverity(severity: AkritesSeverity | null): TagSev
     critical: 'danger',
     high: 'danger',
     medium: 'warn',
+    moderate: 'warn',
     low: 'info',
   };
-  return map[severity];
+  return map[severity] ?? 'secondary';
 }
 
 export function formatStatus(status: string): string {
-  return status.replace(/_/g, ' ');
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // Band thresholds mirror the design spec (design/LFX-AKRITES-Admin-Dashboard.html):

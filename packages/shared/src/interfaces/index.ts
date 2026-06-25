@@ -129,6 +129,9 @@ export * from './persona-detection.interface';
 // Events interfaces (my events, foundation events, travel fund, visa request)
 export * from './events.interface';
 
+// Meetups interfaces
+export * from './meetups.interface';
+
 // Badge interfaces
 export * from './badge.interface';
 

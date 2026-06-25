@@ -105,6 +105,8 @@ import {
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
   RevenueImpactResponse,
+  SocialMediaMonthlyResponse,
+  SocialMediaPlatformMonthlyRow,
   SocialMediaResponse,
   SocialReachResponse,
   TrainingCertificationSummaryResponse,
@@ -288,7 +290,7 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, uid: string, access: boolean = true): Promise<Project> {
+  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -299,9 +301,34 @@ export class ProjectService {
       });
     }
 
-    // Add writer access field to the project
     if (access) {
-      return await this.accessCheckService.addAccessToResource(req, project, 'project');
+      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
+      // Skip meeting_coordinator check when already a writer — the guard allows writer OR
+      // meeting_coordinator, so the extra round trip can't change the outcome.
+      // Return the field as undefined (omitted) rather than false — false would be a
+      // false-negative assertion since the role was never actually checked for writers.
+      if (writerProject.writer) {
+        return writerProject;
+      }
+      // Only run the meeting_coordinator FGA check when the caller explicitly requests it.
+      // This field is consumed by exactly one branch of writer.guard.ts; running it on every
+      // GET /api/projects/:slug call would add a second sequential access-check round-trip
+      // for all non-writer callers (guards, components, etc.) that never read the field.
+      if (!includeMeetingCoordinator) {
+        return writerProject;
+      }
+      const isMeetingCoordinator = await this.accessCheckService
+        .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
+        .catch((error) => {
+          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
+            project_uid: project.uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Return undefined rather than false — false implies the check ran clean and found no
+          // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
+          return undefined;
+        });
+      return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
     }
 
     return project;
@@ -377,7 +404,7 @@ export class ProjectService {
    * Fetches a single project by slug using NATS for slug resolution
    * First resolves slug to ID via NATS, then fetches project data
    */
-  public async getProjectBySlug(req: Request, projectSlug: string): Promise<Project> {
+  public async getProjectBySlug(req: Request, projectSlug: string, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const natsResult = await this.getProjectIdBySlug(req, projectSlug);
 
     if (!natsResult.exists || !natsResult.uid) {
@@ -389,7 +416,7 @@ export class ProjectService {
     }
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid);
+    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
@@ -3314,6 +3341,52 @@ export class ProjectService {
         monthlyData: [],
       };
     }
+  }
+
+  /** Returns monthly social-media metrics by platform. Temporary dummy data until SOCIAL_MEDIA_PLATFORM_MONTHLY is available. */
+  public async getSocialMediaMonthly(foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
+    logger.debug(undefined, 'get_social_media_monthly', 'Returning dummy data — Snowflake view not yet implemented', {
+      foundation_slug: foundationSlug,
+      year,
+    });
+
+    const platformSeeds: { name: string; baseFollowers: number; basePosts: number; baseImpressions: number; baseEngagement: number }[] = [
+      { name: 'LinkedIn', baseFollowers: 125000, basePosts: 45, baseImpressions: 890000, baseEngagement: 3.2 },
+      { name: 'YouTube', baseFollowers: 48000, basePosts: 12, baseImpressions: 520000, baseEngagement: 4.1 },
+      { name: 'Twitter/X', baseFollowers: 210000, basePosts: 120, baseImpressions: 1200000, baseEngagement: 1.8 },
+      { name: 'Facebook', baseFollowers: 67000, basePosts: 30, baseImpressions: 340000, baseEngagement: 2.5 },
+      { name: 'Instagram', baseFollowers: 32000, basePosts: 25, baseImpressions: 280000, baseEngagement: 5.6 },
+    ];
+
+    const currentYear = new Date().getUTCFullYear();
+    const monthCount = year === currentYear ? new Date().getUTCMonth() + 1 : 12;
+
+    const platforms = platformSeeds.map((seed, platformIndex) => {
+      const makeRow = (monthIndex: number): Omit<SocialMediaPlatformMonthlyRow, 'momChangeFollowers'> => {
+        const growth = 1 + monthIndex * 0.012;
+        const jitter = 0.9 + (((platformIndex + 1) * 37 + (monthIndex + 1) * 17) % 21) / 100;
+        const followers = Math.round(seed.baseFollowers * growth);
+        const prevFollowers = monthIndex === 0 ? 0 : Math.round(seed.baseFollowers * (1 + (monthIndex - 1) * 0.012));
+        return {
+          month: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+          followers,
+          newFollowers: monthIndex === 0 ? 0 : followers - prevFollowers,
+          impressions: Math.round(seed.baseImpressions * growth * jitter),
+          engagementRate: Math.round(seed.baseEngagement * (0.95 + (jitter - 0.9) / 2) * 100) / 100,
+          posts: Math.round(seed.basePosts * (0.8 + (jitter - 0.9) * 2)),
+        };
+      };
+
+      const rawRows = Array.from({ length: monthCount }, (_, i) => makeRow(i));
+      const months: SocialMediaPlatformMonthlyRow[] = rawRows.map((row, i) => ({
+        ...row,
+        momChangeFollowers: this.computeMomChange(i, rawRows),
+      }));
+
+      return { platform: seed.name, months };
+    });
+
+    return { year, platforms };
   }
 
   // North Star Metrics Queries (ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_* views)
@@ -6573,5 +6646,12 @@ export class ProjectService {
     }
     const date = value instanceof Date ? value : new Date(String(value));
     return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  }
+
+  private computeMomChange(index: number, data: { followers: number }[]): number | null {
+    if (index === 0) return null;
+    const prev = data[index - 1].followers;
+    if (prev === 0) return null;
+    return Math.round(((data[index].followers - prev) / prev) * 1000) / 10;
   }
 }

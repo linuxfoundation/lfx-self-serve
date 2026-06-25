@@ -31,6 +31,24 @@
       <i class="fa-light fa-box text-base" aria-hidden="true"></i>
       Packages
     </button>
+    <button
+      type="button"
+      class="inline-flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px font-medium transition-colors"
+      [class]="activeTab() === 'triage' ? 'border-blue-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-700'"
+      (click)="setActiveTab('triage')"
+      data-testid="akrites-tab-triage">
+      <i class="fa-light fa-table-columns text-base" aria-hidden="true"></i>
+      Triage board
+    </button>
+    <button
+      type="button"
+      class="inline-flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px font-medium transition-colors"
+      [class]="activeTab() === 'risk-matrix' ? 'border-blue-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-700'"
+      (click)="setActiveTab('risk-matrix')"
+      data-testid="akrites-tab-risk-matrix">
+      <i class="fa-light fa-chart-scatter-bubble text-base" aria-hidden="true"></i>
+      Risk matrix
+    </button>
   </div>
 
   <!-- Overview Tab -->
@@ -42,6 +60,7 @@
       (navigateToPackages)="onOverviewNavigate($event)"
       (openPackageDrawer)="onOverviewPackageClick($event)"
       (resolveEscalation)="onOverviewResolveEscalation($event)"
+      (stewardshipChanged)="onStewardshipChanged()"
       data-testid="akrites-overview-tab">
     </lfx-akrites-overview-tab>
   }
@@ -61,6 +80,7 @@
         [loading]="tableLoading()"
         [statusCounts]="statusCounts()"
         [filters]="filters()"
+        [total]="total()"
         [selectedPackages]="selectedPackages()"
         (filterChange)="onFilterChange($event)"
         (sortChange)="onSortChange($event)"
@@ -68,9 +88,33 @@
         (togglePackage)="onTogglePackage($event)"
         (toggleAll)="onToggleAll($event)"
         (clearFilters)="onClearFilters()"
+        (pageChange)="onPageChange($event)"
         data-testid="akrites-packages-tab">
       </lfx-akrites-packages-tab>
     }
+  }
+
+  <!-- Triage Board Tab -->
+  @if (activeTab() === 'triage') {
+    <lfx-akrites-triage-tab
+      [reloadTrigger]="reloadTrigger()"
+      [sortBy]="filters().sort"
+      (packageClick)="onPackageClick($event)"
+      (stewardshipChanged)="onStewardshipChanged()"
+      data-testid="akrites-triage-tab">
+    </lfx-akrites-triage-tab>
+  }
+
+  <!-- Risk Matrix Tab -->
+  @if (activeTab() === 'risk-matrix') {
+    <lfx-akrites-risk-matrix-tab
+      [points]="scatterPoints()"
+      [loading]="scatterLoading()"
+      [statusCounts]="statusCounts()"
+      (packageClick)="onPackageClick($event)"
+      (filterChange)="onRiskMatrixFilterChange($event)"
+      data-testid="akrites-risk-matrix-tab">
+    </lfx-akrites-risk-matrix-tab>
   }
 
   <!-- Bulk Actions Bar -->

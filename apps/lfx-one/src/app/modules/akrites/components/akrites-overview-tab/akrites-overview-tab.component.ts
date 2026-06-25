@@ -9,21 +9,29 @@ import {
   AkritesActivityResponse,
   AkritesActivityRow,
   AkritesActivityRowVM,
+  AkritesAssignStewardRequest,
   AkritesFilterState,
   AkritesMetrics,
 } from '@lfx-one/shared/interfaces';
-import { catchError, of, switchMap, tap } from 'rxjs';
+import { catchError, map, of, switchMap, take, tap } from 'rxjs';
+import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
-import { formatActivityType } from '../../akrites.utils';
+import { ProjectContextService } from '@shared/services/project-context.service';
+import { formatActivityType, formatStatus } from '../../akrites.utils';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 
 @Component({
   selector: 'lfx-akrites-overview-tab',
-  imports: [DecimalPipe, TitleCasePipe],
+  imports: [DecimalPipe, TitleCasePipe, AkritesAssignStewardModalComponent],
   templateUrl: './akrites-overview-tab.component.html',
 })
 export class AkritesOverviewTabComponent {
   private readonly akritesService = inject(AkritesService);
+  private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly projectContextService = inject(ProjectContextService);
+
+  protected readonly canWrite = computed(() => this.projectContextService.canWrite());
 
   public readonly metrics = input<AkritesMetrics | undefined>(undefined);
   public readonly metricsLoading = input<boolean>(false);
@@ -32,9 +40,13 @@ export class AkritesOverviewTabComponent {
   public readonly navigateToPackages = output<Partial<AkritesFilterState>>();
   public readonly openPackageDrawer = output<string>(); // emits packagePurl
   public readonly resolveEscalation = output<string>(); // emits packagePurl for direct resolve
+  public readonly stewardshipChanged = output<void>();
 
   protected readonly activityLoading = signal(true);
   protected readonly activityError = signal(false);
+  protected readonly assignModalVisible = signal(false);
+  protected readonly assignTargetRow = signal<AkritesActivityRow | null>(null);
+  protected readonly assignActionLoading = signal(false);
 
   // Reactive data flow: when reloadTrigger changes, fetch activity and map to VM objects
   protected readonly activityRows = toSignal(
@@ -81,9 +93,41 @@ export class AkritesOverviewTabComponent {
   protected onActionButtonClick(row: AkritesActivityRow, variant: 'default' | 'blue' | 'red'): void {
     if (variant === 'red') {
       this.resolveEscalation.emit(row.packagePurl);
+    } else if (variant === 'blue') {
+      this.assignTargetRow.set(row);
+      this.assignModalVisible.set(true);
     } else {
       this.openPackageDrawer.emit(row.packagePurl);
     }
+  }
+
+  protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
+    const row = this.assignTargetRow();
+    if (!row || this.assignActionLoading()) return;
+    this.assignActionLoading.set(true);
+
+    const stewardshipId$ =
+      row.stewardshipId !== null ? of(row.stewardshipId) : this.akritesService.openStewardship(row.packagePurl).pipe(map((res) => res.stewardship.id));
+
+    stewardshipId$
+      .pipe(
+        switchMap((id) => this.akritesService.assignSteward(id, body)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          this.assignModalVisible.set(false);
+          this.assignTargetRow.set(null);
+          this.assignActionLoading.set(false);
+          this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${row.packageName}.` });
+          this.stewardshipChanged.emit();
+        },
+        error: () => {
+          this.assignActionLoading.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
+        },
+      });
   }
 
   protected getActivityIcon(type: string): string {
@@ -128,7 +172,8 @@ export class AkritesOverviewTabComponent {
     const rules: Record<string, { label: string; variant: 'default' | 'blue' | 'red'; validStatuses: string[] }> = {
       escalation: { label: 'Resolve', variant: 'red', validStatuses: ['escalated'] },
       steward_removed: { label: 'Assign steward', variant: 'blue', validStatuses: ['unassigned'] },
-      stewardship_opened: { label: 'Assign steward', variant: 'blue', validStatuses: ['unassigned'] },
+      stewardship_opened: { label: 'Assign steward', variant: 'blue', validStatuses: ['open'] },
+      state_changed: { label: 'Assign steward', variant: 'blue', validStatuses: ['open'] },
       advisory_detected: { label: 'Triage advisory', variant: 'default', validStatuses: ['needs_attention'] },
       quarterly_update: { label: 'View update', variant: 'default', validStatuses: ['active'] },
       remediation_logged: { label: 'Review progress', variant: 'default', validStatuses: ['assessing', 'active'] },
@@ -194,7 +239,11 @@ export class AkritesOverviewTabComponent {
         order.push(label);
       }
 
-      // Pre-compute all display properties: styles, icons, labels, actions
+      // Pre-compute all display properties: styles, icons, labels, actions, actor
+      const actor = row.actor;
+      const actorDisplay = actor?.displayName || actor?.username || actor?.userId || null;
+      const actorInitials = this.computeActorInitials(actor);
+
       const vm: AkritesActivityRowVM = {
         ...row,
         relativeTime: this.computeRelativeTime(row.createdAt, now),
@@ -202,9 +251,12 @@ export class AkritesOverviewTabComponent {
         statusDotStyle: this.getStatusDotStyle(row.stewardshipStatus),
         statusLabelStyle: this.getStatusLabelStyle(row.stewardshipStatus),
         activityIcon: this.getActivityIcon(row.activityType),
-        formattedStatus: row.stewardshipStatus.replace(/_/g, ' '),
+        formattedStatus: formatStatus(row.stewardshipStatus),
         formattedActivityLabel: formatActivityType(row.activityType),
         action: this.getActivityAction(row.activityType, row.stewardshipStatus),
+        actorDisplay,
+        actorAvatarUrl: actor?.avatarUrl ?? null,
+        actorInitials,
       };
       groups.get(label)!.rows.push(vm);
     }
@@ -217,5 +269,17 @@ export class AkritesOverviewTabComponent {
 
   private isSameDay(a: Date, b: Date): boolean {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  private computeActorInitials(actor: AkritesActivityRow['actor']): string | null {
+    if (!actor) return null;
+    if (actor.displayName) {
+      return actor.displayName
+        .split(' ')
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() ?? '')
+        .join('');
+    }
+    return (actor.username?.[0] ?? actor.userId?.[0] ?? '').toUpperCase() || null;
   }
 }

@@ -3,37 +3,51 @@
 
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { CDP_CONFIG } from '@lfx-one/shared/constants';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AKRITES_VALID_TABS, AKRITES_DEFAULT_TAB, AKRITES_DEFAULT_VISIBLE_STATUSES, AKRITES_TOTAL_STATUSES } from '@lfx-one/shared/constants';
 import {
   AkritesFilterState,
   AkritesListParams,
   AkritesLoadResult,
   AkritesMetrics,
   AkritesPackage,
+  AkritesScatterPoint,
   AkritesSortKey,
+  AkritesStatus,
   AkritesStatusCounts,
   AkritesEscalateRequest,
   AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
+import { AkritesTriageTabComponent } from '../components/akrites-triage-tab/akrites-triage-tab.component';
+import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix-tab/akrites-risk-matrix-tab.component';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
-  imports: [AkritesPackageDrawerComponent, AkritesPackagesTabComponent, AkritesEscalateModalComponent, AkritesOverviewTabComponent],
+  imports: [
+    AkritesPackageDrawerComponent,
+    AkritesPackagesTabComponent,
+    AkritesEscalateModalComponent,
+    AkritesOverviewTabComponent,
+    AkritesTriageTabComponent,
+    AkritesRiskMatrixTabComponent,
+  ],
   templateUrl: './akrites-dashboard.component.html',
 })
 export class AkritesDashboardComponent {
   private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  protected readonly activeTab = signal<AkritesDashboardTab>('overview');
+  protected readonly activeTab = this.initActiveTab();
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
@@ -55,22 +69,29 @@ export class AkritesDashboardComponent {
     busFactor1Only: false,
     staleOnly: false,
     unstewardedOnly: false,
+    page: 1,
+    pageSize: 25,
   });
 
   private readonly loadResult = this.initLoadResult();
   private readonly metricsResult = this.initMetrics();
+  private readonly scatterResult = this.initScatterResult();
 
   protected readonly tableLoading = signal(true);
   protected readonly metricsLoading = signal(true);
+  protected readonly scatterLoading = signal(false);
+  protected readonly riskMatrixVisibleStatuses = signal<AkritesStatus[]>(AKRITES_DEFAULT_VISIBLE_STATUSES);
   protected readonly initialLoading = computed(() => this.loadResult() === undefined);
   protected readonly loadError = computed(() => this.loadResult()?.error ?? false);
   protected readonly packages = computed<AkritesPackage[]>(() => this.loadResult()?.packages ?? []);
   protected readonly metrics = computed<AkritesMetrics | undefined>(() => this.metricsResult());
+  protected readonly scatterPoints = computed<AkritesScatterPoint[]>(() => this.scatterResult() ?? []);
+
+  protected readonly total = computed<number>(() => this.loadResult()?.total ?? 0);
 
   protected readonly statusCounts = computed<AkritesStatusCounts>(() => {
     const fromApi = this.loadResult()?.statusCounts;
     if (fromApi) return fromApi;
-    // Fall back to zeros while the first load is in flight.
     return { all: 0, unassigned: 0, open: 0, assessing: 0, active: 0, needs_attention: 0, escalated: 0, blocked: 0, inactive: 0 };
   });
 
@@ -85,12 +106,17 @@ export class AkritesDashboardComponent {
       this.selectedPackageId.set(null);
       this.drawerVisible.set(false);
     }
-    this.activeTab.set(tab);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tab === AKRITES_DEFAULT_TAB ? null : tab },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   protected onOverviewNavigate(filter: Partial<AkritesFilterState>): void {
     this.onFilterChange(filter);
-    this.activeTab.set('packages');
+    this.setActiveTab('packages');
   }
 
   protected onOverviewResolveEscalation(purl: string): void {
@@ -138,7 +164,7 @@ export class AkritesDashboardComponent {
         },
         error: () => {
           this.onFilterChange({ search: purl });
-          this.activeTab.set('packages');
+          this.setActiveTab('packages');
         },
       });
   }
@@ -151,8 +177,6 @@ export class AkritesDashboardComponent {
   protected onDrawerClose(): void {
     this.drawerVisible.set(false);
     this.selectedPackageId.set(null);
-    // Bump so the activity feed and package list reflect any changes made in the drawer.
-    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected onStewardshipChanged(): void {
@@ -160,7 +184,11 @@ export class AkritesDashboardComponent {
   }
 
   protected onFilterChange(partial: Partial<AkritesFilterState>): void {
-    this.filters.update((current) => ({ ...current, ...partial }));
+    this.filters.update((current) => ({ ...current, ...partial, page: 1 }));
+  }
+
+  protected onPageChange(event: { page: number; pageSize: number }): void {
+    this.filters.update((current) => ({ ...current, page: event.page, pageSize: event.pageSize }));
   }
 
   protected onTogglePackage(payload: { id: string; event: Event }): void {
@@ -283,8 +311,12 @@ export class AkritesDashboardComponent {
       });
   }
 
+  protected onRiskMatrixFilterChange(visible: AkritesStatus[]): void {
+    this.riskMatrixVisibleStatuses.set(visible);
+  }
+
   protected onSortChange(sort: string): void {
-    this.filters.update((current) => ({ ...current, sort: sort as AkritesSortKey }));
+    this.filters.update((current) => ({ ...current, sort: sort as AkritesSortKey, page: 1 }));
   }
 
   protected onClearFilters(): void {
@@ -303,6 +335,14 @@ export class AkritesDashboardComponent {
     this.clearSelection();
   }
 
+  private initActiveTab() {
+    const queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+    return computed<AkritesDashboardTab>(() => {
+      const raw = queryParamMap().get('tab');
+      return raw && AKRITES_VALID_TABS.has(raw as AkritesDashboardTab) ? (raw as AkritesDashboardTab) : AKRITES_DEFAULT_TAB;
+    });
+  }
+
   private initMetrics() {
     return toSignal<AkritesMetrics | undefined>(
       this.akritesService.getMetrics().pipe(
@@ -316,6 +356,31 @@ export class AkritesDashboardComponent {
     );
   }
 
+  private initScatterResult() {
+    const source = computed(() => ({
+      tab: this.activeTab(),
+      reload: this.reloadTrigger(),
+      visibleStatuses: this.riskMatrixVisibleStatuses(),
+    }));
+    return toSignal(
+      toObservable(source).pipe(
+        filter(({ tab }) => tab === 'risk-matrix'),
+        tap(() => this.scatterLoading.set(true)),
+        switchMap(({ visibleStatuses }) => {
+          const statusFilter = visibleStatuses.length < AKRITES_TOTAL_STATUSES ? visibleStatuses : undefined;
+          return this.akritesService.getScatterData(statusFilter).pipe(
+            map((res): AkritesScatterPoint[] => res.points),
+            catchError((err) => {
+              console.warn('[AKRITES] scatter fetch failed', err);
+              return of<AkritesScatterPoint[]>([]);
+            }),
+            tap(() => this.scatterLoading.set(false))
+          );
+        })
+      )
+    );
+  }
+
   private initLoadResult() {
     // Combine filters with the reload trigger so a steward action re-fetches the list even when filters are unchanged.
     const source = computed(() => ({ f: this.filters(), reload: this.reloadTrigger() }));
@@ -324,10 +389,9 @@ export class AkritesDashboardComponent {
         tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap(({ f }) => {
-          // v1: table is capped at MAX_PAGE_SIZE rows; KPI strip shows aggregate totals from /metrics.
-          // Divergence is intentional for v1 — pagination will align them in a future iteration.
           const params: AkritesListParams = {
-            pageSize: CDP_CONFIG.MAX_PAGE_SIZE,
+            page: f.page,
+            pageSize: f.pageSize,
             sortBy: f.sort,
             search: f.search || undefined,
             status: f.tab !== 'all' ? f.tab : undefined,

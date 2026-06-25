@@ -1,9 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AkritesActivityResponse, AkritesListParams, AkritesMetrics, AkritesPackagesResponse } from '@lfx-one/shared/interfaces';
+import {
+  AkritesActivityResponse,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
+  AkritesAdvisorySeverity,
+  AkritesListParams,
+  AkritesMetrics,
+  AkritesPackagesResponse,
+  AkritesScatterResponse,
+} from '@lfx-one/shared/interfaces';
+import { CDP_CONFIG } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import {
   getStringQueryParam,
   parseAssignStewardBody,
@@ -45,11 +56,70 @@ export class AkritesController {
       const parsedPage = pageRaw ? Number(pageRaw) : NaN;
       const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
       const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
-      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(100, parsedPageSize) : 25;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(CDP_CONFIG.MAX_PAGE_SIZE, parsedPageSize) : 25;
 
       const data: AkritesActivityResponse = await this.akritesService.getActivityFeed(req, page, pageSize);
 
       logger.success(req, 'get_akrites_activity', startTime, { row_count: data.rows?.length ?? 0 });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getPackageAdvisories(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_akrites_package_advisories');
+
+    try {
+      const rawPurl = getStringQueryParam(req, 'purl');
+      const purl = rawPurl?.trim();
+      if (!purl) {
+        return next(ServiceValidationError.forField('purl', 'purl query parameter is required', { operation: 'get_akrites_package_advisories' }));
+      }
+      if (!purl.startsWith('pkg:')) {
+        return next(ServiceValidationError.forField('purl', 'purl must start with "pkg:"', { operation: 'get_akrites_package_advisories' }));
+      }
+
+      const pageRaw = getStringQueryParam(req, 'page');
+      const pageSizeRaw = getStringQueryParam(req, 'pageSize');
+      const parsedPage = pageRaw ? Number(pageRaw) : NaN;
+      const parsedPageSize = pageSizeRaw ? Number(pageSizeRaw) : NaN;
+      const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      const pageSize = Number.isInteger(parsedPageSize) && parsedPageSize >= 1 ? Math.min(CDP_CONFIG.MAX_PAGE_SIZE, parsedPageSize) : 10;
+
+      const validSeverities: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
+      const rawSeverity = getStringQueryParam(req, 'severity');
+      let severity: AkritesAdvisorySeverity | undefined;
+      if (rawSeverity) {
+        if (!validSeverities.includes(rawSeverity as AkritesAdvisorySeverity)) {
+          return next(
+            ServiceValidationError.forField('severity', `Invalid severity. Allowed: ${validSeverities.join(', ')}`, {
+              operation: 'get_akrites_package_advisories',
+            })
+          );
+        }
+        severity = rawSeverity as AkritesAdvisorySeverity;
+      }
+
+      const validResolutions = ['open', 'patched'] as const;
+      const rawResolution = getStringQueryParam(req, 'resolution');
+      let resolution: (typeof validResolutions)[number] | undefined;
+      if (rawResolution) {
+        if (!validResolutions.includes(rawResolution as (typeof validResolutions)[number])) {
+          return next(
+            ServiceValidationError.forField('resolution', `Invalid resolution. Allowed: ${validResolutions.join(', ')}`, {
+              operation: 'get_akrites_package_advisories',
+            })
+          );
+        }
+        resolution = rawResolution as (typeof validResolutions)[number];
+      }
+
+      const params: AkritesAdvisoryParams = { purl, page, pageSize, severity, resolution };
+      const data: AkritesAdvisoryPage = await this.akritesService.getPackageAdvisories(req, params);
+
+      logger.success(req, 'get_akrites_package_advisories', startTime, { purl, advisory_count: data.advisories?.length ?? 0 });
 
       res.json(data);
     } catch (error) {
@@ -126,9 +196,9 @@ export class AkritesController {
     const startTime = logger.startOperation(req, 'open_akrites_stewardship');
 
     try {
-      const purl = parseOpenStewardshipBody(req, 'open_akrites_stewardship');
+      const { purl, actor } = parseOpenStewardshipBody(req, 'open_akrites_stewardship');
 
-      const data = await this.akritesService.openStewardship(req, purl);
+      const data = await this.akritesService.openStewardship(req, purl, actor);
 
       logger.success(req, 'open_akrites_stewardship', startTime, { purl });
 
@@ -147,7 +217,7 @@ export class AkritesController {
 
       const data = await this.akritesService.assignSteward(req, id, body);
 
-      logger.success(req, 'assign_akrites_steward', startTime, { stewardship_id: id, role: body.role });
+      logger.success(req, 'assign_akrites_steward', startTime, { stewardship_id: id, role: body.steward.role });
 
       res.json(data);
     } catch (error) {
@@ -165,6 +235,20 @@ export class AkritesController {
       const data = await this.akritesService.escalateStewardship(req, id, body);
 
       logger.success(req, 'escalate_akrites_stewardship', startTime, { stewardship_id: id, resolution_path: body.resolutionPath });
+
+      res.json(data);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getScatterData(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_akrites_scatter');
+
+    try {
+      const data: AkritesScatterResponse = await this.akritesService.getScatterData(req);
+
+      logger.success(req, 'get_akrites_scatter', startTime, { point_count: data.points?.length ?? 0 });
 
       res.json(data);
     } catch (error) {

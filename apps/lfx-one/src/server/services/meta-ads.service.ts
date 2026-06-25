@@ -2,16 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CampaignStatusUpdateResult,
+  CampaignToggleStatus,
   MetaActionItem,
   MetaAccountTotals,
   MetaCampaignCreateRequest,
   MetaCampaignCreateResult,
   MetaCampaignMetrics,
   MetaMonitorResponse,
+  MetaObjective,
   MetaPacingLabel,
+  MetaPlacement,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_PACING_THRESHOLDS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, META_DEFAULT_PLACEMENTS, META_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -79,6 +83,66 @@ function validateGeoTargets(geoTargets: string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Campaign Creation — objective / placement helpers
+// ---------------------------------------------------------------------------
+
+function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?: string): Record<string, unknown> | null {
+  const params = META_OBJECTIVE_PARAMS[objective];
+  if (params.promotedObjectType === 'page_id') return { page_id: pageId };
+  if (params.promotedObjectType === 'pixel_id') {
+    if (typeof pixelId !== 'string' || !pixelId.trim()) {
+      throw new Error(`pixelId must be a non-empty string for '${objective}' objective`);
+    }
+    return { pixel_id: pixelId.trim(), custom_event_type: 'PURCHASE' };
+  }
+  return null;
+}
+
+function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<string, unknown> {
+  const pl = { ...META_DEFAULT_PLACEMENTS, ...placements };
+  const publisherPlatforms: string[] = [];
+  const facebookPositions: string[] = [];
+  const instagramPositions: string[] = [];
+  const messengerPositions: string[] = [];
+
+  if (pl.facebookFeed) {
+    if (!publisherPlatforms.includes('facebook')) publisherPlatforms.push('facebook');
+    facebookPositions.push('feed');
+  }
+  if (pl.instagramFeed) {
+    if (!publisherPlatforms.includes('instagram')) publisherPlatforms.push('instagram');
+    instagramPositions.push('stream');
+  }
+  if (pl.stories) {
+    if (!publisherPlatforms.includes('facebook')) publisherPlatforms.push('facebook');
+    if (!publisherPlatforms.includes('instagram')) publisherPlatforms.push('instagram');
+    facebookPositions.push('story');
+    instagramPositions.push('story');
+  }
+  if (pl.reels) {
+    if (!publisherPlatforms.includes('facebook')) publisherPlatforms.push('facebook');
+    if (!publisherPlatforms.includes('instagram')) publisherPlatforms.push('instagram');
+    facebookPositions.push('facebook_reels');
+    instagramPositions.push('reels');
+  }
+  if (pl.audienceNetwork) publisherPlatforms.push('audience_network');
+  if (pl.messengerInbox) {
+    publisherPlatforms.push('messenger');
+    messengerPositions.push('messenger_home');
+  }
+
+  if (publisherPlatforms.length === 0) {
+    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, audienceNetwork, or messengerInbox)');
+  }
+
+  const targeting: Record<string, unknown> = { publisher_platforms: publisherPlatforms };
+  if (facebookPositions.length > 0) targeting['facebook_positions'] = facebookPositions;
+  if (instagramPositions.length > 0) targeting['instagram_positions'] = instagramPositions;
+  if (messengerPositions.length > 0) targeting['messenger_positions'] = messengerPositions;
+  return targeting;
+}
+
+// ---------------------------------------------------------------------------
 // Campaign Creation — region / name helpers
 // ---------------------------------------------------------------------------
 
@@ -114,11 +178,20 @@ function resolveRegion(geoTargets: string[]): string {
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
 
+const OBJECTIVE_LABELS = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  engagement: 'Engagement',
+  leads: 'Leads',
+  conversions: 'Conversions',
+} as const satisfies Record<MetaObjective, string>;
+
 function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
+  const objective = OBJECTIVE_LABELS[config.objective ?? 'traffic'];
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
-  return `Events | ${event} | ${region} | Conversions | Intent | Social | ${project} | MoFU`;
+  return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | MoFU`;
 }
 
 function buildMetaUtmUrl(config: MetaCampaignCreateRequest, variantIndex: number): string {
@@ -206,37 +279,48 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     steps.push(`Geo targets skipped (require regional compliance declaration in Meta Ads Manager): ${skippedGeos.join(', ')}`);
   }
 
+  const objective: MetaObjective = config.objective ?? 'traffic';
+  const objParams = META_OBJECTIVE_PARAMS[objective];
+  if (!objParams) {
+    throw new Error(`Unknown Meta objective: '${objective}'. Valid objectives: ${Object.keys(META_OBJECTIVE_PARAMS).join(', ')}`);
+  }
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
   const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
     name: campaignName,
-    objective: 'OUTCOME_TRAFFIC',
+    objective: objParams.campaignObjective,
     status: 'PAUSED',
     special_ad_categories: [],
     is_adset_budget_sharing_enabled: false,
   });
   const campaignId = campaignResp.id;
   if (!campaignId) throw new Error('Meta campaign creation succeeded but returned no campaign ID');
-  steps.push(`Campaign created: ${campaignId} (PAUSED)`);
+  steps.push(`Campaign created: ${campaignId} (${OBJECTIVE_LABELS[objective]}, PAUSED)`);
 
-  // Step 3: Create ad set with budget, schedule, and geo targeting
+  // Step 3: Create ad set with budget, schedule, geo targeting, and placements
   const budgetCents = Math.round(config.budgetUsd * 100);
-  const adSetName = `${config.eventName} - Traffic`;
+  const adSetName = `${config.eventName} - ${OBJECTIVE_LABELS[objective]}`;
+  const placementTargeting = buildPlacementTargeting(config.placements ?? {});
 
   const adSetBody: Record<string, unknown> = {
     name: adSetName,
     campaign_id: campaignId,
     status: 'PAUSED',
     billing_event: 'IMPRESSIONS',
-    optimization_goal: 'LINK_CLICKS',
+    optimization_goal: objParams.optimizationGoal,
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     targeting: {
       geo_locations: { countries: geoCountries },
-      publisher_platforms: ['facebook'],
+      ...placementTargeting,
     },
     start_time: `${config.startDate}T00:00:00+0000`,
     end_time: `${config.endDate}T23:59:59+0000`,
   };
+
+  const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
+  if (promotedObject) {
+    adSetBody['promoted_object'] = promotedObject;
+  }
 
   if (config.lifetimeBudget) {
     adSetBody['lifetime_budget'] = budgetCents;
@@ -303,6 +387,37 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     adCount,
     metaUrl: `${META_ADS_MANAGER_URL}/adsmanager/manage/campaigns?act=${accountId.replace('act_', '')}`,
     steps,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Status Toggle
+// ---------------------------------------------------------------------------
+
+export async function updateMetaCampaignStatus(
+  req: Request | undefined,
+  campaignId: string,
+  status: CampaignToggleStatus
+): Promise<CampaignStatusUpdateResult> {
+  const startTime = logger.startOperation(req, 'meta_campaign_status_update', { campaignId, status });
+
+  const safeId = encodeURIComponent(campaignId);
+  const currentResp = await metaRequest<Partial<{ status: string }>>(req, 'GET', `/${safeId}?fields=status`);
+  if (!currentResp.status) {
+    throw new Error('Meta API returned no status field for the campaign. The campaign may not exist or access may be restricted.');
+  }
+  const previousStatus = currentResp.status;
+
+  const updateResp = await metaRequest<{ success: boolean }>(req, 'POST', `/${safeId}`, { status });
+
+  logger.success(req, 'meta_campaign_status_update', startTime, { campaignId, previousStatus, newStatus: status });
+
+  return {
+    platform: 'meta-ads',
+    campaignId,
+    previousStatus,
+    newStatus: status,
+    success: updateResp.success ?? false,
   };
 }
 

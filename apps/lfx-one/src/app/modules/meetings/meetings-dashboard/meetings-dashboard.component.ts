@@ -20,6 +20,7 @@ import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -65,6 +66,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);
@@ -108,6 +110,7 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
+  protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
@@ -319,6 +322,21 @@ export class MeetingsDashboardComponent {
     } else {
       this.loadMoreUpcoming$.next(pageToken);
     }
+  }
+
+  private initCanWriteMeetings(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.projectContextService.activeContext).pipe(
+        switchMap((ctx) => {
+          if (!ctx?.slug) return of(false);
+          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
+            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            catchError(() => of(false))
+          );
+        })
+      ),
+      { initialValue: false }
+    );
   }
 
   private initializeUpcomingMeetings(): Signal<Meeting[]> {
