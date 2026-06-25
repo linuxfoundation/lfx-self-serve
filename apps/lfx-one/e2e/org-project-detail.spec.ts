@@ -75,7 +75,7 @@ test.describe('Org Project Detail — tab strip', () => {
 
   test('deep-links to the Leaderboards tab via ?tab=', async ({ page }) => {
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('project-detail-leaderboard-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('arrow keys move between tabs', async ({ page }) => {
