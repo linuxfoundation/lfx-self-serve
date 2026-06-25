@@ -17,7 +17,7 @@ export class TagComponent {
   public readonly icon = input<TagProps['icon']>();
   public readonly rounded = input<TagProps['rounded']>(false);
   public readonly styleClass = input<TagProps['styleClass']>('');
-  /** Renders a small filled circle dot before the label using the severity text color. */
+  /** Renders a small filled circle dot before the label using the severity color. */
   public readonly dot = input<TagProps['dot']>(false);
   /** Renders the tag with a border and transparent background instead of a filled background. */
   public readonly outlined = input<TagProps['outlined']>(false);
