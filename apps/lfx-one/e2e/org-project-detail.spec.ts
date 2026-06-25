@@ -15,8 +15,8 @@
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
  *
- * Demo semantics (v1): the page is served from frontend demo fixtures
- * (org-lens-project-detail.demo-data.ts). `kubernetes` is a rich seeded project; an
+ * Demo semantics (v1): the page is served from server-side demo fixtures
+ * (server/services/org-lens-project-detail.demo-data.ts). `kubernetes` is a rich seeded project; an
  * unknown slug returns null → the not-found panel.
  */
 
