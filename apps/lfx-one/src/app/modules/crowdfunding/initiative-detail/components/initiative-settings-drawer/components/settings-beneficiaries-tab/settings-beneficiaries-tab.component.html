@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="settings-beneficiaries-tab">
+  <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Beneficiaries</h3>
+
+  <p class="text-sm text-gray-500">You will be automatically added as a beneficiary. Add others who can submit expenses below.</p>
+
+  <div class="flex flex-col gap-3" data-testid="settings-beneficiaries-list">
+    @for (group of beneficiaryGroups(); track $index) {
+      <div class="flex items-center gap-2" [attr.data-testid]="'settings-beneficiary-row-' + $index">
+        <lfx-input-text [form]="group" control="name" placeholder="Full name" class="flex-1" [dataTest]="'beneficiary-name-' + $index" />
+        <lfx-input-text [form]="group" control="email" type="email" placeholder="Email" class="flex-[2]" [dataTest]="'beneficiary-email-' + $index" />
+        <button
+          type="button"
+          (click)="removeBeneficiary($index)"
+          class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+          [attr.aria-label]="'Remove beneficiary ' + ($index + 1)">
+          <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+        </button>
+      </div>
+    }
+  </div>
+
+  <lfx-button
+    label="Add beneficiary"
+    icon="fa-solid fa-plus"
+    severity="secondary"
+    size="small"
+    styleClass="self-start"
+    (onClick)="addBeneficiary()"
+    data-testid="settings-add-beneficiary-btn" />
+</div>

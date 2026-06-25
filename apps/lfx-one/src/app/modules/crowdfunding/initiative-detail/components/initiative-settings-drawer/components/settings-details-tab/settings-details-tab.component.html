@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="settings-details-tab">
+  <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">General Fund Details</h3>
+
+  <!-- Name -->
+  <div class="flex flex-col gap-1.5" data-testid="settings-field-name">
+    <div class="flex items-center justify-between">
+      <label for="settings-name" class="text-sm font-medium text-gray-700"> Initiative name <span class="text-red-500" aria-hidden="true">*</span> </label>
+      <span class="text-xs text-gray-400">{{ nameLength() }}/100</span>
+    </div>
+    <lfx-input-text [form]="form" control="name" id="settings-name" placeholder="Enter initiative name" />
+  </div>
+
+  <!-- Elevator pitch -->
+  <div class="flex flex-col gap-1.5" data-testid="settings-field-description">
+    <div class="flex items-center justify-between">
+      <label for="settings-description" class="text-sm font-medium text-gray-700">
+        Elevator Pitch <span class="text-red-500" aria-hidden="true">*</span>
+      </label>
+      <span class="text-xs text-gray-400">{{ descriptionLength() }}/500</span>
+    </div>
+    <lfx-textarea
+      [form]="form"
+      control="description"
+      id="settings-description"
+      styleClass="w-full"
+      [rows]="4"
+      [maxlength]="500"
+      placeholder="Describe your initiative in a few sentences…" />
+  </div>
+
+  <!-- Topic / Category tags -->
+  <div class="flex flex-col gap-1.5" data-testid="settings-field-tags">
+    <label for="settings-topics" class="text-sm font-medium text-gray-700"> Topic / Category </label>
+    <lfx-multi-select
+      [form]="form"
+      control="topics"
+      [options]="topicOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select topics"
+      filterPlaceHolder="Search topics"
+      data-testid="settings-topics-select" />
+  </div>
+
+  <!-- Website URL -->
+  <div class="flex flex-col gap-1.5" data-testid="settings-field-website">
+    <label for="settings-website" class="text-sm font-medium text-gray-700">Website URL</label>
+    <lfx-input-text [form]="form" control="websiteUrl" id="settings-website" type="url" placeholder="https://example.org" />
+  </div>
+</div>
