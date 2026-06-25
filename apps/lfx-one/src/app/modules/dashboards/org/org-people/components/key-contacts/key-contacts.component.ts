@@ -9,6 +9,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstVal
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
@@ -48,7 +49,17 @@ import { rolePillClass } from './helpers/key-contacts.helper';
 /** Org Lens — People → Key Contacts tab; LFXV2-2067 adds the per-role and bulk-reassign edit affordances. */
 @Component({
   selector: 'lfx-org-people-key-contacts',
-  imports: [DecimalPipe, ReactiveFormsModule, InputTextComponent, SelectComponent, SkeletonModule, EmptyStateComponent, ToastModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    InputTextComponent,
+    SelectComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    PersonAvatarComponent,
+    ToastModule,
+    TooltipModule,
+  ],
   providers: [MessageService, DialogService],
   templateUrl: './key-contacts.component.html',
 })
@@ -444,6 +455,7 @@ export class KeyContactsComponent {
         roles,
         foundationCount: foundationSlugs.size,
         assignments,
+        avatarUrl: first.avatarUrl ?? null,
         rolePills: roles.map((role) => ({ role, pillClass: rolePillClass(role) })),
         sortedAssignments,
       };

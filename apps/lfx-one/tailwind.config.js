@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { lfxColors, lfxFontSizes } from '@lfx-one/shared';
+import { AVATAR_COLORS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
@@ -13,6 +13,9 @@ export default {
     'bg-blue-400',
     'bg-emerald-400',
     'bg-pink-300',
+    // Person-avatar palette: built at runtime by avatarColorClass() from AVATAR_COLORS in
+    // @lfx-one/shared (outside `content`), so it would be purged. Spread the source list to avoid drift.
+    ...AVATAR_COLORS,
     // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
     'border-l-blue-400',
     'border-l-emerald-400',

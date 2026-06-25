@@ -220,6 +220,126 @@ test.describe('US1 — Board & Committee tab (live data)', () => {
 });
 
 // =============================================================================
+// Avatars on seats
+// =============================================================================
+// 1×1 transparent PNG — loads synchronously (no network) so the photo <img> path is deterministic.
+const PNG_1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+test.describe('Avatars on seats', () => {
+  test('renders the photo <img> when a seat avatar is returned', async ({ page }) => {
+    const board = [{ ...BOARD_SEATS[0], person: { ...BOARD_SEATS[0].person, avatarUrl: PNG_1x1 } }];
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const row = page.getByTestId('board-committee-board-row-board-1');
+    await expect(row.getByTestId('person-avatar-image')).toBeVisible();
+  });
+
+  test('shows two-letter initials (no <img>) when a seat has no avatar', async ({ page }) => {
+    const board = [{ ...BOARD_SEATS[0], person: { ...BOARD_SEATS[0].person, avatarUrl: null } }];
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const row = page.getByTestId('board-committee-board-row-board-1');
+    await expect(row.getByTestId('person-avatar-initials')).toHaveText('AR');
+    await expect(row.getByTestId('person-avatar-image')).toHaveCount(0);
+  });
+
+  test('falls back to initials when the avatar image 404s — the row never breaks', async ({ page }) => {
+    await page.route('**/broken-avatar.png', (route) => route.fulfill({ status: 404, contentType: 'image/png', body: '' }));
+    const board = [{ ...BOARD_SEATS[0], person: { ...BOARD_SEATS[0].person, avatarUrl: 'https://avatars.test.invalid/broken-avatar.png' } }];
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const row = page.getByTestId('board-committee-board-row-board-1');
+    // After the load error the <img> is dropped and the initials fallback remains; the row still renders.
+    await expect(row.getByTestId('person-avatar-image')).toHaveCount(0);
+    await expect(row.getByTestId('person-avatar-initials')).toHaveText('AR');
+    await expect(row).toContainText('Alex Rivera');
+  });
+
+  // Guards the Tailwind purge regression: avatarColorClass() builds the palette class at runtime from
+  // AVATAR_COLORS (in @lfx-one/shared, outside the app's content scan), so every palette entry must be
+  // safelisted or it compiles to nothing → a transparent badge with white initials (invisible). One
+  // email per palette bucket; each badge's computed background must be a real, opaque color.
+  test('every initials-badge palette color compiles to a non-transparent background', async ({ page }) => {
+    const paletteEmails = ['p2@redhat.com', 'p0@redhat.com', 'p5@redhat.com', 'p3@redhat.com', 'p1@redhat.com', 'p6@redhat.com', 'p4@redhat.com'];
+    const board = paletteEmails.map((email, i) => ({
+      ...BOARD_SEATS[0],
+      seatId: `palette-${i}`,
+      memberUid: `palette-${i}`,
+      person: {
+        personId: `palette-${i}`,
+        firstName: 'Pal',
+        lastName: `Ette${i}`,
+        fullName: `Pal Ette${i}`,
+        email,
+        jobTitle: null,
+        initials: `P${i}`,
+        avatarUrl: null,
+      },
+    }));
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const backgrounds = await page.locator('[data-testid="person-avatar"]').evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+    expect(backgrounds.length).toBeGreaterThanOrEqual(7);
+    const transparent = backgrounds.filter((bg) => bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent');
+    expect(transparent, 'every avatar palette color must compile (non-transparent background)').toEqual([]);
+  });
+});
+
+// =============================================================================
+// Avatar fallback matrix
+// =============================================================================
+test.describe('Avatar fallbacks', () => {
+  test('blank name → neutral person icon (no initials, no image)', async ({ page }) => {
+    const board = [
+      {
+        ...BOARD_SEATS[0],
+        seatId: 'board-blank',
+        memberUid: 'board-blank',
+        person: { personId: 'board-blank', firstName: '', lastName: '', fullName: '', email: '', jobTitle: null, initials: '', avatarUrl: null },
+      },
+    ];
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const row = page.getByTestId('board-committee-board-row-board-blank');
+    await expect(row.getByTestId('person-avatar-icon')).toBeVisible();
+    await expect(row.getByTestId('person-avatar-initials')).toHaveCount(0);
+    await expect(row.getByTestId('person-avatar-image')).toHaveCount(0);
+  });
+
+  test('identity-less person with a name → two-letter initials, no broken image', async ({ page }) => {
+    const board = [
+      {
+        ...BOARD_SEATS[0],
+        seatId: 'board-noid',
+        memberUid: 'board-noid',
+        person: {
+          personId: 'board-noid',
+          firstName: 'Zed',
+          lastName: 'Zephyr',
+          fullName: 'Zed Zephyr',
+          email: '',
+          jobTitle: null,
+          initials: 'ZZ',
+          avatarUrl: null,
+        },
+      },
+    ];
+    await stubBoardCommittee(page, { board });
+    await openBoardCommitteeTab(page);
+
+    const row = page.getByTestId('board-committee-board-row-board-noid');
+    await expect(row.getByTestId('person-avatar-initials')).toHaveText('ZZ');
+    await expect(row.getByTestId('person-avatar-image')).toHaveCount(0);
+    await expect(row).toContainText('Zed Zephyr');
+  });
+});
+
+// =============================================================================
 // US2 — CSV export (FR-012)
 // =============================================================================
 test.describe('US2 — CSV export', () => {

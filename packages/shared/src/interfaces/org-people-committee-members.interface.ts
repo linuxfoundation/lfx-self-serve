@@ -16,6 +16,7 @@ export interface CommitteeMemberPerson {
   fullName: string;
   jobTitle: string | null;
   initials: string;
+  avatarUrl?: string | null;
 }
 
 /** One committee seat held by one person on one (non-Board) committee in one foundation. */
