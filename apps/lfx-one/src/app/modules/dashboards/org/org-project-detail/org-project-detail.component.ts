@@ -13,8 +13,28 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import {
+  BAND_CHIP_CLASS,
+  BAND_SIGNAL_FILL,
+  BAND_SIGNAL_FILL_LIGHT,
+  BAND_SIGNAL_RANK,
+  BAND_TAG,
+  DEFAULT_METRIC,
+  PD_DEFAULT_TAB,
+  PD_VALID_TABS,
+  DEFAULT_TIME_RANGE,
+  HEALTH_TAG,
+  lfxColors,
+  METRIC_OPTIONS,
+  STACKED_PALETTE,
+  TIME_RANGE_MONTHS,
+  TIME_RANGE_OPTIONS,
+  VALID_METRICS,
+  VALID_TIME_RANGES,
+} from '@lfx-one/shared/constants';
 import type {
+  InfluenceCardVm,
+  LeaderboardDimension,
   OrgLensCardDetailSection,
   OrgLensLeaderboardMetric,
   OrgLensLeaderboardTimeRange,
@@ -24,7 +44,6 @@ import type {
   OrgLensProjectDetailTab,
   OrgLensProjectHealth,
   OrgLensProjectInfluenceCard,
-  TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
@@ -34,106 +53,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
-
-/** Presentation VM for each influence card — includes chart objects typed for Chart.js. */
-interface InfluenceCardVm {
-  key: string;
-  title: string;
-  scopeLabel: string | null;
-  hasData: boolean;
-  chartType: ChartType;
-  chartData: ChartData<ChartType>;
-  chartOptions: ChartOptions<ChartType>;
-  valueSuffix: string;
-  caption: { prefix: string; emphasis: string; suffix: string };
-  statLabel: string;
-  testId: string;
-}
-
-const DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
-const VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
-
-const DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
-const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
-
-const DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
-const VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
-
-/** Dimension keyed by each side-by-side leaderboard. */
-type LeaderboardDimension = 'technical' | 'ecosystem';
-
-/** Hero health badge → lfx-tag severity (green Excellent / amber Healthy / red At Risk). */
-const HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
-  excellent: { label: 'Excellent', severity: 'success' },
-  healthy: { label: 'Healthy', severity: 'warn' },
-  'at-risk': { label: 'At Risk', severity: 'danger' },
-};
-
-/** Leaderboard band chip → lfx-tag severity. */
-const BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: TagSeverity }> = {
-  leading: { label: 'Leading', severity: 'success' },
-  contributing: { label: 'Contributing', severity: 'info' },
-  participating: { label: 'Participating', severity: 'warn' },
-  'non-lf': { label: 'Non-LF', severity: 'secondary' },
-};
-
-/**
- * Signal-strength bar fill constants for the section-header band chip.
- * Inlined here (not in @lfx-one/shared) to avoid conflict with the shared-package additions
- * landing with PR #921 (LFXV2-1883). Merge those once that PR lands.
- */
-const BAND_SIGNAL_RANK: Record<OrgLensProjectBand, number> = {
-  leading: 4,
-  contributing: 3,
-  participating: 2,
-  'non-lf': 0,
-};
-const BAND_SIGNAL_FILL: Record<OrgLensProjectBand, string> = {
-  leading: 'fill-emerald-500',
-  contributing: 'fill-blue-500',
-  participating: 'fill-amber-500',
-  'non-lf': 'fill-gray-400',
-};
-const BAND_SIGNAL_FILL_LIGHT: Record<OrgLensProjectBand, string> = {
-  leading: 'fill-emerald-200',
-  contributing: 'fill-blue-200',
-  participating: 'fill-amber-200',
-  'non-lf': 'fill-gray-200',
-};
-const BAND_CHIP_CLASS: Record<OrgLensProjectBand, string> = {
-  leading: 'inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700',
-  contributing: 'inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700',
-  participating: 'inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700',
-  'non-lf': 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
-};
-
-const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: string }[] = [
-  { id: 'influence', label: 'Calculated Influence', icon: 'fa-light fa-chart-bar' },
-  { id: 'activity', label: 'Activity Count', icon: 'fa-light fa-list-ol' },
-];
-
-const TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] = [
-  { id: '1y', label: '1 year' },
-  { id: '2y', label: '2 years' },
-  { id: 'all', label: 'All time' },
-];
-
-const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
-
-/** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
-const STACKED_PALETTE: string[] = [
-  lfxColors.blue[600],
-  lfxColors.blue[400],
-  lfxColors.emerald[500],
-  lfxColors.emerald[400],
-  lfxColors.violet[500],
-  lfxColors.violet[400],
-  lfxColors.amber[500],
-  lfxColors.amber[400],
-  lfxColors.blue[300],
-  lfxColors.emerald[300],
-  lfxColors.gray[400],
-];
 
 /** Band thresholds per Boysel et al. markup-mu (Leading / Contributing / Participating / Non-LF). */
 function bandForScore(score: number): OrgLensProjectBand {
@@ -225,6 +144,16 @@ export class OrgProjectDetailComponent {
     const scores = this.viewingScores();
     return scores ? bandForScore(scores.ecosystem) : null;
   });
+  protected readonly technicalBandMeta = computed(() => {
+    const band = this.technicalBand();
+    if (!band) return null;
+    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: BAND_TAG[band].label };
+  });
+  protected readonly ecosystemBandMeta = computed(() => {
+    const band = this.ecosystemBand();
+    if (!band) return null;
+    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: BAND_TAG[band].label };
+  });
 
   // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
@@ -281,7 +210,7 @@ export class OrgProjectDetailComponent {
     if (this.activeTab() === tab) return;
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tab: tab === DEFAULT_TAB ? null : tab },
+      queryParams: { tab: tab === PD_DEFAULT_TAB ? null : tab },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -316,27 +245,6 @@ export class OrgProjectDetailComponent {
     (dimension === 'technical' ? this.techSearch : this.ecoSearch).set(value);
   }
 
-  protected bandChipClass(band: OrgLensProjectBand): string {
-    return BAND_CHIP_CLASS[band];
-  }
-
-  protected bandLabel(band: OrgLensProjectBand): string {
-    return BAND_TAG[band].label;
-  }
-
-  protected bandSignalBars(band: OrgLensProjectBand): { x: number; y: number; h: number; fillClass: string }[] {
-    const rank = BAND_SIGNAL_RANK[band];
-    const heights = [5, 8.3, 11.6, 15];
-    const barWidth = 2.6;
-    const gap = 1.8;
-    return heights.map((h, i) => ({
-      x: i * (barWidth + gap),
-      y: 15 - h,
-      h,
-      fillClass: i < rank ? BAND_SIGNAL_FILL[band] : BAND_SIGNAL_FILL_LIGHT[band],
-    }));
-  }
-
   protected openCardDetail(card: InfluenceCardVm): void {
     this.selectedCard.set(card);
     this.drawerOpen.set(true);
@@ -344,11 +252,6 @@ export class OrgProjectDetailComponent {
 
   protected closeCardDetail(): void {
     this.drawerOpen.set(false);
-  }
-
-  /** Returns initials for a person name (used in drawer person-cell avatars). */
-  protected personInitials(name: string): string {
-    return this.initialsFor(name);
   }
 
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
@@ -403,7 +306,7 @@ export class OrgProjectDetailComponent {
 
   private initActiveTab(): OrgLensProjectDetailTab {
     const raw = this.queryParamMap().get('tab');
-    return raw && VALID_TABS.has(raw) ? (raw as OrgLensProjectDetailTab) : DEFAULT_TAB;
+    return raw && PD_VALID_TABS.has(raw) ? (raw as OrgLensProjectDetailTab) : PD_DEFAULT_TAB;
   }
 
   private initDetailStream(): Observable<OrgLensProjectDetailResponse | null> {
@@ -469,6 +372,19 @@ export class OrgProjectDetailComponent {
       left: el.scrollLeft > 0,
       right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
     });
+  }
+
+  private buildBandBars(band: OrgLensProjectBand): { x: number; y: number; h: number; fillClass: string }[] {
+    const rank = BAND_SIGNAL_RANK[band];
+    const heights = [5, 8.3, 11.6, 15];
+    const barWidth = 2.6;
+    const gap = 1.8;
+    return heights.map((h, i) => ({
+      x: i * (barWidth + gap),
+      y: 15 - h,
+      h,
+      fillClass: i < rank ? BAND_SIGNAL_FILL[band] : BAND_SIGNAL_FILL_LIGHT[band],
+    }));
   }
 
   private initialsFor(name: string): string {

@@ -135,17 +135,17 @@
               <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
                 <div class="flex items-center gap-3">
                   <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
-                  @if (technicalBand(); as band) {
-                    <span [class]="bandChipClass(band)" data-testid="project-detail-technical-band">
+                  @if (technicalBandMeta(); as meta) {
+                    <span [class]="meta.chipClass" data-testid="project-detail-technical-band">
                       <span
                         aria-hidden="true"
                         class="hidden fill-emerald-500 fill-blue-500 fill-amber-500 fill-gray-400 fill-emerald-200 fill-blue-200 fill-amber-200 fill-gray-200"></span>
                       <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
-                        @for (bar of bandSignalBars(band); track bar.x) {
+                        @for (bar of meta.bars; track bar.x) {
                           <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
                         }
                       </svg>
-                      {{ bandLabel(band) }}
+                      {{ meta.label }}
                     </span>
                   }
                   <div class="flex-1 h-px bg-gray-200"></div>
@@ -184,14 +184,14 @@
               <section class="flex flex-col gap-3" data-testid="project-detail-ecosystem-group">
                 <div class="flex items-center gap-3">
                   <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
-                  @if (ecosystemBand(); as band) {
-                    <span [class]="bandChipClass(band)" data-testid="project-detail-ecosystem-band">
+                  @if (ecosystemBandMeta(); as meta) {
+                    <span [class]="meta.chipClass" data-testid="project-detail-ecosystem-band">
                       <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
-                        @for (bar of bandSignalBars(band); track bar.x) {
+                        @for (bar of meta.bars; track bar.x) {
                           <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
                         }
                       </svg>
-                      {{ bandLabel(band) }}
+                      {{ meta.label }}
                     </span>
                   }
                   <div class="flex-1 h-px bg-gray-200"></div>
@@ -527,7 +527,7 @@
                             <span
                               class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700"
                               aria-hidden="true">
-                              {{ personInitials(person.name) }}
+                              {{ person.initials }}
                             </span>
                             <span class="font-medium text-blue-600">{{ person.name }}</span>
                           </div>

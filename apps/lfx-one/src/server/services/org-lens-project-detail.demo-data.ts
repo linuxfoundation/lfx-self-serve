@@ -239,7 +239,7 @@ function trailing12Months(): string[] {
 
 /** Deterministic 12-point ramp ending at `end` (starts ~`startFactor` of it). No RNG → SSR-stable. */
 function ramp(end: number, startFactor: number, round = 0): number[] {
-  if (end === 0) return Array.from({ length: 12 }, () => 0);
+  if (end === 0) return [];
   const start = end * startFactor;
   const step = (end - start) / 11;
   const factor = 10 ** round;
@@ -538,8 +538,16 @@ const FULL_DATES = ['Mar 15, 2024', 'Jun 22, 2024', 'Sep 8, 2024', 'Nov 30, 2024
 
 const DEMO_COMMITTEES = ['Technical Oversight Committee', 'Security TAG', 'Storage TAG', 'App Delivery TAG', 'Runtime TAG'];
 
+function personInitials(name: string): string {
+  const parts = name.split(/[\s/]+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 function personCell(i: number, pool: string[] = DEMO_PEOPLE): OrgLensCardDetailCell {
-  return { person: { name: pool[i % pool.length] } };
+  const name = pool[i % pool.length];
+  return { person: { name, initials: personInitials(name) } };
 }
 
 function textCell(value: string): OrgLensCardDetailCell {
@@ -804,7 +812,7 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
       softwareValueUsd: seed.softwareValueUsd,
       health: seed.health,
       foundationLabel: seed.foundationLabel,
-      // Static demo build timestamp (~1h ago) so the freshness label renders a stable relative value.
+      // Computed per-request as ~1h ago so the freshness label renders a stable relative value in demo.
       lastUpdated: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     },
     technical: technicalCards(seed),

@@ -10,6 +10,26 @@
  * ship independently of the sibling Projects page (LFXV2-1883 / LFXV2-1884).
  */
 
+import type { ChartData, ChartOptions, ChartType } from 'chart.js';
+
+/** Dimension keyed by each side-by-side leaderboard. */
+export type LeaderboardDimension = 'technical' | 'ecosystem';
+
+/** Presentation VM for each influence card — includes chart objects typed for Chart.js. */
+export interface InfluenceCardVm {
+  key: string;
+  title: string;
+  scopeLabel: string | null;
+  hasData: boolean;
+  chartType: ChartType;
+  chartData: ChartData<ChartType>;
+  chartOptions: ChartOptions<ChartType>;
+  valueSuffix: string;
+  caption: { prefix: string; emphasis: string; suffix: string };
+  statLabel: string;
+  testId: string;
+}
+
 /** CHAOSS-derived project health classification — drives the hero badge color token. */
 export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'at-risk';
 
@@ -70,7 +90,7 @@ export interface OrgLensProjectInfluenceCard {
 
 /** One cell in a card-specific detail table row. Exactly one of `person` or `text` should be set. */
 export type OrgLensCardDetailCell =
-  | { person: { name: string; avatarUrl?: string }; text?: never }
+  | { person: { name: string; avatarUrl?: string; initials: string }; text?: never }
   | { text: string; person?: never };
 
 /** One row in the card-specific data table shown in the influence card detail drawer. */
