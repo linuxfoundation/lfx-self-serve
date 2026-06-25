@@ -137,6 +137,9 @@
                   <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
                   @if (technicalBand(); as band) {
                     <span [class]="bandChipClass(band)" data-testid="project-detail-technical-band">
+                      <span
+                        aria-hidden="true"
+                        class="hidden fill-emerald-500 fill-blue-500 fill-amber-500 fill-gray-400 fill-emerald-200 fill-blue-200 fill-amber-200 fill-gray-200"></span>
                       <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
                         @for (bar of bandSignalBars(band); track bar.x) {
                           <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
