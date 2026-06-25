@@ -6,6 +6,7 @@ import {
   CdpActivityResponse,
   CdpActivityRow,
   CdpAdvisory,
+  CdpAdvisoryPage,
   CdpPackageDetail,
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
@@ -15,6 +16,9 @@ import {
   AkritesActivityResponse,
   AkritesActorInput,
   AkritesAdvisory,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
+  AkritesAdvisorySeverity,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
@@ -312,6 +316,71 @@ export class AkritesServerService {
     return this.cdpWrite<AkritesStewardshipResponse>(req, 'update_akrites_stewardship_status', 'PATCH', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
   }
 
+  public async getPackageAdvisories(req: Request, params: AkritesAdvisoryParams): Promise<AkritesAdvisoryPage> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_akrites_package_advisories',
+          service: 'akrites_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGE_ADVISORIES}`);
+      url.searchParams.set('purl', params.purl);
+      if (params.page) url.searchParams.set('page', String(params.page));
+      url.searchParams.set('pageSize', String(params.pageSize ?? 10));
+      if (params.severity) url.searchParams.set('severity', params.severity);
+      if (params.resolution) url.searchParams.set('resolution', params.resolution);
+
+      logger.debug(req, 'get_akrites_package_advisories', 'Fetching advisories from CDP', {
+        purl: params.purl,
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP advisories request failed: ${response.statusText}`, response.status, 'CDP_ADVISORIES_ERROR', {
+          operation: 'get_akrites_package_advisories',
+          service: 'akrites_service',
+          errorBody: errorText,
+        });
+      }
+
+      const data = (await response.json()) as CdpAdvisoryPage;
+
+      logger.debug(req, 'get_akrites_package_advisories', 'Fetched advisories from CDP', {
+        purl: params.purl,
+        count: data.advisories?.length ?? 0,
+        total: data.total,
+      });
+
+      return {
+        page: data.page,
+        pageSize: data.pageSize,
+        total: data.total,
+        advisories: this.mapAdvisories(data.advisories ?? []),
+      };
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch Akrites package advisories', 502, 'AKRITES_ADVISORIES_ERROR', {
+        operation: 'get_akrites_package_advisories',
+        service: 'akrites_service',
+      });
+    }
+  }
+
   public async getScatterData(req: Request): Promise<AkritesScatterResponse> {
     const requestId = randomUUID();
 
@@ -575,7 +644,7 @@ export class AkritesServerService {
 
   private getHighestVulnSeverity(advisories: AkritesAdvisory[]): AkritesSeverity | null {
     if (!advisories.length) return null;
-    const order: AkritesSeverity[] = ['critical', 'high', 'medium', 'low'];
+    const order: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
     for (const sev of order) {
       if (advisories.some((a) => a.severity === sev)) return sev;
     }
@@ -586,8 +655,8 @@ export class AkritesServerService {
     return advisories.map((adv) => ({
       id: adv.osvId,
       severity: adv.severity,
-      description: adv.resolution ?? adv.osvId,
-      state: adv.resolution != null ? ('Patched' as const) : ('Open' as const),
+      description: adv.osvId,
+      state: adv.resolution === 'patched' ? ('Patched' as const) : ('Open' as const),
       cvss: null,
       publishedAt: null,
       affectedVersionRange: null,

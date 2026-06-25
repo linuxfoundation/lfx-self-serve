@@ -259,24 +259,129 @@
         </div>
 
         <!-- Advisories -->
-        <div class="border border-gray-200 rounded-xl overflow-hidden">
-          <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900 px-4 pt-3.5 pb-2">Advisories (OSV / GHSA)</h3>
-          @if (pkg.advisories.length > 0) {
+        <div class="border border-gray-200 rounded-xl overflow-hidden" data-testid="akrites-drawer-advisories">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 pt-3.5 pb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wide text-slate-900">Advisories (OSV / GHSA)</h3>
+            @if (advisoryTotal() > 0) {
+              <span class="text-xs text-gray-400">{{ advisoryTotal() }} total</span>
+            }
+          </div>
+
+          <!-- Filters -->
+          <div class="flex items-center gap-2 px-4 pb-2.5 flex-wrap border-b border-gray-100" data-testid="akrites-drawer-advisory-filters">
+            <button
+              type="button"
+              [attr.aria-pressed]="advisorySeverityFilter() === null"
+              [class]="
+                advisorySeverityFilter() === null
+                  ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                  : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+              "
+              (click)="setSeverityFilter(null)"
+              data-testid="akrites-advisory-filter-all">
+              All
+            </button>
+            @for (opt of advisorySeverityOptions; track opt.value) {
+              <button
+                type="button"
+                [attr.aria-pressed]="advisorySeverityFilter() === opt.value"
+                [class]="
+                  advisorySeverityFilter() === opt.value
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                "
+                (click)="setSeverityFilter(opt.value)"
+                [attr.data-testid]="'akrites-advisory-filter-' + opt.value">
+                {{ opt.label }}
+              </button>
+            }
+            <div class="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === null"
+                [class]="
+                  advisoryResolutionFilter() === null
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                "
+                (click)="setResolutionFilter(null)"
+                data-testid="akrites-advisory-state-all">
+                All
+              </button>
+              <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === 'open'"
+                [class]="
+                  advisoryResolutionFilter() === 'open'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                "
+                (click)="setResolutionFilter('open')"
+                data-testid="akrites-advisory-state-open">
+                Open
+              </button>
+              <button
+                type="button"
+                [attr.aria-pressed]="advisoryResolutionFilter() === 'patched'"
+                [class]="
+                  advisoryResolutionFilter() === 'patched'
+                    ? 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-slate-800 text-white border-slate-800'
+                    : 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                "
+                (click)="setResolutionFilter('patched')"
+                data-testid="akrites-advisory-state-patched">
+                Patched
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          @if (advisoryLoading()) {
+            <div class="flex items-center justify-center py-6">
+              <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+            </div>
+          } @else if (advisoryItems().length > 0) {
             <div class="flex flex-col divide-y divide-gray-100">
-              @for (adv of enrichedAdvisories(); track adv.id) {
+              @for (adv of advisoryItems(); track adv.id) {
                 <div class="flex items-start justify-between gap-3 px-4 py-3">
                   <div class="min-w-0">
                     <div class="font-mono text-xs font-semibold text-slate-900">{{ adv.id }}</div>
-                    <div class="text-xs text-gray-500 mt-1">
-                      {{ adv.description }} — <span class="font-semibold text-gray-700">{{ adv.state }}</span>
+                    <div class="text-xs mt-1">
+                      <span [class]="adv.state === 'Patched' ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'">{{ adv.state }}</span>
                     </div>
                   </div>
-                  <lfx-tag [value]="adv.severity" [severity]="adv.tagSeverity" [rounded]="true" />
+                  @if (adv.severity) {
+                    <lfx-tag [value]="adv.severity" [severity]="adv.tagSeverity" [rounded]="true" />
+                  } @else {
+                    <lfx-tag value="Unknown" [severity]="adv.tagSeverity" [rounded]="true" />
+                  }
                 </div>
               }
             </div>
+            @if (advisoryHasMore()) {
+              <div class="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3">
+                <button
+                  type="button"
+                  class="text-xs text-blue-600 font-medium hover:text-blue-800 transition-colors disabled:opacity-50"
+                  (click)="loadMoreAdvisories()"
+                  [disabled]="advisoryLoadingMore()"
+                  data-testid="akrites-advisory-load-more">
+                  Load more ({{ advisoryShownCount() }} of {{ advisoryTotal() }} shown)
+                </button>
+                @if (advisoryLoadingMore()) {
+                  <i class="fa-light fa-spinner-third fa-spin text-xs text-gray-400" aria-hidden="true"></i>
+                }
+              </div>
+            }
           } @else {
-            <p class="px-4 pb-4 text-sm text-gray-500">No OSV/GHSA advisories on record.</p>
+            <p class="px-4 py-4 text-sm text-gray-500">
+              @if (advisorySeverityFilter() || advisoryResolutionFilter()) {
+                No advisories match the selected filters.
+              } @else {
+                No OSV/GHSA advisories on record.
+              }
+            </p>
           }
         </div>
 

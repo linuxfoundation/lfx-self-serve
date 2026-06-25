@@ -5,7 +5,9 @@ export type AkritesStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'ne
 export type AkritesLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
 export type AkritesEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
 export type AkritesHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
-export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'moderate' | 'low';
+/** Severities the advisories flow models. Narrower than AkritesSeverity — excludes the package-level `medium`. */
+export type AkritesAdvisorySeverity = 'critical' | 'high' | 'moderate' | 'low';
 export type AkritesSortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
 
 // ===== Steward admin action types =====
@@ -138,8 +140,30 @@ export interface AkritesListParams {
 
 export interface CdpAdvisory {
   osvId: string;
-  severity: AkritesSeverity;
-  resolution: string | null;
+  severity: AkritesAdvisorySeverity | null;
+  resolution: 'open' | 'patched' | null;
+}
+
+export interface CdpAdvisoryPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  advisories: CdpAdvisory[];
+}
+
+export interface AkritesAdvisoryParams {
+  purl: string;
+  page?: number;
+  pageSize?: number;
+  severity?: AkritesAdvisorySeverity;
+  resolution?: 'open' | 'patched';
+}
+
+export interface AkritesAdvisoryPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  advisories: AkritesAdvisory[];
 }
 
 export interface CdpPackageDetail {
@@ -280,7 +304,7 @@ export interface AkritesAssignStewardResponse {
 
 export interface AkritesAdvisory {
   id: string;
-  severity: AkritesSeverity;
+  severity: AkritesAdvisorySeverity | null;
   description: string;
   state: 'Open' | 'Patched';
   cvss?: number | null;
