@@ -439,7 +439,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: ['/org/projects'] };
+    const root: MenuItem = { label: 'Org Overview', routerLink: ['/org/overview'] };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

@@ -91,11 +91,13 @@
                         </thead>
                         <tbody>
                           @for (project of row.projects; track project.projectId) {
-                            <!-- INFO: Future Epic implementation — rows are non-interactive while the
-                                 /org/projects drilldown is hidden. Restore the role/tabindex/cursor +
-                                 (click)/(keydown) handlers when the drilldown page is built. -->
                             <tr
                               class="border-b border-gray-100"
+                              [class.cursor-pointer]="project.isLfProject"
+                              [attr.role]="project.isLfProject ? 'button' : null"
+                              [attr.tabindex]="project.isLfProject ? 0 : null"
+                              (click)="onProjectRowClick(project)"
+                              (keydown)="onProjectRowKeydown($event, project)"
                               [attr.data-testid]="
                                 'org-overview-foundations-and-projects-row-' +
                                 (row.foundationSlug || row.foundationId) +
