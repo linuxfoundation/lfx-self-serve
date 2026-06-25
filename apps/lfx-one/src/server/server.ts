@@ -56,6 +56,7 @@ import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
+import mktgAgentsRouter from './routes/mktg-agents.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -255,6 +256,8 @@ app.use('/api/akrites', akritesRouter);
 app.use('/api/ossprey', (req, res) => {
   res.redirect(308, `/api/akrites${req.url}`);
 });
+// Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
+app.use('/api/mktg-agents', mktgAgentsRouter);
 
 app.use('/api/*', apiErrorHandler);
 

@@ -181,6 +181,10 @@ export * from './object.interface';
 // Marketing Impact interfaces
 export * from './marketing-impact.interface';
 
+// Marketing OS Agents interfaces (LFXAI-95 workstream)
+export * from './mktg-agent.interface';
+export * from './mktg-chat.interface';
+
 // Enrollment interfaces
 export * from './enrollment.interface';
 
