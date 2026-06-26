@@ -18,7 +18,7 @@
       <div class="flex flex-col min-w-0">
         <span class="font-medium text-sm text-gray-900 truncate">{{ agent().number }}. {{ agent().name }}</span>
         @if (agent().tags.length > 0) {
-          <span class="text-xs text-gray-500 truncate">{{ agent().tags.join(' · ') }}</span>
+          <span class="text-xs text-gray-500 truncate">{{ tagsLabel() }}</span>
         }
       </div>
     </div>

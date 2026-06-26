@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MktgAgent, MktgChatMessage, MktgChatSession } from '@lfx-one/shared/interfaces';
-import { catchError, of, Subscription, switchMap, takeUntil, timer } from 'rxjs';
+import { catchError, of, Subscription, switchMap, take, takeUntil, timer } from 'rxjs';
 
 import { MktgAgentsService } from '../../../shared/services/mktg-agents.service';
 import { MktgChatSessionService } from '../../../shared/services/mktg-chat-session.service';
@@ -47,6 +47,10 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   public readonly agent = input.required<MktgAgent>();
   public readonly back = output<void>();
 
+  // === Computed ===
+  // Header tag list joined once per agent change — keeps `join()` out of the template.
+  protected readonly tagsLabel = computed(() => this.agent().tags.join(' · '));
+
   // === Forms ===
   protected readonly chatForm = new FormGroup({
     message: new FormControl('', { nonNullable: true }),
@@ -60,9 +64,12 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   protected readonly isHistoryLoading = signal(false);
   protected readonly showSessions = signal(true);
 
-  // In-flight history fetch (load or poll); cancelled on agent/session switch so
-  // a stale response can never overwrite a newer conversation.
+  // In-flight history fetch (load or poll) and the in-flight send POST. Both are
+  // cancelled on agent/session switch and on destroy (via cancelInFlight) so a
+  // stale response can never overwrite a newer conversation or write to a
+  // destroyed component.
   private historySub: Subscription | null = null;
+  private sendSub: Subscription | null = null;
   private optimisticCounter = 0;
 
   // === Lifecycle ===
@@ -105,19 +112,24 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     const agentMessageBaseline = this.countAgentMessages();
     const ownerToken = sessionId ? this.sessionStore.getSession(agentId, sessionId)?.ownerToken : undefined;
 
-    this.mktgAgents.sendMessage({ agentId, message: text, sessionId: sessionId ?? null, ownerToken }).subscribe({
-      next: (response) => {
-        if ('sessionId' in response) {
-          this.onSessionCreated(agentId, response.sessionId, response.ownerToken, text, agentMessageBaseline);
-        } else if (sessionId) {
-          this.pollForReply(sessionId, agentMessageBaseline);
-        }
-      },
-      error: () => {
-        this.isTyping.set(false);
-        this.messages.update((list) => [...list, this.buildMessage('agent', 'Sorry — that message could not be sent. Please try again.')]);
-      },
-    });
+    this.sendSub = this.mktgAgents
+      .sendMessage({ agentId, message: text, sessionId: sessionId ?? null, ownerToken })
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          if ('sessionId' in response) {
+            this.onSessionCreated(agentId, response.sessionId, response.ownerToken, text, agentMessageBaseline);
+          } else if (sessionId) {
+            this.pollForReply(sessionId, agentMessageBaseline);
+          } else {
+            // New-session request but the server returned the follow-up shape:
+            // there is no sessionId to poll, so fail soft instead of leaving the
+            // input wedged with `isTyping` stuck on.
+            this.handleSendError('unexpected follow-up response for a new session');
+          }
+        },
+        error: (error) => this.handleSendError(error),
+      });
   }
 
   protected onSelectSession(sessionId: string): void {
@@ -193,7 +205,8 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
         this.isHistoryLoading.set(false);
         this.messages.set(messages);
       },
-      error: () => {
+      error: (error) => {
+        console.error('[mktg-chat] failed to load session history', error);
         this.isHistoryLoading.set(false);
         this.handleExpiredSession(sessionId);
       },
@@ -211,7 +224,16 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
 
     this.historySub = timer(POLL_INTERVAL_MS, POLL_INTERVAL_MS)
       .pipe(
-        switchMap(() => this.mktgAgents.getHistory(sessionId).pipe(catchError(() => of(null)))),
+        switchMap(() =>
+          this.mktgAgents.getHistory(sessionId).pipe(
+            catchError((error) => {
+              // Swallow transient poll errors so a single hiccup doesn't abort the
+              // wait; the loop retries on the next tick.
+              console.warn('[mktg-chat] history poll failed, retrying', error);
+              return of(null);
+            })
+          )
+        ),
         takeUntil(deadline$)
       )
       .subscribe({
@@ -251,6 +273,16 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   private cancelInFlight(): void {
     this.historySub?.unsubscribe();
     this.historySub = null;
+    // Abandon any in-flight send so its continuation can't poll/swap into the
+    // wrong session (switch) or write after teardown (destroy).
+    this.sendSub?.unsubscribe();
+    this.sendSub = null;
+  }
+
+  private handleSendError(error: unknown): void {
+    console.error('[mktg-chat] failed to send message', error);
+    this.isTyping.set(false);
+    this.messages.update((list) => [...list, this.buildMessage('agent', 'Sorry — that message could not be sent. Please try again.')]);
   }
 
   private countAgentMessages(): number {
