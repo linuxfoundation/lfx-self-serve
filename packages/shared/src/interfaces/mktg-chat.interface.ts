@@ -35,6 +35,23 @@ export interface MktgSessionInfo {
 }
 
 /**
+ * A chat session as persisted client-side (localStorage) for the "Past Chats"
+ * drawer. Carries the `ownerToken` needed to post follow-ups plus presentation
+ * metadata (`title`, `createdAt`) that the server history endpoint does not
+ * return. Stored per-agent: `Record<agentId, MktgChatSession[]>`.
+ */
+export interface MktgChatSession {
+  /** Guild session id returned on session creation. */
+  sessionId: string;
+  /** Owner token from the create response; required to post follow-ups. */
+  ownerToken: string;
+  /** Display label for the drawer — derived from the first user message. */
+  title: string;
+  /** ISO-8601 creation timestamp, used to order and label sessions. */
+  createdAt: string;
+}
+
+/**
  * Request body for `POST /api/mktg-agents/chat`.
  * Omit/null `sessionId` to create a new session; provide it to post a follow-up.
  */
