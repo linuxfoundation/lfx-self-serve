@@ -17,8 +17,8 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/chat
-   * No sessionId → create a session and return `{ sessionId }`.
-   * With sessionId → post a follow-up and return `{ success: true }`.
+   * No sessionId → create a session and return `{ sessionId, ownerToken }`.
+   * With sessionId → verify the owner token, post a follow-up, return `{ success: true }`.
    */
   public async chat(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { agentId, message, sessionId, ownerToken } = req.body as MktgChatRequest;
@@ -75,7 +75,9 @@ export class MktgAgentsController {
     // protected route the sub is always present; guard defensively.
     const userId = getEffectiveSub(req);
     if (!userId) {
-      next(new AuthenticationError('Could not identify the requesting user.', { operation: 'mktg_agents_chat', service: 'mktg_agents_controller', path: req.path }));
+      next(
+        new AuthenticationError('Could not identify the requesting user.', { operation: 'mktg_agents_chat', service: 'mktg_agents_controller', path: req.path })
+      );
       return;
     }
 
@@ -94,7 +96,9 @@ export class MktgAgentsController {
 
       // Follow-up: only the session's creator may post into it (reads stay open).
       if (!verifySessionOwnerToken(ownerToken, userId, validSessionId)) {
-        next(new AuthorizationError('You do not have permission to post to this session.', { operation: 'mktg_agents_chat', service: 'mktg_agents_controller' }));
+        next(
+          new AuthorizationError('You do not have permission to post to this session.', { operation: 'mktg_agents_chat', service: 'mktg_agents_controller' })
+        );
         return;
       }
 

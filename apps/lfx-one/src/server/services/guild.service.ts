@@ -146,11 +146,15 @@ export class GuildService {
       // string-form trigger_message doesn't drop the user's first message.
       text = extractTriggerMessageText(typeof item.content === 'string' ? item.content : content?.data || '');
     } else if (item.type === 'agent_notification_message') {
-      // Only render text notifications; ignore tool/structured payloads.
-      if (content?.type !== 'text') {
+      // Render text notifications (bare string or `{ type: 'text', data }`);
+      // ignore tool/structured payloads.
+      if (typeof item.content === 'string') {
+        text = item.content;
+      } else if (content?.type === 'text') {
+        text = content.data || '';
+      } else {
         return null;
       }
-      text = content?.data || '';
     } else {
       return null;
     }
