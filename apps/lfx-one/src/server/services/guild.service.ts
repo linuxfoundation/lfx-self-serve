@@ -27,10 +27,12 @@ interface GuildSessionEvent {
   id: string;
   type: string;
   created_at: string;
-  content?: {
-    type?: string;
-    data?: string;
-  } | string;
+  content?:
+    | {
+        type?: string;
+        data?: string;
+      }
+    | string;
 }
 
 /**
@@ -204,12 +206,17 @@ export class GuildService {
       });
     } catch (error) {
       const isTimeout = error instanceof Error && error.name === 'TimeoutError';
-      throw new MicroserviceError(isTimeout ? 'Guild API request timed out.' : 'Failed to reach the Guild API.', isTimeout ? 504 : 502, isTimeout ? 'guild_timeout' : 'guild_unreachable', {
-        service: 'guild',
-        path,
-        operation,
-        originalError: error instanceof Error ? error : undefined,
-      });
+      throw new MicroserviceError(
+        isTimeout ? 'Guild API request timed out.' : 'Failed to reach the Guild API.',
+        isTimeout ? 504 : 502,
+        isTimeout ? 'guild_timeout' : 'guild_unreachable',
+        {
+          service: 'guild',
+          path,
+          operation,
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
     }
   }
 
