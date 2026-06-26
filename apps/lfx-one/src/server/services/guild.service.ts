@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MktgChatMessage } from '@lfx-one/shared/interfaces';
+import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -25,19 +25,6 @@ const GUILD_HISTORY_LIMIT = 100;
 // Leading `@mention` prefix — matches an @handle followed by whitespace OR the
 // end of the string, so a mention-only message (e.g. `@foo`) is stripped too.
 const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
-
-/** Minimal shape of a Guild session event (only the fields we consume). */
-interface GuildSessionEvent {
-  id: string;
-  type: string;
-  created_at: string;
-  content?:
-    | {
-        type?: string;
-        data?: string;
-      }
-    | string;
-}
 
 /**
  * Server-side proxy for the Guild AI API (https://docs.guild.ai/platform/triggers).
@@ -178,9 +165,12 @@ export class GuildService {
 
     // Deterministic UTC HH:MM — locale-independent so the shared contract is
     // stable across server locales. Per-viewer localization is deferred to the
-    // client chat panel (LFXAI-99).
+    // client chat panel (LFXAI-99). A missing/invalid created_at yields '' rather
+    // than a "NaN:NaN" string leaking into the response.
     const created = new Date(item.created_at);
-    const timestamp = `${String(created.getUTCHours()).padStart(2, '0')}:${String(created.getUTCMinutes()).padStart(2, '0')}`;
+    const timestamp = Number.isNaN(created.getTime())
+      ? ''
+      : `${String(created.getUTCHours()).padStart(2, '0')}:${String(created.getUTCMinutes()).padStart(2, '0')}`;
 
     return {
       message: {
@@ -225,7 +215,9 @@ export class GuildService {
         signal: AbortSignal.timeout(GUILD_REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
-      const isTimeout = error instanceof Error && error.name === 'TimeoutError';
+      // AbortSignal.timeout() throws a DOMException named 'TimeoutError', but some
+      // runtimes surface aborts as 'AbortError' — treat both as a timeout.
+      const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
       throw new MicroserviceError(
         isTimeout ? 'Guild API request timed out.' : 'Failed to reach the Guild API.',
         isTimeout ? 504 : 502,

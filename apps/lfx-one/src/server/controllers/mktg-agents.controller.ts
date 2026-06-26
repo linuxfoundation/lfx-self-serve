@@ -31,7 +31,8 @@ export class MktgAgentsController {
       return;
     }
 
-    if (!agentId || typeof agentId !== 'string') {
+    const trimmedAgentId = typeof agentId === 'string' ? agentId.trim() : '';
+    if (!trimmedAgentId) {
       next(
         ServiceValidationError.forField('agentId', 'agentId is required', {
           operation: 'mktg_agents_chat',
@@ -42,10 +43,10 @@ export class MktgAgentsController {
       return;
     }
 
-    const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === trimmedAgentId);
     if (!agent) {
       next(
-        ServiceValidationError.forField('agentId', `Unknown agentId: ${agentId}`, {
+        ServiceValidationError.forField('agentId', `Unknown agentId: ${trimmedAgentId}`, {
           operation: 'mktg_agents_chat',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -58,7 +59,7 @@ export class MktgAgentsController {
     // so a placeholder can never be routed to a default/incorrect Guild agent.
     if (agent.status !== 'active') {
       next(
-        ServiceValidationError.forField('agentId', `Agent is not available for chat: ${agentId}`, {
+        ServiceValidationError.forField('agentId', `Agent is not available for chat: ${trimmedAgentId}`, {
           operation: 'mktg_agents_chat',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -68,19 +69,19 @@ export class MktgAgentsController {
     }
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
-    const startTime = logger.startOperation(req, 'mktg_agents_chat', { agent_id: agentId, has_session: !!validSessionId });
+    const startTime = logger.startOperation(req, 'mktg_agents_chat', { agent_id: trimmedAgentId, has_session: !!validSessionId });
 
     try {
       if (!validSessionId) {
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
-        logger.success(req, 'mktg_agents_chat', startTime, { agent_id: agentId, session_created: true });
+        logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: true });
         const response: MktgChatResponse = { sessionId: newSessionId };
         res.json(response);
         return;
       }
 
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
-      logger.success(req, 'mktg_agents_chat', startTime, { agent_id: agentId, session_created: false });
+      logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: false });
       const response: MktgChatResponse = { success: true };
       res.json(response);
     } catch (error) {

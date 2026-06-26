@@ -54,3 +54,18 @@ export interface MktgHistoryResponse {
   /** Messages sorted chronologically (oldest first). */
   messages: MktgChatMessage[];
 }
+
+/**
+ * Minimal shape of a Guild session event — the upstream API response fields the
+ * proxy consumes when mapping history. Part of the Guild chat contract.
+ */
+export interface GuildSessionEvent {
+  /** Guild event id. */
+  id: string;
+  /** Event type (e.g. `trigger_message`, `user_message`, `agent_notification_message`). */
+  type: string;
+  /** ISO-8601 creation timestamp. */
+  created_at: string;
+  /** Event content — a bare string, or an object with a content type + data. */
+  content?: { type?: string; data?: string } | string;
+}
