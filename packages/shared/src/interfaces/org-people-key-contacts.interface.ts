@@ -60,7 +60,7 @@ export interface OrgKeyContactDropdownOption {
 export interface OrgKeyContactPersonGroup {
   email: string;
   displayName: string;
-  /** Two-letter initials derived from the structured first/last name; '' when unusable so the avatar shows its icon fallback. */
+  /** Two-letter initials from the structured first/last name, falling back to the first two alphanumerics of the display name; '' when none are usable so the avatar shows its icon fallback. */
   initials: string;
   title: string | null;
   roles: string[];
