@@ -180,8 +180,7 @@
                 <div class="flex items-center justify-end gap-1">
                   @if (hasPMOAccess() && survey.displayStatus === SurveyStatus.DRAFT) {
                     <a [routerLink]="['/surveys', survey.uid, 'edit']" [queryParams]="editQueryParams()">
-                      <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'surveys-edit-' + rowId">
-                      </lfx-button>
+                      <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'surveys-edit-' + rowId"> </lfx-button>
                     </a>
                     <lfx-button
                       label="Delete"
