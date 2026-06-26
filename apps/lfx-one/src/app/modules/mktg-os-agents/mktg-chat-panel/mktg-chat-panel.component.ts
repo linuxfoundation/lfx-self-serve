@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -73,22 +73,6 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   private sendSub: Subscription | null = null;
   private optimisticCounter = 0;
 
-  public constructor() {
-    // Lock the message input in lockstep with the Send button while sending or
-    // loading. `lfx-input-text` has no `disabled` input, so toggle the control
-    // directly — this makes "the input is disabled while sending" a real
-    // invariant the draft-restore in handleSendError depends on.
-    effect(() => {
-      const locked = this.isTyping() || this.isHistoryLoading();
-      const control = this.chatForm.controls.message;
-      if (locked && control.enabled) {
-        control.disable({ emitEvent: false });
-      } else if (!locked && control.disabled) {
-        control.enable({ emitEvent: false });
-      }
-    });
-  }
-
   // === Lifecycle ===
   public ngOnInit(): void {
     // SSR renders an empty panel — no localStorage, no network.
@@ -125,7 +109,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     // agent replies and the full history is reloaded, or rolled back on failure.
     const optimistic = this.buildMessage('user', text);
     this.messages.update((list) => [...list, optimistic]);
-    this.isTyping.set(true);
+    this.setTyping(true);
 
     const agentMessageBaseline = this.countAgentMessages();
     const ownerToken = sessionId ? this.sessionStore.getSession(agentId, sessionId)?.ownerToken : undefined;
@@ -155,7 +139,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
       return;
     }
     this.cancelInFlight();
-    this.isTyping.set(false);
+    this.setTyping(false);
     this.activeSessionId.set(sessionId);
     this.sessionStore.setActiveSessionId(this.agent().id, sessionId);
     this.loadHistory(sessionId);
@@ -163,7 +147,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
 
   protected onNewChat(): void {
     this.cancelInFlight();
-    this.isTyping.set(false);
+    this.setTyping(false);
     this.activeSessionId.set(null);
     this.messages.set([]);
     this.sessionStore.setActiveSessionId(this.agent().id, null);
@@ -180,7 +164,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
 
     // Deleting the open session: fall back to the most recent remaining one.
     this.cancelInFlight();
-    this.isTyping.set(false);
+    this.setTyping(false);
     const next = this.sessions()[0]?.sessionId ?? null;
     this.activeSessionId.set(next);
     this.sessionStore.setActiveSessionId(agentId, next);
@@ -217,15 +201,15 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   /** Load and display a session's full history; recover gracefully if it expired. */
   private loadHistory(sessionId: string): void {
     this.cancelInFlight();
-    this.isHistoryLoading.set(true);
+    this.setHistoryLoading(true);
     this.historySub = this.mktgAgents.getHistory(sessionId).subscribe({
       next: (messages) => {
-        this.isHistoryLoading.set(false);
+        this.setHistoryLoading(false);
         this.messages.set(messages);
       },
       error: (error) => {
         console.error('[mktg-chat] failed to load session history', error);
-        this.isHistoryLoading.set(false);
+        this.setHistoryLoading(false);
         if (isSessionGoneError(error)) {
           // Genuinely missing/expired upstream — safe to drop locally.
           this.handleExpiredSession(sessionId);
@@ -272,7 +256,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
           const agentMessages = messages.filter((message) => message.sender === 'agent').length;
           if (agentMessages > agentMessageBaseline) {
             this.messages.set(messages);
-            this.isTyping.set(false);
+            this.setTyping(false);
             this.cancelInFlight();
           }
         },
@@ -280,7 +264,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
           // Reached only when the deadline fires first — a reply unsubscribes via
           // cancelInFlight() before the timer can complete.
           if (this.isTyping()) {
-            this.isTyping.set(false);
+            this.setTyping(false);
             this.messages.update((list) => [
               ...list,
               this.buildMessage('agent', 'The agent is taking longer than usual to respond. Your message was sent — check back shortly.'),
@@ -307,6 +291,34 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     this.sendSub = null;
   }
 
+  // The "busy" signals and the input lock are written together so the message
+  // control is always disabled exactly when the Send button is. Done in these
+  // setters (not an effect) per the repo's no-effect()-for-side-effects rule.
+  private setTyping(value: boolean): void {
+    this.isTyping.set(value);
+    this.syncInputLock();
+  }
+
+  private setHistoryLoading(value: boolean): void {
+    this.isHistoryLoading.set(value);
+    this.syncInputLock();
+  }
+
+  /**
+   * Lock the message control while sending or loading. `lfx-input-text` exposes
+   * no `disabled` input, so toggle the FormControl directly — this makes the
+   * "input is disabled while sending" invariant the draft-restore relies on real.
+   */
+  private syncInputLock(): void {
+    const locked = this.isTyping() || this.isHistoryLoading();
+    const control = this.chatForm.controls.message;
+    if (locked && control.enabled) {
+      control.disable({ emitEvent: false });
+    } else if (!locked && control.disabled) {
+      control.enable({ emitEvent: false });
+    }
+  }
+
   /**
    * Recover from a failed send: roll back the optimistic bubble (the server never
    * received it), restore the user's draft so they can resend without retyping,
@@ -316,7 +328,7 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
    */
   private handleSendError(error: unknown, draft: string, optimisticId: string): void {
     console.error('[mktg-chat] failed to send message', error);
-    this.isTyping.set(false);
+    this.setTyping(false);
     this.messages.update((list) => list.filter((message) => message.id !== optimisticId));
     this.chatForm.controls.message.setValue(draft);
     this.messages.update((list) => [...list, this.buildMessage('agent', 'Sorry — that message could not be sent. Please try again.')]);
