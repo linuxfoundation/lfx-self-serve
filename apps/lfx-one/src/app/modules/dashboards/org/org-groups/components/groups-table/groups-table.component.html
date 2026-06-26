@@ -1,0 +1,151 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="pageRows()"
+  [loading]="loading()"
+  [lazy]="false"
+  [paginator]="totalRecords() > pageSizeOptions[0]"
+  [rows]="size()"
+  [first]="first()"
+  [totalRecords]="totalRecords()"
+  [rowsPerPageOptions]="pageSizeOptions"
+  [showCurrentPageReport]="true"
+  [showFirstLastIcon]="false"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  paginatorPosition="bottom"
+  (onPage)="onPage($event)"
+  data-testid="org-groups-table">
+  <ng-template #header>
+    <tr>
+      @let icons = sortIconMap();
+      <th scope="col">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500" (click)="onSort('name')">
+          Name <i [class]="icons.name" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500" (click)="onSort('type')">
+          Type <i [class]="icons.type" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col"><span class="text-xs font-medium text-gray-500">Description</span></th>
+      <th scope="col">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
+          (click)="onSort('memberCount')">
+          Members <i [class]="icons.memberCount" aria-hidden="true"></i>
+        </button>
+      </th>
+      <th scope="col"><span class="text-xs font-medium text-gray-500">Channels</span></th>
+      <th scope="col"><span class="text-xs font-medium text-gray-500">Voting</span></th>
+      <th scope="col">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
+          (click)="onSort('updatedAt')">
+          Last Updated <i [class]="icons.updatedAt" aria-hidden="true"></i>
+        </button>
+      </th>
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-row>
+    <tr
+      class="cursor-pointer hover:bg-gray-50 transition-colors"
+      role="button"
+      tabindex="0"
+      [attr.aria-label]="'View details for ' + row.name"
+      [attr.data-testid]="'org-groups-row-' + row.id">
+      <!-- Name -->
+      <td>
+        <div class="flex items-center gap-2">
+          @if (row.visibility === 'PRIVATE') {
+            <i
+              class="fa-light fa-lock text-xs text-gray-400 shrink-0"
+              aria-hidden="true"
+              pTooltip="Private group"
+              tooltipPosition="top"></i>
+          }
+          <span class="text-sm font-medium text-gray-900">{{ row.name }}</span>
+        </div>
+      </td>
+
+      <!-- Type -->
+      <td>
+        <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+          {{ row.type }}
+        </span>
+      </td>
+
+      <!-- Description -->
+      <td class="max-w-xs">
+        <span
+          class="line-clamp-2 text-sm text-gray-600"
+          [pTooltip]="row.description"
+          tooltipPosition="top"
+          [tooltipDisabled]="row.description.length < 80">
+          {{ row.description }}
+        </span>
+      </td>
+
+      <!-- Members -->
+      <td>
+        <span class="text-sm font-medium text-gray-800">{{ row.memberCount }}</span>
+      </td>
+
+      <!-- Channels -->
+      <td>
+        <div class="flex items-center gap-2" data-testid="org-groups-channels">
+          @if (row.hasMailingList) {
+            <i class="fa-light fa-envelope text-gray-500" aria-hidden="true" pTooltip="Mailing list" tooltipPosition="top"></i>
+          }
+          @if (row.hasChatChannel) {
+            <i class="fa-light fa-message-lines text-gray-500" aria-hidden="true" pTooltip="Chat channel" tooltipPosition="top"></i>
+          }
+          @if (!row.hasMailingList && !row.hasChatChannel) {
+            <span class="text-sm text-gray-400">—</span>
+          }
+        </div>
+      </td>
+
+      <!-- Voting status -->
+      <td>
+        @if (row.votingEnabled) {
+          <span class="inline-flex items-center gap-1 text-sm text-emerald-600" data-testid="org-groups-voting-enabled">
+            <i class="fa-light fa-check" aria-hidden="true"></i>
+          </span>
+        } @else {
+          <span class="text-sm text-gray-400" aria-label="Voting not enabled">—</span>
+        }
+      </td>
+
+      <!-- Last Updated -->
+      <td>
+        <span class="text-sm text-gray-600" [pTooltip]="getFullDate(row.updatedAt)" tooltipPosition="top">
+          {{ getRelativeDate(row.updatedAt) }}
+        </span>
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td colspan="7" class="py-10 text-center">
+        <div class="flex flex-col items-center justify-center gap-3">
+          <i class="fa-light fa-users-rectangle text-3xl text-gray-300" aria-hidden="true"></i>
+          <p class="text-sm text-gray-700">No groups match your filters</p>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            data-testid="org-groups-clear-filters"
+            (click)="onClearFilters()">
+            <i class="fa-light fa-filter-slash" aria-hidden="true"></i>
+            Clear filters
+          </button>
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>

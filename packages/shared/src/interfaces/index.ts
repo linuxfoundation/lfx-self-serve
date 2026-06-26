@@ -227,6 +227,9 @@ export * from './person-detail-drawer.interface';
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
 
+// Org Groups interfaces
+export * from './org-groups.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 
