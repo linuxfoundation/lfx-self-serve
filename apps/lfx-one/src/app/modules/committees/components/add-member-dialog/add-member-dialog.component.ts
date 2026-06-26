@@ -148,6 +148,14 @@ export class AddMemberDialogComponent {
     const current = this.form.get('emails')!.value.trim();
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
     this.searchForm.get('query')!.setValue('');
+
+    // Pre-fill the org field from the selected user's known org (only when shown and currently blank).
+    if (this.showOrganizationField() && user.organization && !this.form.get('organization')!.value?.trim()) {
+      this.form.patchValue({
+        organization: user.organization.name,
+        organization_url: user.organization.website ?? '',
+      });
+    }
   }
 
   public onOrgResolved(result: OrganizationResolveResult): void {
