@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -19,7 +20,7 @@ import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
 // because the chat panel (LFXAI-99) is an in-page side panel, not a separate page.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent],
   templateUrl: './mktg-os-agents.component.html',
 })
 export class MktgOsAgentsComponent {
