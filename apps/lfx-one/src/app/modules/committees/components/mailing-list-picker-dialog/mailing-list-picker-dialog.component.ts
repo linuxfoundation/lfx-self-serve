@@ -34,6 +34,7 @@ export class MailingListPickerDialogComponent {
   public readonly mailingLists: GroupsIOMailingList[] = this.config.data.mailingLists;
   public readonly projectUid: string = this.config.data.projectUid;
   private readonly committeeUid: string = this.config.data.committeeUid;
+  private readonly projectSlug: string | undefined = this.config.data.projectSlug;
 
   public selectedMailingListUids = signal<Set<string>>(new Set(this.config.data.associatedUids));
   public mlSearchQuery = signal('');
@@ -103,8 +104,10 @@ export class MailingListPickerDialogComponent {
           void this.router.navigate(['/mailing-lists', 'manage'], { queryParams: { project_uid: this.projectUid } });
         },
         error: () => {
+          const errorDenyParams: Record<string, string> = { _notice: 'mailing-lists' };
+          if (this.projectSlug) errorDenyParams['project'] = this.projectSlug;
           this.cancel();
-          void this.router.navigate([overviewPath], { queryParams: { _notice: 'mailing-lists' } });
+          void this.router.navigate([overviewPath], { queryParams: errorDenyParams });
         },
       });
   }

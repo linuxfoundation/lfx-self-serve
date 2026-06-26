@@ -131,7 +131,7 @@ export class CommitteeSettingsTabComponent {
             deny();
             return;
           }
-          this.openPickerDialog(committeeUid, projectUid);
+          this.openPickerDialog(committeeUid, projectUid, committee.project_slug);
         },
         error: () => deny(),
       });
@@ -215,7 +215,7 @@ export class CommitteeSettingsTabComponent {
 
   // -- Private methods --
 
-  private openPickerDialog(committeeUid: string, projectUid: string): void {
+  private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
     const ref = this.dialogService.open(MailingListPickerDialogComponent, {
@@ -228,6 +228,7 @@ export class CommitteeSettingsTabComponent {
         mailingLists: this.projectMailingLists(),
         associatedUids,
         projectUid,
+        projectSlug,
         committeeUid,
       },
     }) as DynamicDialogRef;
