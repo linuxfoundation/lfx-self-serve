@@ -24,6 +24,25 @@
       <p class="text-xs text-red-600">Organization is required for this group</p>
     }
   </div>
+
+  @if (isNewOrg()) {
+    <div class="flex w-full flex-col gap-1">
+      <label class="block text-sm font-medium text-gray-700"> Organization Website <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        [form]="form"
+        control="organization_url"
+        placeholder="https://example.com"
+        styleClass="w-full text-sm"
+        dataTest="accept-invite-organization-url">
+      </lfx-input-text>
+      @if (urlControl.errors?.['trimmedRequired'] && urlControl.touched) {
+        <p class="text-xs text-red-600">Website is required for new organizations</p>
+      }
+      @if (urlControl.errors?.['httpsUrl'] && urlControl.touched) {
+        <p class="text-xs text-red-600">Website must be a valid https:// URL</p>
+      }
+    </div>
+  }
 </div>
 
 <div class="flex justify-end gap-2 mt-4">
