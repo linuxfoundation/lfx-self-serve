@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, effect, inject, input, OnDestroy, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -71,6 +72,22 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   private historySub: Subscription | null = null;
   private sendSub: Subscription | null = null;
   private optimisticCounter = 0;
+
+  public constructor() {
+    // Lock the message input in lockstep with the Send button while sending or
+    // loading. `lfx-input-text` has no `disabled` input, so toggle the control
+    // directly — this makes "the input is disabled while sending" a real
+    // invariant the draft-restore in handleSendError depends on.
+    effect(() => {
+      const locked = this.isTyping() || this.isHistoryLoading();
+      const control = this.chatForm.controls.message;
+      if (locked && control.enabled) {
+        control.disable({ emitEvent: false });
+      } else if (!locked && control.disabled) {
+        control.enable({ emitEvent: false });
+      }
+    });
+  }
 
   // === Lifecycle ===
   public ngOnInit(): void {
@@ -209,7 +226,17 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('[mktg-chat] failed to load session history', error);
         this.isHistoryLoading.set(false);
-        this.handleExpiredSession(sessionId);
+        if (isSessionGoneError(error)) {
+          // Genuinely missing/expired upstream — safe to drop locally.
+          this.handleExpiredSession(sessionId);
+        } else {
+          // Transient or server error: keep the session (and its ownerToken)
+          // intact so the user can still post follow-ups; show a non-destructive
+          // notice instead of silently deleting a valid conversation.
+          this.messages.set([
+            this.buildMessage('agent', 'Couldn’t load this conversation right now. It’s still saved — reopen it or send a message to try again.'),
+          ]);
+        }
       },
     });
   }
@@ -283,8 +310,9 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   /**
    * Recover from a failed send: roll back the optimistic bubble (the server never
    * received it), restore the user's draft so they can resend without retyping,
-   * and surface an inline error. The input is disabled while sending, so the
-   * field is guaranteed empty here — restoring the draft can't clobber new input.
+   * and surface an inline error. The message control is locked while sending (see
+   * the constructor effect), so no new input can have accumulated — restoring the
+   * draft can't clobber anything the user typed.
    */
   private handleSendError(error: unknown, draft: string, optimisticId: string): void {
     console.error('[mktg-chat] failed to send message', error);
@@ -312,4 +340,12 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     const now = new Date();
     return `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
   }
+}
+
+/**
+ * True only when the upstream genuinely reports the session as gone (404/410),
+ * so a transient network/5xx error never triggers destructive local cleanup.
+ */
+function isSessionGoneError(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && (error.status === 404 || error.status === 410);
 }
