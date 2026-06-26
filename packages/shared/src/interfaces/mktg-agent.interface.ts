@@ -48,11 +48,13 @@ export interface ActiveMktgAgent extends BaseMktgAgent {
   guildAgentHandle: string;
 }
 
-/** A placeholder tile with no live Guild agent yet: rendered disabled. */
+/**
+ * A placeholder tile with no live Guild agent yet: rendered disabled.
+ * Has no `guildAgentHandle` property at all — `coming-soon` agents cannot carry
+ * a routing handle (not even an explicit `undefined`).
+ */
 export interface ComingSoonMktgAgent extends BaseMktgAgent {
   status: 'coming-soon';
-  /** Never set — `coming-soon` agents have no live Guild agent to route to. */
-  guildAgentHandle?: never;
 }
 
 /**
