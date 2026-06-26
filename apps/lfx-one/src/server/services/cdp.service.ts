@@ -821,8 +821,8 @@ export class CdpService {
         Authorization: `Bearer ${token}`,
         'X-LFX-Request-ID': requestId,
       },
-      // Drop empty-string logos — they're not meaningful URLs
-      body: JSON.stringify({ name, domain, source, ...(logo ? { logo } : {}) }),
+      // Drop empty-string domains and logos — they're not meaningful values
+      body: JSON.stringify({ name, source, ...(domain ? { domain } : {}), ...(logo ? { logo } : {}) }),
       signal: AbortSignal.timeout(10000),
     });
 
