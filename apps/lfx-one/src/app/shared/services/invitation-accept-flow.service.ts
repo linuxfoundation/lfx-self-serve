@@ -63,8 +63,18 @@ export class InvitationAcceptFlowService {
   private currentEmployerFromProfile(experiences: WorkExperienceEntry[]): CommitteeOrganizationReference | null {
     if (!experiences.length) return null;
     const current =
-      experiences.find((e) => !e.endDate) ?? [...experiences].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+      experiences.find((e) => !e.endDate) ?? [...experiences].sort((a, b) => this.monthYearToOrdinal(b.startDate) - this.monthYearToOrdinal(a.startDate))[0];
     return { name: current.organization, id: current.organizationId ?? null };
+  }
+
+  // Converts "MMM YYYY" (BFF date format) to a sortable ordinal. Avoids new Date() on
+  // non-ISO strings, which is unreliable in Safari.
+  private monthYearToOrdinal(monthYear: string): number {
+    const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+    const [mon, yr] = monthYear.split(' ');
+    const month = MONTHS[mon] ?? 0;
+    const year = parseInt(yr, 10);
+    return isNaN(year) ? 0 : year * 12 + month;
   }
 
   private openOrganizationDialog(context: InvitationAcceptContext): Promise<AcceptInviteOrganizationDialogResult | null> {

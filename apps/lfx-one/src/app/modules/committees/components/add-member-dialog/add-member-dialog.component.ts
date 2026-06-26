@@ -151,10 +151,7 @@ export class AddMemberDialogComponent {
 
     // Pre-fill the org field from the selected user's known org (only when shown and currently blank).
     if (this.showOrganizationField() && user.organization && !this.form.get('organization')!.value?.trim()) {
-      this.form.patchValue({
-        organization: user.organization.name,
-        organization_url: user.organization.website ?? '',
-      });
+      this.form.patchValue({ organization: user.organization.name });
     }
   }
 
