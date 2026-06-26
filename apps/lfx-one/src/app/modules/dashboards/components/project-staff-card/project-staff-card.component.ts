@@ -64,5 +64,4 @@ export class ProjectStaffCardComponent {
       user: s?.[row.key],
     }));
   });
-
 }
