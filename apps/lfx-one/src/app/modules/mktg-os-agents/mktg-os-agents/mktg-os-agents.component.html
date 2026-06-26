@@ -13,20 +13,26 @@
 
     <!-- Alerts + Agents in Process (placeholder feeds) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <lfx-card header="Alerts" data-testid="mktg-os-agents-alerts">
-        <ul class="flex flex-col gap-1 list-disc list-inside text-sm text-gray-600">
-          @for (alert of alerts; track alert) {
-            <li>{{ alert }}</li>
-          }
-        </ul>
+      <lfx-card data-testid="mktg-os-agents-alerts">
+        <div class="flex flex-col gap-2">
+          <h2 class="text-sm font-medium text-gray-700">Alerts</h2>
+          <ul class="flex flex-col gap-1 list-disc list-inside text-xs text-gray-600">
+            @for (alert of alerts; track alert) {
+              <li>{{ alert }}</li>
+            }
+          </ul>
+        </div>
       </lfx-card>
 
-      <lfx-card header="Agents in Process" data-testid="mktg-os-agents-in-process">
-        <ul class="flex flex-col gap-1 list-disc list-inside text-sm text-gray-600">
-          @for (item of agentsInProcess; track item) {
-            <li>{{ item }}</li>
-          }
-        </ul>
+      <lfx-card data-testid="mktg-os-agents-in-process">
+        <div class="flex flex-col gap-2">
+          <h2 class="text-sm font-medium text-gray-700">Agents in Process</h2>
+          <ul class="flex flex-col gap-1 list-disc list-inside text-xs text-gray-600">
+            @for (item of agentsInProcess; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+        </div>
       </lfx-card>
     </div>
 
