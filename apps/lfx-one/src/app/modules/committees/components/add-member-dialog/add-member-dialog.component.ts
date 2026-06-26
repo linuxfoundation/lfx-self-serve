@@ -158,12 +158,17 @@ export class AddMemberDialogComponent {
 
     // Pre-fill the org field from the selected user's CDP work experience when shown and blank.
     // Uses the same work-experience endpoint and employer-selection logic as the invite accept flow.
+    // DEBUG — remove before merging
+    console.log('[add-member] selected user:', { username: user.username, email: user.email, showOrgField: this.showOrganizationField(), currentOrg: this.form.get('organization')!.value });
     if (this.showOrganizationField() && user.username && !this.form.get('organization')!.value?.trim()) {
       this.searchService
         .getUserWorkExperiences(user.username)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe((experiences) => {
+          // DEBUG — remove before merging
+          console.log('[add-member] work experiences:', experiences);
           const employer = currentEmployerFromWorkExperiences(experiences);
+          console.log('[add-member] resolved employer:', employer);
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
             this.form.patchValue({ organization: employer.name });
           }
