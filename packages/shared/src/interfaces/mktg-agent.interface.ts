@@ -13,6 +13,12 @@
 export type MktgAgentStatus = 'active' | 'coming-soon';
 
 /**
+ * Tile accent color for the marketplace grid, named after an `lfxColors` scale.
+ * The marketplace component maps each value to concrete Tailwind classes.
+ */
+export type MktgAgentAccent = 'blue' | 'emerald' | 'violet' | 'amber' | 'red' | 'gray';
+
+/**
  * A Marketing OS agent surfaced in the marketplace.
  *
  * The server never trusts a client-supplied handle: it looks the agent up by
@@ -34,6 +40,8 @@ export interface MktgAgent {
   description: string;
   /** Font Awesome icon class for the tile (e.g. `fa-light fa-landmark`). */
   icon: string;
+  /** Tile accent color for the marketplace grid. Defaults to gray when unset. */
+  accent?: MktgAgentAccent;
   /**
    * Guild agent routing handle. When set, the server prepends `@${handle} ` to
    * outbound messages so Guild routes them to this agent. Omitted for

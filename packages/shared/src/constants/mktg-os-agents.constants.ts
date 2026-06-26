@@ -5,12 +5,13 @@ import { MktgAgent } from '../interfaces';
 
 // Shared labels for the Marketing OS Agents marketplace (LFXAI-95 workstream).
 // Centralized so the nav item, route, and landing page stay in sync.
-// The nav reads "Marketing OS"; the landing title matches the mockup ("LFX Mktg OS Marketplace").
+// Product copy always spells out "Marketing" (never "Mktg"); "MKTG"/"mktg" stays
+// only in code identifiers and route segments.
 export const MKTG_OS_AGENTS_LABEL = {
   /** Sidebar nav entry, placed directly under Documents. */
   nav: 'Marketing OS',
-  /** Marketplace landing page title (mockup). */
-  marketplaceTitle: 'LFX Mktg OS Marketplace',
+  /** Marketplace landing page title. */
+  marketplaceTitle: 'LFX Marketing OS Marketplace',
   /** Short description shown under the landing page title. */
   marketplaceDescription: 'Browse and chat with LFX marketing agents.',
 } as const;
@@ -36,6 +37,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     description:
       'Generates the initial marketing content set — 25/50-word summaries, boilerplate, personas, a slide outline, and a getting-started ebook — for a new Linux Foundation project. Step 1 of the LFX Marketing OS Foundation Setup process.',
     icon: 'fa-light fa-landmark',
+    accent: 'blue',
     guildAgentHandle: 'foundation-message',
   },
 ];
