@@ -6,6 +6,7 @@ import { MktgChatRequest, MktgChatResponse, MktgHistoryResponse } from '@lfx-one
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -111,8 +112,7 @@ export class MktgAgentsController {
    * Returns the session's messages mapped to the chat format.
    */
   public async history(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const rawSessionId = req.query['sessionId'];
-    const sessionId = typeof rawSessionId === 'string' && rawSessionId.trim() ? rawSessionId.trim() : undefined;
+    const sessionId = getStringQueryParam(req, 'sessionId')?.trim() || undefined;
 
     if (!sessionId) {
       next(

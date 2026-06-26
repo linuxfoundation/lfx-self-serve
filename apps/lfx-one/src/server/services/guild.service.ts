@@ -35,7 +35,8 @@ const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
  */
 export class GuildService {
   private get apiUrl(): string {
-    return process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL;
+    // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
+    return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
   }
 
   private get apiKey(): string {
@@ -124,7 +125,7 @@ export class GuildService {
     return items
       .map((item) => this.mapEvent(item))
       .filter((entry): entry is { message: MktgChatMessage; createdAt: string } => entry !== null)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .sort((a, b) => toEpoch(a.createdAt) - toEpoch(b.createdAt))
       .map((entry) => entry.message);
   }
 
@@ -141,7 +142,9 @@ export class GuildService {
     if (item.type === 'user_message') {
       text = typeof item.content === 'string' ? item.content : content?.data || '';
     } else if (item.type === 'trigger_message') {
-      text = extractTriggerMessageText(content?.data || '');
+      // content may be a bare string or an object with `data` — handle both so a
+      // string-form trigger_message doesn't drop the user's first message.
+      text = extractTriggerMessageText(typeof item.content === 'string' ? item.content : content?.data || '');
     } else if (item.type === 'agent_notification_message') {
       // Only render text notifications; ignore tool/structured payloads.
       if (content?.type !== 'text') {
@@ -269,6 +272,12 @@ export class GuildService {
 
     throw MicroserviceError.fromMicroserviceResponse(response.status, response.statusText, errorBody, 'guild', path, operation);
   }
+}
+
+/** Parse an ISO timestamp to epoch ms; an invalid/missing value sorts to 0 so ordering stays deterministic. */
+function toEpoch(value: string): number {
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 /**

@@ -14,8 +14,9 @@ export interface MktgChatMessage {
   text: string;
   /**
    * Pre-formatted `HH:MM` timestamp in **UTC** — built server-side as a
-   * deterministic, locale-independent string. Per-viewer localization is
-   * deferred to the client chat panel (LFXAI-99).
+   * deterministic, locale-independent string. Empty (`''`) when the upstream
+   * `created_at` is missing or invalid. Per-viewer localization is deferred to
+   * the client chat panel (LFXAI-99).
    */
   timestamp: string;
 }
