@@ -5,6 +5,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -35,6 +36,7 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
+    RouterLink,
     InputTextComponent,
     SelectComponent,
     SurveyStatusLabelPipe,
@@ -70,6 +72,7 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewResults = output<Survey>();

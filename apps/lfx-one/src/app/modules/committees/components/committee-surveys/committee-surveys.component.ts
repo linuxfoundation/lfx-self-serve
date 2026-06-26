@@ -43,6 +43,7 @@ export class CommitteeSurveysComponent {
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
+  public editSurveyQueryParams: Signal<Record<string, string>> = computed(() => buildCommitteeCreateQueryParams(this.committee()));
 
   /** Checks committee write permission fresh before navigating to the create-survey route.
    * Redirects to the lens-appropriate overview with _notice=surveys if permission has been
