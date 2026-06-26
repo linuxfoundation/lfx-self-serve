@@ -7,11 +7,10 @@ import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invi
 import {
   AcceptInviteOrganizationDialogData,
   AcceptInviteOrganizationDialogResult,
-  CommitteeOrganizationReference,
   InvitationAcceptContext,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { currentEmployerFromWorkExperiences, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'rxjs';
@@ -45,7 +44,7 @@ export class InvitationAcceptFlowService {
       ? of(context)
       : this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
           take(1),
-          map((experiences) => ({ ...context, organization: this.currentEmployerFromProfile(experiences) })),
+          map((experiences) => ({ ...context, organization: currentEmployerFromWorkExperiences(experiences) })),
           catchError(() => of(context))
         );
 
@@ -58,23 +57,6 @@ export class InvitationAcceptFlowService {
         return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, result.organization);
       })
     );
-  }
-
-  private currentEmployerFromProfile(experiences: WorkExperienceEntry[]): CommitteeOrganizationReference | null {
-    if (!experiences.length) return null;
-    const current =
-      experiences.find((e) => !e.endDate) ?? [...experiences].sort((a, b) => this.monthYearToOrdinal(b.startDate) - this.monthYearToOrdinal(a.startDate))[0];
-    return { name: current.organization, id: current.organizationId ?? null };
-  }
-
-  // Converts "MMM YYYY" (BFF date format) to a sortable ordinal. Avoids new Date() on
-  // non-ISO strings, which is unreliable in Safari.
-  private monthYearToOrdinal(monthYear: string): number {
-    const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-    const [mon, yr] = monthYear.split(' ');
-    const month = MONTHS[mon] ?? 0;
-    const year = parseInt(yr, 10);
-    return isNaN(year) ? 0 : year * 12 + month;
   }
 
   private openOrganizationDialog(context: InvitationAcceptContext): Promise<AcceptInviteOrganizationDialogResult | null> {

@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
+import { CdpService } from '../services/cdp.service';
 import { SearchService } from '../services/search.service';
 
 /**
@@ -13,6 +14,7 @@ import { SearchService } from '../services/search.service';
  */
 export class SearchController {
   private searchService: SearchService = new SearchService();
+  private cdpService: CdpService = new CdpService();
 
   /**
    * GET /search/users
@@ -78,6 +80,36 @@ export class SearchController {
       });
 
       res.json(results);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /search/users/:lfid/work-experiences
+   * Returns the CDP work-experience list for any user by LFID.
+   * Used to pre-fill the organization field in the add-member dialog.
+   */
+  public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { lfid } = req.params;
+    const startTime = logger.startOperation(req, 'get_user_work_experiences', { lfid });
+
+    try {
+      if (!lfid || typeof lfid !== 'string') {
+        return next(
+          ServiceValidationError.forField('lfid', 'lfid path parameter is required', {
+            operation: 'get_user_work_experiences',
+            service: 'search_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
+
+      logger.success(req, 'get_user_work_experiences', startTime, { lfid, count: workExperiences.length });
+
+      res.json(workExperiences);
     } catch (error) {
       next(error);
     }

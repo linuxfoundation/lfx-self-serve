@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { UserSearchResponse, UserSearchResult, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -36,5 +36,12 @@ export class SearchService {
         return of([]);
       })
     );
+  }
+
+  /** Fetch work experiences for any user by LFID — used to pre-fill org fields. Fails silently. */
+  public getUserWorkExperiences(lfid: string): Observable<WorkExperienceEntry[]> {
+    return this.http
+      .get<WorkExperienceEntry[]>(`/api/search/users/${encodeURIComponent(lfid)}/work-experiences`)
+      .pipe(catchError(() => of([] as WorkExperienceEntry[])));
   }
 }
