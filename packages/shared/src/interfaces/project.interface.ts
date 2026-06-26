@@ -63,6 +63,12 @@ export interface ProjectSettings {
   updated_at: string;
 }
 
+export interface ProjectStaffRowConfig {
+  key: keyof Pick<ProjectSettings, 'executive_director' | 'program_manager' | 'opportunity_owner'>;
+  label: string;
+  icon: string;
+}
+
 export interface ProjectSlugToIdResponse {
   uid: string;
   slug: string;

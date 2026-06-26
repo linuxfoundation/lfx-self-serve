@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ProjectSettings } from '../interfaces/project.interface';
-
-export interface ProjectStaffRowConfig {
-  key: keyof Pick<ProjectSettings, 'executive_director' | 'program_manager' | 'opportunity_owner'>;
-  label: string;
-  icon: string;
-}
+import type { ProjectStaffRowConfig } from '../interfaces/project.interface';
 
 export const PROJECT_STAFF_ROWS: readonly ProjectStaffRowConfig[] = [
   { key: 'executive_director', label: 'Executive Director', icon: 'fa-light fa-user-tie' },
