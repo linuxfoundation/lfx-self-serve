@@ -5,7 +5,6 @@ import { Component, computed, effect, inject, signal, viewChild } from '@angular
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload } from '@lfx-one/shared/utils';
@@ -16,7 +15,7 @@ import { startWith, take } from 'rxjs';
 @Component({
   selector: 'lfx-accept-invite-organization-dialog',
   standalone: true,
-  imports: [ReactiveFormsModule, ButtonComponent, OrganizationSearchComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, OrganizationSearchComponent],
   templateUrl: './accept-invite-organization-dialog.component.html',
 })
 export class AcceptInviteOrganizationDialogComponent {
