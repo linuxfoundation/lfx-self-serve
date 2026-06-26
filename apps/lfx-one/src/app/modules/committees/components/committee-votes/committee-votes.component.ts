@@ -43,7 +43,7 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
-  public editVoteQueryParams: Signal<Record<string, string>> = computed(() => buildCommitteeCreateQueryParams(this.committee()));
+  public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
   /** Checks committee write permission fresh before navigating to the create-vote route.
    * Redirects to project overview with _notice=votes if permission has been revoked
@@ -56,7 +56,7 @@ export class CommitteeVotesComponent {
     const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
     this.committeeService
-      .getCommittee(committee.uid)
+      .fetchCommittee(committee.uid)
       .pipe(take(1))
       .subscribe({
         next: (fresh) => {
