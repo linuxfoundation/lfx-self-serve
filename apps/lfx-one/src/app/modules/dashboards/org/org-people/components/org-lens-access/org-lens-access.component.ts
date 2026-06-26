@@ -7,6 +7,7 @@ import { Component, computed, DestroyRef, inject, signal, type Signal } from '@a
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
 import { OrgLensAccessService } from '@services/org-lens-access.service';
@@ -57,6 +58,7 @@ type OrgAccessRowVm = OrgAccessUser & {
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
+    PersonAvatarComponent,
     EditAccessRoleModalComponent,
     AddAccessUserModalComponent,
   ],

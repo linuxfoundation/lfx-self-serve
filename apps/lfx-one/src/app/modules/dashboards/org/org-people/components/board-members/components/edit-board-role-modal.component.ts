@@ -10,14 +10,14 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Reassign a single Membership-Entitlement board seat to a new holder. Reuses the committee modal contracts. */
 @Component({
   selector: 'lfx-edit-board-role-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, EmployeeAvatarComponent],
+  imports: [FormsModule, InputTextModule, PersonAvatarComponent],
   templateUrl: './edit-board-role-modal.component.html',
 })
 export class EditBoardRoleModalComponent {

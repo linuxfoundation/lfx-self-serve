@@ -212,6 +212,7 @@ export class OrgLensKeyContactsService {
         fullName: `${firstName} ${lastName}`.trim(),
         jobTitle: d.title?.trim() ? d.title.trim() : null,
         initials: this.deriveInitials(firstName, lastName),
+        avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
       });
     }
     return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -348,6 +349,7 @@ export class OrgLensKeyContactsService {
       email: this.resolveEmail(d),
       jobTitle: d.title?.trim() ? d.title.trim() : null,
       initials: this.deriveInitials(firstName, lastName),
+      avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
     };
   }
 

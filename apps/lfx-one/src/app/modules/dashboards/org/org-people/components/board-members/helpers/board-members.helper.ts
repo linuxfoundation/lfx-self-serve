@@ -40,6 +40,7 @@ export function buildBoardPersonGroups(assignments: CommitteeMemberAssignment[])
       displayName: first.person.fullName,
       jobTitle: first.person.jobTitle,
       initials: first.person.initials,
+      avatarUrl: first.person.avatarUrl ?? null,
       foundationLabels,
       votingCount,
       nonVotingCount,

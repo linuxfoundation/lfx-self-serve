@@ -9,6 +9,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import type {
   AddKeyContactRequest,
   OrgMembershipDetailResponse,
@@ -36,7 +37,16 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
 @Component({
   selector: 'lfx-org-membership-detail',
   standalone: true,
-  imports: [RouterLink, CardComponent, EmptyStateComponent, TooltipModule, ToastModule, BoardCommitteeCardComponent, DocumentationTabComponent],
+  imports: [
+    RouterLink,
+    CardComponent,
+    EmptyStateComponent,
+    PersonAvatarComponent,
+    TooltipModule,
+    ToastModule,
+    BoardCommitteeCardComponent,
+    DocumentationTabComponent,
+  ],
   providers: [MessageService, DialogService],
   templateUrl: './org-membership-detail.component.html',
 })
