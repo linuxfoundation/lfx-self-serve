@@ -43,6 +43,7 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
+  public editVoteQueryParams: Signal<Record<string, string>> = computed(() => buildCommitteeCreateQueryParams(this.committee()));
 
   /** Checks committee write permission fresh before navigating to the create-vote route.
    * Redirects to project overview with _notice=votes if permission has been revoked

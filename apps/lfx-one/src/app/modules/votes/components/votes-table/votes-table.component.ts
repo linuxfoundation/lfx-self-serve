@@ -77,6 +77,7 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewVote = output<string>();

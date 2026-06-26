@@ -156,7 +156,7 @@
                 <div class="flex items-center justify-end gap-1">
                   @if (hasPMOAccess()) {
                     @if (vote.status === PollStatus.DISABLED) {
-                      <a [routerLink]="['/votes', vote.uid, 'edit']">
+                      <a [routerLink]="['/votes', vote.uid, 'edit']" [queryParams]="editQueryParams()">
                         <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.uid"> </lfx-button>
                       </a>
                       <lfx-button
