@@ -109,11 +109,9 @@ export const routes: Routes = [
               import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
           },
           {
-            // INFO: Future Epic implementation — the Projects page is hidden; deep links
-            // fall back to the org overview until the org-projects drilldown is built.
             path: 'projects',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
+            loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
           },
           {
             // INFO: Future Epic implementation — the ROI page is hidden; deep links fall

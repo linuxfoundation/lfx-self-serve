@@ -27,6 +27,18 @@ export default {
     'text-amber-500',
     'text-purple-500',
     'text-gray-500',
+    // Org Lens projects — influence band signal-strength bars (classes defined in @lfx-one/shared, not scanned here)
+    'fill-emerald-500',
+    'fill-blue-500',
+    'fill-amber-500',
+    'fill-red-500',
+    'fill-gray-400',
+    'fill-gray-200',
+    // Lighter tints for the unfilled signal bars
+    'fill-emerald-200',
+    'fill-blue-200',
+    'fill-amber-200',
+    'fill-red-200',
   ],
   theme: {
     container: {
