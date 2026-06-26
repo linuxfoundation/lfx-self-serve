@@ -33,6 +33,8 @@ export class OrganizationSearchComponent {
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
    *  compatibility with forms where canonical normalization is desired. */
   public resolveToCdpName = input<boolean>(true);
+  /** When true, marks the domain/website field as required (shows asterisk and validation errors). */
+  public domainRequired = input<boolean>(false);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
