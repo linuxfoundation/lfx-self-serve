@@ -22,6 +22,10 @@ const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_messa
 // per-viewer timestamp localization deferred to LFXAI-99.
 const GUILD_HISTORY_LIMIT = 100;
 
+// Leading `@mention` prefix — matches an @handle followed by whitespace OR the
+// end of the string, so a mention-only message (e.g. `@foo`) is stripped too.
+const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
+
 /** Minimal shape of a Guild session event (only the fields we consume). */
 interface GuildSessionEvent {
   id: string;
@@ -163,8 +167,9 @@ export class GuildService {
 
     let cleanText = text.trim();
     if (isUser) {
-      // Strip the @handle routing prefix so it never shows in the user's bubble.
-      cleanText = cleanText.replace(/^@[a-zA-Z0-9_-]+\s+/, '');
+      // Strip the @handle routing prefix (including a mention-only message) so
+      // it never shows in the user's bubble.
+      cleanText = cleanText.replace(MENTION_PREFIX_RE, '').trim();
     }
 
     if (!cleanText) {
@@ -194,8 +199,12 @@ export class GuildService {
    * driven only by the catalog handle, never by text the user typed.
    */
   private applyRouting(message: string, handle?: string): string {
-    const cleaned = message.replace(/^@[a-zA-Z0-9_-]+\s+/, '');
-    return handle ? `@${handle} ${cleaned}` : cleaned;
+    const cleaned = message.replace(MENTION_PREFIX_RE, '').trim();
+    if (!handle) {
+      return cleaned;
+    }
+    // Avoid a trailing space when the message was a mention only (cleaned empty).
+    return cleaned ? `@${handle} ${cleaned}` : `@${handle}`;
   }
 
   /**

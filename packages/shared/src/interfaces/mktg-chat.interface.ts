@@ -13,9 +13,9 @@ export interface MktgChatMessage {
   /** Display text (routing prefix stripped for user messages). */
   text: string;
   /**
-   * Pre-formatted `HH:MM` timestamp. Formatted server-side, so it reflects the
-   * server's timezone (UTC in deployed envs), not the viewer's. Per-viewer
-   * localization is deferred to the client chat panel (LFXAI-99).
+   * Pre-formatted `HH:MM` timestamp in **UTC** — built server-side as a
+   * deterministic, locale-independent string. Per-viewer localization is
+   * deferred to the client chat panel (LFXAI-99).
    */
   timestamp: string;
 }
@@ -44,13 +44,10 @@ export interface MktgChatRequest {
 /**
  * Response from `POST /api/mktg-agents/chat`.
  * New session → `{ sessionId }`; follow-up on an existing session → `{ success: true }`.
+ * Modeled as a union of the two real shapes so exactly one is returned — never
+ * `{}` or both at once. Consumers narrow with `'sessionId' in response`.
  */
-export interface MktgChatResponse {
-  /** Present when a new session was created. */
-  sessionId?: string;
-  /** Present (true) when a follow-up was posted to an existing session. */
-  success?: boolean;
-}
+export type MktgChatResponse = { sessionId: string } | { success: true };
 
 /** Response from `GET /api/mktg-agents/history`. */
 export interface MktgHistoryResponse {
