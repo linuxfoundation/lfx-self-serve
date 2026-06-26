@@ -26,6 +26,11 @@ export interface MktgSessionInfo {
   agentId: string;
   /** Guild session id returned on session creation. */
   sessionId: string;
+  /**
+   * Opaque owner token proving the current user created this session. Required
+   * to post follow-up messages; the browser stores it alongside the sessionId.
+   */
+  ownerToken: string;
 }
 
 /**
@@ -39,15 +44,21 @@ export interface MktgChatRequest {
   message: string;
   /** Existing Guild session id, or null/omitted to start a new session. */
   sessionId?: string | null;
+  /**
+   * Owner token from the original create response, required when posting a
+   * follow-up to an existing `sessionId`. Proves the caller created the session;
+   * the server rejects follow-ups whose token doesn't match the caller.
+   */
+  ownerToken?: string;
 }
 
 /**
  * Response from `POST /api/mktg-agents/chat`.
- * New session → `{ sessionId }`; follow-up on an existing session → `{ success: true }`.
+ * New session → `{ sessionId, ownerToken }`; follow-up → `{ success: true }`.
  * Modeled as a union of the two real shapes so exactly one is returned — never
  * `{}` or both at once. Consumers narrow with `'sessionId' in response`.
  */
-export type MktgChatResponse = { sessionId: string } | { success: true };
+export type MktgChatResponse = { sessionId: string; ownerToken: string } | { success: true };
 
 /** Response from `GET /api/mktg-agents/history`. */
 export interface MktgHistoryResponse {
