@@ -223,7 +223,9 @@ export class CommitteeViewComponent {
   public parentGroup: Signal<Committee | null> = this.initParentGroup();
 
   // -- Tab visibility signals --
-  public isMembersTabVisible: Signal<boolean> = computed(() => this.committee()?.member_visibility !== CommitteeMemberVisibility.HIDDEN || this.canEdit());
+  public isMembersTabVisible: Signal<boolean> = computed(
+    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit()
+  );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
   // -- Visitor gating --

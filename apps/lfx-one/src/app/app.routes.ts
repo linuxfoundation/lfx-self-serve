@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -9,6 +10,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
+import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
@@ -207,6 +209,14 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
+      // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
+      {
+        path: `foundation/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
+        data: { lens: 'foundation' },
+        canMatch: [mktgOsAgentsEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mktg-os-agents/mktg-os-agents.routes').then((m) => m.MKTG_OS_AGENTS_ROUTES),
+      },
       {
         path: 'foundation/votes',
         data: { lens: 'foundation' },
@@ -255,6 +265,14 @@ export const routes: Routes = [
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
+      {
+        path: `project/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
+        data: { lens: 'project' },
+        canMatch: [mktgOsAgentsEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mktg-os-agents/mktg-os-agents.routes').then((m) => m.MKTG_OS_AGENTS_ROUTES),
       },
       {
         path: 'project/votes',
