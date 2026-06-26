@@ -47,10 +47,6 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   public readonly agent = input.required<MktgAgent>();
   public readonly back = output<void>();
 
-  // === Computed ===
-  // Header tag list joined once per agent change — keeps `join()` out of the template.
-  protected readonly tagsLabel = computed(() => this.agent().tags.join(' · '));
-
   // === Forms ===
   protected readonly chatForm = new FormGroup({
     message: new FormControl('', { nonNullable: true }),
@@ -63,6 +59,10 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   protected readonly isTyping = signal(false);
   protected readonly isHistoryLoading = signal(false);
   protected readonly showSessions = signal(true);
+
+  // === Computed ===
+  // Header tag list joined once per agent change — keeps `join()` out of the template.
+  protected readonly tagsLabel = computed(() => this.agent().tags.join(' · '));
 
   // In-flight history fetch (load or poll) and the in-flight send POST. Both are
   // cancelled on agent/session switch and on destroy (via cancelInFlight) so a
@@ -105,8 +105,9 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     const sessionId = this.activeSessionId();
 
     // Optimistic user bubble — replaced by the canonical server copy once the
-    // agent replies and the full history is reloaded.
-    this.messages.update((list) => [...list, this.buildMessage('user', text)]);
+    // agent replies and the full history is reloaded, or rolled back on failure.
+    const optimistic = this.buildMessage('user', text);
+    this.messages.update((list) => [...list, optimistic]);
     this.isTyping.set(true);
 
     const agentMessageBaseline = this.countAgentMessages();
@@ -125,10 +126,10 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
             // New-session request but the server returned the follow-up shape:
             // there is no sessionId to poll, so fail soft instead of leaving the
             // input wedged with `isTyping` stuck on.
-            this.handleSendError('unexpected follow-up response for a new session');
+            this.handleSendError('unexpected follow-up response for a new session', text, optimistic.id);
           }
         },
-        error: (error) => this.handleSendError(error),
+        error: (error) => this.handleSendError(error, text, optimistic.id),
       });
   }
 
@@ -279,9 +280,17 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
     this.sendSub = null;
   }
 
-  private handleSendError(error: unknown): void {
+  /**
+   * Recover from a failed send: roll back the optimistic bubble (the server never
+   * received it), restore the user's draft so they can resend without retyping,
+   * and surface an inline error. The input is disabled while sending, so the
+   * field is guaranteed empty here — restoring the draft can't clobber new input.
+   */
+  private handleSendError(error: unknown, draft: string, optimisticId: string): void {
     console.error('[mktg-chat] failed to send message', error);
     this.isTyping.set(false);
+    this.messages.update((list) => list.filter((message) => message.id !== optimisticId));
+    this.chatForm.controls.message.setValue(draft);
     this.messages.update((list) => [...list, this.buildMessage('agent', 'Sorry — that message could not be sent. Please try again.')]);
   }
 

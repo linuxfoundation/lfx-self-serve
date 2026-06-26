@@ -22,7 +22,15 @@ export class MktgAgentsService {
     return this.http.post<MktgChatResponse>('/api/mktg-agents/chat', payload);
   }
 
-  /** Fetch a session's mapped chat history (oldest first). */
+  /**
+   * Fetch a session's mapped chat history (oldest first).
+   *
+   * Errors are intentionally NOT swallowed with a `catchError(() => of([]))`
+   * fallback: the caller distinguishes an expired/missing session (which it
+   * recovers from via `handleExpiredSession`) from a transient poll hiccup
+   * (which it retries). A service-level fallback would mask both and make that
+   * recovery path dead code.
+   */
   public getHistory(sessionId: string): Observable<MktgChatMessage[]> {
     const params = new HttpParams().set('sessionId', sessionId);
     return this.http.get<MktgHistoryResponse>('/api/mktg-agents/history', { params }).pipe(map((response) => response.messages));
