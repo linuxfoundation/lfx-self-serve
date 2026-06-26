@@ -109,7 +109,16 @@ export class SearchController {
 
       logger.success(req, 'get_user_work_experiences', startTime, { lfid, count: workExperiences.length });
 
-      res.json(workExperiences);
+      // Return only the fields required for org pre-fill — job titles, source, and verification
+      // metadata are not needed and would unnecessarily expose other users' profile data.
+      res.json(
+        workExperiences.map(({ organization, organizationId, startDate, endDate }) => ({
+          organization,
+          organizationId: organizationId ?? null,
+          startDate,
+          endDate: endDate ?? null,
+        }))
+      );
     } catch (error) {
       next(error);
     }

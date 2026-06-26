@@ -157,7 +157,8 @@ export class AddMemberDialogComponent {
     this.searchForm.get('query')!.setValue('');
 
     // Pre-fill the org field from the selected user's CDP work experience when shown and blank.
-    // Uses the same work-experience endpoint and employer-selection logic as the invite accept flow.
+    // Uses the same employer-selection logic as the invite accept flow (currentEmployerFromWorkExperiences),
+    // but via a separate endpoint (/api/search/users/:lfid/work-experiences) that accepts any LFID.
     if (this.showOrganizationField() && user.username && !this.form.get('organization')!.value?.trim()) {
       this.searchService
         .getUserWorkExperiences(user.username)

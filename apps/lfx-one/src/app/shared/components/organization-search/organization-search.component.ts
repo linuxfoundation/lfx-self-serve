@@ -103,10 +103,7 @@ export class OrganizationSearchComponent {
           }
 
           const sub = nameControl.valueChanges.subscribe((value: string | null) => {
-            const trimmed = (value ?? '').trim();
-            if (trimmed) {
-              searchControl.setValue(trimmed, { emitEvent: false });
-            }
+            searchControl.setValue((value ?? '').trim(), { emitEvent: false });
           });
 
           onCleanup(() => sub.unsubscribe());
