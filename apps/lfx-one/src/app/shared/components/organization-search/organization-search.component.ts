@@ -85,16 +85,29 @@ export class OrganizationSearchComponent {
       initialValue: [],
     });
 
-    // Effect to sync the search input with the parent form's name control
-    effect(() => {
+    // Effect to sync the search input with the parent form's name control — both on
+    // initial render and whenever the control's value changes programmatically (e.g. patchValue).
+    // onCleanup tears down the valueChanges subscription if the form/nameControl inputs change.
+    effect((onCleanup) => {
       const parentForm = this.form();
       const nameControlName = this.nameControl();
 
       if (parentForm && nameControlName) {
-        const nameControlValue = parentForm.get(nameControlName)?.value;
+        const nameControl = parentForm.get(nameControlName);
+        if (nameControl) {
+          const currentValue = nameControl.value;
+          if (currentValue?.trim()) {
+            searchControl.setValue(currentValue, { emitEvent: false });
+          }
 
-        if (nameControlValue && nameControlValue.trim()) {
-          searchControl.setValue(nameControlValue, { emitEvent: false });
+          const sub = nameControl.valueChanges.subscribe((value: string | null) => {
+            const trimmed = (value ?? '').trim();
+            if (trimmed) {
+              searchControl.setValue(trimmed, { emitEvent: false });
+            }
+          });
+
+          onCleanup(() => sub.unsubscribe());
         }
       }
     });
