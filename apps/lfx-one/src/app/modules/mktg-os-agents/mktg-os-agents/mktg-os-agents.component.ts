@@ -67,6 +67,10 @@ export class MktgOsAgentsComponent {
 
   // === Protected methods ===
   protected onSelectAgent(agent: MktgAgent): void {
+    // Only `active` agents have a chat surface; `coming-soon` tiles are inert.
+    if (agent.status !== 'active') {
+      return;
+    }
     this.selectedAgentId.set(agent.id);
   }
 

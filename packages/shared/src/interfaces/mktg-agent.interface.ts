@@ -19,13 +19,9 @@ export type MktgAgentStatus = 'active' | 'coming-soon';
 export type MktgAgentAccent = 'blue' | 'emerald' | 'violet' | 'amber' | 'red' | 'gray';
 
 /**
- * A Marketing OS agent surfaced in the marketplace.
- *
- * The server never trusts a client-supplied handle: it looks the agent up by
- * `id` in the shared catalog and uses the catalog's `guildAgentHandle` for
- * routing, so the Guild routing target can never be spoofed from the browser.
+ * Presentation fields shared by every Marketing OS agent, independent of status.
  */
-export interface MktgAgent {
+interface BaseMktgAgent {
   /** Stable client-side identifier sent to the proxy as `agentId`. */
   id: string;
   /** Display ordering / badge number from the marketplace mockup. */
@@ -34,18 +30,39 @@ export interface MktgAgent {
   name: string;
   /** Short capability chips shown on the tile and chat header. */
   tags: string[];
-  /** Catalog status; gates whether the tile is clickable. */
-  status: MktgAgentStatus;
   /** One-paragraph description shown on the tile and chat header. */
   description: string;
   /** Font Awesome icon class for the tile (e.g. `fa-light fa-landmark`). */
   icon: string;
   /** Tile accent color for the marketplace grid. Defaults to gray when unset. */
   accent?: MktgAgentAccent;
-  /**
-   * Guild agent routing handle. When set, the server prepends `@${handle} ` to
-   * outbound messages so Guild routes them to this agent. Omitted for
-   * `coming-soon` agents that have no live Guild agent yet.
-   */
-  guildAgentHandle?: string;
 }
+
+/** An agent backed by a live Guild agent: clickable tile, routable chat. */
+export interface ActiveMktgAgent extends BaseMktgAgent {
+  status: 'active';
+  /**
+   * Guild agent routing handle. The server prepends `@${handle} ` to outbound
+   * messages so Guild routes them to this agent. Required for `active` agents.
+   */
+  guildAgentHandle: string;
+}
+
+/** A placeholder tile with no live Guild agent yet: rendered disabled. */
+export interface ComingSoonMktgAgent extends BaseMktgAgent {
+  status: 'coming-soon';
+  /** Never set — `coming-soon` agents have no live Guild agent to route to. */
+  guildAgentHandle?: never;
+}
+
+/**
+ * A Marketing OS agent surfaced in the marketplace. Discriminated on `status`
+ * so only `active` agents carry a `guildAgentHandle` — bad catalog entries
+ * (an `active` agent with no handle, or a `coming-soon` agent with one) fail to
+ * compile.
+ *
+ * The server never trusts a client-supplied handle: it looks the agent up by
+ * `id` in the shared catalog and uses the catalog's `guildAgentHandle` for
+ * routing, so the Guild routing target can never be spoofed from the browser.
+ */
+export type MktgAgent = ActiveMktgAgent | ComingSoonMktgAgent;

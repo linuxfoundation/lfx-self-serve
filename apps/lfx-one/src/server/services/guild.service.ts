@@ -67,7 +67,7 @@ export class GuildService {
     this.assertConfigured('guild_create_session', { requireWorkspace: true });
 
     const apiMessage = this.applyRouting(params.message, params.handle);
-    const path = `/api/workspaces/${this.owner}/${this.workspace}/sessions`;
+    const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
     logger.debug(req, 'guild_create_session', 'Creating Guild session', { has_handle: !!params.handle });
 
@@ -104,7 +104,7 @@ export class GuildService {
     this.assertConfigured('guild_send_follow_up');
 
     const apiMessage = this.applyRouting(params.message, params.handle);
-    const path = `/api/sessions/${sessionId}/events`;
+    const path = `/api/sessions/${encodeURIComponent(sessionId)}/events`;
 
     logger.debug(req, 'guild_send_follow_up', 'Posting follow-up to Guild session', { has_handle: !!params.handle });
 
@@ -120,7 +120,7 @@ export class GuildService {
   public async getHistory(req: Request, sessionId: string): Promise<MktgChatMessage[]> {
     this.assertConfigured('guild_get_history');
 
-    const path = `/api/sessions/${sessionId}/events?limit=${GUILD_HISTORY_LIMIT}&types=${GUILD_EVENT_TYPES}`;
+    const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_HISTORY_LIMIT}&types=${GUILD_EVENT_TYPES}`;
 
     logger.debug(req, 'guild_get_history', 'Fetching Guild session history', {});
 
@@ -171,20 +171,31 @@ export class GuildService {
       return null;
     }
 
+    // Deterministic UTC HH:MM — locale-independent so the shared contract is
+    // stable across server locales. Per-viewer localization is deferred to the
+    // client chat panel (LFXAI-99).
+    const created = new Date(item.created_at);
+    const timestamp = `${String(created.getUTCHours()).padStart(2, '0')}:${String(created.getUTCMinutes()).padStart(2, '0')}`;
+
     return {
       message: {
         id: item.id,
         sender: isUser ? 'user' : 'agent',
         text: cleanText,
-        timestamp: new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp,
       },
       createdAt: item.created_at,
     };
   }
 
-  /** Prepend the `@handle` routing prefix when targeting a specific agent. */
+  /**
+   * Prepend the `@handle` routing prefix when targeting a specific agent.
+   * Any client-supplied leading `@mention` is stripped first so routing is
+   * driven only by the catalog handle, never by text the user typed.
+   */
   private applyRouting(message: string, handle?: string): string {
-    return handle ? `@${handle} ${message}` : message;
+    const cleaned = message.replace(/^@[a-zA-Z0-9_-]+\s+/, '');
+    return handle ? `@${handle} ${cleaned}` : cleaned;
   }
 
   /**

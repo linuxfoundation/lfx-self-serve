@@ -54,6 +54,19 @@ export class MktgAgentsController {
       return;
     }
 
+    // Only `active` agents have a live Guild handle; reject `coming-soon` agents
+    // so a placeholder can never be routed to a default/incorrect Guild agent.
+    if (agent.status !== 'active') {
+      next(
+        ServiceValidationError.forField('agentId', `Agent is not available for chat: ${agentId}`, {
+          operation: 'mktg_agents_chat',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     const startTime = logger.startOperation(req, 'mktg_agents_chat', { agent_id: agentId, has_session: !!validSessionId });
 
