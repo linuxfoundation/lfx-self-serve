@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (loading() || hasError() || hasAnyStaff()) {
+@if (loading() || hasError() || loaded()) {
   <div class="flex flex-col gap-4 w-full" data-testid="project-staff-sidebar">
     <div class="flex items-center gap-3">
       <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">

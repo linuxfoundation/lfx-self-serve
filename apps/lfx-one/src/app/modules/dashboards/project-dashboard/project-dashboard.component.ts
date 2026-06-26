@@ -7,7 +7,7 @@ import { PendingActionItem } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -52,7 +52,7 @@ export class ProjectDashboardComponent {
             return of([]);
           }
 
-          return this.projectService.getPendingActions(project.slug, project.uid).pipe(catchError(() => of([])));
+          return this.projectService.getPendingActions(project.slug, project.uid);
         })
       ),
       { initialValue: [] }
