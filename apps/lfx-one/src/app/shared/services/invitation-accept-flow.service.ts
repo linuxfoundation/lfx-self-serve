@@ -3,11 +3,18 @@
 
 import { inject, Injectable } from '@angular/core';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
-import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, InvitationAcceptContext } from '@lfx-one/shared/interfaces';
+import {
+  AcceptInviteOrganizationDialogData,
+  AcceptInviteOrganizationDialogResult,
+  CommitteeOrganizationReference,
+  InvitationAcceptContext,
+  WorkExperience,
+} from '@lfx-one/shared/interfaces';
 import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
+import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, from, switchMap, take } from 'rxjs';
+import { EMPTY, Observable, from, map, of, switchMap, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -15,10 +22,15 @@ import { EMPTY, Observable, from, switchMap, take } from 'rxjs';
 export class InvitationAcceptFlowService {
   private readonly dialogService = inject(DialogService);
   private readonly invitationService = inject(InvitationService);
+  private readonly userService = inject(UserService);
 
   /**
    * Accepts a committee invitation, opening the organization dialog when the committee
    * requires it. Emits nothing when the user cancels the dialog.
+   *
+   * When the invite has no pre-filled organization, the user's current employer from
+   * their work experience is used to pre-fill the dialog so they don't have to re-enter
+   * an org they've already associated with their profile.
    */
   public accept(context: InvitationAcceptContext): Observable<void> {
     const requiresOrganization = invitationRequiresOrganization(context);
@@ -27,7 +39,17 @@ export class InvitationAcceptFlowService {
       return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid);
     }
 
-    return from(this.openOrganizationDialog(context)).pipe(
+    // Resolve the pre-fill org: use the invite's org when present, otherwise fall back to
+    // the user's current employer from their profile (fails silently — dialog opens blank).
+    const contextReady$: Observable<InvitationAcceptContext> = context.organization
+      ? of(context)
+      : this.userService.getWorkExperience().pipe(
+          take(1),
+          map((experiences) => ({ ...context, organization: this.currentEmployerFromProfile(experiences) }))
+        );
+
+    return contextReady$.pipe(
+      switchMap((ctx) => from(this.openOrganizationDialog(ctx))),
       switchMap((result) => {
         if (!result?.organization) {
           return EMPTY;
@@ -35,6 +57,12 @@ export class InvitationAcceptFlowService {
         return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, result.organization);
       })
     );
+  }
+
+  private currentEmployerFromProfile(experiences: WorkExperience[]): CommitteeOrganizationReference | null {
+    if (!experiences.length) return null;
+    const current = experiences.find((e) => !e.endDate) ?? experiences[0];
+    return { name: current.organization, id: current.organizationId ?? null };
   }
 
   private openOrganizationDialog(context: InvitationAcceptContext): Promise<AcceptInviteOrganizationDialogResult | null> {
