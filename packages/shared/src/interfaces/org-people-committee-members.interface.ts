@@ -103,6 +103,7 @@ export interface ReassignCommitteeRolesPersonRef {
   fullName: string;
   email: string;
   initials: string;
+  avatarUrl?: string | null;
 }
 
 /** Dialog input — the person being replaced, their entitlement-seat catalog, the org uid, and a pessimistic submit callback. */

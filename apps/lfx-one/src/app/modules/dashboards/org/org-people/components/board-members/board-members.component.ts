@@ -213,7 +213,7 @@ export class BoardMembersComponent {
       dismissableMask: true,
       showHeader: false,
       data: {
-        person: { fullName: group.displayName, email: currentEmail, initials: group.initials },
+        person: { fullName: group.displayName, email: currentEmail, initials: group.initials, avatarUrl: group.avatarUrl ?? null },
         roles,
         orgUid,
         submit: (intent) => this.performBulkReassign(intent, orgUid),

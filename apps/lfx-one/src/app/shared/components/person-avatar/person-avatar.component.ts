@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, signal, type Signal } from '@angular/core';
 import { avatarColorClass, avatarInitials, splitDisplayName } from '@lfx-one/shared/utils';
 
 type PersonAvatarSize = 'sm' | 'md' | 'lg';
@@ -32,33 +32,41 @@ export class PersonAvatarComponent {
   // Track the failed URL (not a boolean) so a reused @for instance doesn't suppress a later valid avatar.
   protected readonly failedAvatarUrl = signal<string | null>(null);
 
-  protected readonly resolvedInitials = computed<string>(() => {
-    const provided = (this.initials() ?? '').trim().toUpperCase();
-    if (provided) {
-      return provided.slice(0, 2);
-    }
-    const name = this.name() ?? null;
-    const [first, last] = splitDisplayName(name);
-    return avatarInitials(first, last, name);
-  });
-
-  protected readonly badgeClass = computed<string>(() => {
-    if (!this.resolvedInitials()) {
-      return 'bg-gray-400';
-    }
-    return avatarColorClass(this.identity() ?? this.name());
-  });
-
+  protected readonly resolvedInitials: Signal<string> = this.initResolvedInitials();
+  protected readonly badgeClass: Signal<string> = this.initBadgeClass();
   protected readonly sizeClass = computed<string>(() => SIZE_CLASSES[this.size()]);
-
   protected readonly containerClass = computed<string>(() => `${this.sizeClass()} ${this.badgeClass()}`);
-
-  protected readonly displayImage = computed<boolean>(() => {
-    const url = this.avatarUrl();
-    return !!url && this.failedAvatarUrl() !== url;
-  });
+  protected readonly displayImage: Signal<boolean> = this.initDisplayImage();
 
   protected onImageError(): void {
     this.failedAvatarUrl.set(this.avatarUrl() ?? null);
+  }
+
+  private initResolvedInitials(): Signal<string> {
+    return computed(() => {
+      const provided = (this.initials() ?? '').trim().toUpperCase();
+      if (provided) {
+        return provided.slice(0, 2);
+      }
+      const name = this.name() ?? null;
+      const [first, last] = splitDisplayName(name);
+      return avatarInitials(first, last, name);
+    });
+  }
+
+  private initBadgeClass(): Signal<string> {
+    return computed(() => {
+      if (!this.resolvedInitials()) {
+        return 'bg-gray-400';
+      }
+      return avatarColorClass(this.identity() ?? this.name());
+    });
+  }
+
+  private initDisplayImage(): Signal<boolean> {
+    return computed(() => {
+      const url = this.avatarUrl();
+      return !!url && this.failedAvatarUrl() !== url;
+    });
   }
 }

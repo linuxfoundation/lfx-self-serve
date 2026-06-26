@@ -15,6 +15,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
+import { avatarInitials } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -451,6 +452,7 @@ export class KeyContactsComponent {
       return {
         email: first.email,
         displayName: first.displayName,
+        initials: avatarInitials(first.firstName, first.lastName, first.displayName),
         title: first.title,
         roles,
         foundationCount: foundationSlugs.size,
