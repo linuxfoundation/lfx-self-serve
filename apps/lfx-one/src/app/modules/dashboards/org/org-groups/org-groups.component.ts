@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounceTime, of, switchMap } from 'rxjs';
@@ -188,16 +188,19 @@ export class OrgGroupsComponent {
   }
 
   private initAllGroups(): Signal<readonly OrgGroup[]> {
-    const uid = this.accountContext.selectedAccount().uid;
-    if (!uid) {
-      this.loadingState.set(false);
-      return signal([]);
-    }
     return toSignal(
-      this.groupsService.getGroups().pipe(
-        switchMap((data) => {
-          this.loadingState.set(false);
-          return of(data);
+      toObservable(this.accountContext.selectedAccount).pipe(
+        switchMap((account) => {
+          if (!account.uid) {
+            this.loadingState.set(false);
+            return of([] as OrgGroup[]);
+          }
+          return this.groupsService.getGroups().pipe(
+            switchMap((data) => {
+              this.loadingState.set(false);
+              return of(data);
+            }),
+          );
         }),
       ),
       { initialValue: [] as OrgGroup[] },
@@ -205,11 +208,13 @@ export class OrgGroupsComponent {
   }
 
   private initStats(): Signal<OrgGroupsStats> {
-    const uid = this.accountContext.selectedAccount().uid;
-    if (!uid) return signal({ total: 0, public: 0, votingEnabled: 0, boardCount: 0, otherCount: 0, foundationCount: 0 });
-    return toSignal(this.groupsService.getStats(), {
-      initialValue: { total: 0, public: 0, votingEnabled: 0, boardCount: 0, otherCount: 0, foundationCount: 0 },
-    });
+    const emptyStats: OrgGroupsStats = { total: 0, public: 0, votingEnabled: 0, boardCount: 0, otherCount: 0, foundationCount: 0 };
+    return toSignal(
+      toObservable(this.accountContext.selectedAccount).pipe(
+        switchMap((account) => (account.uid ? this.groupsService.getStats() : of(emptyStats))),
+      ),
+      { initialValue: emptyStats },
+    );
   }
 
   private initKpiCards(): StatCardItem[] {

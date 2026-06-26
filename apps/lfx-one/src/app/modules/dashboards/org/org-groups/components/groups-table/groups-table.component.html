@@ -57,7 +57,9 @@
       role="button"
       tabindex="0"
       [attr.aria-label]="'View details for ' + row.name"
-      [attr.data-testid]="'org-groups-row-' + row.id">
+      [attr.data-testid]="'org-groups-row-' + row.id"
+      (click)="navigateToGroup(row.id)"
+      (keydown)="onRowKeydown($event, row.id)">
       <!-- Name -->
       <td>
         <div class="flex items-center gap-2">

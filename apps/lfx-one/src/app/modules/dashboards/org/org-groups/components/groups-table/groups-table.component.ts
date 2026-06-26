@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { GROUPS_DEFAULT_PAGE_SIZE, GROUPS_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
@@ -15,6 +16,10 @@ import { TableComponent } from '@components/table/table.component';
   templateUrl: './groups-table.component.html',
 })
 export class GroupsTableComponent {
+  // ─── Private injections ──────────────────────────────────────────────────────
+
+  private readonly router = inject(Router);
+
   // ─── Inputs ──────────────────────────────────────────────────────────────────
 
   public readonly groups = input.required<readonly OrgGroup[]>();
@@ -118,5 +123,16 @@ export class GroupsTableComponent {
 
   protected getFullDate(date: Date): string {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  protected navigateToGroup(groupId: string): void {
+    void this.router.navigate(['/project/groups', groupId]);
+  }
+
+  protected onRowKeydown(event: KeyboardEvent, groupId: string): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.navigateToGroup(groupId);
+    }
   }
 }
