@@ -78,6 +78,9 @@ export * from './account.interface';
 // Org Lens (per-account TLF membership tier + cdev org mapping) interfaces
 export * from './org-lens.interface';
 
+// Org Lens Projects page (influence + health) interfaces
+export * from './org-lens-projects.interface';
+
 // Mailing list interfaces
 export * from './mailing-list.interface';
 
