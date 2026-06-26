@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import {
@@ -8,13 +9,12 @@ import {
   AcceptInviteOrganizationDialogResult,
   CommitteeOrganizationReference,
   InvitationAcceptContext,
-  WorkExperience,
+  WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
 import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
-import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, from, map, of, switchMap, take } from 'rxjs';
+import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -22,7 +22,7 @@ import { EMPTY, Observable, from, map, of, switchMap, take } from 'rxjs';
 export class InvitationAcceptFlowService {
   private readonly dialogService = inject(DialogService);
   private readonly invitationService = inject(InvitationService);
-  private readonly userService = inject(UserService);
+  private readonly http = inject(HttpClient);
 
   /**
    * Accepts a committee invitation, opening the organization dialog when the committee
@@ -43,9 +43,10 @@ export class InvitationAcceptFlowService {
     // the user's current employer from their profile (fails silently — dialog opens blank).
     const contextReady$: Observable<InvitationAcceptContext> = context.organization
       ? of(context)
-      : this.userService.getWorkExperience().pipe(
+      : this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
           take(1),
-          map((experiences) => ({ ...context, organization: this.currentEmployerFromProfile(experiences) }))
+          map((experiences) => ({ ...context, organization: this.currentEmployerFromProfile(experiences) })),
+          catchError(() => of(context))
         );
 
     return contextReady$.pipe(
@@ -59,9 +60,10 @@ export class InvitationAcceptFlowService {
     );
   }
 
-  private currentEmployerFromProfile(experiences: WorkExperience[]): CommitteeOrganizationReference | null {
+  private currentEmployerFromProfile(experiences: WorkExperienceEntry[]): CommitteeOrganizationReference | null {
     if (!experiences.length) return null;
-    const current = experiences.find((e) => !e.endDate) ?? experiences[0];
+    const current =
+      experiences.find((e) => !e.endDate) ?? [...experiences].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
     return { name: current.organization, id: current.organizationId ?? null };
   }
 
