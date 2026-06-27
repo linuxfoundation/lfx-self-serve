@@ -84,18 +84,18 @@ export class MailingListPickerDialogComponent {
 
   public onCreateNewList(): void {
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
+    if (this.projectSlug) denyParams['project'] = this.projectSlug;
+    const deny = () => {
+      this.cancel();
+      void this.router.navigate([overviewPath], { queryParams: denyParams });
+    };
 
     this.committeeService
       .getCommittee(this.committeeUid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (fresh) => {
-          const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
-          if (fresh?.project_slug) denyParams['project'] = fresh.project_slug;
-          const deny = () => {
-            this.cancel();
-            void this.router.navigate([overviewPath], { queryParams: denyParams });
-          };
           if (fresh?.writer !== true) {
             deny();
             return;
@@ -103,12 +103,7 @@ export class MailingListPickerDialogComponent {
           this.cancel();
           void this.router.navigate(['/mailing-lists', 'manage'], { queryParams: { project_uid: this.projectUid } });
         },
-        error: () => {
-          const errorDenyParams: Record<string, string> = { _notice: 'mailing-lists' };
-          if (this.projectSlug) errorDenyParams['project'] = this.projectSlug;
-          this.cancel();
-          void this.router.navigate([overviewPath], { queryParams: errorDenyParams });
-        },
+        error: () => deny(),
       });
   }
 
