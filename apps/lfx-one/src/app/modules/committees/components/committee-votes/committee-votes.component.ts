@@ -14,7 +14,7 @@ import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
@@ -48,7 +48,7 @@ export class CommitteeVotesComponent {
   /** Checks committee write permission fresh before navigating to the create-vote route.
    * Redirects to project overview with _notice=votes if permission has been revoked
    * since the page loaded — consistent with the writerGuard denial flow. */
-  public onCreateVote(): void {
+  protected onCreateVote(): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'votes' };
@@ -57,7 +57,6 @@ export class CommitteeVotesComponent {
 
     this.committeeService
       .fetchCommittee(committee.uid)
-      .pipe(take(1))
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
