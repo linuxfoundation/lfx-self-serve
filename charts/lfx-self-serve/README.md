@@ -185,6 +185,17 @@ environment:
 | `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
 | `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
 
+#### Guild AI Integration
+
+Server-side credentials for the Marketing OS agents proxy. Consumed only by the SSR server — never exposed to the browser.
+
+| Parameter                           | Description                            | Required | Default                |
+| ----------------------------------- | -------------------------------------- | -------- | ---------------------- |
+| `environment.GUILD_API_URL`         | Guild API base URL                     | No       | `https://app.guild.ai` |
+| `environment.GUILD_API_KEY`         | API key for Guild workspace operations | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_OWNER` | Guild workspace owner identifier       | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_NAME`  | Guild workspace name                   | **Yes**  | -                      |
+
 #### Runtime Client Configuration
 
 | Parameter                     | Description                                                                                                                                                             | Required | Default           |

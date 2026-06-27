@@ -121,6 +121,26 @@ describe('committeeRequiresOrganization', () => {
 });
 
 describe('invitationRequiresOrganization', () => {
+  // organization_required precedence (committee-service ≥ v1.1)
+  it('returns false when organization_required is false, even if legacy flags are true', () => {
+    expect(invitationRequiresOrganization({ organization_required: false, enable_voting: true, business_email_required: true })).toBe(false);
+  });
+
+  it('returns true when organization_required is true, even if inviteRequiresOrganization is false', () => {
+    expect(invitationRequiresOrganization({ organization_required: true, inviteRequiresOrganization: false })).toBe(true);
+  });
+
+  it('falls through when organization_required is null — checks inviteRequiresOrganization next', () => {
+    expect(invitationRequiresOrganization({ organization_required: null, inviteRequiresOrganization: false })).toBe(false);
+    expect(invitationRequiresOrganization({ organization_required: null, inviteRequiresOrganization: true })).toBe(true);
+  });
+
+  it('falls through when organization_required is undefined — checks legacy flags', () => {
+    expect(invitationRequiresOrganization({ organization_required: undefined, enable_voting: false, business_email_required: false })).toBe(false);
+    expect(invitationRequiresOrganization({ organization_required: undefined, enable_voting: true })).toBe(true);
+  });
+
+  // legacy precedence (pre-v1.1 invites without organization_required)
   it('prefers the precomputed inviteRequiresOrganization flag when set', () => {
     expect(invitationRequiresOrganization({ inviteRequiresOrganization: false, enable_voting: true })).toBe(false);
   });

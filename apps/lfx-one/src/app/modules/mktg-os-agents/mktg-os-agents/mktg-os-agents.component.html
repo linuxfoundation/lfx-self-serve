@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-os-agents-page">
+  <div class="flex flex-col gap-6">
+    <!-- Page Header -->
+    <div class="flex items-start justify-between mt-3">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="mktg-os-agents-title">{{ labels.marketplaceTitle }}</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="mktg-os-agents-description">{{ labels.marketplaceDescription }}</p>
+      </div>
+    </div>
+
+    <!-- Alerts + Agents in Process (placeholder feeds) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <lfx-card data-testid="mktg-os-agents-alerts">
+        <div class="flex flex-col gap-2">
+          <h2 class="text-sm font-medium text-gray-700">Alerts</h2>
+          <ul class="flex flex-col gap-1 list-disc list-inside text-xs text-gray-600">
+            @for (alert of alerts; track alert) {
+              <li>{{ alert }}</li>
+            }
+          </ul>
+        </div>
+      </lfx-card>
+
+      <lfx-card data-testid="mktg-os-agents-in-process">
+        <div class="flex flex-col gap-2">
+          <h2 class="text-sm font-medium text-gray-700">Agents in Process</h2>
+          <ul class="flex flex-col gap-1 list-disc list-inside text-xs text-gray-600">
+            @for (item of agentsInProcess; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+        </div>
+      </lfx-card>
+    </div>
+
+    <!-- Search -->
+    <div class="flex flex-col gap-1.5" data-testid="mktg-os-agents-search">
+      <label for="mktg-os-agents-search-input" class="text-sm font-medium text-gray-700">Search</label>
+      <div class="max-w-md">
+        <lfx-input-text
+          id="mktg-os-agents-search-input"
+          [form]="searchForm"
+          control="search"
+          placeholder="Project Marketing"
+          icon="fa-light fa-magnifying-glass"
+          dataTest="mktg-os-agents-search-input" />
+      </div>
+    </div>
+
+    <!-- Chat surface (stub until LFXAI-99) -->
+    @if (selectedAgent(); as agent) {
+      <lfx-card data-testid="mktg-os-agents-chat-stub">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-100 text-gray-500">
+              <i [class]="agent.icon + ' text-lg'" aria-hidden="true"></i>
+            </span>
+            <div class="flex flex-col">
+              <span class="font-medium text-sm text-gray-900">{{ agent.name }}</span>
+              <span class="text-xs text-gray-500">Chat with this agent opens here in a future update.</span>
+            </div>
+          </div>
+          <lfx-button
+            label="Back to marketplace"
+            icon="fa-light fa-arrow-left"
+            [text]="true"
+            size="small"
+            ariaLabel="Back to the marketplace"
+            data-testid="mktg-os-agents-chat-back-button"
+            (onClick)="clearSelection()" />
+        </div>
+      </lfx-card>
+    }
+
+    <!-- Filtered Results — hidden while a chat surface is open -->
+    @if (!selectedAgent()) {
+      <div class="flex flex-col gap-3" data-testid="mktg-os-agents-results">
+        <h2 class="text-sm font-medium text-gray-700">Filtered Results</h2>
+
+        @if (tiles().length > 0) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            @for (tile of tiles(); track tile.agent.id) {
+              <button
+                type="button"
+                class="flex flex-col gap-3 text-left p-4 bg-white border border-gray-200 border-l-4 rounded-lg transition hover:border-gray-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
+                [ngClass]="tile.borderClass"
+                [disabled]="tile.agent.status !== 'active'"
+                [attr.aria-disabled]="tile.agent.status !== 'active'"
+                [attr.data-testid]="'mktg-os-agents-tile-' + tile.agent.id"
+                [attr.aria-label]="tile.agent.status === 'active' ? 'Open ' + tile.agent.name : tile.agent.name + ' (coming soon)'"
+                (click)="onSelectAgent(tile.agent)">
+                <div class="flex items-center gap-3">
+                  <span class="flex items-center justify-center w-10 h-10 rounded-lg" [ngClass]="tile.iconClass">
+                    <i [class]="tile.agent.icon + ' text-lg'" aria-hidden="true"></i>
+                  </span>
+                  <div class="flex flex-col">
+                    <span class="text-xs text-gray-400">Agent {{ tile.agent.number }}</span>
+                    <span class="font-medium text-sm text-gray-900">{{ tile.agent.name }}</span>
+                  </div>
+                </div>
+
+                @if (tile.agent.tags.length > 0) {
+                  <div class="flex flex-wrap gap-1.5">
+                    @for (tag of tile.agent.tags; track tag) {
+                      <lfx-tag [value]="tag" severity="secondary" [outlined]="true" />
+                    }
+                  </div>
+                }
+
+                <p class="text-xs text-gray-500 line-clamp-3">{{ tile.agent.description }}</p>
+              </button>
+            }
+          </div>
+        } @else {
+          <lfx-empty-state
+            icon="fa-light fa-magnifying-glass"
+            title="No agents match your search"
+            subtitle="Try a different term."
+            [withCard]="true"
+            data-testid="mktg-os-agents-empty" />
+        }
+      </div>
+    }
+  </div>
+</div>

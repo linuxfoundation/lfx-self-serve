@@ -15,7 +15,7 @@ import { resolvePeriodRange } from '@lfx-one/shared/utils';
 import { ServiceValidationError } from '../errors';
 
 import type {
-  HealthMetricsRange,
+  AkritesActorInput,
   AkritesAssignStewardRequest,
   AkritesEscalateRequest,
   AkritesEscalationPath,
@@ -27,6 +27,7 @@ import type {
   AkritesUpdatableStatus,
   AkritesUpdateStatusRequest,
   AkritesSortKey,
+  HealthMetricsRange,
   ResolvedPeriodRange,
 } from '@lfx-one/shared/interfaces';
 
@@ -295,39 +296,71 @@ export function parseStewardshipId(req: Request, operation: string): number {
   return id;
 }
 
-/** Validates the open-stewardship body and returns the normalized purl; throws 400 otherwise. */
-export function parseOpenStewardshipBody(req: Request, operation: string): string {
-  const purl = (req.body as { purl?: unknown })?.purl;
+function parseActor(raw: unknown, operation: string): AkritesActorInput {
+  const actor = raw as { userId?: unknown; username?: unknown; displayName?: unknown; avatarUrl?: unknown } | undefined;
+  if (!actor || typeof actor !== 'object') {
+    throw ServiceValidationError.forField('actor', 'actor object is required', { operation });
+  }
+  if (typeof actor.userId !== 'string' || actor.userId.trim() === '') {
+    throw ServiceValidationError.forField('actor.userId', 'actor.userId is required', { operation });
+  }
+  return {
+    userId: actor.userId.trim(),
+    username: typeof actor.username === 'string' ? actor.username.trim() || null : null,
+    displayName: typeof actor.displayName === 'string' ? actor.displayName.trim() || null : null,
+    avatarUrl: typeof actor.avatarUrl === 'string' ? actor.avatarUrl.trim() || null : null,
+  };
+}
+
+/** Validates the open-stewardship body; returns purl and actor; throws 400 otherwise. */
+export function parseOpenStewardshipBody(req: Request, operation: string): { purl: string; actor: AkritesActorInput } {
+  const body = (req.body ?? {}) as { purl?: unknown; actor?: unknown };
+  const purl = body.purl;
   if (typeof purl !== 'string' || purl.trim() === '' || !purl.trim().startsWith('pkg:')) {
     throw ServiceValidationError.forField('purl', 'purl is required and must start with "pkg:"', { operation });
   }
-  return purl.trim();
+  return { purl: purl.trim(), actor: parseActor(body.actor, operation) };
 }
 
 /** Validates the assign-steward body; throws 400 for missing/invalid fields. */
-export function parseAssignStewardBody(req: Request, operation: string): AkritesAssignStewardRequest {
-  const body = (req.body ?? {}) as { userId?: unknown; role?: unknown; moveToAssessing?: unknown };
+export function parseAssignStewardBody(req: Request, operation: string): AkritesAssignStewardRequest & { actor: AkritesActorInput } {
+  const body = (req.body ?? {}) as { steward?: unknown; moveToAssessing?: unknown; actor?: unknown };
+  const steward = body.steward as { userId?: unknown; username?: unknown; displayName?: unknown; role?: unknown } | undefined;
 
-  if (typeof body.userId !== 'string' || body.userId.trim() === '') {
-    throw ServiceValidationError.forField('userId', 'userId is required', { operation });
+  if (!steward || typeof steward !== 'object') {
+    throw ServiceValidationError.forField('steward', 'steward object is required', { operation });
   }
-  if (typeof body.role !== 'string' || !VALID_AKRITES_STEWARD_ROLES.includes(body.role as AkritesStewardRole)) {
-    throw ServiceValidationError.forField('role', `Invalid role. Allowed: ${VALID_AKRITES_STEWARD_ROLES.join(', ')}`, { operation });
+  if (typeof steward.userId !== 'string' || steward.userId.trim() === '') {
+    throw ServiceValidationError.forField('steward.userId', 'steward.userId is required', { operation });
+  }
+  if (typeof steward.username !== 'string' || steward.username.trim() === '') {
+    throw ServiceValidationError.forField('steward.username', 'steward.username is required', { operation });
+  }
+  if (typeof steward.displayName !== 'string' || steward.displayName.trim() === '') {
+    throw ServiceValidationError.forField('steward.displayName', 'steward.displayName is required', { operation });
+  }
+  if (typeof steward.role !== 'string' || !VALID_AKRITES_STEWARD_ROLES.includes(steward.role as AkritesStewardRole)) {
+    throw ServiceValidationError.forField('steward.role', `Invalid role. Allowed: ${VALID_AKRITES_STEWARD_ROLES.join(', ')}`, { operation });
   }
   if (body.moveToAssessing !== undefined && typeof body.moveToAssessing !== 'boolean') {
     throw ServiceValidationError.forField('moveToAssessing', 'moveToAssessing must be a boolean', { operation });
   }
 
   return {
-    userId: body.userId.trim(),
-    role: body.role as AkritesStewardRole,
+    steward: {
+      userId: steward.userId.trim(),
+      username: steward.username.trim(),
+      displayName: steward.displayName.trim(),
+      role: steward.role as AkritesStewardRole,
+    },
     moveToAssessing: body.moveToAssessing as boolean | undefined,
+    actor: parseActor(body.actor, operation),
   };
 }
 
 /** Validates the escalate body; throws 400 for missing/invalid fields. */
-export function parseEscalateBody(req: Request, operation: string): AkritesEscalateRequest {
-  const body = (req.body ?? {}) as { resolutionPath?: unknown; notes?: unknown };
+export function parseEscalateBody(req: Request, operation: string): AkritesEscalateRequest & { actor: AkritesActorInput } {
+  const body = (req.body ?? {}) as { resolutionPath?: unknown; notes?: unknown; actor?: unknown };
 
   if (typeof body.resolutionPath !== 'string' || !VALID_AKRITES_ESCALATION_PATHS.includes(body.resolutionPath as AkritesEscalationPath)) {
     throw ServiceValidationError.forField('resolutionPath', `Invalid resolutionPath. Allowed: ${VALID_AKRITES_ESCALATION_PATHS.join(', ')}`, { operation });
@@ -339,12 +372,13 @@ export function parseEscalateBody(req: Request, operation: string): AkritesEscal
   return {
     resolutionPath: body.resolutionPath as AkritesEscalationPath,
     notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
+    actor: parseActor(body.actor, operation),
   };
 }
 
 /** Validates the update-status body; requires inactiveReason when status is `inactive`. Throws 400 otherwise. */
-export function parseUpdateStatusBody(req: Request, operation: string): AkritesUpdateStatusRequest {
-  const body = (req.body ?? {}) as { status?: unknown; inactiveReason?: unknown; notes?: unknown };
+export function parseUpdateStatusBody(req: Request, operation: string): AkritesUpdateStatusRequest & { actor: AkritesActorInput } {
+  const body = (req.body ?? {}) as { status?: unknown; inactiveReason?: unknown; notes?: unknown; actor?: unknown };
 
   if (typeof body.status !== 'string' || !VALID_AKRITES_UPDATABLE_STATUSES.includes(body.status as AkritesUpdatableStatus)) {
     throw ServiceValidationError.forField('status', `Invalid status. Allowed: ${VALID_AKRITES_UPDATABLE_STATUSES.join(', ')}`, { operation });
@@ -363,6 +397,7 @@ export function parseUpdateStatusBody(req: Request, operation: string): AkritesU
     status: body.status as AkritesUpdatableStatus,
     inactiveReason: body.inactiveReason as AkritesInactiveReason | undefined,
     notes: typeof body.notes === 'string' && body.notes.trim() !== '' ? body.notes.trim() : undefined,
+    actor: parseActor(body.actor, operation),
   };
 }
 

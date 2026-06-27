@@ -5,7 +5,9 @@ export type AkritesStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'ne
 export type AkritesLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
 export type AkritesEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
 export type AkritesHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
-export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'moderate' | 'low';
+/** Severities the advisories flow models. Narrower than AkritesSeverity — excludes the package-level `medium`. */
+export type AkritesAdvisorySeverity = 'critical' | 'high' | 'moderate' | 'low';
 export type AkritesSortKey = 'risk' | 'impact' | 'health' | 'vulns' | 'name';
 
 // ===== Steward admin action types =====
@@ -35,14 +37,32 @@ export interface AkritesRoleOption {
   description: string;
 }
 
+/** A committee member returned by the steward search endpoint, used for the assignable-steward picker. */
+export interface AkritesSearchStewardResult {
+  /** Auth0/LFX user UID — sent as `userId` in the assign endpoint body. */
+  userId: string;
+  username: string;
+  displayName: string;
+  organization: string | null;
+  status: string;
+  /** Pre-computed initials for the avatar display — avoids method calls in templates. */
+  initials: string;
+}
+
 // ===== CDP Raw Types =====
+
+export interface CdpActivityActor {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
 
 export interface CdpActivityRow {
   id: string;
   stewardshipId: string;
   packagePurl: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -58,10 +78,22 @@ export interface CdpActivityResponse {
   pageSize: number;
 }
 
+/** Steward row in the package stewardship summary (list view). */
+export interface CdpStewardshipSteward {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  role: string;
+  assignedAt: string;
+}
+
 export interface CdpStewardshipSummary {
   purl: string;
   name: string;
   ecosystem: string;
+  lifecycle: string | null;
+  health: { label: string | null; score: number | null } | null;
+  impact: number | null;
   criticalityScore: string | null;
   stewardshipId: string | null;
   stewardshipStatus: string | null;
@@ -72,7 +104,7 @@ export interface CdpStewardshipSummary {
   healthBand: string | null;
   latestReleaseAt: string | null;
   lastActivity: { type: string; content: string; at: string } | null;
-  stewards: { userId: string; role: string; assignedAt: string }[];
+  stewards: CdpStewardshipSteward[];
 }
 
 export interface CdpPackagesListResponse {
@@ -108,8 +140,30 @@ export interface AkritesListParams {
 
 export interface CdpAdvisory {
   osvId: string;
-  severity: AkritesSeverity;
-  resolution: string | null;
+  severity: AkritesAdvisorySeverity | null;
+  resolution: 'open' | 'patched' | null;
+}
+
+export interface CdpAdvisoryPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  advisories: CdpAdvisory[];
+}
+
+export interface AkritesAdvisoryParams {
+  purl: string;
+  page?: number;
+  pageSize?: number;
+  severity?: AkritesAdvisorySeverity;
+  resolution?: 'open' | 'patched';
+}
+
+export interface AkritesAdvisoryPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  advisories: AkritesAdvisory[];
 }
 
 export interface CdpPackageDetail {
@@ -117,15 +171,16 @@ export interface CdpPackageDetail {
   name: string;
   ecosystem: string;
   general: {
-    healthScore: {
+    healthScoreDetails: {
+      total: number | null;
+      label: string | null;
       maintainerHealth: number | null;
       securitySupplyChain: number | null;
       developmentActivity: number | null;
-      total: number | null;
     } | null;
     impact: {
       impactScore: number | null;
-      downloadsLastMonth: number | null;
+      downloadsLastMonth: number | string | null;
       dependentPackages: number | null;
       dependentRepos: number | null;
       transitiveReach: string | null;
@@ -138,13 +193,12 @@ export interface CdpPackageDetail {
       openSSFScorecard: number | null;
     } | null;
   } | null;
-  assessment: Record<string, unknown>;
+  assessment: Record<string, unknown> | null;
   security: {
     securityContacts: unknown | null;
     advisories: CdpAdvisory[];
     cvd: {
       isPvrEnabled: boolean | null;
-      hasSecurityPolicyEnabled: boolean | null;
       tier0Steward: unknown | null;
       criticalVulnerabilityFlag: boolean;
     } | null;
@@ -161,16 +215,18 @@ export interface CdpPackageDetail {
     } | null;
   } | null;
   stewardship: CdpStewardshipDetail | null;
-  history: Record<string, unknown>;
+  history: Record<string, unknown> | null;
 }
 
 // ===== CDP Stewardship Raw Types =====
 
-/** Steward row as returned in the package detail `stewardship.stewards` array. No display name/avatar yet (see roster endpoint). */
+/** Steward row as returned in the package detail `stewardship.stewards` array. */
 export interface CdpStewardSummary {
   id: string;
   stewardshipId: string;
   userId: string;
+  username: string | null;
+  displayName: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   assignedBy: string | null;
@@ -178,7 +234,7 @@ export interface CdpStewardSummary {
 
 /** Stewardship block embedded in the CDP package detail response. */
 export interface CdpStewardshipDetail {
-  id: number | null;
+  id: string | null;
   status: AkritesStatus;
   stewards: CdpStewardSummary[] | null;
   lastActivityAt: string | null;
@@ -202,11 +258,23 @@ export interface CdpStewardshipRecord {
 
 export interface AkritesOpenStewardshipRequest {
   purl: string;
+  actor: AkritesActorInput;
+}
+
+export interface AkritesActorInput {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
 }
 
 export interface AkritesAssignStewardRequest {
-  userId: string;
-  role: AkritesStewardRole;
+  steward: {
+    userId: string;
+    username: string;
+    displayName: string;
+    role: AkritesStewardRole;
+  };
   /** When true, transitions an `unassigned`/`open` stewardship to `assessing` in the same call. */
   moveToAssessing?: boolean;
 }
@@ -236,7 +304,7 @@ export interface AkritesAssignStewardResponse {
 
 export interface AkritesAdvisory {
   id: string;
-  severity: AkritesSeverity;
+  severity: AkritesAdvisorySeverity | null;
   description: string;
   state: 'Open' | 'Patched';
   cvss?: number | null;
@@ -265,12 +333,10 @@ export interface AkritesAssessment {
   monitoring: string[];
 }
 
-/**
- * Steward shown in the UI. `name`/`avatarUrl` are populated once the assignable-steward
- * roster endpoint exists; until then only `userId` (Auth0 sub) + `role` are available.
- */
+/** Steward shown in the UI. `name` is the display name from CDP; `username` is the LFX username. */
 export interface AkritesSteward {
   userId: string;
+  username: string | null;
   role: AkritesStewardRole;
   assignedAt: string;
   name: string | null;
@@ -294,14 +360,15 @@ export interface AkritesPackage {
   ecosystem: AkritesEcosystem;
   lifecycle: AkritesLifecycle | null;
   healthScore: number | null;
+  healthLabel: string | null;
   impactScore: number | null;
   busFactor: number | null;
   monthsStale: number | null;
   vulnCount: number;
   vulnSeverity: AkritesSeverity | null;
   status: AkritesStatus;
-  /** Integer stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
-  stewardshipId: number | null;
+  /** Stewardship id from the detail endpoint — required to call the mutation endpoints. Null until a stewardship row exists. */
+  stewardshipId: string | null;
   stewards: AkritesSteward[];
   lastActivityLabel: string;
   lastActivityTime: string;
@@ -393,8 +460,7 @@ export interface AkritesActivityRow {
   packagePurl: string;
   packageName: string;
   packageEcosystem: string;
-  actorUserId: string | null;
-  actorName: string | null;
+  actor: CdpActivityActor | null;
   actorType: string;
   activityType: string;
   content: string | null;
@@ -419,6 +485,9 @@ export interface AkritesActivityRowVM extends AkritesActivityRow {
   formattedStatus: string;
   formattedActivityLabel: string;
   action: { label: string; variant: 'default' | 'blue' | 'red' } | null;
+  actorDisplay: string | null;
+  actorAvatarUrl: string | null;
+  actorInitials: string | null;
 }
 
 export interface AkritesActivityDayGroup {
@@ -483,7 +552,7 @@ export interface AkritesScatterPoint {
   impactScore: number | null;
   healthScore: number | null;
   status: AkritesStatus;
-  stewardshipId: number | null;
+  stewardshipId: string | null;
   openVulns: number;
 }
 

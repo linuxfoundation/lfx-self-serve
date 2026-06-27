@@ -18,14 +18,14 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Spec 027 US3 — bulk-reassign one person's N Membership-Entitlement committee seats; the parent fans out the PUTs. */
 @Component({
   selector: 'lfx-reassign-committee-roles-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, CheckboxModule, EmployeeAvatarComponent],
+  imports: [FormsModule, InputTextModule, CheckboxModule, PersonAvatarComponent],
   templateUrl: './reassign-committee-roles-modal.component.html',
 })
 export class ReassignCommitteeRolesModalComponent {

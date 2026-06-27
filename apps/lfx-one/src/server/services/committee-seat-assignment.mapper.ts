@@ -9,6 +9,7 @@
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
@@ -81,5 +82,6 @@ export function toPerson(s: CommitteeServiceOrgSeat): CommitteeMemberPerson {
     fullName,
     jobTitle: s.job_title?.trim() ? s.job_title.trim() : null,
     initials,
+    avatarUrl: resolveSeatAvatar(s),
   };
 }

@@ -212,6 +212,7 @@ export class OrgLensKeyContactsService {
         fullName: `${firstName} ${lastName}`.trim(),
         jobTitle: d.title?.trim() ? d.title.trim() : null,
         initials: this.deriveInitials(firstName, lastName),
+        avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
       });
     }
     return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -252,6 +253,7 @@ export class OrgLensKeyContactsService {
         status: 'Active',
         primary_contact: body.contactType === KEY_CONTACT_PRIMARY_CONTACT_TYPE,
         board_member: false,
+        send_invite: true,
       }
     );
     return this.toPerson(created);
@@ -266,6 +268,7 @@ export class OrgLensKeyContactsService {
       primary_contact: body.contactType === KEY_CONTACT_PRIMARY_CONTACT_TYPE,
       board_member: false,
       ...(title ? { title } : {}),
+      send_invite: true,
     };
   }
 
@@ -346,6 +349,7 @@ export class OrgLensKeyContactsService {
       email: this.resolveEmail(d),
       jobTitle: d.title?.trim() ? d.title.trim() : null,
       initials: this.deriveInitials(firstName, lastName),
+      avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
     };
   }
 

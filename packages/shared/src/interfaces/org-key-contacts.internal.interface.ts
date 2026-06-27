@@ -22,6 +22,8 @@ export interface KeyContactDoc {
   emails?: string[];
   primary_contact?: boolean;
   board_member?: boolean;
+  /** Optional avatar URL once member-service enriches key_contact person photos; null/absent → initials. */
+  avatar?: string | null;
 }
 
 /** Minimal query-service project_membership document used during key-contact resolution. */
