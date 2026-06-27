@@ -12,8 +12,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_DEFAULT_TIME_WINDOW,
@@ -270,7 +271,7 @@ export class TraineesComponent {
         title: trainee.title,
         email: trainee.email,
         initials: computePersonInitials(trainee.name),
-        avatarColorClass: computePersonAvatarColorClass(trainee.personKey),
+        avatarColorClass: avatarColorClass(trainee.personKey),
         status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
         coursesCount: courseIds.size,
         certsCount: certCourseIds.size,

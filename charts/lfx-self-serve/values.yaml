@@ -346,6 +346,19 @@ environment:
   AI_API_KEY:
     value:
 
+  # Guild AI Integration — server-side credentials for the Marketing OS agents proxy.
+  GUILD_API_URL:
+    value: "https://app.guild.ai"
+
+  GUILD_API_KEY:
+    value:
+
+  GUILD_WORKSPACE_OWNER:
+    value:
+
+  GUILD_WORKSPACE_NAME:
+    value:
+
   # Public Intercom Messenger workspace App ID. Identity verification rides on the
   # `http://lfx.dev/claims/intercom` Auth0 claim — not on this value.
   INTERCOM_APP_ID:

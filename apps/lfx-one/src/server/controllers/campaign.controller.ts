@@ -7,9 +7,13 @@ import type {
   BulkKeywordActionRequest,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignPlatform,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
+  CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
+import { VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -19,6 +23,11 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
+
+/** Platforms that support the campaign status toggle endpoint. */
+const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
+
+const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -468,6 +477,76 @@ export class CampaignController {
       res.json(data);
     } catch (error) {
       logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
+      next(error);
+    }
+  }
+
+  public async updateCampaignStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+
+    if (!campaignId) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId route parameter is required', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (!NUMERIC_ID_RE.test(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignStatusUpdateRequest>;
+
+    if (!body.platform || !SUPPORTED_STATUS_PLATFORMS.has(body.platform)) {
+      next(
+        ServiceValidationError.forField('platform', `platform must be one of: ${[...SUPPORTED_STATUS_PLATFORMS].join(', ')}`, {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!body.status || !VALID_CAMPAIGN_TOGGLE_STATUSES.has(body.status as CampaignToggleStatus)) {
+      next(
+        ServiceValidationError.forField('status', 'status must be ACTIVE or PAUSED', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_status_update', { campaignId, platform: body.platform, status: body.status });
+
+    try {
+      const result = await this.proxyService.updateCampaignStatus(req, campaignId, {
+        platform: body.platform,
+        status: body.status as CampaignToggleStatus,
+        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
+      });
+      logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
+      res.json(result);
+    } catch (error) {
       next(error);
     }
   }

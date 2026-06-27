@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,10 +15,10 @@ import type {
   CampaignBriefRefineRequest,
   CampaignEventDetails,
   CampaignGoal,
-  CampaignGoalOption,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformOption,
+  CampaignProgramTypeOption,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   LinkedInBriefCopy,
@@ -44,12 +44,18 @@ export class PlanningTabComponent implements OnInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
+  // === Inputs ===
+  public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
+
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
-  protected readonly goals: CampaignGoalOption[] = [...CAMPAIGN_GOALS];
+  protected readonly goals = computed(() => {
+    const goalLabel = this.programTypeConfig().goalLabel;
+    return CAMPAIGN_GOALS.map((g) => (g.id === 'conversions' ? { ...g, label: goalLabel } : g));
+  });
 
   // === Forms ===
   protected readonly briefForm = this.fb.nonNullable.group({
@@ -218,6 +224,7 @@ export class PlanningTabComponent implements OnInit {
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      programType: this.programTypeConfig().id,
     };
 
     this.briefSubscription = this.campaignService
@@ -268,6 +275,7 @@ export class PlanningTabComponent implements OnInit {
       campaignGoal: (this.briefForm.controls.campaignGoal.value as CampaignGoal) || null,
       selectedPlatforms: [...this.selectedPlatforms()],
       linkedInCopy: this.getLinkedInCopy(),
+      programType: this.programTypeConfig().id,
     });
   }
 
@@ -413,6 +421,7 @@ export class PlanningTabComponent implements OnInit {
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
       platforms: [...this.selectedPlatforms()],
+      programType: this.programTypeConfig().id,
     };
 
     this.briefSubscription?.unsubscribe();

@@ -5,7 +5,8 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HeaderComponent } from '@components/header/header.component';
-import { InviteTokenPayload } from '@lfx-one/shared/interfaces';
+import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InviteService } from '@services/invite.service';
 import { take } from 'rxjs';
 
@@ -18,6 +19,7 @@ export class InviteComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly inviteService = inject(InviteService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly isProcessing = signal(true);
@@ -43,7 +45,11 @@ export class InviteComponent implements OnInit {
       .pipe(take(1))
       .subscribe({
         next: (res) => {
-          window.location.href = res.return_url;
+          if (res.pending_committee_invite) {
+            this.collectOrgAndAccept(res.pending_committee_invite, res.return_url);
+          } else {
+            window.location.href = res.return_url;
+          }
         },
         error: (err) => {
           const code = err?.error?.code as string;
@@ -56,6 +62,40 @@ export class InviteComponent implements OnInit {
             reason = 'failed';
           }
           this.redirectToError(reason);
+        },
+      });
+  }
+
+  private collectOrgAndAccept(invite: PendingCommitteeInviteForOrg, returnUrl: string): void {
+    this.isProcessing.set(false);
+    let accepted = false;
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invite.committee_uid,
+        inviteUid: invite.invite_uid,
+        committeeName: invite.committee_name,
+        organization: invite.organization,
+        organization_required: true,
+      })
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          // Committee invite accepted with org — redirect to the group page now that the user is a member.
+          accepted = true;
+          window.location.href = returnUrl;
+        },
+        error: () => {
+          // Committee accept failed; LFID accept already succeeded. Redirect anyway — the user can
+          // retry accepting the committee invite from My Groups.
+          window.location.href = returnUrl;
+        },
+        complete: () => {
+          if (!accepted) {
+            // User dismissed the org dialog without confirming. The LFID accept already succeeded
+            // but the committee invite is still pending. Navigate home so the user isn't left on a
+            // blank page — they can accept the invite from My Groups.
+            void this.router.navigate(['/']);
+          }
         },
       });
   }

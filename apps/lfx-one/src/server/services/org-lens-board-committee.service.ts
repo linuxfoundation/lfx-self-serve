@@ -17,6 +17,7 @@ import type {
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -329,6 +330,7 @@ export class OrgLensBoardCommitteeService {
       email,
       jobTitle: s.job_title ?? null,
       initials,
+      avatarUrl: resolveSeatAvatar(s),
     };
   }
 
@@ -354,6 +356,7 @@ export class OrgLensBoardCommitteeService {
           .replace(/[^A-Za-z0-9]/g, '')
           .slice(0, 2)
           .toUpperCase(),
+      avatarUrl: resolveSeatAvatar(s),
     };
   }
 }

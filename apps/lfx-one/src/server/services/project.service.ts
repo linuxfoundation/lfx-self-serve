@@ -105,6 +105,9 @@ import {
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
   RevenueImpactResponse,
+  SocialMediaMonthlyResponse,
+  SocialMediaPlatformMonthly,
+  SocialMediaPlatformMonthlyRow,
   SocialMediaResponse,
   SocialReachResponse,
   TrainingCertificationSummaryResponse,
@@ -3338,6 +3341,86 @@ export class ProjectService {
         platforms: [],
         monthlyData: [],
       };
+    }
+  }
+
+  /** Fetches monthly social media metrics grouped by platform for the given year. Aggregates across all foundations when slug is `tlf`. */
+  public async getSocialMediaMonthly(foundationSlug: string, year: number): Promise<SocialMediaMonthlyResponse> {
+    logger.debug(undefined, 'get_social_media_monthly', 'Fetching social media monthly data from Snowflake', {
+      foundation_slug: foundationSlug,
+      year,
+    });
+
+    try {
+      const isUmbrella = foundationSlug === 'tlf';
+      const foundationFilter = isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?';
+      const foundationParams = isUmbrella ? [] : [foundationSlug];
+
+      const query = `
+        SELECT
+          PLATFORM_NAME,
+          SNAPSHOT_MONTH,
+          SUM(FOLLOWERS) AS FOLLOWERS,
+          SUM(NEW_FOLLOWERS) AS NEW_FOLLOWERS,
+          SUM(IMPRESSIONS) AS IMPRESSIONS,
+          SUM(ENGAGEMENTS) AS ENGAGEMENTS,
+          SUM(POSTS) AS POSTS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_PLATFORM_MONTHLY
+        WHERE SNAPSHOT_MONTH >= TO_DATE(?) AND SNAPSHOT_MONTH < TO_DATE(?)
+          ${foundationFilter}
+        GROUP BY PLATFORM_NAME, SNAPSHOT_MONTH
+        ORDER BY PLATFORM_NAME, SNAPSHOT_MONTH ASC
+      `;
+
+      const result = await this.snowflakeService.execute<{
+        PLATFORM_NAME: string;
+        SNAPSHOT_MONTH: string | Date;
+        FOLLOWERS: number;
+        NEW_FOLLOWERS: number;
+        IMPRESSIONS: number;
+        ENGAGEMENTS: number;
+        POSTS: number;
+      }>(query, [`${year}-01-01`, `${year + 1}-01-01`, ...foundationParams]);
+
+      const grouped = new Map<string, SocialMediaPlatformMonthlyRow[]>();
+
+      for (const row of result.rows) {
+        const isoDate = ProjectService.toIsoDate(row.SNAPSHOT_MONTH);
+        if (!isoDate) continue;
+        const month = isoDate.slice(0, 7);
+        const impressions = Number(row.IMPRESSIONS) || 0;
+        const engagements = Number(row.ENGAGEMENTS) || 0;
+
+        const entry: SocialMediaPlatformMonthlyRow = {
+          month,
+          followers: Number(row.FOLLOWERS) || 0,
+          newFollowers: Number(row.NEW_FOLLOWERS) || 0,
+          impressions,
+          engagementRate: impressions > 0 ? Math.round((engagements / impressions) * 1000) / 10 : 0,
+          posts: Number(row.POSTS) || 0,
+          momChangeFollowers: null,
+        };
+
+        if (!grouped.has(row.PLATFORM_NAME)) grouped.set(row.PLATFORM_NAME, []);
+        grouped.get(row.PLATFORM_NAME)!.push(entry);
+      }
+
+      const platforms: SocialMediaPlatformMonthly[] = [];
+      for (const [platform, months] of grouped) {
+        for (const month of months) {
+          month.momChangeFollowers = this.computeMomChangeByMonth(month, months);
+        }
+        platforms.push({ platform, months });
+      }
+
+      return { year, platforms };
+    } catch (error) {
+      logger.warning(undefined, 'get_social_media_monthly', 'Failed to fetch social media monthly data, returning empty', {
+        foundation_slug: foundationSlug,
+        year,
+        err: error,
+      });
+      return { year, platforms: [] };
     }
   }
 
@@ -6598,5 +6681,20 @@ export class ProjectService {
     }
     const date = value instanceof Date ? value : new Date(String(value));
     return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  }
+
+  private computeMomChange(index: number, data: { followers: number }[]): number | null {
+    if (index === 0) return null;
+    const prev = data[index - 1].followers;
+    if (prev === 0) return null;
+    return Math.round(((data[index].followers - prev) / prev) * 1000) / 10;
+  }
+
+  private computeMomChangeByMonth(current: SocialMediaPlatformMonthlyRow, all: SocialMediaPlatformMonthlyRow[]): number | null {
+    const [year, month] = current.month.split('-').map(Number);
+    const prevStr = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+    const prev = all.find((m) => m.month === prevStr);
+    if (!prev || prev.followers === 0) return null;
+    return Math.round(((current.followers - prev.followers) / prev.followers) * 1000) / 10;
   }
 }

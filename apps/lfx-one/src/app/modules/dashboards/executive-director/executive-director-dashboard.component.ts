@@ -11,7 +11,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
-import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
+import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
@@ -28,7 +28,7 @@ import { MarketingOverviewComponent } from './components/marketing-overview/mark
     FoundationHealthComponent,
     OrganizationInvolvementComponent,
     SkeletonModule,
-    DashboardQuicklinksComponent,
+    DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
   ],
   templateUrl: './executive-director-dashboard.component.html',
@@ -48,6 +48,7 @@ export class ExecutiveDirectorDashboardComponent {
   // === Computed Signals ===
   protected readonly selectedFoundation = this.projectContextService.selectedFoundation;
   protected readonly selectedProject = computed(() => this.projectContextService.activeContext());
+  protected readonly staffHeading = 'Foundation Staff';
   // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
   // Pass the raw list and let the child render the top N unhidden items.
   public readonly pendingActions: Signal<PendingActionItem[]>;

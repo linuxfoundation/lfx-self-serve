@@ -195,7 +195,7 @@
                   [attr.data-testid]="'edit-key-contact-employee-option-' + emp.email"
                   (mousedown)="$event.preventDefault()"
                   (click)="onSelectEmployee(emp)">
-                  <lfx-employee-avatar [initials]="emp.initials" [avatarUrl]="emp.avatarUrl ?? null" />
+                  <lfx-person-avatar size="sm" [initials]="emp.initials" [avatarUrl]="emp.avatarUrl ?? null" [name]="emp.fullName" [identity]="emp.email" />
                   <div class="flex min-w-0 flex-col">
                     <span class="truncate text-sm font-medium text-gray-900">{{ emp.fullName }}</span>
                     <span class="truncate text-xs text-gray-500">{{ emp.email }}</span>

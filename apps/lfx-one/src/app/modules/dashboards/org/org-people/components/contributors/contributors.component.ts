@@ -31,8 +31,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { ContributorsService } from '../../services/contributors.service';
 
@@ -212,7 +213,7 @@ export class ContributorsComponent {
       displayName: c.displayName,
       title: c.title,
       initials: computePersonInitials(c.displayName),
-      avatarColorClass: computePersonAvatarColorClass(c.personKey),
+      avatarColorClass: avatarColorClass(c.personKey),
       role: c.role,
       commits: c.commits,
       lastActiveTs: c.lastActiveTs,

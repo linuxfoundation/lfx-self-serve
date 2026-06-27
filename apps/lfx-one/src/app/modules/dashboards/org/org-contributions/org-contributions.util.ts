@@ -9,8 +9,9 @@ import type {
   OrgContributionRepoRowVm,
 } from '@lfx-one/shared/interfaces';
 
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 /** Source badge label + Font Awesome icon per upstream system — inferred upstream of this in the data layer. */
 const SOURCE_BADGE: Record<ContributionSource, { label: string; iconClass: string }> = {
@@ -43,7 +44,7 @@ export function decorateRepoRow(row: OrgContributionRepoRow): OrgContributionRep
     projectName: row.projectName,
     projectLogoUrl: row.projectLogoUrl,
     projectInitials: computePersonInitials(row.projectName),
-    projectLogoColorClass: computePersonAvatarColorClass(row.projectName),
+    projectLogoColorClass: avatarColorClass(row.projectName),
     source: row.source,
     sourceLabel: badge.label,
     sourceIconClass: badge.iconClass,
@@ -77,6 +78,6 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
     message: row.message,
     commitUrl: row.commitUrl,
     initials: computePersonInitials(row.committerName),
-    avatarColorClass: computePersonAvatarColorClass(row.username ?? row.committerName),
+    avatarColorClass: avatarColorClass(row.username ?? row.committerName),
   };
 }

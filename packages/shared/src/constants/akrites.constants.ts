@@ -160,6 +160,13 @@ export const AKRITES_STATUS_LABELS: Record<AkritesStatus, string> = {
 /** Display order for Akrites statuses in the risk matrix legend and filters. */
 export const AKRITES_STATUS_ORDER: AkritesStatus[] = ['unassigned', 'needs_attention', 'escalated', 'blocked', 'inactive', 'open', 'assessing', 'active'];
 
+/**
+ * Committee UID for the "LFX Akrites" working group — the source of assignable stewards.
+ * Members of this committee are fetched via GET /api/committees/:id/members.
+ * See: https://app.lfx.dev/groups/8bffb08a-3707-4f8f-9e1c-0cbca8a4dfb6
+ */
+export const AKRITES_STEWARD_COMMITTEE_UID = '8bffb08a-3707-4f8f-9e1c-0cbca8a4dfb6';
+
 /** Empty status counts object with all statuses initialized to 0. */
 export const AKRITES_EMPTY_STATUS_COUNTS: AkritesStatusCounts = {
   all: 0,
