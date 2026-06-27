@@ -3,9 +3,12 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, of, catchError, take } from 'rxjs';
+import { Observable, of, catchError, take, map, throwError } from 'rxjs';
 import {
+  AkritesActorInput,
   AkritesActivityResponse,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
@@ -14,16 +17,21 @@ import {
   AkritesPackage,
   AkritesPackagesResponse,
   AkritesScatterResponse,
+  AkritesSearchStewardResult,
   AkritesStatus,
   AkritesStewardshipResponse,
   AkritesUpdateStatusRequest,
+  CommitteeMember,
 } from '@lfx-one/shared/interfaces';
+import { AKRITES_STEWARD_COMMITTEE_UID } from '@lfx-one/shared/constants';
+import { UserService } from './user.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AkritesService {
   private readonly http = inject(HttpClient);
+  private readonly userService = inject(UserService);
 
   public getPackages(params?: AkritesListParams): Observable<AkritesPackagesResponse> {
     let httpParams = new HttpParams();
@@ -61,6 +69,15 @@ export class AkritesService {
     return this.http.get<AkritesActivityResponse>('/api/akrites/activity', { params });
   }
 
+  public getPackageAdvisories(params: AkritesAdvisoryParams): Observable<AkritesAdvisoryPage> {
+    let httpParams = new HttpParams().set('purl', params.purl);
+    if (params.page) httpParams = httpParams.set('page', String(params.page));
+    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.severity) httpParams = httpParams.set('severity', params.severity);
+    if (params.resolution) httpParams = httpParams.set('resolution', params.resolution);
+    return this.http.get<AkritesAdvisoryPage>('/api/akrites/packages/advisories', { params: httpParams });
+  }
+
   public getPackage(purl: string): Observable<AkritesPackage | null> {
     return this.http.get<AkritesPackage>(`/api/akrites/packages/${encodeURIComponent(purl)}`).pipe(
       catchError((err) => {
@@ -72,18 +89,72 @@ export class AkritesService {
 
   /** Open a package for stewardship; the response carries the integer stewardship id. */
   public openStewardship(purl: string): Observable<AkritesStewardshipResponse> {
-    return this.http.post<AkritesStewardshipResponse>('/api/akrites/stewardships', { purl }).pipe(take(1));
+    const actor = this.buildActor();
+    if (!actor.userId) {
+      return throwError(() => new Error('User is not authenticated'));
+    }
+    return this.http.post<AkritesStewardshipResponse>('/api/akrites/stewardships', { purl, actor }).pipe(take(1));
   }
 
-  public assignSteward(stewardshipId: number, body: AkritesAssignStewardRequest): Observable<AkritesAssignStewardResponse> {
-    return this.http.put<AkritesAssignStewardResponse>(`/api/akrites/stewardships/${stewardshipId}/steward`, body).pipe(take(1));
+  public assignSteward(stewardshipId: string, body: AkritesAssignStewardRequest): Observable<AkritesAssignStewardResponse> {
+    const actor = this.buildActor();
+    if (!actor.userId) {
+      return throwError(() => new Error('User is not authenticated'));
+    }
+    return this.http
+      .put<AkritesAssignStewardResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/steward`, { ...body, actor })
+      .pipe(take(1));
   }
 
-  public escalateStewardship(stewardshipId: number, body: AkritesEscalateRequest): Observable<AkritesStewardshipResponse> {
-    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/escalate`, body).pipe(take(1));
+  public escalateStewardship(stewardshipId: string, body: AkritesEscalateRequest): Observable<AkritesStewardshipResponse> {
+    const actor = this.buildActor();
+    if (!actor.userId) {
+      return throwError(() => new Error('User is not authenticated'));
+    }
+    return this.http
+      .put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/escalate`, { ...body, actor })
+      .pipe(take(1));
   }
 
-  public updateStewardshipStatus(stewardshipId: number, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
-    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${stewardshipId}/status`, body).pipe(take(1));
+  public updateStewardshipStatus(stewardshipId: string, body: AkritesUpdateStatusRequest): Observable<AkritesStewardshipResponse> {
+    const actor = this.buildActor();
+    if (!actor.userId) {
+      return throwError(() => new Error('User is not authenticated'));
+    }
+    return this.http.put<AkritesStewardshipResponse>(`/api/akrites/stewardships/${encodeURIComponent(stewardshipId)}/status`, { ...body, actor }).pipe(take(1));
+  }
+
+  public searchStewards(): Observable<AkritesSearchStewardResult[]> {
+    return this.http.get<CommitteeMember[]>(`/api/committees/${AKRITES_STEWARD_COMMITTEE_UID}/members`).pipe(
+      map((members) =>
+        members
+          .filter((m): m is CommitteeMember & { username: string } => !!m.username) // Filter out members without username to prevent assign failures
+          .map((m) => {
+            const initials = `${m.first_name?.[0] ?? ''}${m.last_name?.[0] ?? ''}`.toUpperCase() || (m.username?.[0] ?? 'U').toUpperCase();
+            return {
+              userId: m.username,
+              username: m.username,
+              displayName: `${m.first_name} ${m.last_name}`.trim() || m.username,
+              organization: m.organization?.name ?? null,
+              status: m.status ?? '',
+              initials,
+            };
+          })
+      ),
+      catchError((err) => {
+        console.error('Failed to load stewards:', err);
+        return of([] as AkritesSearchStewardResult[]);
+      })
+    );
+  }
+
+  private buildActor(): AkritesActorInput {
+    const user = this.userService.user();
+    return {
+      userId: user?.sub ?? '',
+      username: user?.nickname || user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null,
+      displayName: user?.name || null,
+      avatarUrl: user?.picture || null,
+    };
   }
 }

@@ -9,6 +9,8 @@ import type {
   MarketingImpactTabOption,
 } from '../interfaces/marketing-impact.interface';
 
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+
 /** Focus program filter options for the Marketing Impact FOCUS bar. Labels match Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All programs' },

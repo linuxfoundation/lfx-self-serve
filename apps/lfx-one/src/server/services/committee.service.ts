@@ -18,6 +18,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
+  PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
   ProjectSettings,
@@ -25,7 +26,7 @@ import {
   QueryServiceResponse,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { committeeRequiresOrganization } from '@lfx-one/shared/utils';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -661,8 +662,11 @@ export class CommitteeService {
       pending_count: pendingInvites.length,
     });
 
-    // Enrich committee context (name, category, project) for the distinct committees once.
-    // Best-effort: a failed lookup degrades to a UID fallback rather than dropping the list.
+    // Enrich committee context (category, project_name) for the distinct committees once.
+    // committee_name and organization_required are sourced directly from the invite itself
+    // (committee-service ≥ v1.1) so no committee/settings fetch is required to decide org
+    // requirement — those endpoints fail the access check for invitees who are not yet viewers.
+    // Best-effort: a failed lookup degrades gracefully; category/project_name become null.
     const committeeUids = Array.from(new Set(pendingInvites.map((invite) => invite.committee_uid).filter(Boolean)));
     const committeeContext = new Map<
       string,
@@ -670,8 +674,6 @@ export class CommitteeService {
         committee_name: string;
         category?: string | null;
         project_name?: string | null;
-        enable_voting?: boolean;
-        business_email_required?: boolean;
       }
     >();
 
@@ -680,28 +682,6 @@ export class CommitteeService {
       const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
       const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
 
-      // business_email_required is a settings-only field not present in the query-service
-      // committee index (which only stores CommitteeBase). Fetch settings in parallel so the
-      // invitationRequiresOrganization guard is accurate for business-email-only committees.
-      // throwOnError: true so a transient outage throws and is caught below, where we fail
-      // closed (true) rather than leaving business_email_required undefined — enable_voting
-      // is always defined from the index, so the both-undefined guard in
-      // invitationRequiresOrganization never fires here; without this, a settings outage
-      // would silently skip the org dialog and cause a server 400 on accept.
-      const settingsByUid = new Map<string, boolean | undefined>();
-      await Promise.all(
-        committeeUids.map(async (uid) => {
-          try {
-            const settings = await this.getCommitteeSettings(req, uid, { throwOnError: true });
-            settingsByUid.set(uid, settings.business_email_required);
-          } catch {
-            // Settings unavailable — fail closed: assume org is required so the dialog
-            // appears and the server's authoritative check can decide.
-            settingsByUid.set(uid, true);
-          }
-        })
-      );
-
       for (const uid of committeeUids) {
         const committee = committees.get(uid);
         if (committee) {
@@ -709,8 +689,6 @@ export class CommitteeService {
             committee_name: committee.name || uid,
             category: committee.category ?? null,
             project_name: projectNameByCommittee.get(uid) || null,
-            enable_voting: committee.enable_voting,
-            business_email_required: settingsByUid.get(uid),
           });
         }
       }
@@ -723,10 +701,13 @@ export class CommitteeService {
 
     return pendingInvites.map((invite) => {
       const context = committeeContext.get(invite.committee_uid);
+      // Prefer the invite's own committee_name (access-safe, set at invite-creation time),
+      // fall back to the enriched committee resource name, then the UID.
+      const committeeName = invite.committee_name?.trim() || context?.committee_name || invite.committee_uid;
       return {
         uid: invite.uid,
         committee_uid: invite.committee_uid,
-        committee_name: context?.committee_name || invite.committee_uid,
+        committee_name: committeeName,
         project_name: context?.project_name ?? null,
         category: context?.category ?? null,
         role: invite.role ?? null,
@@ -734,8 +715,7 @@ export class CommitteeService {
         status: invite.status,
         created_at: invite.created_at,
         organization: invite.organization ?? null,
-        enable_voting: context?.enable_voting,
-        business_email_required: context?.business_email_required,
+        organization_required: invite.organization_required ?? null,
         // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
         // optional fields not in the committee-service contract yet, so JSON drops them rather than
         // sending an explicit null that consumers would have to disambiguate from "set".
@@ -750,14 +730,20 @@ export class CommitteeService {
    * when multiple pending invites exist — matched against committee_invite UID first, then
    * committee UID; if no match and exactly one pending invite remains, that one is accepted.
    *
-   * Failures are logged and swallowed so LFID acceptance still succeeds — the user can
-   * accept manually from pending-actions / My Groups.
+   * Returns the first invite that requires an organization but had none pre-filled — the
+   * caller must surface this to the user to collect their organization and complete acceptance.
+   * Other invites (those that can be auto-accepted) are still processed before returning.
+   *
+   * Other failures are logged and swallowed so LFID acceptance still succeeds.
    */
-  public async acceptPendingCommitteeInvitesAfterLfidAccept(req: Request, params: { invitedEmail: string; resourceUid?: string }): Promise<void> {
+  public async acceptPendingCommitteeInvitesAfterLfidAccept(
+    req: Request,
+    params: { invitedEmail: string; resourceUid?: string }
+  ): Promise<PendingCommitteeInviteForOrg | null> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
       logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
-      return;
+      return null;
     }
 
     const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
@@ -766,7 +752,7 @@ export class CommitteeService {
         pending_count: pendingInvites.length,
         resource_uid: params.resourceUid,
       });
-      return;
+      return null;
     }
 
     logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
@@ -774,33 +760,33 @@ export class CommitteeService {
       resource_uid: params.resourceUid,
     });
 
+    let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
+
     for (const invite of toAccept) {
       try {
-        // Default to true (org required) so a fetch failure is fail-closed — we skip rather
-        // than auto-accept when we cannot determine the committee's requirements.
-        let requiresOrganization = true;
-
-        try {
-          const committee = await this.getCommitteeById(req, invite.committee_uid, { throwOnSettingsError: true });
-          requiresOrganization = committeeRequiresOrganization({
-            enable_voting: committee.enable_voting,
-            business_email_required: committee.business_email_required,
-          });
-        } catch (settingsError) {
-          logger.warning(req, 'accept_invite', 'Unable to fetch committee settings; treating as org-required (fail-closed)', {
-            committee_uid: invite.committee_uid,
-            invite_uid: invite.uid,
-            err: settingsError,
-          });
-        }
+        // organization_required is carried on the invite itself (committee-service ≥ v1.1) so no
+        // committee/settings fetch is needed — those fail the access check for non-viewer invitees.
+        // Fail-closed when the field is absent: treat as org-required so we skip rather than
+        // auto-accept without the required organization.
+        const requiresOrganization = invitationRequiresOrganization({ organization_required: invite.organization_required });
 
         if (requiresOrganization) {
           const orgName = invite.organization?.name?.trim() || null;
           if (!orgName) {
-            logger.warning(req, 'accept_invite', 'Skipping auto-accept — committee requires organization but invite has none; user must accept manually', {
-              committee_uid: invite.committee_uid,
-              invite_uid: invite.uid,
-            });
+            // Return the first such invite so the client can collect the org and complete acceptance.
+            // Keep processing other invites — those that don't need org can still be auto-accepted.
+            if (!pendingForOrg) {
+              logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+              });
+              pendingForOrg = {
+                committee_uid: invite.committee_uid,
+                invite_uid: invite.uid,
+                committee_name: invite.committee_name?.trim() || invite.committee_uid,
+                organization: invite.organization ?? null,
+              };
+            }
             continue;
           }
           // Build an explicit allowlist payload — trim fields and coerce empty strings to null
@@ -822,6 +808,8 @@ export class CommitteeService {
         });
       }
     }
+
+    return pendingForOrg;
   }
 
   /**
@@ -848,6 +836,18 @@ export class CommitteeService {
       committee_uid: committeeId,
       invite_uid: inviteId,
     });
+  }
+
+  /**
+   * Returns the specific pending committee invite for {@link email} that matches
+   * {@link committeeUid} + {@link inviteUid}, or `null` when not found.
+   *
+   * Uses the email-scoped query index — accessible to the invitee regardless of whether they
+   * are a committee viewer — so this is safe to call before the invite is accepted.
+   */
+  public async getPendingInviteForUser(req: Request, email: string, committeeUid: string, inviteUid: string): Promise<CommitteeInvite | null> {
+    const pending = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+    return pending.find((invite) => invite.committee_uid === committeeUid && invite.uid === inviteUid) ?? null;
   }
 
   // ── Persona Helper ──────────────────────────────────────────────────────

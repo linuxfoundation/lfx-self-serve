@@ -16,6 +16,7 @@ export interface CommitteeMemberPerson {
   fullName: string;
   jobTitle: string | null;
   initials: string;
+  avatarUrl?: string | null;
 }
 
 /** One committee seat held by one person on one (non-Board) committee in one foundation. */
@@ -102,6 +103,7 @@ export interface ReassignCommitteeRolesPersonRef {
   fullName: string;
   email: string;
   initials: string;
+  avatarUrl?: string | null;
 }
 
 /** Dialog input — the person being replaced, their entitlement-seat catalog, the org uid, and a pessimistic submit callback. */

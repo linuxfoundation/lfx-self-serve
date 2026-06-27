@@ -160,8 +160,8 @@ export interface CreateMailingListRequest {
   description: string;
   /** Display title for the mailing list (5-100 chars) */
   title?: string;
-  /** Parent service UID (required) */
-  service_uid: string;
+  /** Parent service ID (required) — matches upstream GroupsioSubgroupRequest contract */
+  service_id: string;
   /** Committee UID to associate (upstream accepts singular committee_uid) */
   committee_uid?: string | null;
   /** Linked committees with allowed voting statuses */

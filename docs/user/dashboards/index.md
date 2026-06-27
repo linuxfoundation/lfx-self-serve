@@ -5,7 +5,7 @@ audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, persona, me, foundation, project, org]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-06-22
 intercom_collection: Dashboards
 ---
 
@@ -13,7 +13,7 @@ The Dashboard is the central starting point of LFX Self Serve. It adapts to show
 
 ## Lens system
 
-The LFX dashboard uses a **lens** concept to let you switch between four different viewing perspectives:
+The LFX dashboard uses a **lens** concept to let you switch between different viewing perspectives:
 
 | Lens           | Description                                            |
 | -------------- | ------------------------------------------------------ |
@@ -22,25 +22,52 @@ The LFX dashboard uses a **lens** concept to let you switch between four differe
 | **Project**    | A specific project's metrics, committees, and activity |
 | **Org**        | Your organization's membership and participation       |
 
-The lenses available to you depend on your persona. Not all users see all four lenses.
+The lenses available to you depend on your persona. Not all users see all lenses.
 
 ## Persona system
 
 Your **persona** is determined by your committee memberships and roles across Linux Foundation projects. The four personas are:
 
-| Persona                | Access                                  |
-| ---------------------- | --------------------------------------- |
-| **Contributor**        | Me and Project lenses                   |
-| **Maintainer**         | Me and Project lenses with write access |
-| **Board Member**       | Me, Foundation, and Project lenses      |
-| **Executive Director** | All four lenses                         |
+| Persona                | Access                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| **Contributor**        | Me and Project lenses                                                         |
+| **Maintainer**         | Me and Project lenses with write access                                       |
+| **Board Member**       | Me, Foundation, and Project lenses                                            |
+| **Executive Director** | Me, Foundation, and Project lenses (Org lens available with org admin access) |
 
-## What you see in each lens
+## Your personal dashboard
 
-- **Me lens** (route: `/`) — your personal dashboard with contributions, badges, and upcoming events
-- **Foundation lens** (route: `/foundation/overview`) — foundation-level overview with health metrics and project summaries
-- **Project lens** (route: `/project/overview`) — a specific project's activity, committees, and contributor metrics
-- **Org lens** (route: `/org`) — your organization's membership and participation data
+The **Me lens** (route: `/`) is your personal dashboard. It shows your individual contributions, badges, upcoming events, and activity across Linux Foundation projects. This is the default view when you log in.
+
+### What you see
+
+- Your personal contributions and open-source activity
+- Badges and credentials you have earned
+- Upcoming events relevant to your project affiliations
+- A summary of your committee memberships and roles
+
+### Navigation
+
+Go to **app.lfx.dev** — the Me lens is the default view on login, or select **Me** from the lens selector at the top of the page.
+
+## Your company's activity
+
+The **Org Overview** page in Org Lens (route: `/org`) shows your organization's membership and participation across Linux Foundation projects. Instead of your personal activity, this view surfaces how your company is engaged with the Linux Foundation as a whole.
+
+### What you can see
+
+- Your organization's current membership status and tier
+- Committee participation by members of your organization
+- Contribution and engagement metrics across projects your company supports
+- Key contacts and representatives for your organization
+
+### Navigation
+
+Switch to the **Org** lens using the lens selector at the top of LFX Self Serve. The Org Overview is the default landing page for the Org lens (route: `/org`).
+
+### Who can access this
+
+Accessing the Org Overview requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, the Org lens will become available to you and you will be able to view your company's collective activity.
 
 ## Related sections
 

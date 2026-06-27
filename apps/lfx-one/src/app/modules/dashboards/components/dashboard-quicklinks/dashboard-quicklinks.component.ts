@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardQuickLink } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -13,6 +13,8 @@ import { ProjectContextService } from '@services/project-context.service';
 })
 export class DashboardQuicklinksComponent {
   private readonly projectContextService = inject(ProjectContextService);
+
+  public readonly layout = input<'header' | 'sidebar'>('header');
 
   protected readonly links: DashboardQuickLink[] = [
     { label: 'Create meeting', icon: 'fa-light fa-calendar', route: ['/meetings', 'create'], testId: 'create-meeting' },

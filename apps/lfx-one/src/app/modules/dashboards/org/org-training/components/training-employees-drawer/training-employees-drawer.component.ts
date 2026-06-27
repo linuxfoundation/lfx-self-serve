@@ -8,9 +8,10 @@ import { Component, computed, inject, input, model, signal } from '@angular/core
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.service';
-import { computePersonAvatarColorClass, computePersonInitials } from '@app/shared/utils/person-avatar.util';
+import { computePersonInitials } from '@app/shared/utils/person-avatar.util';
 import { MAX_ORG_TRAINING_EMPLOYEES } from '@lfx-one/shared/constants';
 import type { OrgCertEmployeeVm, OrgTrainingEmployeesResponse, OrgTrainingEmployeeStatus } from '@lfx-one/shared/interfaces';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, finalize, of, switchMap } from 'rxjs';
@@ -45,7 +46,7 @@ export class TrainingEmployeesDrawerComponent {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.employeesData()?.data ?? [];
     const matched = !term ? data : data.filter((e) => e.name.toLowerCase().includes(term) || (e.jobTitle ?? '').toLowerCase().includes(term));
-    return matched.map((e) => ({ ...e, initials: computePersonInitials(e.name), avatarColorClass: computePersonAvatarColorClass(e.contactId) }));
+    return matched.map((e) => ({ ...e, initials: computePersonInitials(e.name), avatarColorClass: avatarColorClass(e.contactId) }));
   });
 
   protected readonly rosterCap = MAX_ORG_TRAINING_EMPLOYEES;

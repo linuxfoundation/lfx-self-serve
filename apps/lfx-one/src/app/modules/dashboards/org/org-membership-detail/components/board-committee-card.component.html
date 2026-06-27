@@ -110,9 +110,11 @@
                         <tr [attr.data-testid]="'board-committee-board-row-' + seat.seatId">
                           <td class="px-4 py-3 align-top">
                             <div class="flex items-center gap-3">
-                              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-xs font-semibold text-white">
-                                {{ seat.person.initials }}
-                              </div>
+                              <lfx-person-avatar
+                                [avatarUrl]="seat.person.avatarUrl"
+                                [name]="seat.person.fullName"
+                                [initials]="seat.person.initials"
+                                [identity]="seat.person.email" />
                               <div class="flex flex-col">
                                 <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
                                 @if (seat.person.jobTitle) {
@@ -214,9 +216,11 @@
                         <tr [attr.data-testid]="'board-committee-committee-row-' + seat.seatId">
                           <td class="px-4 py-3 align-top">
                             <div class="flex items-center gap-3">
-                              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-xs font-semibold text-white">
-                                {{ seat.person.initials }}
-                              </div>
+                              <lfx-person-avatar
+                                [avatarUrl]="seat.person.avatarUrl"
+                                [name]="seat.person.fullName"
+                                [initials]="seat.person.initials"
+                                [identity]="seat.person.email" />
                               <div class="flex flex-col">
                                 <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
                                 @if (seat.person.jobTitle) {

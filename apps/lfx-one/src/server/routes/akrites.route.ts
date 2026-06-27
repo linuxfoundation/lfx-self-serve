@@ -10,6 +10,7 @@ const akritesController = new AkritesController();
 
 router.get('/packages/metrics', akritesController.getMetrics.bind(akritesController));
 router.get('/packages/scatter', akritesController.getScatterData.bind(akritesController));
+router.get('/packages/advisories', akritesController.getPackageAdvisories.bind(akritesController));
 router.get('/packages', akritesController.getPackages.bind(akritesController));
 router.get('/packages/:purl', akritesController.getPackage.bind(akritesController));
 router.get('/activity', akritesController.getActivityFeed.bind(akritesController));

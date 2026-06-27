@@ -4,21 +4,18 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
-import { ProjectSettings, UserInfo } from '@lfx-one/shared/interfaces';
+import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
+import { ProjectSettings, ProjectStaffRowConfig, UserInfo } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
-interface StaffRow {
-  key: 'executive_director' | 'program_manager' | 'opportunity_owner';
-  label: string;
-  icon: string;
-  user: UserInfo | null | undefined;
-}
+type StaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
 
 @Component({
   selector: 'lfx-project-staff-card',
-  imports: [AvatarComponent, SkeletonModule],
+  imports: [AvatarComponent, SkeletonModule, TooltipModule],
   templateUrl: './project-staff-card.component.html',
   styleUrl: './project-staff-card.component.scss',
 })
@@ -26,13 +23,13 @@ export class ProjectStaffCardComponent {
   private readonly permissionsService = inject(PermissionsService);
 
   public readonly projectUid = input.required<string>();
+  public readonly heading = input<string>('Project Staff');
 
-  // `loading` and `hasError` are tracked separately from `settings` so the template can tell the
-  // three states apart: still fetching, fetch failed, fetch succeeded with no staff assigned.
-  // Bundling them into `null`-means-both (previous approach) hid genuine fetch failures behind the
-  // "No staff assigned" empty state.
+  // `loading`, `hasError`, and `loaded` are tracked separately so the template can distinguish
+  // fetching, fetch failed, and fetch succeeded (including when every role is unassigned).
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
+  protected readonly loaded = signal(false);
 
   protected readonly settings: Signal<ProjectSettings | null> = toSignal(
     toObservable(this.projectUid).pipe(
@@ -40,13 +37,18 @@ export class ProjectStaffCardComponent {
       tap(() => {
         this.loading.set(true);
         this.hasError.set(false);
+        this.loaded.set(false);
       }),
       switchMap((uid) =>
         this.permissionsService.getProjectSettings(uid).pipe(
-          tap(() => this.loading.set(false)),
+          tap(() => {
+            this.loading.set(false);
+            this.loaded.set(true);
+          }),
           catchError(() => {
             this.loading.set(false);
             this.hasError.set(true);
+            this.loaded.set(false);
             return of(null);
           })
         )
@@ -57,12 +59,9 @@ export class ProjectStaffCardComponent {
 
   protected readonly staff: Signal<StaffRow[]> = computed(() => {
     const s = this.settings();
-    return [
-      { key: 'executive_director', label: 'Executive Director', icon: 'fa-light fa-user-tie', user: s?.executive_director },
-      { key: 'program_manager', label: 'Program Manager', icon: 'fa-light fa-user-gear', user: s?.program_manager },
-      { key: 'opportunity_owner', label: 'Opportunity Owner', icon: 'fa-light fa-user-chart', user: s?.opportunity_owner },
-    ];
+    return PROJECT_STAFF_ROWS.map((row) => ({
+      ...row,
+      user: s?.[row.key],
+    }));
   });
-
-  protected readonly hasAnyStaff = computed(() => this.staff().some((row) => !!row.user));
 }

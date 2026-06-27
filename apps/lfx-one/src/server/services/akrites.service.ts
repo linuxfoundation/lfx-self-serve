@@ -6,20 +6,26 @@ import {
   CdpActivityResponse,
   CdpActivityRow,
   CdpAdvisory,
+  CdpAdvisoryPage,
   CdpPackageDetail,
   CdpPackagesListResponse,
   CdpPackagesMetricsResponse,
   CdpScatterResponse,
-  CdpStewardSummary,
+  CdpStewardshipSteward,
   CdpStewardshipSummary,
   AkritesActivityResponse,
+  AkritesActorInput,
   AkritesAdvisory,
+  AkritesAdvisoryPage,
+  AkritesAdvisoryParams,
+  AkritesAdvisorySeverity,
   AkritesAssignStewardRequest,
   AkritesAssignStewardResponse,
   AkritesEscalateRequest,
   AkritesHistoryEntry,
   AkritesListParams,
   AkritesMetrics,
+  AkritesOpenStewardshipRequest,
   AkritesPackage,
   AkritesPackagesResponse,
   AkritesScatterResponse,
@@ -91,7 +97,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -146,7 +152,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -205,7 +211,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -253,7 +259,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (response.status === 404) {
@@ -290,8 +296,9 @@ export class AkritesServerService {
    * Open a package for stewardship (creates the stewardship row if absent).
    * Returns the stewardship record, including the integer `id` used by the other admin actions.
    */
-  public async openStewardship(req: Request, purl: string): Promise<AkritesStewardshipResponse> {
-    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, { purl });
+  public async openStewardship(req: Request, purl: string, actor: AkritesActorInput): Promise<AkritesStewardshipResponse> {
+    const body: AkritesOpenStewardshipRequest = { purl, actor };
+    return this.cdpWrite<AkritesStewardshipResponse>(req, 'open_akrites_stewardship', 'POST', CDP_CONFIG.ENDPOINTS.STEWARDSHIPS_OPEN, body);
   }
 
   /** Assign (or re-assign) a steward to a stewardship, optionally moving it to `assessing`. */
@@ -307,6 +314,71 @@ export class AkritesServerService {
   /** Update a stewardship's status (e.g. assessing/active/needs_attention/blocked/inactive). */
   public async updateStewardshipStatus(req: Request, id: number, body: AkritesUpdateStatusRequest): Promise<AkritesStewardshipResponse> {
     return this.cdpWrite<AkritesStewardshipResponse>(req, 'update_akrites_stewardship_status', 'PATCH', CDP_CONFIG.ENDPOINTS.STEWARDSHIP_STATUS(id), body);
+  }
+
+  public async getPackageAdvisories(req: Request, params: AkritesAdvisoryParams): Promise<AkritesAdvisoryPage> {
+    const requestId = randomUUID();
+
+    try {
+      const token = await this.cdpService.generateToken(req).catch((err: unknown) => {
+        throw new MicroserviceError('Failed to generate CDP token', 401, 'CDP_AUTH_FAILED', {
+          operation: 'get_akrites_package_advisories',
+          service: 'akrites_service',
+          originalMessage: err instanceof Error ? err.message : String(err),
+        });
+      });
+      const url = new URL(`${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.PACKAGE_ADVISORIES}`);
+      url.searchParams.set('purl', params.purl);
+      if (params.page) url.searchParams.set('page', String(params.page));
+      url.searchParams.set('pageSize', String(params.pageSize ?? 10));
+      if (params.severity) url.searchParams.set('severity', params.severity);
+      if (params.resolution) url.searchParams.set('resolution', params.resolution);
+
+      logger.debug(req, 'get_akrites_package_advisories', 'Fetching advisories from CDP', {
+        purl: params.purl,
+        url: url.toString(),
+        request_id: requestId,
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-LFX-Request-ID': requestId,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '[unreadable error body]');
+        throw new MicroserviceError(`CDP advisories request failed: ${response.statusText}`, response.status, 'CDP_ADVISORIES_ERROR', {
+          operation: 'get_akrites_package_advisories',
+          service: 'akrites_service',
+          errorBody: errorText,
+        });
+      }
+
+      const data = (await response.json()) as CdpAdvisoryPage;
+
+      logger.debug(req, 'get_akrites_package_advisories', 'Fetched advisories from CDP', {
+        purl: params.purl,
+        count: data.advisories?.length ?? 0,
+        total: data.total,
+      });
+
+      return {
+        page: data.page,
+        pageSize: data.pageSize,
+        total: data.total,
+        advisories: this.mapAdvisories(data.advisories ?? []),
+      };
+    } catch (error) {
+      if (error instanceof MicroserviceError) throw error;
+
+      throw new MicroserviceError('Failed to fetch Akrites package advisories', 502, 'AKRITES_ADVISORIES_ERROR', {
+        operation: 'get_akrites_package_advisories',
+        service: 'akrites_service',
+      });
+    }
   }
 
   public async getScatterData(req: Request): Promise<AkritesScatterResponse> {
@@ -336,7 +408,7 @@ export class AkritesServerService {
           Authorization: `Bearer ${token}`,
           'X-LFX-Request-ID': requestId,
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -353,8 +425,7 @@ export class AkritesServerService {
       const validStatuses: AkritesStatus[] = ['unassigned', 'open', 'assessing', 'active', 'needs_attention', 'escalated', 'blocked', 'inactive'];
       const points = (data.points ?? []).map((p) => {
         const status = validStatuses.includes(p.stewardshipStatus as AkritesStatus) ? (p.stewardshipStatus as AkritesStatus) : 'unassigned';
-        const parsed = p.stewardshipId ? Number.parseInt(p.stewardshipId, 10) : null;
-        const stewardshipId = parsed !== null && !Number.isNaN(parsed) ? parsed : null;
+        const stewardshipId = p.stewardshipId ?? null;
 
         return {
           purl: p.purl,
@@ -389,22 +460,17 @@ export class AkritesServerService {
       name: item.name,
       purl: item.purl,
       ecosystem: (item.ecosystem as AkritesPackage['ecosystem']) || 'npm',
-      lifecycle: null,
-      healthScore: null,
-      impactScore: null,
+      lifecycle: (item.lifecycle as AkritesPackage['lifecycle']) || null,
+      healthScore: item.health?.score ?? null,
+      healthLabel: item.health?.label ? item.health.label.charAt(0).toUpperCase() + item.health.label.slice(1) : null,
+      impactScore: item.impact ?? null,
       busFactor: item.maintainerCount ?? null,
       monthsStale: null,
       vulnCount,
       vulnSeverity,
       status: (item.stewardshipStatus as AkritesPackage['status']) || 'unassigned',
-      stewardshipId: item.stewardshipId ? parseInt(item.stewardshipId, 10) : null,
-      stewards: (item.stewards ?? []).map((s) => ({
-        userId: s.userId,
-        role: s.role as AkritesStewardRole,
-        assignedAt: s.assignedAt,
-        name: null,
-        avatarUrl: null,
-      })),
+      stewardshipId: item.stewardshipId ?? null,
+      stewards: this.mapStewards(item.stewards ?? []),
       lastActivityLabel: item.lastActivity ? item.lastActivity.content || this.formatActivityLabel(item.lastActivity.type) : '—',
       lastActivityTime: item.lastActivity ? this.formatRelativeTime(item.lastActivity.at) : '',
       downloadsLastMonth: null,
@@ -433,7 +499,7 @@ export class AkritesServerService {
     const advisories = this.mapAdvisories(detail.security?.advisories ?? []);
     const vulnSeverity = this.getHighestVulnSeverity(advisories);
 
-    const hs = detail.general?.healthScore;
+    const hs = detail.general?.healthScoreDetails;
     // Fixed positional slots — the drawer labels them Maintainer health /
     // Security & supply chain / Development activity, so missing scores keep
     // their position instead of shifting the rest.
@@ -459,6 +525,7 @@ export class AkritesServerService {
       ecosystem: (detail.ecosystem as AkritesPackage['ecosystem']) || 'npm',
       lifecycle: (risk?.lifecycle as AkritesPackage['lifecycle']) || null,
       healthScore: hs?.total ?? null,
+      healthLabel: hs?.label ? hs.label.charAt(0).toUpperCase() + hs.label.slice(1) : null,
       impactScore: impact?.impactScore ?? null,
       busFactor: risk?.maintainerBusFactor ?? null,
       monthsStale: this.calculateMonthsStale(repo?.lastCommitAt),
@@ -469,7 +536,12 @@ export class AkritesServerService {
       stewards: this.mapStewards(stewardship?.stewards ?? null),
       lastActivityLabel: '—',
       lastActivityTime: '',
-      downloadsLastMonth: impact?.downloadsLastMonth != null ? this.formatNumber(impact.downloadsLastMonth) : null,
+      downloadsLastMonth: (() => {
+        if (impact?.downloadsLastMonth == null) return null;
+        if (typeof impact.downloadsLastMonth === 'string' && impact.downloadsLastMonth.trim() === '') return null;
+        const n = Number(impact.downloadsLastMonth);
+        return Number.isFinite(n) ? this.formatNumber(n) : null;
+      })(),
       dependentPackages: impact?.dependentPackages != null ? this.formatNumber(impact.dependentPackages) : null,
       dependentRepos: impact?.dependentRepos != null ? this.formatNumber(impact.dependentRepos) : null,
       scoreCardScore: risk?.openSSFScorecard != null ? `${risk.openSSFScorecard.toFixed(1)} / 10` : null,
@@ -518,7 +590,7 @@ export class AkritesServerService {
           'X-LFX-Request-ID': requestId,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -541,14 +613,14 @@ export class AkritesServerService {
     }
   }
 
-  /** Map CDP steward rows to the UI shape. Name/avatar stay null until the roster endpoint exists. */
-  private mapStewards(stewards: CdpStewardSummary[] | null): AkritesSteward[] {
+  private mapStewards(stewards: CdpStewardshipSteward[] | null): AkritesSteward[] {
     if (!stewards) return [];
     return stewards.map((s) => ({
       userId: s.userId,
-      role: s.role,
+      username: s.username ?? null,
+      role: s.role as AkritesStewardRole,
       assignedAt: s.assignedAt,
-      name: null,
+      name: s.displayName ?? null,
       avatarUrl: null,
     }));
   }
@@ -572,7 +644,7 @@ export class AkritesServerService {
 
   private getHighestVulnSeverity(advisories: AkritesAdvisory[]): AkritesSeverity | null {
     if (!advisories.length) return null;
-    const order: AkritesSeverity[] = ['critical', 'high', 'medium', 'low'];
+    const order: AkritesAdvisorySeverity[] = ['critical', 'high', 'moderate', 'low'];
     for (const sev of order) {
       if (advisories.some((a) => a.severity === sev)) return sev;
     }
@@ -583,8 +655,8 @@ export class AkritesServerService {
     return advisories.map((adv) => ({
       id: adv.osvId,
       severity: adv.severity,
-      description: adv.resolution ?? adv.osvId,
-      state: adv.resolution != null ? ('Patched' as const) : ('Open' as const),
+      description: adv.osvId,
+      state: adv.resolution === 'patched' ? ('Patched' as const) : ('Open' as const),
       cvss: null,
       publishedAt: null,
       affectedVersionRange: null,

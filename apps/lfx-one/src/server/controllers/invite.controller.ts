@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { InviteTokenPayload } from '@lfx-one/shared/interfaces';
+import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 import { errors as JoseErrors, JWK, JWT } from 'jose';
 
@@ -98,8 +98,9 @@ export class InviteController {
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
+      let pendingCommitteeInvite: PendingCommitteeInviteForOrg | undefined;
       try {
-        await this.autoAcceptPendingCommitteeInvites(req, payload);
+        pendingCommitteeInvite = (await this.autoAcceptPendingCommitteeInvites(req, payload)) ?? undefined;
       } catch (error) {
         // Best-effort — committee auto-accept failures must not block LFID invite acceptance.
         logger.warning(req, 'accept_invite', 'Committee invite auto-accept failed; LFID accept continues', {
@@ -114,7 +115,7 @@ export class InviteController {
         resource_uid: payload.resource_uid,
       });
 
-      res.json({ return_url: safeReturnUrl });
+      res.json({ return_url: safeReturnUrl, ...(pendingCommitteeInvite && { pending_committee_invite: pendingCommitteeInvite }) });
     } catch (error) {
       next(error);
     }
@@ -146,8 +147,12 @@ export class InviteController {
    * When an LFID invite is accepted for a committee invitee, accept any matching pending
    * committee_invite so a committee_member is created with the session username. Requires
    * the authenticated user's email to match the email embedded in the LFID invite JWT.
+   *
+   * Returns a {@link PendingCommitteeInviteForOrg} when an invite requires an organization
+   * that was not pre-filled — the caller should surface this to the client for manual org
+   * collection. Returns null when all invites were handled or the flow was skipped.
    */
-  private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<void> {
+  private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
     const sessionEmail = getEffectiveEmail(req)?.trim() ?? null;
 
@@ -155,24 +160,24 @@ export class InviteController {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — LFID invite token has no email claim', {
         invite_uid: payload.invite_uid,
       });
-      return;
+      return null;
     }
 
     if (!sessionEmail) {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — session email unavailable', {
         invite_uid: payload.invite_uid,
       });
-      return;
+      return null;
     }
 
     if (invitedEmail !== sessionEmail) {
       logger.info(req, 'accept_invite', 'Skipping committee invite auto-accept — session email does not match LFID invite token email', {
         invite_uid: payload.invite_uid,
       });
-      return;
+      return null;
     }
 
-    await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
+    return this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
       invitedEmail,
       resourceUid: payload.resource_uid,
     });
