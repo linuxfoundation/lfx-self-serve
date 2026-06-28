@@ -131,7 +131,7 @@ export class CommitteeSettingsTabComponent {
             deny();
             return;
           }
-          this.openPickerDialog(committeeUid, projectUid, committee.project_slug);
+          this.openPickerDialog(committeeUid, projectUid, fresh?.project_slug ?? committee.project_slug);
         },
         error: () => deny(),
       });
