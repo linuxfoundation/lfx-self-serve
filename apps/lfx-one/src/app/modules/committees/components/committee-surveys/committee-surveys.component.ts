@@ -14,7 +14,7 @@ import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, take, tap } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
@@ -45,10 +45,7 @@ export class CommitteeSurveysComponent {
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
   public editSurveyQueryParams: Signal<Record<string, string>> = this.createSurveyQueryParams;
 
-  /** Checks committee write permission fresh before navigating to the create-survey route.
-   * Redirects to the lens-appropriate overview with _notice=surveys if permission has been
-   * revoked since the page loaded — consistent with the writerGuard denial flow. */
-  public onCreateSurvey(): void {
+  protected onCreateSurvey(): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'surveys' };
@@ -57,7 +54,6 @@ export class CommitteeSurveysComponent {
 
     this.committeeService
       .fetchCommittee(committee.uid)
-      .pipe(take(1))
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
