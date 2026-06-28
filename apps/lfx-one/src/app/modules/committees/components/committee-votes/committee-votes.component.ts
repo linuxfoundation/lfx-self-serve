@@ -52,18 +52,16 @@ export class CommitteeVotesComponent {
     if (committee.project_slug) denyParams['project'] = committee.project_slug;
     const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
-    this.committeeService
-      .fetchCommittee(committee.uid)
-      .subscribe({
-        next: (fresh) => {
-          if (fresh?.writer !== true) {
-            deny();
-            return;
-          }
-          void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
-        },
-        error: () => deny(),
-      });
+    this.committeeService.fetchCommittee(committee.uid).subscribe({
+      next: (fresh) => {
+        if (fresh?.writer !== true) {
+          deny();
+          return;
+        }
+        void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
+      },
+      error: () => deny(),
+    });
   }
 
   /** Opens the vote results drawer for the selected vote. */
