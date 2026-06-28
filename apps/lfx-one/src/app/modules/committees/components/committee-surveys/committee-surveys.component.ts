@@ -52,18 +52,16 @@ export class CommitteeSurveysComponent {
     if (committee.project_slug) denyParams['project'] = committee.project_slug;
     const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
-    this.committeeService
-      .fetchCommittee(committee.uid)
-      .subscribe({
-        next: (fresh) => {
-          if (fresh?.writer !== true) {
-            deny();
-            return;
-          }
-          void this.router.navigate(['/surveys', 'create'], { queryParams: this.createSurveyQueryParams() });
-        },
-        error: () => deny(),
-      });
+    this.committeeService.fetchCommittee(committee.uid).subscribe({
+      next: (fresh) => {
+        if (fresh?.writer !== true) {
+          deny();
+          return;
+        }
+        void this.router.navigate(['/surveys', 'create'], { queryParams: this.createSurveyQueryParams() });
+      },
+      error: () => deny(),
+    });
   }
 
   public viewSurveyResults(survey: Survey): void {
