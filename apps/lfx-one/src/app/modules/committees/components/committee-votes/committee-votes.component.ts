@@ -45,9 +45,6 @@ export class CommitteeVotesComponent {
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
-  /** Checks committee write permission fresh before navigating to the create-vote route.
-   * Redirects to project overview with _notice=votes if permission has been revoked
-   * since the page loaded — consistent with the writerGuard denial flow. */
   protected onCreateVote(): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
