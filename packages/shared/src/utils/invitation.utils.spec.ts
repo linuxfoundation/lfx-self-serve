@@ -16,6 +16,7 @@ import {
   buildInvitationActions,
   buildInvitationSubtext,
   committeeRequiresOrganization,
+  currentEmployerFromWorkExperiences,
   findPendingInvitationForCommittee,
   formatInviteExpiry,
   invitationRequiresOrganization,
@@ -246,6 +247,55 @@ describe('findPendingInvitationForCommittee', () => {
 
   it('excludes an invite already resolved this session', () => {
     expect(findPendingInvitationForCommittee(invites, new Set(['i1']), 'c1')).toBeNull();
+  });
+});
+
+describe('currentEmployerFromWorkExperiences', () => {
+  it('returns null for an empty array', () => {
+    expect(currentEmployerFromWorkExperiences([])).toBeNull();
+  });
+
+  it('prefers the entry without an endDate (current job)', () => {
+    const result = currentEmployerFromWorkExperiences([
+      { organization: 'Old Corp', organizationId: 'org-old', startDate: 'Jan 2020', endDate: 'Dec 2022' },
+      { organization: 'Current Corp', organizationId: 'org-cur', startDate: 'Jan 2023', endDate: null },
+      { organization: 'Older Corp', organizationId: 'org-older', startDate: 'Jan 2018', endDate: 'Dec 2019' },
+    ]);
+    expect(result).toEqual({ name: 'Current Corp', id: 'org-cur' });
+  });
+
+  it('picks the first entry without endDate when multiple are current', () => {
+    const result = currentEmployerFromWorkExperiences([
+      { organization: 'Corp A', organizationId: 'a', startDate: 'Jan 2021', endDate: null },
+      { organization: 'Corp B', organizationId: 'b', startDate: 'Jan 2022', endDate: null },
+    ]);
+    expect(result?.name).toBe('Corp A');
+  });
+
+  it('falls back to the most recent by startDate when all entries have endDates', () => {
+    const result = currentEmployerFromWorkExperiences([
+      { organization: 'Older Corp', organizationId: 'org-older', startDate: 'Mar 2019', endDate: 'Dec 2020' },
+      { organization: 'Newest Corp', organizationId: 'org-new', startDate: 'Jan 2023', endDate: 'Jun 2024' },
+      { organization: 'Middle Corp', organizationId: 'org-mid', startDate: 'Jan 2021', endDate: 'Dec 2022' },
+    ]);
+    expect(result).toEqual({ name: 'Newest Corp', id: 'org-new' });
+  });
+
+  it('handles a missing organizationId by returning id: null', () => {
+    const result = currentEmployerFromWorkExperiences([{ organization: 'No ID Corp', organizationId: undefined, startDate: 'Jan 2023', endDate: null }]);
+    expect(result).toEqual({ name: 'No ID Corp', id: null });
+  });
+
+  it('correctly orders months within the same year (Dec > Jan)', () => {
+    const result = currentEmployerFromWorkExperiences([
+      { organization: 'Jan Corp', organizationId: 'jan', startDate: 'Jan 2023', endDate: 'Feb 2023' },
+      { organization: 'Dec Corp', organizationId: 'dec', startDate: 'Dec 2023', endDate: 'Jan 2024' },
+    ]);
+    expect(result?.name).toBe('Dec Corp');
+  });
+
+  it('handles an invalid startDate without throwing (treats as ordinal 0)', () => {
+    expect(() => currentEmployerFromWorkExperiences([{ organization: 'Corp', organizationId: null, startDate: 'invalid', endDate: 'Dec 2020' }])).not.toThrow();
   });
 });
 
