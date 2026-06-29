@@ -45,6 +45,13 @@ export class CommitteeVotesComponent {
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
+  public viewVoteResults(voteUid: string): void {
+    const vote = this.votes().find((v) => v.uid === voteUid) || null;
+    this.selectedVoteId.set(voteUid);
+    this.selectedVote.set(vote);
+    this.resultsDrawerVisible.set(true);
+  }
+
   protected onCreateVote(): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
@@ -62,14 +69,6 @@ export class CommitteeVotesComponent {
       },
       error: () => deny(),
     });
-  }
-
-  /** Opens the vote results drawer for the selected vote. */
-  public viewVoteResults(voteUid: string): void {
-    const vote = this.votes().find((v) => v.uid === voteUid) || null;
-    this.selectedVoteId.set(voteUid);
-    this.selectedVote.set(vote);
-    this.resultsDrawerVisible.set(true);
   }
 
   // Private initializer functions
