@@ -14,6 +14,8 @@ import {
   DEFAULT_ORG_MEETINGS_TAB_ID,
   DEMO_PAST_MEETINGS,
   DEMO_UPCOMING_MEETINGS,
+  ORG_MEETINGS_KPI_PAST_COUNT,
+  ORG_MEETINGS_KPI_RECORDINGS_COUNT,
   ORG_MEETINGS_KPI_RECURRING_COUNT,
   ORG_MEETINGS_KPI_RECURRING_PROJECTS,
   ORG_MEETINGS_KPI_UPCOMING_COUNT,
@@ -98,20 +100,38 @@ export class OrgMeetingsComponent {
   }
 
   private initKpiCards(): Signal<StatCardItem[]> {
-    return computed<StatCardItem[]>(() => [
-      {
-        value: String(ORG_MEETINGS_KPI_UPCOMING_COUNT),
-        label: 'Upcoming Meetings',
-        icon: 'fa-light fa-calendar',
-        iconContainerClass: 'bg-blue-100 text-blue-600',
-      },
-      {
-        value: String(ORG_MEETINGS_KPI_RECURRING_COUNT),
-        label: `Recurring Series · Across ${ORG_MEETINGS_KPI_RECURRING_PROJECTS} projects`,
-        icon: 'fa-light fa-rotate',
-        iconContainerClass: 'bg-violet-100 text-violet-600',
-      },
-    ]);
+    return computed<StatCardItem[]>(() => {
+      if (this.activeTab() === 'past') {
+        return [
+          {
+            value: String(ORG_MEETINGS_KPI_PAST_COUNT),
+            label: 'Past Meetings',
+            icon: 'fa-light fa-clock-rotate-left',
+            iconContainerClass: 'bg-gray-100 text-gray-500',
+          },
+          {
+            value: String(ORG_MEETINGS_KPI_RECORDINGS_COUNT),
+            label: 'Recordings Available',
+            icon: 'fa-light fa-video',
+            iconContainerClass: 'bg-red-100 text-red-500',
+          },
+        ];
+      }
+      return [
+        {
+          value: String(ORG_MEETINGS_KPI_UPCOMING_COUNT),
+          label: 'Upcoming Meetings',
+          icon: 'fa-light fa-calendar',
+          iconContainerClass: 'bg-blue-100 text-blue-600',
+        },
+        {
+          value: String(ORG_MEETINGS_KPI_RECURRING_COUNT),
+          label: `Recurring Series · Across ${ORG_MEETINGS_KPI_RECURRING_PROJECTS} projects`,
+          icon: 'fa-light fa-rotate',
+          iconContainerClass: 'bg-violet-100 text-violet-600',
+        },
+      ];
+    });
   }
 
   private initFilterSearch(): Signal<string> {

@@ -28,6 +28,12 @@ export const ORG_MEETINGS_KPI_NEXT_MEETING = 'Jul 3, 2026 · 10:00 AM PT';
 /** KPI: recurring series project span (demo). */
 export const ORG_MEETINGS_KPI_RECURRING_PROJECTS = 3;
 
+/** KPI: total past meetings count (demo). */
+export const ORG_MEETINGS_KPI_PAST_COUNT = 15;
+
+/** KPI: recordings available from past 30 days (demo). */
+export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
+
 /** Project filter options for the Org Meetings filter bar (demo). */
 export const ORG_MEETINGS_PROJECT_OPTIONS: FilterOption[] = [
   { label: 'All Projects', value: null },

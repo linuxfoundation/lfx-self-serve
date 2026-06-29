@@ -39,7 +39,7 @@
             [class]="
               activeTab() === tab.id
                 ? 'rounded-full px-3 py-1.5 text-sm font-medium bg-blue-600 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
-                : 'rounded-full px-3 py-1.5 text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+                : 'rounded-full px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
             "
             [attr.data-testid]="'org-meetings-tab-' + tab.id"
             (click)="switchTab(tab.id)">
