@@ -11,6 +11,11 @@ intercom_collection: Crowdfunding
 
 Your saved payment methods are listed at the bottom of the My Donations page. Each entry shows the card brand, the last four digits, and the expiry date. You can add a new card or remove an existing one at any time.
 
+## Before you begin
+
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Before deleting a card: check whether it is linked to any active recurring donations. Deleting it will cause those donations to fail on the next billing cycle. To avoid missed charges, cancel the recurring donation first — see [Manage Recurring Donations](../manage-recurring-donations/).
+
 ## Add a payment method
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
@@ -20,7 +25,9 @@ Your saved payment methods are listed at the bottom of the My Donations page. Ea
 5. Enter your card number, expiry date, and CVC (the 3-digit security code on the back of the card) in the dialog that appears.
 6. Confirm to save the card.
 
-The new card appears in your payment methods list and can be used for future donations.
+## After completing (add)
+
+The new card appears in your payment methods list immediately and can be used for future donations.
 
 ## Delete a payment method
 
@@ -32,7 +39,9 @@ The new card appears in your payment methods list and can be used for future don
 4. Select **Delete** next to the card you want to remove.
 5. Confirm the deletion.
 
-The card is removed from your account.
+## After completing (delete)
+
+The card is removed from your account immediately. Any active recurring donations linked to that card will fail on their next billing cycle — cancel them before removing the card if you want to stop future charges cleanly.
 
 ## Frequently asked
 

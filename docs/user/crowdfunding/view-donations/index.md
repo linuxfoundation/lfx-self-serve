@@ -34,6 +34,11 @@ A paginated table lists all your donations in chronological order, including bot
 - Donation kind (Monthly or One-time)
 - Amount
 
+## Before you begin
+
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- You must have made at least one donation. If the page shows no history, you have not donated to any initiative yet. Donations are made on the public crowdfunding site at [crowdfunding.linuxfoundation.org](https://crowdfunding.linuxfoundation.org).
+
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
@@ -42,6 +47,10 @@ A paginated table lists all your donations in chronological order, including bot
 4. Scroll down to the recurring donations list to see your active subscriptions.
 5. Scroll further to the donation history table to see all past contributions.
 6. Select a recurring donation to open its detail page.
+
+## After completing
+
+Your full donation history is visible in the table. Selecting a recurring donation opens its detail page where you can review charge history or cancel the subscription — see [Manage Recurring Donations](../manage-recurring-donations/).
 
 ## Related
 

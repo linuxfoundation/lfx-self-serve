@@ -9,9 +9,12 @@ last_updated: 2026-06-16
 intercom_collection: Crowdfunding
 ---
 
-These steps apply to users who have created crowdfunding initiatives. If you have not created any initiatives, this section does not apply to your account.
+This article explains how to edit, archive, and activate crowdfunding initiatives you own in LFX Self Serve. Select an initiative from the [View Initiatives](../view-initiatives/) page to open its detail page, where you can review financials, edit settings, and change the initiative's status.
 
-Select an initiative from the [View Initiatives](../view-initiatives/) page to open its detail page. From the detail page you can review financials, edit initiative settings, and change the initiative's status.
+## Before you begin
+
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- You must have created at least one crowdfunding initiative. These steps apply to initiative owners only.
 
 ## Initiative detail page
 
