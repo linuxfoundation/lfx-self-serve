@@ -87,6 +87,7 @@ export class MeetingManageComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
 
@@ -192,9 +193,9 @@ export class MeetingManageComponent {
         if (!titleControl) return;
 
         if (youtubeEnabled) {
-          titleControl.addValidators(Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+          titleControl.addValidators(this.youtubeMaxLengthValidator);
         } else {
-          titleControl.removeValidators(Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+          titleControl.removeValidators(this.youtubeMaxLengthValidator);
         }
         titleControl.updateValueAndValidity();
       });
