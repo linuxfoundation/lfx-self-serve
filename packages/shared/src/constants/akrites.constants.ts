@@ -112,6 +112,9 @@ export const AKRITES_UPDATABLE_STATUS_OPTIONS: Array<{ value: AkritesUpdatableSt
   { value: 'inactive', label: 'Inactive' },
 ];
 
+/** Stewardship statuses for which assigning a steward is permitted. */
+export const AKRITES_ASSIGNABLE_STATUSES = new Set<AkritesStatus>(['unassigned', 'open', 'assessing', 'escalated', 'inactive']);
+
 /** Valid dashboard tabs for the Akrites module. */
 export const AKRITES_VALID_TABS = new Set<AkritesDashboardTab>(['overview', 'packages', 'triage', 'risk-matrix']);
 

@@ -219,6 +219,7 @@
         <th>Steward</th>
         <th>Last activity</th>
         <th>Stewardship</th>
+        <th class="w-12"><span class="sr-only">Row actions</span></th>
       </tr>
     </ng-template>
     <ng-template #loadingbody let-rowData>
@@ -243,6 +244,7 @@
           </div>
         </td>
         <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td></td>
       </tr>
     </ng-template>
     <ng-template #body let-pkg>
@@ -384,12 +386,32 @@
           }
         </td>
         <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" [rounded]="true" /></td>
+        <td (click)="$event.stopPropagation()" class="text-right">
+          @if (assignablePackageIds().has(pkg.id)) {
+            <lfx-button
+              icon="fa-solid fa-ellipsis-vertical"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              ariaLabel="Package actions"
+              styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+              (onClick)="onRowMenuOpen($event, pkg, rowActionMenu)"
+              [attr.data-testid]="'akrites-row-action-' + pkg.id" />
+            <lfx-menu #rowActionMenu [model]="rowActionItems()" [popup]="true" appendTo="body" />
+          }
+        </td>
       </tr>
     </ng-template>
     <ng-template #emptymessage>
       <tr>
-        <td colspan="10" class="text-center py-8 text-sm text-gray-500">No packages match the current filters.</td>
+        <td colspan="11" class="text-center py-8 text-sm text-gray-500">No packages match the current filters.</td>
       </tr>
     </ng-template>
   </lfx-table>
 </div>
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignModalVisible"
+  [packageName]="assignTargetPackage()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />

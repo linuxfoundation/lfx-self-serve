@@ -4,8 +4,15 @@
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { AKRITES_VALID_TABS, AKRITES_DEFAULT_TAB, AKRITES_DEFAULT_VISIBLE_STATUSES, AKRITES_TOTAL_STATUSES } from '@lfx-one/shared/constants';
 import {
+  AKRITES_ASSIGNABLE_STATUSES,
+  AKRITES_VALID_TABS,
+  AKRITES_DEFAULT_TAB,
+  AKRITES_DEFAULT_VISIBLE_STATUSES,
+  AKRITES_TOTAL_STATUSES,
+} from '@lfx-one/shared/constants';
+import {
+  AkritesAssignStewardRequest,
   AkritesFilterState,
   AkritesListParams,
   AkritesLoadResult,
@@ -24,6 +31,7 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
+import { AkritesAssignStewardModalComponent } from '../components/akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
 import { AkritesTriageTabComponent } from '../components/akrites-triage-tab/akrites-triage-tab.component';
 import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix-tab/akrites-risk-matrix-tab.component';
@@ -34,6 +42,7 @@ import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix
     AkritesPackageDrawerComponent,
     AkritesPackagesTabComponent,
     AkritesEscalateModalComponent,
+    AkritesAssignStewardModalComponent,
     AkritesOverviewTabComponent,
     AkritesTriageTabComponent,
     AkritesRiskMatrixTabComponent,
@@ -46,13 +55,13 @@ export class AkritesDashboardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-
   protected readonly activeTab = this.initActiveTab();
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
   protected readonly showBulkActions = computed(() => this.selectedPackages().size > 0);
   protected readonly bulkEscalateVisible = signal(false);
+  protected readonly bulkAssignStewardVisible = signal(false);
   protected readonly bulkActionLoading = signal(false);
 
   // Bumped after a steward admin action to force the package list and activity feed to re-fetch.
@@ -255,6 +264,57 @@ export class AkritesDashboardComponent {
         error: () => {
           this.bulkActionLoading.set(false);
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Some packages could not be opened. Please try again.' });
+        },
+      });
+  }
+
+  protected onBulkAssignSteward(): void {
+    this.bulkAssignStewardVisible.set(true);
+  }
+
+  protected onBulkAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
+    const selected = this.selectedPackages();
+    const eligible = this.packages().filter((p) => selected.has(p.id) && AKRITES_ASSIGNABLE_STATUSES.has(p.status));
+    if (this.bulkActionLoading()) return;
+    if (!eligible.length) {
+      this.bulkAssignStewardVisible.set(false);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'No eligible packages',
+        detail: 'None of the selected packages are eligible for steward assignment.',
+      });
+      return;
+    }
+    this.bulkAssignStewardVisible.set(false);
+    this.bulkActionLoading.set(true);
+    forkJoin(
+      eligible.map((p) => {
+        const stewardshipId$ =
+          p.stewardshipId !== null ? of(String(p.stewardshipId)) : this.akritesService.openStewardship(p.purl).pipe(map((res) => res.stewardship.id));
+        return stewardshipId$.pipe(
+          switchMap((id) => this.akritesService.assignSteward(id, body)),
+          map(() => true),
+          catchError(() => of(false))
+        );
+      })
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          const succeeded = results.filter(Boolean).length;
+          const failed = results.length - succeeded;
+          this.bulkActionLoading.set(false);
+          if (succeeded > 0) {
+            this.messageService.add({
+              severity: failed > 0 ? 'warn' : 'success',
+              summary: failed > 0 ? 'Partial success' : 'Success',
+              detail: failed > 0 ? `${succeeded} assigned, ${failed} failed.` : `Steward assigned to ${succeeded} package(s).`,
+            });
+            this.clearSelection();
+            this.reloadTrigger.update((n) => n + 1);
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No packages could be assigned. Please try again.' });
+          }
         },
       });
   }
