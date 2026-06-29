@@ -63,6 +63,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: writeFeature ?? 'access' } });
   const deny = () => deniedUrl;
+  const supportsCommitteeWriter = writeFeature != null && ['meetings', 'surveys', 'votes'].includes(writeFeature);
 
   // Committee writers can create meetings, surveys, and votes associated with
   // their committee. Only applicable when committee_uid is in the route query params.
@@ -83,7 +84,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       // a committee writer is not incorrectly denied solely because the project fetch
       // failed. If no committee check is applicable, deny with feedback.
       if (project === null) {
-        return committeeUid && (writeFeature === 'meetings' || writeFeature === 'surveys' || writeFeature === 'votes') ? checkCommittee() : of(deny());
+        return committeeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
       }
       if (project.writer === true) {
         return of(true as const);
@@ -92,7 +93,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       if (writeFeature === 'meetings' && project.meetingCoordinator === true) {
         return of(true as const);
       }
-      if (committeeUid && (writeFeature === 'meetings' || writeFeature === 'surveys' || writeFeature === 'votes')) {
+      if (committeeUid && supportsCommitteeWriter) {
         return checkCommittee();
       }
       return of(deny());
