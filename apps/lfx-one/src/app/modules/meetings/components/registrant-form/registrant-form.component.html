@@ -24,12 +24,6 @@
             (onUserSelect)="handleUserSelection()"
             (onManualEntry)="switchToManualEntry()">
           </lfx-user-search>
-          @if (searchSelectionError()) {
-            <p class="mt-2 text-sm text-red-500 flex items-center gap-1" role="alert" data-testid="registrant-form-search-selection-error">
-              <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
-              {{ searchSelectionError() }}
-            </p>
-          }
         </div>
         <div class="flex items-center justify-center gap-3 mt-3">
           <span class="flex-1 border-t border-gray-200"></span>

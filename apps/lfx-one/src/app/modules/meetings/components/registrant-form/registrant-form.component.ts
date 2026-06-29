@@ -26,7 +26,6 @@ export class RegistrantFormComponent {
 
   // State to track whether we're showing search or individual fields
   public showIndividualFields = signal(false);
-  public searchSelectionError = signal<string | null>(null);
 
   public constructor() {
     // If we have an existing registrant, show individual fields immediately
@@ -48,7 +47,6 @@ export class RegistrantFormComponent {
    */
   public handleUserSelection(): void {
     this.form().markAsDirty();
-    this.searchSelectionError.set(null);
 
     const firstName = this.form().get('first_name')?.value?.trim();
     const lastName = this.form().get('last_name')?.value?.trim();
@@ -80,7 +78,6 @@ export class RegistrantFormComponent {
     const hostValue = this.form().get('host')?.value;
     this.form().reset();
     this.form().get('host')?.setValue(hostValue);
-    this.searchSelectionError.set(null);
     this.showIndividualFields.set(true);
   }
 
