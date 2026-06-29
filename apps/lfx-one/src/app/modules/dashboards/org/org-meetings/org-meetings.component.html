@@ -30,10 +30,10 @@
 
   <!-- Filter bar — standalone card matching app.lfx.dev/meetings -->
   <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-filter-bar">
-    <div class="flex flex-wrap items-center gap-3 px-5 py-4">
-      <!-- Tab pills -->
-      <div class="flex items-center gap-1" data-testid="org-meetings-tab-bar">
-        @for (tab of tabPillOptions(); track tab.id) {
+    <div class="flex items-center gap-3 px-5 py-4">
+      <!-- Tab pills (no counts — matches live site) -->
+      <div class="flex items-center gap-1 flex-shrink-0" data-testid="org-meetings-tab-bar">
+        @for (tab of tabs; track tab.id) {
           <button
             type="button"
             [class]="
@@ -48,15 +48,18 @@
         }
       </div>
 
-      <!-- Search -->
-      <lfx-input-text
-        [form]="filterForm"
-        control="search"
-        placeholder="Search meetings..."
-        icon="fa-light fa-magnifying-glass"
-        data-testid="org-meetings-search" />
+      <!-- Search fills center, pushing filters to the right -->
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search meetings..."
+          icon="fa-light fa-magnifying-glass"
+          styleClass="w-full"
+          data-testid="org-meetings-search" />
+      </div>
 
-      <!-- All Types -->
+      <!-- All Types — right-aligned -->
       <lfx-select
         [form]="filterForm"
         control="type"

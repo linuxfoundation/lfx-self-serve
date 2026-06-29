@@ -15,8 +15,8 @@
     </div>
   } @else {
     @for (meeting of meetings(); track meeting.id) {
-      <div class="flex flex-col gap-3 p-5 border border-gray-200 rounded-lg" [attr.data-testid]="'org-upcoming-meeting-card-' + meeting.id">
-        <!-- ── Header: privacy badge + recurrence | action icons ── -->
+      <div class="flex flex-col gap-3 p-5 bg-white rounded-xl shadow-sm border border-gray-100" [attr.data-testid]="'org-upcoming-meeting-card-' + meeting.id">
+        <!-- ── Header: privacy badge + type badge + recurrence | copy icon ── -->
         <div class="flex items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             @if (meeting.privacy === 'private') {
@@ -28,36 +28,29 @@
                 <i class="fa-light fa-globe text-xs" aria-hidden="true"></i> Public
               </span>
             }
+            @if (meeting.type === 'board') {
+              <span class="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
+                <i class="fa-light fa-users text-xs" aria-hidden="true"></i> Board
+              </span>
+            } @else if (meeting.type === 'working-group') {
+              <span class="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                <i class="fa-light fa-people-group text-xs" aria-hidden="true"></i> Working Group
+              </span>
+            }
             @if (meeting.recurrenceLabel) {
               <span class="inline-flex items-center gap-1 text-xs text-gray-500">
                 <i class="fa-light fa-rotate" aria-hidden="true"></i>{{ meeting.recurrenceLabel }}
               </span>
             }
           </div>
-          <div class="flex items-center gap-1 flex-shrink-0">
-            <button
-              type="button"
-              class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none"
-              title="Copy link"
-              [attr.data-testid]="'org-upcoming-meeting-copy-' + meeting.id"
-              (click)="copyLink(meeting.id)">
-              <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button"
-              class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none"
-              title="Edit meeting"
-              [attr.data-testid]="'org-upcoming-meeting-edit-' + meeting.id">
-              <i class="fa-light fa-pen text-sm" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button"
-              class="rounded p-1 text-gray-400 hover:text-red-500 transition-colors focus-visible:outline-none"
-              title="Delete meeting"
-              [attr.data-testid]="'org-upcoming-meeting-delete-' + meeting.id">
-              <i class="fa-light fa-trash text-sm" aria-hidden="true"></i>
-            </button>
-          </div>
+          <button
+            type="button"
+            class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none flex-shrink-0"
+            title="Copy link"
+            [attr.data-testid]="'org-upcoming-meeting-copy-' + meeting.id"
+            (click)="copyLink(meeting.id)">
+            <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
+          </button>
         </div>
 
         <!-- ── Title ── -->
