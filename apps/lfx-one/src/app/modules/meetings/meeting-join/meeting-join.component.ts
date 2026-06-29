@@ -12,6 +12,7 @@ import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/m
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
@@ -107,6 +108,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     FileTypeDisplayPipe,
     DynamicDialogModule,
     MeetingMaterialsDrawerComponent,
+    ImpersonationBannerComponent,
   ],
   providers: [DialogService],
   templateUrl: './meeting-join.component.html',
@@ -118,7 +120,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
   private readonly projectService = inject(ProjectService);
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
