@@ -10,6 +10,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -30,6 +31,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 })
 export class CommitteeSettingsTabComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -112,25 +114,28 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openMailingListPicker(): void {
-    const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
+    const committee = this.committee();
+    const committeeUid = committee.uid;
+    const projectUid = committee.project_uid;
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
-    const ref = this.dialogService.open(MailingListPickerDialogComponent, {
-      header: 'Associated Mailing Lists',
-      width: '700px',
-      modal: true,
-      closable: true,
-      draggable: false,
-      data: {
-        mailingLists: this.projectMailingLists(),
-        associatedUids,
-        projectUid: this.committee().project_uid,
-      },
-    }) as DynamicDialogRef;
-
-    ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
-      if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids);
-    });
+    this.committeeService
+      .getCommittee(committeeUid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            if (fresh?.project_slug) denyParams['project'] = fresh.project_slug;
+            deny();
+            return;
+          }
+          this.openPickerDialog(committeeUid, projectUid, fresh?.project_slug ?? committee.project_slug);
+        },
+        error: () => deny(),
+      });
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {
@@ -210,6 +215,30 @@ export class CommitteeSettingsTabComponent {
   }
 
   // -- Private methods --
+
+  private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
+    const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
+
+    const ref = this.dialogService.open(MailingListPickerDialogComponent, {
+      header: 'Associated Mailing Lists',
+      width: '700px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: {
+        mailingLists: this.projectMailingLists(),
+        associatedUids,
+        projectUid,
+        projectSlug,
+        committeeUid,
+      },
+    }) as DynamicDialogRef;
+
+    ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
+      if (!result) return;
+      this.saveMailingListAssociation(result.selectedUids, associatedUids);
+    });
+  }
 
   private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>): void {
     const committee = this.committee();
