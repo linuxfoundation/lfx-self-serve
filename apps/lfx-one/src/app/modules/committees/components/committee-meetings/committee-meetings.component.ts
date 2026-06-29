@@ -17,12 +17,13 @@ import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, SURVEY_COLO
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
 import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
 
@@ -45,6 +46,7 @@ import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subs
 })
 export class CommitteeMeetingsComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly meetingService = inject(MeetingService);
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
@@ -94,6 +96,7 @@ export class CommitteeMeetingsComponent {
   public meetingsLoading = signal(true);
   public pastMeetingsLoading = signal(false);
   public calendarLoading = signal(false);
+  public creating = signal(false);
 
   // Data — upcoming meetings
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
@@ -174,20 +177,22 @@ export class CommitteeMeetingsComponent {
     }
   }
 
-  /** Checks committee write permission fresh before navigating to the create-meeting route.
-   * If the permission has been revoked since the page loaded (e.g. Manager demoted to Member),
-   * redirects to the project overview with _notice=meetings so AppComponent shows the toast —
-   * consistent with the writerGuard denial flow. */
-  public onScheduleMeeting(): void {
+  /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
+  protected onScheduleMeeting(): void {
+    if (this.creating()) return;
     const committee = this.committee();
-    const slug = committee.project_slug;
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'meetings' };
-    if (slug) denyParams['project'] = slug;
-    const deny = () => void this.router.navigate(['/project/overview'], { queryParams: denyParams });
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
+    this.creating.set(true);
     this.committeeService
-      .getCommittee(committee.uid)
-      .pipe(take(1))
+      .fetchCommittee(committee.uid)
+      .pipe(
+        finalize(() => this.creating.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
