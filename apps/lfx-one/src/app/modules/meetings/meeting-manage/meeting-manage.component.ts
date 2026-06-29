@@ -875,7 +875,8 @@ export class MeetingManageComponent {
   }
 
   private updateCanProceed(): void {
-    const isValid = this.isStepValid(this.currentStep());
+    const next = this.currentStep() + 1;
+    const isValid = next <= this.totalSteps ? this.canNavigateToStep(next) : this.isStepValid(this.currentStep());
     this.canProceed.set(isValid);
   }
 
