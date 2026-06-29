@@ -5,7 +5,7 @@ audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
 last_generated: 2026-06-16
-last_updated: 2026-06-16
+last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
 
