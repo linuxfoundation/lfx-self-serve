@@ -2,18 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Impersonation Banner -->
-@if (impersonating()) {
-  <div
-    class="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 bg-yellow-400 py-2 text-sm font-medium text-black"
-    data-testid="impersonation-banner">
-    <i class="fa-light fa-eye text-sm"></i>
-    <span
-      >Viewing as <strong>{{ user()?.email }}</strong></span
-    >
-    <span class="text-black/60">— by {{ impersonator()?.name }}</span>
-    <lfx-button label="Stop Impersonating" severity="contrast" size="small" (onClick)="stopImpersonation()" data-testid="stop-impersonation-button" />
-  </div>
-}
+<lfx-impersonation-banner />
 
 <div [ngClass]="{ 'pt-12': impersonating() }">
   <lfx-header></lfx-header>

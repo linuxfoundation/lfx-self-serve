@@ -24,21 +24,20 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, of, startWith, switchMap, take } from 'rxjs';
+import { filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { environment } from '@environments/environment';
 
-import { ButtonComponent } from '@components/button/button.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ButtonComponent],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -49,7 +48,6 @@ export class MainLayoutComponent {
   private readonly appService = inject(AppService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
-  private readonly impersonationService = inject(ImpersonationService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -589,15 +587,6 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
-  }
-
-  protected stopImpersonation(): void {
-    this.impersonationService
-      .stopImpersonation()
-      .pipe(take(1))
-      .subscribe(() => {
-        window.location.reload();
-      });
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
