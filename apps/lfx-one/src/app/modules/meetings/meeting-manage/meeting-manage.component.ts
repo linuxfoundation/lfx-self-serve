@@ -198,6 +198,7 @@ export class MeetingManageComponent {
           titleControl.removeValidators(this.youtubeMaxLengthValidator);
         }
         titleControl.updateValueAndValidity();
+        this.updateCanProceed();
       });
 
     // Separate subscription for meeting data changes - populates form only once
