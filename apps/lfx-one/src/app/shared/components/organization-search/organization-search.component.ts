@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { InputTextComponent } from '../input-text/input-text.component';
@@ -88,12 +88,11 @@ export class OrganizationSearchComponent {
     });
 
     // Sync the internal search input with the parent form's name control — both on initial render
-    // and on any programmatic patchValue(). Uses toObservable + switchMap so the inner subscription
-    // is automatically cancelled and re-created whenever the form() or nameControl() inputs change.
-    toObservable(this.form)
+    // and on any programmatic patchValue(). combineLatest re-subscribes whenever either form()
+    // or nameControl() changes so the inner subscription always tracks the live control.
+    combineLatest([toObservable(this.form), toObservable(this.nameControl)])
       .pipe(
-        switchMap((parentForm) => {
-          const nameControlName = this.nameControl();
+        switchMap(([parentForm, nameControlName]) => {
           if (!parentForm || !nameControlName) return EMPTY;
           const ctrl = parentForm.get(nameControlName);
           if (!ctrl) return EMPTY;

@@ -24,14 +24,7 @@ import {
   OrganizationResolveResult,
   CommitteeOrganizationReference,
 } from '@lfx-one/shared/interfaces';
-import {
-  buildCommitteeOrganizationPayload,
-  committeeRequiresOrganization,
-  currentEmployerFromWorkExperiences,
-  hasLfAccount,
-  parseEmailList,
-  rankUserSearchResults,
-} from '@lfx-one/shared/utils';
+import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -156,15 +149,12 @@ export class AddMemberDialogComponent {
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
     this.searchForm.get('query')!.setValue('');
 
-    // Pre-fill the org field from the selected user's CDP work experience when shown and blank.
-    // Uses the same employer-selection logic as the invite accept flow (currentEmployerFromWorkExperiences),
-    // but via a separate endpoint (/api/search/users/:lfid/work-experiences) that accepts any LFID.
+    // Pre-fill the org field from the selected user's current employer when shown and blank.
     if (this.showOrganizationField() && user.username && !this.form.get('organization')!.value?.trim()) {
       this.searchService
-        .getUserWorkExperiences(user.username)
+        .getUserCurrentEmployer(user.username)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-        .subscribe((experiences) => {
-          const employer = currentEmployerFromWorkExperiences(experiences);
+        .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
             this.form.patchValue({ organization: employer.name });
           }

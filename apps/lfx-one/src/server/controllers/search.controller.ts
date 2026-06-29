@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { UserSearchParams } from '@lfx-one/shared/interfaces';
+import { CommitteeOrganizationReference, UserSearchParams } from '@lfx-one/shared/interfaces';
+import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -87,12 +88,12 @@ export class SearchController {
 
   /**
    * GET /search/users/:lfid/work-experiences
-   * Returns org-prefill fields (organization, organizationId, startDate, endDate) for any user by LFID.
+   * Returns the computed current employer ({name, id}) for any user by LFID, or null.
    * Used to pre-fill the organization field in the add-member dialog.
    *
    * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
    * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
-   * is intentionally minimised to org-prefill fields only to limit PII exposure.
+   * is a single computed org reference (no employment dates or job titles) to limit PII exposure.
    * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
    */
   public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -111,19 +112,11 @@ export class SearchController {
       }
 
       const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
+      const employer: CommitteeOrganizationReference | null = currentEmployerFromWorkExperiences(workExperiences);
 
-      logger.success(req, 'get_user_work_experiences', startTime, { lfid, count: workExperiences.length });
+      logger.success(req, 'get_user_work_experiences', startTime, { lfid, found: !!employer });
 
-      // Return only the fields required for org pre-fill — job titles, source, and verification
-      // metadata are not needed and would unnecessarily expose other users' profile data.
-      res.json(
-        workExperiences.map(({ organization, organizationId, startDate, endDate }) => ({
-          organization,
-          organizationId: organizationId ?? null,
-          startDate,
-          endDate: endDate ?? null,
-        }))
-      );
+      res.json(employer);
     } catch (error) {
       next(error);
     }
