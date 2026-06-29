@@ -106,8 +106,10 @@ export class MailingListPickerDialogComponent {
             deny();
             return;
           }
+          const createParams: Record<string, string> = {};
+          if (this.projectSlug) createParams['project'] = this.projectSlug;
           this.cancel();
-          void this.router.navigate(['/mailing-lists', 'create'], { queryParams: { project: this.projectSlug } });
+          void this.router.navigate(['/mailing-lists', 'create'], { queryParams: createParams });
         },
         error: () => deny(),
       });
