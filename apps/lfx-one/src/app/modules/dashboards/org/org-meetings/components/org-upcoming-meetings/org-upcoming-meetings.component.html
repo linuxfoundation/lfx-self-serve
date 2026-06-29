@@ -45,7 +45,7 @@
           </div>
           <button
             type="button"
-            class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none flex-shrink-0"
+            class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 flex-shrink-0"
             aria-label="Copy meeting link"
             [attr.data-testid]="'org-upcoming-meeting-copy-' + meeting.id"
             (click)="copyLink(meeting.id)">
@@ -85,7 +85,7 @@
             <p class="text-sm text-gray-700" [class.line-clamp-3]="!isExpanded(meeting.id)">{{ meeting.agenda }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 focus-visible:outline-none w-fit"
+              class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded w-fit"
               (click)="toggleExpand(meeting.id)">
               <i [class]="isExpanded(meeting.id) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'" aria-hidden="true"></i>
               {{ isExpanded(meeting.id) ? 'Show less' : 'Show more' }}
@@ -105,7 +105,7 @@
                 @for (resource of meeting.resources; track resource) {
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 text-left truncate focus-visible:outline-none">
+                    class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 text-left truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded">
                     <i class="fa-light fa-arrow-up-right-from-square text-xs flex-shrink-0" aria-hidden="true"></i>
                     <span class="truncate">{{ resource }}</span>
                   </button>
@@ -123,19 +123,19 @@
               <div class="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-blue-400 px-2 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors focus-visible:outline-none"
+                  class="inline-flex items-center justify-center gap-1 rounded-md border border-blue-400 px-2 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   [attr.data-testid]="'org-upcoming-meeting-rsvp-yes-' + meeting.id">
                   <i class="fa-light fa-circle-check text-xs" aria-hidden="true"></i> Yes
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-red-400 px-2 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors focus-visible:outline-none"
+                  class="inline-flex items-center justify-center gap-1 rounded-md border border-red-400 px-2 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                   [attr.data-testid]="'org-upcoming-meeting-rsvp-no-' + meeting.id">
                   <i class="fa-light fa-circle-xmark text-xs" aria-hidden="true"></i> No
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-amber-400 px-2 py-1.5 text-sm font-medium text-amber-600 hover:bg-amber-50 transition-colors focus-visible:outline-none"
+                  class="inline-flex items-center justify-center gap-1 rounded-md border border-amber-400 px-2 py-1.5 text-sm font-medium text-amber-600 hover:bg-amber-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
                   [attr.data-testid]="'org-upcoming-meeting-rsvp-maybe-' + meeting.id">
                   <i class="fa-light fa-circle-question text-xs" aria-hidden="true"></i> Maybe
                 </button>
@@ -143,14 +143,14 @@
             } @else {
               <button
                 type="button"
-                class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 [attr.data-testid]="'org-upcoming-meeting-register-' + meeting.id">
                 <i class="fa-light fa-user-plus text-xs" aria-hidden="true"></i> Register for Meeting
               </button>
             }
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               [attr.data-testid]="'org-upcoming-meeting-details-' + meeting.id">
               <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
             </button>

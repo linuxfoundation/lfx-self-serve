@@ -40,7 +40,7 @@
           </div>
           <button
             type="button"
-            class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none rounded flex-shrink-0"
+            class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded flex-shrink-0"
             aria-label="Copy meeting link"
             (click)="copyLink(meeting.id)">
             <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
@@ -90,7 +90,7 @@
                 @for (resource of meeting.resources; track resource) {
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 text-left truncate focus-visible:outline-none">
+                    class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 text-left truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded">
                     <i class="fa-light fa-arrow-up-right-from-square text-xs flex-shrink-0" aria-hidden="true"></i>
                     <span class="truncate">{{ resource }}</span>
                   </button>
@@ -103,7 +103,7 @@
           <div class="flex items-start">
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
               <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
             </button>

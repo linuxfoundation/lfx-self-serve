@@ -9,7 +9,7 @@
 
   <!-- KPI strip -->
   <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-kpi-strip">
-    <div class="grid w-full grid-cols-2 divide-x divide-gray-200">
+    <div class="grid w-full grid-cols-1 divide-y divide-gray-200 md:grid-cols-2 md:divide-x md:divide-y-0">
       @for (card of kpiCards(); track card.label) {
         <div class="flex items-center gap-3 p-4">
           <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
@@ -30,7 +30,7 @@
 
   <!-- Filter bar — standalone card matching app.lfx.dev/meetings -->
   <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-filter-bar">
-    <div class="flex items-center gap-3 px-5 py-4">
+    <div class="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center">
       <!-- Tab pills (no counts — matches live site) -->
       <div class="flex items-center gap-1 flex-shrink-0" data-testid="org-meetings-tab-bar">
         @for (tab of tabs; track tab.id) {

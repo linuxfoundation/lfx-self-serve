@@ -94,9 +94,3 @@ export interface OrgPastMeeting extends OrgMeeting {
   readonly minutesUploaded: boolean;
   readonly orgPastInvitees: readonly OrgPastMeetingInvitee[];
 }
-
-/** Payload emitted when a user clicks an RSVP button. */
-export interface OrgMeetingRsvpChangeEvent {
-  readonly meetingId: string;
-  readonly status: 'yes' | 'maybe' | 'no';
-}
