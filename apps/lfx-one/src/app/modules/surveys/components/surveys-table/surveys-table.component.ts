@@ -70,6 +70,7 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewResults = output<Survey>();
