@@ -41,10 +41,9 @@ export const PROFILE_ROUTES: Routes = [
         path: 'email',
         loadComponent: () => import('./email/profile-email.component').then((m) => m.ProfileEmailComponent),
       },
-      {
-        path: 'developer',
-        loadComponent: () => import('./developer/profile-developer.component').then((m) => m.ProfileDeveloperComponent),
-      },
+
+      // Developer settings now live in account settings (/settings); keep the old URL working
+      { path: 'developer', redirectTo: '/settings' },
 
       // Backward-compat redirects for old URLs
       { path: 'overview', redirectTo: 'attribution' },

@@ -8,12 +8,14 @@ import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModu
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -23,7 +25,7 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
   selector: 'lfx-account-settings',
   host: { class: 'block' },
   imports: [NgClass, ReactiveFormsModule, BadgeComponent, ButtonComponent, InputTextComponent, ConfirmDialogModule, ToastModule, TooltipModule],
-  providers: [ConfirmationService, MessageService],
+  providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
 })
 export class AccountSettingsComponent {
@@ -31,6 +33,7 @@ export class AccountSettingsComponent {
   private readonly userService = inject(UserService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -92,16 +95,15 @@ export class AccountSettingsComponent {
   // DEVELOPER SETTINGS
   // ══════════════════════════════════════════
 
+  // v2 OIDC session token (audience PCC_AUTH0_AUDIENCE)
   public developerToken = signal('');
-  public showToken = signal(false);
+  // v1 API Gateway token (audience api-gw.*) — empty when the server did not return one
+  public developerV1Token = signal('');
   public loadingToken = signal(true);
   public tokenCopied = signal(false);
 
-  public maskedToken = computed(() => {
-    const token = this.developerToken();
-    if (!token || token.length <= 8) return token;
-    return `${token.slice(0, 4)}${'*'.repeat(11)}${token.slice(-4)}`;
-  });
+  public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
+  public maskedV1Token = computed(() => this.maskTokenValue(this.developerV1Token()));
 
   // ══════════════════════════════════════════
   // PASSWORD
@@ -384,12 +386,21 @@ export class AccountSettingsComponent {
   // DEVELOPER SETTINGS PUBLIC METHODS
   // ══════════════════════════════════════════
 
-  public toggleTokenVisibility(): void {
-    this.showToken.set(!this.showToken());
+  public openTokenPopup(title: string, token: string): void {
+    if (!token) return;
+    this.dialogService.open(TokenRevealDialogComponent, {
+      header: title,
+      width: '40rem',
+      modal: true,
+      draggable: false,
+      resizable: false,
+      dismissableMask: true,
+      style: { maxWidth: '90vw' },
+      data: { token },
+    });
   }
 
-  public copyToken(): void {
-    const token = this.developerToken();
+  public copyToken(token: string): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
     navigator.clipboard.writeText(token).then(() => {
@@ -424,9 +435,20 @@ export class AccountSettingsComponent {
       .getDeveloperTokenInfo()
       .pipe(finalize(() => this.loadingToken.set(false)))
       .subscribe({
-        next: (info) => this.developerToken.set(info.token),
-        error: () => this.developerToken.set(''),
+        next: (info) => {
+          this.developerToken.set(info.token);
+          this.developerV1Token.set(info.v1Token ?? '');
+        },
+        error: () => {
+          this.developerToken.set('');
+          this.developerV1Token.set('');
+        },
       });
+  }
+
+  private maskTokenValue(token: string): string {
+    if (!token || token.length <= 8) return token;
+    return `${token.slice(0, 4)}${'*'.repeat(11)}${token.slice(-4)}`;
   }
 
   private calculatePasswordStrength(password: string): PasswordStrength {
