@@ -317,10 +317,6 @@ export class AkritesDashboardComponent {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No packages could be assigned. Please try again.' });
           }
         },
-        error: () => {
-          this.bulkActionLoading.set(false);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Assignment failed. Please try again.' });
-        },
       });
   }
 

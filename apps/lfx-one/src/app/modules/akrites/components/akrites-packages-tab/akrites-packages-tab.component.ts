@@ -103,6 +103,14 @@ export class AkritesPackagesTabComponent {
   protected readonly assignTargetPackage = signal<AkritesPackage | null>(null);
   protected readonly actionLoading = signal(false);
   protected readonly canWrite = computed(() => this.projectContextService.canWrite());
+  protected readonly assignablePackageIds = computed(
+    () =>
+      new Set(
+        this.packages()
+          .filter((p) => AKRITES_ASSIGNABLE_STATUSES.has(p.status))
+          .map((p) => p.id)
+      )
+  );
 
   protected readonly statusPills = AKRITES_STATUS_PILLS;
   protected readonly sortOptions = AKRITES_SORT_OPTIONS;
@@ -229,10 +237,6 @@ export class AkritesPackagesTabComponent {
   protected onTablePage(event: { first: number; rows: number }): void {
     const page = Math.floor(event.first / event.rows) + 1;
     this.pageChange.emit({ page, pageSize: event.rows });
-  }
-
-  protected canAssignSteward(pkg: AkritesPackage): boolean {
-    return AKRITES_ASSIGNABLE_STATUSES.has(pkg.status);
   }
 
   protected onRowMenuOpen(event: Event, pkg: AkritesPackage, menu: { toggle: (e: Event) => void }): void {
