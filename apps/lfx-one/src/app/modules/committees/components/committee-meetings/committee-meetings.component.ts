@@ -177,6 +177,7 @@ export class CommitteeMeetingsComponent {
     }
   }
 
+  /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
   protected onScheduleMeeting(): void {
     if (this.creating()) return;
     const committee = this.committee();
