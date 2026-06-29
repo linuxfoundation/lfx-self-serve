@@ -46,7 +46,7 @@
           <button
             type="button"
             class="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none flex-shrink-0"
-            title="Copy link"
+            aria-label="Copy meeting link"
             [attr.data-testid]="'org-upcoming-meeting-copy-' + meeting.id"
             (click)="copyLink(meeting.id)">
             <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
