@@ -387,7 +387,7 @@
         </td>
         <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" [rounded]="true" /></td>
         <td (click)="$event.stopPropagation()" class="text-right">
-          @if (canWrite() && assignablePackageIds().has(pkg.id)) {
+          @if (assignablePackageIds().has(pkg.id)) {
             <lfx-button
               icon="fa-solid fa-ellipsis-vertical"
               [text]="true"

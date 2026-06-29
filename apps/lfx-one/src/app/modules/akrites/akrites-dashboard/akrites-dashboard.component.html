@@ -135,7 +135,7 @@
       <div class="w-px h-6 bg-gray-300"></div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         [disabled]="bulkActionLoading()"
         (click)="onBulkOpen()"
         data-testid="akrites-bulk-open">
@@ -153,7 +153,7 @@
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         [disabled]="bulkActionLoading()"
         (click)="onBulkEscalate()"
         data-testid="akrites-bulk-escalate">

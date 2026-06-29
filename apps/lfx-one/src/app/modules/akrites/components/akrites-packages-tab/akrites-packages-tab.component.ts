@@ -15,7 +15,6 @@ import {
 } from '@lfx-one/shared/constants';
 import { AkritesAssignStewardRequest, AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
 import { AkritesService } from '@shared/services/akrites.service';
-import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { map, of, switchMap, take } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
@@ -54,7 +53,6 @@ export class AkritesPackagesTabComponent {
   private readonly akritesService = inject(AkritesService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly formBuilder = inject(FormBuilder);
 
   public readonly packages = input<AkritesPackage[]>([]);
@@ -102,7 +100,6 @@ export class AkritesPackagesTabComponent {
   protected readonly assignModalVisible = signal(false);
   protected readonly assignTargetPackage = signal<AkritesPackage | null>(null);
   protected readonly actionLoading = signal(false);
-  protected readonly canWrite = computed(() => this.projectContextService.canWrite());
   protected readonly assignablePackageIds = computed(
     () =>
       new Set(
@@ -247,8 +244,8 @@ export class AkritesPackagesTabComponent {
   protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     const pkg = this.assignTargetPackage();
     if (!pkg || this.actionLoading()) return;
-    if (!this.canWrite() || !this.assignablePackageIds().has(pkg.id)) {
-      this.messageService.add({ severity: 'error', summary: 'Not allowed', detail: 'You do not have permission to assign a steward to this package.' });
+    if (!this.assignablePackageIds().has(pkg.id)) {
+      this.messageService.add({ severity: 'error', summary: 'Not allowed', detail: 'This package is not eligible for steward assignment.' });
       return;
     }
     this.actionLoading.set(true);

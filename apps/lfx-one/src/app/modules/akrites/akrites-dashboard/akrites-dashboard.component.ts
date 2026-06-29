@@ -28,7 +28,6 @@ import {
 import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
-import { ProjectContextService } from '@shared/services/project-context.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
 import { AkritesPackagesTabComponent } from '../components/akrites-packages-tab/akrites-packages-tab.component';
 import { AkritesEscalateModalComponent } from '../components/akrites-escalate-modal/akrites-escalate-modal.component';
@@ -56,14 +55,11 @@ export class AkritesDashboardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly projectContextService = inject(ProjectContextService);
-
   protected readonly activeTab = this.initActiveTab();
   protected readonly selectedPackageId = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   protected readonly selectedPackages = signal<Set<string>>(new Set());
-  protected readonly canWrite = computed(() => this.projectContextService.canWrite());
-  protected readonly showBulkActions = computed(() => this.canWrite() && this.selectedPackages().size > 0);
+  protected readonly showBulkActions = computed(() => this.selectedPackages().size > 0);
   protected readonly bulkEscalateVisible = signal(false);
   protected readonly bulkAssignStewardVisible = signal(false);
   protected readonly bulkActionLoading = signal(false);
@@ -231,7 +227,6 @@ export class AkritesDashboardComponent {
   }
 
   protected onBulkOpen(): void {
-    if (!this.canWrite()) return;
     const selected = this.selectedPackages();
     const unassigned = this.packages().filter((p) => selected.has(p.id) && p.status === 'unassigned');
     if (this.bulkActionLoading()) return;
@@ -278,7 +273,6 @@ export class AkritesDashboardComponent {
   }
 
   protected onBulkAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
-    if (!this.canWrite()) return;
     const selected = this.selectedPackages();
     const eligible = this.packages().filter((p) => selected.has(p.id) && AKRITES_ASSIGNABLE_STATUSES.has(p.status));
     if (this.bulkActionLoading()) return;
@@ -330,7 +324,6 @@ export class AkritesDashboardComponent {
   }
 
   protected onBulkEscalateConfirm(body: AkritesEscalateRequest): void {
-    if (!this.canWrite()) return;
     const selected = this.selectedPackages();
     const eligible = this.packages().filter((p) => selected.has(p.id) && p.stewardshipId !== null);
     if (this.bulkActionLoading()) return;
