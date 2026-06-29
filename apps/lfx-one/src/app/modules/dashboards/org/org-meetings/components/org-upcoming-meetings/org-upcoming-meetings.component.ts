@@ -95,9 +95,4 @@ export class OrgUpcomingMeetingsComponent {
     void navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`);
   }
 
-  protected openJoin(joinUrl: string | null): void {
-    if (joinUrl && isPlatformBrowser(this.platformId)) {
-      window.open(joinUrl, '_blank', 'noopener,noreferrer');
-    }
-  }
 }
