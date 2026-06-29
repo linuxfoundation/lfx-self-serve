@@ -3,7 +3,7 @@
 
 import { Component, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { filter } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -38,9 +38,20 @@ export class SettingsBeneficiariesTabComponent {
 
   private makeBeneficiaryGroup(b?: Beneficiary): FormGroup {
     // `id` omitted intentionally — CF PATCH is full delete-and-replace, so name + email is the full contract.
-    return new FormGroup({
-      name: new FormControl(b?.name ?? ''),
-      email: new FormControl(b?.email ?? '', Validators.email),
-    });
+    return new FormGroup(
+      {
+        name: new FormControl(b?.name ?? ''),
+        email: new FormControl(b?.email ?? '', Validators.email),
+      },
+      { validators: this.bothOrNeitherValidator }
+    );
+  }
+
+  private bothOrNeitherValidator(group: AbstractControl): ValidationErrors | null {
+    const { name, email } = (group as FormGroup).controls;
+    const hasName = !!name.value?.trim();
+    const hasEmail = !!email.value?.trim();
+    if (hasName === hasEmail) return null;
+    return { partialBeneficiary: true };
   }
 }

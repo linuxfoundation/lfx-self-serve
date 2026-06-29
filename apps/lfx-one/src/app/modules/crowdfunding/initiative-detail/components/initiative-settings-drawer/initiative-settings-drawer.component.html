@@ -33,6 +33,10 @@
           class="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
           [class]="activeSettingsTab() === tab.value ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'"
           (click)="activeSettingsTab.set(tab.value)"
+          role="tab"
+          [attr.aria-selected]="activeSettingsTab() === tab.value"
+          [attr.aria-controls]="'settings-panel-' + tab.value"
+          [attr.id]="'settings-tab-' + tab.value"
           [attr.data-testid]="'settings-tab-' + tab.value">
           {{ tab.label }}
           @if (activeSettingsTab() === tab.value) {
@@ -43,10 +47,34 @@
     </div>
 
     <!-- Tab panels — all rendered, CSS-hidden when inactive to preserve state across tab navigation -->
-    <lfx-settings-details-tab [class.hidden]="activeSettingsTab() !== 'details'" [visible]="visible()" [initiative]="initiative()" />
-    <lfx-settings-branding-tab [class.hidden]="activeSettingsTab() !== 'branding'" [visible]="visible()" [initiative]="initiative()" />
-    <lfx-settings-beneficiaries-tab [class.hidden]="activeSettingsTab() !== 'beneficiaries'" [visible]="visible()" [initiative]="initiative()" />
-    <lfx-settings-funding-tab [class.hidden]="activeSettingsTab() !== 'funding'" [visible]="visible()" [initiative]="initiative()" />
+    <lfx-settings-details-tab
+      id="settings-panel-details"
+      role="tabpanel"
+      aria-labelledby="settings-tab-details"
+      [class.hidden]="activeSettingsTab() !== 'details'"
+      [visible]="visible()"
+      [initiative]="initiative()" />
+    <lfx-settings-branding-tab
+      id="settings-panel-branding"
+      role="tabpanel"
+      aria-labelledby="settings-tab-branding"
+      [class.hidden]="activeSettingsTab() !== 'branding'"
+      [visible]="visible()"
+      [initiative]="initiative()" />
+    <lfx-settings-beneficiaries-tab
+      id="settings-panel-beneficiaries"
+      role="tabpanel"
+      aria-labelledby="settings-tab-beneficiaries"
+      [class.hidden]="activeSettingsTab() !== 'beneficiaries'"
+      [visible]="visible()"
+      [initiative]="initiative()" />
+    <lfx-settings-funding-tab
+      id="settings-panel-funding"
+      role="tabpanel"
+      aria-labelledby="settings-tab-funding"
+      [class.hidden]="activeSettingsTab() !== 'funding'"
+      [visible]="visible()"
+      [initiative]="initiative()" />
 
     <!-- Footer actions -->
     <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">

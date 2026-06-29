@@ -44,7 +44,7 @@ export class SettingsDetailsTabComponent {
               .map((v) => v.trim())
               .filter((v) => v && v.toLowerCase() !== 'null') // CF API bug: null tags serialised as the string "null"
           : [];
-        this.form.patchValue({
+        this.form.reset({
           name: init.name,
           description: init.description,
           topics: existingTopics,
