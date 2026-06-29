@@ -5,6 +5,7 @@ import { Component, DestroyRef, computed, inject, input, output, signal } from '
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder } from '@angular/forms';
 import {
+  AKRITES_ASSIGNABLE_STATUSES,
   AKRITES_ECOSYSTEM_OPTIONS,
   AKRITES_HEALTH_OPTIONS,
   AKRITES_LIFECYCLE_OPTIONS,
@@ -34,8 +35,6 @@ import {
   getLifecycleTagSeverity,
   getStatusTagSeverity,
 } from '../../akrites.utils';
-
-const ASSIGNABLE_STATUSES = new Set(['unassigned', 'open', 'assessing', 'escalated', 'inactive']);
 
 @Component({
   selector: 'lfx-akrites-packages-tab',
@@ -233,7 +232,7 @@ export class AkritesPackagesTabComponent {
   }
 
   protected canAssignSteward(pkg: AkritesPackage): boolean {
-    return pkg.status !== null && ASSIGNABLE_STATUSES.has(pkg.status);
+    return pkg.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(pkg.status);
   }
 
   protected onRowMenuOpen(event: Event, pkg: AkritesPackage, menu: { toggle: (e: Event) => void }): void {

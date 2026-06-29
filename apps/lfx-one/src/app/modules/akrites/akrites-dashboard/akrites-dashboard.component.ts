@@ -4,7 +4,13 @@
 import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { AKRITES_VALID_TABS, AKRITES_DEFAULT_TAB, AKRITES_DEFAULT_VISIBLE_STATUSES, AKRITES_TOTAL_STATUSES } from '@lfx-one/shared/constants';
+import {
+  AKRITES_ASSIGNABLE_STATUSES,
+  AKRITES_VALID_TABS,
+  AKRITES_DEFAULT_TAB,
+  AKRITES_DEFAULT_VISIBLE_STATUSES,
+  AKRITES_TOTAL_STATUSES,
+} from '@lfx-one/shared/constants';
 import {
   AkritesAssignStewardRequest,
   AkritesFilterState,
@@ -269,14 +275,16 @@ export class AkritesDashboardComponent {
 
   protected onBulkAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     const selected = this.selectedPackages();
-    const eligible = this.packages().filter((p) => selected.has(p.id) && p.stewardshipId !== null);
+    const eligible = this.packages().filter(
+      (p) => selected.has(p.id) && p.stewardshipId !== null && p.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(p.status)
+    );
     if (this.bulkActionLoading()) return;
     if (!eligible.length) {
       this.bulkAssignStewardVisible.set(false);
       this.messageService.add({
         severity: 'info',
         summary: 'No eligible packages',
-        detail: 'None of the selected packages have an open stewardship record to assign.',
+        detail: 'None of the selected packages are eligible for steward assignment.',
       });
       return;
     }
