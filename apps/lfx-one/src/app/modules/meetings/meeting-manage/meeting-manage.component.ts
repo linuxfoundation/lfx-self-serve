@@ -18,6 +18,7 @@ import {
   MIN_EARLY_JOIN_TIME,
   STEPPER_SCROLL_OFFSET,
   TOTAL_STEPS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
@@ -181,6 +182,22 @@ export class MeetingManageComponent {
       // Update validation when step changes
       this.updateCanProceed();
     });
+
+    // Watch youtube_upload_enabled and enforce title length limit when enabled
+    this.form()
+      .get('youtube_upload_enabled')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((youtubeEnabled: boolean) => {
+        const titleControl = this.form().get('title');
+        if (!titleControl) return;
+
+        if (youtubeEnabled) {
+          titleControl.addValidators(Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+        } else {
+          titleControl.removeValidators(Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+        }
+        titleControl.updateValueAndValidity();
+      });
 
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)

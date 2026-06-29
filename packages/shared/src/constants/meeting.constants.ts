@@ -248,6 +248,25 @@ export const MIN_EARLY_JOIN_TIME = 10;
 export const MAX_EARLY_JOIN_TIME = 60;
 
 /**
+ * YouTube API maximum video title length
+ * @description The YouTube Data API rejects titles longer than 100 characters
+ */
+export const YOUTUBE_MAX_TITLE_LENGTH = 100;
+
+/**
+ * Characters consumed by the date suffix appended to the YouTube video title
+ * @description The upload handler appends " - DD/MM/YYYY" (13 chars) to the meeting title
+ */
+export const YOUTUBE_TITLE_DATE_SUFFIX_LENGTH = 13;
+
+/**
+ * Maximum meeting title length when YouTube uploads are enabled
+ * @description Derived from the YouTube API limit minus the auto-appended date suffix.
+ * A title exceeding this limit will cause an invalidTitle error on upload.
+ */
+export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTUBE_TITLE_DATE_SUFFIX_LENGTH;
+
+/**
  * Default early join time in minutes
  * @description Standard early join window for new meetings
  */
