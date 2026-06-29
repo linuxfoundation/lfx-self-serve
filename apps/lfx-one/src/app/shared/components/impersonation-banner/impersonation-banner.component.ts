@@ -35,8 +35,6 @@ export class ImpersonationBannerComponent {
             window.location.reload();
           }
         },
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        error: () => {},
       });
   }
 }
