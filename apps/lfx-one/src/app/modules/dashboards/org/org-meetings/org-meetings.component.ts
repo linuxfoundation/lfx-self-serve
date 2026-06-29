@@ -23,7 +23,7 @@ import {
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
 } from '@lfx-one/shared/constants';
-import type { FilterOption, FilterPillOption, OrgMeeting, OrgMeetingsTabId, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { FilterOption, OrgMeeting, OrgMeetingsTabId, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
 
 import { OrgUpcomingMeetingsComponent } from './components/org-upcoming-meetings/org-upcoming-meetings.component';
 import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-past-meetings.component';
@@ -55,7 +55,6 @@ export class OrgMeetingsComponent {
 
   // === Computed signals ===
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
-  protected readonly tabPillOptions: Signal<FilterPillOption[]> = this.initTabPillOptions();
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
   protected readonly filterType: Signal<string | null> = this.initFilterType();
@@ -84,18 +83,6 @@ export class OrgMeetingsComponent {
         })
       ),
       { initialValue: DEFAULT_ORG_MEETINGS_TAB_ID }
-    );
-  }
-
-  private initTabPillOptions(): Signal<FilterPillOption[]> {
-    return computed<FilterPillOption[]>(() =>
-      ORG_MEETINGS_TABS.map((tab) => {
-        const countMap: Record<OrgMeetingsTabId, number> = {
-          upcoming: this.upcomingMeetings().length,
-          past: this.pastMeetings().length,
-        };
-        return { id: tab.id, label: `${tab.label} (${countMap[tab.id]})` };
-      })
     );
   }
 
