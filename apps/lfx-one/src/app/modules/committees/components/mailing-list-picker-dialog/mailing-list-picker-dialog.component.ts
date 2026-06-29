@@ -13,7 +13,7 @@ import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/sha
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-list-type.pipe';
@@ -38,6 +38,7 @@ export class MailingListPickerDialogComponent {
 
   public selectedMailingListUids = signal<Set<string>>(new Set(this.config.data.associatedUids));
   public mlSearchQuery = signal('');
+  public creating = signal(false);
 
   public mlSearchForm = new FormGroup({
     query: new FormControl(''),
@@ -91,9 +92,14 @@ export class MailingListPickerDialogComponent {
       void this.router.navigate([overviewPath], { queryParams: denyParams });
     };
 
+    this.creating.set(true);
     this.committeeService
       .getCommittee(this.committeeUid)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        take(1),
+        finalize(() => this.creating.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
