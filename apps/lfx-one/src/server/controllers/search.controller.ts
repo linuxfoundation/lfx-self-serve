@@ -87,8 +87,13 @@ export class SearchController {
 
   /**
    * GET /search/users/:lfid/work-experiences
-   * Returns the CDP work-experience list for any user by LFID.
+   * Returns org-prefill fields (organization, organizationId, startDate, endDate) for any user by LFID.
    * Used to pre-fill the organization field in the add-member dialog.
+   *
+   * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
+   * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
+   * is intentionally minimised to org-prefill fields only to limit PII exposure.
+   * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
    */
   public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { lfid } = req.params;

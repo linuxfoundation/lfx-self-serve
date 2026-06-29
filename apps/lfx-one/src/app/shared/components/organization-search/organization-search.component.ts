@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { InputTextComponent } from '../input-text/input-text.component';
@@ -87,29 +87,23 @@ export class OrganizationSearchComponent {
       initialValue: [],
     });
 
-    // Effect to sync the search input with the parent form's name control — both on
-    // initial render and whenever the control's value changes programmatically (e.g. patchValue).
-    // onCleanup tears down the valueChanges subscription if the form/nameControl inputs change.
-    effect((onCleanup) => {
-      const parentForm = this.form();
-      const nameControlName = this.nameControl();
-
-      if (parentForm && nameControlName) {
-        const nameControl = parentForm.get(nameControlName);
-        if (nameControl) {
-          const currentValue = nameControl.value;
-          if (currentValue?.trim()) {
-            searchControl.setValue(currentValue, { emitEvent: false });
-          }
-
-          const sub = nameControl.valueChanges.subscribe((value: string | null) => {
-            searchControl.setValue((value ?? '').trim(), { emitEvent: false });
-          });
-
-          onCleanup(() => sub.unsubscribe());
-        }
-      }
-    });
+    // Sync the internal search input with the parent form's name control — both on initial render
+    // and on any programmatic patchValue(). Uses toObservable + switchMap so the inner subscription
+    // is automatically cancelled and re-created whenever the form() or nameControl() inputs change.
+    toObservable(this.form)
+      .pipe(
+        switchMap((parentForm) => {
+          const nameControlName = this.nameControl();
+          if (!parentForm || !nameControlName) return EMPTY;
+          const ctrl = parentForm.get(nameControlName);
+          if (!ctrl) return EMPTY;
+          return merge(of(ctrl.value as string | null), ctrl.valueChanges);
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((value) => {
+        searchControl.setValue((value ?? '').trim(), { emitEvent: false });
+      });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
