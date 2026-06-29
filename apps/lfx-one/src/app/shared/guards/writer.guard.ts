@@ -19,9 +19,9 @@ import { ProjectService } from '../services/project.service';
  * 2. `project.meetingCoordinator` — meeting_coordinator role on the project; accepted
  *    only for routes with `data.writeFeature === 'meetings'`.
  * 3. `committee.writer` — committee writer; accepted only when `committee_uid` is
- *    present in the query params and `writeFeature === 'meetings'`. The backend ruleset
- *    allows committee:uid#writer to create meetings associated with their committee
- *    (POST /itx/meetings when the request body includes a committee).
+ *    present in the query params and `writeFeature` is one of `'meetings'`,
+ *    `'surveys'`, or `'votes'`. The backend ruleset allows committee:uid#writer to
+ *    create resources associated with their committee.
  *
  * Slug resolution: prefers the `?project=` query param (authoritative for the navigation
  * target, works before the lens has synced) then falls back to the active context's slug.
@@ -63,10 +63,10 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: writeFeature ?? 'access' } });
   const deny = () => deniedUrl;
+  const supportsCommitteeWriter = writeFeature != null && ['meetings', 'surveys', 'votes'].includes(writeFeature);
 
-  // Committee writers can create meetings associated with their committee.
-  // Only applicable when committee_uid is present in the route query params
-  // (set by committee-meetings.component's createMeetingQueryParams()).
+  // Committee writers can create meetings, surveys, and votes associated with
+  // their committee. Only applicable when committee_uid is in the route query params.
   // CommitteeService.getCommittee has a tap() that sets the committee signal as a
   // side-effect — acceptable here: on deny navigation is blocked before any committee
   // view renders; on allow the committee page overwrites it.
@@ -84,7 +84,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       // a committee writer is not incorrectly denied solely because the project fetch
       // failed. If no committee check is applicable, deny with feedback.
       if (project === null) {
-        return committeeUid && writeFeature === 'meetings' ? checkCommittee() : of(deny());
+        return committeeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
       }
       if (project.writer === true) {
         return of(true as const);
@@ -93,7 +93,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       if (writeFeature === 'meetings' && project.meetingCoordinator === true) {
         return of(true as const);
       }
-      if (committeeUid && writeFeature === 'meetings') {
+      if (committeeUid && supportsCommitteeWriter) {
         return checkCommittee();
       }
       return of(deny());

@@ -3,12 +3,15 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
+import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, of, switchMap } from 'rxjs';
@@ -21,8 +24,11 @@ import { catchError, filter, finalize, of, switchMap } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeVotesComponent {
+  private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
+  private readonly router = inject(Router);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -30,6 +36,7 @@ export class CommitteeVotesComponent {
 
   // State
   public loading = signal<boolean>(true);
+  public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
@@ -37,13 +44,36 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
+  public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
-  /** Opens the vote results drawer for the selected vote. */
   public viewVoteResults(voteUid: string): void {
     const vote = this.votes().find((v) => v.uid === voteUid) || null;
     this.selectedVoteId.set(voteUid);
     this.selectedVote.set(vote);
     this.resultsDrawerVisible.set(true);
+  }
+
+  protected onCreateVote(): void {
+    const committee = this.committee();
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'votes' };
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
+
+    this.creating.set(true);
+    this.committeeService
+      .fetchCommittee(committee.uid)
+      .pipe(finalize(() => this.creating.set(false)))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
+        },
+        error: () => deny(),
+      });
   }
 
   // Private initializer functions
