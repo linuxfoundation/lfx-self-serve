@@ -21,6 +21,7 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  Impersonator,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
@@ -51,6 +52,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ImpersonationService } from '@services/impersonation.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -119,6 +121,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
+  private readonly impersonationService = inject(ImpersonationService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
@@ -129,6 +132,8 @@ export class MeetingJoinComponent implements OnInit {
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
+  public readonly impersonating: Signal<boolean> = this.userService.impersonating;
+  public readonly impersonator: Signal<Impersonator | null> = this.userService.impersonator;
   public joinForm: FormGroup;
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
   public meeting: Signal<Meeting & { project: Partial<Project> }>;
@@ -322,6 +327,15 @@ export class MeetingJoinComponent implements OnInit {
       mql.addEventListener('change', handler);
       this.destroyRef.onDestroy(() => mql.removeEventListener('change', handler));
     }
+  }
+
+  public stopImpersonation(): void {
+    this.impersonationService
+      .stopImpersonation()
+      .pipe(take(1))
+      .subscribe(() => {
+        window.location.reload();
+      });
   }
 
   public handleCopyLink(): void {
