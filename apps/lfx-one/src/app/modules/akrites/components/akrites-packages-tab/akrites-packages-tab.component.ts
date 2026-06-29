@@ -247,6 +247,10 @@ export class AkritesPackagesTabComponent {
   protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     const pkg = this.assignTargetPackage();
     if (!pkg || this.actionLoading()) return;
+    if (!this.canWrite() || !this.assignablePackageIds().has(pkg.id)) {
+      this.messageService.add({ severity: 'error', summary: 'Not allowed', detail: 'You do not have permission to assign a steward to this package.' });
+      return;
+    }
     this.actionLoading.set(true);
 
     const stewardshipId$ =
