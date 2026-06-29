@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
-import { Component, input } from '@angular/core';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { Component, inject, input, PLATFORM_ID } from '@angular/core';
 import type { OrgPastMeeting, OrgPastMeetingInvitee } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -11,6 +11,8 @@ import type { OrgPastMeeting, OrgPastMeetingInvitee } from '@lfx-one/shared/inte
   templateUrl: './org-past-meetings.component.html',
 })
 export class OrgPastMeetingsComponent {
+  private readonly platformId = inject(PLATFORM_ID);
+
   public readonly meetings = input.required<readonly OrgPastMeeting[]>();
   public readonly loading = input<boolean>(false);
 
@@ -73,6 +75,7 @@ export class OrgPastMeetingsComponent {
   }
 
   protected copyLink(meetingId: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
     void navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`);
   }
 }
