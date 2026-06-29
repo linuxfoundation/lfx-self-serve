@@ -24,6 +24,12 @@
             (onUserSelect)="handleUserSelection()"
             (onManualEntry)="switchToManualEntry()">
           </lfx-user-search>
+          @if (searchSelectionError()) {
+            <p class="mt-2 text-sm text-red-500 flex items-center gap-1" data-testid="registrant-form-search-selection-error">
+              <i class="fa-light fa-circle-exclamation"></i>
+              {{ searchSelectionError() }}
+            </p>
+          }
         </div>
         <div class="flex items-center justify-center gap-3 mt-3">
           <span class="flex-1 border-t border-gray-200"></span>
@@ -59,6 +65,9 @@
             placeholder="Enter first name"
             data-testid="registrant-form-firstname-input">
           </lfx-input-text>
+          @if (form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched) {
+            <p class="text-sm text-red-500" data-testid="registrant-form-firstname-error">First name is required</p>
+          }
         </div>
 
         <!-- Last Name -->
@@ -72,6 +81,9 @@
             placeholder="Enter last name"
             data-testid="registrant-form-lastname-input">
           </lfx-input-text>
+          @if (form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched) {
+            <p class="text-sm text-red-500" data-testid="registrant-form-lastname-error">Last name is required</p>
+          }
         </div>
 
         <!-- Email -->

@@ -26,6 +26,7 @@ export class RegistrantFormComponent {
 
   // State to track whether we're showing search or individual fields
   public showIndividualFields = signal(false);
+  public searchSelectionError = signal<string | null>(null);
 
   public constructor() {
     // If we have an existing registrant, show individual fields immediately
@@ -46,9 +47,25 @@ export class RegistrantFormComponent {
    * Emit event for parent to add the user directly to the guest list
    */
   public handleUserSelection(): void {
-    // The search component has already populated the form controls
-    // Emit event so parent can add the user directly
     this.form().markAsDirty();
+    this.searchSelectionError.set(null);
+
+    const firstName = this.form().get('first_name')?.value?.trim();
+    const lastName = this.form().get('last_name')?.value?.trim();
+
+    if (!firstName && !lastName) {
+      this.searchSelectionError.set("This user's profile is missing a first and last name. Please enter their details manually.");
+      return;
+    }
+    if (!firstName) {
+      this.searchSelectionError.set("This user's profile is missing a first name. Please enter their details manually.");
+      return;
+    }
+    if (!lastName) {
+      this.searchSelectionError.set("This user's profile is missing a last name. Please enter their details manually.");
+      return;
+    }
+
     this.onUserSelected.emit();
   }
 
@@ -56,12 +73,10 @@ export class RegistrantFormComponent {
    * Switch to manual entry mode when user clicks "Enter details manually"
    */
   public switchToManualEntry(): void {
-    // Clear the form for manual entry
-    const hostValue = this.form().get('host')?.value; // Preserve host checkbox state
+    const hostValue = this.form().get('host')?.value;
     this.form().reset();
     this.form().get('host')?.setValue(hostValue);
-
-    // Show individual fields for manual entry
+    this.searchSelectionError.set(null);
     this.showIndividualFields.set(true);
   }
 
