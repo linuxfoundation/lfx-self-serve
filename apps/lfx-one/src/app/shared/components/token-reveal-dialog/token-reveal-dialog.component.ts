@@ -9,7 +9,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
  * Reveal popup for a developer API token. Opened via DialogService.open() with the full
- * token passed as dialog data; displays it on a single horizontally-scrollable line with
+ * token passed as dialog data; displays it in a wrapped, vertically-scrollable box with
  * Copy and Close. The dialog title is set by the opener via the DialogService config header.
  */
 @Component({

@@ -15,7 +15,7 @@ import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -24,7 +24,17 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
 @Component({
   selector: 'lfx-account-settings',
   host: { class: 'block' },
-  imports: [NgClass, ReactiveFormsModule, BadgeComponent, ButtonComponent, InputTextComponent, ConfirmDialogModule, ToastModule, TooltipModule],
+  imports: [
+    NgClass,
+    ReactiveFormsModule,
+    BadgeComponent,
+    ButtonComponent,
+    InputTextComponent,
+    ConfirmDialogModule,
+    ToastModule,
+    TooltipModule,
+    DynamicDialogModule,
+  ],
   providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
 })
@@ -100,7 +110,8 @@ export class AccountSettingsComponent {
   // v1 API Gateway token (audience api-gw.*) — empty when the server did not return one
   public developerV1Token = signal('');
   public loadingToken = signal(true);
-  public tokenCopied = signal(false);
+  // Tracks which token's Copy button most recently succeeded, so only that button shows "Copied!"
+  public tokenCopied = signal<'v2' | 'v1' | null>(null);
 
   public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
   public maskedV1Token = computed(() => this.maskTokenValue(this.developerV1Token()));
@@ -400,14 +411,19 @@ export class AccountSettingsComponent {
     });
   }
 
-  public copyToken(token: string): void {
+  public copyToken(token: string, kind: 'v2' | 'v1'): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
-    navigator.clipboard.writeText(token).then(() => {
-      this.tokenCopied.set(true);
-      this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
-      setTimeout(() => this.tokenCopied.set(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(token)
+      .then(() => {
+        this.tokenCopied.set(kind);
+        this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
+        setTimeout(() => this.tokenCopied.set(null), 2000);
+      })
+      .catch(() => {
+        this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
+      });
   }
 
   // ══════════════════════════════════════════

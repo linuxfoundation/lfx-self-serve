@@ -517,8 +517,8 @@
                       type="button"
                       severity="info"
                       size="small"
-                      [label]="tokenCopied() ? 'Copied!' : 'Copy'"
-                      (onClick)="copyToken(developerToken())"
+                      [label]="tokenCopied() === 'v2' ? 'Copied!' : 'Copy'"
+                      (onClick)="copyToken(developerToken(), 'v2')"
                       data-testid="developer-token-copy-button">
                     </lfx-button>
                   </div>
@@ -553,8 +553,8 @@
                         type="button"
                         severity="info"
                         size="small"
-                        [label]="tokenCopied() ? 'Copied!' : 'Copy'"
-                        (onClick)="copyToken(developerV1Token())"
+                        [label]="tokenCopied() === 'v1' ? 'Copied!' : 'Copy'"
+                        (onClick)="copyToken(developerV1Token(), 'v1')"
                         data-testid="developer-token-v1-copy-button">
                       </lfx-button>
                     </div>
