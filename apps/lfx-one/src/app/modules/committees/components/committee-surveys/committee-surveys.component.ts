@@ -45,6 +45,12 @@ export class CommitteeSurveysComponent {
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
   public editSurveyQueryParams: Signal<Record<string, string>> = this.createSurveyQueryParams;
 
+  public viewSurveyResults(survey: Survey): void {
+    this.selectedSurveyId.set(survey.uid);
+    this.selectedSurvey.set(survey);
+    this.resultsDrawerVisible.set(true);
+  }
+
   protected onCreateSurvey(): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
@@ -62,12 +68,6 @@ export class CommitteeSurveysComponent {
       },
       error: () => deny(),
     });
-  }
-
-  public viewSurveyResults(survey: Survey): void {
-    this.selectedSurveyId.set(survey.uid);
-    this.selectedSurvey.set(survey);
-    this.resultsDrawerVisible.set(true);
   }
 
   // Private initializer functions
