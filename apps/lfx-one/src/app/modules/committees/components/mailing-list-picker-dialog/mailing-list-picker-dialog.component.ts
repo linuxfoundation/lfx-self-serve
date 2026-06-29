@@ -101,7 +101,7 @@ export class MailingListPickerDialogComponent {
             return;
           }
           this.cancel();
-          void this.router.navigate(['/mailing-lists', 'manage'], { queryParams: { project_uid: this.projectUid } });
+          void this.router.navigate(['/mailing-lists', 'create'], { queryParams: { project: this.projectSlug } });
         },
         error: () => deny(),
       });
