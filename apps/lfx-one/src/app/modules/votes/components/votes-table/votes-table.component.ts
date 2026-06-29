@@ -5,7 +5,6 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -36,7 +35,6 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
-    RouterLink,
     InputTextComponent,
     SelectComponent,
     PollStatusLabelPipe,
@@ -77,6 +75,7 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewVote = output<string>();
