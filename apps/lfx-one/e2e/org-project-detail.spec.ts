@@ -107,6 +107,13 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByRole('columnheader', { name: 'Influence Score' })).toHaveCount(0);
   });
 
+  test('time-range toggle persists in the URL and updates the activity column label', async ({ page }) => {
+    await page.getByTestId('project-detail-metric-activity').click();
+    await page.getByTestId('project-detail-time-range-2y').click();
+    await expect(page).toHaveURL(/range=2y/);
+    await expect(page.getByRole('columnheader', { name: 'Activity (24mo)' }).first()).toBeVisible();
+  });
+
   test('search filters a board to matching organizations', async ({ page }) => {
     await page.getByTestId('project-detail-search-technical').fill('Google');
     const rows = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr');

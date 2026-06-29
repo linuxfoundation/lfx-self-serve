@@ -152,16 +152,16 @@
                   <div class="flex items-center gap-1">
                     <button
                       type="button"
-                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
-                      [class.invisible]="!techArrows().left"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!techArrows().left"
                       (click)="scrollCards(technicalTrack, -1)"
                       aria-label="Scroll technical cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
                     <button
                       type="button"
-                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
-                      [class.invisible]="!techArrows().right"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!techArrows().right"
                       (click)="scrollCards(technicalTrack, 1)"
                       aria-label="Scroll technical cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
@@ -198,16 +198,16 @@
                   <div class="flex items-center gap-1">
                     <button
                       type="button"
-                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
-                      [class.invisible]="!ecoArrows().left"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!ecoArrows().left"
                       (click)="scrollCards(ecosystemTrack, -1)"
                       aria-label="Scroll ecosystem cards left">
                       <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
                     </button>
                     <button
                       type="button"
-                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100"
-                      [class.invisible]="!ecoArrows().right"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!ecoArrows().right"
                       (click)="scrollCards(ecosystemTrack, 1)"
                       aria-label="Scroll ecosystem cards right">
                       <i class="fa-light fa-chevron-right" aria-hidden="true"></i>

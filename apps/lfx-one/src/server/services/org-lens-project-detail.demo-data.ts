@@ -314,7 +314,7 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectInfluenceCard[] 
       emphasis: pctStr(shareOf(org.prs, totals.prs)),
       suffix: ' of all pull requests.',
     }),
-    card('avg-merge-time', 'Avg Time to Merge PRs', null, ramp(100 - seed.influence.technical, 0.85, 1), projMergeTime, {
+    card('avg-merge-time', 'Avg Time to Merge PRs', null, org.prs === 0 ? [] : ramp(100 - seed.influence.technical, 0.85, 1), projMergeTime, {
       prefix: 'PRs merged ',
       emphasis: `${mergeSlower}% slower`,
       suffix: ' than average.',

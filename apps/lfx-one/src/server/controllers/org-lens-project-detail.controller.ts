@@ -19,7 +19,8 @@ export class OrgLensProjectDetailController {
   public getProjectDetail(req: Request, res: Response, next: NextFunction): void {
     const orgUid = req.params['orgUid'];
     const projectSlug = req.params['projectSlug'];
-    const orgName = typeof req.query['orgName'] === 'string' ? req.query['orgName'] : 'Your Organization';
+    const rawOrgName = typeof req.query['orgName'] === 'string' ? req.query['orgName'].trim() : '';
+    const orgName = rawOrgName || 'Your Organization';
 
     const startTime = logger.startOperation(req, 'get_org_lens_project_detail', {
       org_uid: orgUid,
