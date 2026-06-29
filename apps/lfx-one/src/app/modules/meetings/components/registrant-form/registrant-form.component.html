@@ -70,7 +70,7 @@
             form().get('first_name')?.touched &&
             form().get('first_name')?.dirty
           ) {
-            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-firstname-error">First name is required</p>
+            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-firstname-error">First name cannot be empty</p>
           }
         </div>
 
@@ -90,7 +90,7 @@
             form().get('last_name')?.touched &&
             form().get('last_name')?.dirty
           ) {
-            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-lastname-error">Last name is required</p>
+            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-lastname-error">Last name cannot be empty</p>
           }
         </div>
 

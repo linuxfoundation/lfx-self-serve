@@ -53,19 +53,23 @@ export class RegistrantFormComponent {
     const firstName = this.form().get('first_name')?.value?.trim();
     const lastName = this.form().get('last_name')?.value?.trim();
 
-    if (!firstName && !lastName) {
-      this.searchSelectionError.set("This user's profile is missing a first and last name. Please enter their details manually.");
-      return;
-    }
-    if (!firstName) {
-      this.searchSelectionError.set("This user's profile is missing a first name. Please enter their details manually.");
-      return;
-    }
-    if (!lastName) {
-      this.searchSelectionError.set("This user's profile is missing a last name. Please enter their details manually.");
+    if (!firstName || !lastName) {
+      // Auto-switch to individual fields, preserving all populated controls,
+      // and mark the missing field(s) as touched+dirty so validation renders.
+      this.showIndividualFields.set(true);
+      if (!firstName) {
+        this.form().get('first_name')?.markAsTouched();
+        this.form().get('first_name')?.markAsDirty();
+      }
+      if (!lastName) {
+        this.form().get('last_name')?.markAsTouched();
+        this.form().get('last_name')?.markAsDirty();
+      }
       return;
     }
 
+    this.form().get('first_name')?.setValue(firstName);
+    this.form().get('last_name')?.setValue(lastName);
     this.onUserSelected.emit();
   }
 
