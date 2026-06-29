@@ -158,11 +158,10 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
           },
           {
-            // INFO: Future Epic implementation — the Meetings page is hidden; deep links
-            // fall back to the org overview until the org meetings feature is built.
             path: 'meetings',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
+            loadComponent: () =>
+              import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
             // INFO: Future Epic implementation — the Groups page is hidden; deep links fall

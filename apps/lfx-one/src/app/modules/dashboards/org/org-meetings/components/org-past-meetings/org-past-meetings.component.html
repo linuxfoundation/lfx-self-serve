@@ -1,0 +1,169 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<div class="flex flex-col divide-y divide-gray-100" data-testid="org-past-meetings-list">
+  @if (loading()) {
+    @for (skeleton of [1, 2, 3]; track skeleton) {
+      <div class="p-5 flex flex-col gap-3 animate-pulse opacity-70">
+        <div class="h-4 bg-gray-200 rounded w-1/3"></div>
+        <div class="h-3 bg-gray-100 rounded w-2/3"></div>
+      </div>
+    }
+  } @else if (meetings().length === 0) {
+    <div class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-past-meetings-empty">
+      <i class="fa-light fa-calendar-check text-4xl text-gray-300" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No past meetings found in this window.</p>
+    </div>
+  } @else {
+    @for (meeting of meetings(); track meeting.id) {
+      <div class="flex flex-col gap-4 p-5 opacity-90 hover:opacity-100 hover:bg-gray-50 transition-all" [attr.data-testid]="'org-past-meeting-card-' + meeting.id">
+        <!-- Top row: badges + copy -->
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-400">
+              @if (meeting.privacy === 'private') {
+                <i class="fa-light fa-lock" aria-label="Private"></i> Private
+              } @else {
+                <i class="fa-light fa-globe" aria-label="Public"></i> Public
+              }
+            </span>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="typePillClass(meeting.type)">
+              {{ typeLabel(meeting.type) }}
+            </span>
+            @if (meeting.recurrenceLabel) {
+              <span class="text-xs text-gray-400">
+                <i class="fa-light fa-rotate mr-1" aria-hidden="true"></i>{{ meeting.recurrenceLabel }}
+              </span>
+            }
+          </div>
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded flex-shrink-0"
+            title="Copy meeting link"
+            (click)="copyLink(meeting.id)"
+          >
+            <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Title + date -->
+        <div class="flex flex-col gap-1">
+          <h3 class="text-base font-semibold text-gray-700">{{ meeting.title }}</h3>
+          <p class="text-sm text-gray-400">
+            <i class="fa-light fa-clock mr-1" aria-hidden="true"></i>
+            {{ meeting.startTime | date: 'EEE, MMM d, y · h:mm a' }}
+          </p>
+          <p class="text-xs text-gray-400">{{ meeting.foundation }} · {{ meeting.project }}</p>
+        </div>
+
+        <!-- Artifact pills -->
+        <div class="flex flex-wrap gap-2">
+          @if (meeting.artifact.recordingUrl) {
+            <a
+              [href]="meeting.artifact.recordingUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+            >
+              <i class="fa-light fa-circle-dot text-xs" aria-hidden="true"></i> Recording
+            </a>
+          } @else {
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-400">
+              <i class="fa-light fa-circle-dot text-xs" aria-hidden="true"></i> Recording
+            </span>
+          }
+          @if (meeting.artifact.transcriptUrl) {
+            <a
+              [href]="meeting.artifact.transcriptUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+            >
+              <i class="fa-light fa-file-lines text-xs" aria-hidden="true"></i> Transcript
+            </a>
+          } @else {
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-400">
+              <i class="fa-light fa-file-lines text-xs" aria-hidden="true"></i> Transcript
+            </span>
+          }
+          @if (meeting.artifact.aiSummaryId) {
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <i class="fa-light fa-sparkles text-xs" aria-hidden="true"></i> AI Summary
+            </button>
+          } @else {
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-400">
+              <i class="fa-light fa-sparkles text-xs" aria-hidden="true"></i> AI Summary
+            </span>
+          }
+          @if (meeting.minutesUploaded) {
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">
+              <i class="fa-light fa-file-check text-xs" aria-hidden="true"></i> Minutes
+            </span>
+          }
+        </div>
+
+        <!-- Attendance bar -->
+        <div class="flex flex-col gap-1">
+          <p class="text-xs font-medium text-gray-500">Attendance</p>
+          @let total = meeting.attendanceTally.attended + meeting.attendanceTally.missed + meeting.attendanceTally.excused;
+          <div class="flex h-2 rounded-full overflow-hidden bg-gray-100">
+            <div class="bg-emerald-500 h-full" [style.width]="attendanceBarWidth(meeting.attendanceTally.attended, total)" title="Attended"></div>
+            <div class="bg-red-400 h-full" [style.width]="attendanceBarWidth(meeting.attendanceTally.missed, total)" title="Missed"></div>
+            <div class="bg-amber-400 h-full" [style.width]="attendanceBarWidth(meeting.attendanceTally.excused, total)" title="Excused"></div>
+          </div>
+          <div class="flex gap-3 text-xs text-gray-500">
+            <span><span class="font-medium text-emerald-600">{{ meeting.attendanceTally.attended }}</span> Attended</span>
+            <span><span class="font-medium text-red-500">{{ meeting.attendanceTally.missed }}</span> Missed</span>
+            <span><span class="font-medium text-amber-600">{{ meeting.attendanceTally.excused }}</span> Excused</span>
+          </div>
+        </div>
+
+        <!-- Org invitees with attendance -->
+        @if (meeting.orgPastInvitees.length > 0) {
+          <div class="flex flex-col gap-2">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Your Org's Attendance</p>
+            @for (invitee of meeting.orgPastInvitees; track invitee.name) {
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center justify-center w-7 h-7 rounded-full bg-gray-100 text-gray-500 text-xs font-medium flex-shrink-0">
+                    {{ initials(invitee.name) }}
+                  </div>
+                  <div class="flex flex-col">
+                    <span class="text-sm font-medium text-gray-700">{{ invitee.name }}</span>
+                    <span class="text-xs text-gray-400">{{ invitee.title }}</span>
+                  </div>
+                </div>
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="attendanceBadgeClass(invitee.attendanceStatus)">
+                  {{ attendanceLabel(invitee.attendanceStatus) }}
+                </span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between pt-1">
+          @if (meeting.guestCount > 0) {
+            <button type="button" class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+              <i class="fa-light fa-users mr-1" aria-hidden="true"></i>{{ meeting.guestCount }} Guests
+            </button>
+          } @else {
+            <span></span>
+          }
+          <button type="button" class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+            See Details <i class="fa-light fa-arrow-right ml-1" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- Show more CTA -->
+    <div class="flex justify-center py-4">
+      <button type="button" class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded" data-testid="org-past-meetings-show-more">
+        <i class="fa-light fa-chevron-down mr-1" aria-hidden="true"></i>Load older meetings
+      </button>
+    </div>
+  }
+</div>
