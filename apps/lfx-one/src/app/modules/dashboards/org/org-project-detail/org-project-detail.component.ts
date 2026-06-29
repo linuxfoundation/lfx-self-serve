@@ -421,9 +421,10 @@ export class OrgProjectDetailComponent {
         .map((p) => {
           const label = esc(p.dataset.label ?? '');
           const formatted = esc(`${p.formattedValue}${valueSuffix}`);
+          const dotColor = esc(p.dataset.borderColor ?? '');
           return (
             '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
-            `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor}"></span>` +
+            `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${dotColor}"></span>` +
             `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${label}: ` +
             `<strong style="color:#111827;font-weight:600">${formatted}</strong></span>` +
             '</div>'
