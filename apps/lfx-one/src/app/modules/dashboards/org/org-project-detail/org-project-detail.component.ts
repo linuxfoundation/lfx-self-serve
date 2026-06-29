@@ -165,10 +165,6 @@ export class OrgProjectDetailComponent {
     return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
   });
 
-  // Sparkline card options — stable class-level references so Angular passes them correctly through ng-template context.
-  protected readonly lineCardOptions: ChartOptions<ChartType> = this.buildLineAreaCardOptions();
-  protected readonly barCardOptions: ChartOptions<ChartType> = this.buildBarCardOptions();
-
   // Leaderboards tab — URL-persisted metric toggle + time range + two side-by-side boards + stacked trend.
   protected readonly metricOptions = METRIC_OPTIONS;
   protected readonly timeRangeOptions = TIME_RANGE_OPTIONS;

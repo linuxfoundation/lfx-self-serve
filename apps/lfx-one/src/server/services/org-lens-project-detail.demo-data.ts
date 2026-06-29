@@ -419,7 +419,7 @@ function trendSeries(seed: ProjectDetailSeed): OrgLensProjectTrendPoint[] {
   const combined = ramp(seed.influence.combined, 0.83, 1);
   const technical = ramp(seed.influence.technical, 0.85, 1);
   const ecosystem = ramp(seed.influence.ecosystem, 0.8, 1);
-  return months.map((month, i) => ({ month, combined: combined[i], technical: technical[i], ecosystem: ecosystem[i] }));
+  return months.map((month, i) => ({ month, combined: combined[i] ?? 0, technical: technical[i] ?? 0, ecosystem: ecosystem[i] ?? 0 }));
 }
 
 /**
@@ -486,6 +486,7 @@ function leaderboard(seed: ProjectDetailSeed, orgName: string): OrgLensProjectLe
 }
 
 function deltaFromSparkline(series: number[]): number {
+  if (series.length === 0) return 0;
   const start = series[0];
   return start === 0 ? 0 : Math.round(((series[series.length - 1] - start) / start) * 100) / 100;
 }

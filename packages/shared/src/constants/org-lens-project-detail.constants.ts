@@ -7,8 +7,8 @@ import type {
   OrgLensProjectBand,
   OrgLensProjectDetailTab,
   OrgLensProjectHealth,
-} from '../interfaces/org-lens-project-detail.interface';
-import type { TagSeverity } from '../interfaces/components.interface';
+  TagSeverity,
+} from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 export const PD_DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
