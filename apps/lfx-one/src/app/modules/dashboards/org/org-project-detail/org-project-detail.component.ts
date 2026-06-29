@@ -42,7 +42,6 @@ import type {
   OrgLensProjectDetailPageState,
   OrgLensProjectDetailResponse,
   OrgLensProjectDetailTab,
-  OrgLensProjectHealth,
   OrgLensProjectInfluenceCard,
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
