@@ -4,12 +4,35 @@
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constants/pending-action.constants';
 import { PendingActionItem } from '../interfaces/components.interface';
 import type { CommitteeOrganizationFormValue, CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
+import type { WorkExperienceEntry } from '../interfaces/profile.interface';
 
 /**
  * Returns true when a committee requires organization on invite create/accept.
  */
 export function committeeRequiresOrganization(flags: { enable_voting?: boolean; business_email_required?: boolean }): boolean {
   return !!flags.enable_voting || !!flags.business_email_required;
+}
+
+/**
+ * Picks the current employer from a CDP work-experience array.
+ * Prefers an entry without an endDate; falls back to the most recent by startDate.
+ * Returns null when the array is empty.
+ *
+ * startDate is formatted as "MMM YYYY" by the BFF — parsed deterministically to
+ * avoid relying on new Date() with non-ISO strings, which is unreliable in Safari.
+ */
+export function currentEmployerFromWorkExperiences(experiences: WorkExperienceEntry[]): CommitteeOrganizationReference | null {
+  if (!experiences.length) return null;
+  const current = experiences.find((e) => !e.endDate) ?? [...experiences].sort((a, b) => monthYearToOrdinal(b.startDate) - monthYearToOrdinal(a.startDate))[0];
+  return { name: current.organization, id: current.organizationId ?? null };
+}
+
+function monthYearToOrdinal(monthYear: string): number {
+  const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+  const [mon, yr] = monthYear.split(' ');
+  const month = MONTHS[mon] ?? 0;
+  const year = parseInt(yr, 10);
+  return isNaN(year) ? 0 : year * 12 + month;
 }
 
 /**
