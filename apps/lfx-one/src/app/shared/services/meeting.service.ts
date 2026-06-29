@@ -491,8 +491,8 @@ export class MeetingService {
    */
   public createRegistrantFormGroup(includeAddMore: boolean = false): FormGroup {
     const controls: any = {
-      first_name: new FormControl('', [Validators.required, Validators.minLength(1)]),
-      last_name: new FormControl('', [Validators.required, Validators.minLength(1)]),
+      first_name: new FormControl('', [Validators.required, Validators.minLength(1), Validators.pattern(/\S/)]),
+      last_name: new FormControl('', [Validators.required, Validators.minLength(1), Validators.pattern(/\S/)]),
       email: new FormControl('', [Validators.required, Validators.email]),
       job_title: new FormControl(''),
       org_name: new FormControl(''),
