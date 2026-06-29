@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, inject, input, OnInit, output } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -15,6 +15,7 @@ import {
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
+import { map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
@@ -27,7 +28,19 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
   public readonly goToStep = output<number>();
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly meetingDetailsStep = MEETING_DETAILS_STEP;
-  public readonly titleLength = computed(() => this.form().get('title')?.value?.length ?? 0);
+  public readonly titleLength = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const ctrl = f.get('title');
+        if (!ctrl) return of(0);
+        return ctrl.valueChanges.pipe(
+          startWith(ctrl.value as string | null),
+          map((v: string | null) => v?.length ?? 0)
+        );
+      })
+    ),
+    { initialValue: 0 }
+  );
 
   // Constants from shared package
   public readonly platformOptions = MEETING_PLATFORMS;

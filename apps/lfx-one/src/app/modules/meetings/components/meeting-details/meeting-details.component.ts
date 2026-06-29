@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -20,7 +20,7 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { finalize, take, tap } from 'rxjs';
+import { finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { AgendaTemplateSelectorComponent } from '../agenda-template-selector/agenda-template-selector.component';
 import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern/meeting-recurrence-pattern.component';
@@ -71,7 +71,19 @@ export class MeetingDetailsComponent implements OnInit {
 
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
-  public readonly titleLength = computed(() => this.form().get('title')?.value?.length ?? 0);
+  public readonly titleLength = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const ctrl = f.get('title');
+        if (!ctrl) return of(0);
+        return ctrl.valueChanges.pipe(
+          startWith(ctrl.value as string | null),
+          map((v: string | null) => v?.length ?? 0)
+        );
+      })
+    ),
+    { initialValue: 0 }
+  );
 
   // Duration options from shared constants
   public readonly durationOptions = MEETING_DURATION_OPTIONS;
