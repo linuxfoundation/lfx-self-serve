@@ -232,7 +232,7 @@ export class AkritesPackagesTabComponent {
   }
 
   protected canAssignSteward(pkg: AkritesPackage): boolean {
-    return pkg.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(pkg.status);
+    return AKRITES_ASSIGNABLE_STATUSES.has(pkg.status);
   }
 
   protected onRowMenuOpen(event: Event, pkg: AkritesPackage, menu: { toggle: (e: Event) => void }): void {

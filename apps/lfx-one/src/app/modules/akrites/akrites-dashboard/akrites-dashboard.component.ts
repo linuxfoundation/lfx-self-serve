@@ -275,7 +275,7 @@ export class AkritesDashboardComponent {
 
   protected onBulkAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     const selected = this.selectedPackages();
-    const eligible = this.packages().filter((p) => selected.has(p.id) && p.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(p.status));
+    const eligible = this.packages().filter((p) => selected.has(p.id) && AKRITES_ASSIGNABLE_STATUSES.has(p.status));
     if (this.bulkActionLoading()) return;
     if (!eligible.length) {
       this.bulkAssignStewardVisible.set(false);
