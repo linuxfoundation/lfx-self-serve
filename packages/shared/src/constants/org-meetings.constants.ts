@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterOption } from '../interfaces';
-import type { OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgPastMeeting, OrgPendingRsvpMeeting } from '../interfaces/org-meetings.interface';
+import type { OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgPastMeeting } from '../interfaces/org-meetings.interface';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -210,33 +210,5 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
       { name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, attendanceStatus: 'attended' },
       { name: 'Marcus Williams', title: 'CTO', avatarUrl: null, attendanceStatus: 'missed' },
     ],
-  },
-];
-
-/** Demo pending-RSVP meetings (2 records). */
-export const DEMO_PENDING_RSVP_MEETINGS: readonly OrgPendingRsvpMeeting[] = [
-  {
-    id: 'pr-1',
-    title: 'CNCF TOC Meeting',
-    privacy: 'public',
-    type: 'working-group',
-    recurrenceLabel: 'Every 2 weeks on Sat',
-    startTime: new Date('2026-07-05T15:00:00Z').toISOString(),
-    endTime: new Date('2026-07-05T16:00:00Z').toISOString(),
-    foundation: 'Cloud Native Computing Foundation',
-    project: 'TOC',
-    agenda: 'Project lifecycle updates. Sandbox application review. TOC elections discussion.',
-  },
-  {
-    id: 'pr-2',
-    title: 'Security TAG Monthly',
-    privacy: 'public',
-    type: 'working-group',
-    recurrenceLabel: 'Every month on the 3rd Wed',
-    startTime: new Date('2026-07-15T17:00:00Z').toISOString(),
-    endTime: new Date('2026-07-15T18:00:00Z').toISOString(),
-    foundation: 'Cloud Native Computing Foundation',
-    project: 'Security TAG',
-    agenda: 'Security posture review. Vulnerability disclosure process update.',
   },
 ];

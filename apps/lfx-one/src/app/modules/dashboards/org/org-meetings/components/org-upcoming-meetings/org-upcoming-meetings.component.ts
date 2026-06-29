@@ -36,6 +36,8 @@ export class OrgUpcomingMeetingsComponent {
 
   protected copyLink(meetingId: string): void {
     if (!isPlatformBrowser(this.platformId)) return;
-    void navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`);
+    navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`)?.catch(() => {
+      // Clipboard access denied or unavailable — fail silently.
+    });
   }
 }

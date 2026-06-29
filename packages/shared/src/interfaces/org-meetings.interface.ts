@@ -95,12 +95,6 @@ export interface OrgPastMeeting extends OrgMeeting {
   readonly orgPastInvitees: readonly OrgPastMeetingInvitee[];
 }
 
-/** A pending-RSVP meeting row — subset of OrgMeeting fields needed for the RSVP flow. */
-export type OrgPendingRsvpMeeting = Pick<
-  OrgMeeting,
-  'id' | 'title' | 'privacy' | 'type' | 'recurrenceLabel' | 'startTime' | 'endTime' | 'foundation' | 'project' | 'agenda'
->;
-
 /** Payload emitted when a user clicks an RSVP button. */
 export interface OrgMeetingRsvpChangeEvent {
   readonly meetingId: string;

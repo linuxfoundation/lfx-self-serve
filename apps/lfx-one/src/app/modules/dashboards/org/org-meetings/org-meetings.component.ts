@@ -62,12 +62,11 @@ export class OrgMeetingsComponent {
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
 
   // === Protected methods ===
-  protected switchTab(tabId: string): void {
-    const id = tabId as OrgMeetingsTabId;
-    if (id === this.activeTab()) return;
+  protected switchTab(tabId: OrgMeetingsTabId): void {
+    if (tabId === this.activeTab()) return;
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tab: id === DEFAULT_ORG_MEETINGS_TAB_ID ? null : id },
+      queryParams: { tab: tabId === DEFAULT_ORG_MEETINGS_TAB_ID ? null : tabId },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
