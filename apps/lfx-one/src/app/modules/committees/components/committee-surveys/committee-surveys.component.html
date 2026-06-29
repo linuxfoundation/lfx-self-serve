@@ -17,6 +17,7 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
+          [loading]="creating()"
           (onClick)="onCreateSurvey()"
           data-testid="committee-surveys-create-btn"></lfx-button>
       }
@@ -29,6 +30,7 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
+          [loading]="creating()"
           (onClick)="onCreateSurvey()"
           data-testid="committee-surveys-empty-create-btn"></lfx-button>
       </div>

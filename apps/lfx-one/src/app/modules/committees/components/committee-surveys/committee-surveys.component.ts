@@ -36,6 +36,7 @@ export class CommitteeSurveysComponent {
 
   // State
   public loading = signal<boolean>(true);
+  public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedSurveyId = signal<string | null>(null);
   public selectedSurvey = signal<Survey | null>(null);
@@ -58,16 +59,20 @@ export class CommitteeSurveysComponent {
     if (committee.project_slug) denyParams['project'] = committee.project_slug;
     const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
-    this.committeeService.fetchCommittee(committee.uid).subscribe({
-      next: (fresh) => {
-        if (fresh?.writer !== true) {
-          deny();
-          return;
-        }
-        void this.router.navigate(['/surveys', 'create'], { queryParams: this.createSurveyQueryParams() });
-      },
-      error: () => deny(),
-    });
+    this.creating.set(true);
+    this.committeeService
+      .fetchCommittee(committee.uid)
+      .pipe(finalize(() => this.creating.set(false)))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          void this.router.navigate(['/surveys', 'create'], { queryParams: this.createSurveyQueryParams() });
+        },
+        error: () => deny(),
+      });
   }
 
   // Private initializer functions
