@@ -8,7 +8,6 @@ import type { OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgPastMeeting
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
   { id: 'upcoming', label: 'Upcoming' },
   { id: 'past', label: 'Past' },
-  { id: 'pending', label: 'Pending RSVP' },
 ] as const;
 
 /** Default tab — URL drops `?tab=` when active to keep deep links clean. */

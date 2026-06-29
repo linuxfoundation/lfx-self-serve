@@ -13,42 +13,22 @@ import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_ORG_MEETINGS_TAB_ID,
   DEMO_PAST_MEETINGS,
-  DEMO_PENDING_RSVP_MEETINGS,
   DEMO_UPCOMING_MEETINGS,
   ORG_MEETINGS_KPI_RECURRING_COUNT,
   ORG_MEETINGS_KPI_RECURRING_PROJECTS,
   ORG_MEETINGS_KPI_UPCOMING_COUNT,
-  ORG_MEETINGS_PROJECT_OPTIONS,
   ORG_MEETINGS_TABS,
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
 } from '@lfx-one/shared/constants';
-import type {
-  FilterOption,
-  FilterPillOption,
-  OrgMeeting,
-  OrgMeetingRsvpChangeEvent,
-  OrgMeetingsTabId,
-  OrgPastMeeting,
-  OrgPendingRsvpMeeting,
-  StatCardItem,
-} from '@lfx-one/shared/interfaces';
+import type { FilterOption, FilterPillOption, OrgMeeting, OrgMeetingsTabId, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
 
 import { OrgUpcomingMeetingsComponent } from './components/org-upcoming-meetings/org-upcoming-meetings.component';
 import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-past-meetings.component';
-import { OrgPendingRsvpMeetingsComponent } from './components/org-pending-rsvp-meetings/org-pending-rsvp-meetings.component';
 
 @Component({
   selector: 'lfx-org-meetings',
-  imports: [
-    ReactiveFormsModule,
-    CardComponent,
-    InputTextComponent,
-    SelectComponent,
-    OrgUpcomingMeetingsComponent,
-    OrgPastMeetingsComponent,
-    OrgPendingRsvpMeetingsComponent,
-  ],
+  imports: [ReactiveFormsModule, CardComponent, InputTextComponent, SelectComponent, OrgUpcomingMeetingsComponent, OrgPastMeetingsComponent],
   templateUrl: './org-meetings.component.html',
 })
 export class OrgMeetingsComponent {
@@ -58,13 +38,11 @@ export class OrgMeetingsComponent {
 
   // === Template constants ===
   protected readonly tabs = ORG_MEETINGS_TABS;
-  protected readonly projectOptions: FilterOption[] = ORG_MEETINGS_PROJECT_OPTIONS;
   protected readonly typeOptions: FilterOption[] = ORG_MEETINGS_TYPE_OPTIONS;
 
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    project: new FormControl<string | null>(null),
     type: new FormControl<string | null>(null),
   });
 
@@ -72,20 +50,17 @@ export class OrgMeetingsComponent {
   protected readonly loading = signal(false);
   protected readonly upcomingMeetings = signal<readonly OrgMeeting[]>(DEMO_UPCOMING_MEETINGS);
   protected readonly pastMeetings = signal<readonly OrgPastMeeting[]>(DEMO_PAST_MEETINGS);
-  protected readonly pendingMeetings = signal<readonly OrgPendingRsvpMeeting[]>(DEMO_PENDING_RSVP_MEETINGS);
 
   // === Computed signals ===
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
   protected readonly tabPillOptions: Signal<FilterPillOption[]> = this.initTabPillOptions();
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
-  protected readonly filterProject: Signal<string | null> = this.initFilterProject();
   protected readonly filterType: Signal<string | null> = this.initFilterType();
   protected readonly filteredUpcoming: Signal<readonly OrgMeeting[]> = this.initFilteredUpcoming();
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
-  protected readonly filteredPending: Signal<readonly OrgPendingRsvpMeeting[]> = this.initFilteredPending();
 
-  // === Public methods ===
+  // === Protected methods ===
   protected switchTab(tabId: string): void {
     const id = tabId as OrgMeetingsTabId;
     if (id === this.activeTab()) return;
@@ -95,13 +70,6 @@ export class OrgMeetingsComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
-  }
-
-  protected onRsvp(event: OrgMeetingRsvpChangeEvent): void {
-    if (event.status === 'yes' || event.status === 'no') {
-      this.pendingMeetings.update((meetings) => meetings.filter((m) => m.id !== event.meetingId));
-    }
-    // 'maybe' keeps the row (still pending)
   }
 
   // === Private initializers ===
@@ -123,7 +91,6 @@ export class OrgMeetingsComponent {
         const countMap: Record<OrgMeetingsTabId, number> = {
           upcoming: this.upcomingMeetings().length,
           past: this.pastMeetings().length,
-          pending: this.pendingMeetings().length,
         };
         return { id: tab.id, label: `${tab.label} (${countMap[tab.id]})` };
       })
@@ -151,10 +118,6 @@ export class OrgMeetingsComponent {
     return toSignal(this.filterForm.controls.search.valueChanges, { initialValue: '' });
   }
 
-  private initFilterProject(): Signal<string | null> {
-    return toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
-  }
-
   private initFilterType(): Signal<string | null> {
     return toSignal(this.filterForm.controls.type.valueChanges, { initialValue: null });
   }
@@ -162,13 +125,11 @@ export class OrgMeetingsComponent {
   private initFilteredUpcoming(): Signal<readonly OrgMeeting[]> {
     return computed(() => {
       const search = this.filterSearch().toLowerCase();
-      const project = this.filterProject();
       const type = this.filterType();
       return this.upcomingMeetings().filter((m) => {
         const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
-        const matchesProject = !project || m.project === project;
         const matchesType = !type || m.type === type;
-        return matchesSearch && matchesProject && matchesType;
+        return matchesSearch && matchesType;
       });
     });
   }
@@ -176,27 +137,11 @@ export class OrgMeetingsComponent {
   private initFilteredPast(): Signal<readonly OrgPastMeeting[]> {
     return computed(() => {
       const search = this.filterSearch().toLowerCase();
-      const project = this.filterProject();
       const type = this.filterType();
       return this.pastMeetings().filter((m) => {
         const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
-        const matchesProject = !project || m.project === project;
         const matchesType = !type || m.type === type;
-        return matchesSearch && matchesProject && matchesType;
-      });
-    });
-  }
-
-  private initFilteredPending(): Signal<readonly OrgPendingRsvpMeeting[]> {
-    return computed(() => {
-      const search = this.filterSearch().toLowerCase();
-      const project = this.filterProject();
-      const type = this.filterType();
-      return this.pendingMeetings().filter((m) => {
-        const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
-        const matchesProject = !project || m.project === project;
-        const matchesType = !type || m.type === type;
-        return matchesSearch && matchesProject && matchesType;
+        return matchesSearch && matchesType;
       });
     });
   }

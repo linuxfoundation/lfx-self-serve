@@ -28,11 +28,10 @@
     </div>
   </lfx-card>
 
-  <!-- Main content card -->
-  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-content-card">
-    <!-- Combined tab + filter bar (single row matching app.lfx.dev/meetings) -->
-    <div class="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-gray-200" data-testid="org-meetings-filter-bar">
-      <!-- Inline tab pills -->
+  <!-- Filter bar — standalone card matching app.lfx.dev/meetings -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-filter-bar">
+    <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+      <!-- Tab pills -->
       <div class="flex items-center gap-1" data-testid="org-meetings-tab-bar">
         @for (tab of tabPillOptions(); track tab.id) {
           <button
@@ -57,15 +56,6 @@
         icon="fa-light fa-magnifying-glass"
         data-testid="org-meetings-search" />
 
-      <!-- All Projects -->
-      <lfx-select
-        [form]="filterForm"
-        control="project"
-        [options]="projectOptions"
-        placeholder="All Projects"
-        [showClear]="true"
-        data-testid="org-meetings-project-filter" />
-
       <!-- All Types -->
       <lfx-select
         [form]="filterForm"
@@ -75,20 +65,13 @@
         [showClear]="true"
         data-testid="org-meetings-type-filter" />
     </div>
-
-    <!-- Tab content -->
-    @if (activeTab() === 'upcoming') {
-      <lfx-org-upcoming-meetings [meetings]="filteredUpcoming()" [loading]="loading()" data-testid="org-meetings-upcoming-tab" />
-    }
-    @if (activeTab() === 'past') {
-      <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="loading()" data-testid="org-meetings-past-tab" />
-    }
-    @if (activeTab() === 'pending') {
-      <lfx-org-pending-rsvp-meetings
-        [meetings]="filteredPending()"
-        [loading]="loading()"
-        (rsvpChange)="onRsvp($event)"
-        data-testid="org-meetings-pending-tab" />
-    }
   </lfx-card>
+
+  <!-- Tab content — each sub-component renders its own bordered cards with gap -->
+  @if (activeTab() === 'upcoming') {
+    <lfx-org-upcoming-meetings [meetings]="filteredUpcoming()" [loading]="loading()" data-testid="org-meetings-upcoming-tab" />
+  }
+  @if (activeTab() === 'past') {
+    <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="loading()" data-testid="org-meetings-past-tab" />
+  }
 </main>

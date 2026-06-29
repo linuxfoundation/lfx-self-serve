@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /** Tab identifier for the Org Meetings page tab strip. */
-export type OrgMeetingsTabId = 'upcoming' | 'past' | 'pending';
+export type OrgMeetingsTabId = 'upcoming' | 'past';
 
 /** Tab definition for the Org Meetings page. */
 export interface OrgMeetingsTabConfig {
