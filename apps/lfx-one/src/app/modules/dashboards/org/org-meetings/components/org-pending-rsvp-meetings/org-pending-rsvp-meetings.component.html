@@ -12,7 +12,9 @@
     <div class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-pending-rsvp-empty">
       <i class="fa-light fa-check-circle text-4xl text-emerald-300" aria-hidden="true"></i>
       <p class="text-sm text-gray-500">You're all caught up — no pending RSVPs.</p>
-      <button type="button" class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+      <button
+        type="button"
+        class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
         View upcoming meetings <i class="fa-light fa-arrow-right ml-1" aria-hidden="true"></i>
       </button>
     </div>
@@ -35,9 +37,7 @@
                 {{ typeLabel(meeting.type) }}
               </span>
               @if (meeting.recurrenceLabel) {
-                <span class="text-xs text-gray-400">
-                  <i class="fa-light fa-rotate mr-1" aria-hidden="true"></i>{{ meeting.recurrenceLabel }}
-                </span>
+                <span class="text-xs text-gray-400"> <i class="fa-light fa-rotate mr-1" aria-hidden="true"></i>{{ meeting.recurrenceLabel }} </span>
               }
               <!-- Deadline chip -->
               <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="deadlineChipClass(meeting.startTime)">
@@ -65,27 +65,26 @@
               type="button"
               class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-emerald-300 text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
               [attr.data-testid]="'rsvp-yes-' + meeting.id"
-              (click)="onRsvp(meeting.id, 'yes')"
-            >
+              (click)="onRsvp(meeting.id, 'yes')">
               <i class="fa-light fa-check mr-1 text-xs" aria-hidden="true"></i> Yes
             </button>
             <button
               type="button"
               class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-amber-300 text-amber-700 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 transition-colors"
               [attr.data-testid]="'rsvp-maybe-' + meeting.id"
-              (click)="onRsvp(meeting.id, 'maybe')"
-            >
+              (click)="onRsvp(meeting.id, 'maybe')">
               <i class="fa-light fa-question mr-1 text-xs" aria-hidden="true"></i> Maybe
             </button>
             <button
               type="button"
               class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-red-300 text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
               [attr.data-testid]="'rsvp-no-' + meeting.id"
-              (click)="onRsvp(meeting.id, 'no')"
-            >
+              (click)="onRsvp(meeting.id, 'no')">
               <i class="fa-light fa-xmark mr-1 text-xs" aria-hidden="true"></i> No
             </button>
-            <button type="button" class="ml-2 text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+            <button
+              type="button"
+              class="ml-2 text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
               See Details
             </button>
           </div>

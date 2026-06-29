@@ -111,9 +111,9 @@ export class OrgMeetingsComponent {
         map((params) => {
           const tab = params.get('tab') as OrgMeetingsTabId | null;
           return tab && VALID_ORG_MEETINGS_TAB_IDS.has(tab) ? tab : DEFAULT_ORG_MEETINGS_TAB_ID;
-        }),
+        })
       ),
-      { initialValue: DEFAULT_ORG_MEETINGS_TAB_ID },
+      { initialValue: DEFAULT_ORG_MEETINGS_TAB_ID }
     );
   }
 
@@ -126,7 +126,7 @@ export class OrgMeetingsComponent {
           pending: this.pendingMeetings().length,
         };
         return { id: tab.id, label: `${tab.label} (${countMap[tab.id]})` };
-      }),
+      })
     );
   }
 

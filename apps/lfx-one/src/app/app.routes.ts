@@ -160,8 +160,7 @@ export const routes: Routes = [
           {
             path: 'meetings',
             data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
-            loadComponent: () =>
-              import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
+            loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
             // INFO: Future Epic implementation — the Groups page is hidden; deep links fall

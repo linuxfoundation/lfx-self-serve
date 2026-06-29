@@ -65,28 +65,40 @@ export class OrgUpcomingMeetingsComponent {
 
   protected rsvpBadgeClass(status: OrgMeetingInvitee['rsvpStatus']): string {
     switch (status) {
-      case 'yes': return 'bg-emerald-100 text-emerald-700';
-      case 'maybe': return 'bg-amber-100 text-amber-700';
-      case 'no': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-500';
+      case 'yes':
+        return 'bg-emerald-100 text-emerald-700';
+      case 'maybe':
+        return 'bg-amber-100 text-amber-700';
+      case 'no':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-500';
     }
   }
 
   protected rsvpDotClass(status: OrgMeetingInvitee['rsvpStatus']): string {
     switch (status) {
-      case 'yes': return 'bg-emerald-500';
-      case 'maybe': return 'bg-amber-400';
-      case 'no': return 'bg-red-500';
-      default: return 'bg-gray-400';
+      case 'yes':
+        return 'bg-emerald-500';
+      case 'maybe':
+        return 'bg-amber-400';
+      case 'no':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-400';
     }
   }
 
   protected rsvpLabel(status: OrgMeetingInvitee['rsvpStatus']): string {
     switch (status) {
-      case 'yes': return 'Accepted';
-      case 'maybe': return 'Tentative';
-      case 'no': return 'Declined';
-      default: return 'Pending';
+      case 'yes':
+        return 'Accepted';
+      case 'maybe':
+        return 'Tentative';
+      case 'no':
+        return 'Declined';
+      default:
+        return 'Pending';
     }
   }
 
@@ -94,5 +106,4 @@ export class OrgUpcomingMeetingsComponent {
     if (!isPlatformBrowser(this.platformId)) return;
     void navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`);
   }
-
 }

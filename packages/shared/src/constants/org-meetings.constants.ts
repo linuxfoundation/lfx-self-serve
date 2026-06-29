@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterOption } from '../interfaces';
-import type {
-  OrgMeeting,
-  OrgMeetingsTabConfig,
-  OrgMeetingsTabId,
-  OrgPastMeeting,
-  OrgPendingRsvpMeeting,
-} from '../interfaces/org-meetings.interface';
+import type { OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgPastMeeting, OrgPendingRsvpMeeting } from '../interfaces/org-meetings.interface';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -69,8 +63,7 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     endTime: '2026-06-30T02:54:00.000Z',
     foundation: 'Cloud Native Computing Foundation',
     project: 'CNCF',
-    agenda:
-      'Review Q3 budget proposal. Approve new project sandbox applications. Open floor for governing board motions.',
+    agenda: 'Review Q3 budget proposal. Approve new project sandbox applications. Open floor for governing board motions.',
     resources: ['Q3 Budget Proposal.pdf', 'Board Meeting Agenda.docx'],
     rsvpTally: { yes: 12, maybe: 2, no: 1, noResponse: 3 },
     orgInvitees: [
@@ -116,9 +109,7 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     agenda: 'Summit logistics. Keynote speaker lineup. Sponsorship tier discussion.',
     resources: [],
     rsvpTally: { yes: 6, maybe: 1, no: 0, noResponse: 2 },
-    orgInvitees: [
-      { name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' },
-    ],
+    orgInvitees: [{ name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' }],
     guestCount: 4,
     joinUrl: 'https://zoom.us/j/demo-lfai-summit',
     statusFlags: { recording: false, transcripts: false, aiSummary: false },
@@ -174,9 +165,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     agenda: 'Documentation sprint planning. Review PR backlog. Localization status updates.',
     resources: ['Docs Sprint Board.pdf'],
     rsvpTally: { yes: 18, maybe: 3, no: 2, noResponse: 5 },
-    orgInvitees: [
-      { name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, rsvpStatus: 'yes' },
-    ],
+    orgInvitees: [{ name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, rsvpStatus: 'yes' }],
     guestCount: 12,
     joinUrl: null,
     statusFlags: { recording: false, transcripts: true, aiSummary: false },
@@ -187,9 +176,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
       aiSummaryId: null,
     },
     minutesUploaded: false,
-    orgPastInvitees: [
-      { name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, attendanceStatus: 'attended' },
-    ],
+    orgPastInvitees: [{ name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, attendanceStatus: 'attended' }],
   },
   {
     id: 'pm-3',

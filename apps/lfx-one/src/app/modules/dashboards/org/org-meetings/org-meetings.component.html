@@ -4,9 +4,7 @@
   <!-- Page header -->
   <header class="flex flex-col gap-1">
     <h1 class="text-2xl font-semibold text-gray-900">Meetings</h1>
-    <p class="text-sm text-gray-500">
-      Coordinate decisions, align stakeholders, and maintain transparent governance across your foundations.
-    </p>
+    <p class="text-sm text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance across your foundations.</p>
   </header>
 
   <!-- KPI strip -->
@@ -39,12 +37,15 @@
         @for (tab of tabPillOptions(); track tab.id) {
           <button
             type="button"
-            [class]="activeTab() === tab.id
-              ? 'rounded-full px-3 py-1.5 text-sm font-medium bg-blue-600 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
-              : 'rounded-full px-3 py-1.5 text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'"
+            [class]="
+              activeTab() === tab.id
+                ? 'rounded-full px-3 py-1.5 text-sm font-medium bg-blue-600 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+                : 'rounded-full px-3 py-1.5 text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+            "
             [attr.data-testid]="'org-meetings-tab-' + tab.id"
-            (click)="switchTab(tab.id)"
-          >{{ tab.label }}</button>
+            (click)="switchTab(tab.id)">
+            {{ tab.label }}
+          </button>
         }
       </div>
 
@@ -54,8 +55,7 @@
         control="search"
         placeholder="Search meetings..."
         icon="fa-light fa-magnifying-glass"
-        data-testid="org-meetings-search"
-      />
+        data-testid="org-meetings-search" />
 
       <!-- All Projects -->
       <lfx-select
@@ -64,8 +64,7 @@
         [options]="projectOptions"
         placeholder="All Projects"
         [showClear]="true"
-        data-testid="org-meetings-project-filter"
-      />
+        data-testid="org-meetings-project-filter" />
 
       <!-- All Types -->
       <lfx-select
@@ -74,8 +73,7 @@
         [options]="typeOptions"
         placeholder="All Types"
         [showClear]="true"
-        data-testid="org-meetings-type-filter"
-      />
+        data-testid="org-meetings-type-filter" />
     </div>
 
     <!-- Tab content -->
@@ -90,8 +88,7 @@
         [meetings]="filteredPending()"
         [loading]="loading()"
         (rsvpChange)="onRsvp($event)"
-        data-testid="org-meetings-pending-tab"
-      />
+        data-testid="org-meetings-pending-tab" />
     }
   </lfx-card>
 </main>

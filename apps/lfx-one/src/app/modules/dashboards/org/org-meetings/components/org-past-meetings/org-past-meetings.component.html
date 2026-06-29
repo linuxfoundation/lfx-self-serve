@@ -15,7 +15,9 @@
     </div>
   } @else {
     @for (meeting of meetings(); track meeting.id) {
-      <div class="flex flex-col gap-4 p-5 opacity-90 hover:opacity-100 hover:bg-gray-50 transition-all" [attr.data-testid]="'org-past-meeting-card-' + meeting.id">
+      <div
+        class="flex flex-col gap-4 p-5 opacity-90 hover:opacity-100 hover:bg-gray-50 transition-all"
+        [attr.data-testid]="'org-past-meeting-card-' + meeting.id">
         <!-- Top row: badges + copy -->
         <div class="flex items-start justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
@@ -30,17 +32,14 @@
               {{ typeLabel(meeting.type) }}
             </span>
             @if (meeting.recurrenceLabel) {
-              <span class="text-xs text-gray-400">
-                <i class="fa-light fa-rotate mr-1" aria-hidden="true"></i>{{ meeting.recurrenceLabel }}
-              </span>
+              <span class="text-xs text-gray-400"> <i class="fa-light fa-rotate mr-1" aria-hidden="true"></i>{{ meeting.recurrenceLabel }} </span>
             }
           </div>
           <button
             type="button"
             class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded flex-shrink-0"
             title="Copy meeting link"
-            (click)="copyLink(meeting.id)"
-          >
+            (click)="copyLink(meeting.id)">
             <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
           </button>
         </div>
@@ -62,8 +61,7 @@
               [href]="meeting.artifact.recordingUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
-            >
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">
               <i class="fa-light fa-circle-dot text-xs" aria-hidden="true"></i> Recording
             </a>
           } @else {
@@ -76,8 +74,7 @@
               [href]="meeting.artifact.transcriptUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
-            >
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">
               <i class="fa-light fa-file-lines text-xs" aria-hidden="true"></i> Transcript
             </a>
           } @else {
@@ -88,8 +85,7 @@
           @if (meeting.artifact.aiSummaryId) {
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-            >
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
               <i class="fa-light fa-sparkles text-xs" aria-hidden="true"></i> AI Summary
             </button>
           } @else {
@@ -114,9 +110,15 @@
             <div class="bg-amber-400 h-full" [style.width]="attendanceBarWidth(meeting.attendanceTally.excused, total)" title="Excused"></div>
           </div>
           <div class="flex gap-3 text-xs text-gray-500">
-            <span><span class="font-medium text-emerald-600">{{ meeting.attendanceTally.attended }}</span> Attended</span>
-            <span><span class="font-medium text-red-500">{{ meeting.attendanceTally.missed }}</span> Missed</span>
-            <span><span class="font-medium text-amber-600">{{ meeting.attendanceTally.excused }}</span> Excused</span>
+            <span
+              ><span class="font-medium text-emerald-600">{{ meeting.attendanceTally.attended }}</span> Attended</span
+            >
+            <span
+              ><span class="font-medium text-red-500">{{ meeting.attendanceTally.missed }}</span> Missed</span
+            >
+            <span
+              ><span class="font-medium text-amber-600">{{ meeting.attendanceTally.excused }}</span> Excused</span
+            >
           </div>
         </div>
 
@@ -146,13 +148,17 @@
         <!-- Footer -->
         <div class="flex items-center justify-between pt-1">
           @if (meeting.guestCount > 0) {
-            <button type="button" class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+            <button
+              type="button"
+              class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
               <i class="fa-light fa-users mr-1" aria-hidden="true"></i>{{ meeting.guestCount }} Guests
             </button>
           } @else {
             <span></span>
           }
-          <button type="button" class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+          <button
+            type="button"
+            class="text-xs text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
             See Details <i class="fa-light fa-arrow-right ml-1" aria-hidden="true"></i>
           </button>
         </div>
@@ -161,7 +167,10 @@
 
     <!-- Show more CTA -->
     <div class="flex justify-center py-4">
-      <button type="button" class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded" data-testid="org-past-meetings-show-more">
+      <button
+        type="button"
+        class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+        data-testid="org-past-meetings-show-more">
         <i class="fa-light fa-chevron-down mr-1" aria-hidden="true"></i>Load older meetings
       </button>
     </div>
