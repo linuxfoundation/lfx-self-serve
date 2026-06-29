@@ -1,13 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, inject, input, OnInit, output } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { ARTIFACT_VISIBILITY_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import {
+  ARTIFACT_VISIBILITY_OPTIONS,
+  MEETING_DETAILS_STEP,
+  MEETING_FEATURES,
+  MEETING_PLATFORMS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
+} from '@lfx-one/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -17,14 +23,11 @@ import { TooltipModule } from 'primeng/tooltip';
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
-  // Form group input from parent
   public readonly form = input.required<FormGroup>();
-
-  // Emits the step number the parent should navigate to
-  public readonly goToDetailsStep = output<number>();
-
-  // YouTube title limit exposed for template
+  public readonly goToStep = output<number>();
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
+  public readonly meetingDetailsStep = MEETING_DETAILS_STEP;
+  public readonly titleLength = computed(() => this.form().get('title')?.value?.length ?? 0);
 
   // Constants from shared package
   public readonly platformOptions = MEETING_PLATFORMS;

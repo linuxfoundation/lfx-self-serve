@@ -26,18 +26,16 @@
         @if (form().get('youtube_upload_enabled')?.value) {
           <div class="flex items-center justify-between mt-1">
             <p class="text-xs text-gray-500">
-              YouTube upload: the meeting date is appended to the video title when uploaded. YouTube allows 100 chars max, so title must be ≤
-              {{ youtubeTitleLimit }} chars.
+              The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
             </p>
             <p
               class="text-xs"
               [ngClass]="{
-                'text-gray-500': (form().get('title')?.value?.length || 0) < youtubeTitleLimit * 0.9,
-                'text-amber-600':
-                  (form().get('title')?.value?.length || 0) >= youtubeTitleLimit * 0.9 && (form().get('title')?.value?.length || 0) <= youtubeTitleLimit,
-                'text-red-600': (form().get('title')?.value?.length || 0) > youtubeTitleLimit,
+                'text-gray-500': titleLength() < youtubeAmberThreshold,
+                'text-amber-600': titleLength() >= youtubeAmberThreshold && titleLength() <= youtubeTitleLimit,
+                'text-red-600': titleLength() > youtubeTitleLimit,
               }">
-              {{ form().get('title')?.value?.length || 0 }}/{{ youtubeTitleLimit }}
+              {{ titleLength() }}/{{ youtubeTitleLimit }}
             </p>
           </div>
         }

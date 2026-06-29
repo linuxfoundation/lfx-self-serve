@@ -230,6 +230,12 @@ export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform
 export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
 
 /**
+ * PrimeNG stepper panel value for the Meeting Details step (1-based)
+ * @description Used when navigating back to Meeting Details from a later step
+ */
+export const MEETING_DETAILS_STEP = 2;
+
+/**
  * Default meeting duration in minutes
  * @description Standard meeting length when no custom duration is specified
  */

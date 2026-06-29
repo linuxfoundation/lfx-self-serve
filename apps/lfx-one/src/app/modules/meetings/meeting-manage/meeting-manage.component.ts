@@ -184,7 +184,9 @@ export class MeetingManageComponent {
       this.updateCanProceed();
     });
 
-    // Watch youtube_upload_enabled and enforce title length limit when enabled
+    // Watch youtube_upload_enabled and enforce title length limit when enabled.
+    // This fires correctly on patchValue during edit-mode hydration because the form initialises
+    // youtube_upload_enabled as false and patchValue flips it to true, triggering valueChanges.
     this.form()
       .get('youtube_upload_enabled')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))

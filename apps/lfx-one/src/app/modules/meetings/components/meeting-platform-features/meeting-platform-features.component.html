@@ -114,16 +114,13 @@
             <div>
               <p class="text-amber-800 font-semibold text-sm mb-1">Meeting title too long for YouTube</p>
               <p class="text-amber-700 text-sm">
-                The meeting date is automatically appended to the video title when uploaded to YouTube, so the title must be {{ youtubeTitleLimit }} characters
-                or fewer. The current title has {{ form().get('title')?.value?.length || 0 }} characters.
-              </p>
-              <p class="text-amber-800 text-sm font-medium mt-1">
-                You must shorten the title before you can continue — the Next button will not work until this is fixed.
+                The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title
+                has {{ titleLength() }} characters.
               </p>
               <button
                 type="button"
                 class="mt-2 text-sm font-medium text-amber-800 underline hover:text-amber-900"
-                (click)="goToDetailsStep.emit(2)"
+                (click)="goToStep.emit(meetingDetailsStep)"
                 data-testid="youtube-title-fix-button">
                 Go back to Meeting Details to shorten the title
               </button>
