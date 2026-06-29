@@ -4,7 +4,7 @@
 <!-- Impersonation Banner -->
 <lfx-impersonation-banner />
 
-<div [ngClass]="{ 'pt-12': impersonating() }">
+<div [ngClass]="{ 'pt-12': userService.impersonating() }">
   <lfx-header></lfx-header>
 
   @if (meeting()) {

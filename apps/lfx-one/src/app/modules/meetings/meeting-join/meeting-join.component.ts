@@ -120,7 +120,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
   private readonly projectService = inject(ProjectService);
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
@@ -131,7 +131,6 @@ export class MeetingJoinComponent implements OnInit {
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
-  public readonly impersonating: Signal<boolean> = this.userService.impersonating;
   public joinForm: FormGroup;
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
   public meeting: Signal<Meeting & { project: Partial<Project> }>;
