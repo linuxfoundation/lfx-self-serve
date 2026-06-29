@@ -275,9 +275,7 @@ export class AkritesDashboardComponent {
 
   protected onBulkAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
     const selected = this.selectedPackages();
-    const eligible = this.packages().filter(
-      (p) => selected.has(p.id) && p.stewardshipId !== null && p.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(p.status)
-    );
+    const eligible = this.packages().filter((p) => selected.has(p.id) && p.status !== null && AKRITES_ASSIGNABLE_STATUSES.has(p.status));
     if (this.bulkActionLoading()) return;
     if (!eligible.length) {
       this.bulkAssignStewardVisible.set(false);
@@ -291,12 +289,15 @@ export class AkritesDashboardComponent {
     this.bulkAssignStewardVisible.set(false);
     this.bulkActionLoading.set(true);
     forkJoin(
-      eligible.map((p) =>
-        this.akritesService.assignSteward(String(p.stewardshipId!), body).pipe(
+      eligible.map((p) => {
+        const stewardshipId$ =
+          p.stewardshipId !== null ? of(String(p.stewardshipId)) : this.akritesService.openStewardship(p.purl).pipe(map((res) => res.stewardship.id));
+        return stewardshipId$.pipe(
+          switchMap((id) => this.akritesService.assignSteward(id, body)),
           map(() => true),
           catchError(() => of(false))
-        )
-      )
+        );
+      })
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
