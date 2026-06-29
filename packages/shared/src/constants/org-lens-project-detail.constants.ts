@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgLensProjectBand, OrgLensProjectDetailTab, OrgLensProjectHealth } from '../interfaces/org-lens-project-detail.interface';
+import type {
+  OrgLensLeaderboardMetric,
+  OrgLensLeaderboardTimeRange,
+  OrgLensProjectBand,
+  OrgLensProjectDetailTab,
+  OrgLensProjectHealth,
+} from '../interfaces/org-lens-project-detail.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
 import { lfxColors } from './colors.constants';
 

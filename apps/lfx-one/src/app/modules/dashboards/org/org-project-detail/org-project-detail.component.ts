@@ -419,8 +419,7 @@ export class OrgProjectDetailComponent {
       tip.style.top = `${rect.top + tooltip.caretY}px`;
       tip.style.transform = 'translateY(-100%)';
 
-      const esc = (value: string) =>
-        value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch));
+      const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch);
 
       const title = esc(tooltip.title?.[0] ?? '');
       const rows = (tooltip.dataPoints ?? [])
