@@ -178,6 +178,7 @@ export class CommitteeMeetingsComponent {
   }
 
   protected onScheduleMeeting(): void {
+    if (this.creating()) return;
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'meetings' };
