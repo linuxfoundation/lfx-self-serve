@@ -139,7 +139,17 @@
         [disabled]="bulkActionLoading()"
         (click)="onBulkOpen()"
         data-testid="akrites-bulk-open">
+        <i class="fa-light fa-folder-open" aria-hidden="true"></i>
         Open for stewardship
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        [disabled]="bulkActionLoading()"
+        (click)="onBulkAssignSteward()"
+        data-testid="akrites-bulk-assign-steward">
+        <i class="fa-light fa-user-group" aria-hidden="true"></i>
+        Assign steward
       </button>
       <button
         type="button"
@@ -147,6 +157,7 @@
         [disabled]="bulkActionLoading()"
         (click)="onBulkEscalate()"
         data-testid="akrites-bulk-escalate">
+        <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
         Escalate
       </button>
     </div>
@@ -164,3 +175,10 @@
 
 <!-- Bulk Escalate Modal -->
 <lfx-akrites-escalate-modal [(visible)]="bulkEscalateVisible" [packageName]="null" [loading]="bulkActionLoading()" (confirm)="onBulkEscalateConfirm($event)" />
+
+<!-- Bulk Assign Steward Modal -->
+<lfx-akrites-assign-steward-modal
+  [(visible)]="bulkAssignStewardVisible"
+  [packageName]="null"
+  [loading]="bulkActionLoading()"
+  (confirm)="onBulkAssignStewardConfirm($event)" />
