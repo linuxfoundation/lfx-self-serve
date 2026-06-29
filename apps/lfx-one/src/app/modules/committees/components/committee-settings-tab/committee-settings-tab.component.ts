@@ -128,6 +128,7 @@ export class CommitteeSettingsTabComponent {
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
+            if (fresh?.project_slug) denyParams['project'] = fresh.project_slug;
             deny();
             return;
           }

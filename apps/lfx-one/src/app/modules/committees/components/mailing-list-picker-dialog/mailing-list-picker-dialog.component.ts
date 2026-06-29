@@ -32,7 +32,6 @@ export class MailingListPickerDialogComponent {
   private readonly router = inject(Router);
 
   public readonly mailingLists: GroupsIOMailingList[] = this.config.data.mailingLists;
-  public readonly projectUid: string = this.config.data.projectUid;
   private readonly committeeUid: string = this.config.data.committeeUid;
   private readonly projectSlug: string | undefined = this.config.data.projectSlug;
 
