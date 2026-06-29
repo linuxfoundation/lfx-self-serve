@@ -30,10 +30,6 @@ export class OrgPendingRsvpMeetingsComponent {
     return `in ${days} days`;
   }
 
-  private hoursUntil(startTime: string): number {
-    return (new Date(startTime).getTime() - Date.now()) / (60 * 60 * 1000);
-  }
-
   protected typePillClass(type: OrgPendingRsvpMeeting['type']): string {
     switch (type) {
       case 'board':
@@ -58,5 +54,9 @@ export class OrgPendingRsvpMeetingsComponent {
 
   protected onRsvp(meetingId: string, status: 'yes' | 'maybe' | 'no'): void {
     this.rsvpChange.emit({ meetingId, status });
+  }
+
+  private hoursUntil(startTime: string): number {
+    return (new Date(startTime).getTime() - Date.now()) / (60 * 60 * 1000);
   }
 }
