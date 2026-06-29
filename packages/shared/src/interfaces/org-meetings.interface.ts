@@ -95,19 +95,11 @@ export interface OrgPastMeeting extends OrgMeeting {
   readonly orgPastInvitees: readonly OrgPastMeetingInvitee[];
 }
 
-/** A pending-RSVP meeting row. */
-export interface OrgPendingRsvpMeeting {
-  readonly id: string;
-  readonly title: string;
-  readonly privacy: OrgMeetingPrivacy;
-  readonly type: OrgMeetingType;
-  readonly recurrenceLabel: string | null;
-  readonly startTime: string;
-  readonly endTime: string;
-  readonly foundation: string;
-  readonly project: string;
-  readonly agenda: string | null;
-}
+/** A pending-RSVP meeting row — subset of OrgMeeting fields needed for the RSVP flow. */
+export type OrgPendingRsvpMeeting = Pick<
+  OrgMeeting,
+  'id' | 'title' | 'privacy' | 'type' | 'recurrenceLabel' | 'startTime' | 'endTime' | 'foundation' | 'project' | 'agenda'
+>;
 
 /** Payload emitted when a user clicks an RSVP button. */
 export interface OrgMeetingRsvpChangeEvent {

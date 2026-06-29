@@ -15,23 +15,23 @@ export class OrgPendingRsvpMeetingsComponent {
   public readonly loading = input<boolean>(false);
   public readonly rsvpChange = output<OrgMeetingRsvpChangeEvent>();
 
-  protected readonly now = Date.now();
-
   protected deadlineChipClass(startTime: string): string {
-    const diff = new Date(startTime).getTime() - this.now;
-    const hours = diff / (60 * 60 * 1000);
+    const hours = this.hoursUntil(startTime);
     if (hours < 24) return 'bg-red-100 text-red-700';
     if (hours < 72) return 'bg-amber-100 text-amber-700';
     return 'bg-gray-100 text-gray-500';
   }
 
   protected deadlineLabel(startTime: string): string {
-    const diff = new Date(startTime).getTime() - this.now;
-    const hours = Math.floor(diff / (60 * 60 * 1000));
-    if (hours < 24) return `in ${hours}h`;
+    const hours = Math.floor(this.hoursUntil(startTime));
+    if (hours < 24) return hours > 0 ? `in ${hours}h` : 'Starting soon';
     const days = Math.floor(hours / 24);
     if (days === 1) return 'tomorrow';
     return `in ${days} days`;
+  }
+
+  private hoursUntil(startTime: string): number {
+    return (new Date(startTime).getTime() - Date.now()) / (60 * 60 * 1000);
   }
 
   protected typePillClass(type: OrgPendingRsvpMeeting['type']): string {
