@@ -65,8 +65,8 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     privacy: 'private',
     type: 'board',
     recurrenceLabel: 'Every week on Thu',
-    startTime: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 13 * 60 * 60 * 1000).toISOString(),
+    startTime: '2026-06-30T01:54:00.000Z',
+    endTime: '2026-06-30T02:54:00.000Z',
     foundation: 'Cloud Native Computing Foundation',
     project: 'CNCF',
     agenda:
