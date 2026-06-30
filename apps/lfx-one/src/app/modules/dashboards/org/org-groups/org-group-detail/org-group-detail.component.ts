@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { GroupDetailTabConfig, GroupDetailTabId, OrgGroupDetail } from '@lfx-one/shared/interfaces';
 
@@ -25,7 +26,7 @@ const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
 /** Group detail page shell (LFXV2-1879) — overview, meetings, votes, surveys, documents tabs. */
 @Component({
   selector: 'lfx-org-group-detail',
-  imports: [RouterLink, CardComponent, TagComponent],
+  imports: [RouterLink, CardComponent, TagComponent, SkeletonModule],
   templateUrl: './org-group-detail.component.html',
 })
 export class OrgGroupDetailComponent {
@@ -48,8 +49,8 @@ export class OrgGroupDetailComponent {
 
   // ─── Server data ──────────────────────────────────────────────────────────────
 
-  protected readonly detail: Signal<OrgGroupDetail | null> = this.initDetail();
   protected readonly loading = signal(true);
+  protected readonly detail: Signal<OrgGroupDetail | null> = this.initDetail();
 
   // ─── Computed helpers ─────────────────────────────────────────────────────────
 
@@ -84,7 +85,8 @@ export class OrgGroupDetailComponent {
               this.loading.set(false);
               return of(data);
             }),
-            catchError(() => {
+            catchError((err) => {
+              console.error('[OrgGroupDetail] failed to load group detail', err);
               this.loading.set(false);
               return of(null);
             })

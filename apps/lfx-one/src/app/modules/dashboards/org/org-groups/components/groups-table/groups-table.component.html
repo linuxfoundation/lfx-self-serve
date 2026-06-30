@@ -18,14 +18,14 @@
   data-testid="org-groups-table">
   <ng-template #header>
     <tr>
-      <th scope="col" style="width:35%"><span class="text-xs font-medium text-gray-500">Name</span></th>
-      <th scope="col" style="width:9%"><span class="text-xs font-medium text-gray-500">Type</span></th>
-      <th scope="col" style="width:11%"><span class="text-xs font-medium text-gray-500">Class</span></th>
-      <th scope="col" style="width:17%"><span class="text-xs font-medium text-gray-500">Description</span></th>
-      <th scope="col" style="width:7%"><span class="text-xs font-medium text-gray-500">Members</span></th>
-      <th scope="col" style="width:7%"><span class="text-xs font-medium text-gray-500">Channels</span></th>
-      <th scope="col" style="width:5%"><span class="text-xs font-medium text-gray-500">Voting</span></th>
-      <th scope="col" style="width:9%"><span class="text-xs font-medium text-gray-500">Last Updated</span></th>
+      <th scope="col" style="width: 35%"><span class="text-xs font-medium text-gray-500">Name</span></th>
+      <th scope="col" style="width: 9%"><span class="text-xs font-medium text-gray-500">Type</span></th>
+      <th scope="col" style="width: 11%"><span class="text-xs font-medium text-gray-500">Class</span></th>
+      <th scope="col" style="width: 17%"><span class="text-xs font-medium text-gray-500">Description</span></th>
+      <th scope="col" style="width: 7%"><span class="text-xs font-medium text-gray-500">Members</span></th>
+      <th scope="col" style="width: 7%"><span class="text-xs font-medium text-gray-500">Channels</span></th>
+      <th scope="col" style="width: 5%"><span class="text-xs font-medium text-gray-500">Voting</span></th>
+      <th scope="col" style="width: 9%"><span class="text-xs font-medium text-gray-500">Last Updated</span></th>
     </tr>
   </ng-template>
 
@@ -38,10 +38,9 @@
       [attr.data-testid]="'org-groups-row-' + row.id"
       (click)="navigateToGroup(row.id)"
       (keydown)="onRowKeydown($event, row.id)">
-
       <!-- Name (lock icon immediately after text) -->
       <td class="whitespace-nowrap">
-        <a [routerLink]="['/org/groups', row.id]" class="lfx-table-name-link text-sm" style="display:inline">{{ row.name }}</a>
+        <a [routerLink]="['/org/groups', row.id]" class="lfx-table-name-link text-sm" style="display: inline">{{ row.name }}</a>
         @if (row.visibility === 'PRIVATE') {
           <i class="fa-light fa-lock text-xs text-gray-500 ml-1" aria-hidden="true" pTooltip="Private" tooltipPosition="top"></i>
         }
@@ -55,17 +54,23 @@
       <!-- Class badge: Board=purple/gavel, Working Group/TAC=amber/users-gear, Other=gray/layers -->
       <td>
         @if (row.type === 'Board') {
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-violet-700 bg-violet-50" data-testid="org-groups-class-board">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-violet-700 bg-violet-50"
+            data-testid="org-groups-class-board">
             <i class="fa-light fa-gavel text-[10px]" aria-hidden="true"></i>
             Boards
           </span>
         } @else if (row.type === 'Working Group' || row.type === 'TAC') {
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50" data-testid="org-groups-class-working-group">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50"
+            data-testid="org-groups-class-working-group">
             <i class="fa-light fa-users-gear text-[10px]" aria-hidden="true"></i>
             Working Groups
           </span>
         } @else {
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-gray-500 bg-gray-50" data-testid="org-groups-class-other">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-gray-500 bg-gray-50"
+            data-testid="org-groups-class-other">
             <i class="fa-light fa-layer-group text-[10px]" aria-hidden="true"></i>
             Other
           </span>

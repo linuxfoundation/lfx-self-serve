@@ -4,20 +4,19 @@
 <div class="flex flex-col gap-6 p-6" data-testid="org-group-detail-page">
   <!-- ── Loading skeleton ──────────────────────────────────────────────── -->
   @if (loading()) {
-    <div class="flex flex-col gap-4 animate-pulse" data-testid="org-group-detail-skeleton">
-      <div class="h-4 w-24 rounded bg-gray-200"></div>
-      <div class="h-8 w-96 rounded bg-gray-200"></div>
+    <div class="flex flex-col gap-4" data-testid="org-group-detail-skeleton">
+      <p-skeleton width="6rem" height="1rem" />
+      <p-skeleton width="24rem" height="1.75rem" />
       <div class="flex gap-2">
-        <div class="h-6 w-16 rounded-full bg-gray-200"></div>
-        <div class="h-6 w-24 rounded-full bg-gray-200"></div>
+        <p-skeleton width="4rem" height="1.5rem" borderRadius="9999px" />
+        <p-skeleton width="6rem" height="1.5rem" borderRadius="9999px" />
       </div>
-      <div class="h-40 rounded-lg bg-gray-100"></div>
+      <p-skeleton width="100%" height="10rem" borderRadius="0.5rem" />
     </div>
   }
 
   <!-- ── Main content ──────────────────────────────────────────────────── -->
-  @if (!loading() && detail()) {
-    @let g = detail()!;
+  @if (!loading() && detail(); as g) {
 
     <!-- Back link + Leave Group button -->
     <div class="flex items-center justify-between" data-testid="org-group-detail-header">

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -39,6 +39,15 @@ export class GroupsTableComponent {
 
   protected readonly page = signal(0);
   protected readonly size = signal(GROUPS_DEFAULT_PAGE_SIZE);
+
+  constructor() {
+    // Reset to first page whenever the data set or active tab changes.
+    effect(() => {
+      this.groups();
+      this.activeTab();
+      this.page.set(0);
+    });
+  }
 
   // ─── Computed ────────────────────────────────────────────────────────────────
 

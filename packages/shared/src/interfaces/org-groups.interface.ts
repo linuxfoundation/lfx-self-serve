@@ -18,7 +18,6 @@ export type GroupType = 'Board' | 'Working Group' | 'TAC' | 'Marketing Committee
 export type GroupVisibility = 'PUBLIC' | 'PRIVATE';
 export type GroupsVotingFilter = 'all' | 'enabled' | 'disabled';
 
-
 // ─── Data model ───────────────────────────────────────────────────────────────
 
 export interface OrgGroup {
