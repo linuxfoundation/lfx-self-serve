@@ -270,12 +270,6 @@ export class OrgProjectDetailComponent {
     return raw && VALID_TIME_RANGES.has(raw) ? (raw as OrgLensLeaderboardTimeRange) : DEFAULT_TIME_RANGE;
   }
 
-  /** Per-dimension activity count derived from that dimension's score, so the two boards differ. */
-  private activityFor(score: number): number {
-    const months = TIME_RANGE_MONTHS[this.timeRange()];
-    return Math.round(score * 46 * (months / 12));
-  }
-
   /**
    * Rank the leaderboard for one dimension (technical / ecosystem), then apply the search filter.
    * Returns all matching rows — the paginator handles slicing.
@@ -290,7 +284,7 @@ export class OrgProjectDetailComponent {
         orgName: entry.row.orgName,
         orgLogoUrl: entry.row.orgLogoUrl,
         initials: this.initialsFor(entry.row.orgName),
-        activityLabel: this.activityFor(entry.score).toLocaleString(),
+        activityLabel: entry.row.activityCount.toLocaleString(),
         bandLabel: bandMeta.label,
         bandSeverity: bandMeta.severity,
         isViewingOrg: entry.row.isViewingOrg,
