@@ -5,7 +5,7 @@ audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, donations, funding, sponsors]
 last_generated: 2026-06-16
-last_updated: 2026-06-16
+last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
 
@@ -43,5 +43,6 @@ Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sideb
 
 ## Related sections
 
+- [Crowdfunding FAQ](./faq/) — answers to common questions about initiatives and donations
 - [Transactions](../transactions/) — view purchase and billing history across all LFX products
 - [Profile](../profile/) — manage your account details associated with your donations
