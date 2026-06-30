@@ -284,7 +284,7 @@
                               @if (row.orgLogoUrl) {
                                 <img
                                   [src]="row.orgLogoUrl"
-                                  [alt]="row.orgName + ' logo'"
+                                  alt=""
                                   class="h-7 w-7 shrink-0 rounded-full object-contain"
                                   aria-hidden="true" />
                               } @else {
@@ -365,7 +365,7 @@
                               @if (row.orgLogoUrl) {
                                 <img
                                   [src]="row.orgLogoUrl"
-                                  [alt]="row.orgName + ' logo'"
+                                  alt=""
                                   class="h-7 w-7 shrink-0 rounded-full object-contain"
                                   aria-hidden="true" />
                               } @else {
@@ -464,7 +464,7 @@
         </div>
         <div class="flex min-w-0 flex-col gap-0.5">
           <h2 class="text-base font-semibold text-gray-900" data-testid="influence-card-detail-title">{{ card.title }}</h2>
-          <p class="text-sm text-gray-500">Last 12 months · {{ card.scopeLabel ?? 'All projects' }}</p>
+          <p class="text-sm text-gray-500">{{ drawerTimeRangeLabel() }} · {{ card.scopeLabel ?? 'All projects' }}</p>
         </div>
       </div>
     }

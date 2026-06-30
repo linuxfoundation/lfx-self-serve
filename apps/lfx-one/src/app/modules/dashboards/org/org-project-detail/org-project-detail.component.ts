@@ -175,6 +175,7 @@ export class OrgProjectDetailComponent {
     if (!this.isActivityMode()) return 'Influence Score';
     return `Activity (${TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
   });
+  protected readonly drawerTimeRangeLabel = computed(() => `Last ${TIME_RANGE_MONTHS[this.timeRange()]} months`);
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
   protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
