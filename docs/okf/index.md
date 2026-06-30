@@ -64,3 +64,7 @@ Significant decisions baked into the codebase.
 - [Monorepo Turborepo](decisions/monorepo-turborepo.md) — Turborepo monorepo with shared package
 - [Auth0 Authentication](decisions/auth0-authentication.md) — Auth0 / Authelia authentication approach
 - [PrimeNG Wrapper Pattern](decisions/primeng-wrapper-pattern.md) — UI library independence via component wrappers
+
+## Validation
+
+Run `node scripts/validate-okf.mjs` locally to validate bundle conformance.
