@@ -82,10 +82,17 @@
         <!-- ── Agenda with Show more/less ── -->
         @if (meeting.agenda) {
           <div class="flex flex-col gap-1">
-            <p class="text-sm text-gray-700" [class.line-clamp-3]="!isExpanded(meeting.id)">{{ meeting.agenda }}</p>
+            <p
+              [attr.id]="'org-upcoming-meeting-agenda-' + meeting.id"
+              class="text-sm text-gray-700"
+              [class.line-clamp-3]="!isExpanded(meeting.id)">
+              {{ meeting.agenda }}
+            </p>
             <button
               type="button"
               class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded w-fit"
+              [attr.aria-expanded]="isExpanded(meeting.id)"
+              [attr.aria-controls]="'org-upcoming-meeting-agenda-' + meeting.id"
               (click)="toggleExpand(meeting.id)">
               <i [class]="isExpanded(meeting.id) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'" aria-hidden="true"></i>
               {{ isExpanded(meeting.id) ? 'Show less' : 'Show more' }}
