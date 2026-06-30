@@ -38,6 +38,7 @@ export class OrgLensProjectDetailController {
           project_slug: projectSlug,
           found: false,
         });
+        res.setHeader('Cache-Control', 'no-store');
         res.status(404).json({ message: 'Project not found' });
         return;
       }
