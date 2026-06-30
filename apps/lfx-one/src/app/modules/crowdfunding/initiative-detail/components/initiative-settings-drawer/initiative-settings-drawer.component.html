@@ -27,9 +27,10 @@
 
   <div class="flex flex-col gap-6 pb-2 overflow-x-hidden" data-testid="initiative-settings-drawer-content">
     <!-- Tab bar -->
-    <div class="flex items-center border-b border-gray-200 -mx-6 px-6 -mt-2" data-testid="initiative-settings-tabs">
+    <div role="tablist" class="flex items-center border-b border-gray-200 -mx-6 px-6 -mt-2" data-testid="initiative-settings-tabs">
       @for (tab of settingsTabs; track tab.value) {
         <button
+          type="button"
           class="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
           [class]="activeSettingsTab() === tab.value ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'"
           (click)="activeSettingsTab.set(tab.value)"
