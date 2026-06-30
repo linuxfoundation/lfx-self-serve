@@ -63,11 +63,14 @@
       </div>
 
       <!-- All Types — right-aligned -->
+      <label for="org-meetings-type-filter-id" class="sr-only">Filter by meeting type</label>
       <lfx-select
         [form]="filterForm"
         control="type"
         [options]="typeOptions"
         placeholder="All Types"
+        inputId="org-meetings-type-filter-id"
+        ariaLabel="Filter by meeting type"
         [showClear]="true"
         data-testid="org-meetings-type-filter" />
     </div>
