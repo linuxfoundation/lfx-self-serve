@@ -213,6 +213,32 @@ For local auth issues (Authelia at `auth.k8s.orb.local`, broken cookies, client-
 4. **The design repo** — for visual spec
 5. **This file + `.claude/rules/`** — for conventions
 
+## Agent Knowledge Layer (OKF)
+
+Curated, agent-readable knowledge about this repo lives under `docs/okf/`.
+The bundle follows [Open Knowledge Format v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf).
+
+**How to navigate:**
+
+1. Start at [`docs/okf/index.md`](docs/okf/index.md) — lists every concept with a one-line description.
+2. Follow relative markdown links to the concept that matches your task area.
+3. Cross-links in concept bodies lead to related services, modules, and decisions.
+
+**When to consult which concepts:**
+
+| Situation | Concept(s) to read first |
+| --- | --- |
+| Modifying a backend service | `docs/okf/services/<service>.md` |
+| Adding/changing an Angular feature module | `docs/okf/modules/<module>.md` |
+| Changing API routes or auth model | `docs/okf/apis/authenticated-api.md` or `apis/public-api.md` |
+| Working with shared types or interfaces | `docs/okf/data-models/shared-package.md` |
+| Making a commit or opening a PR | `docs/okf/runbooks/commit-workflow.md`, `docs/okf/runbooks/post-commit-review.md` |
+| Understanding a major architectural choice | `docs/okf/decisions/<decision>.md` |
+
+**Keeping the bundle current:** When a service, module, or architectural decision changes materially, update the matching concept file and add a `log.md` entry with today's ISO 8601 date.
+
+**CI:** A conformance job (`okf-conformance.yml`) validates the bundle on every PR touching `docs/okf/**`. Run locally with `node scripts/validate-okf.mjs`.
+
 ## Rule Files
 
 Detailed patterns are in `.claude/rules/` and loaded contextually based on the `paths:` frontmatter in each file. The full table of rule files, paths, and topics lives in `.claude/rules/skill-guidance.md`.
