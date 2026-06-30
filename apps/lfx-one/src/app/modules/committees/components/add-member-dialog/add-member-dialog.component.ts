@@ -148,6 +148,18 @@ export class AddMemberDialogComponent {
     const current = this.form.get('emails')!.value.trim();
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
     this.searchForm.get('query')!.setValue('');
+
+    // Pre-fill the org field from the selected user's current employer when shown and blank.
+    if (this.showOrganizationField() && user.username && !this.form.get('organization')!.value?.trim()) {
+      this.searchService
+        .getUserCurrentEmployer(user.username)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe((employer) => {
+          if (employer?.name && !this.form.get('organization')!.value?.trim()) {
+            this.form.patchValue({ organization: employer.name });
+          }
+        });
+    }
   }
 
   public onOrgResolved(result: OrganizationResolveResult): void {

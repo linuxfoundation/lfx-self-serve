@@ -94,7 +94,8 @@
             severity="info"
             size="small"
             [class]="isCalendarView() ? 'md:ml-auto' : ''"
-            (click)="onScheduleMeeting()"
+            [loading]="creating()"
+            (onClick)="onScheduleMeeting()"
             data-testid="committee-meetings-create-btn"></lfx-button>
         }
       </div>
