@@ -21,7 +21,6 @@ export const ORG_MEETINGS_KPI_UPCOMING_COUNT = 12;
 /** KPI: recurring series count (demo). */
 export const ORG_MEETINGS_KPI_RECURRING_COUNT = 4;
 
-
 /** KPI: recurring series project span (demo). */
 export const ORG_MEETINGS_KPI_RECURRING_PROJECTS = 3;
 
@@ -31,7 +30,6 @@ export const ORG_MEETINGS_KPI_PAST_COUNT = 15;
 /** KPI: recordings available from past 30 days (demo). */
 export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
 
-
 /** Type filter options for the Org Meetings filter bar. */
 export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
   { label: 'All Types', value: null },
@@ -39,7 +37,6 @@ export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
   { label: 'Working Group', value: 'working-group' },
   { label: 'Other', value: 'other' },
 ];
-
 
 /** Demo upcoming meetings (3 records). */
 export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
