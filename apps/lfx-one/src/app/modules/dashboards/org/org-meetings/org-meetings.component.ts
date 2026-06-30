@@ -124,7 +124,7 @@ export class OrgMeetingsComponent {
     return toSignal(this.filterForm.controls.search.valueChanges, { initialValue: '' });
   }
 
-  private initFilterType(): Signal<string | null> {
+  private initFilterType(): Signal<OrgMeeting['type'] | null> {
     return toSignal(this.filterForm.controls.type.valueChanges, { initialValue: null });
   }
 
