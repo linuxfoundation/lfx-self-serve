@@ -106,6 +106,29 @@
       <!-- YouTube Auto-upload -->
       <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()"></lfx-feature-toggle>
 
+      <!-- YouTube title length warning -->
+      @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
+        <div class="bg-amber-50 border border-amber-300 rounded-lg p-4" data-testid="youtube-title-length-warning">
+          <div class="flex gap-3">
+            <i class="fa-light fa-triangle-exclamation text-amber-500 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="text-amber-800 font-semibold text-sm mb-1">Meeting title too long for YouTube</p>
+              <p class="text-amber-700 text-sm">
+                The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title
+                has {{ titleLength() }} characters.
+              </p>
+              <button
+                type="button"
+                class="mt-2 text-sm font-medium text-amber-800 underline hover:text-amber-900"
+                (click)="goToStep.emit(meetingDetailsStep)"
+                data-testid="youtube-title-fix-button">
+                Go back to Meeting Details to shorten the title
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- Show in Public Calendar -->
       <lfx-feature-toggle [feature]="calendarFeature" [form]="form()"></lfx-feature-toggle>
     </div>
