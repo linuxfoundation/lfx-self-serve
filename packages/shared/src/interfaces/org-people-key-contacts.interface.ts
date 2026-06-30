@@ -28,6 +28,7 @@ export interface OrgKeyContactAssignment {
   role: string;
   foundationSlug: string;
   foundationName: string | null;
+  avatarUrl?: string | null;
 }
 
 /** Account-level stat strip (FR-004 — filter-independent). */
@@ -59,10 +60,13 @@ export interface OrgKeyContactDropdownOption {
 export interface OrgKeyContactPersonGroup {
   email: string;
   displayName: string;
+  /** Two-letter initials from the structured first/last name, falling back to the first two alphanumerics of the display name; '' when none are usable so the avatar shows its icon fallback. */
+  initials: string;
   title: string | null;
   roles: string[];
   foundationCount: number;
   assignments: OrgKeyContactAssignment[];
+  avatarUrl: string | null;
 }
 
 /** Pre-decorated assignment for the expanded sub-table — pillClass + foundation rowspan flags computed once. */

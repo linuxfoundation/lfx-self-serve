@@ -64,8 +64,13 @@
           <i class="fa-light fa-code-branch text-2xl text-slate-400"></i>
         </div>
         <div class="flex flex-col items-center gap-1 text-center">
-          <p class="text-base font-medium text-slate-700">No project affiliations yet</p>
-          <p class="max-w-sm text-sm text-slate-500">Connect your identities and add work experience to see your project affiliations.</p>
+          @if (hasProfileSetup()) {
+            <p class="text-base font-medium text-slate-700" data-testid="affiliations-empty-title-no-contributions">No project contributions found</p>
+            <p class="max-w-sm text-sm text-slate-500">We couldn't find any project contributions linked to your profile yet.</p>
+          } @else {
+            <p class="text-base font-medium text-slate-700" data-testid="affiliations-empty-title-no-setup">No project affiliations yet</p>
+            <p class="max-w-sm text-sm text-slate-500">Connect your identities and add work experience to see your project affiliations.</p>
+          }
         </div>
         <div class="flex items-center gap-3">
           <lfx-button

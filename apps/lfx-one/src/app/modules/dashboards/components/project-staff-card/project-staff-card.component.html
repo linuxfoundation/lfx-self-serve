@@ -1,74 +1,69 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div
-  class="p-4 bg-white border border-gray-200 hover:border-blue-500 rounded-lg flex-shrink-0 h-full w-[calc(100vw-3rem)] md:w-80"
-  data-testid="project-staff-card-section">
-  <div class="flex flex-col gap-2 h-full">
-    <!-- Header: icon + title (matches lfx-metric-card layout) -->
-    <div class="flex items-center gap-2">
-      <i class="fa-light fa-users-gear w-4 h-4 text-gray-500 flex-shrink-0"></i>
-      <h5 class="text-sm font-medium flex-1">Project Staff</h5>
+@if (loading() || hasError() || loaded()) {
+  <div class="flex flex-col gap-4 w-full" data-testid="project-staff-sidebar">
+    <div class="flex items-center gap-3">
+      <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+        <i class="fa-light fa-people-group text-lg"></i>
+        <span>{{ heading() }}</span>
+      </h2>
+      <div class="flex-1 border-t border-gray-200 self-center"></div>
     </div>
 
-    <!-- Body -->
     @if (loading()) {
-      <div class="flex flex-col divide-y divide-gray-100">
+      <div class="flex flex-row flex-wrap gap-4 xl:flex-col">
         @for (i of [0, 1, 2]; track i) {
-          <div class="flex items-center justify-between gap-2 py-2">
-            <div class="flex items-center gap-2 min-w-0">
-              <p-skeleton width="1rem" height="1rem" borderRadius="4px" />
-              <p-skeleton width="6rem" height="0.75rem" />
-            </div>
-            <div class="flex items-center gap-2">
-              <p-skeleton shape="circle" width="1.5rem" height="1.5rem" />
+          <div class="flex items-center gap-3">
+            <p-skeleton shape="circle" width="2.25rem" height="2.25rem" />
+            <div class="flex flex-col gap-1 flex-1">
+              <p-skeleton width="6rem" height="0.875rem" />
               <p-skeleton width="4rem" height="0.75rem" />
             </div>
           </div>
         }
       </div>
     } @else if (hasError()) {
-      <div class="flex flex-col items-center justify-center gap-2 py-6" data-testid="project-staff-card-error">
-        <i class="fa-light fa-circle-exclamation text-xl text-red-400"></i>
+      <div class="flex flex-col items-center justify-center gap-2 py-4" data-testid="project-staff-card-error">
+        <i class="fa-light fa-circle-exclamation text-xl text-gray-400"></i>
         <span class="text-xs text-gray-600">Couldn&apos;t load staff</span>
         <span class="text-[11px] text-gray-400">Refresh the page to try again</span>
       </div>
-    } @else if (hasAnyStaff()) {
-      <div class="flex flex-col divide-y divide-gray-100 flex-1 justify-around">
+    } @else {
+      <div class="flex flex-row flex-wrap gap-x-6 gap-y-4 xl:flex-col xl:gap-4">
         @for (row of staff(); track row.key) {
-          <div class="flex items-center justify-between gap-2 py-2" [attr.data-testid]="'project-staff-card-row-' + row.key">
-            <!-- Role -->
-            <div class="flex items-center gap-2 min-w-0 shrink-0">
-              <i class="{{ row.icon }} text-gray-500 text-sm w-4 text-center shrink-0"></i>
-              <span class="text-xs font-medium text-gray-700 whitespace-nowrap">{{ row.label }}</span>
-            </div>
-            <!-- Person -->
+          <div class="flex items-start gap-3" [attr.data-testid]="'project-staff-card-row-' + row.key">
             @if (row.user; as u) {
-              <div class="flex items-center gap-2 min-w-0">
-                <lfx-avatar [image]="u.avatar ?? ''" [label]="u.name || u.email" shape="circle" size="normal" styleClass="w-6 h-6 text-xs" />
-                <span class="text-xs font-medium text-gray-900 truncate" [attr.title]="u.name || u.email">{{ u.name || u.email }}</span>
-                @if (u.email) {
-                  <a
-                    [href]="'mailto:' + u.email"
-                    class="shrink-0 text-gray-400 hover:text-blue-500 transition-colors"
-                    [attr.aria-label]="'Email ' + (u.name || u.email)"
-                    [attr.title]="u.email"
-                    (click)="$event.stopPropagation()">
-                    <i class="fa-light fa-envelope text-xs"></i>
-                  </a>
-                }
+              <lfx-avatar [image]="u.avatar ?? ''" [label]="u.name || u.email" shape="circle" size="normal" styleClass="w-9 h-9 text-xs" />
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-sm font-medium text-gray-900 truncate" [attr.title]="u.name || u.email">{{ u.name || u.email }}</span>
+                  @if (u.email) {
+                    <a
+                      [href]="'mailto:' + u.email"
+                      class="inline-flex items-center shrink-0 text-gray-400 hover:text-blue-500 transition-colors"
+                      [attr.aria-label]="'Email ' + (u.name || u.email)"
+                      pTooltip="Send email"
+                      tooltipPosition="top"
+                      (click)="$event.stopPropagation()">
+                      <i class="fa-light fa-envelope text-xs"></i>
+                    </a>
+                  }
+                </div>
+                <span class="text-xs text-gray-500">{{ row.label }}</span>
               </div>
             } @else {
-              <span class="text-xs text-gray-400">&mdash;</span>
+              <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 shrink-0">
+                <i class="fa-light fa-user text-gray-400 text-sm"></i>
+              </div>
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span class="text-sm text-gray-500">Not Set</span>
+                <span class="text-xs text-gray-500">{{ row.label }}</span>
+              </div>
             }
           </div>
         }
       </div>
-    } @else {
-      <div class="flex flex-col items-center justify-center gap-2 py-6" data-testid="project-staff-card-empty">
-        <i class="fa-light fa-user-slash text-xl text-gray-400"></i>
-        <span class="text-xs text-gray-500">No staff assigned</span>
-      </div>
     }
   </div>
-</div>
+}

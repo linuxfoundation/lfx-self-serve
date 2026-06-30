@@ -3,11 +3,13 @@
 
 import { Component, computed, DestroyRef, inject, input, model, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { MessageService } from 'primeng/api';
 
 import {
+  AkritesAdvisory,
+  AkritesAdvisorySeverity,
   AkritesAssignStewardRequest,
   AkritesEscalateRequest,
   AkritesPackage,
@@ -21,6 +23,7 @@ import { AkritesService } from '@shared/services/akrites.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 import { AkritesEscalateModalComponent } from '../akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesStatusModalComponent } from '../akrites-status-modal/akrites-status-modal.component';
 import {
@@ -37,7 +40,15 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
 
 @Component({
   selector: 'lfx-akrites-package-drawer',
-  imports: [DrawerModule, ButtonComponent, EmptyStateComponent, TagComponent, AkritesEscalateModalComponent, AkritesStatusModalComponent],
+  imports: [
+    DrawerModule,
+    ButtonComponent,
+    EmptyStateComponent,
+    TagComponent,
+    AkritesAssignStewardModalComponent,
+    AkritesEscalateModalComponent,
+    AkritesStatusModalComponent,
+  ],
   templateUrl: './akrites-package-drawer.component.html',
 })
 export class AkritesPackageDrawerComponent {
@@ -59,8 +70,41 @@ export class AkritesPackageDrawerComponent {
   protected readonly assignStewardModalVisible = signal(false);
   protected readonly escalateModalVisible = signal(false);
   protected readonly statusModalVisible = signal(false);
+  protected readonly advisorySeverityFilter = signal<AkritesAdvisorySeverity | null>(null);
+  protected readonly advisoryResolutionFilter = signal<'open' | 'patched' | null>(null);
+  protected readonly advisoryLoading = signal(false);
+  protected readonly advisoryLoadingMore = signal(false);
+  protected readonly advisoryItems = signal<(AkritesAdvisory & { tagSeverity: TagSeverity })[]>([]);
+  protected readonly advisoryTotal = signal<number>(0);
+  protected readonly advisoryHasMore = computed(() => this.advisoryTotal() > 0 && this.advisoryItems().length < this.advisoryTotal());
+  protected readonly advisoryShownCount = computed(() => this.advisoryItems().length);
+  /**
+   * Class-level computed so `toObservable(this.advisoryFilterParams)` can be called
+   * in the injection context of the constructor — creating `toObservable` inside a
+   * `switchMap` callback would run outside the injection context and crash at runtime
+   * when switching packages.
+   */
+  private readonly advisoryFilterParams = computed(() => {
+    if (!this.visible() || !this.packageId() || this.activeTab() !== 'security') return null;
+    return {
+      purl: this.packageId()!,
+      severity: this.advisorySeverityFilter() ?? undefined,
+      resolution: this.advisoryResolutionFilter() ?? undefined,
+    };
+  });
+  private static readonly advisoryPageSize = 10;
+  private _advisoryNextPage = 2;
+  /** Monotonic key identifying the active advisory query; stale load-more responses are dropped. */
+  private _advisoryRequestKey = 0;
   private readonly reloadTrigger = signal(0);
   protected readonly packageData: Signal<AkritesPackage | null> = this.initPackageData();
+
+  protected readonly advisorySeverityOptions: readonly { value: AkritesAdvisorySeverity; label: string }[] = [
+    { value: 'critical', label: 'Critical' },
+    { value: 'high', label: 'High' },
+    { value: 'moderate', label: 'Moderate' },
+    { value: 'low', label: 'Low' },
+  ];
 
   protected readonly drawerTabs: { key: DrawerTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -72,15 +116,18 @@ export class AkritesPackageDrawerComponent {
 
   // Prefer the loaded detail status (fresh after a mutation + reload) over the list-row input, which can be stale.
   protected readonly stewardshipStatus = computed<AkritesStatus>(() => this.packageData()?.status ?? this.packageStatus() ?? 'unassigned');
-  protected readonly stewardshipId = computed<number | null>(() => this.packageData()?.stewardshipId ?? null);
+  protected readonly stewardshipId = computed<string | null>(() => this.packageData()?.stewardshipId ?? null);
 
   // Action availability. Open is for not-yet-stewarded packages; status/escalate need an existing stewardship row.
   protected readonly canOpenForStewardship = computed(() => this.stewardshipStatus() === 'unassigned');
-  // Allow assigning a steward on any package — if no stewardship row exists yet the
-  // confirm handler auto-opens the package first and then chains the assign call.
+  // Show "Assign steward" for unassigned/open and "Reassign" for assessing/escalated/inactive.
   protected readonly canAssignSteward = computed(() => {
-    const status = this.stewardshipStatus();
-    return status !== 'inactive';
+    const s = this.stewardshipStatus();
+    return ['unassigned', 'open', 'assessing', 'escalated', 'inactive'].includes(s);
+  });
+  protected readonly assignStewardLabel = computed(() => {
+    const s = this.stewardshipStatus();
+    return ['assessing', 'escalated', 'inactive'].includes(s) ? 'Reassign' : 'Assign steward';
   });
   protected readonly canManageStatus = computed(() => this.stewardshipId() !== null);
   protected readonly canEscalate = computed(() => {
@@ -112,10 +159,55 @@ export class AkritesPackageDrawerComponent {
   protected readonly safeRepoUrl = computed(() => this.getSafeRepoUrl(this.packageData()?.repoUrl ?? null));
   protected readonly mappingTagSeverity = computed(() => this.getMappingTagSeverity(this.packageData()?.supplyChainMapping ?? null));
   protected readonly stewardLabel = computed(() => this.getStewardLabel(this.packageData()?.stewards ?? []));
-  protected readonly enrichedAdvisories = computed(() =>
-    (this.packageData()?.advisories ?? []).map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))
-  );
   protected readonly enrichedHistory = computed(() => (this.packageData()?.history ?? []).map((e) => ({ ...e, dotClass: this.getHistoryDotClass(e.type) })));
+
+  public constructor() {
+    this.initAdvisoryLoader();
+  }
+
+  protected setSeverityFilter(severity: AkritesAdvisorySeverity | null): void {
+    this.advisorySeverityFilter.set(severity);
+  }
+
+  protected setResolutionFilter(resolution: 'open' | 'patched' | null): void {
+    this.advisoryResolutionFilter.set(resolution);
+  }
+
+  protected loadMoreAdvisories(): void {
+    if (this.advisoryLoadingMore() || !this.advisoryHasMore()) return;
+    const purl = this.packageId();
+    if (!purl) return;
+
+    // Capture the active request key so a response that resolves after the query
+    // context changed (package / tab / filters reset by initAdvisoryLoader) is dropped.
+    const requestKey = this._advisoryRequestKey;
+    this.advisoryLoadingMore.set(true);
+    this.akritesService
+      .getPackageAdvisories({
+        purl,
+        severity: this.advisorySeverityFilter() ?? undefined,
+        resolution: this.advisoryResolutionFilter() ?? undefined,
+        page: this._advisoryNextPage,
+        pageSize: AkritesPackageDrawerComponent.advisoryPageSize,
+      })
+      .pipe(
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load more advisories. Please try again.' });
+          return of(null);
+        }),
+        finalize(() => this.advisoryLoadingMore.set(false)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((page) => {
+        // Ignore stale responses from a superseded query.
+        if (page && requestKey === this._advisoryRequestKey) {
+          this._advisoryNextPage++;
+          this.advisoryTotal.set(page.total);
+          this.advisoryItems.update((items) => [...items, ...page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) }))]);
+        }
+      });
+  }
 
   protected onTabChange(tab: DrawerTab): void {
     this.activeTab.set(tab);
@@ -239,7 +331,7 @@ export class AkritesPackageDrawerComponent {
     this.akritesService
       .openStewardship(purl)
       .pipe(
-        switchMap((res) => this.akritesService.assignSteward(parseInt(res.stewardship.id, 10), body)),
+        switchMap((res) => this.akritesService.assignSteward(res.stewardship.id, body)),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -296,6 +388,52 @@ export class AkritesPackageDrawerComponent {
   private onActionError(): void {
     this.actionLoading.set(false);
     this.messageService.add({ severity: 'error', summary: 'Action failed', detail: 'Something went wrong. Please try again.' });
+  }
+
+  private initAdvisoryLoader(): void {
+    // Reset filter signals whenever the selected package changes. This runs in
+    // the constructor's injection context — safe to call toObservable here.
+    toObservable(this.packageId)
+      .pipe(
+        tap(() => {
+          this.advisorySeverityFilter.set(null);
+          this.advisoryResolutionFilter.set(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+
+    // Drive advisory fetches from the class-level advisoryFilterParams computed.
+    // toObservable() is called here (constructor injection context) — NOT inside a
+    // switchMap callback — so Angular's injection context is always available.
+    toObservable(this.advisoryFilterParams)
+      .pipe(
+        // Compare the fixed-shape filter fields directly — cheaper and order-independent vs JSON.stringify.
+        distinctUntilChanged((a, b) => a?.purl === b?.purl && a?.severity === b?.severity && a?.resolution === b?.resolution),
+        switchMap((p) => {
+          // Bump the request key so any in-flight load-more response is discarded.
+          this._advisoryRequestKey++;
+          this.advisoryItems.set([]);
+          this.advisoryTotal.set(0);
+          this._advisoryNextPage = 2;
+          if (!p) return of(null);
+          this.advisoryLoading.set(true);
+          return this.akritesService.getPackageAdvisories({ ...p, page: 1, pageSize: AkritesPackageDrawerComponent.advisoryPageSize }).pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Load failed', detail: 'Could not load advisories. Please try again.' });
+              return of(null);
+            }),
+            finalize(() => this.advisoryLoading.set(false))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((page) => {
+        if (page) {
+          this.advisoryItems.set(page.advisories.map((a) => ({ ...a, tagSeverity: getAdvisoryTagSeverity(a.severity) })));
+          this.advisoryTotal.set(page.total);
+        }
+      });
   }
 
   private initPackageData(): Signal<AkritesPackage | null> {

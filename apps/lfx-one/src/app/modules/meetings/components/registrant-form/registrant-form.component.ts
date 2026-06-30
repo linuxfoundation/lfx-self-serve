@@ -46,9 +46,28 @@ export class RegistrantFormComponent {
    * Emit event for parent to add the user directly to the guest list
    */
   public handleUserSelection(): void {
-    // The search component has already populated the form controls
-    // Emit event so parent can add the user directly
     this.form().markAsDirty();
+
+    const firstName = this.form().get('first_name')?.value?.trim();
+    const lastName = this.form().get('last_name')?.value?.trim();
+
+    if (!firstName || !lastName) {
+      // Auto-switch to individual fields, preserving all populated controls,
+      // and mark the missing field(s) as touched+dirty so validation renders.
+      this.showIndividualFields.set(true);
+      if (!firstName) {
+        this.form().get('first_name')?.markAsTouched();
+        this.form().get('first_name')?.markAsDirty();
+      }
+      if (!lastName) {
+        this.form().get('last_name')?.markAsTouched();
+        this.form().get('last_name')?.markAsDirty();
+      }
+      return;
+    }
+
+    this.form().get('first_name')?.setValue(firstName);
+    this.form().get('last_name')?.setValue(lastName);
     this.onUserSelected.emit();
   }
 
@@ -56,12 +75,9 @@ export class RegistrantFormComponent {
    * Switch to manual entry mode when user clicks "Enter details manually"
    */
   public switchToManualEntry(): void {
-    // Clear the form for manual entry
-    const hostValue = this.form().get('host')?.value; // Preserve host checkbox state
+    const hostValue = this.form().get('host')?.value;
     this.form().reset();
     this.form().get('host')?.setValue(hostValue);
-
-    // Show individual fields for manual entry
     this.showIndividualFields.set(true);
   }
 

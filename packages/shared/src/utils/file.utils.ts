@@ -282,3 +282,50 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
 
   return sanitized;
 }
+
+/**
+ * Escape a single CSV cell per RFC 4180 and neutralize formula-injection prefixes.
+ * String cells starting with =, +, -, @, TAB, or CR are prefixed with a leading apostrophe;
+ * numeric values (including negatives) are left unchanged so Excel keeps them numeric.
+ * @param value - Raw cell value
+ * @returns CSV-safe cell string
+ */
+function escapeCsvCell(value: string | number): string {
+  const raw = String(value ?? '');
+  // Only string cells can carry a formula payload; leave numbers numeric (prefixing makes Excel treat them as text).
+  const safe = typeof value === 'string' && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+/**
+ * Build an RFC 4180 CSV string from a matrix of rows (first row is typically the header).
+ * @param rows - Array of rows, each an array of cell values
+ * @returns CSV text with CRLF line endings
+ */
+export function rowsToCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): string {
+  return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
+}
+
+/**
+ * Trigger a client-side CSV file download in the browser. No-op during SSR (no `document`).
+ * Prepends a UTF-8 BOM so Excel detects the encoding.
+ * @param filename - Download filename (e.g. "report.csv")
+ * @param rows - Array of rows, each an array of cell values
+ */
+export function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<string | number>>): void {
+  // Browser-only: bail unless the full DOM + Blob URL APIs exist (a partial SSR DOM may lack createObjectURL).
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return;
+  }
+
+  const blob = new Blob(['\ufeff' + rowsToCsv(rows)], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = sanitizeFilename(filename);
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}

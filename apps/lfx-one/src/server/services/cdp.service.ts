@@ -821,8 +821,8 @@ export class CdpService {
         Authorization: `Bearer ${token}`,
         'X-LFX-Request-ID': requestId,
       },
-      // Drop empty-string logos — they're not meaningful URLs
-      body: JSON.stringify({ name, domain, source, ...(logo ? { logo } : {}) }),
+      // Drop empty-string domains and logos — CDP rejects them with 400
+      body: JSON.stringify({ name, ...(domain ? { domain } : {}), source, ...(logo ? { logo } : {}) }),
       signal: AbortSignal.timeout(10000),
     });
 
@@ -839,22 +839,32 @@ export class CdpService {
   }
 
   /**
-   * Find or create an organization in CDP by domain
-   * Tries to find first, creates if not found
+   * Find or create an organization in CDP by domain.
+   * The CDP API requires domain for both lookup and creation — callers must
+   * validate that domain is present before calling this method.
    */
   public async resolveOrganization(req: Request | undefined, name: string, domain: string, logo?: string): Promise<CdpOrganization> {
     logger.debug(req, 'resolve_cdp_organization', 'Resolving CDP organization', { name, domain });
 
-    if (domain) {
-      const existing = await this.findOrganizationByDomain(req, domain);
-      if (existing) {
-        logger.debug(req, 'resolve_cdp_organization', 'Found existing CDP organization', { id: existing.id, name: existing.name });
-        return existing;
-      }
+    if (!domain) {
+      throw ServiceValidationError.forField('domain', 'domain is required to resolve or create a CDP organization', {
+        operation: 'resolve_cdp_organization',
+        service: 'cdp_service',
+      });
     }
 
-    const created = await this.createOrganization(req, name, domain, undefined, logo);
-    logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain });
+    // Normalize full URLs (e.g. "https://example.com") to bare hostname ("example.com")
+    // so the CDP API stores and looks up consistent domain identity values.
+    const normalizedDomain = domain.includes('://') ? new URL(domain).hostname : domain;
+
+    const existing = await this.findOrganizationByDomain(req, normalizedDomain);
+    if (existing) {
+      logger.debug(req, 'resolve_cdp_organization', 'Found existing CDP organization', { id: existing.id, name: existing.name });
+      return existing;
+    }
+
+    const created = await this.createOrganization(req, name, normalizedDomain, undefined, logo);
+    logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain: normalizedDomain });
     return created;
   }
 

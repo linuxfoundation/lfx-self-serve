@@ -11,9 +11,10 @@ import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
 import type { OrgEventAttendeesDrawerResponse, OrgEventAttendeeVm } from '@lfx-one/shared/interfaces';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
   selector: 'lfx-event-attendees-drawer',
@@ -39,7 +40,7 @@ export class EventAttendeesDrawerComponent {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.attendeesData()?.data ?? [];
     const matched = !term ? data : data.filter((a) => a.name.toLowerCase().includes(term) || (a.jobTitle ?? '').toLowerCase().includes(term));
-    return matched.map((a) => ({ ...a, initials: computePersonInitials(a.name), avatarColorClass: computePersonAvatarColorClass(a.contactId) }));
+    return matched.map((a) => ({ ...a, initials: computePersonInitials(a.name), avatarColorClass: avatarColorClass(a.contactId) }));
   });
 
   private initAttendeesData() {

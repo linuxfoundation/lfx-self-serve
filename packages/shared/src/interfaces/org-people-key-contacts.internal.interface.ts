@@ -11,6 +11,7 @@ export interface KeyContactIndexedDoc {
   title?: string | null;
   role?: string;
   status?: string | null;
+  avatar?: string | null;
 }
 
 /** Indexed `project_membership.data` shape on query-service — server-side only; fields optional because the search index can omit unindexed columns per row. */

@@ -5,7 +5,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectorRef, Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import type {
@@ -24,7 +24,7 @@ import { take } from 'rxjs';
 @Component({
   selector: 'lfx-edit-key-contact-modal',
   standalone: true,
-  imports: [NgTemplateOutlet, FormsModule, InputTextModule, TooltipModule, EmployeeAvatarComponent],
+  imports: [NgTemplateOutlet, FormsModule, InputTextModule, TooltipModule, PersonAvatarComponent],
   templateUrl: './edit-key-contact-modal.component.html',
 })
 export class EditKeyContactModalComponent {

@@ -13,6 +13,8 @@ import {
   CROWDFUNDING_ENABLED_FLAG,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
+  MKTG_OS_AGENTS_ENABLED_FLAG,
+  MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
   AKRITES_ENABLED_FLAG,
   SURVEY_LABEL,
@@ -22,21 +24,20 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, of, startWith, switchMap, take } from 'rxjs';
+import { filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { environment } from '@environments/environment';
 
-import { ButtonComponent } from '@components/button/button.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ButtonComponent],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -47,7 +48,6 @@ export class MainLayoutComponent {
   private readonly appService = inject(AppService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
-  private readonly impersonationService = inject(ImpersonationService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -59,6 +59,8 @@ export class MainLayoutComponent {
   private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Marketing OS agents marketplace; hides the project-lens nav entry when off. */
+  private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -84,7 +86,10 @@ export class MainLayoutComponent {
         // matching Foundation lens behavior. Authorization for write actions (add user,
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
-        const base = this.projectLensItemsWithGovernance;
+        // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
+        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
+        const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
+        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
@@ -439,32 +444,37 @@ export class MainLayoutComponent {
     },
   ];
 
-  // --- Project Lens Items with Governance (for non-board personas) ---
-  private readonly projectLensItemsWithGovernance: SidebarMenuItem[] = [
-    ...this.projectLensItems,
-    {
-      label: 'Governance',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: VOTE_LABEL.plural,
-          icon: 'fa-light fa-check-to-slot',
-          routerLink: '/project/votes',
-        },
-        {
-          label: SURVEY_LABEL.plural,
-          icon: 'fa-light fa-clipboard-list',
-          routerLink: '/project/surveys',
-        },
-        {
-          label: 'Permissions',
-          icon: 'fa-light fa-shield',
-          routerLink: '/project/settings',
-        },
-      ],
-    },
-  ];
+  // --- Project Lens — Mktg OS agents (dark-launched; inserted directly under Documents in sidebarItems()) ---
+  private readonly mktgOsAgentsNavItem: SidebarMenuItem = {
+    label: MKTG_OS_AGENTS_LABEL.nav,
+    icon: 'fa-light fa-robot',
+    routerLink: '/project/mktg-os-agents',
+    testId: 'sidebar-project-mktg-os-agents',
+  };
+
+  // --- Project Lens — Governance section (for non-board personas) ---
+  private readonly projectGovernanceSection: SidebarMenuItem = {
+    label: 'Governance',
+    isSection: true,
+    expanded: true,
+    items: [
+      {
+        label: VOTE_LABEL.plural,
+        icon: 'fa-light fa-check-to-slot',
+        routerLink: '/project/votes',
+      },
+      {
+        label: SURVEY_LABEL.plural,
+        icon: 'fa-light fa-clipboard-list',
+        routerLink: '/project/surveys',
+      },
+      {
+        label: 'Permissions',
+        icon: 'fa-light fa-shield',
+        routerLink: '/project/settings',
+      },
+    ],
+  };
 
   // Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
   private readonly projectCommunicationsSection: SidebarMenuItem = {
@@ -577,15 +587,6 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
-  }
-
-  protected stopImpersonation(): void {
-    this.impersonationService
-      .stopImpersonation()
-      .pipe(take(1))
-      .subscribe(() => {
-        window.location.reload();
-      });
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

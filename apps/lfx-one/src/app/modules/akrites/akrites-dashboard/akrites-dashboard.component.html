@@ -60,6 +60,7 @@
       (navigateToPackages)="onOverviewNavigate($event)"
       (openPackageDrawer)="onOverviewPackageClick($event)"
       (resolveEscalation)="onOverviewResolveEscalation($event)"
+      (stewardshipChanged)="onStewardshipChanged()"
       data-testid="akrites-overview-tab">
     </lfx-akrites-overview-tab>
   }
@@ -88,6 +89,7 @@
         (toggleAll)="onToggleAll($event)"
         (clearFilters)="onClearFilters()"
         (pageChange)="onPageChange($event)"
+        (stewardshipChanged)="onStewardshipChanged()"
         data-testid="akrites-packages-tab">
       </lfx-akrites-packages-tab>
     }
@@ -119,7 +121,7 @@
   <!-- Bulk Actions Bar -->
   @if (showBulkActions()) {
     <div
-      class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 z-40"
+      class="fixed bottom-6 left-1/2 lg:left-[calc(50%+172px)] -translate-x-1/2 bg-white border border-gray-300 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 z-40"
       data-testid="akrites-bulk-actions-bar">
       <button
         type="button"
@@ -133,18 +135,29 @@
       <div class="w-px h-6 bg-gray-300"></div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         [disabled]="bulkActionLoading()"
         (click)="onBulkOpen()"
         data-testid="akrites-bulk-open">
+        <i class="fa-light fa-folder-open" aria-hidden="true"></i>
         Open for stewardship
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        [disabled]="bulkActionLoading()"
+        (click)="onBulkAssignSteward()"
+        data-testid="akrites-bulk-assign-steward">
+        <i class="fa-light fa-user-group" aria-hidden="true"></i>
+        Assign steward
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         [disabled]="bulkActionLoading()"
         (click)="onBulkEscalate()"
         data-testid="akrites-bulk-escalate">
+        <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
         Escalate
       </button>
     </div>
@@ -162,3 +175,10 @@
 
 <!-- Bulk Escalate Modal -->
 <lfx-akrites-escalate-modal [(visible)]="bulkEscalateVisible" [packageName]="null" [loading]="bulkActionLoading()" (confirm)="onBulkEscalateConfirm($event)" />
+
+<!-- Bulk Assign Steward Modal -->
+<lfx-akrites-assign-steward-modal
+  [(visible)]="bulkAssignStewardVisible"
+  [packageName]="null"
+  [loading]="bulkActionLoading()"
+  (confirm)="onBulkAssignStewardConfirm($event)" />

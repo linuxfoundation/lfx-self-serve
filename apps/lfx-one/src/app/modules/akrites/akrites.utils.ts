@@ -42,9 +42,10 @@ export function getAdvisoryTagSeverity(severity: AkritesSeverity | null): TagSev
     critical: 'danger',
     high: 'danger',
     medium: 'warn',
+    moderate: 'warn',
     low: 'info',
   };
-  return map[severity];
+  return map[severity] ?? 'secondary';
 }
 
 export function formatStatus(status: string): string {

@@ -219,6 +219,7 @@
         <th>Steward</th>
         <th>Last activity</th>
         <th>Stewardship</th>
+        <th class="w-12"><span class="sr-only">Row actions</span></th>
       </tr>
     </ng-template>
     <ng-template #loadingbody let-rowData>
@@ -243,6 +244,7 @@
           </div>
         </td>
         <td><div class="lfx-skeleton-bar w-16"></div></td>
+        <td></td>
       </tr>
     </ng-template>
     <ng-template #body let-pkg>
@@ -309,21 +311,29 @@
           </span>
         </td>
         <!-- TODO(v2): replace per-row template functions below with pure pipes or computed() maps to avoid per-cycle re-execution -->
-        <td><lfx-tag [value]="getLifecycleLabel(pkg.lifecycle)" [severity]="getLifecycleTagSeverity(pkg.lifecycle)" [rounded]="true" [dot]="true" /></td>
+        <td>
+          <lfx-tag
+            [value]="getLifecycleLabel(pkg.lifecycle)"
+            [severity]="getLifecycleTagSeverity(pkg.lifecycle)"
+            [rounded]="true"
+            [dot]="true"
+            [outlined]="true" />
+        </td>
         <td>
           @if (pkg.healthScore !== null) {
             <lfx-tag
-              [value]="getHealthLabel(pkg.healthScore) + ' (' + pkg.healthScore + ')'"
+              [value]="(pkg.healthLabel ?? getHealthLabel(pkg.healthScore)) + ' (' + pkg.healthScore + ')'"
               [severity]="getHealthTagSeverity(pkg.healthScore)"
               [rounded]="true"
-              [dot]="true" />
+              [dot]="true"
+              [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }
         </td>
         <td>
           @if (pkg.impactScore !== null) {
-            <lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" [rounded]="true" />
+            <lfx-tag [value]="pkg.impactScore.toString()" severity="secondary" [rounded]="true" [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }
@@ -335,32 +345,35 @@
               [severity]="getAdvisoryTagSeverity(pkg.vulnSeverity)"
               [rounded]="true"
               [dot]="true"
-              styleClass="whitespace-nowrap" />
+              [outlined]="true" />
           } @else {
             <span class="text-gray-400">—</span>
           }
         </td>
         <td>
           @if (pkg.stewards.length > 0) {
-            <div class="flex items-center">
-              @for (steward of pkg.stewards.slice(0, 3); track steward.userId; let i = $index) {
-                <span
-                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold border-2 border-white flex-shrink-0"
-                  [style.margin-left]="i > 0 ? '-6px' : '0'"
-                  [title]="steward.name ?? steward.userId">
-                  @if (steward.avatarUrl) {
-                    <img [src]="steward.avatarUrl" [alt]="steward.name ?? ''" class="w-full h-full rounded-full object-cover" />
-                  } @else {
-                    {{ steward | stewardInitials }}
-                  }
-                </span>
-              }
-              @if (pkg.stewards.length > 3) {
-                <span
-                  class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold border-2 border-white flex-shrink-0 -ml-1.5">
-                  +{{ pkg.stewards.length - 3 }}
-                </span>
-              }
+            <div class="flex items-center gap-2">
+              <div class="flex items-center">
+                @for (steward of pkg.stewards.slice(0, 2); track steward.userId; let i = $index) {
+                  <span
+                    class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold border-2 border-white flex-shrink-0"
+                    [style.margin-left]="i > 0 ? '-6px' : '0'"
+                    [title]="steward.name ?? steward.userId">
+                    @if (steward.avatarUrl) {
+                      <img [src]="steward.avatarUrl" [alt]="steward.name ?? ''" class="w-full h-full rounded-full object-cover" />
+                    } @else {
+                      {{ steward | stewardInitials }}
+                    }
+                  </span>
+                }
+              </div>
+              <span class="text-xs text-gray-600 truncate max-w-[100px]">
+                @if (pkg.stewards.length === 1) {
+                  {{ pkg.stewards[0].name ?? pkg.stewards[0].username ?? pkg.stewards[0].userId }}
+                } @else {
+                  {{ pkg.stewards.length }} stewards
+                }
+              </span>
             </div>
           } @else {
             <span class="text-gray-400 italic">—</span>
@@ -373,12 +386,32 @@
           }
         </td>
         <td><lfx-tag [value]="formatStatus(pkg.status)" [severity]="getStatusTagSeverity(pkg.status)" [rounded]="true" /></td>
+        <td (click)="$event.stopPropagation()" class="text-right">
+          @if (assignablePackageIds().has(pkg.id)) {
+            <lfx-button
+              icon="fa-solid fa-ellipsis-vertical"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              ariaLabel="Package actions"
+              styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+              (onClick)="onRowMenuOpen($event, pkg, rowActionMenu)"
+              [attr.data-testid]="'akrites-row-action-' + pkg.id" />
+            <lfx-menu #rowActionMenu [model]="rowActionItems()" [popup]="true" appendTo="body" />
+          }
+        </td>
       </tr>
     </ng-template>
     <ng-template #emptymessage>
       <tr>
-        <td colspan="10" class="text-center py-8 text-sm text-gray-500">No packages match the current filters.</td>
+        <td colspan="11" class="text-center py-8 text-sm text-gray-500">No packages match the current filters.</td>
       </tr>
     </ng-template>
   </lfx-table>
 </div>
+
+<lfx-akrites-assign-steward-modal
+  [(visible)]="assignModalVisible"
+  [packageName]="assignTargetPackage()?.name ?? null"
+  [loading]="actionLoading()"
+  (confirm)="onAssignStewardConfirm($event)" />
