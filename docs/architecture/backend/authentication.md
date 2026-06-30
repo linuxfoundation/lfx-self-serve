@@ -84,8 +84,8 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 
 ### What each one is
 
-| Claim                          | Example          | Shape                                                   | Source claim(s)                                                                                                        |
-| ------------------------------ | ---------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Claim                          | Example       | Shape                                                   | Source claim(s)                                                                                                        |
+| ------------------------------ | ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **`sub`** (Auth0 subject)      | `auth0\|jdoe` | Provider-prefixed, opaque, globally unique per identity | `user.sub`                                                                                                             |
 | **`username`** (LFID username) | `jdoe`        | Bare LF login handle, no provider prefix                | `user['https://sso.linuxfoundation.org/claims/username']`, `user.nickname`, `user.username`, `user.preferred_username` |
 

@@ -161,9 +161,9 @@ This is the single choke point — every controller and service uses `req.bearer
 
 Many controllers and services read the user's email/username from `req.oidc.user` for server-side filtering (e.g., "get my meetings"). During impersonation, `req.oidc.user` is still the real user. Three helpers resolve the correct identity:
 
-| Helper                      | Returns                                                            | Notes                                                                                                        |
-| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | Email-keyed lookups                                                                                          |
+| Helper                      | Returns                                                            | Notes                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | Email-keyed lookups                                                                                       |
 | `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `jdoe`)                                        |
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|jdoe`); one incidental caller (badges email lookup) |
 
