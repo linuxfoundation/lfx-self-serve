@@ -164,8 +164,8 @@ Many controllers and services read the user's email/username from `req.oidc.user
 | Helper                      | Returns                                                            | Notes                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | Email-keyed lookups                                                                                          |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `lguerra`)                                        |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|lguerra`); one incidental caller (badges email lookup) |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `jdoe`)                                        |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|jdoe`); one incidental caller (badges email lookup) |
 
 For the full `username` vs `sub` distinction and the `sub` → `username` migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
@@ -235,7 +235,7 @@ Every request made under impersonation is logged at DEBUG level with opaque iden
 
 ```text
 impersonation_request: Request under impersonation
-  impersonator_sub: auth0|asitha
+  impersonator_sub: auth0|jsmith
   target_sub: auth0|jdoe
   path: /api/user/meetings
 ```
@@ -244,7 +244,7 @@ Impersonation start/stop events are logged at INFO level:
 
 ```text
 impersonation_granted: Impersonation session started
-  impersonator_sub: auth0|asitha
+  impersonator_sub: auth0|jsmith
   target_sub: auth0|jdoe
 
 impersonation_stopped: Impersonation session ended
