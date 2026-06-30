@@ -131,7 +131,6 @@ export class OrgProjectDetailComponent {
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
-  protected readonly sourceUrl = computed(() => this.hero()?.sourceUrl ?? null);
 
   // Org's own influence standing (from its leaderboard row) → section-title band badges.
   private readonly viewingScores = computed(() => this.detail()?.leaderboard.find((row) => row.isViewingOrg)?.scores ?? null);
