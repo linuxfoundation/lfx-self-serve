@@ -1,6 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+@if (isPastEvents() && eventsResponse().data.length > 0) {
+  <div class="mb-4 flex items-start gap-2 rounded-md bg-gray-50 p-3 text-sm text-gray-600" data-testid="events-certificate-note">
+    <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+    <span>Certificate of Attendance can take up to 2 weeks after the event ends to show below.</span>
+  </div>
+}
+
 <lfx-table
   [value]="eventsResponse().data"
   [loading]="loading()"
