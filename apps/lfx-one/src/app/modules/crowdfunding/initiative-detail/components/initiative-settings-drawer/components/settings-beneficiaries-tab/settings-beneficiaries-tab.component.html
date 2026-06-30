@@ -19,6 +19,9 @@
           <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
         </button>
       </div>
+      @if (group.hasError('partialBeneficiary') && group.touched) {
+        <p class="text-xs text-red-500" role="alert">Both name and email are required, or leave both empty.</p>
+      }
     }
   </div>
 
