@@ -66,14 +66,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger';
   selector: 'lfx-button',
   imports: [ButtonModule],
   template: `
-    <button
-      pButton
-      [type]="type"
-      [disabled]="disabled"
-      [ngClass]="sizeClass"
-      [class]="variantClass"
-      (click)="onClick.emit()"
-    >
+    <button pButton [type]="type" [disabled]="disabled" [ngClass]="sizeClass" [class]="variantClass" (click)="onClick.emit()">
       {{ label }}
     </button>
   `,
@@ -109,17 +102,12 @@ import { ButtonComponent } from '@app/shared/components/button/button.component'
 
 @Component({
   imports: [ButtonComponent],
-  template: `
-    <lfx-button
-      label="Click me"
-      variant="primary"
-      size="md"
-      (onClick)="handleClick()"
-    />
-  `,
+  template: ` <lfx-button label="Click me" variant="primary" size="md" (onClick)="handleClick()" /> `,
 })
 export class MyComponent {
-  handleClick() { /* ... */ }
+  handleClick() {
+    /* ... */
+  }
 }
 ```
 

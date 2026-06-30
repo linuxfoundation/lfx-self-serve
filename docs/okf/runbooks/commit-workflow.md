@@ -153,7 +153,7 @@ If a file is missing the header, `check-headers.sh` will fail the commit. Run it
    git commit --signoff -S -m "feat(component): add new feature
 
    Description of the change and why it was made.
-   
+
    Refs: LFXV2-123"
    ```
 

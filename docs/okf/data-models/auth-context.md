@@ -18,7 +18,7 @@ tags: [auth, typescript, interfaces]
 export interface AuthContext {
   authenticated: boolean;
   user: User | null;
-  
+
   // Persona + project enrichment (populated server-side via persona-detection,
   // hydrated to browser through Angular TransferState)
   persona?: PersonaType | null;
@@ -26,7 +26,7 @@ export interface AuthContext {
   organizations?: Account[];
   projects?: EnrichedPersonaProject[];
   personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
-  
+
   // Impersonation capability + active state
   canImpersonate?: boolean;
   impersonating?: boolean;
@@ -57,18 +57,18 @@ export interface M2MTokenResponse {
 
 ## Key Fields
 
-| Field | Type | Purpose |
-| --- | --- | --- |
-| `authenticated` | `boolean` | Whether the request has a valid authenticated user session |
-| `user` | `User \| null` | User details from Auth0/Authelia (name, email, subject claim); null if unauthenticated |
-| `persona` | `PersonaType \| null` | Current persona (Contributor, Maintainer, ED, Board Member) |
-| `personas` | `PersonaType[]` | All available personas for the user across projects |
-| `organizations` | `Account[]` | Organizations the user is affiliated with |
-| `projects` | `EnrichedPersonaProject[]` | Projects where user has a role, enriched with metadata |
-| `personaProjects` | `Partial<Record<PersonaType, PersonaProject[]>>` | Projects grouped by persona |
-| `canImpersonate` | `boolean` | Whether user has executive director permission to impersonate |
-| `impersonating` | `boolean` | Whether an active impersonation session is in place |
-| `impersonator` | `Impersonator` | Details of the ED impersonating the current session |
+| Field             | Type                                             | Purpose                                                                                |
+| ----------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `authenticated`   | `boolean`                                        | Whether the request has a valid authenticated user session                             |
+| `user`            | `User \| null`                                   | User details from Auth0/Authelia (name, email, subject claim); null if unauthenticated |
+| `persona`         | `PersonaType \| null`                            | Current persona (Contributor, Maintainer, ED, Board Member)                            |
+| `personas`        | `PersonaType[]`                                  | All available personas for the user across projects                                    |
+| `organizations`   | `Account[]`                                      | Organizations the user is affiliated with                                              |
+| `projects`        | `EnrichedPersonaProject[]`                       | Projects where user has a role, enriched with metadata                                 |
+| `personaProjects` | `Partial<Record<PersonaType, PersonaProject[]>>` | Projects grouped by persona                                                            |
+| `canImpersonate`  | `boolean`                                        | Whether user has executive director permission to impersonate                          |
+| `impersonating`   | `boolean`                                        | Whether an active impersonation session is in place                                    |
+| `impersonator`    | `Impersonator`                                   | Details of the ED impersonating the current session                                    |
 
 ## User Token vs M2M Token
 
@@ -84,6 +84,7 @@ export interface M2MTokenResponse {
 - Used in browser requests; also available for programmatic API clients
 
 **In Code**:
+
 ```typescript
 // Request has user session (browser login)
 if (req.oidc?.isAuthenticated()) {
@@ -94,7 +95,8 @@ if (req.oidc?.isAuthenticated()) {
 
 ### M2M (Machine-to-Machine) Tokens
 
-**When to Use**: 
+**When to Use**:
+
 - Unauthenticated public endpoints (`/public/api/**`) making upstream API calls
 - Explicit privileged upstream calls from an authenticated route (rare)
 
@@ -106,12 +108,14 @@ if (req.oidc?.isAuthenticated()) {
 - Used for server-to-server communication; never exposed to frontend
 
 **When NOT to Use**:
+
 - ❌ Replacing user identity for normal authenticated flows
 - ❌ Building new protected endpoints (`/api/**`) — use user tokens instead
 - ❌ Skipping authorization checks because "the app has M2M access"
 - ❌ Attributing user actions without user identity (breaks audit trail)
 
 **In Code**:
+
 ```typescript
 // Public endpoint — no user exists
 // Generate M2M token for upstream call
@@ -119,11 +123,12 @@ const m2mToken = await m2mTokenUtil.getToken();
 
 // Make upstream request with M2M credentials
 const response = await apiClient.get('/meetings/:id', {
-  headers: { Authorization: `Bearer ${m2mToken}` }
+  headers: { Authorization: `Bearer ${m2mToken}` },
 });
 ```
 
 **M2M Configuration**:
+
 ```bash
 M2M_AUTH_CLIENT_ID='...'
 M2M_AUTH_CLIENT_SECRET='...'

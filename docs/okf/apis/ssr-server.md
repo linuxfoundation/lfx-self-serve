@@ -76,6 +76,7 @@ The server applies middleware in strict order for optimal performance and correc
 The server reads environment variables for all configuration:
 
 ### User Authentication
+
 - `PCC_AUTH0_SECRET` — Session encryption key
 - `PCC_BASE_URL` — Application base URL (e.g., `http://localhost:4000`)
 - `PCC_AUTH0_ISSUER_BASE_URL` — Auth0 tenant URL
@@ -84,12 +85,14 @@ The server reads environment variables for all configuration:
 - `PCC_AUTH0_AUDIENCE` — Auth0 API audience (optional)
 
 ### M2M Authentication (Public Endpoints)
+
 - `M2M_AUTH_CLIENT_ID` — OAuth2 M2M client ID
 - `M2M_AUTH_CLIENT_SECRET` — OAuth2 M2M client secret
 - `M2M_AUTH_ISSUER_BASE_URL` — M2M token endpoint
 - `M2M_AUTH_AUDIENCE` — M2M token audience
 
 ### OpenTelemetry Tracing (Optional)
+
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP collector endpoint (unset = disabled)
 - `OTEL_SERVICE_NAME` — Service name in traces (default: `lfx-self-serve`)
 - `OTEL_TRACES_SAMPLER` — Sampler strategy (default: `parentbased_always_on`)
@@ -98,6 +101,7 @@ The server reads environment variables for all configuration:
 - `APP_VERSION` — Version reported in traces (default: `development`)
 
 ### Environment & Execution
+
 - `NODE_ENV` — Environment (development/production)
 - `PM2` — Set to `true` when running under PM2 process manager
 

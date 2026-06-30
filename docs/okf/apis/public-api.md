@@ -26,11 +26,11 @@ The Public API bridges the gap between public user access and secure backend com
 
 The following route files implement public API endpoints:
 
-| Route File | Endpoint(s) | Purpose |
-| --- | --- | --- |
-| `public-meetings.route.ts` | `/public/api/meetings/:id` | Public meeting discovery and detail retrieval |
-| `public-committees.route.ts` | `/public/api/committees/**` | Public committee browsing |
-| `public-projects.route.ts` | `/public/api/projects/**` | Public project discovery |
+| Route File                   | Endpoint(s)                 | Purpose                                       |
+| ---------------------------- | --------------------------- | --------------------------------------------- |
+| `public-meetings.route.ts`   | `/public/api/meetings/:id`  | Public meeting discovery and detail retrieval |
+| `public-committees.route.ts` | `/public/api/committees/**` | Public committee browsing                     |
+| `public-projects.route.ts`   | `/public/api/projects/**`   | Public project discovery                      |
 
 ## M2M Token Strategy
 
@@ -45,6 +45,7 @@ Public endpoints cannot use user bearer tokens (no authenticated user exists). I
 **Implementation**: `apps/lfx-one/src/server/utils/m2m-token.util.ts`
 
 **Environment Variables**:
+
 - `M2M_AUTH_CLIENT_ID` — OAuth2 client ID for M2M authentication
 - `M2M_AUTH_CLIENT_SECRET` — OAuth2 client secret for M2M authentication
 - `M2M_AUTH_ISSUER_BASE_URL` — Auth provider token endpoint (e.g. `https://auth.k8s.orb.local/`)

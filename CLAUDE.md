@@ -226,14 +226,14 @@ The bundle follows [Open Knowledge Format v0.1](https://github.com/GoogleCloudPl
 
 **When to consult which concepts:**
 
-| Situation | Concept(s) to read first |
-| --- | --- |
-| Modifying a backend service | `docs/okf/services/<service>.md` |
-| Adding/changing an Angular feature module | `docs/okf/modules/<module>.md` |
-| Changing API routes or auth model | `docs/okf/apis/authenticated-api.md` or `apis/public-api.md` |
-| Working with shared types or interfaces | `docs/okf/data-models/shared-package.md` |
-| Making a commit or opening a PR | `docs/okf/runbooks/commit-workflow.md`, `docs/okf/runbooks/post-commit-review.md` |
-| Understanding a major architectural choice | `docs/okf/decisions/<decision>.md` |
+| Situation                                  | Concept(s) to read first                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| Modifying a backend service                | `docs/okf/services/<service>.md`                                                  |
+| Adding/changing an Angular feature module  | `docs/okf/modules/<module>.md`                                                    |
+| Changing API routes or auth model          | `docs/okf/apis/authenticated-api.md` or `apis/public-api.md`                      |
+| Working with shared types or interfaces    | `docs/okf/data-models/shared-package.md`                                          |
+| Making a commit or opening a PR            | `docs/okf/runbooks/commit-workflow.md`, `docs/okf/runbooks/post-commit-review.md` |
+| Understanding a major architectural choice | `docs/okf/decisions/<decision>.md`                                                |
 
 **Keeping the bundle current:** When a service, module, or architectural decision changes materially, update the matching concept file and add a `log.md` entry with today's ISO 8601 date.
 

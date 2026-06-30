@@ -25,39 +25,39 @@ Authentication is enforced by the unified auth middleware (`apps/lfx-one/src/ser
 
 The following route files implement protected API endpoints under `/api/`:
 
-| Route File | Endpoint(s) | Purpose |
-| --- | --- | --- |
-| `analytics.route.ts` | `/api/analytics/**` | User analytics and platform metrics |
-| `badges.route.ts` | `/api/badges/**` | Credential badge management |
-| `campaigns.route.ts` | `/api/campaigns/**` | Campaign data and management |
-| `committees.route.ts` | `/api/committees/**` | Committee creation and updates |
-| `documents.route.ts` | `/api/documents/**` | Project document access |
-| `events.route.ts` | `/api/events/**` | Event browsing and registration |
+| Route File               | Endpoint(s)             | Purpose                                       |
+| ------------------------ | ----------------------- | --------------------------------------------- |
+| `analytics.route.ts`     | `/api/analytics/**`     | User analytics and platform metrics           |
+| `badges.route.ts`        | `/api/badges/**`        | Credential badge management                   |
+| `campaigns.route.ts`     | `/api/campaigns/**`     | Campaign data and management                  |
+| `committees.route.ts`    | `/api/committees/**`    | Committee creation and updates                |
+| `documents.route.ts`     | `/api/documents/**`     | Project document access                       |
+| `events.route.ts`        | `/api/events/**`        | Event browsing and registration               |
 | `impersonation.route.ts` | `/api/impersonation/**` | Admin impersonation (Executive Director only) |
-| `invite.route.ts` | `/api/invite/**` | Invite token validation and acceptance |
-| `mailing-lists.route.ts` | `/api/mailing-lists/**` | Mailing list subscription management |
-| `meetings.route.ts` | `/api/meetings/**` | Meeting CRUD and detail retrieval |
-| `meetups.route.ts` | `/api/meetups/**` | Meetup browsing and registration |
-| `navigation.route.ts` | `/api/navigation/**` | Application navigation structure |
-| `newsletters.route.ts` | `/api/newsletters/**` | Newsletter listing and management |
-| `organizations.route.ts` | `/api/organizations/**` | Organization data and hierarchy |
-| `orgs.route.ts` | `/api/orgs/**` | Alternative org endpoints |
-| `past-meetings.route.ts` | `/api/past-meetings/**` | Historical meeting access |
-| `persona.route.ts` | `/api/persona/**` | User persona detection and enrichment |
-| `profile.route.ts` | `/api/profile/**` | User profile and account settings |
-| `projects.route.ts` | `/api/projects/**` | Project listing and details |
-| `rewards.route.ts` | `/api/rewards/**` | Reward program data |
-| `search.route.ts` | `/api/search/**` | Full-text search across resources |
-| `surveys.route.ts` | `/api/surveys/**` | Survey CRUD and response collection |
-| `training.route.ts` | `/api/training/**` | Training enrollment and status |
-| `enrollment.route.ts` | `/api/enrollment/**` | Learning path enrollment management |
-| `transaction.route.ts` | `/api/transaction/**` | Billing and purchase history |
-| `user.route.ts` | `/api/user/**` | Current user details and preferences |
-| `votes.route.ts` | `/api/votes/**` | Poll and vote creation/management |
-| `crowdfunding.route.ts` | `/api/crowdfunding/**` | Crowdfunding campaign access |
-| `copilot.route.ts` | `/api/copilot/**` | AI copilot features |
-| `akrites.route.ts` | `/api/akrites/**` | Akrites-specific data endpoints |
-| `mktg-agents.route.ts` | `/api/mktg-agents/**` | Marketing agent and guild proxy |
+| `invite.route.ts`        | `/api/invite/**`        | Invite token validation and acceptance        |
+| `mailing-lists.route.ts` | `/api/mailing-lists/**` | Mailing list subscription management          |
+| `meetings.route.ts`      | `/api/meetings/**`      | Meeting CRUD and detail retrieval             |
+| `meetups.route.ts`       | `/api/meetups/**`       | Meetup browsing and registration              |
+| `navigation.route.ts`    | `/api/navigation/**`    | Application navigation structure              |
+| `newsletters.route.ts`   | `/api/newsletters/**`   | Newsletter listing and management             |
+| `organizations.route.ts` | `/api/organizations/**` | Organization data and hierarchy               |
+| `orgs.route.ts`          | `/api/orgs/**`          | Alternative org endpoints                     |
+| `past-meetings.route.ts` | `/api/past-meetings/**` | Historical meeting access                     |
+| `persona.route.ts`       | `/api/persona/**`       | User persona detection and enrichment         |
+| `profile.route.ts`       | `/api/profile/**`       | User profile and account settings             |
+| `projects.route.ts`      | `/api/projects/**`      | Project listing and details                   |
+| `rewards.route.ts`       | `/api/rewards/**`       | Reward program data                           |
+| `search.route.ts`        | `/api/search/**`        | Full-text search across resources             |
+| `surveys.route.ts`       | `/api/surveys/**`       | Survey CRUD and response collection           |
+| `training.route.ts`      | `/api/training/**`      | Training enrollment and status                |
+| `enrollment.route.ts`    | `/api/enrollment/**`    | Learning path enrollment management           |
+| `transaction.route.ts`   | `/api/transaction/**`   | Billing and purchase history                  |
+| `user.route.ts`          | `/api/user/**`          | Current user details and preferences          |
+| `votes.route.ts`         | `/api/votes/**`         | Poll and vote creation/management             |
+| `crowdfunding.route.ts`  | `/api/crowdfunding/**`  | Crowdfunding campaign access                  |
+| `copilot.route.ts`       | `/api/copilot/**`       | AI copilot features                           |
+| `akrites.route.ts`       | `/api/akrites/**`       | Akrites-specific data endpoints               |
+| `mktg-agents.route.ts`   | `/api/mktg-agents/**`   | Marketing agent and guild proxy               |
 
 ## Authentication Flow
 

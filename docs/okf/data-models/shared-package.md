@@ -32,6 +32,7 @@ TypeScript interfaces are the primary mechanism for defining data shapes across 
 - ... and 25+ more domain-specific files
 
 **Conventions**:
+
 - File suffix: `.interface.ts`
 - One domain per file (e.g., all meeting-related types in `meeting.interface.ts`)
 - Prefer `interface` over union types for extensibility
@@ -42,6 +43,7 @@ TypeScript interfaces are the primary mechanism for defining data shapes across 
 Shared string enumerations used on both frontend and backend for type-safe status and category values.
 
 **Files**:
+
 - `committee.enum.ts` — Committee status, member roles
 - `meeting.enum.ts` — Meeting types, visibility levels
 - `survey.enum.ts` — Survey question types, response status
@@ -58,6 +60,7 @@ Shared string enumerations used on both frontend and backend for type-safe statu
 - `committee-member.enum.ts` — Member role and status
 
 **Conventions**:
+
 - File suffix: `.enum.ts`
 - Use string enums (values readable in logs, JSON, upstream filters)
 - One enum per file, grouped by domain
@@ -67,6 +70,7 @@ Shared string enumerations used on both frontend and backend for type-safe statu
 Pure functions split into two categories:
 
 **Generic Utilities** — Domain-free helpers:
+
 - `date-time.utils.ts` — Timezone-aware date formatting and parsing (date-fns, date-fns-tz)
 - `form.utils.ts` — Angular reactive form helpers
 - `string.utils.ts` — String manipulation and sanitization
@@ -79,6 +83,7 @@ Pure functions split into two categories:
 - `identity.utils.ts` — User identifier normalization
 
 **Domain-specific Utilities**:
+
 - `meeting.utils.ts` — RSVP calculations, meeting transformations
 - `survey.utils.ts` — Response aggregation, NPS calculation
 - `poll.utils.ts` — Vote status derivation, result tallying
@@ -92,6 +97,7 @@ Pure functions split into two categories:
 - `invitation.utils.ts` — Invite token and expiration checks
 
 **Conventions**:
+
 - File suffix: `.utils.ts` (or `.util.ts` for older single-purpose files)
 - Pure functions only — no side effects, no I/O
 - Security-sensitive utilities (URL validation, file type checking) block dangerous inputs by default
@@ -102,6 +108,7 @@ Pure functions split into two categories:
 Reusable Angular reactive form validators for common input patterns. Export as standalone `ValidatorFn` functions grouped by domain.
 
 **Files**:
+
 - `meeting.validators.ts` — Meeting date/time, title, attendee count validation
 - `mailing-list.validators.ts` — Email format, subscription constraints
 - `vote.validators.ts` — Option text, vote limit validation
@@ -109,6 +116,7 @@ Reusable Angular reactive form validators for common input patterns. Export as s
 - `committee.validators.ts` — Role and member constraints
 
 **Conventions**:
+
 - File suffix: `.validators.ts`
 - Export as standalone `ValidatorFn` functions
 - Import path: `@lfx-one/shared/validators`
@@ -118,6 +126,7 @@ Reusable Angular reactive form validators for common input patterns. Export as s
 Design tokens, API endpoint configuration, and static lookup data. Use `as const` for immutability.
 
 **Content**:
+
 - Design tokens — `lfxColors`, `lfxFontSizes`, spacing scales, typography
 - API config — Base URLs, endpoint paths, API versions
 - Domain constants — Countries, timezones, t-shirt sizes, currency codes
@@ -125,6 +134,7 @@ Design tokens, API endpoint configuration, and static lookup data. Use `as const
 - Static lookup tables — Status strings, role definitions, permission matrices
 
 **Organization**:
+
 - File suffix: `.constants.ts`
 - Group by domain (e.g., `meeting.constants.ts` for meeting-related defaults)
 - Subdirectories allowed for large groupings (e.g., `meeting-templates/`)
@@ -191,6 +201,7 @@ yarn check-types                    # Type-check only (no emit)
 Outputs TypeScript declarations alongside JavaScript for downstream workspace consumers.
 
 **TypeScript Configuration**:
+
 - Target: ES2022
 - Strict mode: enabled
 - Module resolution: `bundler`
@@ -199,10 +210,12 @@ Outputs TypeScript declarations alongside JavaScript for downstream workspace co
 ## Dependencies
 
 **Runtime** (within `packages/shared/`):
+
 - `date-fns` — Date/time formatting and utilities
 - `date-fns-tz` — Timezone support for date-fns
 
 **Peer** (consumers control versions):
+
 - `@angular/core` — Angular core framework
 - `@angular/forms` — Reactive forms
 - `rxjs` — Reactive programming

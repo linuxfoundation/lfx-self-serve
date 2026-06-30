@@ -92,19 +92,19 @@ Key tasks in `turbo.json`:
 {
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],        // Depends on upstream (shared) build
+      "dependsOn": ["^build"], // Depends on upstream (shared) build
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**"]
     },
     "lint": {
-      "dependsOn": ["^lint"]          // Upstream lint must pass first
+      "dependsOn": ["^lint"] // Upstream lint must pass first
     },
     "start": {
-      "cache": false,                 // Dev server never cached
-      "persistent": true              // Keeps running
+      "cache": false, // Dev server never cached
+      "persistent": true // Keeps running
     },
     "check-types": {
-      "dependsOn": ["^build"]         // Upstream build must succeed
+      "dependsOn": ["^build"] // Upstream build must succeed
     }
   }
 }

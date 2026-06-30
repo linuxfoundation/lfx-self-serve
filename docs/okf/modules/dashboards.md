@@ -40,6 +40,7 @@ The Dashboards module provides multi-persona dashboard experiences tailored to d
 ## Backend Surface
 
 Dashboards primarily consume data from upstream services; route file verification needed (may not have dedicated `dashboards.route.ts`). Data integration happens through:
+
 - [Meeting Service](../services/meeting-service.md) — meeting and RSVP data
 - [Committee Service](../services/committee-service.md) — committee overview
 - [Project Service](../services/project-service.md) — project metrics and status

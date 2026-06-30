@@ -69,16 +69,18 @@ M2M_AUTH_AUDIENCE='http://lfx-api.k8s.orb.local/'
 
 ```typescript
 // apps/lfx-one/src/server/server.ts
-app.use(auth({
-  authRequired: false,              // Global default: no auth required
-  auth0Logout: true,                // Support logout endpoint
-  secret: process.env.PCC_AUTH0_SECRET,
-  baseURL: process.env.PCC_BASE_URL,
-  clientID: process.env.PCC_AUTH0_CLIENT_ID,
-  clientSecret: process.env.PCC_AUTH0_CLIENT_SECRET,
-  issuerBaseURL: process.env.PCC_AUTH0_ISSUER_BASE_URL,
-  audience: process.env.PCC_AUTH0_AUDIENCE,
-}));
+app.use(
+  auth({
+    authRequired: false, // Global default: no auth required
+    auth0Logout: true, // Support logout endpoint
+    secret: process.env.PCC_AUTH0_SECRET,
+    baseURL: process.env.PCC_BASE_URL,
+    clientID: process.env.PCC_AUTH0_CLIENT_ID,
+    clientSecret: process.env.PCC_AUTH0_CLIENT_SECRET,
+    issuerBaseURL: process.env.PCC_AUTH0_ISSUER_BASE_URL,
+    audience: process.env.PCC_AUTH0_AUDIENCE,
+  })
+);
 ```
 
 Individual routes then apply protection via middleware:
@@ -106,10 +108,10 @@ export interface AuthContext {
   authenticated: boolean;
   user: User | null;
   // User identity
-  persona?: PersonaType | null;           // Current persona (Contributor, Maintainer, ED, Board Member)
-  personas?: PersonaType[];               // Available personas
-  organizations?: Account[];              // Organizations the user belongs to
-  projects?: EnrichedPersonaProject[];    // Projects the user has access to
+  persona?: PersonaType | null; // Current persona (Contributor, Maintainer, ED, Board Member)
+  personas?: PersonaType[]; // Available personas
+  organizations?: Account[]; // Organizations the user belongs to
+  projects?: EnrichedPersonaProject[]; // Projects the user has access to
   personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
   // Impersonation (ED/Admin feature)
   canImpersonate?: boolean;

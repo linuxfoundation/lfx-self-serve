@@ -28,7 +28,7 @@ The application uses **Angular 20 with stable zoneless change detection** paired
 // apps/lfx-one/src/app/app.config.ts
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideZonelessChangeDetection(),  // Stable API in Angular 20
+    provideZonelessChangeDetection(), // Stable API in Angular 20
     provideRouter(routes),
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch()),
@@ -61,7 +61,7 @@ export const config = mergeApplicationConfig(appConfig, {
 export const serverRoutes: ServerRoute[] = [
   {
     path: '**',
-    renderMode: RenderMode.Server,  // All routes rendered server-side
+    renderMode: RenderMode.Server, // All routes rendered server-side
   },
 ];
 ```
