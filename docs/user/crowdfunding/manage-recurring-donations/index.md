@@ -5,11 +5,16 @@ audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, recurring donations, cancel, subscription, manage]
 last_generated: 2026-06-16
-last_updated: 2026-06-16
+last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
 
-A recurring donation is a monthly subscription that automatically charges your saved payment method each billing cycle. You can view the details of a recurring donation and cancel it at any time from the recurring donation detail page.
+This article explains how to view your recurring donation details and how to cancel a recurring donation subscription in LFX Self Serve. A recurring donation is a monthly subscription that automatically charges your saved payment method each billing cycle. You can view the details of a recurring donation and cancel it at any time from the recurring donation detail page.
+
+## Before you begin
+
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- You must have at least one active recurring donation. If your recurring donations list is empty, you have no active subscriptions.
 
 ## View recurring donation details
 
