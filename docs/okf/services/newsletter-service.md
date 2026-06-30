@@ -29,12 +29,10 @@ The Newsletter Service is a thin pass-through layer that delegates all newslette
 
 ## Related Concepts
 
-- [Newsletter Service Client](./newsletter-service.md#related-source) — typed HTTP wrapper for Go service calls
 - [AI Service](./ai-service.md) — may provide draft content generation
-- [Email Service](../architecture/backend/README.md#external-services) — downstream recipient delivery
-- [Project Service](./project-service.md) — newsletters are scoped to projects
+- [Email Service](../../architecture/backend/README.md#external-services) — downstream recipient delivery
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/newsletter.service.ts`
 - Client Source: `apps/lfx-one/src/server/services/newsletter-service.client.ts`

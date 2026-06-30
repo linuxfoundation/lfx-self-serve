@@ -30,10 +30,9 @@ The Surveys module enables authorized users to create, manage, and analyze surve
 ## Related Concepts
 
 - [Snowflake Service](../services/snowflake-service.md) — Survey analytics and response data storage
-- [Project Service](../services/project-service.md) — Surveys are scoped to projects
-- [Auth Guards](../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
+- [Auth Guards](../../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/surveys/`
 - Routing: `apps/lfx-one/src/app/modules/surveys/surveys.routes.ts`

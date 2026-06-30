@@ -30,9 +30,9 @@ The service implements lazy environment variable resolution with memoization to 
 
 - [Meeting Service](./meeting-service.md) — consumes agenda generation
 - [Newsletter Service](./newsletter-service.md) — consumes newsletter generation
-- [Authentication](../decisions/auth-architecture.md) — Bearer token required on all endpoints
+- [Authentication](../decisions/auth0-authentication.md) — Bearer token required on all endpoints
 
-# Citations
+## Citations
 
 - Architecture: `docs/architecture/backend/ai-service.md`
 - Source: `apps/lfx-one/src/server/services/ai.service.ts`

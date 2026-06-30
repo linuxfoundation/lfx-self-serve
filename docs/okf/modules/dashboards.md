@@ -43,16 +43,16 @@ Dashboards primarily consume data from upstream services; route file verificatio
 
 - [Meeting Service](../services/meeting-service.md) — meeting and RSVP data
 - [Committee Service](../services/committee-service.md) — committee overview
-- [Project Service](../services/project-service.md) — project metrics and status
+- Project Service — project metrics and status (concept file not in this bundle)
 - [Newsletter Service](../services/newsletter-service.md) — newsletter analytics
 
 ## Related Concepts
 
-- [Authentication](../architecture/frontend/README.md#authentication) — Dashboard persona determined by user role
-- [Microservice Proxy](../architecture/backend/README.md#microservice-integration) — Aggregates upstream service data
+- [Authentication](../../architecture/frontend/README.md#authentication) — Dashboard persona determined by user role
+- [Microservice Proxy](../../architecture/backend/README.md#microservice-integration) — Aggregates upstream service data
 - All feature modules — dashboards surface data from each module context
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/dashboards/`
 - Main component: `apps/lfx-one/src/app/modules/dashboards/dashboard.component.ts`

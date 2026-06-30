@@ -33,9 +33,9 @@ The Mailing Lists module enables users to discover, subscribe to, and manage pro
 
 - [Newsletters](./newsletters.md) — Newsletters may use mailing lists for distribution
 - [Committees](./committees.md) — Committees may have associated mailing lists
-- [Auth Guards](../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
+- [Auth Guards](../../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/mailing-lists/`
 - Routing: `apps/lfx-one/src/app/modules/mailing-lists/mailing-lists.routes.ts`

@@ -233,7 +233,7 @@ The impersonation system allows Executive Directors to act on behalf of other us
 - [Shared Package](./shared-package.md) — Contains `AuthContext` interface definition
 - [Authentication](../../architecture/backend/authentication.md) — Auth0/Authelia configuration and token strategies
 - [Impersonation](../../architecture/backend/impersonation.md) — ED impersonation system
-- [Development Rules - M2M vs User Tokens](../../.claude/rules/development-rules.md#authentication-user-tokens-vs-m2m-tokens) — Guidance on token usage
+- [Development Rules - M2M vs User Tokens](../../../.claude/rules/development-rules.md#authentication-user-tokens-vs-m2m-tokens) — Guidance on token usage
 
 ## Citations
 

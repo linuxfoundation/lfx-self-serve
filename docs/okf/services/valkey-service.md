@@ -29,9 +29,9 @@ The Valkey Service implements a distributed cache layer backed by Valkey (Redis-
 
 ## Related Concepts
 
-- [Cache Port](../shared/package-architecture.md#interfaces) — service interface contract
-- [Shutdown Hooks](../architecture/backend/README.md#lifecycle) — graceful cleanup pattern
+- [Cache Port](../../architecture/shared/package-architecture.md#interfaces) — service interface contract
+- [Shutdown Hooks](../../architecture/backend/README.md#lifecycle) — graceful cleanup pattern
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/valkey.service.ts`

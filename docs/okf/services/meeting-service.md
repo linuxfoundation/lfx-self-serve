@@ -34,9 +34,8 @@ The Meeting Service handles all meeting-related business logic including creatio
 
 - [AI Service](./ai-service.md) — agenda generation for meetings
 - [Committee Service](./committee-service.md) — meetings may be committee-scoped
-- [Project Service](./project-service.md) — meetings are scoped to projects
-- [Microservice Proxy](../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
+- [Microservice Proxy](../../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/meeting.service.ts`

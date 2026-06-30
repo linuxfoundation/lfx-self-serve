@@ -37,9 +37,9 @@ The Meetings module enables users to discover, create, manage, and join meetings
 - [Committees](./committees.md) — Meetings may be committee-scoped
 - [Events](./events.md) — Meetings are a category of events
 - [AI Service](../services/ai-service.md) — Meeting agenda generation
-- [Calendar Integration](../architecture/frontend/README.md#calendar-integration) — Meetings can be added to user calendars
+- [Calendar Integration](../../architecture/frontend/README.md#calendar-integration) — Meetings can be added to user calendars
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/meetings/`
 - Routing: `apps/lfx-one/src/app/modules/meetings/meetings.routes.ts`

@@ -25,16 +25,15 @@ The Votes module enables users to participate in and manage voting/polling on LF
 ## Backend Surface
 
 - Server route: `apps/lfx-one/src/server/routes/votes.route.ts`
-- Service: [Vote Service](../services/vote-service.md)
+- Service: Vote Service (concept file not in this bundle)
 
 ## Related Concepts
 
 - [Committees](./committees.md) — Voting may be used for committee decisions
 - [Survey Service](../services/survey-service.md) — Surveys can include voting mechanisms
-- [Project Service](../services/project-service.md) — Votes are scoped to projects
-- [Auth Guards](../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
+- [Auth Guards](../../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/votes/`
 - Routing: `apps/lfx-one/src/app/modules/votes/votes.routes.ts`

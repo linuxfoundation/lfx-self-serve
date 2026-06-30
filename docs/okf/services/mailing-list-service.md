@@ -29,10 +29,9 @@ The Mailing List Service handles mailing list operations and subscriptions with 
 
 ## Related Concepts
 
-- [Project Service](./project-service.md) — mailing lists are scoped to projects
-- [Microservice Proxy](../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
-- [Access Control](../architecture/backend/README.md#authorization) — project-level permissions enforcement
+- [Microservice Proxy](../../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
+- [Access Control](../../architecture/backend/README.md#authorization) — project-level permissions enforcement
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/mailing-list.service.ts`

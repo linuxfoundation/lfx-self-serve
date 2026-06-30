@@ -34,10 +34,9 @@ The Committees module provides comprehensive committee management for LFX projec
 ## Related Concepts
 
 - [Meetings](./meetings.md) — Committees may host meetings
-- [Project Service](../services/project-service.md) — Committees are scoped to projects
-- [Auth Guards](../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
+- [Auth Guards](../../architecture/frontend/README.md#route-guards) — Writer guard controls creation/editing
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/committees/`
 - Routing: `apps/lfx-one/src/app/modules/committees/committees.routes.ts`

@@ -32,10 +32,9 @@ The Survey Service handles all survey-related business logic including creation,
 
 ## Related Concepts
 
-- [Project Service](./project-service.md) — surveys are scoped to projects
-- [Microservice Proxy](../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
-- [Query Service](../architecture/backend/README.md#pagination) — paginated response handling
+- [Microservice Proxy](../../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
+- [Query Service](../../architecture/backend/README.md#pagination) — paginated response handling
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/survey.service.ts`

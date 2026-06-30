@@ -30,11 +30,11 @@ The Snowflake Service manages read-only analytical queries against the Snowflake
 
 ## Related Concepts
 
-- [Lock Manager](../architecture/backend/snowflake-integration.md#query-deduplication) — query deduplication strategy
-- [Snowflake Integration](../architecture/backend/snowflake-integration.md) — architecture patterns and security layers
-- [Analytics Controllers](../architecture/backend/README.md#analytics) — primary callers for data access
+- [Lock Manager](../../architecture/backend/snowflake-integration.md#query-deduplication) — query deduplication strategy
+- [Snowflake Integration](../../architecture/backend/snowflake-integration.md) — architecture patterns and security layers
+- [Analytics Controllers](../../architecture/backend/README.md#analytics) — primary callers for data access
 
-# Citations
+## Citations
 
 - Architecture: `docs/architecture/backend/snowflake-integration.md`
 - Source: `apps/lfx-one/src/server/services/snowflake.service.ts`

@@ -28,11 +28,10 @@ The NATS Service provides a high-performance messaging interface for inter-servi
 
 ## Related Concepts
 
-- [Project Service](./project-service.md) — resolves project slugs via NATS
 - [Auth Service](./auth-service.md) — fetches user identities via NATS auth-service
-- [NATS Integration](../architecture/backend/nats-integration.md) — architecture patterns and configuration
+- [NATS Integration](../../architecture/backend/nats-integration.md) — architecture patterns and configuration
 
-# Citations
+## Citations
 
 - Architecture: `docs/architecture/backend/nats-integration.md`
 - Source: `apps/lfx-one/src/server/services/nats.service.ts`

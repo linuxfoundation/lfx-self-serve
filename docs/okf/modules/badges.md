@@ -22,14 +22,13 @@ The Badges module enables users to browse and manage credentialing badges earned
 ## Backend Surface
 
 - Server route: `apps/lfx-one/src/server/routes/badges.route.ts`
-- Service: [Badge Service](../services/badge-service.md)
+- Service: Badge Service (concept file not in this bundle)
 
 ## Related Concepts
 
 - [Dashboards](./dashboards.md) — User dashboards contain badge information
-- [Project Service](../services/project-service.md) — Badges are scoped to projects
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/badges/`
 - Routing: `apps/lfx-one/src/app/modules/badges/badges.routes.ts`

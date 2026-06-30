@@ -37,7 +37,7 @@ The Newsletters module enables authorized users to create, manage, and analyze p
 - [AI Service](../services/ai-service.md) — Assists with newsletter content generation
 - [Snowflake Service](../services/snowflake-service.md) — Analytics data source
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/newsletters/`
 - Routing: `apps/lfx-one/src/app/modules/newsletters/newsletters.routes.ts`

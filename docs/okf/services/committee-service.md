@@ -32,9 +32,8 @@ The service integrates with access control checks to enforce user authorization 
 ## Related Concepts
 
 - [Meeting Service](./meeting-service.md) — meetings may be associated with committees
-- [Project Service](./project-service.md) — committees are scoped to projects
-- [Microservice Proxy](../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
+- [Microservice Proxy](../../architecture/backend/README.md#microservice-integration) — HTTP proxy pattern
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/server/services/committee.service.ts`

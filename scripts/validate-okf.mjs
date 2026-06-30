@@ -45,15 +45,23 @@ function extractType(content) {
 const files = await collectMd(ROOT);
 const errors = [];
 
+// Verify required root files exist before iterating
+for (const name of ['index.md', 'log.md']) {
+  if (!files.some((f) => f === join(ROOT, name))) {
+    errors.push(`Missing required root file: ${join(ROOT, name)}`);
+  }
+}
+
 for (const file of files) {
   const rel = relative(process.cwd(), file);
-  const basename = file.split('/').pop();
+  // Use ROOT-relative path so only top-level index.md/log.md are treated as reserved
+  const rootRel = relative(ROOT, file);
   const content = await readFile(file, 'utf8');
 
-  if (RESERVED.has(basename)) {
+  if (RESERVED.has(rootRel)) {
     // Reserved files must NOT have frontmatter
     if (content.trimStart().startsWith('---')) {
-      errors.push(`${rel}: reserved file "${basename}" must not have YAML frontmatter`);
+      errors.push(`${rel}: reserved file "${rootRel}" must not have YAML frontmatter`);
     }
     continue;
   }

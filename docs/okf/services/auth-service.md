@@ -30,10 +30,10 @@ The service also fetches Auth0 user identity data through the NATS auth-service,
 ## Related Concepts
 
 - [NATS Integration](./nats-service.md) — routes identity lookups through NATS
-- [API Routes](../architecture/backend/authentication.md) — selective route protection patterns
-- [Impersonation](../architecture/backend/impersonation.md) — admin impersonation capability
+- [API Routes](../../architecture/backend/authentication.md) — selective route protection patterns
+- [Impersonation](../../architecture/backend/impersonation.md) — admin impersonation capability
 
-# Citations
+## Citations
 
 - Architecture: `docs/architecture/backend/authentication.md`
 - Source: `apps/lfx-one/src/server/services/auth0.service.ts`

@@ -179,7 +179,7 @@ This pattern:
 ## Related Concepts
 
 - [Angular Zoneless SSR](../decisions/angular-zoneless-ssr.md) — SSR implications for component wrappers (e.g., avoiding browser-only APIs)
-- [Component Architecture](../modules/component-architecture.md) — module file organization and component placement
+- [Component Architecture](../../architecture/frontend/component-architecture.md) — module file organization and component placement
 
 ## Citations
 

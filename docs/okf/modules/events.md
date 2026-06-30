@@ -28,15 +28,14 @@ The Events module enables users to discover and manage event attendance across t
 ## Backend Surface
 
 - Server route: `apps/lfx-one/src/server/routes/events.route.ts`
-- Service: [Event Service](../services/event-service.md)
+- Service: Event Service (concept file not in this bundle)
 
 ## Related Concepts
 
 - [Meetings](./meetings.md) — Meetings are a type of event
 - [Dashboards](./dashboards.md) — Events data surfaces in dashboard contexts
-- [Project Service](../services/project-service.md) — Events may be scoped to projects or organizations
 
-# Citations
+## Citations
 
 - Source: `apps/lfx-one/src/app/modules/events/`
 - Routing: `apps/lfx-one/src/app/modules/events/events.routes.ts`
