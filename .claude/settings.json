@@ -11,5 +11,16 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "lfx-skills": {
+      "source": {
+        "source": "github",
+        "repo": "linuxfoundation/lfx-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "lfx-skills@lfx-skills": true
   }
 }
