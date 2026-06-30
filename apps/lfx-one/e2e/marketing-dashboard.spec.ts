@@ -55,6 +55,15 @@ async function openDrawer(page: Page, cardTestId: string, drawerContentTestId: s
   await expect(page.locator(`[data-testid="${drawerContentTestId}"]`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 
+/**
+ * Open a drawer and wait for its data to load (loading skeleton cleared).
+ * dataTestId is the element behind the drawer's loading gate (typically `*-drawer-stats`).
+ */
+async function openDrawerAndWaitForData(page: Page, cardTestId: string, drawerContentTestId: string, dataTestId: string): Promise<void> {
+  await openDrawer(page, cardTestId, drawerContentTestId);
+  await expect(page.locator(`[data-testid="${dataTestId}"]`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+}
+
 test.describe('Marketing Overview Section', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(DASHBOARD_URL);
@@ -191,8 +200,7 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('shows stats section with data', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
-    await expect(page.locator('[data-testid="website-visits-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await openDrawerAndWaitForData(page, 'marketing-card-website-visits', 'website-visits-drawer-content', 'website-visits-drawer-stats');
     const statCards = page.locator('[data-testid="website-visits-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(2);
   });
@@ -220,9 +228,8 @@ test.describe('Email CTR Drawer', () => {
     await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email Click-Through Rate');
   });
 
-  test('shows stats and chart sections', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
-    await expect(page.locator('[data-testid="email-ctr-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  test('shows stats and email sections', async ({ page }) => {
+    await openDrawerAndWaitForData(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content', 'email-ctr-drawer-stats');
     await expect(page.locator('[data-testid="email-ctr-drawer-email-section"]')).toBeVisible();
   });
 
@@ -245,8 +252,7 @@ test.describe('Paid Social Reach Drawer', () => {
   });
 
   test('shows ROAS and impressions charts', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content');
-    await expect(page.locator('[data-testid="paid-social-reach-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await openDrawerAndWaitForData(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content', 'paid-social-reach-drawer-stats');
     await expect(page.locator('[data-testid="paid-social-reach-drawer-roas-chart-section"]')).toBeVisible();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-chart-section"]')).toBeVisible();
   });
@@ -270,8 +276,7 @@ test.describe('Social Media Drawer', () => {
   });
 
   test('shows stats and platform breakdown', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
-    await expect(page.locator('[data-testid="social-media-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await openDrawerAndWaitForData(page, 'marketing-card-social-media', 'social-media-drawer-content', 'social-media-drawer-stats');
     await expect(page.locator('[data-testid="social-media-drawer-platforms-section"]')).toBeVisible();
   });
 
@@ -294,8 +299,7 @@ test.describe('Member Growth Drawer', () => {
   });
 
   test('shows stats section', async ({ page }) => {
-    await openDrawer(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-content');
-    await expect(page.locator('[data-testid="member-acquisition-drawer-stats"]')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await openDrawerAndWaitForData(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-content', 'member-acquisition-drawer-stats');
     const statCards = page.locator('[data-testid="member-acquisition-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(3);
   });
