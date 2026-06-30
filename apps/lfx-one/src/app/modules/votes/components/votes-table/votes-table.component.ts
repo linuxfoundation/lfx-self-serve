@@ -14,8 +14,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, VOTE_ENDED_EARLY_TOOLTIP, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -59,8 +60,10 @@ export class VotesTableComponent {
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
+  protected readonly voteEndedEarlyTooltip = VOTE_ENDED_EARLY_TOOLTIP;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
+  protected readonly isVoteEndedEarly = isVoteEndedEarly;
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
@@ -77,6 +80,8 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
+  /** Early-end info icon beside Ended status — management lenses only; Me lens voters see plain Ended. */
+  public readonly showEndedEarlyInfo = input<boolean>(true);
 
   // === Outputs ===
   public readonly viewVote = output<string>();

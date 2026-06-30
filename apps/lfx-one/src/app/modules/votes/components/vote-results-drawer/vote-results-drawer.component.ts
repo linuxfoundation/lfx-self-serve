@@ -6,7 +6,7 @@ import { Component, computed, inject, input, model, output, signal, Signal } fro
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, PollType, VOTE_ENDED_EARLY_TOOLTIP, VoteResponseStatus } from '@lfx-one/shared';
 import {
   MyVoteResponse,
   PollCommentResult,
@@ -17,6 +17,7 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
+import { getVoteCloseTime, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -34,6 +35,12 @@ import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, sha
 export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
+
+  // === Constants ===
+  protected readonly PollStatus = PollStatus;
+  protected readonly getVoteCloseTime = getVoteCloseTime;
+  protected readonly isVoteEndedEarly = isVoteEndedEarly;
+  protected readonly voteEndedEarlyTooltip = VOTE_ENDED_EARLY_TOOLTIP;
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);

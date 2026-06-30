@@ -20,6 +20,9 @@ export const VOTE_LABEL = {
   plural: 'Votes',
 } as const;
 
+/** Tooltip for votes that auto-ended before their scheduled close date. */
+export const VOTE_ENDED_EARLY_TOOLTIP = 'Vote ended early — all voters have responded.';
+
 /**
  * Poll status display labels
  * @description Human-readable labels for poll statuses

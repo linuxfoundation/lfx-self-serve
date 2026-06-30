@@ -132,7 +132,9 @@
 
               <td>
                 @if (vote.status === PollStatus.ENDED) {
-                  <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
+                  <span class="text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
+                    {{ vote.end_time | date: 'MMM d, y' }}
+                  </span>
                 } @else if (vote.status === PollStatus.DISABLED) {
                   <span class="text-sm text-gray-700">Draft</span>
                 } @else if (vote.end_time) {
@@ -149,7 +151,17 @@
               </td>
 
               <td>
-                <lfx-tag [value]="vote.status | pollStatusLabel" [severity]="vote.status | pollStatusSeverity"></lfx-tag>
+                <div class="flex items-center gap-1.5">
+                  <lfx-tag [value]="vote.status | pollStatusLabel" [severity]="vote.status | pollStatusSeverity"></lfx-tag>
+                  @if (showEndedEarlyInfo() && vote.status === PollStatus.ENDED && isVoteEndedEarly(vote)) {
+                    <i
+                      class="fa-light fa-circle-info text-slate-400 text-sm cursor-help"
+                      [pTooltip]="voteEndedEarlyTooltip"
+                      tooltipPosition="top"
+                      [attr.aria-label]="voteEndedEarlyTooltip"
+                      [attr.data-testid]="'votes-ended-early-info-' + vote.uid"></i>
+                  }
+                </div>
               </td>
 
               <td>

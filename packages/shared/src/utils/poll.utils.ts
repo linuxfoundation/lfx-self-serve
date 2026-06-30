@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import { UserVote } from '../interfaces/poll.interface';
+import { UserVote, Vote } from '../interfaces/poll.interface';
 
 /**
  * Combined vote status type
@@ -29,4 +29,22 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   }
 
   return 'closed';
+}
+
+/**
+ * Effective close time for a poll. When a poll auto-ended early (all voters responded
+ * before end_time), early_end_time holds the real close timestamp; otherwise end_time
+ * is the close. Mirrors the lfx-v2-ui / pcc-v2-frontend `early_end_time ?? end_time` fallback.
+ */
+export function getVoteCloseTime(vote: Pick<Vote, 'end_time' | 'early_end_time'>): string {
+  return vote.early_end_time ?? vote.end_time;
+}
+
+/** True when the poll closed before its scheduled end_time (ITX auto-end). */
+export function isVoteEndedEarly(vote: Pick<Vote, 'end_time' | 'early_end_time'>): boolean {
+  if (!vote.early_end_time || !vote.end_time) {
+    return false;
+  }
+
+  return new Date(vote.early_end_time).getTime() < new Date(vote.end_time).getTime();
 }

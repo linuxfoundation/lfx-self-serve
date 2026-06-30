@@ -45,7 +45,7 @@
             <span class="text-slate-400">•</span>
             <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
             @if (voterState() === 'closed') {
-              <span data-testid="vote-results-drawer-voter-close-date">Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+              <span data-testid="vote-results-drawer-voter-close-date">Closed {{ getVoteCloseTime(voteData) | date: 'MMM d, y' }}</span>
             } @else if (closeDateDisplay().isCountdown) {
               <span
                 class="bg-amber-50 text-amber-700 border border-amber-200 text-xs px-2.5 py-1 rounded font-medium"
@@ -65,13 +65,23 @@
               {{ voteData.committee_name || 'Unknown' }}
             </span>
             <span class="text-slate-400">•</span>
-            <lfx-tag
-              [value]="voteData.status | pollStatusLabel"
-              [severity]="voteData.status | pollStatusSeverity"
-              data-testid="vote-results-drawer-status"></lfx-tag>
+            <div class="flex items-center gap-1">
+              <lfx-tag
+                [value]="voteData.status | pollStatusLabel"
+                [severity]="voteData.status | pollStatusSeverity"
+                data-testid="vote-results-drawer-status"></lfx-tag>
+              @if (voteData.status === PollStatus.ENDED && isVoteEndedEarly(voteData)) {
+                <i
+                  class="fa-light fa-circle-info text-slate-400 text-sm cursor-help"
+                  [pTooltip]="voteEndedEarlyTooltip"
+                  tooltipPosition="top"
+                  [attr.aria-label]="voteEndedEarlyTooltip"
+                  data-testid="vote-results-drawer-ended-early-info"></i>
+              }
+            </div>
             <span class="text-slate-400">•</span>
             @if (isVoteClosed()) {
-              <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+              <span>Closed {{ getVoteCloseTime(voteData) | date: 'MMM d, y' }}</span>
             } @else {
               <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
             }

@@ -179,6 +179,8 @@ export interface Vote {
   last_modified_time?: string;
   /** Poll end/deadline timestamp */
   end_time: string;
+  /** Actual close time when the poll auto-ended early because all eligible voters responded before end_time. Absent when the poll closed on schedule or is still active. RFC3339. Read-only (set upstream by ITX, proxied by lfx-v2-voting-service). */
+  early_end_time?: string;
   /** Current poll status */
   status: PollStatus;
   /** V2 project UID */
