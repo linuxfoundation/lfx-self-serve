@@ -41,7 +41,6 @@ export class OrgGroupsComponent {
   protected readonly tabs = GROUPS_TABS;
   protected readonly votingOptions: GroupsSelectOption[] = [...GROUPS_VOTING_OPTIONS];
   protected readonly foundationPlaceholder = 'All Foundations';
-  protected readonly projectPlaceholder = 'All Projects';
 
   // ─── URL snapshot for initial values ─────────────────────────────────────────
 
@@ -52,7 +51,6 @@ export class OrgGroupsComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     foundation: new FormControl<string>(this.initialParams.get('foundation') ?? '', { nonNullable: true }),
-    project: new FormControl<string>(this.initialParams.get('project') ?? '', { nonNullable: true }),
     voting: new FormControl<GroupsVotingFilter>((this.initialParams.get('voting') as GroupsVotingFilter) ?? 'all', { nonNullable: true }),
   });
 
@@ -118,10 +116,6 @@ export class OrgGroupsComponent {
     return [{ label: 'All Foundations', value: '' }, ...foundations.map((f) => ({ label: f, value: f }))];
   });
 
-  // ─── Stub project options ─────────────────────────────────────────────────────
-
-  protected readonly projectOptions: GroupsSelectOption[] = [{ label: 'All Projects', value: '' }];
-
   // ─── URL sync ─────────────────────────────────────────────────────────────────
 
   public constructor() {
@@ -131,7 +125,7 @@ export class OrgGroupsComponent {
         queryParams: {
           q: v.search || null,
           foundation: v.foundation || null,
-          project: v.project || null,
+
           voting: v.voting !== 'all' ? v.voting : null,
         },
         queryParamsHandling: 'merge',
@@ -170,7 +164,7 @@ export class OrgGroupsComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.reset({ search: '', foundation: '', project: '', voting: 'all' });
+    this.filterForm.reset({ search: '', foundation: '', voting: 'all' });
   }
 
   protected tabLabel(tab: GroupsTabConfig): string {
@@ -199,49 +193,43 @@ export class OrgGroupsComponent {
             switchMap((data) => {
               this.loadingState.set(false);
               return of(data);
-            }),
+            })
           );
-        }),
+        })
       ),
-      { initialValue: [] as OrgGroup[] },
+      { initialValue: [] as OrgGroup[] }
     );
   }
 
   private initStats(): Signal<OrgGroupsStats> {
     const emptyStats: OrgGroupsStats = { total: 0, public: 0, votingEnabled: 0, boardCount: 0, otherCount: 0, foundationCount: 0 };
     return toSignal(
-      toObservable(this.accountContext.selectedAccount).pipe(
-        switchMap((account) => (account.uid ? this.groupsService.getStats() : of(emptyStats))),
-      ),
-      { initialValue: emptyStats },
+      toObservable(this.accountContext.selectedAccount).pipe(switchMap((account) => (account.uid ? this.groupsService.getStats() : of(emptyStats)))),
+      { initialValue: emptyStats }
     );
   }
 
   private initKpiCards(): StatCardItem[] {
     const s = this.stats();
     const loading = this.isLoading();
-    const foundationLabel = s.foundationCount === 1 ? '1 foundation' : `${s.foundationCount} foundations`;
     return [
       {
         value: loading ? '—' : s.total,
         label: 'Total Groups',
         icon: 'fa-light fa-users-rectangle',
         iconContainerClass: 'bg-blue-50 text-blue-600',
-        subtext: loading ? undefined : `Across ${foundationLabel}`,
       },
       {
         value: loading ? '—' : s.public,
         label: 'Public Groups',
         icon: 'fa-light fa-globe',
         iconContainerClass: 'bg-green-50 text-green-600',
-        subtext: 'Visible to non-members',
       },
       {
         value: loading ? '—' : s.votingEnabled,
         label: 'Voting Enabled Groups',
         icon: 'fa-light fa-check-to-slot',
         iconContainerClass: 'bg-purple-50 text-purple-600',
-        subtext: 'Cast binding votes',
       },
     ];
   }

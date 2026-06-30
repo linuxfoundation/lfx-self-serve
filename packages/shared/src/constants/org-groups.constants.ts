@@ -5,9 +5,9 @@ import type { GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilt
 
 /** Groups page tabs in visible order (`all` is the default). */
 export const GROUPS_TABS: readonly GroupsTabConfig[] = [
-  { id: 'all', label: 'All', icon: 'fa-light fa-users-rectangle', noun: 'all groups' },
-  { id: 'board', label: 'Board', icon: 'fa-light fa-user-tie', noun: 'board groups' },
-  { id: 'other', label: 'Other', icon: 'fa-light fa-sitemap', noun: 'other groups' },
+  { id: 'all', label: 'All', icon: '', noun: 'all groups' },
+  { id: 'board', label: 'Board', icon: 'fa-light fa-gavel', noun: 'board groups' },
+  { id: 'other', label: 'Other', icon: 'fa-light fa-layer-group', noun: 'other groups' },
 ] as const;
 
 /** Default tab — URL drops `?tab=` when active to keep deep links clean. */
@@ -24,7 +24,7 @@ export const GROUPS_DEFAULT_PAGE_SIZE = 25;
 
 /** Voting-status filter options for the shared filter bar. */
 export const GROUPS_VOTING_OPTIONS: readonly GroupsSelectOption[] = [
-  { label: 'All', value: 'all' satisfies GroupsVotingFilter },
+  { label: 'All Voting Status', value: 'all' satisfies GroupsVotingFilter },
   { label: 'Voting Enabled', value: 'enabled' satisfies GroupsVotingFilter },
   { label: 'Non-Voting', value: 'disabled' satisfies GroupsVotingFilter },
 ] as const;

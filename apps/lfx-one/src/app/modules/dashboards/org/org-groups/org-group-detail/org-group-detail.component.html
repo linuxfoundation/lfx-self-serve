@@ -1,0 +1,357 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6" data-testid="org-group-detail-page">
+  <!-- ── Loading skeleton ──────────────────────────────────────────────── -->
+  @if (loading()) {
+    <div class="flex flex-col gap-4 animate-pulse" data-testid="org-group-detail-skeleton">
+      <div class="h-4 w-24 rounded bg-gray-200"></div>
+      <div class="h-8 w-96 rounded bg-gray-200"></div>
+      <div class="flex gap-2">
+        <div class="h-6 w-16 rounded-full bg-gray-200"></div>
+        <div class="h-6 w-24 rounded-full bg-gray-200"></div>
+      </div>
+      <div class="h-40 rounded-lg bg-gray-100"></div>
+    </div>
+  }
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  @if (!loading() && detail()) {
+    @let g = detail()!;
+
+    <!-- Back link + Leave Group button -->
+    <div class="flex items-center justify-between" data-testid="org-group-detail-header">
+      <a
+        routerLink="/org/groups"
+        class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-700"
+        data-testid="org-group-detail-back-link">
+        <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
+        My Groups
+      </a>
+
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        data-testid="org-group-detail-leave-btn">
+        <i class="fa-light fa-arrow-right-from-bracket" aria-hidden="true"></i>
+        Leave Group
+      </button>
+    </div>
+
+    <!-- Header card: identity + mailing list -->
+    <lfx-card class="[&_.p-card-body]:!p-0" data-testid="org-group-detail-identity-card">
+      <div class="flex gap-6 px-6 pt-5 pb-4">
+        <!-- Left: name, tags, parent project, created -->
+        <div class="flex flex-1 flex-col gap-4" data-testid="org-group-detail-identity">
+          <!-- Name + lock -->
+          <div class="flex items-center gap-2">
+            <h1 class="text-[20px] font-light text-gray-700" data-testid="org-group-detail-name">{{ g.name }}</h1>
+            @if (g.visibility === 'PRIVATE') {
+              <i class="fa-light fa-lock text-gray-400" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
+            }
+          </div>
+
+          <!-- Tags -->
+          <div class="flex flex-wrap items-center gap-2" data-testid="org-group-detail-tags">
+            @if (g.type === 'Board') {
+              <lfx-tag value="Board" severity="danger" data-testid="org-group-detail-tag-board" />
+            }
+            @if (g.votingEnabled) {
+              <lfx-tag value="Voting Enabled" severity="success" data-testid="org-group-detail-tag-voting" />
+            }
+            @if (g.inviteOnly) {
+              <lfx-tag value="Invite Only" severity="secondary" data-testid="org-group-detail-tag-invite" />
+            }
+          </div>
+
+          <!-- Parent project + created date -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-1.5 text-sm">
+              <i class="fa-light fa-gavel text-gray-500" aria-hidden="true"></i>
+              <span class="text-gray-500">Parent Project:</span>
+              <a [routerLink]="['/org/groups']" class="font-medium text-blue-600 hover:text-blue-700" data-testid="org-group-detail-parent-project">
+                {{ g.parentProject }}
+              </a>
+              <i class="fa-light fa-chevron-right text-xs text-gray-400" aria-hidden="true"></i>
+            </div>
+            <div class="text-sm text-gray-500" data-testid="org-group-detail-created">
+              Created <span class="font-medium text-gray-700">{{ formatCreatedAt(g.createdAt) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: mailing list card -->
+        @if (g.mailingListName) {
+          <div
+            class="flex w-64 shrink-0 flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-[12.5px] text-gray-600"
+            data-testid="org-group-detail-mailing-list-card">
+            <div class="flex items-center gap-2">
+              <i class="fa-light fa-envelope text-gray-400" aria-hidden="true"></i>
+              <span class="font-medium text-gray-700">{{ g.mailingListName }}</span>
+              @if (g.mailingListIsPrivate) {
+                <lfx-tag value="Private" severity="secondary" />
+              }
+            </div>
+            <div class="flex items-center gap-2 text-gray-500">
+              <i class="fa-light fa-users text-gray-400" aria-hidden="true"></i>
+              <span>{{ g.mailingListSubscribers ?? 0 }} subscribers</span>
+            </div>
+          </div>
+        }
+      </div>
+    </lfx-card>
+
+    <!-- Tab strip -->
+    <div data-testid="org-group-detail-tabs">
+      <div class="flex gap-1" role="tablist" aria-label="Group detail tabs">
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            role="tab"
+            [id]="'org-group-detail-tab-' + tab.id"
+            [attr.aria-selected]="activeTab() === tab.id"
+            [attr.aria-controls]="'org-group-detail-panel-' + tab.id"
+            [attr.data-testid]="'org-group-detail-tab-' + tab.id"
+            [class]="
+              activeTab() === tab.id
+                ? 'inline-flex items-center gap-1.5 rounded-full bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white'
+                : 'inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3.5 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700'
+            "
+            (click)="switchTab(tab.id)">
+            <i [class]="tab.icon" aria-hidden="true"></i>
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Tab panels -->
+    @if (activeTab() === 'overview') {
+      <!-- Overview: two-column layout -->
+      <div
+        class="flex gap-6"
+        role="tabpanel"
+        id="org-group-detail-panel-overview"
+        aria-labelledby="org-group-detail-tab-overview"
+        data-testid="org-group-detail-overview">
+        <!-- LEFT PANEL — stats + chairs -->
+        <aside class="flex w-72 shrink-0 flex-col gap-6" data-testid="org-group-detail-left-panel">
+          <!-- Stats list -->
+          <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-stats">
+            <!-- Members -->
+            <div class="flex items-center gap-3 px-4 py-3">
+              <i class="fa-light fa-users w-4 text-center text-gray-400" aria-hidden="true"></i>
+              <span class="flex-1 text-sm text-gray-700">Members</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-member-count">{{ g.memberCount }}</span>
+            </div>
+            <div class="border-t border-gray-100"></div>
+            <!-- Organizations -->
+            <div class="flex items-center gap-3 px-4 py-3">
+              <i class="fa-light fa-building w-4 text-center text-gray-400" aria-hidden="true"></i>
+              <span class="flex-1 text-sm text-gray-700">Organizations</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-org-count">{{ g.organizationCount }}</span>
+            </div>
+            <div class="border-t border-gray-100"></div>
+            <!-- Meetings -->
+            <div class="flex items-center gap-3 px-4 py-3">
+              <i class="fa-light fa-calendar w-4 text-center text-gray-400" aria-hidden="true"></i>
+              <span class="flex-1 text-sm text-gray-700">Meetings</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-meeting-count">{{ g.meetingCount }}</span>
+            </div>
+            <div class="border-t border-gray-100"></div>
+            <!-- Active Votes -->
+            <div class="flex items-center gap-3 px-4 py-3">
+              <i class="fa-light fa-check-to-slot w-4 text-center text-gray-400" aria-hidden="true"></i>
+              <span class="flex-1 text-sm text-gray-700">Active Votes</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-vote-count">{{ g.activeVoteCount }}</span>
+            </div>
+            <div class="border-t border-gray-100"></div>
+            <!-- Open Surveys -->
+            <div class="flex items-center gap-3 px-4 py-3">
+              <i class="fa-light fa-clipboard-list w-4 text-center text-gray-400" aria-hidden="true"></i>
+              <span class="flex-1 text-sm text-gray-700">Open Surveys</span>
+              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-survey-count">{{ g.openSurveyCount }}</span>
+            </div>
+          </div>
+
+          <!-- Chairs -->
+          @if (g.chairs.length > 0) {
+            <div class="flex flex-col gap-3" data-testid="org-group-detail-chairs">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Chairs</span>
+              <div class="flex flex-col gap-3">
+                @for (chair of g.chairs; track chair.id) {
+                  <div class="flex items-center gap-3" [attr.data-testid]="'org-group-detail-chair-' + chair.id">
+                    <div
+                      [class]="'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ' + chair.avatarColor"
+                      aria-hidden="true">
+                      {{ chair.initials }}
+                    </div>
+                    <div class="flex flex-col">
+                      <span class="text-sm font-semibold text-gray-900">{{ chair.name }}</span>
+                      <span class="text-xs text-gray-500">Chair</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </aside>
+
+        <!-- RIGHT PANEL — meetings -->
+        <div class="flex min-w-0 flex-1 flex-col gap-6" data-testid="org-group-detail-right-panel">
+          <!-- Next Meeting -->
+          <section class="flex flex-col gap-3" data-testid="org-group-detail-next-meeting-section">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-clock text-gray-500" aria-hidden="true"></i>
+                <h2 class="text-base font-semibold text-gray-900">Next Meeting</h2>
+              </div>
+              <a routerLink="." class="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="org-group-detail-next-meeting-view-all">
+                View All
+              </a>
+            </div>
+
+            @if (hasNextMeeting() && nextMeeting()) {
+              @let nm = nextMeeting()!;
+              <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-next-meeting-card">
+                <div class="flex items-start gap-4 p-4">
+                  <!-- Calendar date widget -->
+                  <div class="flex shrink-0 flex-col items-center rounded-md border border-gray-200 bg-white text-center" style="min-width: 3rem">
+                    <div class="rounded-t-md bg-gray-100 px-3 py-0.5 text-xs font-medium uppercase text-gray-500">{{ nm.monthAbbr }}</div>
+                    <div class="px-3 py-1 text-2xl font-bold text-gray-900 leading-none">{{ nm.day }}</div>
+                  </div>
+                  <!-- Details -->
+                  <div class="flex min-w-0 flex-1 flex-col gap-1">
+                    <div class="text-xs text-gray-500">{{ nm.dayOfWeek }}, {{ nm.time }} · {{ nm.durationMin }}m</div>
+                    <div class="text-sm font-semibold text-gray-900">{{ nm.title }}</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center rounded border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                        {{ nm.projectName }}
+                      </span>
+                      <span class="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
+                        {{ nm.meetingType }}
+                      </span>
+                    </div>
+                  </div>
+                  <!-- Copy icon -->
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Copy meeting link"
+                    data-testid="org-group-detail-next-meeting-copy">
+                    <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <!-- Meeting details button -->
+                <div class="border-t border-gray-100 px-4 py-2">
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    data-testid="org-group-detail-next-meeting-details">
+                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                    Meeting details
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-8" data-testid="org-group-detail-no-next-meeting">
+                <p class="text-sm text-gray-500">No upcoming meetings scheduled</p>
+              </div>
+            }
+          </section>
+
+          <!-- Past Meeting -->
+          <section class="flex flex-col gap-3" data-testid="org-group-detail-past-meeting-section">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-clock-rotate-left text-gray-500" aria-hidden="true"></i>
+                <h2 class="text-base font-semibold text-gray-900">Past Meeting</h2>
+              </div>
+              <a routerLink="." class="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="org-group-detail-past-meeting-view-all">
+                View All
+              </a>
+            </div>
+
+            @if (hasPastMeeting() && pastMeeting()) {
+              @let pm = pastMeeting()!;
+              <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-past-meeting-card">
+                <div class="flex items-start gap-4 p-4">
+                  <!-- Calendar date widget -->
+                  <div class="flex shrink-0 flex-col items-center rounded-md border border-gray-200 bg-white text-center" style="min-width: 3rem">
+                    <div class="rounded-t-md bg-gray-100 px-3 py-0.5 text-xs font-medium uppercase text-gray-500">{{ pm.monthAbbr }}</div>
+                    <div class="px-3 py-1 text-2xl font-bold text-gray-900 leading-none">{{ pm.day }}</div>
+                  </div>
+                  <!-- Details -->
+                  <div class="flex min-w-0 flex-1 flex-col gap-1">
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{{ pm.dayOfWeek }}, {{ pm.time }} · {{ pm.durationMin }}m</span>
+                      @if (pm.hasAiSummary) {
+                        <i class="fa-light fa-sparkles text-amber-400" aria-label="AI summary available" title="AI summary available"></i>
+                      }
+                    </div>
+                    <div class="text-sm font-semibold text-gray-900">{{ pm.title }}</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center rounded border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                        {{ pm.projectName }}
+                      </span>
+                      <span class="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
+                        {{ pm.meetingType }}
+                      </span>
+                    </div>
+                  </div>
+                  <!-- Copy icon -->
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Copy meeting link"
+                    data-testid="org-group-detail-past-meeting-copy">
+                    <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <!-- Meeting details button -->
+                <div class="border-t border-gray-100 px-4 py-2">
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    data-testid="org-group-detail-past-meeting-details">
+                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                    Meeting details
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-8" data-testid="org-group-detail-no-past-meeting">
+                <p class="text-sm text-gray-500">No past meetings found</p>
+              </div>
+            }
+          </section>
+        </div>
+      </div>
+    }
+
+    <!-- Non-overview tab panels -->
+    @if (activeTab() !== 'overview') {
+      <div
+        class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-16"
+        [id]="'org-group-detail-panel-' + activeTab()"
+        [attr.aria-labelledby]="'org-group-detail-tab-' + activeTab()"
+        role="tabpanel"
+        data-testid="org-group-detail-coming-soon">
+        <div class="flex flex-col items-center gap-2">
+          <i class="fa-light fa-clock-rotate-left text-3xl text-gray-300" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-gray-500">Coming soon</p>
+          <p class="text-xs text-gray-400">This section is under construction.</p>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- ── Not found ──────────────────────────────────────────────────────── -->
+  @if (!loading() && !detail()) {
+    <div class="flex flex-col items-center justify-center gap-3 py-20" data-testid="org-group-detail-not-found">
+      <i class="fa-light fa-triangle-exclamation text-4xl text-gray-300" aria-hidden="true"></i>
+      <p class="text-base font-medium text-gray-700">Group not found</p>
+      <a routerLink="/org/groups" class="text-sm font-medium text-blue-600 hover:text-blue-700"> Back to My Groups </a>
+    </div>
+  }
+</div>

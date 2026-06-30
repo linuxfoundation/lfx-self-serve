@@ -4,54 +4,54 @@
 <main class="flex flex-col gap-6 p-6" data-testid="org-groups-page">
   <header class="flex flex-col gap-2" data-testid="org-groups-header">
     <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-groups-title">Groups</h1>
-    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">
-      Groups your organization is a member of across all foundations and projects.
-    </p>
+    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">Groups your organization is a member of across all foundations and projects.</p>
   </header>
 
   @if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select a company via Impersonate to view groups."
-      data-testid="org-groups-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company via Impersonate to view groups." data-testid="org-groups-no-company-empty-state" />
   } @else {
     <!-- KPI strip -->
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-groups-kpis" />
 
-    <!-- Content card: tab strip + filter bar + table -->
-    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-groups-content-card">
-      <!-- Tab strip -->
-      <div
-        class="flex items-center gap-1 border-b border-gray-200 px-4 overflow-x-auto"
-        data-testid="org-groups-tab-bar"
-        role="tablist"
-        aria-label="Groups page sections"
-        (keydown)="onTabKeydown($event)">
-        @for (tab of tabs; track tab.id) {
-          @let isActive = activeTab() === tab.id;
-          <button
-            type="button"
-            role="tab"
-            class="flex items-center gap-2 px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            [id]="'org-groups-tab-' + tab.id"
-            [attr.aria-selected]="isActive"
-            aria-controls="org-groups-tabpanel"
-            [attr.tabindex]="isActive ? 0 : -1"
-            [attr.data-testid]="'org-groups-tab-' + tab.id"
-            [class.border-blue-600]="isActive"
-            [class.text-blue-600]="isActive"
-            [class.border-transparent]="!isActive"
-            [class.text-gray-500]="!isActive"
-            [class.hover:text-gray-700]="!isActive"
-            (click)="switchTab(tab.id)">
-            {{ tabLabel(tab) }}
-          </button>
-        }
-      </div>
+    <!-- Tab strip (standalone row, outside the card) -->
+    <div
+      class="flex items-center gap-2 overflow-x-auto"
+      data-testid="org-groups-tab-bar"
+      role="tablist"
+      aria-label="Groups page sections"
+      (keydown)="onTabKeydown($event)">
+      @for (tab of tabs; track tab.id) {
+        @let isActive = activeTab() === tab.id;
+        <button
+          type="button"
+          role="tab"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap"
+          [id]="'org-groups-tab-' + tab.id"
+          [attr.aria-selected]="isActive"
+          aria-controls="org-groups-tabpanel"
+          [attr.tabindex]="isActive ? 0 : -1"
+          [attr.data-testid]="'org-groups-tab-' + tab.id"
+          [class.bg-violet-600]="isActive && tab.id === 'board'"
+          [class.bg-blue-600]="isActive && tab.id !== 'board'"
+          [class.text-white]="isActive"
+          [class.text-violet-600]="!isActive && tab.id === 'board'"
+          [class.text-gray-600]="!isActive && tab.id !== 'board'"
+          [class.hover:bg-violet-50]="!isActive && tab.id === 'board'"
+          [class.hover:bg-gray-100]="!isActive && tab.id !== 'board'"
+          (click)="switchTab(tab.id)">
+          @if (tab.icon) {
+            <i [class]="tab.icon" aria-hidden="true"></i>
+          }
+          {{ tabLabel(tab) }}
+        </button>
+      }
+    </div>
 
+    <!-- Content card: filter bar + table -->
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-groups-content-card">
       <!-- Shared filter bar -->
       <div
-        class="flex flex-col gap-3 sm:flex-row sm:items-center px-5 py-4 border-b border-gray-100"
+        class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4 px-5 pt-4 pb-3 border-b border-gray-100"
         data-testid="org-groups-filter-bar"
         [formGroup]="filterForm">
         <div class="relative flex-1">
@@ -80,24 +80,12 @@
         <div class="w-full sm:w-44">
           <lfx-select
             [form]="filterForm"
-            control="project"
-            size="small"
-            [options]="projectOptions"
-            optionLabel="label"
-            optionValue="value"
-            [placeholder]="projectPlaceholder"
-            styleClass="w-full"
-            ariaLabel="Filter by project"
-            dataTest="org-groups-project-filter" />
-        </div>
-        <div class="w-full sm:w-44">
-          <lfx-select
-            [form]="filterForm"
             control="voting"
             size="small"
             [options]="votingOptions"
             optionLabel="label"
             optionValue="value"
+            placeholder="All Voting Status"
             styleClass="w-full"
             ariaLabel="Filter by voting status"
             dataTest="org-groups-voting-filter" />
@@ -110,12 +98,14 @@
         id="org-groups-tabpanel"
         [attr.aria-labelledby]="'org-groups-tab-' + activeTab()"
         [attr.data-testid]="'org-groups-panel-' + activeTab()">
-        <lfx-groups-table
-          [groups]="filteredGroups()"
-          [loading]="isLoading()"
-          [activeTab]="activeTab()"
-          (clearFilters)="clearFilters()"
-          data-testid="org-groups-groups-table" />
+        <div class="px-5 pb-5">
+          <lfx-groups-table
+            [groups]="filteredGroups()"
+            [loading]="isLoading()"
+            [activeTab]="activeTab()"
+            (clearFilters)="clearFilters()"
+            data-testid="org-groups-groups-table" />
+        </div>
       </section>
     </lfx-card>
   }
