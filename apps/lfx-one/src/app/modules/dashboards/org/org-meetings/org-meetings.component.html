@@ -51,9 +51,11 @@
 
       <!-- Search fills center, pushing filters to the right -->
       <div class="flex-1">
+        <label for="org-meetings-search-id" class="sr-only">Search meetings</label>
         <lfx-input-text
           [form]="filterForm"
           control="search"
+          id="org-meetings-search-id"
           placeholder="Search meetings..."
           icon="fa-light fa-magnifying-glass"
           styleClass="w-full"
