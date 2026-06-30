@@ -67,8 +67,8 @@ export interface OrgMeetingStatusFlags {
   readonly aiSummary: boolean;
 }
 
-/** An upcoming meeting in the Org Lens Meetings list. */
-export interface OrgMeeting {
+/** Fields shared by both upcoming and past meetings. */
+export interface OrgMeetingBase {
   readonly id: string;
   readonly title: string;
   readonly privacy: OrgMeetingPrivacy;
@@ -80,6 +80,10 @@ export interface OrgMeeting {
   readonly project: string;
   readonly agenda: string | null;
   readonly resources: readonly string[];
+}
+
+/** An upcoming meeting in the Org Lens Meetings list. */
+export interface OrgMeeting extends OrgMeetingBase {
   readonly rsvpTally: OrgMeetingRsvpTally;
   readonly orgInvitees: readonly OrgMeetingInvitee[];
   readonly guestCount: number;
@@ -88,7 +92,7 @@ export interface OrgMeeting {
 }
 
 /** A past meeting in the Org Lens Meetings list. */
-export interface OrgPastMeeting extends OrgMeeting {
+export interface OrgPastMeeting extends OrgMeetingBase {
   readonly attendanceTally: OrgMeetingAttendanceTally;
   readonly artifact: OrgMeetingArtifact;
   readonly minutesUploaded: boolean;

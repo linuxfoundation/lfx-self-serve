@@ -23,7 +23,7 @@ import {
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
 } from '@lfx-one/shared/constants';
-import type { FilterOption, OrgMeeting, OrgMeetingsTabId, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { FilterOption, OrgMeeting, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
 
 import { OrgUpcomingMeetingsComponent } from './components/org-upcoming-meetings/org-upcoming-meetings.component';
 import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-past-meetings.component';
@@ -45,7 +45,7 @@ export class OrgMeetingsComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    type: new FormControl<OrgMeeting['type'] | null>(null),
+    type: new FormControl<OrgMeetingType | null>(null),
   });
 
   // === WritableSignals ===
@@ -55,8 +55,9 @@ export class OrgMeetingsComponent {
 
   // === Computed signals ===
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
+  protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
-  protected readonly filterType: Signal<OrgMeeting['type'] | null> = this.initFilterType();
+  protected readonly filterType: Signal<OrgMeetingType | null> = this.initFilterType();
   protected readonly filteredUpcoming: Signal<readonly OrgMeeting[]> = this.initFilteredUpcoming();
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
 
@@ -123,7 +124,7 @@ export class OrgMeetingsComponent {
     return toSignal(this.filterForm.controls.search.valueChanges, { initialValue: '' });
   }
 
-  private initFilterType(): Signal<OrgMeeting['type'] | null> {
+  private initFilterType(): Signal<OrgMeetingType | null> {
     return toSignal(this.filterForm.controls.type.valueChanges, { initialValue: null });
   }
 

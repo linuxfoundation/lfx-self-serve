@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption } from '../interfaces';
-import type { OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgPastMeeting } from '../interfaces/org-meetings.interface';
+import type { FilterOption, OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -54,7 +53,7 @@ export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
 ];
 
 /** Valid meeting type values for server-side validation. */
-export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<string> = new Set(['board', 'working-group', 'other']);
+export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'working-group', 'other']);
 
 /** Demo upcoming meetings (3 records). */
 export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
@@ -135,15 +134,6 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     project: 'CNCF',
     agenda: 'Q2 financial review. Project graduation vote. Open source strategy alignment.',
     resources: ['Q2 Financial Summary.pdf', 'Project Graduation Proposal.pdf'],
-    rsvpTally: { yes: 14, maybe: 1, no: 0, noResponse: 3 },
-    orgInvitees: [
-      { name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Marcus Williams', title: 'CTO', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Priya Sharma', title: 'Director of Open Source', avatarUrl: null, rsvpStatus: 'yes' },
-    ],
-    guestCount: 9,
-    joinUrl: null,
-    statusFlags: { recording: true, transcripts: true, aiSummary: true },
     attendanceTally: { attended: 10, missed: 2, excused: 1 },
     artifact: {
       recordingUrl: 'https://lfx.dev/recordings/demo-cncf-board-jun26',
@@ -169,11 +159,6 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     project: 'Kubernetes',
     agenda: 'Documentation sprint planning. Review PR backlog. Localization status updates.',
     resources: ['Docs Sprint Board.pdf'],
-    rsvpTally: { yes: 18, maybe: 3, no: 2, noResponse: 5 },
-    orgInvitees: [{ name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, rsvpStatus: 'yes' }],
-    guestCount: 12,
-    joinUrl: null,
-    statusFlags: { recording: false, transcripts: true, aiSummary: false },
     attendanceTally: { attended: 16, missed: 5, excused: 2 },
     artifact: {
       recordingUrl: null,
@@ -195,14 +180,6 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     project: 'OpenSSF',
     agenda: 'Alpha-Omega initiative review. Membership renewal pipeline. Security scorecard adoption metrics.',
     resources: [],
-    rsvpTally: { yes: 10, maybe: 0, no: 1, noResponse: 2 },
-    orgInvitees: [
-      { name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Marcus Williams', title: 'CTO', avatarUrl: null, rsvpStatus: 'yes' },
-    ],
-    guestCount: 6,
-    joinUrl: null,
-    statusFlags: { recording: false, transcripts: false, aiSummary: false },
     attendanceTally: { attended: 8, missed: 3, excused: 0 },
     artifact: { recordingUrl: null, transcriptUrl: null, aiSummaryId: null },
     minutesUploaded: false,
