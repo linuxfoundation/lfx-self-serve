@@ -45,7 +45,7 @@ export class OrgMeetingsComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    type: new FormControl<string | null>(null),
+    type: new FormControl<OrgMeeting['type'] | null>(null),
   });
 
   // === WritableSignals ===
