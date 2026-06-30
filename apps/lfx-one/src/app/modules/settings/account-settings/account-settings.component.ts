@@ -452,8 +452,10 @@ export class AccountSettingsComponent {
       .pipe(finalize(() => this.loadingToken.set(false)))
       .subscribe({
         next: (info) => {
-          this.developerToken.set(info.token);
-          this.developerV1Token.set(info.v1Token ?? '');
+          // Guard the shape at runtime: a non-string (e.g. null on a transient error path) resets
+          // to empty rather than leaking a raw value through maskTokenValue.
+          this.developerToken.set(typeof info.token === 'string' ? info.token : '');
+          this.developerV1Token.set(typeof info.v1Token === 'string' ? info.v1Token : '');
         },
         error: () => {
           this.developerToken.set('');
