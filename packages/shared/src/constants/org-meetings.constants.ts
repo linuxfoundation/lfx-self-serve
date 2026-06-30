@@ -40,8 +40,6 @@ export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
   { label: 'Other', value: 'other' },
 ];
 
-/** Valid meeting type values for server-side validation. */
-export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'working-group', 'other']);
 
 /** Demo upcoming meetings (3 records). */
 export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
