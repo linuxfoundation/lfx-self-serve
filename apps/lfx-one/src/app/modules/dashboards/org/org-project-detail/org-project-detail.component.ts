@@ -566,9 +566,7 @@ export class OrgProjectDetailComponent {
     // Build raw series, then normalize each month so all series sum to 100%.
     const rawSeries: number[][] = entries.map((entry) => this.buildTrendSeries(entry.score, months, entry.seed));
     const monthTotals = rawSeries[0].map((_, mi) => rawSeries.reduce((sum, s) => sum + (s[mi] ?? 0), 0));
-    const pctSeries: number[][] = rawSeries.map((series) =>
-      series.map((val, mi) => (monthTotals[mi] > 0 ? (val / monthTotals[mi]) * 100 : 0))
-    );
+    const pctSeries: number[][] = rawSeries.map((series) => series.map((val, mi) => (monthTotals[mi] > 0 ? (val / monthTotals[mi]) * 100 : 0)));
 
     // Rank by most-recent-month share (most influential now → first in ranked[]).
     const lastIdx = months - 1;
