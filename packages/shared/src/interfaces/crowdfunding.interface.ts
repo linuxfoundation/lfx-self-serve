@@ -317,6 +317,30 @@ export interface PresignedURLResult {
   requiredHeaders: Record<string, string>;
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  publishedAt: string;
+}
+
+export interface AnnouncementList {
+  data: Announcement[];
+  totalCount: number;
+}
+
+export interface CreateAnnouncementInput {
+  title: string;
+  body: string;
+  publishedAt: string;
+}
+
+export interface UpdateAnnouncementInput {
+  title?: string;
+  body?: string;
+  publishedAt?: string;
+}
+
 export type FundCategory = 'development' | 'marketing' | 'meetups' | 'bug_bounty' | 'travel' | 'documentation';
 
 export interface FundDistributionItem {

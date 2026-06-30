@@ -9,6 +9,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { ButtonComponent } from '@components/button/button.component';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
+import { SettingsAnnouncementsTabComponent } from './components/settings-announcements-tab/settings-announcements-tab.component';
 import { SettingsBeneficiariesTabComponent } from './components/settings-beneficiaries-tab/settings-beneficiaries-tab.component';
 import { SettingsBrandingTabComponent } from './components/settings-branding-tab/settings-branding-tab.component';
 import { SettingsDetailsTabComponent } from './components/settings-details-tab/settings-details-tab.component';
@@ -19,6 +20,7 @@ import { SettingsFundingTabComponent } from './components/settings-funding-tab/s
   imports: [
     DrawerModule,
     ButtonComponent,
+    SettingsAnnouncementsTabComponent,
     SettingsDetailsTabComponent,
     SettingsBrandingTabComponent,
     SettingsBeneficiariesTabComponent,
@@ -43,6 +45,7 @@ export class InitiativeSettingsDrawerComponent {
     { value: 'branding', label: 'Branding' },
     { value: 'beneficiaries', label: 'Beneficiaries' },
     { value: 'funding', label: 'Funding' },
+    { value: 'announcements', label: 'Announcements' },
   ];
 
   private readonly detailsTab = viewChild.required(SettingsDetailsTabComponent);

@@ -76,6 +76,13 @@
       [class.hidden]="activeSettingsTab() !== 'funding'"
       [visible]="visible()"
       [initiative]="initiative()" />
+    <lfx-settings-announcements-tab
+      id="settings-panel-announcements"
+      role="tabpanel"
+      aria-labelledby="settings-tab-announcements"
+      [class.hidden]="activeSettingsTab() !== 'announcements'"
+      [visible]="visible()"
+      [initiative]="initiative()" />
 
     <!-- Footer actions -->
     <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">

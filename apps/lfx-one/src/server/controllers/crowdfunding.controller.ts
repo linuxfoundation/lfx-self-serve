@@ -6,7 +6,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES } from '@lfx-one/shared/constants';
-import { CrowdfundingInitiativeStatus, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { CreateAnnouncementInput, CrowdfundingInitiativeStatus, UpdateAnnouncementInput, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
@@ -401,6 +401,110 @@ export class CrowdfundingController {
       logger.success(req, 'get_initiative_transactions', startTime, { slug, total: transactions.totalCount });
 
       res.json(transactions);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/crowdfunding/initiatives/:id/announcements — list announcements for an initiative. */
+  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
+  public async getAnnouncements(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_announcements');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_announcements' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'get_announcements' });
+      }
+
+      logger.success(req, 'get_announcements', startTime, { id });
+      res.json({ data: [], totalCount: 0 });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /api/crowdfunding/initiatives/:id/announcements — create an announcement. */
+  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
+  public async createAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'create_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'create_announcement' });
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const title = typeof body['title'] === 'string' ? body['title'].trim() : '';
+      const bodyText = typeof body['body'] === 'string' ? body['body'].trim() : '';
+      const publishedAt = typeof body['publishedAt'] === 'string' ? body['publishedAt'].trim() : '';
+
+      if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'create_announcement' });
+      if (!bodyText) throw ServiceValidationError.forField('body', 'body is required', { operation: 'create_announcement' });
+      if (!publishedAt) throw ServiceValidationError.forField('publishedAt', 'publishedAt is required', { operation: 'create_announcement' });
+
+      const input: CreateAnnouncementInput = { title, body: bodyText, publishedAt };
+      logger.success(req, 'create_announcement', startTime, { id });
+      res.status(201).json({ id: crypto.randomUUID(), ...input });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/initiatives/:id/announcements/:announcementId — update an announcement. */
+  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
+  public async updateAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      const announcementId = (req.params['announcementId'] ?? '').trim();
+      if (!id) throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'update_announcement' });
+      if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'update_announcement' });
+
+      const body = req.body as Record<string, unknown>;
+      const input: UpdateAnnouncementInput = {};
+      if (typeof body['title'] === 'string') input.title = body['title'].trim();
+      if (typeof body['body'] === 'string') input.body = body['body'].trim();
+      if (typeof body['publishedAt'] === 'string') input.publishedAt = body['publishedAt'].trim();
+
+      logger.success(req, 'update_announcement', startTime, { id, announcementId });
+      res.json({ id: announcementId, ...input });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** DELETE /api/crowdfunding/initiatives/:id/announcements/:announcementId — delete an announcement. */
+  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
+  public async deleteAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'delete_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'delete_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      const announcementId = (req.params['announcementId'] ?? '').trim();
+      if (!id) throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'delete_announcement' });
+      if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'delete_announcement' });
+
+      logger.success(req, 'delete_announcement', startTime, { id, announcementId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

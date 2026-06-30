@@ -1,0 +1,155 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-confirmDialog key="settings-announcements"></p-confirmDialog>
+<div class="flex flex-col gap-5" data-testid="settings-announcements-tab">
+  <div class="flex items-center justify-between">
+    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Announcements</h3>
+    @if (!showAddForm()) {
+      <lfx-button
+        label="New Announcement"
+        icon="fa-solid fa-plus"
+        severity="secondary"
+        size="small"
+        [disabled]="saving()"
+        (onClick)="startAdd()"
+        data-testid="settings-add-announcement-btn" />
+    }
+  </div>
+
+  <!-- Add form -->
+  @if (showAddForm()) {
+    <div class="flex flex-col gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200" data-testid="settings-announcement-add-form">
+      <h4 class="text-sm font-medium text-gray-700">New Announcement</h4>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-700">Title <span class="text-red-500" aria-hidden="true">*</span></label>
+        <lfx-input-text [form]="addForm" control="title" placeholder="Announcement title" dataTest="add-announcement-title" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-700">Message <span class="text-red-500" aria-hidden="true">*</span></label>
+        <lfx-rich-editor
+          [form]="addForm"
+          control="body"
+          placeholder="Write your announcement…"
+          [editorStyle]="{ minHeight: '160px' }"
+          dataTest="add-announcement-body" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-700">Date <span class="text-red-500" aria-hidden="true">*</span></label>
+        <lfx-input-text [form]="addForm" control="publishedAt" type="date" dataTest="add-announcement-date" />
+      </div>
+      <div class="flex justify-end gap-2">
+        <lfx-button
+          label="Cancel"
+          severity="secondary"
+          size="small"
+          [disabled]="saving()"
+          (onClick)="cancelAdd()"
+          data-testid="settings-add-announcement-cancel" />
+        <lfx-button
+          label="Add"
+          severity="primary"
+          size="small"
+          [loading]="saving()"
+          [disabled]="saving()"
+          (onClick)="onAdd()"
+          data-testid="settings-add-announcement-submit" />
+      </div>
+    </div>
+  }
+
+  <!-- Loading state -->
+  @if (loading()) {
+    <div class="flex flex-col gap-4" data-testid="settings-announcements-loading">
+      @for (_ of [1, 2, 3]; track $index) {
+        <div class="h-16 bg-gray-100 rounded-lg animate-pulse"></div>
+      }
+    </div>
+  }
+
+  <!-- Empty state -->
+  @if (!loading() && announcements().length === 0 && !showAddForm()) {
+    <div class="flex flex-col items-center py-8 gap-2 text-center" data-testid="settings-announcements-empty">
+      <i class="fa-light fa-bullhorn text-3xl text-gray-300" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No announcements yet. Add one to keep sponsors engaged.</p>
+    </div>
+  }
+
+  <!-- Announcement list -->
+  @if (!loading() && announcements().length > 0) {
+    <div class="flex flex-col gap-3" data-testid="settings-announcements-list">
+      @for (a of announcements(); track a.id) {
+        <div class="flex flex-col gap-3 p-4 border border-gray-200 rounded-lg" [attr.data-testid]="'settings-announcement-' + a.id">
+          @if (editingId() !== a.id) {
+            <!-- View mode -->
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <span class="text-sm font-medium text-gray-900">{{ a.title }}</span>
+                <span class="text-xs text-gray-500">{{ a.publishedAt | date: 'mediumDate' }}</span>
+                <div class="text-sm text-gray-600 mt-1 prose prose-sm max-w-none" [innerHTML]="a.body"></div>
+              </div>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <button
+                  type="button"
+                  class="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                  aria-label="Edit announcement"
+                  [disabled]="saving()"
+                  (click)="startEdit(a)"
+                  [attr.data-testid]="'settings-announcement-edit-' + a.id">
+                  <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                </button>
+                <button
+                  type="button"
+                  class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                  aria-label="Delete announcement"
+                  [disabled]="saving()"
+                  (click)="onDelete(a)"
+                  [attr.data-testid]="'settings-announcement-delete-' + a.id">
+                  <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          } @else {
+            <!-- Edit mode -->
+            <div class="flex flex-col gap-3" data-testid="settings-announcement-edit-form">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-medium text-gray-700">Title <span class="text-red-500" aria-hidden="true">*</span></label>
+                <lfx-input-text [form]="editForm" control="title" placeholder="Announcement title" [dataTest]="'edit-announcement-title-' + a.id" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-medium text-gray-700">Message <span class="text-red-500" aria-hidden="true">*</span></label>
+                <lfx-rich-editor
+                  [form]="editForm"
+                  control="body"
+                  placeholder="Write your announcement…"
+                  [editorStyle]="{ minHeight: '160px' }"
+                  [dataTest]="'edit-announcement-body-' + a.id" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-medium text-gray-700">Date <span class="text-red-500" aria-hidden="true">*</span></label>
+                <lfx-input-text [form]="editForm" control="publishedAt" type="date" [dataTest]="'edit-announcement-date-' + a.id" />
+              </div>
+              <div class="flex justify-end gap-2">
+                <lfx-button
+                  label="Cancel"
+                  severity="secondary"
+                  size="small"
+                  [disabled]="saving()"
+                  (onClick)="cancelEdit()"
+                  [attr.data-testid]="'settings-announcement-edit-cancel-' + a.id" />
+                <lfx-button
+                  label="Save"
+                  severity="primary"
+                  size="small"
+                  [loading]="saving()"
+                  [disabled]="saving()"
+                  (onClick)="onEdit(a)"
+                  [attr.data-testid]="'settings-announcement-edit-save-' + a.id" />
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

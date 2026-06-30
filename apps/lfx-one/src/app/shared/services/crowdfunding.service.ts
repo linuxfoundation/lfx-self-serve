@@ -16,6 +16,9 @@ import {
   EMPTY_DONATION_STATS,
 } from '@lfx-one/shared/constants';
 import {
+  Announcement,
+  AnnouncementList,
+  CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
   DonationStats,
@@ -26,6 +29,7 @@ import {
   PresignedURLResult,
   RecurringDonation,
   RecurringDonationsResponse,
+  UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
@@ -103,6 +107,30 @@ export class CrowdfundingService {
   public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
     return this.http
       .patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
+  public getAnnouncements(initiativeId: string): Observable<AnnouncementList> {
+    return this.http
+      .get<AnnouncementList>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`)
+      .pipe(catchError(this.handleCfError({ data: [], totalCount: 0 }, 'getAnnouncements')));
+  }
+
+  public createAnnouncement(initiativeId: string, input: CreateAnnouncementInput): Observable<Announcement> {
+    return this.http
+      .post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
+  public updateAnnouncement(initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Observable<Announcement> {
+    return this.http
+      .patch<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
+  public deleteAnnouncement(initiativeId: string, announcementId: string): Observable<void> {
+    return this.http
+      .delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`)
       .pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
