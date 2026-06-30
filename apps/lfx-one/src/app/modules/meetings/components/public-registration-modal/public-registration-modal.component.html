@@ -18,6 +18,13 @@
         placeholder="Enter first name"
         data-testid="public-registration-firstname-input">
       </lfx-input-text>
+      @if (
+        (form.get('first_name')?.errors?.['required'] || form.get('first_name')?.errors?.['pattern']) &&
+        form.get('first_name')?.touched &&
+        form.get('first_name')?.dirty
+      ) {
+        <p class="text-sm text-red-500" role="alert" data-testid="public-registration-firstname-error">First name cannot be empty</p>
+      }
     </div>
 
     <!-- Last Name -->
@@ -31,6 +38,13 @@
         placeholder="Enter last name"
         data-testid="public-registration-lastname-input">
       </lfx-input-text>
+      @if (
+        (form.get('last_name')?.errors?.['required'] || form.get('last_name')?.errors?.['pattern']) &&
+        form.get('last_name')?.touched &&
+        form.get('last_name')?.dirty
+      ) {
+        <p class="text-sm text-red-500" role="alert" data-testid="public-registration-lastname-error">Last name cannot be empty</p>
+      }
     </div>
 
     <!-- Email -->
