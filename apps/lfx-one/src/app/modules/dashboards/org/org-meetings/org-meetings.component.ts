@@ -55,9 +55,8 @@ export class OrgMeetingsComponent {
 
   // === Computed signals ===
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
-  protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
-  protected readonly filterType: Signal<string | null> = this.initFilterType();
+  protected readonly filterType: Signal<OrgMeeting['type'] | null> = this.initFilterType();
   protected readonly filteredUpcoming: Signal<readonly OrgMeeting[]> = this.initFilteredUpcoming();
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
 
