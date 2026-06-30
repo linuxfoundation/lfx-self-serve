@@ -124,7 +124,7 @@ export class CrowdfundingService {
 
   public updateAnnouncement(initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Observable<Announcement> {
     return this.http
-      .patch<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
+      .put<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
       .pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 

@@ -319,9 +319,12 @@ export interface PresignedURLResult {
 
 export interface Announcement {
   id: string;
+  initiativeId: string;
+  createdBy: string;
   title: string;
-  body: string;
-  publishedAt: string;
+  description: string;
+  createdOn: string;
+  updatedOn: string;
 }
 
 export interface AnnouncementList {
@@ -331,14 +334,12 @@ export interface AnnouncementList {
 
 export interface CreateAnnouncementInput {
   title: string;
-  body: string;
-  publishedAt: string;
+  description: string;
 }
 
 export interface UpdateAnnouncementInput {
-  title?: string;
-  body?: string;
-  publishedAt?: string;
+  title: string;
+  description: string;
 }
 
 export type FundCategory = 'development' | 'marketing' | 'meetups' | 'bug_bounty' | 'travel' | 'documentation';

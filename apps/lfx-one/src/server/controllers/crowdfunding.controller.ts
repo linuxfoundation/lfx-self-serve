@@ -407,7 +407,6 @@ export class CrowdfundingController {
   }
 
   /** GET /api/crowdfunding/initiatives/:id/announcements — list announcements for an initiative. */
-  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
   public async getAnnouncements(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_announcements');
 
@@ -421,15 +420,15 @@ export class CrowdfundingController {
         throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'get_announcements' });
       }
 
-      logger.success(req, 'get_announcements', startTime, { id });
-      res.json({ data: [], totalCount: 0 });
+      const announcements = await this.crowdfundingService.getAnnouncements(req, id);
+      logger.success(req, 'get_announcements', startTime, { id, count: announcements.data.length });
+      res.json(announcements);
     } catch (error) {
       next(error);
     }
   }
 
   /** POST /api/crowdfunding/initiatives/:id/announcements — create an announcement. */
-  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
   public async createAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'create_announcement');
 
@@ -445,23 +444,21 @@ export class CrowdfundingController {
 
       const body = req.body as Record<string, unknown>;
       const title = typeof body['title'] === 'string' ? body['title'].trim() : '';
-      const bodyText = typeof body['body'] === 'string' ? body['body'].trim() : '';
-      const publishedAt = typeof body['publishedAt'] === 'string' ? body['publishedAt'].trim() : '';
+      const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
 
       if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'create_announcement' });
-      if (!bodyText) throw ServiceValidationError.forField('body', 'body is required', { operation: 'create_announcement' });
-      if (!publishedAt) throw ServiceValidationError.forField('publishedAt', 'publishedAt is required', { operation: 'create_announcement' });
+      if (!description) throw ServiceValidationError.forField('description', 'description is required', { operation: 'create_announcement' });
 
-      const input: CreateAnnouncementInput = { title, body: bodyText, publishedAt };
-      logger.success(req, 'create_announcement', startTime, { id });
-      res.status(201).json({ id: crypto.randomUUID(), ...input });
+      const input: CreateAnnouncementInput = { title, description };
+      const announcement = await this.crowdfundingService.createAnnouncement(req, id, input);
+      logger.success(req, 'create_announcement', startTime, { id, announcementId: announcement.id });
+      res.status(201).json(announcement);
     } catch (error) {
       next(error);
     }
   }
 
-  /** PATCH /api/crowdfunding/initiatives/:id/announcements/:announcementId — update an announcement. */
-  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
+  /** PUT /api/crowdfunding/initiatives/:id/announcements/:announcementId — update an announcement. */
   public async updateAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'update_announcement');
 
@@ -476,20 +473,22 @@ export class CrowdfundingController {
       if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'update_announcement' });
 
       const body = req.body as Record<string, unknown>;
-      const input: UpdateAnnouncementInput = {};
-      if (typeof body['title'] === 'string') input.title = body['title'].trim();
-      if (typeof body['body'] === 'string') input.body = body['body'].trim();
-      if (typeof body['publishedAt'] === 'string') input.publishedAt = body['publishedAt'].trim();
+      const title = typeof body['title'] === 'string' ? body['title'].trim() : '';
+      const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
 
+      if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'update_announcement' });
+      if (!description) throw ServiceValidationError.forField('description', 'description is required', { operation: 'update_announcement' });
+
+      const input: UpdateAnnouncementInput = { title, description };
+      const announcement = await this.crowdfundingService.updateAnnouncement(req, id, announcementId, input);
       logger.success(req, 'update_announcement', startTime, { id, announcementId });
-      res.json({ id: announcementId, ...input });
+      res.json(announcement);
     } catch (error) {
       next(error);
     }
   }
 
   /** DELETE /api/crowdfunding/initiatives/:id/announcements/:announcementId — delete an announcement. */
-  // TODO: proxy to the upstream CF API once announcements endpoint is available (LFXV2-2536)
   public async deleteAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'delete_announcement');
 
@@ -503,6 +502,7 @@ export class CrowdfundingController {
       if (!id) throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'delete_announcement' });
       if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'delete_announcement' });
 
+      await this.crowdfundingService.deleteAnnouncement(req, id, announcementId);
       logger.success(req, 'delete_announcement', startTime, { id, announcementId });
       res.status(204).send();
     } catch (error) {

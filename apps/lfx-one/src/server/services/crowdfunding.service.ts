@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  Announcement,
+  AnnouncementList,
+  CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
   DonationStats,
@@ -12,12 +15,15 @@ import {
   PresignedURLResult,
   RecurringDonation,
   RecurringDonationsResponse,
+  UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
+  BackendAnnouncement,
+  BackendAnnouncementList,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
   BackendDonation,
@@ -32,6 +38,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { getHttpErrorCode } from '../helpers/http-status.helper';
 import {
+  mapAnnouncementWire,
   mapToInitiativeBase,
   mapToInitiativeDetail,
   mapCfDonationToMyDonation,
@@ -324,6 +331,49 @@ export class CrowdfundingService {
 
     logger.success(req, 'cf_update_initiative', startTime, { id });
     return mapToInitiativeDetail(raw);
+  }
+
+  public async getAnnouncements(req: Request, initiativeId: string): Promise<AnnouncementList> {
+    const startTime = logger.startOperation(req, 'cf_get_announcements', { initiativeId });
+    const raw = await cfFetch<BackendAnnouncementList>(req, 'getAnnouncements', `/v1/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
+    logger.success(req, 'cf_get_announcements', startTime, { count: raw.data.length });
+    return { data: raw.data.map(mapAnnouncementWire), totalCount: raw.meta.total };
+  }
+
+  public async createAnnouncement(req: Request, initiativeId: string, input: CreateAnnouncementInput): Promise<Announcement> {
+    const startTime = logger.startOperation(req, 'cf_create_announcement', { initiativeId });
+    const raw = await cfFetch<BackendAnnouncement>(req, 'createAnnouncement', `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`, {
+      method: 'POST',
+      body: { title: input.title, description: input.description },
+    });
+    logger.success(req, 'cf_create_announcement', startTime, { announcementId: raw.id });
+    return mapAnnouncementWire(raw);
+  }
+
+  public async updateAnnouncement(req: Request, initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Promise<Announcement> {
+    const startTime = logger.startOperation(req, 'cf_update_announcement', { initiativeId, announcementId });
+    const raw = await cfFetch<BackendAnnouncement>(
+      req,
+      'updateAnnouncement',
+      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      { method: 'PUT', body: { title: input.title, description: input.description } }
+    );
+    logger.success(req, 'cf_update_announcement', startTime, { announcementId });
+    return mapAnnouncementWire(raw);
+  }
+
+  public async deleteAnnouncement(req: Request, initiativeId: string, announcementId: string): Promise<void> {
+    const startTime = logger.startOperation(req, 'cf_delete_announcement', { initiativeId, announcementId });
+    await cfFetch<void>(
+      req,
+      'deleteAnnouncement',
+      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      {
+        method: 'DELETE',
+        noBody: true,
+      }
+    );
+    logger.success(req, 'cf_delete_announcement', startTime, { announcementId });
   }
 
   public async getPresignedUrl(req: Request, contentType: string): Promise<PresignedURLResult> {

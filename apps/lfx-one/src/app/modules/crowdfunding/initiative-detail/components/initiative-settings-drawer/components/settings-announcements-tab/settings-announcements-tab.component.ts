@@ -36,14 +36,12 @@ export class SettingsAnnouncementsTabComponent {
 
   protected readonly addForm = new FormGroup({
     title: new FormControl('', [Validators.required, Validators.maxLength(200)]),
-    body: new FormControl('', [Validators.required]),
-    publishedAt: new FormControl('', [Validators.required]),
+    description: new FormControl('', [Validators.required]),
   });
 
   protected readonly editForm = new FormGroup({
     title: new FormControl('', [Validators.required, Validators.maxLength(200)]),
-    body: new FormControl('', [Validators.required]),
-    publishedAt: new FormControl('', [Validators.required]),
+    description: new FormControl('', [Validators.required]),
   });
 
   public constructor() {
@@ -55,7 +53,7 @@ export class SettingsAnnouncementsTabComponent {
   protected startAdd(): void {
     this.showAddForm.set(true);
     this.editingId.set(null);
-    this.addForm.reset({ publishedAt: new Date().toISOString().slice(0, 10) });
+    this.addForm.reset();
   }
 
   protected cancelAdd(): void {
@@ -66,11 +64,7 @@ export class SettingsAnnouncementsTabComponent {
   protected startEdit(a: Announcement): void {
     this.editingId.set(a.id);
     this.showAddForm.set(false);
-    this.editForm.reset({
-      title: a.title,
-      body: a.body,
-      publishedAt: a.publishedAt.slice(0, 10),
-    });
+    this.editForm.reset({ title: a.title, description: a.description });
   }
 
   protected cancelEdit(): void {
@@ -86,14 +80,8 @@ export class SettingsAnnouncementsTabComponent {
 
     this.saving.set(true);
     try {
-      const { title, body, publishedAt } = this.addForm.value as { title: string; body: string; publishedAt: string };
-      const created = await firstValueFrom(
-        this.crowdfundingService.createAnnouncement(this.initiative().id, {
-          title,
-          body,
-          publishedAt: new Date(publishedAt).toISOString(),
-        })
-      );
+      const { title, description } = this.addForm.value as { title: string; description: string };
+      const created = await firstValueFrom(this.crowdfundingService.createAnnouncement(this.initiative().id, { title, description }));
       this.announcements.update((list) => [created, ...list]);
       this.showAddForm.set(false);
       this.addForm.reset();
@@ -113,14 +101,8 @@ export class SettingsAnnouncementsTabComponent {
 
     this.saving.set(true);
     try {
-      const { title, body, publishedAt } = this.editForm.value as { title: string; body: string; publishedAt: string };
-      const updated = await firstValueFrom(
-        this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, {
-          title,
-          body,
-          publishedAt: new Date(publishedAt).toISOString(),
-        })
-      );
+      const { title, description } = this.editForm.value as { title: string; description: string };
+      const updated = await firstValueFrom(this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, { title, description }));
       this.announcements.update((list) => list.map((item) => (item.id === a.id ? { ...item, ...updated } : item)));
       this.editingId.set(null);
       this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Announcement updated.' });
