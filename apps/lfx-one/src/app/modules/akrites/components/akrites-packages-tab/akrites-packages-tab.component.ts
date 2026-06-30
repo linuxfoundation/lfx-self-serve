@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder } from '@angular/forms';
 import {
+  AKRITES_ASSIGNABLE_STATUSES,
   AKRITES_ECOSYSTEM_OPTIONS,
   AKRITES_HEALTH_OPTIONS,
   AKRITES_LIFECYCLE_OPTIONS,
@@ -11,12 +13,17 @@ import {
   AKRITES_STATUS_PILLS,
   AKRITES_VULN_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { AkritesAssignStewardRequest, AkritesFilterChip, AkritesFilterState, AkritesPackage, AkritesStatusCounts } from '@lfx-one/shared/interfaces';
+import { AkritesService } from '@shared/services/akrites.service';
+import { MessageService } from 'primeng/api';
+import { map, of, switchMap, take } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 import { StewardInitialsPipe } from '../../pipes/steward-initials.pipe';
 import {
   formatStatus,
@@ -30,10 +37,22 @@ import {
 
 @Component({
   selector: 'lfx-akrites-packages-tab',
-  imports: [ButtonComponent, CheckboxComponent, SelectComponent, StewardInitialsPipe, TableComponent, TagComponent],
+  imports: [
+    AkritesAssignStewardModalComponent,
+    ButtonComponent,
+    CheckboxComponent,
+    MenuComponent,
+    SelectComponent,
+    StewardInitialsPipe,
+    TableComponent,
+    TagComponent,
+  ],
   templateUrl: './akrites-packages-tab.component.html',
 })
 export class AkritesPackagesTabComponent {
+  private readonly akritesService = inject(AkritesService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly formBuilder = inject(FormBuilder);
 
   public readonly packages = input<AkritesPackage[]>([]);
@@ -74,9 +93,21 @@ export class AkritesPackagesTabComponent {
   public readonly toggleAll = output<{ checked: boolean }>();
   public readonly clearFilters = output<void>();
   public readonly pageChange = output<{ page: number; pageSize: number }>();
+  public readonly stewardshipChanged = output<void>();
 
   protected readonly sortMenuOpen = signal(false);
   protected readonly filterPanelOpen = signal(false);
+  protected readonly assignModalVisible = signal(false);
+  protected readonly assignTargetPackage = signal<AkritesPackage | null>(null);
+  protected readonly actionLoading = signal(false);
+  protected readonly assignablePackageIds = computed(
+    () =>
+      new Set(
+        this.packages()
+          .filter((p) => AKRITES_ASSIGNABLE_STATUSES.has(p.status))
+          .map((p) => p.id)
+      )
+  );
 
   protected readonly statusPills = AKRITES_STATUS_PILLS;
   protected readonly sortOptions = AKRITES_SORT_OPTIONS;
@@ -124,6 +155,16 @@ export class AkritesPackagesTabComponent {
   protected readonly getHealthTagSeverity = getHealthTagSeverity;
   protected readonly getHealthLabel = getHealthLabel;
   protected readonly getAdvisoryTagSeverity = getAdvisoryTagSeverity;
+
+  protected readonly rowActionItems = computed(() => [
+    {
+      label: 'Assign stewardship',
+      icon: 'fa-light fa-user-plus',
+      command: () => {
+        this.assignModalVisible.set(true);
+      },
+    },
+  ]);
 
   protected isPackageSelected(id: string): boolean {
     return this.selectedPackages().has(id);
@@ -193,5 +234,43 @@ export class AkritesPackagesTabComponent {
   protected onTablePage(event: { first: number; rows: number }): void {
     const page = Math.floor(event.first / event.rows) + 1;
     this.pageChange.emit({ page, pageSize: event.rows });
+  }
+
+  protected onRowMenuOpen(event: Event, pkg: AkritesPackage, menu: { toggle: (e: Event) => void }): void {
+    this.assignTargetPackage.set(pkg);
+    menu.toggle(event);
+  }
+
+  protected onAssignStewardConfirm(body: AkritesAssignStewardRequest): void {
+    const pkg = this.assignTargetPackage();
+    if (!pkg || this.actionLoading()) return;
+    if (!this.assignablePackageIds().has(pkg.id)) {
+      this.messageService.add({ severity: 'error', summary: 'Not allowed', detail: 'This package is not eligible for steward assignment.' });
+      return;
+    }
+    this.actionLoading.set(true);
+
+    const stewardshipId$ =
+      pkg.stewardshipId !== null ? of(String(pkg.stewardshipId)) : this.akritesService.openStewardship(pkg.purl).pipe(map((res) => res.stewardship.id));
+
+    stewardshipId$
+      .pipe(
+        switchMap((id) => this.akritesService.assignSteward(id, body)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          this.assignModalVisible.set(false);
+          this.assignTargetPackage.set(null);
+          this.actionLoading.set(false);
+          this.messageService.add({ severity: 'success', summary: 'Assigned', detail: `Steward assigned to ${pkg.name}.` });
+          this.stewardshipChanged.emit();
+        },
+        error: () => {
+          this.actionLoading.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not assign steward. Please try again.' });
+        },
+      });
   }
 }
