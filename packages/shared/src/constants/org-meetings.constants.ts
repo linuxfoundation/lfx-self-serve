@@ -21,8 +21,6 @@ export const ORG_MEETINGS_KPI_UPCOMING_COUNT = 12;
 /** KPI: recurring series count (demo). */
 export const ORG_MEETINGS_KPI_RECURRING_COUNT = 4;
 
-/** KPI: next meeting label (demo). */
-export const ORG_MEETINGS_KPI_NEXT_MEETING = 'Jul 3, 2026 · 10:00 AM PT';
 
 /** KPI: recurring series project span (demo). */
 export const ORG_MEETINGS_KPI_RECURRING_PROJECTS = 3;
