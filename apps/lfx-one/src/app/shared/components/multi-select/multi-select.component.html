@@ -15,13 +15,22 @@
     [size]="size()"
     [styleClass]="styleClass()"
     class="w-full">
-    @if (optionSubLabel(); as subKey) {
+    @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
-        <div class="flex flex-col gap-0.5 leading-tight">
-          <span class="text-sm text-gray-900">{{ option[optionLabel()] }}</span>
-          @if (option[subKey]) {
-            <span class="text-xs text-gray-500">{{ option[subKey] }}</span>
+        <div class="flex items-center gap-2">
+          @if (optionImage(); as imgKey) {
+            @if (option[imgKey]) {
+              <img [src]="option[imgKey]" alt="" class="h-5 w-5 flex-shrink-0 rounded" />
+            }
           }
+          <div class="flex flex-col gap-0.5 leading-tight">
+            <span class="text-sm text-gray-900">{{ option[optionLabel()] }}</span>
+            @if (optionSubLabel(); as subKey) {
+              @if (option[subKey]) {
+                <span class="text-xs text-gray-500">{{ option[subKey] }}</span>
+              }
+            }
+          </div>
         </div>
       </ng-template>
     }

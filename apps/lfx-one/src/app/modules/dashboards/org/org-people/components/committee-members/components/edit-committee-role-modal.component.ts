@@ -10,14 +10,14 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { EmployeeAvatarComponent } from '@components/employee-avatar/employee-avatar.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Spec 027 US4 — reassign a single Membership-Entitlement committee seat to a new holder. */
 @Component({
   selector: 'lfx-edit-committee-role-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, EmployeeAvatarComponent],
+  imports: [FormsModule, InputTextModule, PersonAvatarComponent],
   templateUrl: './edit-committee-role-modal.component.html',
 })
 export class EditCommitteeRoleModalComponent {

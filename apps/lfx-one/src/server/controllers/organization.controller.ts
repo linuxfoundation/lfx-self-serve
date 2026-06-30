@@ -78,6 +78,17 @@ export class OrganizationController {
         return;
       }
 
+      if (!domain || typeof domain !== 'string') {
+        const validationError = ServiceValidationError.forField('domain', 'Organization domain is required and must be a string', {
+          operation: 'resolve_organization',
+          service: 'organization_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
       if (logo !== undefined && (typeof logo !== 'string' || !logo.startsWith('https://'))) {
         const validationError = ServiceValidationError.forField('logo', 'Organization logo must be an https URL', {
           operation: 'resolve_organization',

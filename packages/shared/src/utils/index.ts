@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './avatar.utils';
 export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';

@@ -218,11 +218,17 @@ export class SocialAccountsTabComponent {
 
       const expanded = this.expandedPlatforms();
 
+      const currentYear = new Date().getUTCFullYear();
+      const currentMonth = new Date().getUTCMonth();
+
       return data.platforms.map((p) => {
         const rowsByMonth = new Map(p.months.map((m) => [m.month, m]));
-        const latestRow = p.months.length > 0 ? p.months.reduce((latest, row) => (row.month > latest.month ? row : latest)) : null;
+        const maxMonth = data.year === currentYear ? currentMonth : 11;
+        const maxMonthStr = `${data.year}-${String(maxMonth + 1).padStart(2, '0')}`;
+        const filteredMonths = p.months.filter((m) => m.month <= maxMonthStr);
+        const latestRow = filteredMonths.length > 0 ? filteredMonths.reduce((latest, row) => (row.month > latest.month ? row : latest)) : null;
 
-        const allMonths: SocialMonthlyRow[] = MONTH_NAMES.map((name, i) => {
+        const allMonths: SocialMonthlyRow[] = MONTH_NAMES.slice(0, maxMonth + 1).map((name, i) => {
           const monthStr = `${data.year}-${String(i + 1).padStart(2, '0')}`;
           const row = rowsByMonth.get(monthStr);
           if (!row) {

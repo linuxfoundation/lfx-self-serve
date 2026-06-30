@@ -9,6 +9,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstVal
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -53,7 +54,17 @@ import { buildBoardPersonGroups, decorateBoardPersonGroup } from './helpers/boar
 @Component({
   selector: 'lfx-org-people-board-members',
   standalone: true,
-  imports: [DecimalPipe, ReactiveFormsModule, InputTextComponent, SelectComponent, SkeletonModule, EmptyStateComponent, ToastModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    InputTextComponent,
+    SelectComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    PersonAvatarComponent,
+    ToastModule,
+    TooltipModule,
+  ],
   providers: [MessageService, DialogService],
   templateUrl: './board-members.component.html',
 })
@@ -202,7 +213,7 @@ export class BoardMembersComponent {
       dismissableMask: true,
       showHeader: false,
       data: {
-        person: { fullName: group.displayName, email: currentEmail, initials: group.initials },
+        person: { fullName: group.displayName, email: currentEmail, initials: group.initials, avatarUrl: group.avatarUrl ?? null },
         roles,
         orgUid,
         submit: (intent) => this.performBulkReassign(intent, orgUid),

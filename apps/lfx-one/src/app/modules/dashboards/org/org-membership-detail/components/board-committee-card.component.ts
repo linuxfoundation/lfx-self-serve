@@ -24,6 +24,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgLensBoardCommitteeService } from '@services/org-lens-board-committee.service';
 
 import { ReassignBoardRolesModalComponent } from './reassign-board-roles-modal.component';
@@ -32,7 +33,7 @@ import { WhyCantEditModalComponent } from './why-cant-edit-modal.component';
 @Component({
   selector: 'lfx-board-committee-card',
   standalone: true,
-  imports: [FormsModule, InputTextModule, ToastModule, TooltipModule, CardComponent, EmptyStateComponent],
+  imports: [FormsModule, InputTextModule, ToastModule, TooltipModule, CardComponent, EmptyStateComponent, PersonAvatarComponent],
   providers: [DialogService],
   templateUrl: './board-committee-card.component.html',
 })

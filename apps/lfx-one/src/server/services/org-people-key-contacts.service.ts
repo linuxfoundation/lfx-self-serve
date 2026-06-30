@@ -144,6 +144,7 @@ export class OrgPeopleKeyContactsService {
         role,
         foundationSlug,
         foundationName: this.resolveFoundationName(membership),
+        avatarUrl: c.avatar?.trim() ? c.avatar.trim() : null,
       });
     }
 

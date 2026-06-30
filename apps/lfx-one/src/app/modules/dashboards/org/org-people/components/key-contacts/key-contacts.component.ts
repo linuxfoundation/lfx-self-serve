@@ -9,11 +9,13 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstVal
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
+import { avatarInitials } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -48,7 +50,17 @@ import { rolePillClass } from './helpers/key-contacts.helper';
 /** Org Lens — People → Key Contacts tab; LFXV2-2067 adds the per-role and bulk-reassign edit affordances. */
 @Component({
   selector: 'lfx-org-people-key-contacts',
-  imports: [DecimalPipe, ReactiveFormsModule, InputTextComponent, SelectComponent, SkeletonModule, EmptyStateComponent, ToastModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    InputTextComponent,
+    SelectComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    PersonAvatarComponent,
+    ToastModule,
+    TooltipModule,
+  ],
   providers: [MessageService, DialogService],
   templateUrl: './key-contacts.component.html',
 })
@@ -440,10 +452,12 @@ export class KeyContactsComponent {
       return {
         email: first.email,
         displayName: first.displayName,
+        initials: avatarInitials(first.firstName, first.lastName, first.displayName),
         title: first.title,
         roles,
         foundationCount: foundationSlugs.size,
         assignments,
+        avatarUrl: first.avatarUrl ?? null,
         rolePills: roles.map((role) => ({ role, pillClass: rolePillClass(role) })),
         sortedAssignments,
       };

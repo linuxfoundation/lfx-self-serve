@@ -31,8 +31,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
@@ -269,7 +270,7 @@ export class EventAttendeesComponent {
         title: attendee.title,
         email: attendee.email,
         initials: computePersonInitials(attendee.name),
-        avatarColorClass: computePersonAvatarColorClass(attendee.personKey),
+        avatarColorClass: avatarColorClass(attendee.personKey),
         role: anySpeaker ? 'Speaker' : 'Attendee',
         eventsCount: eventIds.size,
         lastAttendedTs,

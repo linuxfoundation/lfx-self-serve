@@ -58,7 +58,8 @@ export class HeaderComponent {
     {
       label: 'Developer Settings',
       icon: 'fa-light fa-cog',
-      routerLink: '/profile/developer',
+      routerLink: '/settings',
+      fragment: 'developer-settings',
     },
     {
       separator: true,

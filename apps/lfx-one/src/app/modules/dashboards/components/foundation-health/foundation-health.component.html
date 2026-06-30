@@ -181,13 +181,6 @@
             }
           }
         }
-
-        <!-- Project Staff card — shown on 'all' (alongside metric cards) and 'staff' (solo) -->
-        @if (showStaffCard()) {
-          @if (selectedFoundation(); as foundation) {
-            <lfx-project-staff-card [projectUid]="foundation.uid" />
-          }
-        }
       </div>
 
       <!-- Right shadow fade -->
