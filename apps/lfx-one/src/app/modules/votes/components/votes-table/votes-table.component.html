@@ -133,7 +133,7 @@
               <td>
                 @if (vote.status === PollStatus.ENDED) {
                   <span class="text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
-                    {{ vote.end_time | date: 'MMM d, y' }}
+                    {{ getVoteCloseTime(vote) | date: 'MMM d, y' }}
                   </span>
                 } @else if (vote.status === PollStatus.DISABLED) {
                   <span class="text-sm text-gray-700">Draft</span>
@@ -168,9 +168,16 @@
                 <div class="flex items-center justify-end gap-1">
                   @if (hasPMOAccess()) {
                     @if (vote.status === PollStatus.DISABLED) {
-                      <a [routerLink]="['/votes', vote.uid, 'edit']">
-                        <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.uid"> </lfx-button>
-                      </a>
+                      <lfx-button
+                        label="Edit"
+                        severity="primary"
+                        size="small"
+                        [text]="true"
+                        [routerLink]="['/votes', vote.uid, 'edit']"
+                        [queryParams]="editQueryParams()"
+                        (onClick)="$event.stopPropagation()"
+                        [attr.data-testid]="'votes-edit-' + vote.uid">
+                      </lfx-button>
                       <lfx-button
                         label="Delete"
                         severity="danger"

@@ -32,8 +32,8 @@ export class PublicRegistrationModalComponent {
 
   public constructor() {
     this.form = new FormGroup({
-      first_name: new FormControl('', [Validators.required, Validators.minLength(2)]),
-      last_name: new FormControl('', [Validators.required, Validators.minLength(2)]),
+      first_name: new FormControl('', [Validators.required, Validators.pattern(/\S/)]),
+      last_name: new FormControl('', [Validators.required, Validators.pattern(/\S/)]),
       email: new FormControl('', [Validators.required, Validators.email]),
       job_title: new FormControl(''),
       org_name: new FormControl(''),

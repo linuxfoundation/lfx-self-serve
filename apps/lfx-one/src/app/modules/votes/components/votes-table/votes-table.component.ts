@@ -5,7 +5,6 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -16,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_ENDED_EARLY_TOOLTIP, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
-import { isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getVoteCloseTime, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -37,7 +36,6 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
-    RouterLink,
     InputTextComponent,
     SelectComponent,
     PollStatusLabelPipe,
@@ -63,6 +61,7 @@ export class VotesTableComponent {
   protected readonly voteEndedEarlyTooltip = VOTE_ENDED_EARLY_TOOLTIP;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
+  protected readonly getVoteCloseTime = getVoteCloseTime;
   protected readonly isVoteEndedEarly = isVoteEndedEarly;
 
   // === Inputs ===
@@ -82,6 +81,7 @@ export class VotesTableComponent {
   public readonly showDraftTab = input<boolean>(true);
   /** Early-end info icon beside Ended status — management lenses only; Me lens voters see plain Ended. */
   public readonly showEndedEarlyInfo = input<boolean>(true);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewVote = output<string>();
