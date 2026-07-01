@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MY_EVENT_STATUS } from '../constants/events.constants';
+
 import { OffsetPaginatedResponse } from './api.interface';
 
 /**
@@ -10,6 +12,12 @@ import { OffsetPaginatedResponse } from './api.interface';
  * maps to `EVENT_STATUS IN ('Pending', 'Planned')`.
  */
 export type EventStatusFilter = 'Active' | 'Planned' | 'Pending' | 'Completed' | 'coming-soon';
+
+/**
+ * Canonical display values for a user's My Events registration status.
+ * Derived from the {@link MY_EVENT_STATUS} constant so the union stays in sync with it.
+ */
+export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
 
 /**
  * Event item for the My Events dashboard

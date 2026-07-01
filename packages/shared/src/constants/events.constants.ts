@@ -42,8 +42,6 @@ export const MY_EVENT_STATUS = {
   NOT_REGISTERED: 'Not Registered',
 } as const;
 
-export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
-
 export const VISA_REQUEST_STATUS_OPTIONS: FilterOption[] = [
   { label: 'All Statuses', value: null },
   { label: 'Submitted', value: 'Submitted' },
