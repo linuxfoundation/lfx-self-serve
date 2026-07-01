@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilter } from '../interfaces';
+import type { GroupDetailTabConfig, GroupDetailTabId, GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilter } from '../interfaces';
 
 /** Groups page tabs in visible order (`all` is the default). */
 export const GROUPS_TABS: readonly GroupsTabConfig[] = [
@@ -28,3 +28,20 @@ export const GROUPS_VOTING_OPTIONS: readonly GroupsSelectOption[] = [
   { label: 'Voting Enabled', value: 'enabled' satisfies GroupsVotingFilter },
   { label: 'Non-Voting', value: 'disabled' satisfies GroupsVotingFilter },
 ] as const;
+
+/** Derived from GROUPS_VOTING_OPTIONS; used to validate `?voting=` query-param input. */
+export const VALID_GROUPS_VOTING_FILTERS: ReadonlySet<GroupsVotingFilter> = new Set<GroupsVotingFilter>(
+  GROUPS_VOTING_OPTIONS.map((o) => o.value as GroupsVotingFilter)
+);
+
+/** Group detail page tabs in visible order. */
+export const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
+  { id: 'overview', label: 'Overview', icon: 'fa-solid fa-circle-dot' },
+  { id: 'votes', label: 'Votes', icon: 'fa-light fa-check-to-slot' },
+  { id: 'meetings', label: 'Meetings', icon: 'fa-light fa-calendar' },
+  { id: 'surveys', label: 'Surveys', icon: 'fa-light fa-chart-bar' },
+  { id: 'documents', label: 'Documents', icon: 'fa-light fa-folder' },
+] as const;
+
+/** Default tab for group detail — overview is shown on initial load. */
+export const DEFAULT_DETAIL_TAB_ID: GroupDetailTabId = 'overview';

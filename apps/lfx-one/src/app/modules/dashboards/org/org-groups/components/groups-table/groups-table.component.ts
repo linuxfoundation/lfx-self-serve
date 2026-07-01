@@ -37,17 +37,8 @@ export class GroupsTableComponent {
 
   // ─── State ───────────────────────────────────────────────────────────────────
 
-  protected readonly page = signal(0);
+  protected readonly first = signal(0);
   protected readonly size = signal(GROUPS_DEFAULT_PAGE_SIZE);
-
-  constructor() {
-    // Reset to first page whenever the data set or active tab changes.
-    effect(() => {
-      this.groups();
-      this.activeTab();
-      this.page.set(0);
-    });
-  }
 
   // ─── Computed ────────────────────────────────────────────────────────────────
 
@@ -61,17 +52,19 @@ export class GroupsTableComponent {
 
   protected readonly totalRecords = computed(() => this.tabFilteredGroups().length);
 
-  protected readonly first = computed(() => this.page() * this.size());
-
-  protected readonly pageRows = computed(() => {
-    const start = this.first();
-    return this.tabFilteredGroups().slice(start, start + this.size());
-  });
+  constructor() {
+    // Reset to first page whenever the data set or active tab changes.
+    effect(() => {
+      this.groups();
+      this.activeTab();
+      this.first.set(0);
+    });
+  }
 
   // ─── Public methods ───────────────────────────────────────────────────────────
 
   protected onPage(event: { first: number; rows: number }): void {
-    this.page.set(Math.floor(event.first / event.rows));
+    this.first.set(event.first);
     this.size.set(event.rows);
   }
 

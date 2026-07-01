@@ -546,7 +546,7 @@ export class MainLayoutComponent {
         // INFO: Future Epic implementation — the Meetings page is hidden until the org
         // meetings feature is built. Restore the entry below to re-enable it.
         // { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
-        { label: 'Groups', icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
+        { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
       ],
     },
     {

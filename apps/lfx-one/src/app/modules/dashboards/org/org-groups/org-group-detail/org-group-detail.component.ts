@@ -1,27 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, type Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { DETAIL_TABS } from '@lfx-one/shared/constants';
 import type { GroupDetailTabConfig, GroupDetailTabId, OrgGroupDetail } from '@lfx-one/shared/interfaces';
 
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 
 import { OrgGroupsService } from '../services/org-groups.service';
-
-const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
-  { id: 'overview', label: 'Overview', icon: 'fa-solid fa-circle-dot' },
-  { id: 'votes', label: 'Votes', icon: 'fa-light fa-check-to-slot' },
-  { id: 'meetings', label: 'Meetings', icon: 'fa-light fa-calendar' },
-  { id: 'surveys', label: 'Surveys', icon: 'fa-light fa-chart-bar' },
-  { id: 'documents', label: 'Documents', icon: 'fa-light fa-folder' },
-] as const;
 
 /** Group detail page shell (LFXV2-1879) — overview, meetings, votes, surveys, documents tabs. */
 @Component({
@@ -32,6 +25,7 @@ const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
 export class OrgGroupDetailComponent {
   // ─── Private injections ──────────────────────────────────────────────────────
 
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly route = inject(ActivatedRoute);
   private readonly groupsService = inject(OrgGroupsService);
 
@@ -63,6 +57,23 @@ export class OrgGroupDetailComponent {
 
   protected switchTab(id: GroupDetailTabId): void {
     this.activeTab.set(id);
+  }
+
+  protected onTabKeydown(event: KeyboardEvent): void {
+    const ids = this.tabs.map((t) => t.id);
+    const idx = ids.indexOf(this.activeTab());
+    let next: number | null = null;
+    if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
+    else if (event.key === 'ArrowLeft') next = (idx - 1 + ids.length) % ids.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = ids.length - 1;
+    if (next !== null) {
+      event.preventDefault();
+      this.switchTab(ids[next]);
+      if (isPlatformBrowser(this.platformId)) {
+        (document.getElementById(`org-group-detail-tab-${ids[next]}`) as HTMLElement | null)?.focus();
+      }
+    }
   }
 
   protected formatCreatedAt(date: Date): string {

@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { debounceTime, of, switchMap } from 'rxjs';
 
-import { GROUPS_TABS, GROUPS_VOTING_OPTIONS, DEFAULT_GROUPS_TAB_ID, VALID_GROUPS_TAB_IDS } from '@lfx-one/shared/constants';
+import { GROUPS_TABS, GROUPS_VOTING_OPTIONS, DEFAULT_GROUPS_TAB_ID, VALID_GROUPS_TAB_IDS, VALID_GROUPS_VOTING_FILTERS } from '@lfx-one/shared/constants';
 import type { GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilter, OrgGroup, OrgGroupsStats, StatCardItem } from '@lfx-one/shared/interfaces';
 
 import { CardComponent } from '@components/card/card.component';
@@ -51,7 +51,13 @@ export class OrgGroupsComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     foundation: new FormControl<string>(this.initialParams.get('foundation') ?? '', { nonNullable: true }),
-    voting: new FormControl<GroupsVotingFilter>((this.initialParams.get('voting') as GroupsVotingFilter) ?? 'all', { nonNullable: true }),
+    voting: new FormControl<GroupsVotingFilter>(
+      (() => {
+        const v = this.initialParams.get('voting');
+        return v && VALID_GROUPS_VOTING_FILTERS.has(v as GroupsVotingFilter) ? (v as GroupsVotingFilter) : 'all';
+      })(),
+      { nonNullable: true }
+    ),
   });
 
   // ─── Mutable state ────────────────────────────────────────────────────────────

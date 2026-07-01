@@ -2,13 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-table
-  [value]="pageRows()"
+  [value]="$any(tabFilteredGroups())"
   [loading]="loading()"
   [lazy]="false"
-  [paginator]="totalRecords() > pageSizeOptions[0]"
+  [paginator]="totalRecords() > size()"
   [rows]="size()"
   [first]="first()"
-  [totalRecords]="totalRecords()"
   [rowsPerPageOptions]="pageSizeOptions"
   [showCurrentPageReport]="true"
   [showFirstLastIcon]="false"
@@ -40,7 +39,9 @@
       (keydown)="onRowKeydown($event, row.id)">
       <!-- Name (lock icon immediately after text) -->
       <td class="whitespace-nowrap">
-        <a [routerLink]="['/org/groups', row.id]" class="lfx-table-name-link text-sm" style="display: inline">{{ row.name }}</a>
+        <a [routerLink]="['/org/groups', row.id]" (click)="$event.stopPropagation()" class="lfx-table-name-link text-sm" style="display: inline">{{
+          row.name
+        }}</a>
         @if (row.visibility === 'PRIVATE') {
           <i class="fa-light fa-lock text-xs text-gray-500 ml-1" aria-hidden="true" pTooltip="Private" tooltipPosition="top"></i>
         }
@@ -58,14 +59,14 @@
             class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-violet-700 bg-violet-50"
             data-testid="org-groups-class-board">
             <i class="fa-light fa-gavel text-[10px]" aria-hidden="true"></i>
-            Boards
+            Board
           </span>
         } @else if (row.type === 'Working Group' || row.type === 'TAC') {
           <span
             class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50"
             data-testid="org-groups-class-working-group">
             <i class="fa-light fa-users-gear text-[10px]" aria-hidden="true"></i>
-            Working Groups
+            Working Group
           </span>
         } @else {
           <span
@@ -110,6 +111,7 @@
             [class]="row.hasChatChannel ? 'inline-flex items-center text-gray-500 cursor-default' : 'inline-flex items-center text-gray-300 cursor-default'"
             [pTooltip]="row.hasChatChannel ? 'Chat channel' : 'No chat channel'"
             tooltipPosition="top"
+            tabindex="0"
             [attr.aria-label]="row.hasChatChannel ? 'Chat channel' : 'No chat channel'">
             <i class="fa-light fa-comment w-4 h-4" aria-hidden="true"></i>
           </span>
