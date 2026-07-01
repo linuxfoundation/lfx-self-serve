@@ -430,6 +430,7 @@ export interface AkritesLoadResult {
   total: number | null;
   error: boolean;
   statusCounts: AkritesStatusCounts | null;
+  loading: boolean;
 }
 
 export interface CdpPackagesMetricsResponse {

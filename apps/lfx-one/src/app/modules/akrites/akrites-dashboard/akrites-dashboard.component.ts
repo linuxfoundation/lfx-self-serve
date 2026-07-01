@@ -25,7 +25,7 @@ import {
   AkritesEscalateRequest,
   AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter, startWith } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
@@ -86,7 +86,7 @@ export class AkritesDashboardComponent {
   private readonly metricsResult = this.initMetrics();
   private readonly scatterResult = this.initScatterResult();
 
-  protected readonly tableLoading = signal(true);
+  protected readonly tableLoading = computed(() => this.loadResult()?.loading ?? true);
   protected readonly metricsLoading = signal(true);
   protected readonly scatterLoading = signal(false);
   protected readonly riskMatrixVisibleStatuses = signal<AkritesStatus[]>(AKRITES_DEFAULT_VISIBLE_STATUSES);
@@ -446,7 +446,6 @@ export class AkritesDashboardComponent {
     const source = computed(() => ({ f: this.filters(), reload: this.reloadTrigger() }));
     return toSignal<AkritesLoadResult | undefined>(
       toObservable(source).pipe(
-        tap(() => this.tableLoading.set(true)),
         debounceTime(300),
         switchMap(({ f }) => {
           const params: AkritesListParams = {
@@ -464,11 +463,19 @@ export class AkritesDashboardComponent {
             unstewardedOnly: f.unstewardedOnly || undefined,
           };
           return this.akritesService.getPackages(params).pipe(
-            map((res): AkritesLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false, statusCounts: res.statusCounts ?? null })),
-            catchError(() => of<AkritesLoadResult>({ packages: [], total: null, error: true, statusCounts: null }))
+            map(
+              (res): AkritesLoadResult => ({
+                packages: res.packages ?? [],
+                total: res.total ?? null,
+                error: false,
+                statusCounts: res.statusCounts ?? null,
+                loading: false,
+              })
+            ),
+            catchError(() => of<AkritesLoadResult>({ packages: [], total: null, error: true, statusCounts: null, loading: false })),
+            startWith<AkritesLoadResult>({ packages: [], total: null, error: false, statusCounts: null, loading: true })
           );
-        }),
-        tap(() => this.tableLoading.set(false))
+        })
       )
     );
   }
