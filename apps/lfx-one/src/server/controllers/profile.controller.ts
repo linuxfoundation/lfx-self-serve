@@ -31,6 +31,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
+import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -1686,7 +1687,7 @@ export class ProfileController {
       const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, tokenResponse.id_token);
 
       if (!linkResponse.success) {
-        const isAlreadyLinked = linkResponse.error?.includes('already') || linkResponse.message?.includes('already');
+        const isAlreadyLinked = isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message);
         logger.error(req, 'social_auth_callback', startTime, new Error('Identity link failed'), {
           error: linkResponse.error,
           message: linkResponse.message,
@@ -1792,7 +1793,7 @@ export class ProfileController {
           message: response.message,
         });
 
-        if (response.error?.includes('already linked')) {
+        if (isIdentityAlreadyLinkedError(response.error, response.message)) {
           // Upstream auth-service emits the "already linked" error without identifying the
           // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
           // The resolved account is logged for support/debugging only — never returned to the
@@ -1921,7 +1922,7 @@ export class ProfileController {
       const linkResponse = await this.emailVerificationService.linkIdentity(req, authToken, identityToken);
 
       if (!linkResponse.success) {
-        if (linkResponse.error?.includes('already linked')) {
+        if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (linkResponse.error === 'Service temporarily unavailable') {
