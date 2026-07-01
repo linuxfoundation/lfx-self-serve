@@ -7,6 +7,7 @@ import {
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
@@ -1804,7 +1805,7 @@ export class ProfileController {
             linked_to: linkedTo,
           });
 
-          res.status(409).json({ success: false, error: response.error, message: 'This email is already linked to another account' });
+          res.status(409).json({ success: false, error: response.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
         } else {
@@ -1922,7 +1923,7 @@ export class ProfileController {
       if (!linkResponse.success) {
         if (linkResponse.error?.includes('already linked')) {
           // Never forward the upstream message here — it could name the owning account.
-          res.status(409).json({ success: false, error: linkResponse.error, message: 'This email is already linked to another account' });
+          res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (linkResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: linkResponse.error, message: linkResponse.message });
         } else {
