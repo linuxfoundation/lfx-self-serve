@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  Announcement,
+  AnnouncementList,
+  CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
   DonationStats,
@@ -10,13 +13,16 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
+  RecurringDonation,
   RecurringDonationsResponse,
+  UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
+  BackendAnnouncement,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
   BackendDonation,
@@ -31,6 +37,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { getHttpErrorCode } from '../helpers/http-status.helper';
 import {
+  mapAnnouncementWire,
   mapToInitiativeBase,
   mapToInitiativeDetail,
   mapCfDonationToMyDonation,
@@ -97,6 +104,22 @@ async function cfFetch<T>(req: Request, operation: string, path: string, options
   }
   if (options.noBody) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+async function cfFetchAllPages<T>(req: Request, operation: string, basePath: string, pageSize = 500): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await cfFetch<{ data: T[]; meta: { total: number; limit: number; offset: number } }>(
+      req,
+      operation,
+      `${basePath}?limit=${pageSize}&offset=${offset}`
+    );
+    all.push(...page.data);
+    if (all.length >= page.meta.total || page.data.length === 0) break;
+    offset += page.data.length;
+  }
+  return all;
 }
 
 // cfFetchNullable calls the authenticated CF API but returns null on 404 instead of throwing.
@@ -221,30 +244,10 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    // Fetch all pages of donations and subscriptions in parallel so stats reflect the user's
-    // complete history, not just the first fixed-size page.
-    const STATS_PAGE_SIZE = 500;
-
-    async function fetchAllPages<T>(pageReq: Parameters<typeof cfFetch>[0], operation: string, basePath: string): Promise<T[]> {
-      const all: T[] = [];
-      let offset = 0;
-      while (true) {
-        const page = await cfFetch<{ data: T[]; meta: { total: number; limit: number; offset: number } }>(
-          pageReq,
-          operation,
-          `${basePath}?limit=${STATS_PAGE_SIZE}&offset=${offset}`
-        );
-        all.push(...page.data);
-        if (all.length >= page.meta.total || page.data.length === 0) break;
-        offset += STATS_PAGE_SIZE;
-      }
-      return all;
-    }
-
     // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
     const [allDonations, allSubscriptions] = await Promise.all([
-      fetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
-      fetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
+      cfFetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
+      cfFetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
     ]);
 
     const totalDonated = allDonations.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
@@ -262,14 +265,11 @@ export class CrowdfundingService {
   public async getMyRecurringDonations(req: Request): Promise<RecurringDonationsResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_recurring_donations');
 
-    const raw = await cfFetch<{ data: BackendSubscription[]; meta: { total: number; limit: number; offset: number } }>(
-      req,
-      'getMyRecurringDonations',
-      '/v1/me/subscriptions'
-    );
+    const all = await cfFetchAllPages<BackendSubscription>(req, 'getMyRecurringDonations', '/v1/me/subscriptions');
 
-    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data.map(mapSubscriptionToRecurringDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    const canceled = all.filter((s) => s.status === 'canceled').length;
+    logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: all.length, canceled });
+    return { data: all.map(mapSubscriptionToRecurringDonation), total: all.length, pageSize: all.length, offset: 0 };
   }
 
   public async getMyDonations(req: Request, pageSize?: number, offset?: number): Promise<MyDonationsResponse> {
@@ -285,6 +285,19 @@ export class CrowdfundingService {
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
     return { data: raw.data.map(mapCfDonationToMyDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+  }
+
+  public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {
+    const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
+
+    const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    if (!raw) {
+      logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId });
+      return null;
+    }
+
+    logger.success(req, 'cf_get_recurring_donation_by_id', startTime, { subscriptionId });
+    return mapSubscriptionToRecurringDonation(raw);
   }
 
   public async cancelSubscription(req: Request, subscriptionId: string): Promise<void> {
@@ -319,6 +332,49 @@ export class CrowdfundingService {
     return mapToInitiativeDetail(raw);
   }
 
+  public async getAnnouncements(req: Request, initiativeId: string): Promise<AnnouncementList> {
+    const startTime = logger.startOperation(req, 'cf_get_announcements', { initiativeId });
+    const data = await cfFetchAllPages<BackendAnnouncement>(req, 'getAnnouncements', `/v1/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
+    logger.success(req, 'cf_get_announcements', startTime, { count: data.length });
+    return { data: data.map(mapAnnouncementWire), totalCount: data.length };
+  }
+
+  public async createAnnouncement(req: Request, initiativeId: string, input: CreateAnnouncementInput): Promise<Announcement> {
+    const startTime = logger.startOperation(req, 'cf_create_announcement', { initiativeId });
+    const raw = await cfFetch<BackendAnnouncement>(req, 'createAnnouncement', `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`, {
+      method: 'POST',
+      body: { title: input.title, description: input.description },
+    });
+    logger.success(req, 'cf_create_announcement', startTime, { announcementId: raw.id });
+    return mapAnnouncementWire(raw);
+  }
+
+  public async updateAnnouncement(req: Request, initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Promise<Announcement> {
+    const startTime = logger.startOperation(req, 'cf_update_announcement', { initiativeId, announcementId });
+    const raw = await cfFetch<BackendAnnouncement>(
+      req,
+      'updateAnnouncement',
+      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      { method: 'PUT', body: { title: input.title, description: input.description } }
+    );
+    logger.success(req, 'cf_update_announcement', startTime, { announcementId });
+    return mapAnnouncementWire(raw);
+  }
+
+  public async deleteAnnouncement(req: Request, initiativeId: string, announcementId: string): Promise<void> {
+    const startTime = logger.startOperation(req, 'cf_delete_announcement', { initiativeId, announcementId });
+    await cfFetch<void>(
+      req,
+      'deleteAnnouncement',
+      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      {
+        method: 'DELETE',
+        noBody: true,
+      }
+    );
+    logger.success(req, 'cf_delete_announcement', startTime, { announcementId });
+  }
+
   public async getPresignedUrl(req: Request, contentType: string): Promise<PresignedURLResult> {
     const startTime = logger.startOperation(req, 'cf_get_presigned_url');
 
@@ -340,14 +396,16 @@ export class CrowdfundingService {
     slug: string,
     type?: 'donations' | 'expenses',
     size?: number,
-    from?: number
+    from?: number,
+    kind?: 'one-time' | 'recurring'
   ): Promise<CrowdfundingTransactionList | null> {
-    const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from });
+    const startTime = logger.startOperation(req, 'cf_get_initiative_transactions', { slug, type, size, from, kind });
 
     const params = new URLSearchParams();
     if (type) params.set('type', type);
     if (size != null) params.set('limit', String(size));
     if (from != null) params.set('offset', String(from));
+    if (kind) params.set('kind', kind);
     const qs = params.toString();
 
     // /v1/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
@@ -362,6 +420,7 @@ export class CrowdfundingService {
     }
 
     logger.success(req, 'cf_get_initiative_transactions', startTime, { total: raw.total_count });
+
     return {
       data: raw.data.map(mapToTransaction),
       totalCount: raw.total_count,

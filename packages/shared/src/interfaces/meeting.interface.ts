@@ -131,6 +131,18 @@ export interface MeetingCommittee {
   name?: string;
 }
 
+/** Indexed v1_meeting zoom_config; AI flags use ai_companion_enabled / ai_summary_require_approval vs top-level ai_summary_enabled / require_ai_summary_approval. */
+export interface MeetingZoomConfig {
+  /** Zoom numeric meeting ID */
+  meeting_id?: string;
+  /** Zoom meeting passcode */
+  passcode?: string;
+  /** Whether Zoom AI Companion (AI summary) is enabled */
+  ai_companion_enabled?: boolean | null;
+  /** Whether AI summaries require approval before publishing */
+  ai_summary_require_approval?: boolean | null;
+}
+
 export interface Meeting {
   // API Response fields - not in create payload
   /** Unique identifier for the meeting */
@@ -188,6 +200,8 @@ export interface Meeting {
   ai_summary_enabled?: boolean | null;
   /** Whether AI summary requires approval before being shared */
   require_ai_summary_approval?: boolean | null;
+  /** Nested Zoom config from the indexed query-service projection (source for ai_summary_enabled on list views) */
+  zoom_config?: MeetingZoomConfig | null;
 
   /** 6-digit Zoom host key */
   host_key?: string;
@@ -1102,8 +1116,9 @@ export interface UrlMetadataResponse {
 }
 
 /**
- * Project context returned alongside a public meeting response. Limited to the fields a
- * non-authenticated viewer is allowed to see (no internals like description, status, etc.).
+ * Slim project context returned alongside public meeting endpoints.
+ * Only the fields needed for the join page — callers must not assume
+ * any other project fields are present.
  */
 export type PublicMeetingProject = {
   name: string;
@@ -1114,34 +1129,14 @@ export type PublicMeetingProject = {
 };
 
 /**
- * Redacted meeting shape returned for `visibility === 'private'` + unauthenticated viewers.
- * Only the bare minimum needed for the page to know "a meeting with this id exists, and it is
- * private — render the sign-in gate." All sensitive fields (title, agenda, materials, join
- * info, etc.) are intentionally omitted at the server. LFX sign-in is required to view more.
- */
-export type RedactedMeeting = Pick<Meeting, 'id' | 'visibility'>;
-export type RedactedPastMeeting = Pick<PastMeeting, 'id' | 'visibility'>;
-
-/**
- * Response from the public meeting-by-id endpoint (GET /public/api/meetings/:id).
- * `meeting` is the full record for public / authenticated-private viewers, or redacted for
- * private + anonymous viewers. `project` is null when the meeting is redacted.
- */
-export interface PublicMeetingResponse {
-  meeting: Meeting | RedactedMeeting;
-  project: PublicMeetingProject | null;
-}
-
-/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
- * via the existing authenticated endpoints. `meeting` is redacted and `project` is null for
- * the `visibility === 'private'` + anonymous case (full_access will also be false then).
+ * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting | RedactedPastMeeting;
-  project: PublicMeetingProject | null;
+  meeting: PastMeeting;
+  project: PublicMeetingProject;
   full_access: boolean;
 }
 

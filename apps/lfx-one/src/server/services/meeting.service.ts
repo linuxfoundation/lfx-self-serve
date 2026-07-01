@@ -34,7 +34,13 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { buildRecurrenceNeverEndDate, getPastMeetingTranscriptUrl, mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
+import {
+  buildRecurrenceNeverEndDate,
+  getPastMeetingTranscriptUrl,
+  mapITXResponseToMeetingRsvp,
+  normalizeIndexedMeetingAiSummary,
+  selectPrimaryPastMeetingSummary,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -96,10 +102,12 @@ export class MeetingService {
       has_more_pages: !!page_token,
     });
 
-    let meetings: Meeting[] = resources.map((resource) => ({
-      ...resource.data,
-      id: resource.data.id || resource.id?.split(':').pop() || resource.id,
-    }));
+    let meetings: Meeting[] = resources.map((resource) =>
+      normalizeIndexedMeetingAiSummary({
+        ...resource.data,
+        id: resource.data.id || resource.id?.split(':').pop() || resource.id,
+      })
+    );
 
     // Enrich meetings with project names and committee data in parallel (independent enrichments)
     const hasCommittees = meetings.some((m) => m.committees && m.committees.length > 0);
@@ -930,8 +938,15 @@ export class MeetingService {
         return null;
       }
 
-      // Always transform from V1 summary format to V2
-      const summary = transformV1SummaryToV2(resources[0].data);
+      const summary = selectPrimaryPastMeetingSummary(resources);
+
+      if (summary && resources.length > 1) {
+        logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
+          past_meeting_id: pastMeetingUid,
+          total: resources.length,
+          selected_uid: summary.uid,
+        });
+      }
 
       return summary;
     } catch (error) {

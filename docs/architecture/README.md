@@ -16,12 +16,14 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 20 development patterns with signals
 - **[Component Architecture](./frontend/component-architecture.md)** - PrimeNG wrapper components and design patterns
 - **[Lens & Persona System](./frontend/lens-system.md)** - LensService, persona detection, ProjectContextService
+- **[Persona Detection Pipeline](./frontend/persona-detection.md)** - Upstream persona-service NATS contract, detection→persona mapping, caching, SSR hydration
 - **[Styling System](./frontend/styling-system.md)** - CSS layers, Tailwind, and LFX UI Core integration
 - **[State Management](./frontend/state-management.md)** - Angular Signals and reactive programming
 - **[Drawer Pattern](./frontend/drawer-pattern.md)** - Drawer components, lazy data, chart integration
 - **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
+- **[Public Meeting Join](./frontend/public-meeting-join.md)** - Anonymous and authenticated join flows, access model, attachment gating
 
 ### 🖥 Backend Architecture
 

@@ -3,6 +3,7 @@
 
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
+import type { CommitteeOrganizationReference } from './committee.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -155,6 +156,8 @@ export interface TagProps {
   styleClass?: string;
   /** Renders a small filled circle dot before the label, inheriting the severity color */
   dot?: boolean;
+  /** Renders the tag with a border and transparent background instead of a filled background */
+  outlined?: boolean;
 }
 
 /**
@@ -515,6 +518,10 @@ export interface PendingActionItem {
   inviteGroupName?: string;
   /** Invitation title text up to (and excluding) the group name (set on Invitation action types), e.g. "You've been invited to " — built alongside `text` so the UI can link just the group name without runtime string-splitting. */
   inviteTitlePrefix?: string;
+  /** Suggested organization from the committee_invite (set on Invitation action types) */
+  inviteOrganization?: CommitteeOrganizationReference | null;
+  /** Precomputed flag: accept must collect organization when true (set on Invitation action types) */
+  inviteRequiresOrganization?: boolean;
 }
 
 /**
@@ -683,4 +690,6 @@ export interface TabOption<T = string> {
   label: string;
   /** Value associated with the tab */
   value: T;
+  /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
+  savesInline?: boolean;
 }

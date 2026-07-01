@@ -9,8 +9,14 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting } from '../interfaces';
-import { buildRecurrenceSummary, resolveOccurrenceRecurrence, sortPastMeetingsDescending } from './meeting.utils';
+import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
+import {
+  buildRecurrenceSummary,
+  normalizeIndexedMeetingAiSummary,
+  resolveOccurrenceRecurrence,
+  selectPrimaryPastMeetingSummary,
+  sortPastMeetingsDescending,
+} from './meeting.utils';
 
 /**
  * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
@@ -133,5 +139,150 @@ describe('resolveOccurrenceRecurrence', () => {
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
+  });
+});
+
+describe('normalizeIndexedMeetingAiSummary', () => {
+  it('derives ai_summary_enabled from zoom_config.ai_companion_enabled when top-level is absent', () => {
+    const meeting = { zoom_config: { ai_companion_enabled: true } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+  });
+
+  it('derives ai_summary_enabled false from zoom_config.ai_companion_enabled false', () => {
+    const meeting = { zoom_config: { ai_companion_enabled: false } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+  });
+
+  it('preserves explicit top-level ai_summary_enabled true over zoom_config false', () => {
+    const meeting = { ai_summary_enabled: true, zoom_config: { ai_companion_enabled: false } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+  });
+
+  it('preserves explicit top-level ai_summary_enabled false over zoom_config true', () => {
+    const meeting = { ai_summary_enabled: false, zoom_config: { ai_companion_enabled: true } } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+  });
+
+  it('returns the same reference when zoom_config is absent', () => {
+    const meeting = { ai_summary_enabled: true } as Meeting;
+
+    expect(normalizeIndexedMeetingAiSummary(meeting)).toBe(meeting);
+  });
+
+  it('derives require_ai_summary_approval from zoom_config with the same precedence', () => {
+    const fromZoom = { zoom_config: { ai_summary_require_approval: true } } as Meeting;
+    expect(normalizeIndexedMeetingAiSummary(fromZoom).require_ai_summary_approval).toBe(true);
+
+    const topLevelWins = {
+      require_ai_summary_approval: false,
+      zoom_config: { ai_summary_require_approval: true },
+    } as Meeting;
+    expect(normalizeIndexedMeetingAiSummary(topLevelWins).require_ai_summary_approval).toBe(false);
+  });
+
+  it('leaves ai_summary fields undefined when neither layer provides a value', () => {
+    const meeting = { zoom_config: { meeting_id: '123' } } as Meeting;
+    const result = normalizeIndexedMeetingAiSummary(meeting);
+    expect(result.ai_summary_enabled).toBeUndefined();
+    expect(result.require_ai_summary_approval).toBeUndefined();
+  });
+});
+
+function summaryResource(id: string, data: Partial<PastMeetingSummary> & { content?: string; edited_content?: string }): QueryServiceItem<PastMeetingSummary> {
+  return {
+    id,
+    type: 'v1_past_meeting_summary',
+    data: data as PastMeetingSummary,
+  };
+}
+
+describe('selectPrimaryPastMeetingSummary', () => {
+  it('returns null for empty or undefined input', () => {
+    expect(selectPrimaryPastMeetingSummary([])).toBeNull();
+    expect(selectPrimaryPastMeetingSummary(undefined)).toBeNull();
+  });
+
+  it('returns a single empty-content record unchanged', () => {
+    const resources = [summaryResource('empty-1', { uid: 'empty-1', content: '' })];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('empty-1');
+  });
+
+  it('prefers a content-bearing record when an empty one sorts first (LFXV2-2222)', () => {
+    const resources = [
+      summaryResource('empty-first', { uid: 'empty-first', content: '' }),
+      summaryResource('content-second', { uid: 'content-second', content: 'AI generated summary text' }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('content-second');
+  });
+
+  it('returns the newest summary when multiple records have content', () => {
+    const resources = [
+      summaryResource('older', {
+        uid: 'older',
+        content: 'Older summary',
+        updated_at: '2026-01-01T10:00:00Z',
+      }),
+      summaryResource('newer', {
+        uid: 'newer',
+        content: 'Newer summary',
+        updated_at: '2026-03-01T10:00:00Z',
+      }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer');
+  });
+
+  it('falls back to the first record when all summaries are empty, even with differing timestamps', () => {
+    const resources = [
+      summaryResource('first', { uid: 'first', content: '', updated_at: '2026-01-01T10:00:00Z' }),
+      summaryResource('second', { uid: 'second', content: '', updated_at: '2026-06-01T10:00:00Z' }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('first');
+  });
+
+  it('selects content over empty even when the content record lacks timestamps', () => {
+    const resources = [
+      summaryResource('empty-with-ts', {
+        uid: 'empty-with-ts',
+        content: '',
+        updated_at: '2026-06-01T10:00:00Z',
+      }),
+      summaryResource('content-no-ts', { uid: 'content-no-ts', content: 'Summary without timestamps' }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('content-no-ts');
+  });
+
+  it('treats whitespace-only content as empty and prefers a genuinely content-bearing record', () => {
+    const resources = [
+      summaryResource('whitespace-first', { uid: 'whitespace-first', content: '   ' }),
+      summaryResource('real-content', { uid: 'real-content', content: 'Actual summary text' }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('real-content');
+  });
+
+  it('falls back to created_at for recency when updated_at is absent', () => {
+    const resources = [
+      summaryResource('older-created', {
+        uid: 'older-created',
+        content: 'Older summary',
+        created_at: '2026-01-01T10:00:00Z',
+      }),
+      summaryResource('newer-created', {
+        uid: 'newer-created',
+        content: 'Newer summary',
+        created_at: '2026-03-01T10:00:00Z',
+      }),
+    ];
+
+    expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
   });
 });

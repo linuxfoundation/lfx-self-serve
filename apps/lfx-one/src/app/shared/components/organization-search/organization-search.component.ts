@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { InputTextComponent } from '../input-text/input-text.component';
@@ -29,6 +29,12 @@ export class OrganizationSearchComponent {
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
   public disabled = input<boolean>(false);
+  /** When false, the field keeps the user-selected name instead of being overwritten with the
+   *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
+   *  compatibility with forms where canonical normalization is desired. */
+  public resolveToCdpName = input<boolean>(true);
+  /** When true, marks the domain/website field as required (shows asterisk and validation errors). */
+  public domainRequired = input<boolean>(false);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -81,19 +87,22 @@ export class OrganizationSearchComponent {
       initialValue: [],
     });
 
-    // Effect to sync the search input with the parent form's name control
-    effect(() => {
-      const parentForm = this.form();
-      const nameControlName = this.nameControl();
-
-      if (parentForm && nameControlName) {
-        const nameControlValue = parentForm.get(nameControlName)?.value;
-
-        if (nameControlValue && nameControlValue.trim()) {
-          searchControl.setValue(nameControlValue, { emitEvent: false });
-        }
-      }
-    });
+    // Sync the internal search input with the parent form's name control — both on initial render
+    // and on any programmatic patchValue(). combineLatest re-subscribes whenever either form()
+    // or nameControl() changes so the inner subscription always tracks the live control.
+    combineLatest([toObservable(this.form), toObservable(this.nameControl)])
+      .pipe(
+        switchMap(([parentForm, nameControlName]) => {
+          if (!parentForm || !nameControlName) return EMPTY;
+          const ctrl = parentForm.get(nameControlName);
+          if (!ctrl) return EMPTY;
+          return merge(of(ctrl.value as string | null), ctrl.valueChanges);
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((value) => {
+        searchControl.setValue((value ?? '').trim(), { emitEvent: false });
+      });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
@@ -203,6 +212,8 @@ export class OrganizationSearchComponent {
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
+          // Uses cdpOrg.logo unconditionally — this method resolves from form values rather
+          // than an autocomplete suggestion, so no suggestion logo is available as a fallback.
           logo: cdpOrg.logo,
           originalName: name || '',
           nameChanged: cdpOrg.name.toLowerCase() !== (name || '').toLowerCase(),
@@ -211,12 +222,10 @@ export class OrganizationSearchComponent {
         this.resolvingOrg.set(false);
         this.onOrganizationResolved.emit(result);
 
-        // Update field text to the resolved name
-        this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-        const nameCtrl = this.nameControl();
-        if (nameCtrl && this.form().get(nameCtrl)) {
-          this.form().get(nameCtrl)?.setValue(cdpOrg.name);
+        if (this.resolveToCdpName()) {
+          this.applyCdpName(cdpOrg.name);
         }
+
         return result;
       }),
       catchError(() => {
@@ -239,7 +248,10 @@ export class OrganizationSearchComponent {
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
-            logo: cdpOrg.logo,
+            // When not resolving to CDP canonical, prefer the suggestion's non-empty logo so
+            // the displayed logo matches what the user selected rather than the CDP entity's logo.
+            // Empty-string suggestion logos fall back to cdpOrg.logo (same as the =true path).
+            logo: this.resolveToCdpName() ? cdpOrg.logo : logo || cdpOrg.logo,
             originalName: name,
             nameChanged: cdpOrg.name.toLowerCase() !== name.toLowerCase(),
           };
@@ -247,11 +259,8 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
           this.onOrganizationResolved.emit(result);
 
-          // Update field text to the resolved name
-          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
-          const nameControlName = this.nameControl();
-          if (nameControlName && this.form().get(nameControlName)) {
-            this.form().get(nameControlName)?.setValue(cdpOrg.name);
+          if (this.resolveToCdpName()) {
+            this.applyCdpName(cdpOrg.name);
           }
         },
         error: () => {
@@ -259,6 +268,14 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
         },
       });
+  }
+
+  private applyCdpName(name: string): void {
+    this.organizationForm.get('organizationSearch')?.setValue(name, { emitEvent: false });
+    const nameControlName = this.nameControl();
+    if (nameControlName && this.form().get(nameControlName)) {
+      this.form().get(nameControlName)?.setValue(name);
+    }
   }
 
   private clearResolveState(): void {

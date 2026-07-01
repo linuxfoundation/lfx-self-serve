@@ -59,6 +59,13 @@
             placeholder="Enter first name"
             data-testid="registrant-form-firstname-input">
           </lfx-input-text>
+          @if (
+            (form().get('first_name')?.errors?.['required'] || form().get('first_name')?.errors?.['pattern']) &&
+            form().get('first_name')?.touched &&
+            form().get('first_name')?.dirty
+          ) {
+            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-firstname-error">First name cannot be empty</p>
+          }
         </div>
 
         <!-- Last Name -->
@@ -72,6 +79,13 @@
             placeholder="Enter last name"
             data-testid="registrant-form-lastname-input">
           </lfx-input-text>
+          @if (
+            (form().get('last_name')?.errors?.['required'] || form().get('last_name')?.errors?.['pattern']) &&
+            form().get('last_name')?.touched &&
+            form().get('last_name')?.dirty
+          ) {
+            <p class="text-sm text-red-500" role="alert" data-testid="registrant-form-lastname-error">Last name cannot be empty</p>
+          }
         </div>
 
         <!-- Email -->
@@ -118,6 +132,7 @@
             styleClass="w-full"
             inputStyleClass="w-full text-sm"
             panelStyleClass="w-full"
+            [resolveToCdpName]="false"
             dataTestId="registrant-form-organization-input">
           </lfx-organization-search>
         </div>

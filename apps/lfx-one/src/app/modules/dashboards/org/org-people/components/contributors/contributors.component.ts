@@ -30,9 +30,10 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
-import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { ContributorsService } from '../../services/contributors.service';
 
@@ -45,7 +46,7 @@ import { ContributorsService } from '../../services/contributors.service';
 export class ContributorsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(ContributorsService);
-  private readonly personPanel = inject(PersonProfilePanelService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgContributorTimeRangeOption[] = [...ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS];
@@ -152,7 +153,14 @@ export class ContributorsComponent {
 
   protected onPersonClick(row: OrgContributorRowVm, event: Event): void {
     event.stopPropagation();
-    this.personPanel.open(row.displayName);
+    this.drawer.open({
+      personKey: row.personKey,
+      name: row.displayName,
+      title: row.title,
+      initials: row.initials,
+      avatarColorClass: row.avatarColorClass,
+      defaultTab: 'code',
+    });
   }
 
   protected showAll(): void {
@@ -205,7 +213,7 @@ export class ContributorsComponent {
       displayName: c.displayName,
       title: c.title,
       initials: computePersonInitials(c.displayName),
-      avatarColorClass: computePersonAvatarColorClass(c.personKey),
+      avatarColorClass: avatarColorClass(c.personKey),
       role: c.role,
       commits: c.commits,
       lastActiveTs: c.lastActiveTs,

@@ -20,6 +20,7 @@ node_modules
 .env.development.local
 .env.test.local
 .env.production.local
+.env.bak.*
 
 # Testing
 coverage
@@ -69,3 +70,6 @@ snowflake.log
 
 # Design reference files (Cowork session artifacts, not source code)
 design/
+
+# Playwright MCP snapshot/screenshot artifacts
+.playwright-mcp

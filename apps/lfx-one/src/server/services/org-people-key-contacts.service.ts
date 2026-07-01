@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_KEY_CONTACT_REQUIRED_ROLES } from '@lfx-one/shared/constants';
+import { ORG_KEY_CONTACT_REQUIRED_ROLES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   KeyContactIndexedDoc,
   OrgKeyContactAssignment,
@@ -13,7 +13,44 @@ import type {
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { withPerUserCache } from './valkey.service';
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Each assignment is rendered straight from cache, so validate every required string key before accepting. */
+function isKeyContactAssignment(value: unknown): boolean {
+  const a = value as Partial<OrgKeyContactAssignment>;
+  return (
+    isObject(value) &&
+    typeof a.contactUid === 'string' &&
+    typeof a.membershipUid === 'string' &&
+    typeof a.email === 'string' &&
+    typeof a.firstName === 'string' &&
+    typeof a.lastName === 'string' &&
+    typeof a.displayName === 'string' &&
+    (a.title === null || typeof a.title === 'string') &&
+    typeof a.role === 'string' &&
+    typeof a.foundationSlug === 'string' &&
+    (a.foundationName === null || typeof a.foundationName === 'string')
+  );
+}
+
+function isKeyContactsStats(value: unknown): boolean {
+  const s = value as Partial<OrgKeyContactsStats>;
+  return (
+    isObject(value) && typeof s.individualCount === 'number' && typeof s.foundationsCovered === 'number' && typeof s.unfilledRequiredRoleCount === 'number'
+  );
+}
+
+/** Rejects a corrupt/legacy entry (degrades to a miss) by validating every assignment element and the numeric stat fields against the wire contract. */
+function isKeyContactsResponse(value: unknown): boolean {
+  const v = value as Partial<OrgKeyContactsResponse>;
+  return isObject(value) && Array.isArray(v.assignments) && v.assignments.every(isKeyContactAssignment) && isKeyContactsStats(v.stats);
+}
 
 /** Org Lens — People → Key Contacts tab. V1 is org-wide and read-only; membership-scoped reads + writes live in OrgLensKeyContactsService (spec 024). */
 export class OrgPeopleKeyContactsService {
@@ -28,8 +65,20 @@ export class OrgPeopleKeyContactsService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip (FR-004). Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. */
+  /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip. Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. Served through the per-caller shared cache; only successful reads are cached. */
   public async getKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeKeyContacts(req, orgUid),
+      isKeyContactsResponse
+    );
+  }
+
+  private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
     const tags = `b2b_org_uid:${orgUid}`;
     // failOnPartial: true on both fetches — stats are computed off the full active dataset, so a dropped page would silently produce wrong counts and missing-join filters.
     const [contacts, memberships] = await Promise.all([
@@ -95,6 +144,7 @@ export class OrgPeopleKeyContactsService {
         role,
         foundationSlug,
         foundationName: this.resolveFoundationName(membership),
+        avatarUrl: c.avatar?.trim() ? c.avatar.trim() : null,
       });
     }
 

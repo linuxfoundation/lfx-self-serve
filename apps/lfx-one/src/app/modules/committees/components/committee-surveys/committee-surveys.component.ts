@@ -1,13 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
+import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
+import { CommitteeService } from '@services/committee.service';
+import { LensService } from '@services/lens.service';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
@@ -20,8 +24,11 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeSurveysComponent {
+  private readonly committeeService = inject(CommitteeService);
+  private readonly lensService = inject(LensService);
   private readonly surveyService = inject(SurveyService);
   private readonly messageService = inject(MessageService);
+  private readonly router = inject(Router);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -29,12 +36,15 @@ export class CommitteeSurveysComponent {
 
   // State
   public loading = signal<boolean>(true);
+  public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedSurveyId = signal<string | null>(null);
   public selectedSurvey = signal<Survey | null>(null);
 
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
+  public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
+  public editSurveyQueryParams: Signal<Record<string, string>> = this.createSurveyQueryParams;
 
   public viewSurveyResults(survey: Survey): void {
     this.selectedSurveyId.set(survey.uid);
@@ -42,7 +52,34 @@ export class CommitteeSurveysComponent {
     this.resultsDrawerVisible.set(true);
   }
 
+  protected onCreateSurvey(): void {
+    const committee = this.committee();
+    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
+    const denyParams: Record<string, string> = { _notice: 'surveys' };
+    if (committee.project_slug) denyParams['project'] = committee.project_slug;
+    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
+
+    this.creating.set(true);
+    this.committeeService
+      .fetchCommittee(committee.uid)
+      .pipe(finalize(() => this.creating.set(false)))
+      .subscribe({
+        next: (fresh) => {
+          if (fresh?.writer !== true) {
+            deny();
+            return;
+          }
+          void this.router.navigate(['/surveys', 'create'], { queryParams: this.createSurveyQueryParams() });
+        },
+        error: () => deny(),
+      });
+  }
+
   // Private initializer functions
+  private initCreateSurveyQueryParams(): Signal<Record<string, string>> {
+    return computed(() => buildCommitteeCreateQueryParams(this.committee()));
+  }
+
   private initSurveys(): Signal<Survey[]> {
     return toSignal(
       toObservable(this.committee).pipe(

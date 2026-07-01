@@ -18,18 +18,19 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { take } from 'rxjs';
 
-import { CommitteeMembersService } from '../../../services/committee-members.service';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 
 /** Spec 027 US3 — bulk-reassign one person's N Membership-Entitlement committee seats; the parent fans out the PUTs. */
 @Component({
   selector: 'lfx-reassign-committee-roles-modal',
   standalone: true,
-  imports: [FormsModule, InputTextModule, CheckboxModule],
+  imports: [FormsModule, InputTextModule, CheckboxModule, PersonAvatarComponent],
   templateUrl: './reassign-committee-roles-modal.component.html',
 })
 export class ReassignCommitteeRolesModalComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly dataService = inject(CommitteeMembersService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignCommitteeRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
@@ -73,11 +74,11 @@ export class ReassignCommitteeRolesModalComponent {
 
   public constructor() {
     if (this.orgUid) {
-      this.dataService
+      this.directory
         .getEmployees(this.orgUid)
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: (res) => this.employees.set(res.employees ?? []),
+          next: (list) => this.employees.set(list),
           error: () => this.employeeSearchUnavailable.set(true),
         });
     }

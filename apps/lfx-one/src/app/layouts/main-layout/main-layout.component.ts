@@ -13,8 +13,10 @@ import {
   CROWDFUNDING_ENABLED_FLAG,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
+  MKTG_OS_AGENTS_ENABLED_FLAG,
+  MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
-  OSSPREY_ENABLED_FLAG,
+  AKRITES_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -22,21 +24,20 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, of, startWith, switchMap, take } from 'rxjs';
+import { filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { environment } from '@environments/environment';
 
-import { ButtonComponent } from '@components/button/button.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ButtonComponent],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -47,7 +48,6 @@ export class MainLayoutComponent {
   private readonly appService = inject(AppService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
-  private readonly impersonationService = inject(ImpersonationService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -57,8 +57,10 @@ export class MainLayoutComponent {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate; collapses Crowdfunding sub-nav to an external link when off. */
   private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
-  /** Dark-launch gate for the OSSPREY admin dashboard; hides the Security nav section when off. */
-  private readonly isOsspreyEnabled = this.featureFlagService.getBooleanFlag(OSSPREY_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
+  private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Marketing OS agents marketplace; hides the project-lens nav entry when off. */
+  private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -84,7 +86,10 @@ export class MainLayoutComponent {
         // matching Foundation lens behavior. Authorization for write actions (add user,
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
-        const base = this.projectLensItemsWithGovernance;
+        // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
+        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
+        const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
+        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
@@ -94,39 +99,44 @@ export class MainLayoutComponent {
     }
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/OSSPREY is dark-launched).
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
-    this.isOsspreyEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
+    this.isAkritesEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
   );
 
   // --- Me Lens Items ---
-  // Computed so both Crowdfunding and Security/OSSPREY nav entries react to their feature flags in real time.
+  // Computed so both Crowdfunding and Security/Akrites nav entries react to their feature flags in real time.
   private readonly meLensItems = computed((): SidebarMenuItem[] => {
-    const crowdfundingItem: SidebarMenuItem = this.isCrowdfundingEnabled()
-      ? {
-          label: 'Crowdfunding',
-          icon: 'fa-light fa-circle-dollar',
-          isGroup: true,
-          expanded: true,
-          items: [
-            {
-              label: 'My Initiatives',
-              icon: 'fa-light fa-hand-holding-heart',
-              routerLink: '/crowdfunding/initiatives',
-            },
-            {
-              label: 'My Donations',
-              icon: 'fa-light fa-heart',
-              routerLink: '/crowdfunding/donations',
-            },
-          ],
-        }
-      : {
-          label: 'Crowdfunding',
-          icon: 'fa-light fa-circle-dollar',
-          url: environment.urls.crowdfunding,
-          target: '_self',
-        };
+    const crowdfundingEnabled = this.isCrowdfundingEnabled();
+
+    // Flag OFF: no internal pages exist, so Crowdfunding stays a single external
+    // link inside the My Growth section (its original placement).
+    const crowdfundingLink: SidebarMenuItem = {
+      label: 'Crowdfunding',
+      icon: 'fa-light fa-circle-dollar',
+      url: environment.urls.crowdfunding,
+      target: '_self',
+    };
+
+    // Flag ON: Crowdfunding is promoted to its own top-level section (peer of
+    // My Engagement / My Growth), with its sub-pages as section children.
+    const crowdfundingSection: SidebarMenuItem = {
+      label: 'Crowdfunding',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'My Initiatives',
+          icon: 'fa-light fa-box-dollar',
+          routerLink: '/crowdfunding/initiatives',
+        },
+        {
+          label: 'My Donations',
+          icon: 'fa-light fa-hand-heart',
+          routerLink: '/crowdfunding/donations',
+        },
+      ],
+    };
 
     return [
       {
@@ -148,6 +158,11 @@ export class MainLayoutComponent {
             label: 'My Events',
             icon: 'fa-light fa-ticket',
             routerLink: '/events',
+          },
+          {
+            label: 'My Meetups',
+            icon: 'fa-light fa-people-group',
+            routerLink: '/meetups',
           },
           {
             label: 'My ' + COMMITTEE_LABEL.plural,
@@ -182,9 +197,9 @@ export class MainLayoutComponent {
         expanded: true,
         items: [
           {
-            label: 'OSSPREY Program',
+            label: 'Akrites Program',
             icon: 'fa-light fa-shield-halved',
-            routerLink: '/ossprey',
+            routerLink: '/akrites',
           },
         ],
       },
@@ -203,7 +218,7 @@ export class MainLayoutComponent {
             icon: 'fa-light fa-chalkboard-teacher',
             url: environment.urls.mentorship,
           },
-          crowdfundingItem,
+          ...(crowdfundingEnabled ? [] : [crowdfundingLink]),
           {
             label: 'Badges',
             icon: 'fa-light fa-award',
@@ -211,6 +226,7 @@ export class MainLayoutComponent {
           },
         ],
       },
+      ...(crowdfundingEnabled ? [crowdfundingSection] : []),
       {
         label: 'My Account',
         isSection: true,
@@ -428,32 +444,37 @@ export class MainLayoutComponent {
     },
   ];
 
-  // --- Project Lens Items with Governance (for non-board personas) ---
-  private readonly projectLensItemsWithGovernance: SidebarMenuItem[] = [
-    ...this.projectLensItems,
-    {
-      label: 'Governance',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: VOTE_LABEL.plural,
-          icon: 'fa-light fa-check-to-slot',
-          routerLink: '/project/votes',
-        },
-        {
-          label: SURVEY_LABEL.plural,
-          icon: 'fa-light fa-clipboard-list',
-          routerLink: '/project/surveys',
-        },
-        {
-          label: 'Permissions',
-          icon: 'fa-light fa-shield',
-          routerLink: '/project/settings',
-        },
-      ],
-    },
-  ];
+  // --- Project Lens — Mktg OS agents (dark-launched; inserted directly under Documents in sidebarItems()) ---
+  private readonly mktgOsAgentsNavItem: SidebarMenuItem = {
+    label: MKTG_OS_AGENTS_LABEL.nav,
+    icon: 'fa-light fa-robot',
+    routerLink: '/project/mktg-os-agents',
+    testId: 'sidebar-project-mktg-os-agents',
+  };
+
+  // --- Project Lens — Governance section (for non-board personas) ---
+  private readonly projectGovernanceSection: SidebarMenuItem = {
+    label: 'Governance',
+    isSection: true,
+    expanded: true,
+    items: [
+      {
+        label: VOTE_LABEL.plural,
+        icon: 'fa-light fa-check-to-slot',
+        routerLink: '/project/votes',
+      },
+      {
+        label: SURVEY_LABEL.plural,
+        icon: 'fa-light fa-clipboard-list',
+        routerLink: '/project/surveys',
+      },
+      {
+        label: 'Permissions',
+        icon: 'fa-light fa-shield',
+        routerLink: '/project/settings',
+      },
+    ],
+  };
 
   // Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
   private readonly projectCommunicationsSection: SidebarMenuItem = {
@@ -486,21 +507,15 @@ export class MainLayoutComponent {
           icon: 'fa-light fa-display',
           routerLink: '/org/memberships',
         },
-        {
-          label: 'Projects',
-          icon: 'fa-light fa-folder',
-          routerLink: '/org/projects',
-        },
-        {
-          label: 'ROI',
-          icon: 'fa-light fa-chart-line-up',
-          routerLink: '/org/roi',
-        },
-        {
-          label: 'Governance',
-          icon: 'fa-light fa-layer-group',
-          routerLink: '/org/governance',
-        },
+        // INFO: Future Epic implementation — the Projects page is hidden until the
+        // org-projects drilldown is built. Restore the entry below to re-enable it.
+        // { label: 'Projects', icon: 'fa-light fa-folder', routerLink: '/org/projects' },
+        // INFO: Future Epic implementation — the ROI page is hidden until the org ROI
+        // feature is built. Restore the entry below to re-enable it.
+        // { label: 'ROI', icon: 'fa-light fa-chart-line-up', routerLink: '/org/roi' },
+        // INFO: Future Epic implementation — the Governance page is hidden until the org
+        // governance feature is built. Restore the entry below to re-enable it.
+        // { label: 'Governance', icon: 'fa-light fa-layer-group', routerLink: '/org/governance' },
       ],
     },
     {
@@ -528,16 +543,12 @@ export class MainLayoutComponent {
           icon: 'fa-light fa-graduation-cap',
           routerLink: '/org/training',
         },
-        {
-          label: 'Meetings',
-          icon: 'fa-light fa-video',
-          routerLink: '/org/meetings',
-        },
-        {
-          label: COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
-          routerLink: '/org/groups',
-        },
+        // INFO: Future Epic implementation — the Meetings page is hidden until the org
+        // meetings feature is built. Restore the entry below to re-enable it.
+        // { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
+        // INFO: Future Epic implementation — the Groups page is hidden until the org
+        // groups feature is built. Restore the entry below to re-enable it.
+        // { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
       ],
     },
     {
@@ -576,15 +587,6 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
-  }
-
-  protected stopImpersonation(): void {
-    this.impersonationService
-      .stopImpersonation()
-      .pipe(take(1))
-      .subscribe(() => {
-        window.location.reload();
-      });
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

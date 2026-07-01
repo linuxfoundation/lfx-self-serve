@@ -7,6 +7,7 @@
       [surveys]="surveys()"
       [hasPMOAccess]="canEdit()"
       [loading]="loading()"
+      [editQueryParams]="editSurveyQueryParams()"
       (viewResults)="viewSurveyResults($event)"
       (rowClick)="viewSurveyResults($event)">
       @if (canEdit()) {
@@ -16,8 +17,8 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
-          [routerLink]="['/surveys', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [loading]="creating()"
+          (onClick)="onCreateSurvey()"
           data-testid="committee-surveys-create-btn"></lfx-button>
       }
     </lfx-surveys-table>
@@ -29,8 +30,8 @@
           icon="fa-light fa-chart-simple"
           severity="info"
           size="small"
-          [routerLink]="['/surveys', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [loading]="creating()"
+          (onClick)="onCreateSurvey()"
           data-testid="committee-surveys-empty-create-btn"></lfx-button>
       </div>
     }

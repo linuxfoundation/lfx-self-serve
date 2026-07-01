@@ -8,6 +8,7 @@
       [hasPMOAccess]="canEdit()"
       [loading]="loading()"
       [totalRecords]="votes().length"
+      [editQueryParams]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
       (viewVote)="viewVoteResults($event)">
       @if (canEdit()) {
@@ -17,8 +18,8 @@
           icon="fa-light fa-check-to-slot"
           severity="info"
           size="small"
-          [routerLink]="['/votes', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [loading]="creating()"
+          (onClick)="onCreateVote()"
           data-testid="committee-votes-create-btn"></lfx-button>
       }
     </lfx-votes-table>
@@ -30,8 +31,8 @@
           icon="fa-light fa-check-to-slot"
           severity="info"
           size="small"
-          [routerLink]="['/votes', 'create']"
-          [queryParams]="{ committee_uid: committee().uid }"
+          [loading]="creating()"
+          (onClick)="onCreateVote()"
           data-testid="committee-votes-empty-create-btn"></lfx-button>
       </div>
     }

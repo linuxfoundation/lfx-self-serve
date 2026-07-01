@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 
 import type {
@@ -13,21 +13,27 @@ import type {
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
+  MetaAccountOption,
+  MetaMonitorResponse,
+  RedditAccountOption,
+  RedditMonitorResponse,
+  RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
+import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
-type PlatformType = 'google' | 'linkedin';
+type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta';
 
 const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent],
+  imports: [AudienceDemographicsComponent, MetaPacingClassPipe],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -38,9 +44,11 @@ export class MonitoringTabComponent implements OnInit {
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
+  private redditSub: Subscription | null = null;
   private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   protected readonly Math = Math;
+  protected readonly platformColors = PLATFORM_BRAND_COLORS;
   protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
   protected readonly keywordPageSize = KEYWORD_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
@@ -52,7 +60,7 @@ export class MonitoringTabComponent implements OnInit {
 
   // Platform switcher
   protected readonly selectedPlatform = signal<PlatformType>('google');
-  protected readonly linkedInAccountOptions = signal<LinkedInAccountOption[]>([]);
+  protected readonly linkedInAccountOptions = signal<LinkedInAccount[]>([]);
   protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
@@ -61,6 +69,33 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
+
+  // Reddit
+  protected readonly redditAccountOptions = signal<RedditAccountOption[]>([]);
+  protected readonly selectedRedditAccountKey = signal<string>('');
+  protected readonly redditLoading = signal(false);
+  protected readonly redditData = signal<RedditMonitorResponse | null>(null);
+  protected readonly redditError = signal<string | null>(null);
+  protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
+  protected readonly redditTotals = computed(() => this.redditData()?.accountTotals ?? null);
+  protected readonly redditPulledAt = computed(() => {
+    const pulledAt = this.redditData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
+
+  // Meta
+  private metaSub: Subscription | null = null;
+  protected readonly metaAccountOptions = signal<MetaAccountOption[]>([]);
+  protected readonly selectedMetaAccountKey = signal<string>('');
+  protected readonly metaLoading = signal(false);
+  protected readonly metaData = signal<MetaMonitorResponse | null>(null);
+  protected readonly metaError = signal<string | null>(null);
+  protected readonly metaCampaigns = computed(() => this.metaData()?.campaigns ?? []);
+  protected readonly metaTotals = computed(() => this.metaData()?.accountTotals ?? null);
+  protected readonly metaPulledAt = computed(() => {
+    const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
   });
 
@@ -104,7 +139,7 @@ export class MonitoringTabComponent implements OnInit {
         next: (accounts) => {
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
-            this.selectedLinkedInAccountKey.set(accounts[0].key);
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
             if (this.selectedPlatform() === 'linkedin') {
               this.fetchLinkedInData();
             }
@@ -115,6 +150,42 @@ export class MonitoringTabComponent implements OnInit {
           this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
         },
       });
+    this.campaignService
+      .getRedditAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.redditAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
+            this.selectedRedditAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'reddit') {
+              this.fetchRedditData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+        },
+      });
+    this.campaignService
+      .getMetaAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.metaAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
+            this.selectedMetaAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'meta') {
+              this.fetchMetaData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+        },
+      });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -122,8 +193,14 @@ export class MonitoringTabComponent implements OnInit {
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (this.selectedPlatform() === 'reddit') {
+      this.fetchRedditData();
+    } else if (this.selectedPlatform() === 'meta') {
+      this.fetchMetaData();
     } else {
       this.linkedInData.set(null);
+      this.redditData.set(null);
+      this.metaData.set(null);
     }
   }
 
@@ -131,6 +208,10 @@ export class MonitoringTabComponent implements OnInit {
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (this.selectedPlatform() === 'reddit') {
+      this.fetchRedditData();
+    } else if (this.selectedPlatform() === 'meta') {
+      this.fetchMetaData();
     }
   }
 
@@ -199,6 +280,10 @@ export class MonitoringTabComponent implements OnInit {
     this.selectedPlatform.set(p);
     if (p === 'linkedin') {
       this.fetchLinkedInData();
+    } else if (p === 'reddit') {
+      this.fetchRedditData();
+    } else if (p === 'meta') {
+      this.fetchMetaData();
     }
   }
 
@@ -245,6 +330,74 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatLinkedInPct(n: number): string {
     return `${n.toFixed(2)}%`;
+  }
+
+  protected setRedditAccount(key: string): void {
+    this.selectedRedditAccountKey.set(key);
+    this.fetchRedditData();
+  }
+
+  protected onRedditAccountChange(event: Event): void {
+    this.setRedditAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchRedditData(): void {
+    const accountKey = this.selectedRedditAccountKey();
+    if (!accountKey) return;
+    this.redditSub?.unsubscribe();
+    this.redditLoading.set(true);
+    this.redditError.set(null);
+    this.redditSub = this.campaignService
+      .getRedditMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.redditData.set(data);
+          this.redditLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditLoading.set(false);
+        },
+      });
+  }
+
+  protected redditPacingClass(label: RedditPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
+  }
+
+  protected setMetaAccount(key: string): void {
+    this.selectedMetaAccountKey.set(key);
+    this.fetchMetaData();
+  }
+
+  protected onMetaAccountChange(event: Event): void {
+    this.setMetaAccount((event.target as HTMLSelectElement).value);
+  }
+
+  protected fetchMetaData(): void {
+    const accountKey = this.selectedMetaAccountKey();
+    if (!accountKey) return;
+    this.metaSub?.unsubscribe();
+    this.metaLoading.set(true);
+    this.metaError.set(null);
+    this.metaSub = this.campaignService
+      .getMetaMonitorData(accountKey, this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.metaData.set(data);
+          this.metaLoading.set(false);
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta data');
+          this.metaLoading.set(false);
+        },
+      });
   }
 
   protected eventLabel(campaignName: string): string {

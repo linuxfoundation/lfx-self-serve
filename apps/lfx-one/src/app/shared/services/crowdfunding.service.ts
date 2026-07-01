@@ -16,6 +16,9 @@ import {
   EMPTY_DONATION_STATS,
 } from '@lfx-one/shared/constants';
 import {
+  Announcement,
+  AnnouncementList,
+  CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
   DonationStats,
@@ -24,7 +27,9 @@ import {
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
+  RecurringDonation,
   RecurringDonationsResponse,
+  UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
@@ -72,6 +77,13 @@ export class CrowdfundingService {
     return this.http.get<DonationStats>('/api/crowdfunding/donation-stats').pipe(catchError(this.handleCfError(EMPTY_DONATION_STATS, 'getMyDonationStats')));
   }
 
+  public getRecurringDonationById(id: string): Observable<RecurringDonation | null> {
+    if (!id.trim()) return of(null);
+    return this.http
+      .get<RecurringDonation>(`/api/crowdfunding/recurring-donations/${encodeURIComponent(id.trim())}`)
+      .pipe(catchError(this.handleCfError(null, 'getRecurringDonationById')));
+  }
+
   public getMyRecurringDonations(): Observable<RecurringDonationsResponse> {
     return this.http
       .get<RecurringDonationsResponse>('/api/crowdfunding/recurring-donations')
@@ -98,6 +110,30 @@ export class CrowdfundingService {
       .pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
 
+  public getAnnouncements(initiativeId: string): Observable<AnnouncementList> {
+    return this.http
+      .get<AnnouncementList>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`)
+      .pipe(catchError(this.handleCfError({ data: [], totalCount: 0 }, 'getAnnouncements')));
+  }
+
+  public createAnnouncement(initiativeId: string, input: CreateAnnouncementInput): Observable<Announcement> {
+    return this.http
+      .post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
+  public updateAnnouncement(initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Observable<Announcement> {
+    return this.http
+      .put<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
+  public deleteAnnouncement(initiativeId: string, announcementId: string): Observable<void> {
+    return this.http
+      .delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`)
+      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+  }
+
   public deletePaymentMethod(): Observable<void> {
     return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(catchError(this.redirectIfCfUnauthenticated()));
   }
@@ -108,12 +144,13 @@ export class CrowdfundingService {
 
   public getInitiativeTransactions(
     slug: string,
-    params?: { type?: 'donations' | 'expenses'; size?: number; from?: number }
+    params?: { type?: 'donations' | 'expenses'; size?: number; from?: number; kind?: 'one-time' | 'recurring' }
   ): Observable<CrowdfundingTransactionList> {
     let httpParams = new HttpParams();
     if (params?.type) httpParams = httpParams.set('type', params.type);
     if (params?.size != null) httpParams = httpParams.set('size', String(params.size));
     if (params?.from != null) httpParams = httpParams.set('from', String(params.from));
+    if (params?.kind) httpParams = httpParams.set('kind', params.kind);
 
     return this.http
       .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}/transactions`, { params: httpParams })
@@ -125,6 +162,7 @@ export class CrowdfundingService {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
         if (isPlatformBrowser(this.platformId)) {
           this.redirectToCfAuth();
+          return EMPTY; // navigating away — don't emit fallback so loading state persists
         }
         return of(fallback);
       }

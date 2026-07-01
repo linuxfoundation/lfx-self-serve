@@ -3,7 +3,7 @@
 
 // Generated with [Cursor](https://cursor.com)
 
-import { ORG_ACCESS_ROLE_RELATION } from '@lfx-one/shared/constants';
+import { ORG_ACCESS_ROLE_RELATION, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgSettings,
   MemberServiceOrgUser,
@@ -21,6 +21,50 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
+import { invalidatePerUserCache, withPerUserCache } from './valkey.service';
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Each user row is served straight from cache to the client, so validate its element shape against the wire contract. */
+function isAccessUser(value: unknown): boolean {
+  const u = value as Partial<OrgAccessUser>;
+  return (
+    isObject(value) &&
+    typeof u.email === 'string' &&
+    typeof u.name === 'string' &&
+    typeof u.initials === 'string' &&
+    (u.avatarUrl === null || typeof u.avatarUrl === 'string') &&
+    (u.jobTitle === null || typeof u.jobTitle === 'string') &&
+    (u.role === 'admin' || u.role === 'viewer') &&
+    (u.inviteStatus === 'pending' || u.inviteStatus === 'accepted') &&
+    typeof u.isPending === 'boolean'
+  );
+}
+
+function isAccessSummary(value: unknown): boolean {
+  const s = value as Partial<OrgAccessSummary>;
+  return isObject(value) && typeof s.totalUsers === 'number' && typeof s.administrators === 'number' && typeof s.viewers === 'number';
+}
+
+/** Rejects a corrupt/legacy access-list entry (degrades to a miss) by validating every user element and the numeric summary fields against the wire contract. */
+function isAccessListResponse(value: unknown): boolean {
+  const v = value as Partial<OrgAccessListResponse>;
+  return (
+    isObject(value) &&
+    typeof v.orgUid === 'string' &&
+    Array.isArray(v.users) &&
+    v.users.every(isAccessUser) &&
+    isAccessSummary(v.summary) &&
+    typeof v.canManage === 'boolean'
+  );
+}
+
+/** Rejects a corrupt/legacy principals entry whose elements don't match the user wire shape (degrades to a miss before the directory merge reads user fields). */
+function isPrincipalArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isAccessUser);
+}
 
 // Spec 025 — Org Lens Access read/write against member-service settings.
 // Reads via GET /b2b_orgs/{uid}/settings. Writes use the PER-PRINCIPAL endpoints
@@ -48,12 +92,39 @@ export class OrgLensAccessService {
    * role-grants lookup on the post-write refresh.
    */
   public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
-    const [settings, canManage] = await Promise.all([
-      this.fetchSettings(req, orgUid),
-      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
-    ]);
-    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
-    return { orgUid, users, summary: this.buildSummary(users), canManage };
+    // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
+    // (compute directly, no read/write). The caller's own earlier-read entries are dropped by the write
+    // path's invalidateCallerCaches; any other caller's per-user entry ages out within the TTL.
+    if (knownCanManage !== undefined) {
+      return this.computeAccessList(req, orgUid, knownCanManage);
+    }
+    const username = getEffectiveUsername(req) ?? '';
+    // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.computeAccessList(req, orgUid, undefined),
+      isAccessListResponse
+    );
+  }
+
+  /**
+   * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
+   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Access tab — the directory orchestrator owns its own merge + enrichment.
+   */
+  public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      async () => this.mapPrincipals(await this.fetchSettings(req, orgUid)),
+      isPrincipalArray
+    );
   }
 
   /** Add Users — invite a NEW principal via the per-principal POST endpoint; returns the refreshed list. */
@@ -67,6 +138,7 @@ export class OrgLensAccessService {
       ...(cleanName ? { name: cleanName } : {}),
     };
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_MEMBER_SERVICE', `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users`, 'POST', undefined, body);
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
@@ -83,6 +155,7 @@ export class OrgLensAccessService {
       undefined,
       { invited_as: ORG_ACCESS_ROLE_RELATION[role] }
     );
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
@@ -97,11 +170,36 @@ export class OrgLensAccessService {
       `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users/${encodeURIComponent(target)}`,
       'DELETE'
     );
+    await this.invalidateCallerCaches(req, orgUid);
     // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
     return this.listAccessUsers(req, orgUid, true);
   }
 
   // ── base helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Drop the acting caller's own cached access views after a write so their next read (page reload or the
+   * directory `:principals` merge) reflects the mutation immediately rather than serving the pre-write list
+   * for up to the TTL. The write response itself already bypasses the cache; this closes the read-after-write
+   * gap for the caller. Best-effort — a failed delete just leaves the entry to age out within the TTL — and
+   * scoped to the caller, so another admin's per-user entry still ages out on its own.
+   */
+  private async invalidateCallerCaches(req: Request, orgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    await Promise.all([
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`, username, orgUid),
+      invalidatePerUserCache(`${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:principals`, username, orgUid),
+    ]);
+  }
+
+  private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
+    const [settings, canManage] = await Promise.all([
+      this.fetchSettings(req, orgUid),
+      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
+    ]);
+    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
+    return { orgUid, users, summary: this.buildSummary(users), canManage };
+  }
 
   /** Authoritative settings read (member-service source of record). */
   private async fetchSettings(req: Request, orgUid: string): Promise<MemberServiceB2bOrgSettings> {

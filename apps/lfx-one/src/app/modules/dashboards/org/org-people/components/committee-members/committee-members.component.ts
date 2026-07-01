@@ -9,9 +9,11 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstVal
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE, votingStatusPillClass } from '@lfx-one/shared/constants';
 import type {
   CommitteeMemberAssignmentVm,
@@ -33,6 +35,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 
+import { toDrawerGovernanceSeats } from '../../helpers/governance-seats.helper';
 import { CommitteeMembersService } from '../../services/committee-members.service';
 import { EditCommitteeRoleModalComponent } from './components/edit-committee-role-modal.component';
 import { ReassignCommitteeRolesModalComponent } from './components/reassign-committee-roles-modal.component';
@@ -42,7 +45,17 @@ import { buildPersonGroups, decoratePersonGroup } from './helpers/committee-memb
 @Component({
   selector: 'lfx-org-people-committee-members',
   standalone: true,
-  imports: [DecimalPipe, ReactiveFormsModule, InputTextComponent, SelectComponent, SkeletonModule, EmptyStateComponent, ToastModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    InputTextComponent,
+    SelectComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    PersonAvatarComponent,
+    ToastModule,
+    TooltipModule,
+  ],
   providers: [MessageService, DialogService],
   templateUrl: './committee-members.component.html',
 })
@@ -53,6 +66,7 @@ export class CommitteeMembersComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Individuals', 'Committees', 'Foundations with committee members'];
@@ -147,6 +161,19 @@ export class CommitteeMembersComponent {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     this.toggleExpansion(email);
+  }
+
+  // Open the drawer on Governance from already-loaded seats (Committee rows have no personKey).
+  protected onPersonClick(group: CommitteeMemberPersonGroupVm, event: Event): void {
+    event.stopPropagation();
+    this.drawer.open({
+      name: group.displayName,
+      title: group.jobTitle,
+      initials: group.initials,
+      avatarColorClass: 'bg-purple-500',
+      defaultTab: 'governance',
+      governanceSeats: toDrawerGovernanceSeats(group.assignments),
+    });
   }
 
   protected retry(): void {

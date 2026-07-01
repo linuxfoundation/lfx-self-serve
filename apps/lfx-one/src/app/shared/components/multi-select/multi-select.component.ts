@@ -21,6 +21,9 @@ export class MultiSelectComponent {
   // list. Selected chips still show only optionLabel. When undefined the
   // dropdown renders default p-multiSelect items.
   public readonly optionSubLabel = input<string | undefined>(undefined);
+  // Optional key for a per-option logo/image URL shown before the label in the dropdown list.
+  // When undefined (and no optionSubLabel) the dropdown renders default p-multiSelect items.
+  public readonly optionImage = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
   public readonly appendTo = input<any>('body');

@@ -12,7 +12,7 @@
       <div class="mb-6">
         <div class="flex justify-between items-center w-full gap-4">
           <h1 class="font-display font-light text-2xl">{{ activeLens() === 'me' ? 'My Meetings' : 'Meetings' }}</h1>
-          @if (activeLens() !== 'me' && canWrite()) {
+          @if (activeLens() !== 'me' && canWriteMeetings()) {
             <lfx-button
               icon="fa-light fa-calendar"
               severity="info"

@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 /**
  * Returns a deterministic palette class for a donor name, used to
  * color-code donor avatars consistently across crowdfunding components.

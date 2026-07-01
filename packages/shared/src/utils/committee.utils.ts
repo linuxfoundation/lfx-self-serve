@@ -59,6 +59,18 @@ export function getGroupBehavioralClass(category: string | undefined): GroupBeha
   return 'other';
 }
 
+/**
+ * Build the query params used when navigating to create a vote or survey for a committee.
+ * Always includes `committee_uid`; includes `project` only when the committee carries a project slug.
+ */
+export function buildCommitteeCreateQueryParams(committee: Committee): Record<string, string> {
+  const params: Record<string, string> = { committee_uid: committee.uid };
+  if (committee.project_slug) {
+    params['project'] = committee.project_slug;
+  }
+  return params;
+}
+
 // ── Per-type query helpers ──────────────────────────────────────────────────
 
 /** True for governing-board type */

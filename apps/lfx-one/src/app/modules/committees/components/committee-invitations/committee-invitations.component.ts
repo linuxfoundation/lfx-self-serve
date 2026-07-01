@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, Component, DestroyRef, inject, output, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PendingInvitation } from '@lfx-one/shared/interfaces';
 import { RouterLink } from '@angular/router';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -35,12 +38,13 @@ const TOAST_KEY = 'committee-invitations';
 export class CommitteeInvitationsComponent {
   // ── Injections ──────────────────────────────────────────────────────────────
   private readonly invitationService = inject(InvitationService);
+  private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
   // ── Outputs ───────────────────────────────────────────────────────────────
-  /** Emitted after an invite is accepted so the parent can refresh My Committees. */
-  public readonly accepted = output<void>();
+  /** Emitted with the accepted group's UID so the parent can refresh My Committees. */
+  public readonly accepted = output<string>();
 
   // Dedicated toast key exposed to the template.
   protected readonly toastKey = TOAST_KEY;
@@ -68,12 +72,28 @@ export class CommitteeInvitationsComponent {
   }
 
   public onAccept(invitation: PendingInvitation): void {
-    this.invitationService.markResolved(invitation.uid);
-    this.invitationService
-      .acceptInvitation(invitation.committee_uid, invitation.uid)
-      .pipe(take(1))
+    const requiresOrganization = invitationRequiresOrganization(invitation);
+
+    if (!requiresOrganization) {
+      this.invitationService.markResolved(invitation.uid);
+    }
+
+    this.invitationAcceptFlow
+      .accept({
+        committeeUid: invitation.committee_uid,
+        inviteUid: invitation.uid,
+        committeeName: invitation.committee_name,
+        organization: invitation.organization,
+        enable_voting: invitation.enable_voting,
+        business_email_required: invitation.business_email_required,
+        inviteRequiresOrganization: requiresOrganization,
+      })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
+          if (requiresOrganization) {
+            this.invitationService.markResolved(invitation.uid);
+          }
           this.invitationService.forgetResolved(invitation.uid);
           this.messageService.add({
             key: TOAST_KEY,
@@ -81,10 +101,12 @@ export class CommitteeInvitationsComponent {
             summary: `You've joined ${invitation.committee_name}`,
             life: 3000,
           });
-          this.accepted.emit();
+          this.accepted.emit(invitation.committee_uid);
         },
         error: () => {
-          this.invitationService.unmarkResolved(invitation.uid);
+          if (!requiresOrganization) {
+            this.invitationService.unmarkResolved(invitation.uid);
+          }
           this.messageService.add({
             key: TOAST_KEY,
             severity: 'error',

@@ -33,6 +33,7 @@ export interface OrgActiveMembershipsResponse {
 export interface OrgExpiredMembership {
   foundationId: string;
   foundationName: string;
+  foundationSlug: string;
   foundationLogo: string | null;
   membershipTier: string;
   tierStartDate: string | null;
@@ -49,6 +50,7 @@ export interface OrgExpiredMembershipsResponse {
 export interface OrgDiscoverOpportunity {
   foundationId: string;
   foundationName: string;
+  foundationSlug: string;
   foundationLogo: string | null;
   category: string;
   suggestedTier: string;
@@ -90,6 +92,7 @@ export interface OrgMembershipKeyContactPerson {
   email: string;
   jobTitle: string | null;
   initials: string;
+  avatarUrl?: string | null;
 }
 
 /**
@@ -120,6 +123,8 @@ export interface KeyContactEmployee {
   fullName: string;
   jobTitle: string | null;
   initials: string;
+  /** Optional avatar/photo URL; the picker falls back to initials when absent. */
+  avatarUrl?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */
@@ -286,6 +291,10 @@ export interface CommitteeServiceOrgSeat {
   organization_id: string;
   is_org_editable: boolean;
   reason?: string | null;
+  /** Seat holder's avatar URL (Auth0 user_metadata.picture), enriched at write-time upstream; empty when none. */
+  avatar?: string | null;
+  /** Seat holder's LF ID (~99.5% populated); powers the interim derive-from-username avatar render. */
+  username?: string | null;
 }
 
 /** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */

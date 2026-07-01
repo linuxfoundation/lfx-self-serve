@@ -30,9 +30,10 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
-import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
@@ -45,7 +46,7 @@ import { EventAttendeesService } from '../../services/event-attendees.service';
 export class EventAttendeesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(EventAttendeesService);
-  private readonly personPanel = inject(PersonProfilePanelService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_EVENT_ATTENDEES_INITIAL_LIMIT;
   protected readonly timeWindowOptions: OrgEventAttendeeTimeWindowOption[] = [...ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS];
@@ -152,7 +153,14 @@ export class EventAttendeesComponent {
 
   protected onPersonClick(row: OrgEventAttendeeRowVm, event: Event): void {
     event.stopPropagation();
-    this.personPanel.open(row.name);
+    this.drawer.open({
+      personKey: row.personKey,
+      name: row.name,
+      title: row.title,
+      initials: row.initials,
+      avatarColorClass: row.avatarColorClass,
+      defaultTab: 'events',
+    });
   }
 
   protected showAll(): void {
@@ -262,7 +270,7 @@ export class EventAttendeesComponent {
         title: attendee.title,
         email: attendee.email,
         initials: computePersonInitials(attendee.name),
-        avatarColorClass: computePersonAvatarColorClass(attendee.personKey),
+        avatarColorClass: avatarColorClass(attendee.personKey),
         role: anySpeaker ? 'Speaker' : 'Attendee',
         eventsCount: eventIds.size,
         lastAttendedTs,

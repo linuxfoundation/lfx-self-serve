@@ -2539,12 +2539,24 @@ export interface WebActivitiesSummaryRow {
 }
 
 /**
+ * Individual domain within a classification group (from WEB_ACTIVITIES_BY_DOMAIN)
+ */
+export interface WebActivityDomainDetail {
+  host: string;
+  sessions: number;
+  pageViews: number;
+  newUsers: number;
+  returningUsers: number;
+}
+
+/**
  * Domain group breakdown in the API response
  */
 export interface WebActivitiesDomainGroup {
   domainGroup: string;
   totalSessions: number;
   totalPageViews: number;
+  domains: WebActivityDomainDetail[];
 }
 
 /**
@@ -2733,6 +2745,29 @@ export interface SocialMediaResponse {
   monthlyData: SocialMediaMonthlyData[];
 }
 
+/** Per-platform monthly row for the social media monthly growth table. */
+export interface SocialMediaPlatformMonthlyRow {
+  month: string;
+  followers: number;
+  newFollowers: number;
+  impressions: number;
+  engagementRate: number;
+  posts: number;
+  momChangeFollowers: number | null;
+}
+
+/** A single platform's monthly breakdown for the social media monthly growth table. */
+export interface SocialMediaPlatformMonthly {
+  platform: string;
+  months: SocialMediaPlatformMonthlyRow[];
+}
+
+/** API response for the social media monthly growth endpoint. */
+export interface SocialMediaMonthlyResponse {
+  year: number;
+  platforms: SocialMediaPlatformMonthly[];
+}
+
 // ============================================
 // Email CTR (Marketing Dashboard)
 // ============================================
@@ -2804,6 +2839,7 @@ export interface EmailTypeBreakdown {
 export interface EmailCtrResponse {
   currentCtr: number;
   changePercentage: number;
+  momChangePercentage: number | null;
   trend: 'up' | 'down';
   monthlyData: number[];
   monthlyLabels: string[];

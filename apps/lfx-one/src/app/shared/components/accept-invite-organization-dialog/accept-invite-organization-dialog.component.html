@@ -1,0 +1,47 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="accept-invite-organization-dialog">
+  <p class="text-sm text-gray-500">
+    Before joining <strong>{{ committeeName }}</strong
+    >, please confirm the organization you represent.
+  </p>
+
+  <div class="flex w-full flex-col gap-1">
+    <label class="block text-sm font-medium text-gray-700"> Organization <span class="text-red-500">*</span> </label>
+    <lfx-organization-search
+      [form]="form"
+      nameControl="organization"
+      domainControl="organization_url"
+      [domainRequired]="isNewOrg()"
+      placeholder="Search for organization..."
+      styleClass="w-full"
+      inputStyleClass="text-sm w-full"
+      panelStyleClass="text-sm w-full"
+      dataTestId="accept-invite-organization-search"
+      (onOrganizationResolved)="onOrgResolved($event)">
+    </lfx-organization-search>
+    @if (organizationControl.errors?.['trimmedRequired'] && organizationControl.touched) {
+      <p class="text-xs text-red-600">Organization is required for this group</p>
+    }
+  </div>
+</div>
+
+<div class="flex justify-end gap-2 mt-4">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    [outlined]="true"
+    size="small"
+    (onClick)="onCancel()"
+    [disabled]="submitting()"
+    data-testid="accept-invite-organization-cancel"></lfx-button>
+  <lfx-button
+    label="Join Group"
+    severity="info"
+    size="small"
+    [loading]="submitting()"
+    [disabled]="submitting()"
+    (onClick)="onConfirm()"
+    data-testid="accept-invite-organization-confirm"></lfx-button>
+</div>

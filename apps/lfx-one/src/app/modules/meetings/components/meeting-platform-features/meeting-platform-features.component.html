@@ -49,49 +49,85 @@
       <div class="flex flex-col gap-3">
         <h4 class="text-neutral-950">Meeting Features</h4>
 
-        <!-- Enable Recording (with nested settings) -->
-        <lfx-feature-toggle [feature]="recordingFeature" [form]="form()">
-          @if (form().get('recording_enabled')?.value) {
+        <!-- Enable Recording -->
+        <lfx-feature-toggle [feature]="recordingFeature" [form]="form()"></lfx-feature-toggle>
+
+        <!-- AI Meeting Summary (with nested settings) -->
+        <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
+          @if (form().get('zoom_ai_enabled')?.value) {
             <div class="mt-4 pt-4 border-t border-gray-200">
-              <label for="artifact-visibility" class="block text-neutral-950 mb-2">Recording & Summary Access</label>
-              <lfx-select
-                size="small"
-                [form]="form()"
-                control="artifact_visibility"
-                [options]="artifactVisibilityOptions"
-                placeholder="Select artifact visibility"
-                styleClass="w-full"
-                id="artifact-visibility"
-                data-testid="artifact-visibility-select"></lfx-select>
-              <p class="mt-1 text-sm text-gray-500">Who can access recordings, transcripts, and AI summaries</p>
+              <div class="flex items-center justify-between">
+                <div>
+                  <label for="require-ai-approval" class="text-neutral-950">Require AI Summary Approval</label>
+                  <p class="text-sm text-gray-500">AI summary must be reviewed before sharing</p>
+                </div>
+                <lfx-toggle
+                  [form]="form()"
+                  control="require_ai_summary_approval"
+                  id="require-ai-approval"
+                  data-testid="require-ai-approval-toggle"></lfx-toggle>
+              </div>
             </div>
           }
         </lfx-feature-toggle>
 
-        <!-- Generate Transcripts -->
-        <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+        <!-- Artifact access (shown when recording OR AI summary is enabled) -->
+        @if (form().get('recording_enabled')?.value || form().get('zoom_ai_enabled')?.value) {
+          <div class="mt-2 pt-4 border-t border-gray-200">
+            <label for="artifact-visibility" class="block text-neutral-950 mb-2">
+              @if (form().get('recording_enabled')?.value && form().get('zoom_ai_enabled')?.value) {
+                Recording & Summary Access
+              } @else if (form().get('recording_enabled')?.value) {
+                Recording Access
+              } @else {
+                Summary Access
+              }
+            </label>
+            <lfx-select
+              size="small"
+              [form]="form()"
+              control="artifact_visibility"
+              [options]="artifactVisibilityOptions"
+              placeholder="Select artifact visibility"
+              styleClass="w-full"
+              id="artifact-visibility"
+              data-testid="artifact-visibility-select"></lfx-select>
+            <p class="mt-1 text-sm text-gray-500">Who can access recordings, transcripts, and/or AI summaries</p>
+          </div>
+        }
       </div>
     </div>
 
     <!-- Right Column - Remaining Features -->
     <div class="flex flex-col gap-3">
+      <!-- Generate Transcripts -->
+      <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+
       <!-- YouTube Auto-upload -->
       <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()"></lfx-feature-toggle>
 
-      <!-- AI Meeting Summary (with nested settings) -->
-      <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
-        @if (form().get('zoom_ai_enabled')?.value) {
-          <div class="mt-4 pt-4 border-t border-gray-200">
-            <div class="flex items-center justify-between">
-              <div>
-                <label for="require-ai-approval" class="text-neutral-950">Require AI Summary Approval</label>
-                <p class="text-sm text-gray-500">AI summary must be reviewed before sharing</p>
-              </div>
-              <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+      <!-- YouTube title length warning -->
+      @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
+        <div class="bg-amber-50 border border-amber-300 rounded-lg p-4" data-testid="youtube-title-length-warning">
+          <div class="flex gap-3">
+            <i class="fa-light fa-triangle-exclamation text-amber-500 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="text-amber-800 font-semibold text-sm mb-1">Meeting title too long for YouTube</p>
+              <p class="text-amber-700 text-sm">
+                The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title
+                has {{ titleLength() }} characters.
+              </p>
+              <button
+                type="button"
+                class="mt-2 text-sm font-medium text-amber-800 underline hover:text-amber-900"
+                (click)="goToStep.emit(meetingDetailsStep)"
+                data-testid="youtube-title-fix-button">
+                Go back to Meeting Details to shorten the title
+              </button>
             </div>
           </div>
-        }
-      </lfx-feature-toggle>
+        </div>
+      }
 
       <!-- Show in Public Calendar -->
       <lfx-feature-toggle [feature]="calendarFeature" [form]="form()"></lfx-feature-toggle>

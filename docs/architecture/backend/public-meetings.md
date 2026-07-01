@@ -177,10 +177,6 @@ The API returns different data based on meeting visibility:
 4. **Passcode Security**: Passcodes validated server-side only
 5. **M2M Token Scope**: Limited permissions for public endpoint tokens
 
-## 📈 Future Enhancements
+## 📄 Related Documentation
 
-- **Analytics Integration**: Track public meeting access patterns
-- **Caching Layer**: Improve performance for frequently accessed meetings
-- **Registration Enhancement**: Support more registration types for public users
-- **Meeting Previews**: Limited time-based access for private meetings
-- **Social Sharing**: Enhanced metadata for social media sharing
+- **[Public Meeting Join Page](../frontend/public-meeting-join.md)** — Frontend component architecture, join flows, attachment/member gating, and guest-join form behavior.

@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 /**
+ * Developer settings token info returned by GET /api/profile/developer.
+ *
+ * `token` is the user's v2 OIDC session token (audience PCC_AUTH0_AUDIENCE).
+ * `v1Token` is the user-scoped v1 API Gateway token (audience api-gw.*), minted via
+ * refresh-token exchange in the auth middleware and surfaced for users still calling v1 APIs.
+ * It is omitted when unavailable (no refresh token / exchange failed) so the UI can hide the row.
+ */
+export interface DeveloperTokenInfo {
+  token: string;
+  type: string;
+  v1Token?: string;
+}
+
+/**
  * Profile tab configuration for the profile layout navigation
  */
 export interface ProfileTab {
@@ -390,6 +404,29 @@ export interface AffiliationEditPeriod {
   endMonth: string;
   endYear: string;
   isPresent: boolean;
+  // Index into the org's weWindows that this period was seeded from. Scopes the period's
+  // year dropdown to that single stint. Undefined for manually-added / segment-derived periods.
+  windowIndex?: number;
+}
+
+/**
+ * A single work-history stint window (one employment period at an org).
+ * An org can have several when the user worked there across multiple stints.
+ */
+export interface AffiliationWorkWindow {
+  startDate: string; // "Mon YYYY"
+  endDate?: string; // "Mon YYYY"; undefined = present/ongoing
+}
+
+/**
+ * Validation errors for an editable affiliation period (dialog internal state)
+ */
+export interface AffiliationPeriodErrors {
+  outsideWorkExperience: boolean;
+  startAfterEnd: boolean;
+  // Period has a start but is neither "Present" nor given a complete end date — would otherwise
+  // save as open-ended and bypass the work-history window constraint.
+  incompleteEnd: boolean;
 }
 
 /**
@@ -400,8 +437,11 @@ export interface AffiliationEditOrg {
   organizationLogo?: string;
   enabled: boolean;
   periods: AffiliationEditPeriod[];
-  weStartDate?: string;
-  weEndDate?: string;
+  // One window per work-history stint at this org. Empty = no work-history constraint
+  // (e.g. orgs known only from existing confirmed affiliations, or "Independent").
+  weWindows: AffiliationWorkWindow[];
+  // Compact "earliest start – latest end" summary across all stints, shown in the card header.
+  rangeLabel?: string;
 }
 
 /**
@@ -446,9 +486,22 @@ export interface CdpResolveRequest {
 
 /**
  * CDP member resolve response
+ * @description `memberId` is absent when CDP has no member for the requested
+ * LFID/emails — a successful (200) resolve can legitimately yield no member.
  */
 export interface CdpResolveResponse {
-  memberId: string;
+  memberId?: string;
+}
+
+/**
+ * Request body for creating a new member in CDP
+ * @description Used when a resolve call finds no existing member — either a 404
+ * ("Member not found") or a successful response with no member ID — so a member is
+ * created seeded with the user's identities (e.g. their LFID).
+ */
+export interface CdpCreateMemberRequest {
+  displayName: string;
+  identities: CdpCreateIdentityRequest[];
 }
 
 /**

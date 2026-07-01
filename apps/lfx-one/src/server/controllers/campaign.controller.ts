@@ -7,22 +7,34 @@ import type {
   BulkKeywordActionRequest,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignPlatform,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
+  CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
+import { VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
-import { LINKEDIN_ACCOUNTS } from '../constants';
+import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
-import { CampaignMetricsService, LinkedInMetricsService } from '../services/campaign-metrics.service';
+import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
+import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
+
+/** Platforms that support the campaign status toggle endpoint. */
+const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
+
+const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
+  private readonly redditMetricsService = new RedditMetricsService();
+  private readonly metaMetricsService = new MetaMetricsService();
   private readonly activeStreams = new Set<Response>();
 
   public constructor() {
@@ -313,8 +325,13 @@ export class CampaignController {
   }
 
   public getLinkedInAccounts(_req: Request, res: Response): void {
-    const accounts = LINKEDIN_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
-    res.json(accounts);
+    const config = getLinkedInConfig();
+    // Return default account first so clients defaulting to accounts[0] honour the configured default.
+    const sorted = [
+      ...config.accounts.filter((a) => a.accountId === config.defaultAccountId),
+      ...config.accounts.filter((a) => a.accountId !== config.defaultAccountId),
+    ];
+    res.json(sorted);
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -322,7 +339,8 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
-    const account = LINKEDIN_ACCOUNTS.find((a) => a.accountId === rawKey) ?? LINKEDIN_ACCOUNTS[0];
+    const config = getLinkedInConfig();
+    const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
       next(
         ServiceValidationError.forField('accountKey', 'Invalid LinkedIn account key', {
@@ -389,6 +407,144 @@ export class CampaignController {
     try {
       const result = await this.proxyService.executeKeywordActions(req, body);
       logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public getRedditAccounts(_req: Request, res: Response): void {
+    const accounts = REDDIT_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
+    res.json(accounts);
+  }
+
+  public async getRedditMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const rawDays = String(req.query['days'] ?? '30');
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
+    const rawKey = String(req.query['accountKey'] ?? '');
+    const account = rawKey ? REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) : REDDIT_ACCOUNTS[0];
+    if (!account) {
+      next(
+        ServiceValidationError.forField('accountKey', 'Invalid Reddit account key', {
+          operation: 'reddit_monitor',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const accountId = account.accountId;
+    const startTime = logger.startOperation(req, 'reddit_monitor', { days, accountKey: rawKey });
+
+    try {
+      const data = await this.redditMetricsService.getRedditMonitorData(req, accountId, days);
+      logger.success(req, 'reddit_monitor', startTime, { campaigns: data.campaigns.length });
+      res.json(data);
+    } catch (error) {
+      logger.error(req, 'reddit_monitor', startTime, error, { days, accountKey: rawKey });
+      next(error);
+    }
+  }
+
+  public getMetaAccounts(_req: Request, res: Response): void {
+    const accounts = META_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
+    res.json(accounts);
+  }
+
+  public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const rawDays = String(req.query['days'] ?? '30');
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
+    const rawKey = String(req.query['accountKey'] ?? '');
+    const account = rawKey ? META_ACCOUNTS.find((a) => a.accountId === rawKey) : META_ACCOUNTS[0];
+    if (!account) {
+      next(
+        ServiceValidationError.forField('accountKey', 'Invalid Meta account key', {
+          operation: 'meta_monitor',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const accountId = account.accountId;
+    const startTime = logger.startOperation(req, 'meta_monitor', { days, accountKey: rawKey });
+
+    try {
+      const data = await this.metaMetricsService.getMonitorData(req, accountId, days);
+      logger.success(req, 'meta_monitor', startTime, { campaigns: data.campaigns.length });
+      res.json(data);
+    } catch (error) {
+      logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
+      next(error);
+    }
+  }
+
+  public async updateCampaignStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+
+    if (!campaignId) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId route parameter is required', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (!NUMERIC_ID_RE.test(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignStatusUpdateRequest>;
+
+    if (!body.platform || !SUPPORTED_STATUS_PLATFORMS.has(body.platform)) {
+      next(
+        ServiceValidationError.forField('platform', `platform must be one of: ${[...SUPPORTED_STATUS_PLATFORMS].join(', ')}`, {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!body.status || !VALID_CAMPAIGN_TOGGLE_STATUSES.has(body.status as CampaignToggleStatus)) {
+      next(
+        ServiceValidationError.forField('status', 'status must be ACTIVE or PAUSED', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_status_update', { campaignId, platform: body.platform, status: body.status });
+
+    try {
+      const result = await this.proxyService.updateCampaignStatus(req, campaignId, {
+        platform: body.platform,
+        status: body.status as CampaignToggleStatus,
+        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
+      });
+      logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
       res.json(result);
     } catch (error) {
       next(error);

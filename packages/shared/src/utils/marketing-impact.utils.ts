@@ -1,31 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MarketingImpactMonthOption } from '../interfaces/marketing-impact.interface';
+import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
 
-/** Number of past months to show in the Marketing Impact month picker. */
+/** Number of past months to show in the Marketing Impact period picker. */
 const MONTH_COUNT = 12;
 
-/** Builds the last 12 month options in descending order for the month picker. */
-export function buildMarketingImpactMonthOptions(): MarketingImpactMonthOption[] {
-  const now = new Date();
-  const options: MarketingImpactMonthOption[] = [];
-
-  for (let i = 1; i <= MONTH_COUNT; i++) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    options.push({ label, value });
-  }
-
-  return options;
-}
-
-/** Returns the default reporting month (previous calendar month). */
+/** Returns the default reporting month (previous calendar month, UTC). */
 export function getDefaultMarketingImpactMonth(): string {
   const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 // === Trend Helpers ===
@@ -63,4 +48,95 @@ export function computeMomPct(arr: number[] | undefined): number | null {
   const previous = arr.at(-2) ?? 0;
   if (previous === 0) return null;
   return ((current - previous) / previous) * 100;
+}
+
+// === Period Utilities ===
+
+const PERIOD_PRESETS = ['ytd', 'last-3', 'last-6'] as const;
+const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** Builds grouped period options: presets first, then individual months. */
+export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const presets: MarketingImpactPeriodOption[] = [
+    { label: `Year to Date (${currentYear})`, value: 'ytd' },
+    { label: 'Last 3 months', value: 'last-3' },
+    { label: 'Last 6 months', value: 'last-6' },
+  ];
+
+  const months: MarketingImpactPeriodOption[] = [];
+  for (let i = 1; i <= MONTH_COUNT; i++) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    months.push({ label, value });
+  }
+
+  return [...presets, ...months];
+}
+
+/** Returns the default period value (previous calendar month as YYYY-MM). */
+export function getDefaultMarketingImpactPeriod(): string {
+  return getDefaultMarketingImpactMonth();
+}
+
+/** Checks whether a period string is a preset identifier. */
+export function isPeriodPreset(value: string): value is (typeof PERIOD_PRESETS)[number] {
+  return (PERIOD_PRESETS as readonly string[]).includes(value);
+}
+
+/** Checks whether a period string is a valid YYYY-MM month. */
+export function isPeriodMonth(value: string): boolean {
+  return MONTH_REGEX.test(value);
+}
+
+/** Resolves a period value to a concrete date range with start/end dates in YYYY-MM-DD format. */
+export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
+  const now = new Date();
+  const utcYear = now.getUTCFullYear();
+  const utcMonth = now.getUTCMonth() + 1;
+
+  if (isPeriodPreset(period)) {
+    const endDate = firstOfMonth(utcYear, utcMonth);
+
+    if (period === 'ytd') {
+      return {
+        type: 'ytd',
+        startDate: `${utcYear}-01-01`,
+        endDate,
+        label: `Year to Date (${utcYear})`,
+      };
+    }
+
+    const months = period === 'last-3' ? 3 : 6;
+    return {
+      type: 'trailing',
+      startDate: firstOfMonth(utcYear, utcMonth - months),
+      endDate,
+      label: `Last ${months} months`,
+    };
+  }
+
+  if (isPeriodMonth(period)) {
+    const [year, mo] = period.split('-').map(Number);
+    if (year > utcYear || (year === utcYear && mo > utcMonth)) {
+      return null;
+    }
+    const date = new Date(Date.UTC(year, mo - 1, 1));
+    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return {
+      type: 'month',
+      startDate: firstOfMonth(year, mo),
+      endDate: firstOfMonth(year, mo + 1),
+      label,
+    };
+  }
+
+  return null;
+}
+
+function firstOfMonth(year: number, month: number): string {
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }

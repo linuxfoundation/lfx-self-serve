@@ -11,9 +11,10 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
-import { PersonProfilePanelService } from '@services/person-profile-panel.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
-import { computePersonAvatarColorClass, computePersonInitials } from '@shared/utils/person-avatar.util';
+import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_DEFAULT_TIME_WINDOW,
@@ -45,7 +46,7 @@ import { TraineesService } from '../../services/trainees.service';
 export class TraineesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(TraineesService);
-  private readonly personPanel = inject(PersonProfilePanelService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_TRAINEES_INITIAL_LIMIT;
   protected readonly timeWindowOptions: OrgTraineeTimeWindowOption[] = [...ORG_TRAINEE_TIME_WINDOW_OPTIONS];
@@ -155,7 +156,14 @@ export class TraineesComponent {
 
   protected onPersonClick(row: OrgTraineeRowVm, event: Event): void {
     event.stopPropagation();
-    this.personPanel.open(row.name);
+    this.drawer.open({
+      personKey: row.personKey,
+      name: row.name,
+      title: row.title,
+      initials: row.initials,
+      avatarColorClass: row.avatarColorClass,
+      defaultTab: 'training',
+    });
   }
 
   protected showAll(): void {
@@ -263,7 +271,7 @@ export class TraineesComponent {
         title: trainee.title,
         email: trainee.email,
         initials: computePersonInitials(trainee.name),
-        avatarColorClass: computePersonAvatarColorClass(trainee.personKey),
+        avatarColorClass: avatarColorClass(trainee.personKey),
         status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
         coursesCount: courseIds.size,
         certsCount: certCourseIds.size,

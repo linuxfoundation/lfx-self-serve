@@ -1,0 +1,32 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Keyframe animation for loading bar
+@keyframes risk-matrix-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+// Danger zone background with diagonal stripe pattern (high impact, poor health)
+.danger-zone-background {
+  background: repeating-linear-gradient(45deg, rgba(229, 72, 77, 0.09) 0, rgba(229, 72, 77, 0.09) 6px, transparent 6px, transparent 12px);
+}
+
+// Quadrant divider (vertical)
+.quadrant-divider-vertical {
+  border-left: 1px dashed #e2e8f0;
+}
+
+// Quadrant divider (horizontal)
+.quadrant-divider-horizontal {
+  border-top: 1px dashed #e2e8f0;
+}
+
+// Tooltip background color
+.tooltip-background {
+  background: #0f172a;
+}

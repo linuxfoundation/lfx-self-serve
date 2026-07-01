@@ -18,8 +18,12 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
-  LinkedInAccountOption,
+  LinkedInAccount,
   LinkedInMonitorResponse,
+  MetaAccountOption,
+  MetaMonitorResponse,
+  RedditAccountOption,
+  RedditMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -69,12 +73,28 @@ export class CampaignService {
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
   }
 
-  public getLinkedInAccounts(): Observable<LinkedInAccountOption[]> {
-    return this.http.get<LinkedInAccountOption[]>('/api/campaigns/linkedin/accounts');
+  public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts');
   }
 
   public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
+  }
+
+  public getRedditAccounts(): Observable<RedditAccountOption[]> {
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts');
+  }
+
+  public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey } });
+  }
+
+  public getMetaAccounts(): Observable<MetaAccountOption[]> {
+    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts');
+  }
+
+  public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey } });
   }
 
   public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {

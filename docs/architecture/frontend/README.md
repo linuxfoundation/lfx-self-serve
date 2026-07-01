@@ -28,6 +28,14 @@ The LFX One frontend is built with Angular 20 using stable zoneless change detec
 
 ## 📋 Documentation Sections
 
+### [Lens & Persona System](./lens-system.md)
+
+See how LensService, PersonaService, and ProjectContextService fit together to drive navigation and scope.
+
+### [Persona Detection Pipeline](./persona-detection.md)
+
+Trace where personas come from: the upstream persona-service NATS contract, detection→persona mapping, caching, and SSR hydration.
+
 ### [Persona × Lens Content Matrix](./persona-content-matrix.md)
 
 See which sidebar links and pages each persona can access in each lens, plus route guard wiring.

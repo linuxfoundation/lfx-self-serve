@@ -5,7 +5,7 @@ import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedMonth, parseEntityType } from '../helpers/validation.helper';
+import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -1944,9 +1944,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_web_activities_summary');
-      const month = getValidatedMonth(req, 'get_web_activities_summary');
+      const period = getValidatedPeriod(req, 'get_web_activities_summary');
 
-      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification, month);
+      const response = await this.projectService.getWebActivitiesSummary(foundationSlug, classification, period);
 
       logger.success(req, 'get_web_activities_summary', startTime, {
         foundation_slug: foundationSlug,
@@ -1990,9 +1990,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_email_ctr');
-      const month = getValidatedMonth(req, 'get_email_ctr');
+      const period = getValidatedPeriod(req, 'get_email_ctr');
 
-      const response = await this.projectService.getEmailCtr(foundationSlug, classification, month);
+      const response = await this.projectService.getEmailCtr(foundationSlug, classification, period);
 
       logger.success(req, 'get_email_ctr', startTime, {
         foundation_slug: foundationSlug,
@@ -2036,9 +2036,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_social_reach');
-      const month = getValidatedMonth(req, 'get_social_reach');
+      const period = getValidatedPeriod(req, 'get_social_reach');
 
-      const response = await this.projectService.getSocialReach(foundationSlug, classification, month);
+      const response = await this.projectService.getSocialReach(foundationSlug, classification, period);
 
       logger.success(req, 'get_social_reach', startTime, {
         foundation_slug: foundationSlug,
@@ -2081,9 +2081,9 @@ export class AnalyticsController {
         });
       }
 
-      const month = getValidatedMonth(req, 'get_keyword_performance');
+      const period = getValidatedPeriod(req, 'get_keyword_performance');
 
-      const response = await this.projectService.getKeywordPerformance(foundationSlug, month);
+      const response = await this.projectService.getKeywordPerformance(foundationSlug, period);
 
       logger.success(req, 'get_keyword_performance', startTime, {
         foundation_slug: foundationSlug,
@@ -2124,13 +2124,69 @@ export class AnalyticsController {
         });
       }
 
-      const month = getValidatedMonth(req, 'get_social_media');
+      const period = getValidatedPeriod(req, 'get_social_media');
 
-      const response = await this.projectService.getSocialMedia(foundationSlug, month);
+      const response = await this.projectService.getSocialMedia(foundationSlug, period);
 
       logger.success(req, 'get_social_media', startTime, {
         foundation_slug: foundationSlug,
         total_followers: response.totalFollowers,
+        platforms_count: response.platforms.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/social-media/monthly
+   * Get per-platform monthly social media growth data
+   */
+  public async getSocialMediaMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_social_media_monthly');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      if (foundationSlug.length > NAME_MAX_LENGTH) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug exceeds maximum length', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      const yearParam = getStringQueryParam(req, 'year');
+      if (yearParam && !/^\d{4}$/.test(yearParam)) {
+        throw ServiceValidationError.forField('year', 'year must be a 4-digit number', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+      const year = yearParam ? Number(yearParam) : new Date().getUTCFullYear();
+
+      if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+        throw ServiceValidationError.forField('year', 'year must be between 2020 and 2100', {
+          operation: 'get_social_media_monthly',
+        });
+      }
+
+      const response = await this.projectService.getSocialMediaMonthly(foundationSlug, year);
+
+      logger.success(req, 'get_social_media_monthly', startTime, {
+        foundation_slug: foundationSlug,
+        year,
         platforms_count: response.platforms.length,
       });
 
@@ -2711,8 +2767,8 @@ export class AnalyticsController {
       }
 
       const includeMentions = getStringQueryParam(req, 'includeMentions') === 'true';
-      const month = getValidatedMonth(req, 'get_brand_health');
-      const response = await this.projectService.getBrandHealth(foundationSlug, includeMentions, month);
+      const period = getValidatedPeriod(req, 'get_brand_health');
+      const response = await this.projectService.getBrandHealth(foundationSlug, includeMentions, period);
 
       logger.success(req, 'get_brand_health', startTime, {
         foundation_slug: foundationSlug,
@@ -2750,9 +2806,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_revenue_impact');
-      const month = getValidatedMonth(req, 'get_revenue_impact');
+      const period = getValidatedPeriod(req, 'get_revenue_impact');
 
-      const response = await this.projectService.getRevenueImpact(foundationSlug, classification, month);
+      const response = await this.projectService.getRevenueImpact(foundationSlug, classification, period);
 
       logger.success(req, 'get_revenue_impact', startTime, {
         foundation_slug: foundationSlug,
@@ -2792,9 +2848,9 @@ export class AnalyticsController {
       }
 
       const classification = getValidatedClassification(req, 'get_marketing_attribution');
-      const month = getValidatedMonth(req, 'get_marketing_attribution');
+      const period = getValidatedPeriod(req, 'get_marketing_attribution');
 
-      const response = await this.projectService.getMarketingAttribution(foundationSlug, classification, month);
+      const response = await this.projectService.getMarketingAttribution(foundationSlug, classification, period);
 
       logger.success(req, 'get_marketing_attribution', startTime, {
         foundation_slug: foundationSlug,

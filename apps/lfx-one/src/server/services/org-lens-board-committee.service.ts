@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isBoardCategory } from '@lfx-one/shared/constants';
+import { isBoardCategory, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   BoardSeat,
   CommitteeSeat,
@@ -17,11 +17,14 @@ import type {
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { resolveSeatAvatar } from '../helpers/avatar.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
+import { withPerUserCache } from './valkey.service';
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
@@ -154,9 +157,17 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
-  /** Spec 027: org-wide seat drain (no project filter) for the People → Committee tab. Reuses the private drain + its 200-page fail-closed safety cap so the org-wide roster never duplicates the pagination logic. */
+  /** Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory picker, cached per caller + org so the single full-roster drain is shared across consumers; only the full, non-truncated drain is cached here — the bounded picker and project-scoped `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as the full roster. */
   public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
-    return this.fetchOrgSeats(req, orgUid);
+    const username = getEffectiveUsername(req) ?? '';
+    return withPerUserCache(
+      VALKEY_CACHE.ORG_SEATS_NAMESPACE,
+      username,
+      orgUid,
+      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+      () => this.fetchOrgSeats(req, orgUid),
+      isOrgSeatArray
+    );
   }
 
   /** Resolve the membership's project family (foundation root + descendants) for seat scoping (spec 026 T007a): SFID → slug (getFoundationSlug) → uid (getProjectIdBySlug) → family (getFoundationProjectUids); `undefined` when unresolvable so callers return an EMPTY list, never the org-wide roster. */
@@ -319,6 +330,7 @@ export class OrgLensBoardCommitteeService {
       email,
       jobTitle: s.job_title ?? null,
       initials,
+      avatarUrl: resolveSeatAvatar(s),
     };
   }
 
@@ -344,6 +356,12 @@ export class OrgLensBoardCommitteeService {
           .replace(/[^A-Za-z0-9]/g, '')
           .slice(0, 2)
           .toUpperCase(),
+      avatarUrl: resolveSeatAvatar(s),
     };
   }
+}
+
+/** Rejects a corrupt/legacy seat entry whose elements aren't non-null objects (degrades to a miss before seat fields are read). */
+function isOrgSeatArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }

@@ -12,6 +12,7 @@ import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/m
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
@@ -107,6 +108,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     FileTypeDisplayPipe,
     DynamicDialogModule,
     MeetingMaterialsDrawerComponent,
+    ImpersonationBannerComponent,
   ],
   providers: [DialogService],
   templateUrl: './meeting-join.component.html',
@@ -118,7 +120,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
   private readonly projectService = inject(ProjectService);
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
@@ -131,7 +133,7 @@ export class MeetingJoinComponent implements OnInit {
   public user: Signal<User | null> = this.userService.user;
   public joinForm: FormGroup;
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
-  public meeting: Signal<Meeting & { project: Partial<Project> | null }>;
+  public meeting: Signal<Meeting & { project: Partial<Project> }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override when
   // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule. NOTE: the
@@ -182,9 +184,6 @@ export class MeetingJoinComponent implements OnInit {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
-  // True when the viewer is anonymous on a private meeting — drives the strict sign-in gate
-  // that hides all sensitive content (title, agenda, materials, join info) on the page.
-  public restrictedView: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
   protected hasSummaryContent: Signal<boolean>;
@@ -284,7 +283,6 @@ export class MeetingJoinComponent implements OnInit {
     this.meetingTitle = this.initializeMeetingTitle();
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
-    this.restrictedView = this.initializeRestrictedView();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
@@ -542,7 +540,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeMeeting() {
-    return toSignal<Meeting & { project: Partial<Project> | null }>(
+    return toSignal<Meeting & { project: Partial<Project> }>(
       combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
         debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
         switchMap(([params, queryParams]) => {
@@ -563,7 +561,7 @@ export class MeetingJoinComponent implements OnInit {
               }),
               map((res: PublicPastMeetingResponse) => ({
                 meeting: res.meeting,
-                project: res.project as Partial<Project> | null,
+                project: res.project as Partial<Project>,
               })),
               catchError((error) => {
                 if ([404, 403, 400].includes(error.status)) {
@@ -587,7 +585,7 @@ export class MeetingJoinComponent implements OnInit {
                   }),
                   map((res: PublicPastMeetingResponse) => ({
                     meeting: res.meeting,
-                    project: res.project as Partial<Project> | null,
+                    project: res.project as Partial<Project>,
                   })),
                   catchError(() => {
                     this.router.navigate(['/meetings/not-found']);
@@ -602,16 +600,12 @@ export class MeetingJoinComponent implements OnInit {
             })
           );
         }),
-        // The response shape is widened to allow the redacted variant ({id, visibility}, project: null)
-        // for private + anonymous viewers. Downstream signals and the template gate that case via
-        // `restrictedView` — full-Meeting field access only happens when restrictedView() is false,
-        // so the assertion to `Meeting & { project: ... }` is safe at the points where it's read.
-        map((res) => ({ ...res.meeting, project: res.project }) as Meeting & { project: Partial<Project> | null }),
+        map((res) => ({ ...res.meeting, project: res.project })),
         tap((res) => {
           this.project.set(res.project);
         })
       )
-    ) as Signal<Meeting & { project: Partial<Project> | null }>;
+    ) as Signal<Meeting & { project: Partial<Project> }>;
   }
 
   private isPastMeetingOccurrenceId(id: string): boolean {
@@ -889,7 +883,6 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.meeting).pipe(
           filter((meeting) => {
             if (!meeting?.id) return false;
-            if (meeting.visibility === 'public' && !meeting.restricted) return true;
             return this.authenticated();
           }),
           distinctUntilChanged((a, b) => a.id === b.id)
@@ -934,10 +927,6 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeHasAiCompanion(): Signal<boolean> {
     return computed(() => this.meeting()?.ai_summary_enabled || false);
-  }
-
-  private initializeRestrictedView(): Signal<boolean> {
-    return computed(() => this.meeting()?.visibility === 'private' && !this.authenticated());
   }
 
   private initializeIsInvited(): Signal<boolean> {

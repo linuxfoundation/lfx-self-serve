@@ -16,9 +16,11 @@ import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, finalize, of, switchMap, take } from 'rxjs';
 
+import { NewsletterFailedRecipientsDrawerComponent } from '../components/newsletter-failed-recipients-drawer/newsletter-failed-recipients-drawer.component';
+
 @Component({
   selector: 'lfx-newsletter-analytics',
-  imports: [DatePipe, CardComponent, ChartComponent, EmptyStateComponent, SkeletonModule],
+  imports: [DatePipe, CardComponent, ChartComponent, EmptyStateComponent, SkeletonModule, NewsletterFailedRecipientsDrawerComponent],
   templateUrl: './newsletter-analytics.component.html',
   styleUrl: './newsletter-analytics.component.scss',
 })
@@ -35,6 +37,7 @@ export class NewsletterAnalyticsComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly canRenderChart = signal<boolean>(false);
+  protected readonly failedDrawerVisible = signal<boolean>(false);
 
   // === Computed (complex bodies extracted to private init* methods) ===
   protected readonly openRatePercent: Signal<number | null> = this.initOpenRatePercent();
@@ -95,6 +98,10 @@ export class NewsletterAnalyticsComponent {
       relativeTo: this.route.parent,
       queryParams: { tab: 'sent' },
     });
+  }
+
+  protected openFailedDrawer(): void {
+    this.failedDrawerVisible.set(true);
   }
 
   private initOpenRatePercent(): Signal<number | null> {

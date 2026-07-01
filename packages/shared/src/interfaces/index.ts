@@ -69,11 +69,17 @@ export * from './persona.interface';
 // Snowflake interfaces
 export * from './snowflake.interface';
 
+// Valkey shared cache interfaces
+export * from './valkey-cache.interface';
+
 // Account interfaces
 export * from './account.interface';
 
 // Org Lens (per-account TLF membership tier + cdev org mapping) interfaces
 export * from './org-lens.interface';
+
+// Org Lens Projects page (influence + health) interfaces
+export * from './org-lens-projects.interface';
 
 // Mailing list interfaces
 export * from './mailing-list.interface';
@@ -99,8 +105,8 @@ export * from './sse.interface';
 // Copilot interfaces
 export * from './copilot.interface';
 
-// OSSPREY admin dashboard interfaces
-export * from './ossprey.interface';
+// Akrites admin dashboard interfaces
+export * from './akrites.interface';
 
 // Committee application interfaces
 export * from './committee-application.interface';
@@ -122,6 +128,9 @@ export * from './persona-detection.interface';
 
 // Events interfaces (my events, foundation events, travel fund, visa request)
 export * from './events.interface';
+
+// Meetups interfaces
+export * from './meetups.interface';
 
 // Badge interfaces
 export * from './badge.interface';
@@ -175,6 +184,10 @@ export * from './object.interface';
 // Marketing Impact interfaces
 export * from './marketing-impact.interface';
 
+// Marketing OS Agents interfaces (LFXAI-95 workstream)
+export * from './mktg-agent.interface';
+export * from './mktg-chat.interface';
+
 // Enrollment interfaces
 export * from './enrollment.interface';
 
@@ -208,6 +221,9 @@ export * from './org-people-event-attendees.interface';
 // Org People — Contributors tab (LFXV2-1874)
 export * from './org-people-contributors.interface';
 
+// Shared person-detail drawer (LFXV2-2195)
+export * from './person-detail-drawer.interface';
+
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
 
@@ -234,3 +250,6 @@ export * from './crowdfunding.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
+
+// Entity project context interfaces
+export * from './entity-project-context.interface';

@@ -19,6 +19,7 @@ export interface CommitteeMemberPersonGroup {
   displayName: string;
   jobTitle: string | null;
   initials: string;
+  avatarUrl: string | null;
   /** Distinct foundation names this person holds seats on, sorted A→Z. */
   foundationLabels: string[];
   /** Count of distinct `committeeUid` across this person's assignments. */

@@ -1,201 +1,576 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  ContributionSource,
+  ContributionsCommitSortColumn,
   ContributionsDateRange,
+  ContributionsSortColumn,
+  ContributionsView,
   OrgContributionCommitRow,
+  OrgContributionEmployeeOption,
+  OrgContributionProjectOption,
   OrgContributionRepoRow,
   OrgContributionsKpis,
   OrgContributionsQuery,
   OrgContributionsResponse,
 } from '@lfx-one/shared/interfaces';
 
-import { logger } from './logger.service';
-import {
-  DEMO_COMMIT_FEED,
-  DEMO_EMPLOYEE_OPTIONS,
-  DEMO_EMPLOYEE_USERNAMES,
-  DEMO_PROJECT_OPTIONS,
-  DEMO_REPO_EMPLOYEES,
-  DEMO_REPOS,
-} from './org-contributions.demo';
+import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
-/**
- * Code Contributions page data access (LFXV2-1894).
- *
- * SCAFFOLD: this worktree serves curated demo-company data (see `org-contributions.demo.ts`)
- * rather than querying real Salesforce / Snowflake. Filters, sort, and pagination are applied
- * over the demo set so the page behaves end-to-end. The follow-up data pass swaps the demo
- * source for LFX Insights queries (repositories index, commit rollups, org-affiliation
- * precedence explicit > email-domain > EasyCLA, rolling-365 trends) behind this same method.
- */
+const PLATINUM_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_CONTRIBUTIONS';
+
+interface ContributionsKpiRow {
+  PROJECTS_WITH_ACTIVITY: number;
+  REPOSITORIES: number;
+  COMMITS: number;
+}
+
+interface ContributionsRepoRow {
+  REPOSITORY_URL: string;
+  REPOSITORY_PATH: string;
+  PROJECT_ID: string | null;
+  PROJECT_NAME: string | null;
+  PROJECT_SLUG: string | null;
+  PROJECT_LOGO: string | null;
+  SOURCE: ContributionSource;
+  COMMITS: number;
+  FIRST_COMMIT_TS: Date | string | null;
+  LAST_COMMIT_TS: Date | string | null;
+  TOTAL_RECORDS: number;
+}
+
+interface ContributionsCommitRow {
+  COMMIT_ID: string;
+  MEMBER_ID: string | null;
+  PERSON_KEY: string | null;
+  PROJECT_NAME: string | null;
+  MEMBER_DISPLAY_NAME: string | null;
+  MEMBER_LOGO: string | null;
+  GITHUB_USERNAME: string | null;
+  SOURCE: ContributionSource;
+  ACTIVITY_TS: Date | string | null;
+  COMMIT_MESSAGE: string | null;
+  COMMIT_URL: string | null;
+  TOTAL_RECORDS: number;
+}
+
+interface ContributionsProjectOptionRow {
+  PROJECT_ID: string;
+  PROJECT_SLUG: string | null;
+  PROJECT_NAME: string | null;
+  PARENT_SLUG: string | null;
+  COMMITS: number;
+}
+
+interface ContributionsEmployeeOptionRow {
+  MEMBER_ID: string;
+  MEMBER_DISPLAY_NAME: string | null;
+  COMMITS: number;
+}
+
+/** Code Contributions page data access (LFXV2-1894) — reads `platinum_lfx_one_org_code_contributions`. */
 export class OrgContributionsService {
-  /** Repositories table + KPI strip + filter options, server-paginated over the active filter scope. */
+  private readonly snowflakeService: SnowflakeService;
+
+  public constructor() {
+    this.snowflakeService = SnowflakeService.getInstance();
+  }
+
+  /** KPI strip + filter options + server-paginated Repositories table + Commits feed. */
   public async getContributions(accountId: string, query: OrgContributionsQuery): Promise<OrgContributionsResponse> {
-    // TODO(LFXV2-1894): replace demo source with Snowflake dbt models (repositories index + commit rollups).
-    assertDemoAllowed();
-    const filtered = this.filterRepos(query);
-    const sorted = sortRepos(filtered, query);
-    const page = paginate(sorted, query);
+    if (!accountId) {
+      return emptyResponse(accountId, query.dateRange);
+    }
+
+    const scope = buildScopeFilters(query);
+    const kpiSearch = buildKpiSearchFilter(query);
+    const repoSearch = buildRepoSearchFilter(query.search);
+    const commitSearch = buildCommitSearchFilter(query.search);
+
+    const repoPagination = viewAwarePagination(query, 'repositories');
+    const commitPagination = viewAwarePagination(query, 'commits');
+
+    const raw = await withOrgCache(
+      accountId,
+      `contributions:${contributionsSignature(query)}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchContributionsRaw(accountId, query, scope, kpiSearch, repoSearch, commitSearch, repoPagination, commitPagination),
+      isContributionsRaw
+    );
+
+    const kpis = mapKpis(raw.kpiRows[0]);
+    const totalRecords = raw.repoRows.length > 0 ? raw.repoRows[0].TOTAL_RECORDS : 0;
+    const repositories = query.view === 'repositories' ? raw.repoRows.map(mapRepoRow) : [];
+    const commitsTotalRecords = raw.commitRows.length > 0 ? raw.commitRows[0].TOTAL_RECORDS : 0;
+    const commits = query.view === 'commits' ? raw.commitRows.map(mapCommitRow) : [];
 
     return {
       accountId,
       dateRange: query.dateRange,
-      kpis: buildKpis(filtered),
-      repositories: page,
-      commits: filterCommitFeed(query),
-      projectOptions: DEMO_PROJECT_OPTIONS,
-      employeeOptions: DEMO_EMPLOYEE_OPTIONS,
-      totalRecords: filtered.length,
+      kpis,
+      repositories,
+      commits,
+      projectOptions: raw.projectOptionRows.map(mapProjectOption),
+      employeeOptions: raw.employeeOptionRows.map(mapEmployeeOption),
+      totalRecords,
+      commitsTotalRecords,
     };
   }
 
-  /** Compose all four filters (AND) over the demo repos. Search scopes the Repository path only. */
-  private filterRepos(query: OrgContributionsQuery): OrgContributionRepoRow[] {
-    const projectScope = expandProjectSelection(query.projects);
-    const cutoffMs = dateRangeCutoffMs(query.dateRange);
-    const search = query.search.toLowerCase();
+  private async fetchContributionsRaw(
+    accountId: string,
+    query: OrgContributionsQuery,
+    scope: ScopeFilters,
+    kpiSearch: SearchFilter,
+    repoSearch: SearchFilter,
+    commitSearch: SearchFilter,
+    repoPagination: ViewAwarePagination,
+    commitPagination: ViewAwarePagination
+  ): Promise<{
+    kpiRows: ContributionsKpiRow[];
+    repoRows: ContributionsRepoRow[];
+    commitRows: ContributionsCommitRow[];
+    projectOptionRows: ContributionsProjectOptionRow[];
+    employeeOptionRows: ContributionsEmployeeOptionRow[];
+  }> {
+    const [kpiResult, repoResult, commitResult, projectResult, employeeResult] = await Promise.all([
+      this.fetchKpis(accountId, scope, kpiSearch),
+      this.fetchRepositories(accountId, scope, repoSearch, query, repoPagination),
+      this.fetchCommits(accountId, scope, commitSearch, query, commitPagination),
+      this.fetchProjectOptionRows(accountId, query.dateRange),
+      this.fetchEmployeeOptionRows(accountId, query.dateRange),
+    ]);
 
-    return DEMO_REPOS.filter((repo) => {
-      if (projectScope && !projectScope.has(repo.projectSlug ?? '')) {
-        return false;
-      }
-      if (query.employees.length) {
-        const contributors = DEMO_REPO_EMPLOYEES[repo.repositoryId] ?? [];
-        if (!query.employees.some((id) => contributors.includes(id))) {
-          return false;
-        }
-      }
-      if (search && !repo.repositoryPath.toLowerCase().includes(search)) {
-        return false;
-      }
-      if (cutoffMs !== null) {
-        const lastMs = repo.lastCommitTs ? new Date(repo.lastCommitTs).getTime() : 0;
-        if (lastMs < cutoffMs) {
-          return false;
-        }
-      }
-      return true;
-    });
+    return {
+      kpiRows: kpiResult.rows,
+      repoRows: repoResult.rows,
+      commitRows: commitResult.rows,
+      projectOptionRows: projectResult.rows,
+      employeeOptionRows: employeeResult.rows,
+    };
+  }
+
+  private async fetchKpis(accountId: string, scope: ScopeFilters, kpiSearch: SearchFilter): Promise<{ rows: ContributionsKpiRow[] }> {
+    const sql = `
+      SELECT
+        COUNT(DISTINCT COALESCE(project_id, project_slug, project_name)) AS PROJECTS_WITH_ACTIVITY,
+        COUNT(DISTINCT repository_url) AS REPOSITORIES,
+        COUNT(DISTINCT commit_id) AS COMMITS
+      FROM ${PLATINUM_TABLE}
+      WHERE account_id = ?
+        ${scope.datePredicate}
+        ${scope.projectPredicate}
+        ${scope.employeePredicate}
+        ${kpiSearch.predicate}
+    `;
+    return this.snowflakeService.execute<ContributionsKpiRow>(sql, [accountId, ...scope.binds, ...kpiSearch.binds]);
+  }
+
+  private async fetchRepositories(
+    accountId: string,
+    scope: ScopeFilters,
+    repoSearch: SearchFilter,
+    query: OrgContributionsQuery,
+    pagination: ViewAwarePagination
+  ): Promise<{ rows: ContributionsRepoRow[] }> {
+    const offset = (pagination.page - 1) * pagination.size;
+    const orderBy = repoOrderByColumn(query.sort);
+    const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
+
+    const sql = `
+      WITH repo_agg AS (
+        SELECT
+          repository_url,
+          ANY_VALUE(repository_path) AS repository_path,
+          ANY_VALUE(project_id) AS project_id,
+          ANY_VALUE(project_name) AS project_name,
+          ANY_VALUE(project_slug) AS project_slug,
+          ANY_VALUE(project_logo) AS project_logo,
+          ANY_VALUE(source) AS source,
+          COUNT(DISTINCT commit_id) AS commits,
+          MIN(org_repo_first_commit_ts) AS first_commit_ts,
+          MAX(activity_ts) AS last_commit_ts
+        FROM ${PLATINUM_TABLE}
+        WHERE account_id = ?
+          ${scope.datePredicate}
+          ${scope.projectPredicate}
+          ${scope.employeePredicate}
+          ${repoSearch.predicate}
+        GROUP BY repository_url
+      )
+      SELECT
+        repository_url,
+        repository_path,
+        project_id,
+        project_name,
+        project_slug,
+        project_logo,
+        source,
+        commits,
+        first_commit_ts,
+        last_commit_ts,
+        COUNT(*) OVER() AS total_records
+      FROM repo_agg
+      ORDER BY ${orderBy} ${sortDir}, repository_url ASC
+      LIMIT ${pagination.size} OFFSET ${offset}
+    `;
+    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, ...scope.binds, ...repoSearch.binds]);
+  }
+
+  private async fetchCommits(
+    accountId: string,
+    scope: ScopeFilters,
+    commitSearch: SearchFilter,
+    query: OrgContributionsQuery,
+    pagination: ViewAwarePagination
+  ): Promise<{ rows: ContributionsCommitRow[] }> {
+    const offset = (pagination.page - 1) * pagination.size;
+    const orderBy = commitOrderByColumn(query.commitSort);
+    const sortDir = query.commitDir === 1 ? 'ASC' : 'DESC';
+
+    const sql = `
+      WITH commit_rows AS (
+        SELECT
+          commit_id,
+          member_id,
+          person_key,
+          project_name,
+          member_display_name,
+          member_logo,
+          github_username,
+          source,
+          activity_ts,
+          commit_message,
+          commit_url
+        FROM ${PLATINUM_TABLE}
+        WHERE account_id = ?
+          ${scope.datePredicate}
+          ${scope.projectPredicate}
+          ${scope.employeePredicate}
+          ${commitSearch.predicate}
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY commit_id ORDER BY activity_ts DESC) = 1
+      )
+      SELECT
+        commit_id,
+        member_id,
+        person_key,
+        project_name,
+        member_display_name,
+        member_logo,
+        github_username,
+        source,
+        activity_ts,
+        commit_message,
+        commit_url,
+        COUNT(*) OVER() AS total_records
+      FROM commit_rows
+      ORDER BY ${orderBy} ${sortDir}, commit_id ASC
+      LIMIT ${pagination.size} OFFSET ${offset}
+    `;
+    return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds]);
+  }
+
+  private async fetchProjectOptionRows(accountId: string, dateRange: ContributionsDateRange): Promise<{ rows: ContributionsProjectOptionRow[] }> {
+    const datePredicate = dateRangePredicate(dateRange);
+    const sql = `
+      SELECT
+        project_id,
+        ANY_VALUE(project_slug) AS project_slug,
+        ANY_VALUE(project_name) AS project_name,
+        ANY_VALUE(parent_slug) AS parent_slug,
+        COUNT(DISTINCT commit_id) AS commits
+      FROM ${PLATINUM_TABLE}
+      WHERE account_id = ?
+        ${datePredicate}
+        AND project_id IS NOT NULL
+      GROUP BY project_id
+      ORDER BY commits DESC, project_name ASC
+    `;
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
+  }
+
+  private async fetchEmployeeOptionRows(accountId: string, dateRange: ContributionsDateRange): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
+    const datePredicate = dateRangePredicate(dateRange);
+    const sql = `
+      SELECT
+        member_id,
+        ANY_VALUE(member_display_name) AS member_display_name,
+        COUNT(DISTINCT commit_id) AS commits
+      FROM ${PLATINUM_TABLE}
+      WHERE account_id = ?
+        ${datePredicate}
+        AND member_id IS NOT NULL
+      GROUP BY member_id
+      ORDER BY commits DESC, member_display_name ASC
+    `;
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
   }
 }
 
-/** Build the set of leaf project slugs a selection covers — a parent foundation pulls in all its children. */
-function expandProjectSelection(selected: string[]): Set<string> | null {
-  if (!selected.length) {
-    return null;
-  }
-  const scope = new Set<string>();
-  for (const slug of selected) {
-    scope.add(slug);
-    for (const option of DEMO_PROJECT_OPTIONS) {
-      if (option.parentSlug === slug) {
-        scope.add(option.slug);
-      }
-    }
-  }
-  return scope;
+interface ScopeFilters {
+  datePredicate: string;
+  projectPredicate: string;
+  employeePredicate: string;
+  binds: string[];
 }
 
-/** Resolve a project selection to the set of project *names* it covers (parents expand to children), or null when nothing is selected. */
-function projectNamesForSelection(selected: string[]): Set<string> | null {
-  const slugs = expandProjectSelection(selected);
-  if (!slugs) {
-    return null;
+interface SearchFilter {
+  predicate: string;
+  binds: string[];
+}
+
+interface ViewAwarePagination {
+  page: number;
+  size: number;
+}
+
+/** Active tab uses client page/size; inactive tab fetches one row at offset 0 only to read COUNT(*) OVER(). */
+function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsView): ViewAwarePagination {
+  if (query.view === tab) {
+    return { page: query.page, size: query.size };
   }
-  const names = new Set<string>();
-  for (const option of DEMO_PROJECT_OPTIONS) {
-    if (slugs.has(option.slug)) {
-      names.add(option.name);
-    }
+  return { page: 1, size: 1 };
+}
+
+function buildScopeFilters(query: OrgContributionsQuery): ScopeFilters {
+  const binds: string[] = [];
+  const datePredicate = dateRangePredicate(query.dateRange);
+  const projectPredicate = projectFilterPredicate(query.projects, binds);
+  const employeePredicate = employeeFilterPredicate(query.employees, binds);
+  return { datePredicate, projectPredicate, employeePredicate, binds };
+}
+
+function buildKpiSearchFilter(query: OrgContributionsQuery): SearchFilter {
+  return query.view === 'commits' ? buildCommitSearchFilter(query.search) : buildRepoSearchFilter(query.search);
+}
+
+function buildRepoSearchFilter(search: string): SearchFilter {
+  const trimmed = search.trim();
+  if (!trimmed) {
+    return { predicate: '', binds: [] };
   }
-  return names;
+  return { predicate: 'AND repository_path ILIKE ?', binds: [`%${trimmed}%`] };
 }
 
-/** Epoch-ms cutoff for the window, or null for `all`. */
-function dateRangeCutoffMs(dateRange: ContributionsDateRange): number | null {
-  const day = 86_400_000;
-  switch (dateRange) {
-    case '30d':
-      return Date.now() - 30 * day;
-    case '90d':
-      return Date.now() - 90 * day;
-    case '12mo':
-      return Date.now() - 365 * day;
-    case 'all':
-      return null;
+function buildCommitSearchFilter(search: string): SearchFilter {
+  const trimmed = search.trim();
+  if (!trimmed) {
+    return { predicate: '', binds: [] };
   }
-}
-
-function sortRepos(repos: OrgContributionRepoRow[], query: OrgContributionsQuery): OrgContributionRepoRow[] {
-  const copy = [...repos];
-  copy.sort((a, b) => {
-    switch (query.sort) {
-      case 'commits':
-        return (a.commits - b.commits) * query.dir;
-      case 'firstCommit':
-        return (tsMs(a.firstCommitTs) - tsMs(b.firstCommitTs)) * query.dir;
-      case 'lastCommit':
-        return (tsMs(a.lastCommitTs) - tsMs(b.lastCommitTs)) * query.dir;
-    }
-  });
-  return copy;
-}
-
-/** Org-wide Commits feed filter: Date Range bounds the window; Search scopes message/project/committer; Employees narrows by handle. */
-function filterCommitFeed(query: OrgContributionsQuery): OrgContributionCommitRow[] {
-  const cutoffMs = dateRangeCutoffMs(query.dateRange);
-  const search = query.search.toLowerCase();
-  const projectNames = projectNamesForSelection(query.projects);
-  const usernames = new Set(query.employees.map((id) => DEMO_EMPLOYEE_USERNAMES[id]).filter((name): name is string => !!name));
-  return DEMO_COMMIT_FEED.filter((commit) => {
-    if (cutoffMs !== null && new Date(commit.committedTs).getTime() < cutoffMs) {
-      return false;
-    }
-    if (projectNames && !projectNames.has(commit.projectName)) {
-      return false;
-    }
-    if (usernames.size && (!commit.username || !usernames.has(commit.username))) {
-      return false;
-    }
-    if (search) {
-      const haystack = `${commit.message} ${commit.projectName} ${commit.committerName} ${commit.username ?? ''}`.toLowerCase();
-      if (!haystack.includes(search)) {
-        return false;
-      }
-    }
-    return true;
-  });
-}
-
-/**
- * Demo-scaffold guard. Throws in production unless explicitly opted in (CONTRIBUTIONS_DEMO=true)
- * so synthetic data can't render in prod before the LFX Insights data pass (LFXV2-1894); warns
- * otherwise so the scaffold state is visible in Datadog on every request.
- */
-function assertDemoAllowed(): void {
-  if (process.env['NODE_ENV'] === 'production' && process.env['CONTRIBUTIONS_DEMO'] !== 'true') {
-    throw new Error(
-      'OrgContributionsService is serving demo data; the real LFX Insights source is not implemented yet (LFXV2-1894). Set CONTRIBUTIONS_DEMO=true to allow demo data in production.'
-    );
-  }
-  logger.warning(undefined, 'org_contributions_demo_data', 'Serving demo/scaffold Code Contributions data — real LFX Insights source pending (LFXV2-1894)');
-}
-
-function buildKpis(repos: OrgContributionRepoRow[]): OrgContributionsKpis {
+  const pattern = `%${trimmed}%`;
   return {
-    // Count distinct projects by projectId — projectSlug is nullable and would collapse null-slug repos together.
-    projectsWithActivity: new Set(repos.map((r) => r.projectId)).size,
-    repositories: repos.length,
-    commits: repos.reduce((acc, r) => acc + r.commits, 0),
+    predicate: `
+      AND (
+        commit_message ILIKE ?
+        OR project_name ILIKE ?
+        OR member_display_name ILIKE ?
+        OR github_username ILIKE ?
+      )`,
+    binds: [pattern, pattern, pattern, pattern],
   };
 }
 
-function paginate<T>(rows: T[], query: OrgContributionsQuery): T[] {
-  const start = (query.page - 1) * query.size;
-  return rows.slice(start, start + query.size);
+function dateRangePredicate(dateRange: ContributionsDateRange): string {
+  switch (dateRange) {
+    case '30d':
+      return 'AND activity_ts >= DATEADD(day, -30, CURRENT_TIMESTAMP())';
+    case '90d':
+      return 'AND activity_ts >= DATEADD(day, -90, CURRENT_TIMESTAMP())';
+    case '12mo':
+      return 'AND activity_ts >= DATEADD(month, -12, CURRENT_TIMESTAMP())';
+    case 'all':
+      return '';
+  }
 }
 
-function tsMs(iso: string | null): number {
-  return iso ? new Date(iso).getTime() : 0;
+function projectFilterPredicate(projects: string[], binds: string[]): string {
+  if (!projects.length) {
+    return '';
+  }
+  const placeholders = projects.map(() => '?').join(', ');
+  // project_slug / parent_slug / project_id each get the same binds, in order.
+  for (let i = 0; i < 3; i += 1) {
+    binds.push(...projects);
+  }
+  return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
+}
+
+function employeeFilterPredicate(employees: string[], binds: string[]): string {
+  if (!employees.length) {
+    return '';
+  }
+  const placeholders = employees.map(() => '?').join(', ');
+  for (const id of employees) {
+    binds.push(id);
+  }
+  return `AND member_id IN (${placeholders})`;
+}
+
+function repoOrderByColumn(sort: ContributionsSortColumn): string {
+  switch (sort) {
+    case 'firstCommit':
+      return 'first_commit_ts';
+    case 'lastCommit':
+      return 'last_commit_ts';
+    case 'commits':
+      return 'commits';
+  }
+}
+
+function commitOrderByColumn(sort: ContributionsCommitSortColumn): string {
+  switch (sort) {
+    case 'project':
+      return 'project_name';
+    case 'committer':
+      return 'member_display_name';
+    case 'username':
+      return 'github_username';
+    case 'date':
+      return 'activity_ts';
+  }
+}
+
+function mapKpis(row: ContributionsKpiRow | undefined): OrgContributionsKpis {
+  return {
+    projectsWithActivity: row?.PROJECTS_WITH_ACTIVITY ?? 0,
+    repositories: row?.REPOSITORIES ?? 0,
+    commits: row?.COMMITS ?? 0,
+  };
+}
+
+function mapProjectOption(row: ContributionsProjectOptionRow): OrgContributionProjectOption {
+  return {
+    slug: row.PROJECT_SLUG ?? row.PROJECT_ID,
+    projectId: row.PROJECT_ID,
+    name: row.PROJECT_NAME ?? row.PROJECT_ID,
+    commits: row.COMMITS ?? 0,
+    parentSlug: row.PARENT_SLUG,
+  };
+}
+
+function mapEmployeeOption(row: ContributionsEmployeeOptionRow): OrgContributionEmployeeOption {
+  return {
+    id: row.MEMBER_ID,
+    displayName: row.MEMBER_DISPLAY_NAME ?? row.MEMBER_ID,
+    commits: row.COMMITS ?? 0,
+  };
+}
+
+/** Deterministic, key-safe cache-key suffix covering every query field that changes the SQL (filter arrays sorted so member order never fragments the key); base64url keeps it to `[A-Za-z0-9_-]`. */
+function contributionsSignature(query: OrgContributionsQuery): string {
+  const parts = [
+    query.dateRange,
+    query.view,
+    query.search,
+    query.sort,
+    query.dir,
+    query.commitSort,
+    query.commitDir,
+    query.page,
+    query.size,
+    [...query.projects].sort().join(','),
+    [...query.employees].sort().join(','),
+  ];
+  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+}
+
+function isContributionsRaw(value: unknown): boolean {
+  const v = value as { kpiRows?: unknown; repoRows?: unknown; commitRows?: unknown; projectOptionRows?: unknown; employeeOptionRows?: unknown } | null;
+  return (
+    !!v &&
+    isRowArray(v.kpiRows, 'PROJECTS_WITH_ACTIVITY', 'REPOSITORIES', 'COMMITS') &&
+    isRowArray(v.repoRows, 'REPOSITORY_URL') &&
+    isRowArray(v.commitRows, 'COMMIT_ID') &&
+    isRowArray(v.projectOptionRows, 'PROJECT_ID') &&
+    isRowArray(v.employeeOptionRows, 'MEMBER_ID')
+  );
+}
+
+/** Array guard that validates every element so a single corrupt/legacy row degrades the whole entry to a cache miss: each element must be a non-null object carrying all required contract keys. */
+function isRowArray(value: unknown, ...requiredKeys: string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((row) => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+      return requiredKeys.every((key) => key in (row as Record<string, unknown>));
+    })
+  );
+}
+
+function mapRepoRow(row: ContributionsRepoRow): OrgContributionRepoRow {
+  return {
+    repositoryId: row.REPOSITORY_URL,
+    repositoryPath: row.REPOSITORY_PATH,
+    projectId: row.PROJECT_ID ?? '',
+    projectName: row.PROJECT_NAME ?? '—',
+    projectSlug: row.PROJECT_SLUG,
+    projectLogoUrl: row.PROJECT_LOGO,
+    source: row.SOURCE ?? 'git',
+    upstreamUrl: row.REPOSITORY_URL,
+    commits: row.COMMITS ?? 0,
+    firstCommitTs: toIsoTimestamp(row.FIRST_COMMIT_TS),
+    lastCommitTs: toIsoTimestamp(row.LAST_COMMIT_TS),
+  };
+}
+
+function mapCommitRow(row: ContributionsCommitRow): OrgContributionCommitRow {
+  // Prefer warehouse person_key (matches detail endpoint); cdp: fallback only when column is null.
+  const personKey = row.PERSON_KEY ?? (row.MEMBER_ID ? `cdp:${row.MEMBER_ID}` : null);
+  return {
+    commitSha: row.COMMIT_ID,
+    contributorId: row.MEMBER_ID,
+    personKey,
+    projectName: row.PROJECT_NAME ?? '—',
+    committerName: row.MEMBER_DISPLAY_NAME ?? 'Unknown',
+    committerAvatarUrl: row.MEMBER_LOGO,
+    committerTitle: null,
+    username: parseGithubUsername(row.GITHUB_USERNAME),
+    source: row.SOURCE ?? 'git',
+    committedTs: toIsoTimestamp(row.ACTIVITY_TS) ?? '',
+    message: row.COMMIT_MESSAGE ?? '',
+    commitUrl: row.COMMIT_URL,
+  };
+}
+
+function parseGithubUsername(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.includes('/')) {
+    return trimmed.replace(/^@/, '') || null;
+  }
+  const match = trimmed.match(/github\.com\/([^/?#]+)/i);
+  return match?.[1] ?? null;
+}
+
+function toIsoTimestamp(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const isoLike = value.includes(' ') ? value.replace(' ', 'T') : value;
+    const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(isoLike) ? isoLike : `${isoLike}Z`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return null;
+}
+
+function emptyResponse(accountId: string, dateRange: ContributionsDateRange): OrgContributionsResponse {
+  return {
+    accountId,
+    dateRange,
+    kpis: { projectsWithActivity: 0, repositories: 0, commits: 0 },
+    repositories: [],
+    commits: [],
+    projectOptions: [],
+    employeeOptions: [],
+    totalRecords: 0,
+    commitsTotalRecords: 0,
+  };
 }

@@ -48,6 +48,7 @@ export interface BoardMemberPersonGroup {
   displayName: string;
   jobTitle: string | null;
   initials: string;
+  avatarUrl: string | null;
   /** Distinct foundation names this person holds a board seat on, sorted A→Z. */
   foundationLabels: string[];
   /** Count of this person's board seats classified as voting. */

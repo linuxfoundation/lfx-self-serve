@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   ContributorPersonProjectRow,
   OrgContributorFoundationOption,
@@ -15,6 +15,7 @@ import type {
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
+import { withOrgCache } from './valkey.service';
 
 /** Contributors tab data access — single bundled GET, time-window aggregated server-side per Item 2 A1 lock. */
 export class OrgPeopleContributorsService {
@@ -30,7 +31,13 @@ export class OrgPeopleContributorsService {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    const rows = await this.fetchPersonProjectRows(accountId, timeRange);
+    const rows = await withOrgCache(
+      accountId,
+      `people-contributors:${timeRange}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchPersonProjectRows(accountId, timeRange),
+      isObjectRowArray
+    );
     return buildResponse(accountId, timeRange, rows);
   }
 
@@ -67,6 +74,10 @@ export class OrgPeopleContributorsService {
     const result = await this.snowflakeService.execute<ContributorPersonProjectRow>(query, [accountId]);
     return result.rows;
   }
+}
+
+function isObjectRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }
 
 /** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (dbt caps at 3yr rolling). */

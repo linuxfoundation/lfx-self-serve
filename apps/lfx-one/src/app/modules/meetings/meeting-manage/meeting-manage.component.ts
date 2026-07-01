@@ -18,6 +18,7 @@ import {
   MIN_EARLY_JOIN_TIME,
   STEPPER_SCROLL_OFFSET,
   TOTAL_STEPS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
@@ -86,6 +87,7 @@ export class MeetingManageComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
 
@@ -181,6 +183,25 @@ export class MeetingManageComponent {
       // Update validation when step changes
       this.updateCanProceed();
     });
+
+    // Watch youtube_upload_enabled and enforce title length limit when enabled.
+    // This fires correctly on patchValue during edit-mode hydration because the form initialises
+    // youtube_upload_enabled as false and patchValue flips it to true, triggering valueChanges.
+    this.form()
+      .get('youtube_upload_enabled')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((youtubeEnabled: boolean) => {
+        const titleControl = this.form().get('title');
+        if (!titleControl) return;
+
+        if (youtubeEnabled) {
+          titleControl.addValidators(this.youtubeMaxLengthValidator);
+        } else {
+          titleControl.removeValidators(this.youtubeMaxLengthValidator);
+        }
+        titleControl.updateValueAndValidity();
+        this.updateCanProceed();
+      });
 
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
@@ -497,9 +518,9 @@ export class MeetingManageComponent {
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
       show_meeting_attendees: false, // Coming Soon — disabled in form
-      ai_summary_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
-      require_ai_summary_approval: formValue.recording_enabled && formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
-      artifact_visibility: formValue.recording_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
+      ai_summary_enabled: formValue.zoom_ai_enabled || false,
+      require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
+      artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: formValue.committees || [],
@@ -741,7 +762,6 @@ export class MeetingManageComponent {
     if (meeting.recording_enabled) {
       this.form().get('transcript_enabled')?.enable();
       this.form().get('youtube_upload_enabled')?.enable();
-      this.form().get('zoom_ai_enabled')?.enable();
     }
 
     this.form().patchValue({
@@ -858,7 +878,8 @@ export class MeetingManageComponent {
   }
 
   private updateCanProceed(): void {
-    const isValid = this.isStepValid(this.currentStep());
+    const next = this.currentStep() + 1;
+    const isValid = next <= this.totalSteps ? this.canNavigateToStep(next) : this.isStepValid(this.currentStep());
     this.canProceed.set(isValid);
   }
 
@@ -936,7 +957,7 @@ export class MeetingManageComponent {
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
         show_meeting_attendees: new FormControl({ value: false, disabled: true }),
-        zoom_ai_enabled: new FormControl({ value: false, disabled: true }),
+        zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
 

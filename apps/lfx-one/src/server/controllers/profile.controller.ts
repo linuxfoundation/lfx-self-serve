@@ -16,6 +16,7 @@ import {
   CdpWorkExperienceRequest,
   ClaimAliasRequest,
   CombinedProfile,
+  DeveloperTokenInfo,
   EmailManagementData,
   EnrichedIdentity,
   IdentityDisplayState,
@@ -172,6 +173,15 @@ export class ProfileController {
         user_id: userProfile.id,
         username,
         has_metadata: !!natsUserData,
+      });
+
+      // Per-user profile data must never be served from a cache — otherwise the client
+      // refetch right after a profile save can return the pre-save body from the browser
+      // HTTP cache, leaving the header card / edit dialog showing stale values until a full reload.
+      res.set({
+        ['Cache-Control']: 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
       });
 
       res.json(combinedProfile);
@@ -747,15 +757,22 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Return token information
-      const tokenInfo = {
+      // The v1 API Gateway token (audience api-gw.*) is minted by the auth middleware via
+      // refresh-token exchange and stored on req.apiGatewayToken. Surface it alongside the v2
+      // token so users migrating off the ID dashboard can keep calling v1 APIs. Only include the
+      // key when present so the UI can hide the v1 row when the exchange produced nothing.
+      const v1Token = req.apiGatewayToken;
+
+      const tokenInfo: DeveloperTokenInfo = {
         token: bearerToken,
         type: 'Bearer',
+        ...(v1Token ? { v1Token } : {}),
       };
 
       logger.success(req, 'get_developer_token_info', startTime, {
         user_id: userId,
         token_length: bearerToken.length,
+        has_v1_token: Boolean(v1Token),
       });
 
       // Set cache headers to prevent caching of sensitive bearer tokens

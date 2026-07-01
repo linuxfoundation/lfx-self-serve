@@ -17,8 +17,13 @@ router.post('/hubspot/utm/create', (req, res, next) => campaignController.create
 router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
+router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
+router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
+router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
+router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
+router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
 
 export default router;

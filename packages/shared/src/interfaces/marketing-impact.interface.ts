@@ -9,12 +9,18 @@ import type {
   RevenueImpactResponse,
 } from './analytics-data.interface';
 
-/** Month option for the Marketing Impact page month picker. */
-export interface MarketingImpactMonthOption {
-  /** Display label (e.g., "April 2026") */
+/** Period option for the Marketing Impact date range picker. */
+export interface MarketingImpactPeriodOption {
   label: string;
-  /** ISO-style value for API use (e.g., "2026-04") */
   value: string;
+}
+
+/** Resolved date range from a validated period parameter. */
+export interface ResolvedPeriodRange {
+  type: 'month' | 'ytd' | 'trailing';
+  startDate: string;
+  endDate: string;
+  label: string;
 }
 
 /** Tab option for the Marketing Impact section tabs. */
@@ -129,6 +135,27 @@ export interface SocialAccountRow {
   posts: string;
 }
 
+/** View-model row for a single month inside a social monthly platform. */
+export interface SocialMonthlyRow {
+  month: string;
+  impressions: string;
+  engagementRate: string;
+  followers: string;
+  newFollowers: string;
+  momChange: string;
+  momChangeClass: string;
+}
+
+/** View-model for an expandable social platform with monthly data. */
+export interface SocialMonthlyPlatform {
+  platform: string;
+  expanded: boolean;
+  latestFollowers: string;
+  latestMomChange: string;
+  latestMomChangeClass: string;
+  months: SocialMonthlyRow[];
+}
+
 /** Segment data for the sentiment breakdown horizontal bar chart. */
 export interface SentimentBar {
   positive: number;
@@ -139,6 +166,17 @@ export interface SentimentBar {
   negativeLabel: string;
 }
 
+/** View-model row for an individual domain inside a classification group. */
+export interface WebActivityDomainDetailRow {
+  host: string;
+  sessions: string;
+  pageViews: string;
+  newUsers: string;
+  returningUsers: string;
+  sessionShare: number;
+  sessionShareFormatted: string;
+}
+
 /** View-model row for the web activity domain table. */
 export interface WebActivityDomainRow {
   domain: string;
@@ -147,6 +185,7 @@ export interface WebActivityDomainRow {
   pagesPerSession: string;
   sessionShare: number;
   sessionShareFormatted: string;
+  domains: WebActivityDomainDetailRow[];
 }
 
 /** View-model row for the platform performance table. */

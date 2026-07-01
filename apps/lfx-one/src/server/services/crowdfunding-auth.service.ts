@@ -11,6 +11,7 @@ interface TokenResponse {
   token_type: string;
   scope: string;
   expires_in: number;
+  refresh_token?: string;
 }
 
 const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
@@ -27,6 +28,8 @@ const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
  * has an Auth0 session — no second consent screen is shown.
  */
 export class CrowdfundingAuthService {
+  private readonly pendingRefreshes = new Map<string, Promise<boolean>>();
+
   private _clientId: string | undefined;
   private _clientSecret: string | undefined;
   private _audience: string | undefined;
@@ -90,7 +93,7 @@ export class CrowdfundingAuthService {
       response_type: 'code',
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
-      scope: 'openid profile access:me',
+      scope: 'openid profile access:me offline_access',
       audience: this.audience,
       state,
     });
@@ -181,5 +184,75 @@ export class CrowdfundingAuthService {
 
     req.appSession.crowdfundingToken = tokenResponse.access_token;
     req.appSession.crowdfundingTokenExpiresAt = expiresAt;
+
+    if (tokenResponse.refresh_token) {
+      req.appSession.crowdfundingRefreshToken = tokenResponse.refresh_token;
+    }
+  }
+
+  /**
+   * Attempts to silently renew the CF access token using the stored refresh token.
+   * Returns true and updates the session on success; returns false (non-throwing)
+   * on any failure so callers can fall back to the auth-code redirect.
+   * Clears the stale refresh token only on invalid_grant (terminal error); transient
+   * failures (5xx, timeouts) leave the token in place for the next request to retry.
+   * Single-flight: concurrent requests sharing the same refresh token share one Promise
+   * so only one refresh attempt hits Auth0 per in-flight batch.
+   */
+  public tryRefreshToken(req: Request): Promise<boolean> {
+    const refreshToken = req.appSession?.crowdfundingRefreshToken;
+    if (!refreshToken) return Promise.resolve(false);
+
+    const key = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const inflight = this.pendingRefreshes.get(key);
+    if (inflight) return inflight;
+
+    const promise = this.doRefreshToken(req, refreshToken).finally(() => this.pendingRefreshes.delete(key));
+    this.pendingRefreshes.set(key, promise);
+    return promise;
+  }
+
+  private async doRefreshToken(req: Request, refreshToken: string): Promise<boolean> {
+    const startTime = logger.startOperation(req, 'crowdfunding_token_refresh', {});
+
+    try {
+      const response = await fetch(`${this.issuerBaseUrl}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          audience: this.audience,
+        }).toString(),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        const errorCode = (errorBody as Record<string, unknown>)?.['error'];
+        logger.warning(req, 'crowdfunding_token_refresh', 'Token refresh returned non-OK status', {
+          status: response.status,
+          error: errorCode,
+        });
+        if (errorCode === 'invalid_grant' && req.appSession) {
+          delete req.appSession.crowdfundingRefreshToken;
+        }
+        return false;
+      }
+
+      const tokenResponse: TokenResponse = await response.json();
+      this.storeToken(req, tokenResponse);
+
+      logger.success(req, 'crowdfunding_token_refresh', startTime, { expires_in: tokenResponse.expires_in });
+
+      return true;
+    } catch (error) {
+      logger.warning(req, 'crowdfunding_token_refresh', 'Token refresh request failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return false;
+    }
   }
 }

@@ -1,19 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MONTH_NAMES } from '@lfx-one/shared/constants';
 import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
-import type { MarketingImpactFocusProgram, PerformanceSummaryKpi, SocialAccountRow, SocialMediaResponse } from '@lfx-one/shared/interfaces';
+import type {
+  MarketingImpactFocusProgram,
+  PerformanceSummaryKpi,
+  SocialAccountRow,
+  SocialMediaMonthlyResponse,
+  SocialMediaResponse,
+  SocialMonthlyPlatform,
+  SocialMonthlyRow,
+} from '@lfx-one/shared/interfaces';
 
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
 @Component({
   selector: 'lfx-social-accounts-tab',
-  imports: [SparklineKpiCardComponent],
+  imports: [SparklineKpiCardComponent, NgClass],
   templateUrl: './social-accounts-tab.component.html',
   styleUrl: './social-accounts-tab.component.scss',
 })
@@ -23,33 +33,63 @@ export class SocialAccountsTabComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
-  public readonly selectedMonth = input<string>('');
+  public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  protected readonly monthlyLoading = signal(false);
+  protected readonly expandedPlatforms = signal<Set<string>>(new Set());
+  protected readonly selectedYear = signal(new Date().getUTCFullYear());
 
   // === Computed Signals ===
   protected readonly socialData: Signal<SocialMediaResponse | null> = this.initSocialData();
   protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
   protected readonly platformRows: Signal<SocialAccountRow[]> = this.initPlatformRows();
   protected readonly hasPlatforms = computed(() => this.platformRows().length > 0);
+  protected readonly monthlyData: Signal<SocialMediaMonthlyResponse | null> = this.initMonthlyData();
+  protected readonly monthlyPlatforms: Signal<SocialMonthlyPlatform[]> = this.initMonthlyPlatforms();
+  protected readonly hasMonthlyData = computed(() => this.monthlyPlatforms().length > 0);
+  protected readonly availableYears = computed(() => {
+    const current = new Date().getUTCFullYear();
+    return [current, current - 1];
+  });
+
+  // === Protected Methods ===
+  protected togglePlatform(platform: string): void {
+    const current = this.expandedPlatforms();
+    const next = new Set(current);
+    if (next.has(platform)) {
+      next.delete(platform);
+    } else {
+      next.add(platform);
+    }
+    this.expandedPlatforms.set(next);
+  }
+
+  protected onYearChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    const parsed = parseInt(target.value, 10);
+    if (Number.isFinite(parsed) && this.availableYears().includes(parsed)) {
+      this.selectedYear.set(parsed);
+    }
+  }
 
   // === Private Initializers ===
   private initSocialData(): Signal<SocialMediaResponse | null> {
     const slug$ = toObservable(this.foundationSlug);
-    const month$ = toObservable(this.selectedMonth);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, month$]).pipe(
-        switchMap(([slug, month]) => {
+      combineLatest([slug$, period$]).pipe(
+        switchMap(([slug, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          return this.analyticsService.getSocialMedia(slug, month || undefined).pipe(
+          return this.analyticsService.getSocialMedia(slug, period || undefined).pipe(
             finalize(() => this.loading.set(false)),
             catchError(() => of(null))
           );
@@ -147,5 +187,94 @@ export class SocialAccountsTabComponent {
           })
         );
     });
+  }
+
+  private initMonthlyData(): Signal<SocialMediaMonthlyResponse | null> {
+    const slug$ = toObservable(this.foundationSlug);
+    const year$ = toObservable(this.selectedYear);
+
+    return toSignal(
+      combineLatest([slug$, year$]).pipe(
+        switchMap(([slug, year]) => {
+          if (!slug) {
+            this.monthlyLoading.set(false);
+            return of(null);
+          }
+          this.monthlyLoading.set(true);
+          return this.analyticsService.getSocialMediaMonthly(slug, year).pipe(
+            finalize(() => this.monthlyLoading.set(false)),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initMonthlyPlatforms(): Signal<SocialMonthlyPlatform[]> {
+    return computed(() => {
+      const data = this.monthlyData();
+      if (!data?.platforms?.length) return [];
+
+      const expanded = this.expandedPlatforms();
+
+      const currentYear = new Date().getUTCFullYear();
+      const currentMonth = new Date().getUTCMonth();
+
+      return data.platforms.map((p) => {
+        const rowsByMonth = new Map(p.months.map((m) => [m.month, m]));
+        const maxMonth = data.year === currentYear ? currentMonth : 11;
+        const maxMonthStr = `${data.year}-${String(maxMonth + 1).padStart(2, '0')}`;
+        const filteredMonths = p.months.filter((m) => m.month <= maxMonthStr);
+        const latestRow = filteredMonths.length > 0 ? filteredMonths.reduce((latest, row) => (row.month > latest.month ? row : latest)) : null;
+
+        const allMonths: SocialMonthlyRow[] = MONTH_NAMES.slice(0, maxMonth + 1).map((name, i) => {
+          const monthStr = `${data.year}-${String(i + 1).padStart(2, '0')}`;
+          const row = rowsByMonth.get(monthStr);
+          if (!row) {
+            return {
+              month: name,
+              impressions: '—',
+              engagementRate: '—',
+              followers: '—',
+              newFollowers: '—',
+              momChange: '—',
+              momChangeClass: 'text-gray-400',
+            };
+          }
+          return {
+            month: name,
+            impressions: formatNumber(row.impressions),
+            engagementRate: `${row.engagementRate.toFixed(2)}%`,
+            followers: formatNumber(row.followers),
+            newFollowers: formatNumber(row.newFollowers),
+            momChange: this.formatMomChange(row.momChangeFollowers),
+            momChangeClass: this.getMomChangeClass(row.momChangeFollowers),
+          };
+        });
+
+        return {
+          platform: p.platform,
+          expanded: expanded.has(p.platform),
+          latestFollowers: latestRow ? formatNumber(latestRow.followers) : '—',
+          latestMomChange: latestRow ? this.formatMomChange(latestRow.momChangeFollowers) : '—',
+          latestMomChangeClass: latestRow ? this.getMomChangeClass(latestRow.momChangeFollowers) : 'text-gray-400',
+          months: allMonths,
+        };
+      });
+    });
+  }
+
+  private formatMomChange(value: number | null): string {
+    if (value === null) return '—';
+    const sign = value >= 0 ? '+' : '';
+    return `${sign}${value.toFixed(1)}%`;
+  }
+
+  private getMomChangeClass(value: number | null): string {
+    if (value === null) return 'text-gray-400';
+    if (value > 0) return 'text-green-600';
+    if (value < 0) return 'text-red-600';
+    return 'text-gray-500';
   }
 }
