@@ -17,8 +17,8 @@
 
   <!-- ── Main content ──────────────────────────────────────────────────── -->
   @if (!loading() && detail(); as g) {
-    <!-- Back link + Leave Group button -->
-    <div class="flex items-center justify-between" data-testid="org-group-detail-header">
+    <!-- Back link -->
+    <div data-testid="org-group-detail-header">
       <a
         routerLink="/org/groups"
         class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-700"
@@ -26,35 +26,29 @@
         <i class="fa-light fa-chevron-left text-xs" aria-hidden="true"></i>
         My Groups
       </a>
-
-      <button
-        type="button"
-        disabled
-        class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 opacity-50 cursor-not-allowed"
-        data-testid="org-group-detail-leave-btn">
-        <i class="fa-light fa-arrow-right-from-bracket" aria-hidden="true"></i>
-        Leave Group
-      </button>
     </div>
 
     <!-- Header card: identity + mailing list -->
     <lfx-card class="[&_.p-card-body]:!p-0" data-testid="org-group-detail-identity-card">
       <div class="flex gap-6 px-6 pt-5 pb-4">
-        <!-- Left: name, tags, parent project, created -->
-        <div class="flex flex-1 flex-col gap-4" data-testid="org-group-detail-identity">
+        <!-- Left: name, description, tags, parent project, dates -->
+        <div class="flex flex-1 flex-col gap-3" data-testid="org-group-detail-identity">
           <!-- Name + lock -->
           <div class="flex items-center gap-2">
-            <h1 class="text-[20px] font-light text-gray-700" data-testid="org-group-detail-name">{{ g.name }}</h1>
+            <h1 class="text-xl font-light text-gray-700" data-testid="org-group-detail-name">{{ g.name }}</h1>
             @if (g.visibility === 'PRIVATE') {
-              <i class="fa-light fa-lock text-gray-400" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
+              <i class="fa-light fa-lock text-gray-400 text-sm" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
             }
           </div>
 
+          <!-- Description -->
+          @if (g.description) {
+            <p class="text-xs text-gray-500" data-testid="org-group-detail-description">{{ g.description }}</p>
+          }
+
           <!-- Tags -->
           <div class="flex flex-wrap items-center gap-2" data-testid="org-group-detail-tags">
-            @if (g.type === 'Board') {
-              <lfx-tag value="Board" severity="danger" data-testid="org-group-detail-tag-board" />
-            }
+            <lfx-tag [value]="g.type" severity="secondary" data-testid="org-group-detail-tag-type" />
             @if (g.votingEnabled) {
               <lfx-tag value="Voting Enabled" severity="success" data-testid="org-group-detail-tag-voting" />
             }
@@ -63,18 +57,18 @@
             }
           </div>
 
-          <!-- Parent project + created date -->
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-center gap-1.5 text-sm">
-              <i class="fa-light fa-gavel text-gray-500" aria-hidden="true"></i>
-              <span class="text-gray-500">Parent Project:</span>
-              <a [routerLink]="['/org/groups']" class="font-medium text-blue-600 hover:text-blue-700" data-testid="org-group-detail-parent-project">
+          <!-- Parent project + dates -->
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center gap-[5.25px] text-[10.5px] text-blue-600" data-testid="org-group-detail-parent-row">
+              <i class="fa-light fa-share-nodes" aria-hidden="true"></i>
+              <span class="font-medium">Parent Project:</span>
+              <a [routerLink]="['/org/groups']" class="font-medium hover:text-blue-700" data-testid="org-group-detail-parent-project">
                 {{ g.parentProject }}
               </a>
-              <i class="fa-light fa-chevron-right text-xs text-gray-400" aria-hidden="true"></i>
+              <i class="fa-light fa-chevron-right text-[9px]" aria-hidden="true"></i>
             </div>
-            <div class="text-sm text-gray-500" data-testid="org-group-detail-created">
-              Created <span class="font-medium text-gray-700">{{ formatCreatedAt(g.createdAt) }}</span>
+            <div class="text-sm text-gray-700" data-testid="org-group-detail-dates">
+              Created {{ formatDate(g.createdAt) }}<span class="mx-1">·</span>Updated {{ formatDate(g.updatedAt) }}
             </div>
           </div>
         </div>
@@ -114,8 +108,8 @@
             [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
             [class]="
               activeTab() === tab.id
-                ? 'inline-flex items-center gap-1.5 rounded-full bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white'
-                : 'inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3.5 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700'
+                ? 'inline-flex items-center gap-1.5 rounded-full bg-blue-500 py-[5.25px] px-[10.5px] text-xs font-medium text-white'
+                : 'inline-flex items-center gap-1.5 rounded-full bg-gray-100 py-[5.25px] px-[10.5px] text-xs font-medium text-gray-700 hover:text-gray-900'
             "
             (click)="switchTab(tab.id)">
             <i [class]="tab.icon" aria-hidden="true"></i>
@@ -138,39 +132,34 @@
         <aside class="flex w-72 shrink-0 flex-col gap-6" data-testid="org-group-detail-left-panel">
           <!-- Stats list -->
           <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-stats">
-            <!-- Members -->
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="flex items-center gap-[10.5px] px-[14px] py-[10.5px]">
               <i class="fa-light fa-users w-4 text-center text-gray-400" aria-hidden="true"></i>
-              <span class="flex-1 text-sm text-gray-700">Members</span>
-              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-member-count">{{ g.memberCount }}</span>
+              <span class="flex-1 text-xs text-gray-700">Members</span>
+              <span class="text-xs font-semibold text-gray-900" data-testid="org-group-detail-member-count">{{ g.memberCount }}</span>
             </div>
-            <div class="border-t border-gray-100"></div>
-            <!-- Organizations -->
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="border-t border-gray-200"></div>
+            <div class="flex items-center gap-[10.5px] px-[14px] py-[10.5px]">
               <i class="fa-light fa-building w-4 text-center text-gray-400" aria-hidden="true"></i>
-              <span class="flex-1 text-sm text-gray-700">Organizations</span>
-              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-org-count">{{ g.organizationCount }}</span>
+              <span class="flex-1 text-xs text-gray-700">Organizations</span>
+              <span class="text-xs font-semibold text-gray-900" data-testid="org-group-detail-org-count">{{ g.organizationCount }}</span>
             </div>
-            <div class="border-t border-gray-100"></div>
-            <!-- Meetings -->
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="border-t border-gray-200"></div>
+            <div class="flex items-center gap-[10.5px] px-[14px] py-[10.5px]">
               <i class="fa-light fa-calendar w-4 text-center text-gray-400" aria-hidden="true"></i>
-              <span class="flex-1 text-sm text-gray-700">Meetings</span>
-              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-meeting-count">{{ g.meetingCount }}</span>
+              <span class="flex-1 text-xs text-gray-700">Meetings</span>
+              <span class="text-xs font-semibold text-gray-900" data-testid="org-group-detail-meeting-count">{{ g.meetingCount }}</span>
             </div>
-            <div class="border-t border-gray-100"></div>
-            <!-- Active Votes -->
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="border-t border-gray-200"></div>
+            <div class="flex items-center gap-[10.5px] px-[14px] py-[10.5px]">
               <i class="fa-light fa-check-to-slot w-4 text-center text-gray-400" aria-hidden="true"></i>
-              <span class="flex-1 text-sm text-gray-700">Active Votes</span>
-              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-vote-count">{{ g.activeVoteCount }}</span>
+              <span class="flex-1 text-xs text-gray-700">Active Votes</span>
+              <span class="text-xs font-semibold text-gray-900" data-testid="org-group-detail-vote-count">{{ g.activeVoteCount }}</span>
             </div>
-            <div class="border-t border-gray-100"></div>
-            <!-- Open Surveys -->
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="border-t border-gray-200"></div>
+            <div class="flex items-center gap-[10.5px] px-[14px] py-[10.5px]">
               <i class="fa-light fa-clipboard-list w-4 text-center text-gray-400" aria-hidden="true"></i>
-              <span class="flex-1 text-sm text-gray-700">Open Surveys</span>
-              <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-survey-count">{{ g.openSurveyCount }}</span>
+              <span class="flex-1 text-xs text-gray-700">Open Surveys</span>
+              <span class="text-xs font-semibold text-gray-900" data-testid="org-group-detail-survey-count">{{ g.openSurveyCount }}</span>
             </div>
           </div>
 
@@ -203,12 +192,12 @@
           <section class="flex flex-col gap-3" data-testid="org-group-detail-next-meeting-section">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <i class="fa-light fa-clock text-gray-500" aria-hidden="true"></i>
-                <h2 class="text-base font-semibold text-gray-900">Next Meeting</h2>
+                <i class="fa-light fa-calendar text-gray-500" aria-hidden="true"></i>
+                <h2 class="text-sm font-semibold text-gray-900">Next Meeting</h2>
               </div>
               <button
                 type="button"
-                class="text-sm font-medium text-blue-600 hover:text-blue-700"
+                class="text-xs font-medium text-blue-600 hover:text-blue-700"
                 data-testid="org-group-detail-next-meeting-view-all"
                 (click)="switchTab('meetings')">
                 View All
@@ -217,44 +206,59 @@
 
             @if (hasNextMeeting() && nextMeeting()) {
               @let nm = nextMeeting()!;
-              <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-next-meeting-card">
-                <div class="flex items-start gap-4 p-4">
+              <div class="overflow-hidden rounded-[14px] border border-gray-200 bg-white" data-testid="org-group-detail-next-meeting-card">
+                <!-- Card body -->
+                <div class="flex items-start gap-[14px] p-[10.5px]">
                   <!-- Calendar date widget -->
-                  <div class="flex shrink-0 flex-col items-center rounded-md border border-gray-200 bg-white text-center" style="min-width: 3rem">
-                    <div class="rounded-t-md bg-gray-100 px-3 py-0.5 text-xs font-medium uppercase text-gray-500">{{ nm.monthAbbr }}</div>
-                    <div class="px-3 py-1 text-2xl font-bold text-gray-900 leading-none">{{ nm.day }}</div>
+                  <div class="flex w-14 shrink-0 flex-col overflow-hidden rounded-[10.5px] border border-gray-200 text-center">
+                    <div class="flex items-center justify-center bg-gray-200 py-[1.75px] text-[10px] font-semibold uppercase text-gray-500">
+                      {{ nm.monthAbbr }}
+                    </div>
+                    <div class="flex items-center justify-center py-[6px] text-[28px] font-light leading-none text-gray-900">
+                      {{ nm.day }}
+                    </div>
                   </div>
                   <!-- Details -->
-                  <div class="flex min-w-0 flex-1 flex-col gap-1">
-                    <div class="text-xs text-gray-500">{{ nm.dayOfWeek }}, {{ nm.time }} · {{ nm.durationMin }}m</div>
-                    <div class="text-sm font-semibold text-gray-900">{{ nm.title }}</div>
-                    <div class="flex flex-wrap gap-1.5">
-                      <span class="inline-flex items-center rounded border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                  <div class="flex min-w-0 flex-1 flex-col gap-[5.25px] py-[3.5px]">
+                    <div class="text-[10.5px] text-gray-500">{{ nm.dayOfWeek }}, {{ nm.time }} · {{ nm.durationMin }}m</div>
+                    <div class="text-xs font-semibold text-gray-900">{{ nm.title }}</div>
+                    <!-- Meeting pill tags -->
+                    <div class="flex flex-wrap items-center gap-2">
+                      <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                        <i class="fa-light fa-landmark text-[9px]" aria-hidden="true"></i>
                         {{ nm.projectName }}
-                      </span>
-                      <span class="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
+                      </button>
+                      <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                        <i class="fa-light fa-calendar text-[9px]" aria-hidden="true"></i>
                         {{ nm.meetingType }}
-                      </span>
+                      </button>
+                      @if (nm.isRecurring) {
+                        <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                          <i class="fa-light fa-rotate text-[9px]" aria-hidden="true"></i>
+                          Recurring
+                        </button>
+                      }
                     </div>
+                    @if (nm.description) {
+                      <p class="text-[10px] text-gray-500 line-clamp-2">{{ nm.description }}</p>
+                    }
                   </div>
                   <!-- Copy icon -->
                   <button
                     type="button"
-                    disabled
-                    class="shrink-0 rounded p-1 text-gray-400 opacity-50 cursor-not-allowed"
+                    class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                     aria-label="Copy meeting link"
                     data-testid="org-group-detail-next-meeting-copy">
                     <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
                   </button>
                 </div>
-                <!-- Meeting details button -->
-                <div class="border-t border-gray-100 px-4 py-2">
+                <!-- Footer -->
+                <div class="border-t border-gray-200 px-[10.5px] py-[7px]">
                   <button
                     type="button"
-                    disabled
-                    class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 opacity-50 cursor-not-allowed"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                     data-testid="org-group-detail-next-meeting-details">
-                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                    <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
                     Meeting details
                   </button>
                 </div>
@@ -271,11 +275,11 @@
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <i class="fa-light fa-clock-rotate-left text-gray-500" aria-hidden="true"></i>
-                <h2 class="text-base font-semibold text-gray-900">Past Meeting</h2>
+                <h2 class="text-sm font-semibold text-gray-900">Past Meeting</h2>
               </div>
               <button
                 type="button"
-                class="text-sm font-medium text-blue-600 hover:text-blue-700"
+                class="text-xs font-medium text-blue-600 hover:text-blue-700"
                 data-testid="org-group-detail-past-meeting-view-all"
                 (click)="switchTab('meetings')">
                 View All
@@ -284,30 +288,47 @@
 
             @if (hasPastMeeting() && pastMeeting()) {
               @let pm = pastMeeting()!;
-              <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-group-detail-past-meeting-card">
-                <div class="flex items-start gap-4 p-4">
+              <div class="overflow-hidden rounded-[14px] border border-gray-200 bg-white" data-testid="org-group-detail-past-meeting-card">
+                <!-- Card body -->
+                <div class="flex items-start gap-[14px] p-[10.5px]">
                   <!-- Calendar date widget -->
-                  <div class="flex shrink-0 flex-col items-center rounded-md border border-gray-200 bg-white text-center" style="min-width: 3rem">
-                    <div class="rounded-t-md bg-gray-100 px-3 py-0.5 text-xs font-medium uppercase text-gray-500">{{ pm.monthAbbr }}</div>
-                    <div class="px-3 py-1 text-2xl font-bold text-gray-900 leading-none">{{ pm.day }}</div>
+                  <div class="flex w-14 shrink-0 flex-col overflow-hidden rounded-[10.5px] border border-gray-200 text-center">
+                    <div class="flex items-center justify-center bg-gray-200 py-[1.75px] text-[10px] font-semibold uppercase text-gray-500">
+                      {{ pm.monthAbbr }}
+                    </div>
+                    <div class="flex items-center justify-center py-[6px] text-[28px] font-light leading-none text-gray-900">
+                      {{ pm.day }}
+                    </div>
                   </div>
                   <!-- Details -->
-                  <div class="flex min-w-0 flex-1 flex-col gap-1">
-                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                  <div class="flex min-w-0 flex-1 flex-col gap-[5.25px] py-[3.5px]">
+                    <div class="flex items-center gap-2 text-[10.5px] text-gray-500">
                       <span>{{ pm.dayOfWeek }}, {{ pm.time }} · {{ pm.durationMin }}m</span>
                       @if (pm.hasAiSummary) {
                         <i class="fa-light fa-sparkles text-amber-400" aria-label="AI summary available" title="AI summary available"></i>
                       }
                     </div>
-                    <div class="text-sm font-semibold text-gray-900">{{ pm.title }}</div>
-                    <div class="flex flex-wrap gap-1.5">
-                      <span class="inline-flex items-center rounded border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                    <div class="text-xs font-semibold text-gray-900">{{ pm.title }}</div>
+                    <!-- Meeting pill tags -->
+                    <div class="flex flex-wrap items-center gap-2">
+                      <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                        <i class="fa-light fa-landmark text-[9px]" aria-hidden="true"></i>
                         {{ pm.projectName }}
-                      </span>
-                      <span class="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
+                      </button>
+                      <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                        <i class="fa-light fa-calendar text-[9px]" aria-hidden="true"></i>
                         {{ pm.meetingType }}
-                      </span>
+                      </button>
+                      @if (pm.isRecurring) {
+                        <button type="button" class="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-blue-600 hover:text-blue-800">
+                          <i class="fa-light fa-rotate text-[9px]" aria-hidden="true"></i>
+                          Recurring
+                        </button>
+                      }
                     </div>
+                    @if (pm.description) {
+                      <p class="text-[10px] text-gray-500 line-clamp-2">{{ pm.description }}</p>
+                    }
                   </div>
                   <!-- Copy icon -->
                   <button
@@ -318,15 +339,34 @@
                     <i class="fa-light fa-copy text-sm" aria-hidden="true"></i>
                   </button>
                 </div>
-                <!-- Meeting details button -->
-                <div class="border-t border-gray-100 px-4 py-2">
-                  <button
-                    type="button"
-                    class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    data-testid="org-group-detail-past-meeting-details">
-                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
-                    Meeting details
-                  </button>
+                <!-- Footer -->
+                <div class="border-t border-gray-200 px-[10.5px] py-[7px]">
+                  @if (pm.hasRecording) {
+                    <div class="flex gap-2">
+                      <button
+                        type="button"
+                        class="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        data-testid="org-group-detail-past-meeting-details">
+                        <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+                        Meeting details
+                      </button>
+                      <button
+                        type="button"
+                        class="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600"
+                        data-testid="org-group-detail-past-meeting-recording">
+                        <i class="fa-light fa-play text-[10px]" aria-hidden="true"></i>
+                        Watch recording
+                      </button>
+                    </div>
+                  } @else {
+                    <button
+                      type="button"
+                      class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      data-testid="org-group-detail-past-meeting-details">
+                      <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+                      Meeting details
+                    </button>
+                  }
                 </div>
               </div>
             } @else {

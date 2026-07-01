@@ -76,7 +76,7 @@ export class OrgGroupDetailComponent {
     }
   }
 
-  protected formatCreatedAt(date: Date): string {
+  protected formatDate(date: Date): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 

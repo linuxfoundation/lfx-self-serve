@@ -87,6 +87,9 @@ export interface GroupMeeting {
   meetingType: string;
   hasReminder: boolean;
   hasAiSummary: boolean;
+  description?: string;
+  isRecurring?: boolean;
+  hasRecording?: boolean;
 }
 
 export interface OrgGroupDetail extends OrgGroup {
