@@ -123,7 +123,7 @@
       <!-- Certificate -->
       @if (isPastEvents()) {
         <td>
-          @if (canDownloadCertificate(event.status)) {
+          @if (event.status === MY_EVENT_STATUS.ATTENDED) {
             <div class="flex justify-end">
               <lfx-button
                 label="Download Certificate"

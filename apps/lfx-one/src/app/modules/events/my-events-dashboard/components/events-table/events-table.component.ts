@@ -35,10 +35,13 @@ export class EventsTableComponent {
     Sponsor: 'info',
   };
 
+  /** Exposed for template comparison (gates the Download Certificate button). */
+  protected readonly MY_EVENT_STATUS = MY_EVENT_STATUS;
+
   protected readonly statusSeverityMap: Partial<Record<string, TagSeverity>> = {
-    Registered: 'info',
-    Attended: 'success',
-    'Not Registered': 'secondary',
+    [MY_EVENT_STATUS.REGISTERED]: 'info',
+    [MY_EVENT_STATUS.ATTENDED]: 'success',
+    [MY_EVENT_STATUS.NOT_REGISTERED]: 'secondary',
     Waitlisted: 'warn',
     Cancelled: 'danger',
   };
@@ -59,10 +62,6 @@ export class EventsTableComponent {
       EVENT_CITY: getIcon('EVENT_CITY'),
     };
   });
-
-  protected canDownloadCertificate(status: string): boolean {
-    return status === MY_EVENT_STATUS.ATTENDED;
-  }
 
   protected onPageChange(event: { first: number; rows: number }): void {
     this.pageChange.emit({ offset: event.first, pageSize: event.rows });
