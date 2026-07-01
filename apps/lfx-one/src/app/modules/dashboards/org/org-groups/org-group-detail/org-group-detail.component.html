@@ -1,0 +1,439 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6" data-testid="org-group-detail-page">
+  <!-- ── Loading skeleton ──────────────────────────────────────────────── -->
+  @if (loading()) {
+    <div class="flex flex-col gap-4" data-testid="org-group-detail-skeleton">
+      <p-skeleton width="6rem" height="1rem" />
+      <p-skeleton width="24rem" height="1.75rem" />
+      <div class="flex gap-2">
+        <p-skeleton width="4rem" height="1.5rem" borderRadius="9999px" />
+        <p-skeleton width="6rem" height="1.5rem" borderRadius="9999px" />
+      </div>
+      <p-skeleton width="100%" height="10rem" borderRadius="0.5rem" />
+    </div>
+  }
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  @if (!loading() && detail(); as g) {
+    <!-- Back link -->
+    <div data-testid="org-group-detail-header">
+      <a routerLink="/org/groups" class="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800" data-testid="org-group-detail-back-link">
+        <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
+        Groups
+      </a>
+    </div>
+
+    <!-- Header card: identity + mailing list -->
+    <lfx-card class="[&_.p-card-body]:!p-0" data-testid="org-group-detail-identity-card">
+      <div class="flex gap-6 px-6 pt-5 pb-4">
+        <!-- Left: name, description, tags, parent project, dates -->
+        <div class="flex flex-1 flex-col gap-3" data-testid="org-group-detail-identity">
+          <!-- Name + lock -->
+          <div class="flex items-center gap-2">
+            <h1 class="font-display font-light text-[20px]" data-testid="org-group-detail-name">{{ g.name }}</h1>
+            @if (g.visibility === 'PRIVATE') {
+              <i class="fa-light fa-lock w-4 h-4 text-gray-400" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
+            }
+          </div>
+
+          <!-- Description -->
+          @if (g.description) {
+            <p class="text-sm text-gray-500" data-testid="org-group-detail-description">{{ g.description }}</p>
+          }
+
+          <!-- Tags -->
+          <div class="flex flex-wrap items-center gap-2" data-testid="org-group-detail-tags">
+            <lfx-tag [value]="g.type" severity="secondary" data-testid="org-group-detail-tag-type" />
+            @if (g.votingEnabled) {
+              <lfx-tag value="Voting Enabled" severity="success" data-testid="org-group-detail-tag-voting" />
+            }
+            @if (g.inviteOnly) {
+              <lfx-tag value="Invite Only" severity="secondary" data-testid="org-group-detail-tag-invite" />
+            }
+          </div>
+
+          <!-- Parent project + dates -->
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center gap-1.5 text-xs font-medium text-blue-600" data-testid="org-group-detail-parent-row">
+              <i class="fa-light fa-diagram-project text-[11px]" aria-hidden="true"></i>
+              <span>Parent Project:</span>
+              <a [routerLink]="['/org/groups']" class="hover:text-blue-800" data-testid="org-group-detail-parent-project">
+                {{ g.parentProject }}
+              </a>
+              <i class="fa-light fa-chevron-right text-[10px]" aria-hidden="true"></i>
+            </div>
+            <div class="flex items-center gap-1" data-testid="org-group-detail-dates">
+              <span class="text-xs text-gray-400">Created {{ formatDate(g.createdAt) }}</span>
+              <span class="text-xs text-gray-400">&middot; Updated {{ formatDate(g.updatedAt) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: channels card (mailing list) -->
+        @if (g.mailingListName) {
+          <div
+            class="bg-gray-50 border border-gray-200 rounded-lg text-[12.5px] text-gray-600 w-full lg:max-w-[380px] flex-shrink-0 self-start"
+            data-testid="org-group-detail-mailing-list-card">
+            <div class="flex items-center gap-2.5 px-3.5 py-2.5">
+              <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-[12.5px] font-semibold text-gray-900">{{ g.mailingListName }}</span>
+                  @if (g.mailingListIsPrivate) {
+                    <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                  } @else {
+                    <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                  }
+                </div>
+                <div class="text-[11px] text-gray-400 mt-0.5">{{ g.mailingListSubscribers ?? 0 }} subscribers</div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    </lfx-card>
+
+    <!-- Tab strip -->
+    <div data-testid="org-group-detail-tabs">
+      <div class="flex gap-1" role="tablist" aria-label="Group detail tabs" (keydown)="onTabKeydown($event)">
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            role="tab"
+            [id]="'org-group-detail-tab-' + tab.id"
+            [attr.aria-selected]="activeTab() === tab.id"
+            [attr.aria-controls]="'org-group-detail-panel-' + tab.id"
+            [attr.data-testid]="'org-group-detail-tab-' + tab.id"
+            [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+            [class]="
+              activeTab() === tab.id
+                ? 'flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors bg-blue-500 text-white'
+                : 'flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
+            "
+            (click)="switchTab(tab.id)">
+            <i [class]="tab.icon + ' mr-1.5'" aria-hidden="true"></i>{{ tab.label }}
+            @if (tab.id === 'members') {
+              <lfx-tag
+                [value]="'' + g.memberCount"
+                [rounded]="true"
+                [severity]="activeTab() === tab.id ? 'contrast' : 'secondary'"
+                styleClass="ml-1.5 !text-[10px] !px-1.5 !py-0.5" />
+            }
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Tab panels -->
+    @if (activeTab() === 'overview') {
+      <!-- Overview: two-column layout -->
+      <div
+        class="flex gap-6"
+        role="tabpanel"
+        id="org-group-detail-panel-overview"
+        aria-labelledby="org-group-detail-tab-overview"
+        data-testid="org-group-detail-overview">
+        <!-- LEFT PANEL — stats + chairs -->
+        <aside class="flex w-72 shrink-0 flex-col gap-6" data-testid="org-group-detail-left-panel">
+          <!-- Stats + Chairs -->
+          <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="org-group-detail-stats">
+            <div class="flex flex-col divide-y divide-gray-100">
+              <div class="flex items-center gap-3 px-4 py-3">
+                <i class="fa-light fa-users w-4 text-center flex-shrink-0 text-gray-400" aria-hidden="true"></i>
+                <span class="flex-1 text-sm text-gray-700">Members</span>
+                <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-member-count">{{ g.memberCount }}</span>
+              </div>
+              <div class="flex items-center gap-3 px-4 py-3">
+                <i class="fa-light fa-building w-4 text-center flex-shrink-0 text-gray-400" aria-hidden="true"></i>
+                <span class="flex-1 text-sm text-gray-700">Organizations</span>
+                <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-org-count">{{ g.organizationCount }}</span>
+              </div>
+              <div class="flex items-center gap-3 px-4 py-3">
+                <i class="fa-light fa-calendar w-4 text-center flex-shrink-0 text-gray-400" aria-hidden="true"></i>
+                <span class="flex-1 text-sm text-gray-700">Meetings</span>
+                <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-meeting-count">{{ g.meetingCount }}</span>
+              </div>
+              <div class="flex items-center gap-3 px-4 py-3">
+                <i class="fa-light fa-check-to-slot w-4 text-center flex-shrink-0 text-gray-400" aria-hidden="true"></i>
+                <span class="flex-1 text-sm text-gray-700">Active Votes</span>
+                <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-vote-count">{{ g.activeVoteCount }}</span>
+              </div>
+              <div class="flex items-center gap-3 px-4 py-3">
+                <i class="fa-light fa-clipboard-list w-4 text-center flex-shrink-0 text-gray-400" aria-hidden="true"></i>
+                <span class="flex-1 text-sm text-gray-700">Open Surveys</span>
+                <span class="text-sm font-semibold text-gray-900" data-testid="org-group-detail-survey-count">{{ g.openSurveyCount }}</span>
+              </div>
+            </div>
+
+            <!-- Chairs -->
+            @if (g.chairs.length > 0) {
+              <div class="border-t border-gray-100 px-4 py-3" data-testid="org-group-detail-chairs">
+                <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Chairs</p>
+                <div class="flex flex-col gap-1.5">
+                  @for (chair of g.chairs; track chair.id) {
+                    <div class="flex items-center gap-2" [attr.data-testid]="'org-group-detail-chair-' + chair.id">
+                      <div
+                        class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+                        [style.background-color]="chair.role === 'Chair' ? '#6366f1' : '#f59e0b'"
+                        aria-hidden="true">
+                        {{ chair.initials }}
+                      </div>
+                      <div class="min-w-0">
+                        <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.name }}</p>
+                        <p class="text-[10.5px] text-gray-500">{{ chair.role }}</p>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </lfx-card>
+        </aside>
+
+        <!-- RIGHT PANEL — meetings -->
+        <div class="flex min-w-0 flex-1 flex-col gap-6" data-testid="org-group-detail-right-panel">
+          <!-- Next Meeting -->
+          <section class="flex flex-col gap-3" data-testid="org-group-detail-next-meeting-section">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-calendar text-gray-400" aria-hidden="true"></i>
+                <h2 class="text-sm font-medium text-gray-700">Next Meeting</h2>
+              </div>
+              <lfx-button
+                label="View All"
+                [text]="true"
+                size="small"
+                severity="info"
+                styleClass="!text-xs"
+                data-testid="org-group-detail-next-meeting-view-all"
+                (onClick)="switchTab('meetings')" />
+            </div>
+
+            @if (hasNextMeeting() && nextMeeting()) {
+              @let nm = nextMeeting()!;
+              <div
+                class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden hover:border-blue-400 transition-colors"
+                data-testid="org-group-detail-next-meeting-card">
+                <!-- Card body -->
+                <div class="flex gap-4 items-start px-4 py-3">
+                  <!-- Date badge -->
+                  <div class="relative shrink-0">
+                    <div class="w-16 rounded-xl overflow-hidden flex flex-col border border-gray-200">
+                      <div class="flex items-center justify-center py-0.5 bg-gray-200">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ nm.monthAbbr }}</span>
+                      </div>
+                      <div class="h-11 flex items-center justify-center bg-gray-50">
+                        <span class="font-display font-light text-3xl leading-none text-gray-900">{{ nm.day }}</span>
+                      </div>
+                    </div>
+                    <!-- Visibility dot badge -->
+                    <div
+                      class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
+                      [style.background-color]="nm.isPrivate ? '#d4183d' : '#00bc7d'"
+                      [attr.aria-label]="nm.isPrivate ? 'Private meeting' : 'Public meeting'">
+                      <i
+                        [class]="'text-white text-[10px] leading-none block ' + (nm.isPrivate ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe')"
+                        aria-hidden="true"></i>
+                    </div>
+                  </div>
+                  <!-- Details -->
+                  <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
+                    <p class="text-[10px] text-gray-500">{{ nm.dayOfWeek }}, {{ nm.time }} &middot; {{ nm.durationMin }}m</p>
+                    <h3 class="text-sm font-semibold text-gray-900 truncate">{{ nm.title }}</h3>
+                    <!-- Meeting pill chips -->
+                    <div class="flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                        <i class="fa-light fa-landmark text-[10px]" aria-hidden="true"></i>
+                        {{ nm.projectName }}
+                      </span>
+                      <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                        <i class="fa-light fa-calendar text-[10px]" aria-hidden="true"></i>
+                        {{ nm.meetingType }}
+                      </span>
+                      @if (nm.isRecurring) {
+                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                          <i class="fa-light fa-arrows-rotate text-[10px]" aria-hidden="true"></i>
+                          Recurring
+                        </span>
+                      }
+                    </div>
+                    @if (nm.description) {
+                      <p class="text-[10px] text-gray-500 truncate min-w-0">{{ nm.description }}</p>
+                    }
+                  </div>
+                  <!-- Copy button -->
+                  <button
+                    type="button"
+                    class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
+                    aria-label="Copy meeting link"
+                    data-testid="org-group-detail-next-meeting-copy">
+                    <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <!-- Footer -->
+                <div class="flex gap-3 px-4 pb-4 pt-5">
+                  <lfx-button
+                    class="flex-1"
+                    severity="secondary"
+                    size="small"
+                    styleClass="w-full"
+                    label="Meeting details"
+                    [outlined]="true"
+                    icon="fa-light fa-arrow-up-right-from-square text-xs"
+                    data-testid="org-group-detail-next-meeting-details" />
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-8" data-testid="org-group-detail-no-next-meeting">
+                <p class="text-sm text-gray-500">No upcoming meetings scheduled</p>
+              </div>
+            }
+          </section>
+
+          <!-- Past Meeting -->
+          <section class="flex flex-col gap-3" data-testid="org-group-detail-past-meeting-section">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-clock-rotate-left text-gray-400" aria-hidden="true"></i>
+                <h2 class="text-sm font-medium text-gray-700">Past Meeting</h2>
+              </div>
+              <lfx-button
+                label="View All"
+                [text]="true"
+                size="small"
+                severity="info"
+                styleClass="!text-xs"
+                data-testid="org-group-detail-past-meeting-view-all"
+                (onClick)="switchTab('meetings')" />
+            </div>
+
+            @if (hasPastMeeting() && pastMeeting()) {
+              @let pm = pastMeeting()!;
+              <div
+                class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden hover:border-blue-400 transition-colors"
+                data-testid="org-group-detail-past-meeting-card">
+                <!-- Card body -->
+                <div class="flex gap-4 items-start px-4 py-3">
+                  <!-- Date badge -->
+                  <div class="relative shrink-0">
+                    <div class="w-16 rounded-xl overflow-hidden flex flex-col border border-gray-200">
+                      <div class="flex items-center justify-center py-0.5 bg-gray-200">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ pm.monthAbbr }}</span>
+                      </div>
+                      <div class="h-11 flex items-center justify-center bg-gray-50">
+                        <span class="font-display font-light text-3xl leading-none text-gray-900">{{ pm.day }}</span>
+                      </div>
+                    </div>
+                    <!-- Visibility dot badge -->
+                    <div
+                      class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
+                      [style.background-color]="pm.isPrivate ? '#d4183d' : '#00bc7d'"
+                      [attr.aria-label]="pm.isPrivate ? 'Private meeting' : 'Public meeting'">
+                      <i
+                        [class]="'text-white text-[10px] leading-none block ' + (pm.isPrivate ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe')"
+                        aria-hidden="true"></i>
+                    </div>
+                  </div>
+                  <!-- Details -->
+                  <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
+                    <div class="flex items-center gap-2 text-gray-400">
+                      <p class="text-[10px] text-gray-500 shrink-0">{{ pm.dayOfWeek }}, {{ pm.time }} &middot; {{ pm.durationMin }}m</p>
+                      @if (pm.hasAiSummary) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-sparkles text-[11px] text-gray-500" role="img" aria-label="AI summary available" title="AI summary available"></i>
+                      }
+                    </div>
+                    <h3 class="text-sm font-semibold text-gray-900 truncate">{{ pm.title }}</h3>
+                    <!-- Meeting pill chips -->
+                    <div class="flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                        <i class="fa-light fa-landmark text-[10px]" aria-hidden="true"></i>
+                        {{ pm.projectName }}
+                      </span>
+                      <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                        <i class="fa-light fa-calendar text-[10px]" aria-hidden="true"></i>
+                        {{ pm.meetingType }}
+                      </span>
+                      @if (pm.isRecurring) {
+                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+                          <i class="fa-light fa-arrows-rotate text-[10px]" aria-hidden="true"></i>
+                          Recurring
+                        </span>
+                      }
+                    </div>
+                    @if (pm.description) {
+                      <p class="text-[10px] text-gray-500 truncate min-w-0">{{ pm.description }}</p>
+                    }
+                  </div>
+                  <!-- Copy button -->
+                  <button
+                    type="button"
+                    class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
+                    aria-label="Copy meeting link"
+                    data-testid="org-group-detail-past-meeting-copy">
+                    <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <!-- Footer -->
+                <div class="flex gap-3 px-4 pb-4 pt-5">
+                  <lfx-button
+                    class="flex-1"
+                    severity="secondary"
+                    size="small"
+                    styleClass="w-full"
+                    label="Meeting details"
+                    [outlined]="true"
+                    icon="fa-light fa-arrow-up-right-from-square text-xs"
+                    data-testid="org-group-detail-past-meeting-details" />
+                  @if (pm.hasRecording) {
+                    <lfx-button
+                      class="flex-1"
+                      severity="success"
+                      size="small"
+                      styleClass="w-full"
+                      label="Watch recording"
+                      icon="fa-light fa-play text-xs"
+                      data-testid="org-group-detail-past-meeting-recording" />
+                  }
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-8" data-testid="org-group-detail-no-past-meeting">
+                <p class="text-sm text-gray-500">No past meetings found</p>
+              </div>
+            }
+          </section>
+        </div>
+      </div>
+    }
+
+    <!-- Non-overview tab panels -->
+    @if (activeTab() !== 'overview') {
+      <div
+        class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-16"
+        [id]="'org-group-detail-panel-' + activeTab()"
+        [attr.aria-labelledby]="'org-group-detail-tab-' + activeTab()"
+        role="tabpanel"
+        data-testid="org-group-detail-coming-soon">
+        <div class="flex flex-col items-center gap-2">
+          <i class="fa-light fa-clock-rotate-left text-3xl text-gray-300" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-gray-500">Coming soon</p>
+          <p class="text-xs text-gray-400">This section is under construction.</p>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- ── Not found ──────────────────────────────────────────────────────── -->
+  @if (!loading() && !detail()) {
+    <div class="flex flex-col items-center justify-center gap-3 py-20" data-testid="org-group-detail-not-found">
+      <i class="fa-light fa-triangle-exclamation text-4xl text-gray-300" aria-hidden="true"></i>
+      <p class="text-base font-medium text-gray-700">Group not found</p>
+      <a routerLink="/org/groups" class="text-sm font-medium text-blue-600 hover:text-blue-700"> Back to Groups </a>
+    </div>
+  }
+</div>

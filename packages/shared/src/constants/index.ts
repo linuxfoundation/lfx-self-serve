@@ -63,6 +63,7 @@ export * from './foundation-projects.constants';
 export * from './marketing-impact.constants';
 export * from './org-people.constants';
 export * from './org-contributions.constants';
+export * from './org-groups.constants';
 export * from './org-people-key-contacts.constants';
 export * from './org-people-board-members.constants';
 export * from './org-people-committee-members.constants';

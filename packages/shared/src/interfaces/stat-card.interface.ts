@@ -15,4 +15,6 @@ export interface StatCardItem {
   icon: string;
   /** Tailwind class string applied to the icon's rounded container (bg + text color). */
   iconContainerClass: string;
+  /** Optional secondary line displayed below the label (e.g., "Across 4 foundations"). */
+  subtext?: string;
 }

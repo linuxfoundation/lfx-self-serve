@@ -165,11 +165,20 @@ export const routes: Routes = [
             pathMatch: 'full',
           },
           {
-            // INFO: Future Epic implementation — the Groups page is hidden; deep links fall
-            // back to the org overview until the org groups feature is built.
             path: 'groups',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            data: {
+              lens: 'org',
+              title: 'Groups',
+              description: 'Groups your organization is a member of across all foundations and projects.',
+              icon: 'fa-light fa-users-rectangle',
+            },
+            loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
+          },
+          {
+            path: 'groups/:groupId',
+            data: { lens: 'org', title: 'Group Detail', description: 'Group overview, meetings, votes, and members.', icon: 'fa-light fa-users-rectangle' },
+            loadComponent: () =>
+              import('./modules/dashboards/org/org-groups/org-group-detail/org-group-detail.component').then((m) => m.OrgGroupDetailComponent),
           },
           {
             path: 'profile',
