@@ -21,6 +21,21 @@ export interface Project {
    *   transiently. Do NOT treat as a definitive role denial.
    */
   meetingCoordinator?: boolean;
+  /**
+   * Response-only marketing access probe fields — present only when the caller
+   * requested marketing access checks (`?marketing_access=true`).
+   *
+   * Each follows the same semantics as `meetingCoordinator`:
+   * - `true`      — FGA check ran and user holds the relation.
+   * - `false`     — FGA check ran; user does not hold the relation.
+   * - `undefined` — check was not requested or failed transiently.
+   *
+   * These are consumed by the Angular marketing guards (LFXV2-2236).
+   * FGA-backed — no ED-persona shortcut.
+   */
+  marketingDashboardViewer?: boolean;
+  campaignViewer?: boolean;
+  campaignManager?: boolean;
   public: boolean;
   parent_uid: string;
   stage: ProjectStage | string;

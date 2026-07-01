@@ -42,4 +42,11 @@ export type AccessCheckResourceType =
   | 'groupsio_service'
   | 'groupsio_mailing_list'
   | 'groupsio_member';
-export type AccessCheckAccessType = 'writer' | 'viewer' | 'organizer' | 'meeting_coordinator';
+export type AccessCheckAccessType =
+  | 'writer'
+  | 'viewer'
+  | 'organizer'
+  | 'meeting_coordinator'
+  | 'marketing_dashboard_viewer'
+  | 'campaign_viewer'
+  | 'campaign_manager';

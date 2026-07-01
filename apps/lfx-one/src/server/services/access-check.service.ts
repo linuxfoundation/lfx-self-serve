@@ -119,6 +119,92 @@ export class AccessCheckService {
   }
 
   /**
+   * Check multiple access types on a single resource in one API call.
+   *
+   * Unlike {@link checkAccess} — which maps its results by `resource.id` only,
+   * causing multiple access types for the same ID to collide (last-write-wins) —
+   * this method operates on a single ID and returns a `Record` keyed by
+   * `AccessCheckAccessType`, so every relation is preserved independently.
+   *
+   * Results are matched positionally to `accessTypes` (same order as the upstream
+   * `/access-check` response), then stored as `record[accessType] = hasAccess`.
+   * Throws on upstream error or result-count mismatch — callers must catch and
+   * decide how to fail (e.g. omit probe fields, return `undefined`, or deny).
+   *
+   * @param req Express request object with auth context
+   * @param resourceType Resource type (e.g. 'project')
+   * @param id Resource unique identifier
+   * @param accessTypes Array of access types to check
+   * @returns Record mapping each access type to its boolean result
+   */
+  public async checkMultipleAccess<T extends AccessCheckAccessType>(
+    req: Request,
+    resourceType: AccessCheckResourceType,
+    id: string,
+    accessTypes: T[]
+  ): Promise<Record<T, boolean>> {
+    const operationName = `check_multiple_access_${resourceType}`;
+    const startTime = logger.startOperation(req, operationName, {
+      resource_type: resourceType,
+      resource_id: id,
+      access_types: accessTypes,
+    });
+
+    const fallback = Object.fromEntries(accessTypes.map((a) => [a, false])) as Record<T, boolean>;
+
+    if (accessTypes.length === 0) {
+      return fallback;
+    }
+
+    try {
+      const apiRequests = accessTypes.map((access) => `${resourceType}:${id}#${access}`);
+      const requestPayload: AccessCheckApiRequest = { requests: apiRequests };
+
+      const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        '/access-check',
+        'POST',
+        undefined,
+        requestPayload
+      );
+
+      if (response.results.length !== accessTypes.length) {
+        throw new Error(`access-check result count mismatch: expected ${accessTypes.length}, received ${response.results.length}`);
+      }
+
+      const result = { ...fallback };
+
+      for (let i = 0; i < accessTypes.length; i++) {
+        const access = accessTypes[i];
+        const resultString = response.results[i];
+        let hasAccess = false;
+
+        if (resultString && typeof resultString === 'string') {
+          const parts = resultString.split('\t');
+          if (parts.length >= 2) {
+            hasAccess = parts[1]?.toLowerCase() === 'true';
+          }
+        }
+
+        result[access] = hasAccess;
+      }
+
+      logger.success(req, operationName, startTime, {
+        resource_id: id,
+        granted: accessTypes.filter((a) => result[a]),
+      });
+
+      return result;
+    } catch (error) {
+      logger.error(req, operationName, startTime, error, {
+        resource_id: id,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Add writer access field to multiple resources automatically
    * @param req Express request object with auth context
    * @param resources Array of resource objects with uid or id field

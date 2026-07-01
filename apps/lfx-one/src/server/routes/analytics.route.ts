@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
+import { requireProjectAccess } from '../middleware/require-project-access.middleware';
 
 const router = Router();
 
@@ -137,21 +138,25 @@ router.get('/org-involvement-event-attendance-monthly', (req, res, next) => anal
 router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
+// Marketing Impact endpoints — require marketing_dashboard_viewer FGA relation.
+// See LFXV2-2235. Enforcement is flag-gated (MARKETING_ACCESS_ENFORCEMENT=true).
+const requireMarketingDashboardViewer = requireProjectAccess('marketing_dashboard_viewer');
+
 // Web activities summary endpoint (marketing dashboard)
-router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
+router.get('/web-activities-summary', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
 
 // Email CTR endpoint (marketing dashboard)
-router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req, res, next));
+router.get('/email-ctr', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getEmailCtr(req, res, next));
 
 // Social reach endpoint (marketing dashboard)
-router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
+router.get('/social-reach', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
 // Keyword performance endpoint (marketing dashboard)
-router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+router.get('/keyword-performance', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
 
 // Social media endpoints (marketing dashboard)
-router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
-router.get('/social-media/monthly', (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
+router.get('/social-media', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
@@ -187,8 +192,8 @@ router.get('/board-meeting-participation-summary', (req, res, next) => analytics
 router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
 router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
-router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
-router.get('/marketing-attribution', (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
+router.get('/revenue-impact', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+router.get('/marketing-attribution', requireMarketingDashboardViewer, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
 // Multi-foundation summary endpoint (multi-foundation dashboard)
 router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
