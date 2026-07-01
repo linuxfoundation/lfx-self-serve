@@ -17,6 +17,7 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -87,6 +88,7 @@ export class VoteResultsDrawerComponent {
   protected readonly closeDateDisplay: Signal<{ chip: string; absolute: string; isCountdown: boolean }> = this.initCloseDateDisplay();
   /** One-line plain-English explainer for each vote type, shown on hover of the voter header pill. */
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
+  protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -409,6 +411,18 @@ export class VoteResultsDrawerComponent {
         case PollType.MEEK_STV:
           return 'Voters rank options; multi-winner proportional method that transfers surplus and eliminated ballots.';
       }
+    });
+  }
+
+  private initVoteEndedEarlyTooltip(): Signal<string | null> {
+    return computed(() => {
+      const voteData = this.vote();
+      if (!voteData || !isVoteEndedEarly(voteData) || !voteData.early_end_time) {
+        return null;
+      }
+
+      const formattedEarlyClose = formatDate(voteData.early_end_time, 'MMM d, y', 'en-US');
+      return getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     });
   }
 }
