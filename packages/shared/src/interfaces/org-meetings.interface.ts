@@ -77,6 +77,7 @@ export interface OrgMeetingBase {
   readonly startTime: string;
   readonly endTime: string;
   readonly foundation: string;
+  readonly orgName: string;
   readonly project: string;
   readonly agenda: string | null;
   readonly resources: readonly string[];
