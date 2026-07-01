@@ -44,7 +44,7 @@ All TypeScript interfaces **and type aliases** live in this package — **includ
 - File suffix: `.interface.ts`; one domain per file (e.g. `meeting.interface.ts` owns all meeting-shaped types).
 - Prefer `interface` over union types where it makes the shape extensible.
 - Add JSDoc for non-obvious fields (especially ones that mirror upstream Go/Goa API shapes).
-- **Type aliases live here too, including derived aliases** such as `type Foo = (typeof BAR)[keyof typeof BAR]`. The alias belongs in the interface file even when the `BAR` constant it derives from lives in a constants file — import the constant into the `.interface.ts` to derive the alias. (This is a type-only import in a values-only file, so it introduces no runtime cycle.)
+- **Type aliases live here too, including derived aliases** such as `type Foo = (typeof BAR)[keyof typeof BAR]`. The alias belongs in the interface file even when the `BAR` constant it derives from lives in a constants file — import the constant into the `.interface.ts` to derive the alias. (The constant is used only in a type position via `typeof`, so the import is erased at compile time and creates no runtime dependency cycle.)
 
 ### Constants (`constants/`)
 
