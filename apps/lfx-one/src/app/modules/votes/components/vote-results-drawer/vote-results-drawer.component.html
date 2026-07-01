@@ -87,7 +87,7 @@
             @if (isVoteClosed()) {
               <span class="inline-flex items-center gap-1">
                 <span>Closed {{ voteCloseTime() | date: 'MMM d, y' }}</span>
-                @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
+                @if (showEndedEarlyInfo() && voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
                     class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
