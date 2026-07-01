@@ -28,6 +28,7 @@ export class NewsletterReviewComponent {
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
+  public readonly canPreview = input<boolean>(false);
   public readonly sending = input<boolean>(false);
   public readonly testSending = input<boolean>(false);
   public readonly deleting = input<boolean>(false);

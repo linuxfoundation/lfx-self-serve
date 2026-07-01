@@ -143,6 +143,8 @@ export class NewsletterManageComponent {
   private readonly committeeUidsValue = signal<string[]>([]);
   private readonly subjectValue = signal<string>('');
   private readonly bodyLayoutValue = signal<NewsletterLayout | null>(null);
+  // Server-rendered body_html, synced back after each save (render-on-write).
+  private readonly bodyHtmlValue = signal<string>('');
 
   // === Save dedup ===
   private readonly lastSavedSnapshot = signal<{ subject: string; bodyLayout: string; committeeUids: string[] } | null>(null);
@@ -154,13 +156,22 @@ export class NewsletterManageComponent {
 
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
-  public readonly bodyFilled = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
+  // Content exists as either composed blocks (new drafts) or raw body_html
+  // (drafts authored before the composer landed) — either keeps a draft sendable.
+  public readonly bodyFilled = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0 || this.bodyHtmlValue().trim().length > 0);
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
+  // body_html is server-derived, so it only reflects the canvas once a save has
+  // completed and synced it back. bodyRendered/isDirty gate the surfaces that
+  // consume body_html (preview, test-send, send) so none acts on stale or empty
+  // HTML — e.g. a test email must never go out with an unrendered body.
+  private readonly bodyRendered = computed(() => this.bodyHtmlValue().trim().length > 0);
+  private readonly isDirty = computed(() => this.computeIsDirty());
+  public readonly canPreview = computed(() => this.bodyRendered() && !this.isDirty());
   public readonly canSend = computed(
-    () => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.hasContext() && !this.submitting() && !this.resolvingSend()
+    () => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && !this.isDirty() && this.hasContext() && !this.submitting() && !this.resolvingSend()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
+    () => this.subjectFilled() && this.bodyRendered() && !this.isDirty() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
   );
   public readonly canProceed = computed(() => this.computeCanProceed(this.currentStep()));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
@@ -609,6 +620,11 @@ export class NewsletterManageComponent {
     this.committeeUidsValue.set(committeeUids);
     this.subjectValue.set(subject);
     this.bodyLayoutValue.set(bodyLayout);
+    this.bodyHtmlValue.set(bodyHtml);
+    // A freshly loaded draft matches the server, so seed the saved snapshot —
+    // otherwise isDirty would read true on reopen and gate preview/send off until
+    // the first autosave.
+    this.recordSavedSnapshot({ subject, bodyLayout: this.serializeLayout(bodyLayout), committeeUids });
     this.fetchRecipientCountFor(committeeUids);
   }
 
@@ -648,8 +664,23 @@ export class NewsletterManageComponent {
     );
   }
 
+  // Reactive dirty check for the gate computeds: compares the mirrored form state
+  // against the last saved snapshot. Distinct from snapshotMatchesLastSaved, which
+  // reads form.controls directly for the imperative save path.
+  private computeIsDirty(): boolean {
+    const saved = this.lastSavedSnapshot();
+    if (!saved) return true;
+    return !(
+      saved.subject === this.subjectValue() &&
+      saved.bodyLayout === this.serializeLayout(this.bodyLayoutValue()) &&
+      this.uidsEqual(saved.committeeUids, this.committeeUidsValue())
+    );
+  }
+
   // body_html is server-derived, so dedup on the authored body_layout instead —
   // otherwise composer edits (which don't touch body_html until save) never save.
+  // Relies on the composer emitting a stable key order: content-equal layouts must
+  // serialize identically for the dedup and isDirty checks to hold.
   private serializeLayout(layout: NewsletterLayout | null): string {
     return JSON.stringify(layout ?? null);
   }
@@ -657,7 +688,9 @@ export class NewsletterManageComponent {
   // Keep body_html in sync with the server-rendered output so the preview drawer
   // and test-send use the authoritative MJML render derived from body_layout.
   private syncDerivedBodyHtml(draft: Newsletter): void {
-    this.form.controls.bodyHtml.setValue(draft.body_html ?? '', { emitEvent: false });
+    const bodyHtml = draft.body_html ?? '';
+    this.form.controls.bodyHtml.setValue(bodyHtml, { emitEvent: false });
+    this.bodyHtmlValue.set(bodyHtml);
   }
 
   private uidsEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {

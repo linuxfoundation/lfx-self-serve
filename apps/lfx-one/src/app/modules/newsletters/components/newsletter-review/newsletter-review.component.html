@@ -123,6 +123,7 @@
           severity="secondary"
           [text]="true"
           size="small"
+          [disabled]="!canPreview()"
           (onClick)="preview.emit()"
           data-testid="newsletter-review-preview-btn">
         </lfx-button>

@@ -38,6 +38,7 @@
         [edEmail]="edEmail()"
         [canSend]="canSend()"
         [canSendTest]="canSendTest()"
+        [canPreview]="canPreview()"
         [sending]="submitting()"
         [testSending]="testSending()"
         [deleting]="deletingDraft()"
@@ -131,6 +132,7 @@
                   [outlined]="true"
                   [text]="true"
                   size="small"
+                  [disabled]="!canPreview()"
                   (onClick)="openPreviewDrawer()"
                   data-testid="newsletter-manage-preview-btn">
                 </lfx-button>

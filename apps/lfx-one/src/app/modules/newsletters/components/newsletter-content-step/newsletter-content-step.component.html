@@ -20,9 +20,10 @@
   </div>
 
   <div class="flex flex-col gap-2 flex-1">
-    <label class="text-sm font-medium text-gray-700">Body</label>
+    <span id="newsletter-body-label" class="text-sm font-medium text-gray-700">Body</span>
     <lfx-newsletter-block-composer
       ngSkipHydration
+      aria-labelledby="newsletter-body-label"
       [initialLayout]="initialLayout()"
       (layoutChange)="onLayoutChange($event)"
       data-testid="newsletter-content-composer">

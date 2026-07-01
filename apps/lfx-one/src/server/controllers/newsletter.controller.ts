@@ -5,6 +5,7 @@ import { NEWSLETTER_RAW_CONTENT_MAX_LENGTH, NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH 
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
+  NewsletterLayout,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
   NewsletterStatus,
@@ -362,7 +363,11 @@ export class NewsletterController {
     return newsletterUid;
   }
 
-  private validateCommonPayload(payload: { subject?: string; body_html?: string; ed_reply_email?: string }, path: string, operation: string): void {
+  private validateCommonPayload(
+    payload: { subject?: string; body_html?: string; body_layout?: NewsletterLayout | null; ed_reply_email?: string },
+    path: string,
+    operation: string
+  ): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
@@ -371,9 +376,14 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+    // The body may arrive as raw HTML or as a structured block layout. The
+    // newsletter service renders body_layout to body_html on write, so an empty
+    // body_html is acceptable as long as a non-empty layout accompanies it.
+    const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
+    const hasBodyLayout = !!payload?.body_layout && Array.isArray(payload.body_layout.blocks) && payload.body_layout.blocks.length > 0;
+    if (!hasBodyHtml && !hasBodyLayout) {
       fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+    } else if (typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
     }
 
