@@ -45,8 +45,10 @@ export class CertificateService {
 
     const eventRow = await this.getEventRow(req, data.eventId, data.userEmail);
 
-    // Certificates are only issued for events the user actually attended (USER_ATTENDED = 1).
-    if (eventRow.USER_ATTENDED !== 1) {
+    // Certificates are only issued for events the user actually attended. Use a truthy
+    // check to mirror mapRowToEvent's status derivation so the UI gate and this API gate
+    // never diverge, regardless of whether Snowflake returns USER_ATTENDED as 1 or true.
+    if (!eventRow.USER_ATTENDED) {
       throw new AuthorizationError('Certificate is only available for events you attended', {
         operation: 'generate_certificate',
         service: 'certificate_service',
