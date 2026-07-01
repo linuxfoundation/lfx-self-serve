@@ -86,8 +86,8 @@
         [initiative]="initiative()" />
     }
 
-    <!-- Footer actions — hidden on announcements tab, which manages its own save flow -->
-    @if (activeSettingsTab() !== 'announcements') {
+    <!-- Footer actions — hidden on tabs that manage their own inline save flow -->
+    @if (!activeTab()?.savesInline) {
       <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
         <lfx-button label="Cancel" severity="secondary" [disabled]="saving()" (onClick)="onClose()" data-testid="initiative-settings-cancel-btn" />
         <lfx-button

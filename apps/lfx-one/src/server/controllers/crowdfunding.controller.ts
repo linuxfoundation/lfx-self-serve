@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES } from '@lfx-one/shared/constants';
 import { CreateAnnouncementInput, CrowdfundingInitiativeStatus, UpdateAnnouncementInput, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
@@ -447,7 +448,9 @@ export class CrowdfundingController {
       const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
 
       if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'create_announcement' });
-      if (!description) throw ServiceValidationError.forField('description', 'description is required', { operation: 'create_announcement' });
+      if (!description || !stripHtml(description)) {
+        throw ServiceValidationError.forField('description', 'description is required', { operation: 'create_announcement' });
+      }
 
       const input: CreateAnnouncementInput = { title, description };
       const announcement = await this.crowdfundingService.createAnnouncement(req, id, input);
@@ -477,7 +480,9 @@ export class CrowdfundingController {
       const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
 
       if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'update_announcement' });
-      if (!description) throw ServiceValidationError.forField('description', 'description is required', { operation: 'update_announcement' });
+      if (!description || !stripHtml(description)) {
+        throw ServiceValidationError.forField('description', 'description is required', { operation: 'update_announcement' });
+      }
 
       const input: UpdateAnnouncementInput = { title, description };
       const announcement = await this.crowdfundingService.updateAnnouncement(req, id, announcementId, input);

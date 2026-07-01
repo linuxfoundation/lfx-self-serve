@@ -7,7 +7,7 @@ import { filter, firstValueFrom } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ButtonComponent } from '@components/button/button.component';
-import { ANNOUNCEMENTS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { ANNOUNCEMENT_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -43,15 +43,19 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly activeSettingsTab = signal<string>('details');
   protected readonly saving = signal(false);
 
-  protected readonly announcementsEnabled = this.featureFlagService.getBooleanFlag(ANNOUNCEMENTS_ENABLED_FLAG, false);
+  protected readonly announcementsEnabled = this.featureFlagService.getBooleanFlag(ANNOUNCEMENT_ENABLED_FLAG, false);
 
   protected readonly settingsTabs: Signal<TabOption<string>[]> = computed(() => [
     { value: 'details', label: 'Initiative details' },
     { value: 'branding', label: 'Branding' },
     { value: 'beneficiaries', label: 'Beneficiaries' },
     { value: 'funding', label: 'Funding' },
-    ...(this.announcementsEnabled() ? [{ value: 'announcements', label: 'Announcements' }] : []),
+    ...(this.announcementsEnabled() ? [{ value: 'announcements', label: 'Announcements', savesInline: true }] : []),
   ]);
+
+  protected readonly activeTab: Signal<TabOption<string> | undefined> = computed(() =>
+    this.settingsTabs().find((tab) => tab.value === this.activeSettingsTab())
+  );
 
   private readonly detailsTab = viewChild.required(SettingsDetailsTabComponent);
   private readonly brandingTab = viewChild.required(SettingsBrandingTabComponent);

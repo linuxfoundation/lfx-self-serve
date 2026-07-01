@@ -12,6 +12,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { Announcement, InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 @Component({
@@ -36,12 +37,12 @@ export class SettingsAnnouncementsTabComponent {
 
   protected readonly addForm = new FormGroup({
     title: new FormControl('', [Validators.required, Validators.maxLength(200)]),
-    description: new FormControl('', [Validators.required]),
+    description: new FormControl('', [htmlRequiredValidator()]),
   });
 
   protected readonly editForm = new FormGroup({
     title: new FormControl('', [Validators.required, Validators.maxLength(200)]),
-    description: new FormControl('', [Validators.required]),
+    description: new FormControl('', [htmlRequiredValidator()]),
   });
 
   public constructor() {
