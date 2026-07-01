@@ -180,8 +180,3 @@ export interface BackendAnnouncement {
   created_on: string;
   updated_on: string;
 }
-
-export interface BackendAnnouncementList {
-  data: BackendAnnouncement[];
-  meta: { total: number; limit: number; offset: number };
-}
