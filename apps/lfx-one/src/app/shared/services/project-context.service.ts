@@ -6,8 +6,8 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { isBoardScopedPersona, ProjectContext } from '@lfx-one/shared/interfaces';
-import { isSameProjectContext } from '@lfx-one/shared/utils';
+import { ProjectContext } from '@lfx-one/shared/interfaces';
+import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
 

@@ -1,9 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { REWARD_STEP_SIZE } from '@lfx-one/shared/constants';
+import { REWARD_CATEGORIES, REWARD_STEP_SIZE } from '@lfx-one/shared/constants';
 import {
-  REWARD_CATEGORIES,
   RewardCouponGenerationResponse,
   RewardPromotion,
   RewardPromotionCategory,
