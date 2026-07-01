@@ -253,7 +253,7 @@
                   </div>
                   @if (technicalBoard().length === 0) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-technical-empty">
-                      {{ techSearch().trim() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                      {{ techSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table
@@ -330,7 +330,7 @@
                   </div>
                   @if (ecosystemBoard().length === 0) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-ecosystem-empty">
-                      {{ ecoSearch().trim() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                      {{ ecoSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table

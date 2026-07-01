@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, ElementRef, inject, input, output, PLATFORM_ID, QueryList, ViewChildren } from '@angular/core';
+import { Component, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
 import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgLensProjectDetailTab } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -14,7 +14,7 @@ import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgLensProj
   templateUrl: './org-project-detail-tab-bar.component.html',
 })
 export class OrgProjectDetailTabBarComponent {
-  @ViewChildren('tabBtn') private readonly tabBtns!: QueryList<ElementRef<HTMLButtonElement>>;
+  private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -42,7 +42,7 @@ export class OrgProjectDetailTabBarComponent {
       this.tabChange.emit(ids[next]);
       if (isPlatformBrowser(this.platformId)) {
         const n = next;
-        setTimeout(() => this.tabBtns.get(n)?.nativeElement.focus());
+        setTimeout(() => this.tabBtns()[n]?.nativeElement.focus());
       }
     }
   }

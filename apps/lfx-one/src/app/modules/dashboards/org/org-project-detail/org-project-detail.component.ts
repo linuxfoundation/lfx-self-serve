@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, effect, ElementRef, inject, PLATFORM_ID, signal, type Signal, ViewChild } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -84,8 +84,8 @@ function bandForScore(score: number): OrgLensProjectBand {
   templateUrl: './org-project-detail.component.html',
 })
 export class OrgProjectDetailComponent {
-  @ViewChild('technicalTrack') private techTrackRef?: ElementRef<HTMLElement>;
-  @ViewChild('ecosystemTrack') private ecoTrackRef?: ElementRef<HTMLElement>;
+  private readonly techTrackRef = viewChild<ElementRef<HTMLElement>>('technicalTrack');
+  private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
   private readonly detailService = inject(OrgLensProjectDetailService);
@@ -177,6 +177,8 @@ export class OrgProjectDetailComponent {
   protected readonly drawerTimeRangeLabel = computed(() => `Last ${TIME_RANGE_MONTHS[this.timeRange()]} months`);
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
+  protected readonly techSearchHasQuery = computed(() => this.techSearch().trim().length > 0);
+  protected readonly ecoSearchHasQuery = computed(() => this.ecoSearch().trim().length > 0);
   protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
   protected readonly ecosystemBoard = computed(() => this.buildBoard('ecosystem', this.ecoSearch()));
 
@@ -185,21 +187,28 @@ export class OrgProjectDetailComponent {
   protected readonly stackedTrendData = computed<ChartData<ChartType>>(() => this.buildStackedTrend());
   protected readonly stackedTrendOptions: ChartOptions<ChartType> = this.buildStackedTrendOptions();
 
-  // After cards populate (async data load), check whether each track is actually scrollable.
-  private readonly _scrollEffect = effect(() => {
-    const tab = this.activeTab();
-    const techLen = this.technicalCards().length;
-    const ecoLen = this.ecosystemCards().length;
-    if (tab !== 'pd-influence') return;
-    if (techLen === 0 && ecoLen === 0) return;
-    Promise.resolve().then(() => {
-      this.refreshArrows(this.techTrackRef?.nativeElement, true);
-      this.refreshArrows(this.ecoTrackRef?.nativeElement, false);
-    });
-  });
-
   // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
+
+  constructor() {
+    // React when tab or card counts change to refresh horizontal scroll arrows.
+    toObservable(
+      computed(() => ({
+        tab: this.activeTab(),
+        techLen: this.technicalCards().length,
+        ecoLen: this.ecosystemCards().length,
+      }))
+    )
+      .pipe(
+        filter(({ tab, techLen, ecoLen }) => tab === 'pd-influence' && (techLen > 0 || ecoLen > 0)),
+        switchMap(() => Promise.resolve()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.refreshArrows(this.techTrackRef()?.nativeElement, true);
+        this.refreshArrows(this.ecoTrackRef()?.nativeElement, false);
+      });
+  }
 
   protected switchTab(tab: OrgLensProjectDetailTab): void {
     if (this.activeTab() === tab) return;
@@ -274,18 +283,23 @@ export class OrgProjectDetailComponent {
    * Returns all matching rows — the paginator handles slicing.
    */
   private buildBoard(dimension: LeaderboardDimension, search: string) {
-    const valued = (this.detail()?.leaderboard ?? []).map((row) => ({ row, score: row.scores[dimension] }));
-    valued.sort((a, b) => b.score - a.score || a.row.orgName.localeCompare(b.row.orgName));
+    const isActivity = this.metric() === 'activity';
+    const valued = (this.detail()?.leaderboard ?? []).map((row) => ({
+      row,
+      score: row.scores[dimension],
+      sortKey: isActivity ? row.activityCount : row.scores[dimension],
+    }));
+    valued.sort((a, b) => b.sortKey - a.sortKey || a.row.orgName.localeCompare(b.row.orgName));
     const ranked = valued.map((entry, i) => {
-      const bandMeta = BAND_TAG[bandForScore(entry.score)];
+      const bandMeta = isActivity ? null : BAND_TAG[bandForScore(entry.score)];
       return {
         rank: i + 1,
         orgName: entry.row.orgName,
         orgLogoUrl: entry.row.orgLogoUrl,
         initials: this.initialsFor(entry.row.orgName),
         activityLabel: entry.row.activityCount.toLocaleString(),
-        bandLabel: bandMeta.label,
-        bandSeverity: bandMeta.severity,
+        bandLabel: bandMeta?.label ?? '',
+        bandSeverity: bandMeta?.severity ?? 'secondary',
         isViewingOrg: entry.row.isViewingOrg,
       };
     });

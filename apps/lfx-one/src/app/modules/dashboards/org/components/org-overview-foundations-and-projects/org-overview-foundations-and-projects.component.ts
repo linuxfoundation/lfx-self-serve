@@ -128,7 +128,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected onProjectRowClick(project: OrgLensFoundationRow['projects'][number]): void {
     if (!project.isLfProject) return;
     this.onProjectClick({ projectId: project.projectId, projectName: project.projectName });
-    void this.router.navigate(['/org/projects', project.projectSlug]);
+    void this.router.navigate(['/org/projects', project.projectSlug || project.projectId]);
   }
 
   protected onProjectRowKeydown(event: KeyboardEvent, project: OrgLensFoundationRow['projects'][number]): void {
