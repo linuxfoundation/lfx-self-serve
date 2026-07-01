@@ -6,6 +6,7 @@ import { EventsService } from '@app/shared/services/events.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { take } from 'rxjs/operators';
@@ -58,6 +59,10 @@ export class EventsTableComponent {
       EVENT_CITY: getIcon('EVENT_CITY'),
     };
   });
+
+  protected canDownloadCertificate(status: string): boolean {
+    return status === MY_EVENT_STATUS.ATTENDED;
+  }
 
   protected onPageChange(event: { first: number; rows: number }): void {
     this.pageChange.emit({ offset: event.first, pageSize: event.rows });

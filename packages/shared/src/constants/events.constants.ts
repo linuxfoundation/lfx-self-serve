@@ -31,6 +31,19 @@ export const MY_EVENT_STATUS_OPTIONS: FilterOption[] = [
   { label: 'Not Registered', value: 'not-registered' },
 ];
 
+/**
+ * Canonical display values for a user's My Events registration status.
+ * Derived server-side in EventsService.mapRowToEvent and consumed by the UI
+ * (status tag + Download Certificate gating). Keep in sync with the table's statusSeverityMap.
+ */
+export const MY_EVENT_STATUS = {
+  ATTENDED: 'Attended',
+  REGISTERED: 'Registered',
+  NOT_REGISTERED: 'Not Registered',
+} as const;
+
+export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
+
 export const VISA_REQUEST_STATUS_OPTIONS: FilterOption[] = [
   { label: 'All Statuses', value: null },
   { label: 'Submitted', value: 'Submitted' },

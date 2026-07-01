@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { PDFTemplateDetails, CertificateData, CertificateEventRow } from '@lfx-one/shared/interfaces';
@@ -44,6 +44,15 @@ export class CertificateService {
     });
 
     const eventRow = await this.getEventRow(req, data.eventId, data.userEmail);
+
+    // Certificates are only issued for events the user actually attended (USER_ATTENDED = 1).
+    if (eventRow.USER_ATTENDED !== 1) {
+      throw new AuthorizationError('Certificate is only available for events you attended', {
+        operation: 'generate_certificate',
+        service: 'certificate_service',
+      });
+    }
+
     const template = PROJECT_TEMPLATES[eventRow.PROJECT_ID] ?? DEFAULT_TEMPLATE;
 
     logger.debug(req, 'generate_certificate', 'Building PDF', {
@@ -63,7 +72,8 @@ export class CertificateService {
         EVENT_LOCATION,
         EVENT_CITY,
         EVENT_COUNTRY,
-        PROJECT_ID
+        PROJECT_ID,
+        USER_ATTENDED
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
       WHERE EVENT_ID = ?
         AND USER_EMAIL = ?

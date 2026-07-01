@@ -297,6 +297,8 @@ export interface CertificateEventRow {
   EVENT_CITY: string | null;
   EVENT_COUNTRY: string | null;
   PROJECT_ID: string;
+  /** Attendance flag (1 = attended); certificates are only issued for attended events */
+  USER_ATTENDED: number | null;
 }
 
 export interface CertificateData {
