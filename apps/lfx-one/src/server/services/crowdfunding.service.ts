@@ -23,7 +23,6 @@ import { Request } from 'express';
 
 import {
   BackendAnnouncement,
-  BackendAnnouncementList,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
   BackendDonation,
