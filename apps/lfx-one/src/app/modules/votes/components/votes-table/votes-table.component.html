@@ -137,6 +137,7 @@
                     @if (showEndedEarlyInfo() && voteEndedEarlyDetailTooltip(vote); as earlyCloseTooltip) {
                       <button
                         type="button"
+                        (click)="$event.stopPropagation()"
                         class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                         [pTooltip]="earlyCloseTooltip"
                         tooltipEvent="both"

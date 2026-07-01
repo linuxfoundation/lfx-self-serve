@@ -36,10 +36,6 @@ export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
 
-  // === Constants ===
-  protected readonly PollStatus = PollStatus;
-  protected readonly isVoteEndedEarly = isVoteEndedEarly;
-
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);

@@ -60,7 +60,6 @@ export class VotesTableComponent {
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
-  protected readonly isVoteEndedEarly = isVoteEndedEarly;
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
