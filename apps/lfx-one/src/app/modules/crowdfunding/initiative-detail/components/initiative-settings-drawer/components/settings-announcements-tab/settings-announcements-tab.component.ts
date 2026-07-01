@@ -103,7 +103,9 @@ export class SettingsAnnouncementsTabComponent {
     this.saving.set(true);
     try {
       const { title, description } = this.editForm.value as { title: string; description: string };
-      const updated = await firstValueFrom(this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, { title, description }), { defaultValue: null });
+      const updated = await firstValueFrom(this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, { title, description }), {
+        defaultValue: null,
+      });
       if (!updated) return;
       this.announcements.update((list) => list.map((item) => (item.id === a.id ? { ...item, ...updated } : item)));
       this.editingId.set(null);
@@ -131,7 +133,9 @@ export class SettingsAnnouncementsTabComponent {
   private async runDelete(a: Announcement): Promise<void> {
     this.saving.set(true);
     try {
-      const deleted = await firstValueFrom(this.crowdfundingService.deleteAnnouncement(this.initiative().id, a.id).pipe(map(() => true)), { defaultValue: false });
+      const deleted = await firstValueFrom(this.crowdfundingService.deleteAnnouncement(this.initiative().id, a.id).pipe(map(() => true)), {
+        defaultValue: false,
+      });
       if (!deleted) return;
       this.announcements.update((list) => list.filter((item) => item.id !== a.id));
       if (this.editingId() === a.id) this.editingId.set(null);
