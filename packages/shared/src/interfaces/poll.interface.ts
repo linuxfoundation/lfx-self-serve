@@ -221,6 +221,12 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
+export interface VoteTableRow extends Vote {
+  closeTime: string;
+  endedEarlyTooltip: string | null;
+}
+
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */
 export interface IndexedVote extends Omit<Vote, 'uid'> {
   vote_uid: string;
