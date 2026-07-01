@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<main class="flex flex-col gap-6 p-6" data-testid="org-meetings-page">
+  <!-- Page header -->
+  <header class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold text-gray-900">Meetings</h1>
+    <p class="text-sm text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance across your foundations.</p>
+  </header>
+
+  <!-- KPI strip -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-kpi-strip">
+    <div class="grid w-full grid-cols-1 divide-y divide-gray-200 md:grid-cols-2 md:divide-x md:divide-y-0">
+      @for (card of kpiCards(); track card.label) {
+        <div class="flex items-center gap-3 p-4">
+          <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
+            <i [class]="card.icon + ' text-xl'" aria-hidden="true"></i>
+          </div>
+          <div class="flex flex-col gap-0.5">
+            @if (loading()) {
+              <p class="text-xl font-medium text-gray-400">&mdash;</p>
+            } @else {
+              <p class="text-xl font-medium text-gray-900">{{ card.value }}</p>
+            }
+            <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
+          </div>
+        </div>
+      }
+    </div>
+  </lfx-card>
+
+  <!-- Filter bar — standalone card matching app.lfx.dev/meetings -->
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-filter-bar">
+    <div class="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center">
+      <!-- Tab pills (no counts — matches live site) -->
+      <div class="flex items-center gap-1 flex-shrink-0" data-testid="org-meetings-tab-bar">
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            [class]="
+              activeTab() === tab.id
+                ? 'rounded-full px-3 py-1.5 text-sm font-medium bg-blue-600 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+                : 'rounded-full px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+            "
+            [attr.aria-pressed]="activeTab() === tab.id"
+            [attr.data-testid]="'org-meetings-tab-' + tab.id"
+            (click)="switchTab(tab.id)">
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+
+      <!-- Search fills center, pushing filters to the right -->
+      <div class="flex-1">
+        <label for="org-meetings-search-id" class="sr-only">Search meetings</label>
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          id="org-meetings-search-id"
+          placeholder="Search meetings..."
+          icon="fa-light fa-magnifying-glass"
+          styleClass="w-full"
+          data-testid="org-meetings-search" />
+      </div>
+
+      <!-- All Projects — right-aligned -->
+      <label for="org-meetings-project-filter-id" class="sr-only">Filter by project</label>
+      <lfx-select
+        [form]="filterForm"
+        control="project"
+        [options]="projectOptions"
+        placeholder="All Projects"
+        inputId="org-meetings-project-filter-id"
+        ariaLabel="Filter by project"
+        [showClear]="true"
+        data-testid="org-meetings-project-filter" />
+
+      <!-- All Types — right-aligned -->
+      <label for="org-meetings-type-filter-id" class="sr-only">Filter by meeting type</label>
+      <lfx-select
+        [form]="filterForm"
+        control="type"
+        [options]="typeOptions"
+        placeholder="All Types"
+        inputId="org-meetings-type-filter-id"
+        ariaLabel="Filter by meeting type"
+        [showClear]="true"
+        data-testid="org-meetings-type-filter" />
+    </div>
+  </lfx-card>
+
+  <!-- Tab content — each sub-component renders its own bordered cards with gap -->
+  @if (activeTab() === 'upcoming') {
+    <lfx-org-upcoming-meetings [meetings]="filteredUpcoming()" [loading]="loading()" data-testid="org-meetings-upcoming-tab" />
+  }
+  @if (activeTab() === 'past') {
+    <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="loading()" data-testid="org-meetings-past-tab" />
+  }
+</main>
