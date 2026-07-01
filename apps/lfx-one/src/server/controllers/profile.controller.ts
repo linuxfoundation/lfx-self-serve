@@ -1794,14 +1794,17 @@ export class ProfileController {
         if (response.error?.includes('already linked')) {
           // Upstream auth-service emits the "already linked" error without identifying the
           // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
+          // The resolved account is logged for support/debugging only — never returned to the
+          // client, so we don't expose another user's LFID.
           const linkedTo =
             (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
 
-          const message = linkedTo
-            ? `This email is already linked to account: ${linkedTo}`
-            : response.message || 'This email is already linked to another account';
+          logger.warning(req, 'send_email_verification', 'Email already linked to another account', {
+            email,
+            linked_to: linkedTo,
+          });
 
-          res.status(409).json({ success: false, error: response.error, message, linkedTo });
+          res.status(409).json({ success: false, error: response.error, message: 'This email is already linked to another account' });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
         } else {
@@ -1918,7 +1921,8 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (linkResponse.error?.includes('already linked')) {
-          res.status(409).json({ success: false, error: linkResponse.error, message: linkResponse.message });
+          // Never forward the upstream message here — it could name the owning account.
+          res.status(409).json({ success: false, error: linkResponse.error, message: 'This email is already linked to another account' });
         } else if (linkResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: linkResponse.error, message: linkResponse.message });
         } else {
