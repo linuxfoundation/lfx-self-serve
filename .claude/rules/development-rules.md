@@ -24,6 +24,7 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 - Use TypeScript interfaces instead of union types for better maintainability
 - Shared package uses direct source imports during development for hot reloading
 - All interfaces, reusable constants, and enums should live in the shared package
+- Types live in `interfaces/`, values live in `constants/`: `export type` (including derived aliases like `type Foo = (typeof BAR)[keyof typeof BAR]`) belongs in a `.interface.ts`; constants files export runtime values only. A derived alias goes in the interface file even when its source constant lives in `constants/` (import the constant to derive it)
 
 ## AI Service
 
