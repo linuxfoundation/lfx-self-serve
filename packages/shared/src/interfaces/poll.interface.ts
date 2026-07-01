@@ -223,7 +223,6 @@ export interface Vote {
 
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
-  closeTime: string;
   endedEarlyTooltip: string | null;
 }
 

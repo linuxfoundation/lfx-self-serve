@@ -17,7 +17,7 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { getVoteCloseTime, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -41,8 +41,6 @@ export class VoteResultsDrawerComponent {
   public readonly listVote = input<Vote | null>(null);
   /** Selects the voter-blind panel (B/C/D states, no live tallies, no creator note) when 'voter'; defaults to the unchanged creator UI. The /me/votes dashboard passes 'voter'. */
   public readonly audience = input<'voter' | 'creator'>('creator');
-  /** Early-end info icon beside Closed date — management lenses only; Me lens voters see plain Closed. */
-  public readonly showEndedEarlyInfo = input<boolean>(true);
 
   // === Outputs ===
   public readonly castVoteRequested = output<string>();
@@ -90,7 +88,6 @@ export class VoteResultsDrawerComponent {
   protected readonly closeDateDisplay: Signal<{ chip: string; absolute: string; isCountdown: boolean }> = this.initCloseDateDisplay();
   /** One-line plain-English explainer for each vote type, shown on hover of the voter header pill. */
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
-  protected readonly voteCloseTime: Signal<string | null> = this.initVoteCloseTime();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
 
   // === Protected Methods ===
@@ -414,13 +411,6 @@ export class VoteResultsDrawerComponent {
         case PollType.MEEK_STV:
           return 'Voters rank options; multi-winner proportional method that transfers surplus and eliminated ballots.';
       }
-    });
-  }
-
-  private initVoteCloseTime(): Signal<string | null> {
-    return computed(() => {
-      const voteData = this.vote();
-      return voteData ? getVoteCloseTime(voteData) : null;
     });
   }
 

@@ -133,8 +133,8 @@
               <td>
                 @if (vote.status === PollStatus.ENDED) {
                   <span class="inline-flex items-center gap-1 text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
-                    <span>{{ vote.closeTime | date: 'MMM d, y' }}</span>
-                    @if (showEndedEarlyInfo() && vote.endedEarlyTooltip; as earlyCloseTooltip) {
+                    <span>{{ vote.end_time | date: 'MMM d, y' }}</span>
+                    @if (vote.endedEarlyTooltip; as earlyCloseTooltip) {
                       <button
                         type="button"
                         (click)="$event.stopPropagation()"

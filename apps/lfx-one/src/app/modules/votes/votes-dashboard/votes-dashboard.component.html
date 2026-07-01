@@ -54,7 +54,6 @@
         [showFoundationFilter]="showFoundationFilter()"
         [showProjectFilter]="showProjectFilter()"
         [showDraftTab]="!isMeLens()"
-        [showEndedEarlyInfo]="!isMeLens()"
         (foundationFilterChange)="onFoundationFilterChange($event)"
         (projectFilterChange)="onProjectFilterChange($event)"
         (viewVote)="onViewVote($event)"
@@ -76,7 +75,6 @@
   [voteId]="selectedVoteId()"
   [listVote]="selectedListVote()"
   [audience]="isMeLens() ? 'voter' : 'creator'"
-  [showEndedEarlyInfo]="!isMeLens()"
   (castVoteRequested)="onCastFromResults($event)"
   data-testid="votes-results-drawer"></lfx-vote-results-drawer>
 

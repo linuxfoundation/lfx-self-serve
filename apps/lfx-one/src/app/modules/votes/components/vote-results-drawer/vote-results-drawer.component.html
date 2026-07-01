@@ -46,8 +46,8 @@
             <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
             @if (voterState() === 'closed') {
               <span class="inline-flex items-center gap-1" data-testid="vote-results-drawer-voter-close-date">
-                <span>Closed {{ voteCloseTime() | date: 'MMM d, y' }}</span>
-                @if (showEndedEarlyInfo() && voteEndedEarlyTooltip(); as earlyCloseTooltip) {
+                <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+                @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
                     class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
@@ -86,8 +86,8 @@
             <span class="text-slate-400">•</span>
             @if (isVoteClosed()) {
               <span class="inline-flex items-center gap-1">
-                <span>Closed {{ voteCloseTime() | date: 'MMM d, y' }}</span>
-                @if (showEndedEarlyInfo() && voteEndedEarlyTooltip(); as earlyCloseTooltip) {
+                <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+                @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
                     class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"

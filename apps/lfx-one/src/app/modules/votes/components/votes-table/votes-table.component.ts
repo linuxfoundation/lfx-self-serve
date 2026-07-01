@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getVoteCloseTime, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -76,8 +76,6 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
-  /** Early-end info icon beside Ended status — management lenses only; Me lens voters see plain Ended. */
-  public readonly showEndedEarlyInfo = input<boolean>(true);
   public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
@@ -280,7 +278,6 @@ export class VotesTableComponent {
 
     return {
       ...vote,
-      closeTime: getVoteCloseTime(vote),
       endedEarlyTooltip,
     };
   }
