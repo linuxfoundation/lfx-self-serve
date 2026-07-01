@@ -7,6 +7,7 @@ import {
   COMING_SOON_SENTINEL,
   DEFAULT_EVENT_SORT_FIELD,
   DEFAULT_VISA_REQUEST_SORT_FIELD,
+  MY_EVENT_STATUS,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
   WHOLE_NUMBER_PATTERN,
@@ -25,6 +26,7 @@ import {
   MyEventOrganizationsResponse,
   MyEventRow,
   MyEventsResponse,
+  MyEventStatus,
   TravelFundApplication,
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
@@ -1031,13 +1033,13 @@ export class EventsService {
     // only rows with REGISTRATION_STATUS = 'Accepted' (or LEFT JOINed nulls for upcoming discovery)
     // reach this mapper. If new REGISTRATION_STATUS values are added to Snowflake, this mapping
     // should be updated to derive status from row.REGISTRATION_STATUS directly.
-    let status: string;
+    let status: MyEventStatus;
     if (!row.IS_REGISTERED) {
-      status = 'Not Registered';
+      status = MY_EVENT_STATUS.NOT_REGISTERED;
     } else if (row.IS_PAST_EVENT && row.USER_ATTENDED) {
-      status = 'Attended';
+      status = MY_EVENT_STATUS.ATTENDED;
     } else {
-      status = 'Registered';
+      status = MY_EVENT_STATUS.REGISTERED;
     }
 
     return {

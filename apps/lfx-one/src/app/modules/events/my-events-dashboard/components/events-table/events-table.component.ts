@@ -6,6 +6,7 @@ import { EventsService } from '@app/shared/services/events.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { take } from 'rxjs/operators';
@@ -34,10 +35,13 @@ export class EventsTableComponent {
     Sponsor: 'info',
   };
 
+  /** Exposed for template comparison (gates the Download Certificate button). */
+  protected readonly MY_EVENT_STATUS = MY_EVENT_STATUS;
+
   protected readonly statusSeverityMap: Partial<Record<string, TagSeverity>> = {
-    Registered: 'info',
-    Attended: 'success',
-    'Not Registered': 'secondary',
+    [MY_EVENT_STATUS.REGISTERED]: 'info',
+    [MY_EVENT_STATUS.ATTENDED]: 'success',
+    [MY_EVENT_STATUS.NOT_REGISTERED]: 'secondary',
     Waitlisted: 'warn',
     Cancelled: 'danger',
   };

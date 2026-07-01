@@ -123,16 +123,18 @@
       <!-- Certificate -->
       @if (isPastEvents()) {
         <td>
-          <div class="flex justify-end">
-            <lfx-button
-              label="Download Certificate"
-              severity="primary"
-              [outlined]="true"
-              size="small"
-              styleClass="whitespace-nowrap"
-              (onClick)="$event.stopPropagation(); downloadCertificate(event.id)"
-              [attr.data-testid]="'event-download-certificate-button-' + event.id" />
-          </div>
+          @if (event.status === MY_EVENT_STATUS.ATTENDED) {
+            <div class="flex justify-end">
+              <lfx-button
+                label="Download Certificate"
+                severity="primary"
+                [outlined]="true"
+                size="small"
+                styleClass="whitespace-nowrap"
+                (onClick)="$event.stopPropagation(); downloadCertificate(event.id)"
+                [attr.data-testid]="'event-download-certificate-button-' + event.id" />
+            </div>
+          }
         </td>
       }
 
