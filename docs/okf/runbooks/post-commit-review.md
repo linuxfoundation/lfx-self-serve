@@ -66,7 +66,7 @@ For each subagent, use these parameters:
 
 **Example invocation:**
 
-```
+```text
 I just committed feat(meetings): add calendar sync. Launching post-commit reviewers.
 ```
 
@@ -107,7 +107,7 @@ If your branch has more than one commit, launch the reviewer trio again with the
 
 **Prompt for all three subagents (exact):**
 
-```
+```text
 target repo: lfx-self-serve
 
 branch

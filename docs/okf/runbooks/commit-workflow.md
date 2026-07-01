@@ -29,7 +29,7 @@ Register your public GPG key with GitHub via [github.com/settings/keys](https://
 
 All commit messages must follow Angular conventions:
 
-```
+```text
 <type>(<scope>): <description>
 
 <body>
@@ -67,7 +67,7 @@ Describes the area affected, following Angular conventions. Examples: `auth`, `u
 
 ### Examples
 
-```
+```text
 feat(meetings): add calendar sync integration
 fix(auth): resolve token expiration on page reload
 docs(okf): update knowledge graph index

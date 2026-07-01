@@ -12,7 +12,7 @@ The application uses **PrimeNG** as the underlying UI component library but **do
 
 ### The Abstraction Layer
 
-```
+```text
 Application Code
     ↓
 LFX Wrapper Components (e.g., lfx-button, lfx-dialog)
@@ -115,7 +115,7 @@ export class MyComponent {
 
 **Wrapper components live in:**
 
-```
+```text
 apps/lfx-one/src/app/shared/components/
 ├── button/
 │   ├── button.component.ts

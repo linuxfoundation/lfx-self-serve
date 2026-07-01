@@ -107,7 +107,7 @@ The server reads environment variables for all configuration:
 
 ## Request Flow Example
 
-```
+```text
 ┌─────────────────────┐
 │  Incoming Request   │
 └──────────┬──────────┘

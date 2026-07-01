@@ -58,6 +58,7 @@ snowflake.log
 .claude/doc
 .claude/sessions
 .claude/tasks
+.claude/worktrees
 .claude/settings.local.json
 .claude/*.lock
 
