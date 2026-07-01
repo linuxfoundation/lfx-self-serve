@@ -287,7 +287,21 @@
                   </div>
                   <!-- Details -->
                   <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
-                    <p class="text-[10px] text-gray-500">{{ nm.dayOfWeek }}, {{ nm.time }} &middot; {{ nm.durationMin }}m</p>
+                    <div class="flex items-center gap-2 text-gray-400">
+                      <p class="text-[10px] text-gray-500 shrink-0">{{ nm.dayOfWeek }}, {{ nm.time }} &middot; {{ nm.durationMin }}m</p>
+                      @if (nm.hasRecording) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-video text-[11px] text-gray-500" role="img" aria-label="Recording enabled" title="Recording enabled"></i>
+                      }
+                      @if (nm.hasTranscripts) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-file-lines text-[11px] text-gray-500" role="img" aria-label="Transcripts enabled" title="Transcripts enabled"></i>
+                      }
+                      @if (nm.hasAiSummary) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-sparkles text-[11px] text-gray-500" role="img" aria-label="AI summary enabled" title="AI summary enabled"></i>
+                      }
+                    </div>
                     <h3 class="text-sm font-semibold text-gray-900 truncate">{{ nm.title }}</h3>
                     <!-- Meeting pill chips -->
                     <div class="flex flex-wrap gap-1.5">
@@ -387,9 +401,17 @@
                   <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
                     <div class="flex items-center gap-2 text-gray-400">
                       <p class="text-[10px] text-gray-500 shrink-0">{{ pm.dayOfWeek }}, {{ pm.time }} &middot; {{ pm.durationMin }}m</p>
+                      @if (pm.hasRecording) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-video text-[11px] text-gray-500" role="img" aria-label="Recording enabled" title="Recording enabled"></i>
+                      }
+                      @if (pm.hasTranscripts) {
+                        <span class="text-[10px]" aria-hidden="true">&middot;</span>
+                        <i class="fa-light fa-file-lines text-[11px] text-gray-500" role="img" aria-label="Transcripts enabled" title="Transcripts enabled"></i>
+                      }
                       @if (pm.hasAiSummary) {
                         <span class="text-[10px]" aria-hidden="true">&middot;</span>
-                        <i class="fa-light fa-sparkles text-[11px] text-gray-500" role="img" aria-label="AI summary available" title="AI summary available"></i>
+                        <i class="fa-light fa-sparkles text-[11px] text-gray-500" role="img" aria-label="AI summary enabled" title="AI summary enabled"></i>
                       }
                     </div>
                     <h3 class="text-sm font-semibold text-gray-900 truncate">{{ pm.title }}</h3>

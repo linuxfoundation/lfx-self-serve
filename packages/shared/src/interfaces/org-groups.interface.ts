@@ -90,6 +90,7 @@ export interface GroupMeeting {
   description?: string;
   isRecurring?: boolean;
   hasRecording?: boolean;
+  hasTranscripts?: boolean;
   isPrivate?: boolean;
 }
 
