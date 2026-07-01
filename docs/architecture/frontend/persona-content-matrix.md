@@ -5,7 +5,7 @@
 
 Maps every persona to the sidebar links and key pages it can see in each lens. Use this as the source of truth when adding new nav items, writing persona regression tests, or auditing access gating.
 
-For background on how personas and lenses are resolved, see [Lens & Persona System](./lens-system.md).
+For background on how personas and lenses are resolved, see [Lens & Persona System](./lens-system.md). For where the persona values themselves come from (the upstream detection contract and mapping), see [Persona Detection Pipeline](./persona-detection.md).
 
 ## Personas
 
@@ -152,12 +152,12 @@ Available to `contributor`, `maintainer`, and root writers.
 
 Guards enforce access at the router level — regardless of whether a sidebar link is visible.
 
-| Guard                    | Protected routes                                                                        | Access rule                                                                                                                                             |
-| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                                                                                                             |
-| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                              |
-| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or `canWrite()`                                                                                                        |
-| `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration |
+| Guard                    | Protected routes                                                                        | Access rule                                                                                                                                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                                                                                                                                                                         |
+| `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                                                                                          |
+| `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or project `writer`; meetings routes also allow `meetingCoordinator` or `committee.writer` when `?committee_uid=` is set — see [Meetings write paths](#meetings-write-paths) below |
+| `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                             |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
@@ -165,18 +165,29 @@ Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
 ## Write-action gating per feature domain
 
-The `writerGuard` protects create and edit routes. Within read-only pages, UI elements (add/edit/delete buttons) are additionally gated by `canWrite()` in the component template.
+The `writerGuard` protects create and edit routes. Within read-only pages, UI elements (add/edit/delete buttons) are additionally gated by `canWrite()` (project `writer` on the active context) or feature-specific signals — meetings use `canWriteMeetings` on the dashboard and `committee.writer` on the committee Meetings tab.
 
-| Domain                 | Create/edit route guard | In-page UI gating                                    |
-| ---------------------- | ----------------------- | ---------------------------------------------------- |
-| Meetings               | `writerGuard`           | Yes                                                  |
-| Committees             | `writerGuard`           | Yes                                                  |
-| Mailing Lists          | `writerGuard`           | Yes                                                  |
-| Surveys                | `writerGuard`           | Yes                                                  |
-| Votes                  | `writerGuard`           | Yes                                                  |
-| Settings / Permissions | —                       | `canWrite()` — view-only banner shown to non-writers |
+| Domain                 | Create/edit route guard | In-page UI gating                                                                          |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
+| Meetings               | `writerGuard`           | Dashboard CTA: `project.writer` or `meetingCoordinator`; committee tab: `committee.writer` |
+| Committees             | `writerGuard`           | `canWrite()`                                                                               |
+| Mailing Lists          | `writerGuard`           | `canWrite()`                                                                               |
+| Surveys                | `writerGuard`           | `canWrite()`                                                                               |
+| Votes                  | `writerGuard`           | `canWrite()`                                                                               |
+| Settings / Permissions | —                       | `canWrite()` — view-only banner shown to non-writers                                       |
 
-> Backend write enforcement (whether the upstream microservices independently reject unauthorized writes) is tracked separately in [LFXV2-1662](https://linuxfoundation.atlassian.net/browse/LFXV2-1662).
+### Meetings write paths
+
+Meeting create/edit is **manage/write permission**, not persona. A user with only the `contributor` persona can still create meetings when they hold a committee writer role.
+
+| Layer               | Rule                                                                                                                                                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Route guard**     | `writerGuard` with `data.writeFeature === 'meetings'`: ED fast path; else `project.writer`, `project.meetingCoordinator`, or `committee.writer` when `?committee_uid=` is in the query (from committee Meetings tab).                                                                                              |
+| **Dashboard CTA**   | Meetings list (`/meetings`): `canWriteMeetings` — `project.writer` or `meetingCoordinator` on the active project context (no committee-writer path on this surface).                                                                                                                                               |
+| **Committee tab**   | Committee Meetings tab: `committee.writer` checked fresh before navigating to `/meetings/create` with `committee_uid` + `project` query params.                                                                                                                                                                    |
+| **Meeting service** | `POST /itx/meetings`: OpenFGA `meetings_creator` on `project:{project_uid}` **or** `writer` on `committee:{committees[0].uid}` when the body includes committees ([LFXV2-2395](https://linuxfoundation.atlassian.net/browse/LFXV2-2395)). Update/delete/registrant routes unchanged (`organizer` on `v1_meeting`). |
+
+> Broader backend write enforcement gaps are tracked in [LFXV2-1662](https://linuxfoundation.atlassian.net/browse/LFXV2-1662).
 
 ---
 

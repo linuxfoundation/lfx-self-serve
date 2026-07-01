@@ -12,6 +12,7 @@ import {
   CombinedProfile,
   ClaimAliasRequest,
   CreateUserPermissionRequest,
+  DeveloperTokenInfo,
   EmailManagementData,
   EnrichedIdentity,
   Impersonator,
@@ -167,8 +168,8 @@ export class UserService {
   /**
    * Get developer token information
    */
-  public getDeveloperTokenInfo(): Observable<{ token: string; type: string }> {
-    return this.http.get<{ token: string; type: string }>('/api/profile/developer').pipe(take(1));
+  public getDeveloperTokenInfo(): Observable<DeveloperTokenInfo> {
+    return this.http.get<DeveloperTokenInfo>('/api/profile/developer').pipe(take(1));
   }
 
   /**

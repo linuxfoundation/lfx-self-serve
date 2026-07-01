@@ -1,14 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, inject, input, OnInit } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, inject, input, OnInit, output } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { ARTIFACT_VISIBILITY_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS } from '@lfx-one/shared/constants';
+import {
+  ARTIFACT_VISIBILITY_OPTIONS,
+  MEETING_DETAILS_STEP,
+  MEETING_FEATURES,
+  MEETING_PLATFORMS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
+} from '@lfx-one/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
+import { map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
@@ -17,8 +24,23 @@ import { TooltipModule } from 'primeng/tooltip';
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
-  // Form group input from parent
   public readonly form = input.required<FormGroup>();
+  public readonly goToStep = output<number>();
+  public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
+  public readonly meetingDetailsStep = MEETING_DETAILS_STEP;
+  public readonly titleLength = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const ctrl = f.get('title');
+        if (!ctrl) return of(0);
+        return ctrl.valueChanges.pipe(
+          startWith(ctrl.value as string | null),
+          map((v: string | null) => v?.length ?? 0)
+        );
+      })
+    ),
+    { initialValue: 0 }
+  );
 
   // Constants from shared package
   public readonly platformOptions = MEETING_PLATFORMS;
