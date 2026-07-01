@@ -3,11 +3,20 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, inject, input, PLATFORM_ID, signal } from '@angular/core';
-import type { OrgMeeting } from '@lfx-one/shared/interfaces';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import type { OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingRsvpTally } from '@lfx-one/shared/interfaces';
+
+const RSVP_BADGES: Record<Exclude<OrgMeetingRsvpStatus, null>, { label: string; badgeClass: string }> = {
+  yes: { label: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-600' },
+  maybe: { label: 'Tentative', badgeClass: 'bg-amber-50 text-amber-600' },
+  no: { label: 'Declined', badgeClass: 'bg-red-50 text-red-600' },
+};
+
+const NO_RESPONSE_BADGE = { label: 'No Response', badgeClass: 'bg-gray-100 text-gray-500' };
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
-  imports: [DatePipe],
+  imports: [DatePipe, PersonAvatarComponent],
   templateUrl: './org-upcoming-meetings.component.html',
 })
 export class OrgUpcomingMeetingsComponent {
@@ -39,5 +48,23 @@ export class OrgUpcomingMeetingsComponent {
     navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`)?.catch(() => {
       // Clipboard access denied or unavailable — fail silently.
     });
+  }
+
+  protected totalInvited(tally: OrgMeetingRsvpTally): number {
+    return tally.yes + tally.maybe + tally.no + tally.noResponse;
+  }
+
+  protected attendingPercent(tally: OrgMeetingRsvpTally): number {
+    const total = this.totalInvited(tally);
+    return total === 0 ? 0 : Math.round((tally.yes / total) * 100);
+  }
+
+  protected rsvpPercent(count: number, tally: OrgMeetingRsvpTally): number {
+    const total = this.totalInvited(tally);
+    return total === 0 ? 0 : (count / total) * 100;
+  }
+
+  protected rsvpBadge(status: OrgMeetingRsvpStatus): { label: string; badgeClass: string } {
+    return status ? RSVP_BADGES[status] : NO_RESPONSE_BADGE;
   }
 }

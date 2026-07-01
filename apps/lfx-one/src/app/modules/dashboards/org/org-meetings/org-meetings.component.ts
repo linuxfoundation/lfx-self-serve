@@ -19,6 +19,7 @@ import {
   ORG_MEETINGS_KPI_RECURRING_COUNT,
   ORG_MEETINGS_KPI_RECURRING_PROJECTS,
   ORG_MEETINGS_KPI_UPCOMING_COUNT,
+  ORG_MEETINGS_PROJECT_OPTIONS,
   ORG_MEETINGS_TABS,
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
@@ -41,11 +42,13 @@ export class OrgMeetingsComponent {
   // === Template constants ===
   protected readonly tabs = ORG_MEETINGS_TABS;
   protected readonly typeOptions: FilterOption[] = ORG_MEETINGS_TYPE_OPTIONS;
+  protected readonly projectOptions: FilterOption[] = ORG_MEETINGS_PROJECT_OPTIONS;
 
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
     type: new FormControl<OrgMeetingType | null>(null),
+    project: new FormControl<string | null>(null),
   });
 
   // === WritableSignals ===
@@ -58,6 +61,7 @@ export class OrgMeetingsComponent {
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
   protected readonly filterType: Signal<OrgMeetingType | null> = this.initFilterType();
+  protected readonly filterProject: Signal<string | null> = this.initFilterProject();
   protected readonly filteredUpcoming: Signal<readonly OrgMeeting[]> = this.initFilteredUpcoming();
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
 
@@ -128,14 +132,20 @@ export class OrgMeetingsComponent {
     return toSignal(this.filterForm.controls.type.valueChanges, { initialValue: null });
   }
 
+  private initFilterProject(): Signal<string | null> {
+    return toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
+  }
+
   private initFilteredUpcoming(): Signal<readonly OrgMeeting[]> {
     return computed(() => {
       const search = this.filterSearch().toLowerCase();
       const type = this.filterType();
+      const project = this.filterProject();
       return this.upcomingMeetings().filter((m) => {
         const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
         const matchesType = !type || m.type === type;
-        return matchesSearch && matchesType;
+        const matchesProject = !project || m.project === project;
+        return matchesSearch && matchesType && matchesProject;
       });
     });
   }
@@ -144,10 +154,12 @@ export class OrgMeetingsComponent {
     return computed(() => {
       const search = this.filterSearch().toLowerCase();
       const type = this.filterType();
+      const project = this.filterProject();
       return this.pastMeetings().filter((m) => {
         const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
         const matchesType = !type || m.type === type;
-        return matchesSearch && matchesType;
+        const matchesProject = !project || m.project === project;
+        return matchesSearch && matchesType && matchesProject;
       });
     });
   }

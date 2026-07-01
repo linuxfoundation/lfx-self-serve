@@ -30,6 +30,16 @@ export const ORG_MEETINGS_KPI_PAST_COUNT = 15;
 /** KPI: recordings available from past 30 days (demo). */
 export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
 
+/** Project filter options for the Org Meetings filter bar. */
+export const ORG_MEETINGS_PROJECT_OPTIONS: FilterOption[] = [
+  { label: 'All Projects', value: null },
+  { label: 'CNCF', value: 'CNCF' },
+  { label: 'Kubernetes', value: 'Kubernetes' },
+  { label: 'LF AI & Data Foundation', value: 'LF AI & Data Foundation' },
+  { label: 'OpenSSF', value: 'OpenSSF' },
+  { label: 'Security TAG', value: 'Security TAG' },
+];
+
 /** Type filter options for the Org Meetings filter bar. */
 export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
   { label: 'All Types', value: null },

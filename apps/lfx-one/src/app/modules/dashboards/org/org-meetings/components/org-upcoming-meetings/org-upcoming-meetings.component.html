@@ -97,10 +97,10 @@
           </div>
         }
 
-        <!-- ── Two-column: Resources | RSVP or Register ── -->
+        <!-- ── Two-column: Resources | People Invited or Register ── -->
         <div class="grid grid-cols-2 gap-4">
           <!-- LEFT: Resources -->
-          <div class="flex flex-col gap-2 rounded-lg bg-gray-50 p-3">
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
             <p class="flex items-center gap-1.5 text-sm font-medium text-gray-500"><i class="fa-light fa-paperclip" aria-hidden="true"></i> Resources</p>
             @if (meeting.resources.length === 0) {
               <p class="text-sm text-gray-400 italic">No resources available</p>
@@ -118,47 +118,95 @@
             }
           </div>
 
-          <!-- RIGHT: RSVP (private) or Register (public) + See Meeting Details -->
-          <div class="flex flex-col gap-2">
-            @if (meeting.privacy === 'private') {
-              <p class="flex items-center gap-1.5 text-sm font-medium text-blue-600">
-                <i class="fa-light fa-people-group text-xs" aria-hidden="true"></i> RSVP
-              </p>
-              <div class="grid grid-cols-3 gap-2">
+          <!-- RIGHT: People Invited or Register -->
+          @if (meeting.privacy === 'private') {
+            <!-- People Invited (org-lens attendance summary; no personal RSVP actions here) -->
+            <div
+              class="flex flex-col gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4"
+              [attr.data-testid]="'org-upcoming-meeting-people-invited-' + meeting.id">
+              <div class="flex items-center justify-between gap-3">
+                <p class="flex items-center gap-1.5 text-sm font-medium text-gray-700"><i class="fa-light fa-users" aria-hidden="true"></i> People Invited</p>
+                <span class="text-lg font-semibold text-gray-400">{{ attendingPercent(meeting.rsvpTally) }}%</span>
+              </div>
+
+              <p class="text-base text-gray-900">{{ meeting.rsvpTally.yes }} of {{ totalInvited(meeting.rsvpTally) }} attending</p>
+
+              <div
+                class="flex h-2 w-full overflow-hidden rounded-full bg-gray-100"
+                role="img"
+                [attr.aria-label]="attendingPercent(meeting.rsvpTally) + '% attending'">
+                <div class="bg-blue-500" [style.width.%]="rsvpPercent(meeting.rsvpTally.yes, meeting.rsvpTally)"></div>
+                <div class="bg-amber-400" [style.width.%]="rsvpPercent(meeting.rsvpTally.maybe, meeting.rsvpTally)"></div>
+                <div class="bg-red-500" [style.width.%]="rsvpPercent(meeting.rsvpTally.no, meeting.rsvpTally)"></div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-4 text-sm">
+                <span class="inline-flex items-center gap-1.5 text-blue-600">
+                  <i class="fa-light fa-circle-check text-xs" aria-hidden="true"></i> {{ meeting.rsvpTally.yes }} Yes
+                </span>
+                <span class="inline-flex items-center gap-1.5 text-amber-600">
+                  <i class="fa-light fa-circle-question text-xs" aria-hidden="true"></i> {{ meeting.rsvpTally.maybe }} Maybe
+                </span>
+                <span class="inline-flex items-center gap-1.5 text-red-500">
+                  <i class="fa-light fa-circle-xmark text-xs" aria-hidden="true"></i> {{ meeting.rsvpTally.no }} No
+                </span>
+              </div>
+
+              @if (meeting.orgInvitees.length > 0) {
+                <div class="flex flex-col gap-3 rounded-lg border border-gray-100 p-3">
+                  <p class="text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                    {{ meeting.foundation }} Invitees ({{ meeting.orgInvitees.length }})
+                  </p>
+                  <div class="flex flex-col divide-y divide-gray-100">
+                    @for (invitee of meeting.orgInvitees; track invitee.name) {
+                      <div class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+                        <lfx-person-avatar [avatarUrl]="invitee.avatarUrl" [name]="invitee.name" [identity]="invitee.name" />
+                        <div class="flex-1 min-w-0">
+                          <p class="truncate text-sm font-medium text-gray-900">{{ invitee.name }}</p>
+                          <p class="truncate text-sm text-gray-500">{{ invitee.title }}</p>
+                        </div>
+                        <span
+                          class="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
+                          [class]="rsvpBadge(invitee.rsvpStatus).badgeClass">
+                          <i class="fa-light fa-circle-small text-[6px]" aria-hidden="true"></i> {{ rsvpBadge(invitee.rsvpStatus).label }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <div class="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-blue-400 px-2 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  [attr.data-testid]="'org-upcoming-meeting-rsvp-yes-' + meeting.id">
-                  <i class="fa-light fa-circle-check text-xs" aria-hidden="true"></i> Yes
+                  class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  [attr.data-testid]="'org-upcoming-meeting-guests-' + meeting.id">
+                  <i class="fa-light fa-user" aria-hidden="true"></i> Guests ({{ meeting.guestCount }})
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-red-400 px-2 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-                  [attr.data-testid]="'org-upcoming-meeting-rsvp-no-' + meeting.id">
-                  <i class="fa-light fa-circle-xmark text-xs" aria-hidden="true"></i> No
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex items-center justify-center gap-1 rounded-md border border-amber-400 px-2 py-1.5 text-sm font-medium text-amber-600 hover:bg-amber-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                  [attr.data-testid]="'org-upcoming-meeting-rsvp-maybe-' + meeting.id">
-                  <i class="fa-light fa-circle-question text-xs" aria-hidden="true"></i> Maybe
+                  class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  [attr.data-testid]="'org-upcoming-meeting-details-' + meeting.id">
+                  <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i> See Details
                 </button>
               </div>
-            } @else {
+            </div>
+          } @else {
+            <div class="flex flex-col gap-2">
               <button
                 type="button"
                 class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 [attr.data-testid]="'org-upcoming-meeting-register-' + meeting.id">
                 <i class="fa-light fa-user-plus text-xs" aria-hidden="true"></i> Register for Meeting
               </button>
-            }
-            <button
-              type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              [attr.data-testid]="'org-upcoming-meeting-details-' + meeting.id">
-              <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
-            </button>
-          </div>
+              <button
+                type="button"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                [attr.data-testid]="'org-upcoming-meeting-details-' + meeting.id">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
+              </button>
+            </div>
+          }
         </div>
       </div>
     }
