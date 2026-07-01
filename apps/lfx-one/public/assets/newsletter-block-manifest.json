@@ -275,17 +275,17 @@
         "image_url": {
           "type": "image",
           "label": "Banner image URL",
-          "default": "https://userimg-assets.customeriomail.com/images/client-env-156870/1733915861589_LogoHat3_01JETQ0TG7QVYJ84NS1VQ69KXN.png"
+          "default": ""
         },
         "brand_label": {
           "type": "text",
           "label": "Brand label (right side)",
-          "default": "MLOps Community × The Linux Foundation"
+          "default": ""
         },
         "link": {
           "type": "text",
           "label": "Link URL",
-          "default": "https://mlops.community/"
+          "default": ""
         }
       },
       "template": "<Section style=\"padding:16px 24px\">\n  <Row>\n    <Column style=\"width:50%;vertical-align:middle\">\n      <Link href=\"{{link}}\"><Img if=\"image_url\" src=\"{{image_url}}\" alt=\"\" width=\"98\" style=\"display:block;border:0\" /></Link>\n    </Column>\n    <Column style=\"width:50%;vertical-align:middle;text-align:right\">\n      <Text if=\"brand_label\" style=\"margin:0;font-size:13px;color:#7B7D81;text-align:right\">{{brand_label}}</Text>\n    </Column>\n  </Row>\n</Section>"

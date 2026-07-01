@@ -60,12 +60,11 @@ const WRAPPER_PATH = ['wrappers', `${WRAPPER_KEY}.html`];
 // draw them. `logo_header` is the top-of-edition banner: a full-width logo image
 // with an optional right-aligned brand label, mirroring gatewaze's LogoHeader.
 //
-// The default `image_url` is the real MLOps Community masthead the AAIF
-// user-community editions ship with (the "here." LogoHat3 PNG, served from the
-// legacy Customer.io image CDN and linked to mlops.community). The brand label
-// defaults to the "MLOps Community × The Linux Foundation" lockup text — there
-// is no single combined banner asset in the gatewaze repos, the lockup is a
-// logo image plus brand-label text, exactly as LogoHeader.tsx renders it.
+// This is a generic platform block, so its fields ship without defaults — the
+// author supplies the banner image, link, and brand label per edition. The
+// template guards each field with `if=`, so an unfilled block simply renders
+// nothing. Tenant-specific assets (e.g. a project's masthead) belong in
+// per-project/template config, not baked into the shared platform palette.
 const PLATFORM_BLOCKS = [
   {
     block_type: 'logo_header',
@@ -76,17 +75,17 @@ const PLATFORM_BLOCKS = [
       image_url: {
         type: 'image',
         label: 'Banner image URL',
-        default: 'https://userimg-assets.customeriomail.com/images/client-env-156870/1733915861589_LogoHat3_01JETQ0TG7QVYJ84NS1VQ69KXN.png',
+        default: '',
       },
       brand_label: {
         type: 'text',
         label: 'Brand label (right side)',
-        default: 'MLOps Community × The Linux Foundation',
+        default: '',
       },
       link: {
         type: 'text',
         label: 'Link URL',
-        default: 'https://mlops.community/',
+        default: '',
       },
     },
     template: [
