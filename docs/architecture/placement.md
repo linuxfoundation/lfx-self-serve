@@ -44,9 +44,13 @@ Is it a type alias / interface (not a runtime value)?
                  (Includes derived aliases: `type Foo = (typeof BAR)[keyof typeof BAR]`.
                   The alias goes here even if BAR lives in constants/ — import the
                   constant into the .interface.ts to derive it.)
+  NO (it's a runtime value, enum, or utility)
+       -> constants: packages/shared/src/constants/<name>.constants.ts (values only — no export type)
+       -> enums:     packages/shared/src/enums/<name>.enum.ts
+       -> utils:     packages/shared/src/utils/<name>.utils.ts
 ```
 
-Enums go in `packages/shared/src/enums/<name>.enum.ts`; constants in `packages/shared/src/constants/<name>.constants.ts` (**runtime values only — no `export type`**). Each directory has a barrel `index.ts` — every new file must be exported there.
+Each directory has a barrel `index.ts` — every new file must be exported there.
 
 See `docs/architecture/shared/package-architecture.md` for full naming, exports, and import-alias rules.
 
