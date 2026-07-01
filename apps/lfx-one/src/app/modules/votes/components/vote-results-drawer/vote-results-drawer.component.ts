@@ -6,7 +6,7 @@ import { Component, computed, inject, input, model, output, signal, Signal } fro
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, PollType, VOTE_ENDED_EARLY_TOOLTIP, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
   MyVoteResponse,
   PollCommentResult,
@@ -17,7 +17,7 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { getVoteCloseTime, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -38,9 +38,7 @@ export class VoteResultsDrawerComponent {
 
   // === Constants ===
   protected readonly PollStatus = PollStatus;
-  protected readonly getVoteCloseTime = getVoteCloseTime;
   protected readonly isVoteEndedEarly = isVoteEndedEarly;
-  protected readonly voteEndedEarlyTooltip = VOTE_ENDED_EARLY_TOOLTIP;
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -96,6 +94,15 @@ export class VoteResultsDrawerComponent {
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
 
   // === Protected Methods ===
+  protected voteEndedEarlyDetailTooltip(vote: Vote): string | null {
+    if (!isVoteEndedEarly(vote) || !vote.early_end_time) {
+      return null;
+    }
+
+    const formattedEarlyClose = formatDate(vote.early_end_time, 'MMM d, y', 'en-US');
+    return getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }

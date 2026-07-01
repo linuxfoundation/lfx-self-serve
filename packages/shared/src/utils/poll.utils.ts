@@ -40,6 +40,11 @@ export function getVoteCloseTime(vote: Pick<Vote, 'end_time' | 'early_end_time'>
   return vote.early_end_time ?? vote.end_time;
 }
 
+/** Tooltip copy when the scheduled close date differs from the actual early close. */
+export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
+  return `Vote closed early at ${earlyEndTimeFormatted}. All voters have responded.`;
+}
+
 /** True when the poll closed before its scheduled end_time (ITX auto-end). */
 export function isVoteEndedEarly(vote: Pick<Vote, 'end_time' | 'early_end_time'>): boolean {
   if (!vote.early_end_time || !vote.end_time) {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -13,9 +13,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, VOTE_ENDED_EARLY_TOOLTIP, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
-import { getVoteCloseTime, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -58,10 +58,8 @@ export class VotesTableComponent {
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
-  protected readonly voteEndedEarlyTooltip = VOTE_ENDED_EARLY_TOOLTIP;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
-  protected readonly getVoteCloseTime = getVoteCloseTime;
   protected readonly isVoteEndedEarly = isVoteEndedEarly;
 
   // === Inputs ===
@@ -130,6 +128,15 @@ export class VotesTableComponent {
   }
 
   // === Protected Methods ===
+  protected voteEndedEarlyDetailTooltip(vote: Vote): string | null {
+    if (!isVoteEndedEarly(vote) || !vote.early_end_time) {
+      return null;
+    }
+
+    const formattedEarlyClose = formatDate(vote.early_end_time, 'MMM d, y', 'en-US');
+    return getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
+  }
+
   protected onViewVote(voteId: string): void {
     this.viewVote.emit(voteId);
   }
