@@ -679,10 +679,28 @@ export class NewsletterManageComponent {
 
   // body_html is server-derived, so dedup on the authored body_layout instead —
   // otherwise composer edits (which don't touch body_html until save) never save.
-  // Relies on the composer emitting a stable key order: content-equal layouts must
-  // serialize identically for the dedup and isDirty checks to hold.
+  // Canonicalized (sorted keys) so a content-equal layout serializes identically
+  // regardless of key order: the composer and the server may order keys
+  // differently, and isDirty/dedup compare across that boundary on reopen.
   private serializeLayout(layout: NewsletterLayout | null): string {
-    return JSON.stringify(layout ?? null);
+    return JSON.stringify(this.canonicalizeValue(layout ?? null));
+  }
+
+  // Recursively sort object keys so serialization is order-independent. Array
+  // order is preserved — block ordering is meaningful.
+  private canonicalizeValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.canonicalizeValue(entry));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = this.canonicalizeValue((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+    return value;
   }
 
   // Keep body_html in sync with the server-rendered output so the preview drawer
