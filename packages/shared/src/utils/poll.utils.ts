@@ -31,15 +31,6 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   return 'closed';
 }
 
-/**
- * Effective close time for a poll. When a poll auto-ended early (all voters responded
- * before end_time), early_end_time holds the real close timestamp; otherwise end_time
- * is the close. Mirrors the lfx-v2-ui / pcc-v2-frontend `early_end_time ?? end_time` fallback.
- */
-export function getVoteCloseTime(vote: Pick<Vote, 'end_time' | 'early_end_time'>): string {
-  return vote.early_end_time ?? vote.end_time;
-}
-
 /** Tooltip copy when the scheduled close date differs from the actual early close. */
 export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
   return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
