@@ -71,26 +71,66 @@
           </div>
         </div>
 
-        <!-- Right: channels card (mailing list) -->
-        @if (g.mailingListName) {
+        <!-- Right: channels card (mailing list, chat channel, website) -->
+        @if (g.mailingListName || g.chatChannelUrl || g.websiteUrl) {
           <div
             class="bg-gray-50 border border-gray-200 rounded-lg text-[12.5px] text-gray-600 w-full lg:max-w-[380px] flex-shrink-0 self-start"
-            data-testid="org-group-detail-mailing-list-card">
-            <div class="flex items-center gap-2.5 px-3.5 py-2.5">
-              <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-[12.5px] font-semibold text-gray-900">{{ g.mailingListName }}</span>
-                  @if (g.mailingListIsPrivate) {
-                    <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                  } @else {
-                    <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                  }
+            data-testid="org-group-detail-channels-card">
+            @if (g.mailingListName) {
+              <div class="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" data-testid="org-group-detail-mailing-list-row">
+                <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
                 </div>
-                <div class="text-[11px] text-gray-400 mt-0.5">{{ g.mailingListSubscribers ?? 0 }} subscribers</div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-[12.5px] font-semibold text-gray-900">{{ g.mailingListName }}</span>
+                    @if (g.mailingListIsPrivate) {
+                      <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                    } @else {
+                      <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                    }
+                  </div>
+                  <div class="text-[11px] text-gray-400 mt-0.5">{{ g.mailingListSubscribers ?? 0 }} subscribers</div>
+                </div>
               </div>
+            }
+            <div class="flex flex-col divide-y divide-gray-200">
+              @if (g.chatChannelUrl) {
+                <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="org-group-detail-chat-channel-row">
+                  <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <i [class]="chatPlatformIcon(g.chatChannelUrl) + ' text-gray-600 text-xs'" aria-hidden="true"></i>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel(g.chatChannelUrl) }}</div>
+                    <a
+                      [href]="g.chatChannelUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                      [title]="g.chatChannelUrl"
+                      >{{ g.chatChannelUrl }}</a
+                    >
+                  </div>
+                </div>
+              }
+              @if (g.websiteUrl) {
+                <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="org-group-detail-website-row">
+                  <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <i [class]="repoPlatformIcon(g.websiteUrl) + ' text-gray-600 text-xs'" aria-hidden="true"></i>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel(g.websiteUrl) }}</div>
+                    <a
+                      [href]="g.websiteUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                      [title]="g.websiteUrl"
+                      >{{ g.websiteUrl }}</a
+                    >
+                  </div>
+                </div>
+              }
             </div>
           </div>
         }
@@ -100,7 +140,7 @@
     <!-- Tab strip -->
     <div data-testid="org-group-detail-tabs">
       <div class="flex gap-1" role="tablist" aria-label="Group detail tabs" (keydown)="onTabKeydown($event)">
-        @for (tab of tabs; track tab.id) {
+        @for (tab of visibleTabs(); track tab.id) {
           <button
             type="button"
             role="tab"
@@ -170,9 +210,9 @@
             </div>
 
             <!-- Chairs -->
-            @if (g.chairs.length > 0) {
-              <div class="border-t border-gray-100 px-4 py-3" data-testid="org-group-detail-chairs">
-                <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Chairs</p>
+            <div class="border-t border-gray-100 px-4 py-3" data-testid="org-group-detail-chairs">
+              <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Chairs</p>
+              @if (g.chairs.length > 0) {
                 <div class="flex flex-col gap-1.5">
                   @for (chair of g.chairs; track chair.id) {
                     <div class="flex items-center gap-2" [attr.data-testid]="'org-group-detail-chair-' + chair.id">
@@ -189,8 +229,13 @@
                     </div>
                   }
                 </div>
-              </div>
-            }
+              } @else {
+                <div class="flex items-center gap-2 py-1" data-testid="org-group-detail-no-chairs">
+                  <i class="fa-light fa-user-crown text-gray-300" aria-hidden="true"></i>
+                  <p class="text-xs text-gray-400">No chairs assigned</p>
+                </div>
+              }
+            </div>
           </lfx-card>
         </aside>
 

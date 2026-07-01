@@ -10,6 +10,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { DETAIL_TABS } from '@lfx-one/shared/constants';
 import type { GroupDetailTabConfig, GroupDetailTabId, OrgGroupDetail } from '@lfx-one/shared/interfaces';
+import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -34,6 +35,12 @@ export class OrgGroupDetailComponent {
 
   protected readonly tabs: readonly GroupDetailTabConfig[] = DETAIL_TABS;
 
+  /** Pure platform-detection helpers exposed for template binding. */
+  protected readonly chatPlatformIcon = getChatPlatformIcon;
+  protected readonly chatPlatformLabel = getChatPlatformLabel;
+  protected readonly repoPlatformIcon = getRepoPlatformIcon;
+  protected readonly repoPlatformLabel = getRepoPlatformLabel;
+
   // ─── Mutable state ────────────────────────────────────────────────────────────
 
   protected activeTab = signal<GroupDetailTabId>('overview');
@@ -54,6 +61,9 @@ export class OrgGroupDetailComponent {
   protected readonly nextMeeting = computed(() => this.detail()?.nextMeetings[0] ?? null);
   protected readonly pastMeeting = computed(() => this.detail()?.pastMeetings[0] ?? null);
 
+  /** Votes tab only shows for groups with voting enabled, mirroring committee's `enable_voting` gate. */
+  protected readonly visibleTabs: Signal<readonly GroupDetailTabConfig[]> = this.initVisibleTabs();
+
   // ─── Public methods ───────────────────────────────────────────────────────────
 
   protected switchTab(id: GroupDetailTabId): void {
@@ -61,7 +71,7 @@ export class OrgGroupDetailComponent {
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
+    const ids = this.visibleTabs().map((t) => t.id);
     const idx = ids.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
@@ -82,6 +92,10 @@ export class OrgGroupDetailComponent {
   }
 
   // ─── Private initializers ─────────────────────────────────────────────────────
+
+  private initVisibleTabs(): Signal<readonly GroupDetailTabConfig[]> {
+    return computed(() => this.tabs.filter((tab) => tab.id !== 'votes' || this.detail()?.votingEnabled));
+  }
 
   private initDetail(): Signal<OrgGroupDetail | null> {
     return toSignal(

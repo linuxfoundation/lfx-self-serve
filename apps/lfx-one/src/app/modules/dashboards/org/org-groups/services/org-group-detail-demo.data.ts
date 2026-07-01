@@ -252,6 +252,68 @@ const K8S_STEERING: OrgGroupDetail = {
   mailingListName: 'steering@kubernetes.io',
   mailingListSubscribers: 120,
   mailingListIsPrivate: false,
+  chatChannelUrl: 'https://kubernetes.slack.com/archives/C09QZTMFN',
+  websiteUrl: 'https://github.com/kubernetes/steering',
+};
+
+const CNCF_MARKETING: OrgGroupDetail = {
+  id: 'cncf-marketing',
+  name: 'CNCF Marketing Committee',
+  description: 'Coordinates marketing, events, and community communications across CNCF projects.',
+  type: 'Other',
+  foundation: 'CNCF',
+  visibility: 'PRIVATE',
+  votingEnabled: false,
+  memberCount: 75,
+  hasMailingList: false,
+  hasChatChannel: true,
+  updatedAt: d('2026-04-03T00:00:00Z'),
+  parentProject: 'LF Products',
+  parentProjectId: 'lf-products',
+  createdAt: d('2026-03-23T00:00:00Z'),
+  organizationCount: 22,
+  meetingCount: 6,
+  activeVoteCount: 0,
+  openSurveyCount: 0,
+  inviteOnly: true,
+  chairs: [],
+  nextMeetings: [
+    {
+      id: 'nm1',
+      title: 'Marketing Committee Sync',
+      monthAbbr: 'JUL',
+      day: 9,
+      dayOfWeek: 'Wed',
+      time: '11:00 AM',
+      durationMin: 30,
+      projectName: 'CNCF',
+      meetingType: 'Other',
+      hasReminder: false,
+      hasAiSummary: false,
+      description: 'Committee sync on upcoming events, content calendar, and community campaigns.',
+      isRecurring: true,
+    },
+  ],
+  pastMeetings: [
+    {
+      id: 'pm1',
+      title: 'Marketing Committee Sync',
+      monthAbbr: 'JUN',
+      day: 11,
+      dayOfWeek: 'Wed',
+      time: '11:00 AM',
+      durationMin: 30,
+      projectName: 'CNCF',
+      meetingType: 'Meeting',
+      hasReminder: false,
+      hasAiSummary: true,
+      description: 'Committee sync on upcoming events, content calendar, and community campaigns.',
+      isRecurring: true,
+      hasRecording: true,
+    },
+  ],
+  chatChannelUrl: 'https://linuxfoundation.slack.com/archives/C01GB7D71B9',
+  websiteUrl: 'https://www.cncf.io/marketing',
 };
 
 const PYTORCH_BOARD: OrgGroupDetail = {
@@ -320,6 +382,7 @@ export const ORG_GROUP_DETAIL_DEMO_MAP: Readonly<Record<string, OrgGroupDetail>>
   'lfai-governing-board': LFAI_GOVERNING_BOARD,
   'k8s-steering': K8S_STEERING,
   'pytorch-board': PYTORCH_BOARD,
+  'cncf-marketing': CNCF_MARKETING,
 } as const;
 
 export function getGroupDetailDemo(id: string): OrgGroupDetail {

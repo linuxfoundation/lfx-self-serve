@@ -108,4 +108,6 @@ export interface OrgGroupDetail extends OrgGroup {
   mailingListName?: string;
   mailingListSubscribers?: number;
   mailingListIsPrivate?: boolean;
+  chatChannelUrl?: string;
+  websiteUrl?: string;
 }
