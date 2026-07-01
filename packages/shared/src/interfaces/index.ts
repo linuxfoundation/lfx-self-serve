@@ -247,6 +247,9 @@ export * from './linux-email.interface';
 
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
+export * from './countries.interface';
+export * from './states.interface';
+export * from './tshirt-sizes.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
