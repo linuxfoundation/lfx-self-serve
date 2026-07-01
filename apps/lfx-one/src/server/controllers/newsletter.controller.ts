@@ -21,6 +21,9 @@ import { NewsletterService } from '../services/newsletter.service';
 
 const SUBJECT_MAX_LENGTH = 200;
 const BODY_MAX_LENGTH = 100_000;
+// Structured layout is JSON, so it runs larger than the rendered HTML; bound the
+// serialized size defensively (body_html has its own cap) to reject runaway payloads.
+const BODY_LAYOUT_MAX_LENGTH = 500_000;
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
@@ -385,6 +388,9 @@ export class NewsletterController {
       fieldErrors['body_html'] = 'Body is required';
     } else if (typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    }
+    if (hasBodyLayout && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {

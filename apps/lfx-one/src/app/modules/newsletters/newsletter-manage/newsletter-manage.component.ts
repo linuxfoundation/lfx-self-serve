@@ -168,7 +168,7 @@ export class NewsletterManageComponent {
   private readonly isDirty = computed(() => this.computeIsDirty());
   public readonly canPreview = computed(() => this.bodyRendered() && !this.isDirty());
   public readonly canSend = computed(
-    () => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && !this.isDirty() && this.hasContext() && !this.submitting() && !this.resolvingSend()
+    () => this.audienceFilled() && this.subjectFilled() && this.bodyRendered() && !this.isDirty() && this.hasContext() && !this.submitting() && !this.resolvingSend()
   );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyRendered() && !this.isDirty() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
