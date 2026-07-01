@@ -250,6 +250,8 @@ export * from './crowdfunding.interface';
 export * from './countries.interface';
 export * from './states.interface';
 export * from './tshirt-sizes.interface';
+export * from './tag.interface';
+export * from './timezones.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
