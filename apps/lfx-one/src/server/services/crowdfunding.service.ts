@@ -335,9 +335,9 @@ export class CrowdfundingService {
 
   public async getAnnouncements(req: Request, initiativeId: string): Promise<AnnouncementList> {
     const startTime = logger.startOperation(req, 'cf_get_announcements', { initiativeId });
-    const raw = await cfFetch<BackendAnnouncementList>(req, 'getAnnouncements', `/v1/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
-    logger.success(req, 'cf_get_announcements', startTime, { count: raw.data.length });
-    return { data: raw.data.map(mapAnnouncementWire), totalCount: raw.meta.total };
+    const data = await cfFetchAllPages<BackendAnnouncement>(req, 'getAnnouncements', `/v1/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
+    logger.success(req, 'cf_get_announcements', startTime, { count: data.length });
+    return { data: data.map(mapAnnouncementWire), totalCount: data.length };
   }
 
   public async createAnnouncement(req: Request, initiativeId: string, input: CreateAnnouncementInput): Promise<Announcement> {

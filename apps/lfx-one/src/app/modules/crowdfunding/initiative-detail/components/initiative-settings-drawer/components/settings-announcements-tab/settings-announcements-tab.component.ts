@@ -5,7 +5,7 @@ import { DatePipe } from '@angular/common';
 import { Component, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { filter, firstValueFrom } from 'rxjs';
+import { filter, firstValueFrom, map } from 'rxjs';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ButtonComponent } from '@components/button/button.component';
@@ -81,7 +81,8 @@ export class SettingsAnnouncementsTabComponent {
     this.saving.set(true);
     try {
       const { title, description } = this.addForm.value as { title: string; description: string };
-      const created = await firstValueFrom(this.crowdfundingService.createAnnouncement(this.initiative().id, { title, description }));
+      const created = await firstValueFrom(this.crowdfundingService.createAnnouncement(this.initiative().id, { title, description }), { defaultValue: null });
+      if (!created) return;
       this.announcements.update((list) => [created, ...list]);
       this.showAddForm.set(false);
       this.addForm.reset();
@@ -102,7 +103,8 @@ export class SettingsAnnouncementsTabComponent {
     this.saving.set(true);
     try {
       const { title, description } = this.editForm.value as { title: string; description: string };
-      const updated = await firstValueFrom(this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, { title, description }));
+      const updated = await firstValueFrom(this.crowdfundingService.updateAnnouncement(this.initiative().id, a.id, { title, description }), { defaultValue: null });
+      if (!updated) return;
       this.announcements.update((list) => list.map((item) => (item.id === a.id ? { ...item, ...updated } : item)));
       this.editingId.set(null);
       this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Announcement updated.' });
@@ -129,7 +131,8 @@ export class SettingsAnnouncementsTabComponent {
   private async runDelete(a: Announcement): Promise<void> {
     this.saving.set(true);
     try {
-      await firstValueFrom(this.crowdfundingService.deleteAnnouncement(this.initiative().id, a.id));
+      const deleted = await firstValueFrom(this.crowdfundingService.deleteAnnouncement(this.initiative().id, a.id).pipe(map(() => true)), { defaultValue: false });
+      if (!deleted) return;
       this.announcements.update((list) => list.filter((item) => item.id !== a.id));
       if (this.editingId() === a.id) this.editingId.set(null);
       this.messageService.add({ severity: 'success', summary: 'Deleted', detail: 'Announcement deleted.' });
@@ -145,7 +148,8 @@ export class SettingsAnnouncementsTabComponent {
     this.showAddForm.set(false);
     this.editingId.set(null);
     try {
-      const result = await firstValueFrom(this.crowdfundingService.getAnnouncements(this.initiative().id));
+      const result = await firstValueFrom(this.crowdfundingService.getAnnouncements(this.initiative().id), { defaultValue: null });
+      if (!result) return;
       this.announcements.set(result.data);
     } finally {
       this.loading.set(false);
