@@ -41,6 +41,8 @@ export class VoteResultsDrawerComponent {
   public readonly listVote = input<Vote | null>(null);
   /** Selects the voter-blind panel (B/C/D states, no live tallies, no creator note) when 'voter'; defaults to the unchanged creator UI. The /me/votes dashboard passes 'voter'. */
   public readonly audience = input<'voter' | 'creator'>('creator');
+  /** Early-end info icon beside Closed date — management lenses only; Me lens voters see plain Closed. */
+  public readonly showEndedEarlyInfo = input<boolean>(true);
 
   // === Outputs ===
   public readonly castVoteRequested = output<string>();

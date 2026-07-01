@@ -76,6 +76,7 @@
   [voteId]="selectedVoteId()"
   [listVote]="selectedListVote()"
   [audience]="isMeLens() ? 'voter' : 'creator'"
+  [showEndedEarlyInfo]="!isMeLens()"
   (castVoteRequested)="onCastFromResults($event)"
   data-testid="votes-results-drawer"></lfx-vote-results-drawer>
 
