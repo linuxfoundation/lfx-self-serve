@@ -24,15 +24,6 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
-    // Dev/preview surface for the Phase-1 block composer (LFXV2-2381). Mounts the
-    // standalone composer with the loaded manifest so it can be exercised in the
-    // running app without touching the existing newsletter wizard.
-    path: 'composer-preview',
-    canActivate: [authGuard, newsletterAccessGuard],
-    loadComponent: () => import('./newsletter-composer-preview/newsletter-composer-preview.component').then((m) => m.NewsletterComposerPreviewComponent),
-    data: { preload: false },
-  },
-  {
     // projectUid is in the URL so edit/analytics survive a foundation-vs-project
     // context switch — the owning project travels with the link rather than being
     // re-derived from whatever context happens to be active when the route loads.

@@ -10,14 +10,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
-  GenerateNewsletterResponse,
   Newsletter,
+  NewsletterLayout,
   NewsletterManageViewMode,
   NewsletterSendResult,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
+import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -86,6 +86,10 @@ export class NewsletterManageComponent {
   public readonly form = new FormGroup({
     committeeUids: new FormControl<string[]>([], { nonNullable: true }),
     subject: new FormControl<string>('', { nonNullable: true }),
+    // body_layout is the authored source of truth (from the block composer).
+    // body_html is derived server-side (render-on-write) and synced back on save
+    // so the preview drawer and test-send use the authoritative MJML render.
+    bodyLayout: new FormControl<NewsletterLayout | null>(null),
     bodyHtml: new FormControl<string>('', { nonNullable: true }),
   });
 
@@ -138,10 +142,10 @@ export class NewsletterManageComponent {
   // === Form mirrors ===
   private readonly committeeUidsValue = signal<string[]>([]);
   private readonly subjectValue = signal<string>('');
-  private readonly bodyValue = signal<string>('');
+  private readonly bodyLayoutValue = signal<NewsletterLayout | null>(null);
 
   // === Save dedup ===
-  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; committeeUids: string[] } | null>(null);
+  private readonly lastSavedSnapshot = signal<{ subject: string; bodyLayout: string; committeeUids: string[] } | null>(null);
   private readonly saveTrigger$ = new Subject<boolean>();
 
   // === Recipient summary ===
@@ -150,7 +154,7 @@ export class NewsletterManageComponent {
 
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
-  public readonly bodyFilled = computed(() => stripHtml(this.bodyValue() ?? '').length > 0);
+  public readonly bodyFilled = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
   public readonly canSend = computed(
     () => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.hasContext() && !this.submitting() && !this.resolvingSend()
@@ -259,13 +263,6 @@ export class NewsletterManageComponent {
     this.previewDrawerVisible.set(true);
   }
 
-  protected onGenerated(result: GenerateNewsletterResponse): void {
-    this.form.patchValue({
-      subject: result.subject ?? this.form.controls.subject.value,
-      bodyHtml: result.bodyHtml,
-    });
-  }
-
   protected onSendTest(): void {
     if (!this.canSendTest()) return;
     this.testSending.set(true);
@@ -337,7 +334,7 @@ export class NewsletterManageComponent {
   private initFormMirrors(): void {
     this.form.controls.committeeUids.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.committeeUidsValue.set(v ?? []));
     this.form.controls.subject.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.subjectValue.set(v ?? ''));
-    this.form.controls.bodyHtml.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyValue.set(v ?? ''));
+    this.form.controls.bodyLayout.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyLayoutValue.set(v ?? null));
   }
 
   private initRecipientCount(): void {
@@ -607,10 +604,11 @@ export class NewsletterManageComponent {
     const committeeUids = draft.committee_uids ?? [];
     const subject = draft.subject ?? '';
     const bodyHtml = draft.body_html ?? '';
-    this.form.patchValue({ committeeUids, subject, bodyHtml }, { emitEvent: false });
+    const bodyLayout = draft.body_layout ?? null;
+    this.form.patchValue({ committeeUids, subject, bodyLayout, bodyHtml }, { emitEvent: false });
     this.committeeUidsValue.set(committeeUids);
     this.subjectValue.set(subject);
-    this.bodyValue.set(bodyHtml);
+    this.bodyLayoutValue.set(bodyLayout);
     this.fetchRecipientCountFor(committeeUids);
   }
 
@@ -645,9 +643,21 @@ export class NewsletterManageComponent {
     if (!saved) return false;
     return (
       saved.subject === this.form.controls.subject.value &&
-      saved.bodyHtml === this.form.controls.bodyHtml.value &&
+      saved.bodyLayout === this.serializeLayout(this.form.controls.bodyLayout.value) &&
       this.uidsEqual(saved.committeeUids, this.form.controls.committeeUids.value)
     );
+  }
+
+  // body_html is server-derived, so dedup on the authored body_layout instead —
+  // otherwise composer edits (which don't touch body_html until save) never save.
+  private serializeLayout(layout: NewsletterLayout | null): string {
+    return JSON.stringify(layout ?? null);
+  }
+
+  // Keep body_html in sync with the server-rendered output so the preview drawer
+  // and test-send use the authoritative MJML render derived from body_layout.
+  private syncDerivedBodyHtml(draft: Newsletter): void {
+    this.form.controls.bodyHtml.setValue(draft.body_html ?? '', { emitEvent: false });
   }
 
   private uidsEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
@@ -685,12 +695,13 @@ export class NewsletterManageComponent {
     const basePayload = {
       subject: this.form.controls.subject.value,
       body_html: this.form.controls.bodyHtml.value,
+      body_layout: this.form.controls.bodyLayout.value ?? undefined,
       committee_uids: this.form.controls.committeeUids.value,
       ed_reply_email: this.edEmail(),
     };
     const snapshotKey = {
       subject: basePayload.subject,
-      bodyHtml: basePayload.body_html,
+      bodyLayout: this.serializeLayout(this.form.controls.bodyLayout.value),
       committeeUids: [...basePayload.committee_uids],
     };
 
@@ -701,6 +712,7 @@ export class NewsletterManageComponent {
         finalize(clearSavingFlags),
         map((draft) => {
           this.version.set(draft.version);
+          this.syncDerivedBodyHtml(draft);
           this.savedAt.set(new Date());
           this.recordSavedSnapshot(snapshotKey);
           if (isManual) this.notifyDraftSaved();
@@ -717,6 +729,7 @@ export class NewsletterManageComponent {
       map((draft) => {
         this.newsletterId.set(draft.id);
         this.version.set(draft.version);
+        this.syncDerivedBodyHtml(draft);
         this.savedAt.set(new Date());
         this.recordSavedSnapshot(snapshotKey);
         this.router.navigate([], {
@@ -732,10 +745,10 @@ export class NewsletterManageComponent {
     );
   }
 
-  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; committeeUids: string[] }): void {
+  private recordSavedSnapshot(payload: { subject: string; bodyLayout: string; committeeUids: string[] }): void {
     this.lastSavedSnapshot.set({
       subject: payload.subject,
-      bodyHtml: payload.bodyHtml,
+      bodyLayout: payload.bodyLayout,
       committeeUids: [...payload.committeeUids],
     });
   }
