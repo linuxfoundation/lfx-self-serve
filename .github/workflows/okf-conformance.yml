@@ -1,0 +1,43 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: OKF Conformance
+
+on:
+  pull_request:
+    paths:
+      - 'docs/okf/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/okf/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  okf-conformance:
+    name: Validate OKF Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate OKF bundle
+        run: node scripts/validate-okf.mjs
+
+      - name: Hint on failure
+        if: failure()
+        run: |
+          echo ""
+          echo "To run locally: node scripts/validate-okf.mjs"
+          echo "Bundle docs: docs/okf/index.md"
