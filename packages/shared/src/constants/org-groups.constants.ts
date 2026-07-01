@@ -36,11 +36,12 @@ export const VALID_GROUPS_VOTING_FILTERS: ReadonlySet<GroupsVotingFilter> = new 
 
 /** Group detail page tabs in visible order. */
 export const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
-  { id: 'overview', label: 'Overview', icon: 'fa-solid fa-circle-dot' },
+  { id: 'overview', label: 'Overview', icon: 'fa-light fa-gauge' },
+  { id: 'members', label: 'Members', icon: 'fa-light fa-users' },
   { id: 'votes', label: 'Votes', icon: 'fa-light fa-check-to-slot' },
   { id: 'meetings', label: 'Meetings', icon: 'fa-light fa-calendar' },
-  { id: 'surveys', label: 'Surveys', icon: 'fa-light fa-chart-bar' },
-  { id: 'documents', label: 'Documents', icon: 'fa-light fa-folder' },
+  { id: 'surveys', label: 'Surveys', icon: 'fa-light fa-chart-simple' },
+  { id: 'documents', label: 'Documents', icon: 'fa-light fa-folder-open' },
 ] as const;
 
 /** Default tab for group detail — overview is shown on initial load. */

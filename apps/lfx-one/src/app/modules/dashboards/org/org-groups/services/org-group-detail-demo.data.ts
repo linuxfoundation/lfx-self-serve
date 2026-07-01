@@ -25,7 +25,7 @@ const GENERIC_DETAIL: OrgGroupDetail = {
   activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: false,
-  chairs: [{ id: 'c1', name: 'Jane Smith', initials: 'JS', avatarColor: 'bg-blue-500' }],
+  chairs: [{ id: 'c1', name: 'Jane Smith', initials: 'JS', role: 'Chair' }],
   nextMeetings: [
     {
       id: 'nm1',
@@ -84,8 +84,8 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
   openSurveyCount: 0,
   inviteOnly: true,
   chairs: [
-    { id: 'c1', name: 'Linus Torvalds', initials: 'LT', avatarColor: 'bg-violet-500' },
-    { id: 'c2', name: 'Greg Kroah-Hartman', initials: 'GK', avatarColor: 'bg-blue-500' },
+    { id: 'c1', name: 'Linus Torvalds', initials: 'LT', role: 'Chair' },
+    { id: 'c2', name: 'Greg Kroah-Hartman', initials: 'GK', role: 'Vice Chair' },
   ],
   nextMeetings: [
     {
@@ -102,6 +102,7 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
       hasAiSummary: false,
       description: 'Quarterly board meeting to review kernel governance, security patches, and maintainer updates.',
       isRecurring: true,
+      isPrivate: true,
     },
   ],
   pastMeetings: [
@@ -120,6 +121,7 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
       description: 'Quarterly board meeting to review kernel governance, security patches, and maintainer updates.',
       isRecurring: true,
       hasRecording: true,
+      isPrivate: true,
     },
   ],
   mailingListName: 'kernel-board@lists.linuxfoundation.org',
@@ -147,7 +149,7 @@ const LFAI_GOVERNING_BOARD: OrgGroupDetail = {
   activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: true,
-  chairs: [{ id: 'c1', name: 'Ibrahim Haddad', initials: 'IH', avatarColor: 'bg-emerald-500' }],
+  chairs: [{ id: 'c1', name: 'Ibrahim Haddad', initials: 'IH', role: 'Chair' }],
   nextMeetings: [
     {
       id: 'nm1',
@@ -209,8 +211,8 @@ const K8S_STEERING: OrgGroupDetail = {
   openSurveyCount: 1,
   inviteOnly: true,
   chairs: [
-    { id: 'c1', name: 'Bob Killen', initials: 'BK', avatarColor: 'bg-blue-600' },
-    { id: 'c2', name: 'Christoph Blecker', initials: 'CB', avatarColor: 'bg-rose-500' },
+    { id: 'c1', name: 'Bob Killen', initials: 'BK', role: 'Chair' },
+    { id: 'c2', name: 'Christoph Blecker', initials: 'CB', role: 'Vice Chair' },
   ],
   nextMeetings: [
     {
@@ -272,7 +274,7 @@ const PYTORCH_BOARD: OrgGroupDetail = {
   activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: true,
-  chairs: [{ id: 'c1', name: 'David Nalley', initials: 'DN', avatarColor: 'bg-amber-500' }],
+  chairs: [{ id: 'c1', name: 'David Nalley', initials: 'DN', role: 'Chair' }],
   nextMeetings: [
     {
       id: 'nm1',

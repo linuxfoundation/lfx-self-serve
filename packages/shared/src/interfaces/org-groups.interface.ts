@@ -60,7 +60,7 @@ export interface GroupsSelectOption {
 
 // ─── Group detail ─────────────────────────────────────────────────────────────
 
-export type GroupDetailTabId = 'overview' | 'votes' | 'meetings' | 'surveys' | 'documents';
+export type GroupDetailTabId = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents';
 
 export interface GroupDetailTabConfig {
   readonly id: GroupDetailTabId;
@@ -72,7 +72,7 @@ export interface GroupChair {
   id: string;
   name: string;
   initials: string;
-  avatarColor: string; // tailwind bg class e.g. 'bg-violet-500'
+  role: string; // 'Chair' | 'Vice Chair' | ... — drives avatar color, like committee chair.role.name
 }
 
 export interface GroupMeeting {
@@ -90,6 +90,7 @@ export interface GroupMeeting {
   description?: string;
   isRecurring?: boolean;
   hasRecording?: boolean;
+  isPrivate?: boolean;
 }
 
 export interface OrgGroupDetail extends OrgGroup {

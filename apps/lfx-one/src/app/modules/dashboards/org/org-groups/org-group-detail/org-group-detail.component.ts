@@ -11,15 +11,16 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { DETAIL_TABS } from '@lfx-one/shared/constants';
 import type { GroupDetailTabConfig, GroupDetailTabId, OrgGroupDetail } from '@lfx-one/shared/interfaces';
 
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 
 import { OrgGroupsService } from '../services/org-groups.service';
 
-/** Group detail page shell (LFXV2-1879) — overview, meetings, votes, surveys, documents tabs. */
+/** Group detail page shell (LFXV2-1879) — overview, members, meetings, votes, surveys, documents tabs. */
 @Component({
   selector: 'lfx-org-group-detail',
-  imports: [RouterLink, CardComponent, TagComponent, SkeletonModule],
+  imports: [RouterLink, ButtonComponent, CardComponent, TagComponent, SkeletonModule],
   templateUrl: './org-group-detail.component.html',
 })
 export class OrgGroupDetailComponent {
