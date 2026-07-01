@@ -1,0 +1,143 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col h-[32rem] bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="mktg-chat-panel">
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-3 min-w-0">
+      <lfx-button
+        icon="fa-light fa-arrow-left"
+        [text]="true"
+        size="small"
+        ariaLabel="Back to the marketplace"
+        data-testid="mktg-chat-back"
+        (onClick)="onBack()" />
+      <span class="flex items-center justify-center w-9 h-9 rounded-lg bg-gray-100 text-gray-500 shrink-0">
+        <i [class]="agent().icon + ' text-base'" aria-hidden="true"></i>
+      </span>
+      <div class="flex flex-col min-w-0">
+        <span class="font-medium text-sm text-gray-900 truncate">{{ agent().number }}. {{ agent().name }}</span>
+        @if (agent().tags.length > 0) {
+          <span class="text-xs text-gray-500 truncate">{{ tagsLabel() }}</span>
+        }
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <lfx-button
+        icon="fa-light fa-clock-rotate-left"
+        [text]="true"
+        size="small"
+        [ariaLabel]="showSessions() ? 'Hide past chats' : 'Show past chats'"
+        data-testid="mktg-chat-toggle-sessions"
+        (onClick)="onToggleSessions()" />
+      <lfx-button
+        label="New Chat"
+        icon="fa-light fa-plus"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Start a new chat"
+        data-testid="mktg-chat-new"
+        (onClick)="onNewChat()" />
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="flex flex-1 min-h-0">
+    <!-- Past Chats drawer -->
+    @if (showSessions()) {
+      <aside class="flex flex-col gap-2 w-56 shrink-0 border-r border-gray-200 p-3 overflow-y-auto" data-testid="mktg-chat-sessions">
+        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Past Chats</span>
+        @if (sessions().length === 0) {
+          <p class="text-xs text-gray-400">No past chats yet. Send a message to start one.</p>
+        } @else {
+          <ul class="flex flex-col gap-1">
+            @for (session of sessions(); track session.sessionId) {
+              <li class="flex items-center gap-1 rounded-md" [class.bg-gray-100]="session.sessionId === activeSessionId()">
+                <button
+                  type="button"
+                  class="flex-1 min-w-0 px-2 py-1.5 text-left rounded-md hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  [attr.data-testid]="'mktg-chat-session-' + session.sessionId"
+                  (click)="onSelectSession(session.sessionId)">
+                  <span class="block text-xs font-medium text-gray-800 truncate">{{ session.title }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="px-1.5 py-1 rounded text-gray-400 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  [attr.data-testid]="'mktg-chat-delete-' + session.sessionId"
+                  aria-label="Delete chat"
+                  (click)="onDeleteSession(session.sessionId)">
+                  <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </aside>
+    }
+
+    <!-- Chat main -->
+    <div class="flex flex-col flex-1 min-w-0">
+      <!-- Intro banner -->
+      <p class="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">{{ agent().description }}</p>
+
+      @if (isHistoryLoading()) {
+        <div class="flex flex-1 items-center justify-center gap-2 text-sm text-gray-500" data-testid="mktg-chat-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          <span>Loading chat history…</span>
+        </div>
+      } @else {
+        <!-- Messages -->
+        <div class="flex flex-col flex-1 gap-3 p-4 overflow-y-auto" data-testid="mktg-chat-messages">
+          @for (message of messages(); track message.id) {
+            <div
+              class="flex flex-col max-w-[80%]"
+              [class.self-end]="message.sender === 'user'"
+              [class.items-end]="message.sender === 'user'"
+              [attr.data-testid]="'mktg-chat-message-' + message.sender">
+              <div
+                class="px-3 py-2 rounded-lg text-sm break-words whitespace-pre-wrap"
+                [ngClass]="message.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'">
+                {{ message.text }}
+              </div>
+              @if (message.timestamp) {
+                <span class="mt-1 text-[10px] text-gray-400">{{ message.timestamp }}</span>
+              }
+            </div>
+          } @empty {
+            @if (!isTyping()) {
+              <div class="flex flex-1 items-center justify-center text-sm text-gray-400 text-center" data-testid="mktg-chat-empty">
+                Send a message to start chatting with {{ agent().name }}.
+              </div>
+            }
+          }
+
+          @if (isTyping()) {
+            <div class="flex items-center gap-1 self-start px-3 py-2 rounded-lg bg-gray-100" data-testid="mktg-chat-typing" aria-label="Agent is responding">
+              <span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:0.15s]"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:0.3s]"></span>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Input -->
+      <form class="flex items-center gap-2 p-3 border-t border-gray-200" [formGroup]="chatForm" (ngSubmit)="onSubmit()">
+        <div class="flex-1">
+          <lfx-input-text [form]="chatForm" control="message" [placeholder]="'Message ' + agent().name + '…'" dataTest="mktg-chat-input" />
+        </div>
+        <lfx-button
+          type="button"
+          label="Send"
+          icon="fa-light fa-paper-plane"
+          size="small"
+          [disabled]="isTyping() || isHistoryLoading()"
+          ariaLabel="Send message"
+          data-testid="mktg-chat-send"
+          (onClick)="onSubmit()" />
+      </form>
+    </div>
+  </div>
+</div>
