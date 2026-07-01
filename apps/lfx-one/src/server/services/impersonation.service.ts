@@ -19,6 +19,9 @@ import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helpe
 import { logger } from './logger.service';
 import { NatsService } from './nats.service';
 
+/** Safety buffer subtracted from token expiry to avoid using near-expired tokens (5 min). */
+const TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS = 300;
+
 export class ImpersonationService {
   private readonly natsService: NatsService;
 
@@ -26,13 +29,14 @@ export class ImpersonationService {
     this.natsService = new NatsService();
   }
 
-  public async exchangeToken(req: Request, targetUser: string): Promise<M2MTokenResponse> {
-    logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser });
+  public async exchangeToken(req: Request, targetUser: string, audience?: string): Promise<M2MTokenResponse> {
+    logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser, ...(audience ? { audience } : {}) });
 
     const codec = this.natsService.getCodec();
     const payload = JSON.stringify({
       subject_token: req.bearerToken || '',
       target_user: targetUser,
+      ...(audience ? { audience } : {}),
     });
 
     try {
@@ -131,7 +135,8 @@ export class ImpersonationService {
     tokenResponse: M2MTokenResponse,
     targetClaims: LfxAccessTokenClaims,
     profile?: { name?: string; picture?: string },
-    personaContext?: PersonaType
+    personaContext?: PersonaType,
+    cfTokenResponse?: M2MTokenResponse
   ): void {
     if (!req.appSession) {
       req.appSession = {};
@@ -153,10 +158,18 @@ export class ImpersonationService {
     };
 
     req.appSession['impersonationToken'] = tokenResponse.access_token;
-    const safetyBufferSeconds = tokenResponse.expires_in > 300 ? 300 : 0;
+    const safetyBufferSeconds = tokenResponse.expires_in > TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS ? TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS : 0;
     req.appSession['impersonationExpiresAt'] = Date.now() + (tokenResponse.expires_in - safetyBufferSeconds) * 1000;
     req.appSession['impersonationUser'] = targetUser;
     req.appSession['impersonator'] = impersonator;
+
+    // Store target user's CF token when we obtained one via audience-scoped CTE.
+    // Stored in Unix seconds to match the pattern of crowdfundingTokenExpiresAt.
+    if (cfTokenResponse) {
+      const cfSafetyBuffer = cfTokenResponse.expires_in > TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS ? TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS : 0;
+      req.appSession['impersonationCrowdfundingToken'] = cfTokenResponse.access_token;
+      req.appSession['impersonationCrowdfundingExpiresAt'] = Math.floor(Date.now() / 1000) + cfTokenResponse.expires_in - cfSafetyBuffer;
+    }
 
     if (personaContext) {
       req.appSession['impersonationPersonaContext'] = personaContext;

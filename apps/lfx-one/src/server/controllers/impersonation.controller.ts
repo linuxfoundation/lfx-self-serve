@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PersonaType, VALID_PERSONAS } from '@lfx-one/shared/interfaces';
+import { M2MTokenResponse, PersonaType, VALID_PERSONAS } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
@@ -65,8 +65,25 @@ export class ImpersonationController {
         throw new Error('Failed to decode target user claims from CTE response');
       }
 
+      // Attempt a CF-audience CTE so the impersonated session can access the target user's
+      // Crowdfunding data. This is best-effort: if the exchange fails (e.g. the target user
+      // has no CF account or Auth0 denies the audience), impersonation still starts and CF
+      // sections fall back to empty state (Phase 1 behaviour).
+      const cfAudience = process.env['CROWDFUNDING_API_AUDIENCE'];
+      let cfTokenResponse: M2MTokenResponse | undefined;
+      if (cfAudience) {
+        try {
+          cfTokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), cfAudience);
+          logger.debug(req, 'start_impersonation', 'CF CTE exchange succeeded for target user');
+        } catch (cfErr) {
+          logger.warning(req, 'start_impersonation', 'CF CTE exchange failed — CF will show empty state during impersonation', {
+            error: cfErr instanceof Error ? cfErr.message : String(cfErr),
+          });
+        }
+      }
+
       const profile = await this.impersonationService.fetchTargetUserProfile(req, targetClaims['sub']);
-      this.impersonationService.startImpersonation(req, res, tokenResponse, targetClaims, profile, personaContext);
+      this.impersonationService.startImpersonation(req, res, tokenResponse, targetClaims, profile, personaContext, cfTokenResponse);
 
       logger.success(req, 'start_impersonation', startTime, {
         target_sub: targetClaims['sub'],
