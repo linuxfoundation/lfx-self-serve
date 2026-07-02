@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BOARD_SCOPED_PERSONA_PRIORITY, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
@@ -28,6 +28,10 @@ export class ProjectSelectorComponent {
   private readonly navigationService = inject(NavigationService);
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  private readonly popoverRef = viewChild<Popover>('popover');
+  private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
 
   public readonly lens = input.required<NavLens>();
   public readonly selectedProject = input<ProjectContext | null>(null);
@@ -86,6 +90,7 @@ export class ProjectSelectorComponent {
 
   protected onPopoverShow(): void {
     this.isPanelOpen.set(true);
+    this.alignPanelTop();
   }
 
   protected onPopoverHide(): void {
@@ -119,6 +124,22 @@ export class ProjectSelectorComponent {
       }
     } else {
       this.navigationService.loadNextPage(this.lens());
+    }
+  }
+
+  /**
+   * Align the panel's top edge with the selector trigger. Only applies at lg+, where the SCSS sets
+   * `position: fixed` (viewport-relative). Below that PrimeNG uses absolute (document-relative)
+   * positioning, so a viewport-relative top would mis-place the panel on scroll.
+   */
+  private alignPanelTop(): void {
+    if (!isPlatformBrowser(this.platformId) || !window.matchMedia('(min-width: 1024px)').matches) {
+      return;
+    }
+    const trigger = this.triggerRef()?.nativeElement;
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (trigger && container) {
+      container.style.top = `${Math.round(trigger.getBoundingClientRect().top)}px`;
     }
   }
 

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, model, Signal } from '@angular/core';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Account, DisplayOrgItem, OrgItem } from '@lfx-one/shared/interfaces';
@@ -31,6 +31,10 @@ export class OrgSelectorComponent {
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  private readonly popoverRef = viewChild<Popover>('popover');
+  private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
 
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
@@ -149,6 +153,7 @@ export class OrgSelectorComponent {
 
   protected onPopoverShow(): void {
     this.isPanelOpen.set(true);
+    this.alignPanelTop();
     // Safety net when bootstrap raced ahead of the visibility gate (enabled was false on first tick).
     if (this.enabled() && this.items().length === 0 && !this.loading()) {
       this.bootstrapOrgList();
@@ -162,6 +167,22 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /**
+   * Align the panel's top edge with the selector trigger. Only applies at lg+, where the SCSS sets
+   * `position: fixed` (viewport-relative). Below that PrimeNG uses absolute (document-relative)
+   * positioning, so a viewport-relative top would mis-place the panel on scroll.
+   */
+  private alignPanelTop(): void {
+    if (!isPlatformBrowser(this.platformId) || !window.matchMedia('(min-width: 1024px)').matches) {
+      return;
+    }
+    const trigger = this.triggerRef()?.nativeElement;
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (trigger && container) {
+      container.style.top = `${Math.round(trigger.getBoundingClientRect().top)}px`;
+    }
   }
 
   private bootstrapOrgList(): void {
