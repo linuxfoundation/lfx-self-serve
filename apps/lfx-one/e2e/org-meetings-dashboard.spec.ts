@@ -116,4 +116,29 @@ test.describe('Org Meetings Dashboard', () => {
     await expect(page).not.toHaveURL(/tab=/);
     await expect(page.getByTestId('org-meetings-upcoming-tab')).toBeVisible();
   });
+
+  test('search narrows the upcoming meetings list', async ({ page }) => {
+    await gotoOrgMeetingsPage(page);
+    await expect(page.getByTestId('org-meetings-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const list = page.getByTestId('org-upcoming-meetings-list');
+    const initialCount = await list.locator('[data-testid^="org-upcoming-meeting-card-"]').count();
+    expect(initialCount).toBeGreaterThan(1);
+
+    await page.getByTestId('org-meetings-search').locator('input').fill('Security TAG');
+    await expect(list.locator('[data-testid^="org-upcoming-meeting-card-"]')).toHaveCount(1);
+    await expect(list).toContainText('Security TAG Monthly');
+  });
+
+  test('pending RSVP toggle narrows the upcoming meetings list', async ({ page }) => {
+    await gotoOrgMeetingsPage(page);
+    await expect(page.getByTestId('org-meetings-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const list = page.getByTestId('org-upcoming-meetings-list');
+    const initialCount = await list.locator('[data-testid^="org-upcoming-meeting-card-"]').count();
+
+    await page.getByTestId('org-meetings-pending-rsvp-toggle').click();
+    const filteredCount = await list.locator('[data-testid^="org-upcoming-meeting-card-"]').count();
+    expect(filteredCount).toBeLessThan(initialCount);
+  });
 });

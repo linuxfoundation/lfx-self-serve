@@ -38,13 +38,15 @@
               </span>
             }
           </div>
-          <button
-            type="button"
-            class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded flex-shrink-0"
-            aria-label="Copy meeting link"
-            [cdkCopyToClipboard]="meetingLinkUrl(meeting.id)">
-            <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
-          </button>
+          @defer (on idle) {
+            <button
+              type="button"
+              class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded flex-shrink-0"
+              aria-label="Copy meeting link"
+              [cdkCopyToClipboard]="meetingLinkUrl(meeting.id)">
+              <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
+            </button>
+          }
         </div>
 
         <!-- ── Title ── -->

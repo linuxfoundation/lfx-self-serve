@@ -160,14 +160,21 @@ export class OrgMeetingsComponent {
   private initFilteredUpcoming(): Signal<readonly OrgMeeting[]> {
     return computed(() => {
       const pendingRsvpOnly = this.pendingRsvpOnly();
+      const now = Date.now();
       return this.upcomingMeetings()
+        .filter((m) => new Date(m.startTime).getTime() >= now)
         .filter((m) => this.matchesFilters(m))
         .filter((m) => !pendingRsvpOnly || m.orgInvitees.some((invitee) => invitee.rsvpStatus === null));
     });
   }
 
   private initFilteredPast(): Signal<readonly OrgPastMeeting[]> {
-    return computed(() => this.pastMeetings().filter((m) => this.matchesFilters(m)));
+    return computed(() => {
+      const now = Date.now();
+      return this.pastMeetings()
+        .filter((m) => new Date(m.startTime).getTime() < now)
+        .filter((m) => this.matchesFilters(m));
+    });
   }
 
   private matchesFilters(meeting: OrgMeetingBase): boolean {

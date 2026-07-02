@@ -20,7 +20,8 @@ export class OrgPastMeetingsComponent {
   protected meetingLinkUrl(meetingId: string): string {
     const path = `/meetings/${meetingId}`;
     // SSR fallback: `window` is undefined during server rendering, so this must return the
-    // relative path — the copy button renders unconditionally, so this runs on every SSR pass.
+    // relative path regardless of whether the calling template evaluates it eagerly or behind
+    // a `@defer` block — the guard keeps this method safe in either context.
     if (!isPlatformBrowser(this.platformId)) return path;
     return `${window.location.origin}${path}`;
   }
