@@ -416,7 +416,7 @@ export class SidebarNavService {
     testId: 'sidebar-project-mktg-os-agents',
   };
 
-  // --- Project Lens — Governance section (for non-board personas) ---
+  // --- Project Lens — Governance section (always surfaced under the Project lens) ---
   private readonly projectGovernanceSection: SidebarMenuItem = {
     label: 'Governance',
     isSection: true,

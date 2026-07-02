@@ -26,6 +26,7 @@
         <span
           class="text-xs font-normal text-gray-400 leading-none truncate"
           data-testid="org-selector-trigger-role-badge"
+          [attr.aria-label]="'Role: ' + selectedRoleLabel()"
           [attr.data-role-persona]="selectedRolePersona()"
           [attr.data-role-label]="selectedRoleLabel()"
           [attr.title]="selectedRoleTooltip() || selectedRoleLabel()"
