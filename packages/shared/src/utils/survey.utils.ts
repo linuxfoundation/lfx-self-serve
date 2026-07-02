@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { COMBINED_SURVEY_STATUS, type CombinedSurveyStatus } from '../constants/survey.constants';
+import { COMBINED_SURVEY_STATUS } from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import type { NpsBand, SurveyDisplayStatusInput, SurveyResponseItem, SurveyStatusInput } from '../interfaces/survey.interface';
+import type { CombinedSurveyStatus, NpsBand, SurveyDisplayStatusInput, SurveyResponseItem, SurveyStatusInput } from '../interfaces/survey.interface';
 
 /**
  * Sentinel value the API uses on `response_status` to signal that responses
