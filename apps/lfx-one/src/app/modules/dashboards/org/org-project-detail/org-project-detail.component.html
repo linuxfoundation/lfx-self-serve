@@ -29,19 +29,19 @@
         icon="fa-light fa-folder-open"
         title="Project not found"
         subtitle="We couldn't find that project for your organization."
-        ctaLabel="Back to Org Overview"
+        ctaLabel="Back to Projects"
         ctaIcon="fa-light fa-arrow-left"
-        [ctaRoute]="['/org/overview']"
+        [ctaRoute]="['/org/projects']"
         data-testid="project-detail-not-found">
       </lfx-empty-state>
     }
 
     @default {
       @if (hero(); as h) {
-        <!-- Breadcrumb: Org Overview / <Project> -->
+        <!-- Breadcrumb: Projects / <Project> -->
         <lfx-breadcrumb
           [model]="breadcrumbItems()"
-          [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/overview'], styleClass: 'sr-only' }"
+          [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
           data-testid="project-detail-breadcrumb">
         </lfx-breadcrumb>
 
