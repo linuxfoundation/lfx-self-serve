@@ -167,10 +167,11 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
-            // Source the target's real timestamps from NATS metadata; fall back to '' (explicit
-            // "unknown") rather than a fabricated current time that would change every request.
-            created_at: (natsUserData?.created_at || '') as string,
-            updated_at: (natsUserData?.updated_at || '') as string,
+            // Use an explicit "unknown" ('') rather than a fabricated current time that would change
+            // on every request. UserMetadata carries no created_at/updated_at, and these fields
+            // aren't surfaced for the impersonated view.
+            created_at: '',
+            updated_at: '',
           }
         : {
             id: oidcUser['sub'] as string,
