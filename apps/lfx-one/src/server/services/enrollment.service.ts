@@ -41,7 +41,7 @@ export class EnrollmentService {
       // an error — the target's membership isn't reachable if the member-service rejects the token.
       if (impersonating) {
         logger.warning(req, 'get_individual_enrollments', 'Target enrollment fetch failed during impersonation; showing standard card', {
-          error: error instanceof Error ? error.message : 'Unknown error',
+          err: error,
         });
         return [{ ...TLF_INDIVIDUAL_SUPPORTER, membership: null }];
       }
@@ -96,13 +96,27 @@ export class EnrollmentService {
     logger.debug(req, 'get_linux_addon_membership', 'Checking Linux.com add-on purchase from member-service');
 
     // Impersonation-aware: resolve `/me` as the target via their bearer token (see getIndividualEnrollments).
-    const data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
-      operation: 'get_linux_addon_membership',
-      service: ENROLLMENT_SERVICE,
-      errorMessage: 'Linux.com add-on membership fetch failed',
-      errorCode: 'LINUX_ADDON_MEMBERSHIP_FETCH_FAILED',
-      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-    });
+    const impersonating = isImpersonating(req);
+
+    let data: { Data?: RawMembership[]; data?: RawMembership[] } | null;
+    try {
+      data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
+        operation: 'get_linux_addon_membership',
+        service: ENROLLMENT_SERVICE,
+        errorMessage: 'Linux.com add-on membership fetch failed',
+        errorCode: 'LINUX_ADDON_MEMBERSHIP_FETCH_FAILED',
+        bearerToken: impersonating ? req.bearerToken : undefined,
+      });
+    } catch (error) {
+      // While impersonating, the target's add-on isn't reachable if the member-service rejects the
+      // token — treat as not purchased so the Linux.com card renders a clean read-only state rather
+      // than the retry panel. Non-impersonation failures propagate to the caller as before.
+      if (impersonating) {
+        logger.warning(req, 'get_linux_addon_membership', 'Target add-on fetch failed during impersonation; treating as not purchased', { err: error });
+        return false;
+      }
+      throw error;
+    }
 
     const rawMemberships: RawMembership[] = data?.Data ?? data?.data ?? [];
     return rawMemberships.some((m) => m.Product?.ID === LINUX_COM_ADDON_PRODUCT_ID && VALID_STATUSES.has(m.Status as EnrollmentMembership['Status']));

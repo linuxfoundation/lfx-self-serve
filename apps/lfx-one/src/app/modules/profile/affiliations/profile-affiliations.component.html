@@ -79,6 +79,7 @@
             severity="secondary"
             [outlined]="true"
             size="small"
+            [disabled]="impersonating()"
             (onClick)="navigateToIdentities()"
             data-testid="verify-identities-btn" />
           <lfx-button
