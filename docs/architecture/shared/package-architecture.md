@@ -39,17 +39,19 @@ During development, TypeScript path mappings resolve `@lfx-one/shared/*` directl
 
 ### Interfaces (`interfaces/`)
 
-All TypeScript interfaces live in this package — **including component-specific prop interfaces** — so types are discoverable from one place and reusable without refactoring.
+All TypeScript interfaces **and type aliases** live in this package — **including component-specific prop interfaces** — so types are discoverable from one place and reusable without refactoring.
 
 - File suffix: `.interface.ts`; one domain per file (e.g. `meeting.interface.ts` owns all meeting-shaped types).
 - Prefer `interface` over union types where it makes the shape extensible.
 - Add JSDoc for non-obvious fields (especially ones that mirror upstream Go/Goa API shapes).
+- **Type aliases live here too, including derived aliases** such as `type Foo = (typeof BAR)[keyof typeof BAR]`. The alias belongs in the interface file even when the `BAR` constant it derives from lives in a constants file — import the constant into the `.interface.ts` to derive the alias. (The constant is used only in a type position via `typeof`, so the import is erased at compile time and creates no runtime dependency cycle.)
 
 ### Constants (`constants/`)
 
 Design tokens, API endpoint config, and static lookup data (countries, timezones, t-shirt sizes, etc.).
 
 - Use `as const` assertions for immutable values.
+- Export **runtime values only** — `const`, `as const` objects, `Set`s, arrays. No `export type` / `export interface`; a type derived from a constant goes in the matching `.interface.ts` (see Interfaces above).
 - Group by domain file. Subdirectories are allowed for large groupings (e.g. `meeting-templates/`).
 
 ### Enums (`enums/`)
@@ -121,6 +123,7 @@ Keep runtime deps minimal. Prefer peer dependencies for framework-specific types
 
 - **File naming**: Use the canonical suffix (`.interface.ts`, `.constants.ts`, `.enum.ts`, `.utils.ts`, `.validators.ts`) so tooling and grep work consistently.
 - **Interfaces everywhere**: Even component-specific prop types live here — no local `interface Foo {}` declarations inside `apps/lfx-one/`.
+- **Types in `interfaces/`, values in `constants/`**: `export type` (including derived aliases like `(typeof CONST)[keyof typeof CONST]`) belongs in a `.interface.ts`; constants files export runtime values only.
 - **Prefer `interface` over union types** for shapes you might extend.
 - **Optional properties**: Use `?` for fields that may be undefined rather than `| undefined` in unions.
 - **Pure utils**: Utilities should not import from `apps/lfx-one/` — the dependency direction is one-way (app depends on shared, not vice versa).

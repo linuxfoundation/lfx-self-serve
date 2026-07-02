@@ -174,6 +174,7 @@ For missing sign-off recovery (single-commit amend, or older commits / cherry-pi
 - Never nest ternary expressions.
 - Use `flex + flex-col + gap-*`, not `space-y-*`, for vertical stacking.
 - All shared constants and interfaces live in `@lfx-one/shared` — no module-level consts or local `interface Foo {}` inside `apps/lfx-one/`.
+- Within `@lfx-one/shared`, types live in `interfaces/` and values live in `constants/`: `export type` (including derived aliases like `(typeof CONST)[keyof typeof CONST]`) belongs in a `.interface.ts`; constants files export runtime values only.
 
 ### Architecture
 
