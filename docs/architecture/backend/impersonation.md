@@ -165,7 +165,7 @@ Many controllers and services read the user's email/username from `req.oidc.user
 | --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | Email-keyed lookups                                                                                       |
 | `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `jdoe`)                                        |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|jdoe`); one incidental caller (badges email lookup) |
+| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — Auth0 sub (prefixed, e.g. `auth0\|jdoe`); two incidental callers (badges email lookup, mktg-agents session owner binding) |
 
 For the full `username` vs `sub` distinction and the `sub` → `username` migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
