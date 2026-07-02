@@ -18,7 +18,6 @@ export class JoinApplicationDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
 
   public readonly committeeName: string = this.config.data.committeeName;
-  public readonly mode: 'application' | 'invite_only' = this.config.data.mode;
 
   public applicationForm = new FormGroup({
     message: new FormControl(''),
