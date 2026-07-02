@@ -103,6 +103,25 @@ export class CommitteeController {
   }
 
   /**
+   * GET /committees/my-committee-uids
+   * Lightweight alternative to /my-committees — returns only the UIDs the caller is a member of.
+   * Skips committee detail fetches and project enrichment; use when only set-membership checks are needed.
+   */
+  public async getMyCommitteeUids(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = req.query['project_uid'] as string | undefined;
+    const startTime = logger.startOperation(req, 'get_my_committee_uids', { project_uid: projectUid });
+
+    try {
+      const uids = await this.committeeService.getMyCommitteeUids(req, projectUid);
+
+      logger.success(req, 'get_my_committee_uids', startTime, { uid_count: uids.size });
+      res.json([...uids]);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /committees/:id
    */
   public async getCommitteeById(req: Request, res: Response, next: NextFunction): Promise<void> {

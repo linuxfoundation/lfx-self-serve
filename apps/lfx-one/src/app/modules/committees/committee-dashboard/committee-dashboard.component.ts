@@ -125,7 +125,7 @@ export class CommitteeDashboardComponent {
     // Initialize data
     this.committees = this.initializeCommittees();
     this.myCommittees = this.initializeMyCommittees();
-    this.myCommitteeUids = computed(() => new Set(this.myCommittees().map((c) => c.uid)));
+    this.myCommitteeUids = this.initializeMyCommitteeUids();
     this.decoratedCommittees = this.initializeDecoratedCommittees();
     this.decoratedMyCommittees = this.initializeDecoratedMyCommittees();
 
@@ -302,18 +302,45 @@ export class CommitteeDashboardComponent {
     return toSignal(
       combineLatest([scope$, refresh$]).pipe(
         switchMap(([scope]) => {
-          if (scope.mode !== 'all' && !scope.uid) {
+          if (scope.mode !== 'all') {
+            // Non-me lens: full enrichment is not needed here; UIDs are fetched via getMyCommitteeUids.
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
 
           this.myCommitteesLoading.set(true);
-          const projectUid = scope.mode === 'project' ? scope.uid : undefined;
-          const foundationUid = scope.mode === 'foundation' ? scope.uid : undefined;
-          return this.committeeService.getMyCommittees(projectUid, foundationUid).pipe(finalize(() => this.myCommitteesLoading.set(false)));
+          return this.committeeService.getMyCommittees().pipe(finalize(() => this.myCommitteesLoading.set(false)));
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Builds the `myCommitteeUids` signal:
+   * - Me lens: derives from the fully-enriched `myCommittees` signal (no extra HTTP call).
+   * - ED/project lens: fetches only membership UIDs via the lightweight endpoint, skipping
+   *   committee detail and project-enrichment fan-out. The result is only used for member-badge
+   *   rendering in the committee table — full enrichment is not needed.
+   */
+  private initializeMyCommitteeUids(): Signal<Set<string>> {
+    const fromFull$ = toObservable(computed(() => new Set(this.myCommittees().map((c) => c.uid))));
+    const isMeLens$ = toObservable(this.isMeLens);
+    const refresh$ = toObservable(this.refresh);
+
+    return toSignal(
+      combineLatest([isMeLens$, refresh$]).pipe(
+        switchMap(([isMeLens]) => {
+          if (isMeLens) {
+            return fromFull$;
+          }
+          return this.committeeService.getMyCommitteeUids().pipe(
+            map((uids) => new Set(uids)),
+            catchError(() => of(new Set<string>()))
+          );
+        })
+      ),
+      { initialValue: new Set<string>() }
     );
   }
 
