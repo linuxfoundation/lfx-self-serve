@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { BehavioralClassDisplayConfig, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -37,17 +37,6 @@ export const COMMITTEE_LABEL = {
   singular: 'Group',
   plural: 'Groups',
 } as const;
-
-/**
- * Committee category info for card-based selection
- * @description Defines icons, descriptions, and colors for each committee category
- */
-export interface CommitteeCategoryInfo {
-  icon: string;
-  description: string;
-  examples: string;
-  color: string;
-}
 
 /**
  * Committee category configurations with visual styling

@@ -8,6 +8,7 @@ import {
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
   ROOT_PROJECT_UID_CACHE_TTL_MS,
+  VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
@@ -20,7 +21,6 @@ import {
   PersonaDetections,
   PersonaProject,
   PersonaType,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
