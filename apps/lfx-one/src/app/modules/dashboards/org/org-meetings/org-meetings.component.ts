@@ -53,12 +53,14 @@ export class OrgMeetingsComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  protected readonly pendingRsvpOnly = signal(false);
   protected readonly upcomingMeetings = signal<readonly OrgMeeting[]>(DEMO_UPCOMING_MEETINGS);
   protected readonly pastMeetings = signal<readonly OrgPastMeeting[]>(DEMO_PAST_MEETINGS);
 
   // === Computed signals ===
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
+  protected readonly nextUpcomingMeetingDate: Signal<string> = this.initNextUpcomingMeetingDate();
   protected readonly filterSearch: Signal<string> = this.initFilterSearch();
   protected readonly filterType: Signal<OrgMeetingType | null> = this.initFilterType();
   protected readonly filterProject: Signal<string | null> = this.initFilterProject();
@@ -74,6 +76,10 @@ export class OrgMeetingsComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
+  }
+
+  protected togglePendingRsvpOnly(): void {
+    this.pendingRsvpOnly.update((value) => !value);
   }
 
   // === Private initializers ===
@@ -97,30 +103,42 @@ export class OrgMeetingsComponent {
             value: String(ORG_MEETINGS_KPI_PAST_COUNT),
             label: 'Past Meetings',
             icon: 'fa-light fa-clock-rotate-left',
-            iconContainerClass: 'bg-gray-100 text-gray-500',
+            iconContainerClass: 'bg-gray-200 text-gray-500',
           },
           {
             value: String(ORG_MEETINGS_KPI_RECORDINGS_COUNT),
             label: 'Recordings Available',
             icon: 'fa-light fa-video',
-            iconContainerClass: 'bg-red-100 text-red-500',
+            iconContainerClass: 'bg-red-100 text-red-600',
           },
         ];
       }
+      const nextDate = this.nextUpcomingMeetingDate();
       return [
         {
           value: String(ORG_MEETINGS_KPI_UPCOMING_COUNT),
           label: 'Upcoming Meetings',
+          subLine: nextDate ? `Next: ${nextDate}` : undefined,
           icon: 'fa-light fa-calendar',
           iconContainerClass: 'bg-blue-100 text-blue-600',
         },
         {
           value: String(ORG_MEETINGS_KPI_RECURRING_COUNT),
-          label: `Recurring Series · Across ${ORG_MEETINGS_KPI_RECURRING_PROJECTS} projects`,
-          icon: 'fa-light fa-rotate',
-          iconContainerClass: 'bg-violet-100 text-violet-600',
+          label: 'Recurring Series',
+          subLine: `Across ${ORG_MEETINGS_KPI_RECURRING_PROJECTS} projects`,
+          icon: 'fa-light fa-repeat',
+          iconContainerClass: 'bg-purple-100 text-purple-600',
         },
       ];
+    });
+  }
+
+  private initNextUpcomingMeetingDate(): Signal<string> {
+    return computed(() => {
+      const sorted = [...this.upcomingMeetings()].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      const first = sorted[0];
+      if (!first) return '';
+      return new Date(first.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
   }
 
@@ -141,11 +159,13 @@ export class OrgMeetingsComponent {
       const search = this.filterSearch().toLowerCase();
       const type = this.filterType();
       const project = this.filterProject();
+      const pendingRsvpOnly = this.pendingRsvpOnly();
       return this.upcomingMeetings().filter((m) => {
         const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
         const matchesType = !type || m.type === type;
         const matchesProject = !project || m.project === project;
-        return matchesSearch && matchesType && matchesProject;
+        const matchesPendingRsvp = !pendingRsvpOnly || m.orgInvitees.some((invitee) => invitee.rsvpStatus === null);
+        return matchesSearch && matchesType && matchesProject && matchesPendingRsvp;
       });
     });
   }
