@@ -41,7 +41,7 @@ export const ORG_MEETINGS_PROJECT_OPTIONS: FilterOption[] = [
 ];
 
 /** Type filter options for the Org Meetings filter bar. */
-export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption[] = [
+export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption<OrgMeetingType | null>[] = [
   { label: 'All Types', value: null },
   { label: 'Board', value: 'board' },
   { label: 'Working Group', value: 'working-group' },

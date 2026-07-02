@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
@@ -16,7 +17,7 @@ const NO_RESPONSE_BADGE = { label: 'No Response', badgeClass: 'bg-gray-100 text-
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
-  imports: [DatePipe, PersonAvatarComponent],
+  imports: [DatePipe, PersonAvatarComponent, ClipboardModule],
   templateUrl: './org-upcoming-meetings.component.html',
 })
 export class OrgUpcomingMeetingsComponent {
@@ -39,11 +40,13 @@ export class OrgUpcomingMeetingsComponent {
     });
   }
 
-  protected copyLink(meetingId: string): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-    navigator.clipboard?.writeText(`${window.location.origin}/meetings/${meetingId}`)?.catch(() => {
-      // Clipboard access denied or unavailable — fail silently.
-    });
+  protected meetingLinkUrl(meetingId: string): string {
+    const path = `/meetings/${meetingId}`;
+    // SSR fallback: `window` is undefined during server rendering, so we return the relative
+    // path. The copy button sits behind a `@defer` block, so in practice the clipboard write
+    // only runs in the browser where `window.location.origin` resolves.
+    if (!isPlatformBrowser(this.platformId)) return path;
+    return `${window.location.origin}${path}`;
   }
 
   protected totalInvited(tally: OrgMeetingRsvpTally): number {

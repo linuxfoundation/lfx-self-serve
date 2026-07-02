@@ -41,7 +41,7 @@ export class OrgMeetingsComponent {
 
   // === Template constants ===
   protected readonly tabs = ORG_MEETINGS_TABS;
-  protected readonly typeOptions: FilterOption[] = ORG_MEETINGS_TYPE_OPTIONS;
+  protected readonly typeOptions: FilterOption<OrgMeetingType | null>[] = ORG_MEETINGS_TYPE_OPTIONS;
   protected readonly projectOptions: FilterOption[] = ORG_MEETINGS_PROJECT_OPTIONS;
 
   // === Forms ===
