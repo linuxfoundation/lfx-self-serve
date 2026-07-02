@@ -26,8 +26,8 @@ import { map, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Builds the lens-aware sidebar menu items. Extracted from MainLayoutComponent so both the main
- * layout and the docs shell can render the same lens navigation (the docs shell shows it faded,
- * as a non-interactive hint of where the user will return).
+ * layout and the docs shell can render the same lens navigation. In the docs shell the previously
+ * active lens tab stays selected and no menu item is active (there is no lens route under /docs).
  */
 @Injectable({
   providedIn: 'root',
@@ -41,7 +41,7 @@ export class SidebarNavService {
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
-  /** Dark-launch gate; collapses Crowdfunding sub-nav to an external link when off. */
+  /** Dark-launch gate; the Crowdfunding section is shown only when on (no Crowdfunding nav entry when off). */
   private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
