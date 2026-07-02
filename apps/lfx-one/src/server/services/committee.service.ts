@@ -166,20 +166,17 @@ export class CommitteeService {
       })
     );
 
-    // Get member count and mailing list association for each committee in parallel
-    committees = await Promise.all(
-      committees.map(async (committee) => {
-        const [memberCount, mlCount] = await Promise.all([
-          this.getCommitteeMembersCount(req, committee.uid),
-          this.getMailingListCountByCommittee(req, committee.uid),
-        ]);
-        return {
-          ...committee,
-          total_members: memberCount,
-          has_mailing_list: mlCount > 0,
-        };
-      })
-    );
+    // Enrich with mailing-list presence via a single batched query (OR-tag semantics).
+    // total_members is already indexed by the committee-service as part of
+    // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
+    const committeeUids = committees.map((c) => c.uid).filter(Boolean);
+    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+
+    committees = committees.map((committee) => ({
+      ...committee,
+      total_members: committee.total_members ?? 0,
+      has_mailing_list: committeesWithMailingList.has(committee.uid),
+    }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)
     committees = await this.accessCheckService.addAccessToResources(req, committees, 'committee');
@@ -971,40 +968,29 @@ export class CommitteeService {
     const committeeUids = Array.from(membershipMap.keys());
     const committees = await this.getCommitteesByIds(req, committeeUids);
 
-    // Enrich each committee with per-committee counts (query-service) and membership metadata
-    const enriched = await Promise.all(
-      committeeUids.map(async (uid) => {
-        const committee = committees.get(uid);
-        if (!committee) {
-          logger.warning(req, 'get_my_committees', 'Committee not found in query service, skipping', {
-            committee_uid: uid,
-          });
-          return null;
-        }
-        const [memberCountRes, mlCountRes] = await Promise.allSettled([this.getCommitteeMembersCount(req, uid), this.getMailingListCountByCommittee(req, uid)]);
-        if (memberCountRes.status === 'rejected') {
-          logger.warning(req, 'get_my_committees', 'Failed to fetch committee members count, defaulting to 0', {
-            committee_uid: uid,
-            err: memberCountRes.reason,
-          });
-        }
-        if (mlCountRes.status === 'rejected') {
-          logger.warning(req, 'get_my_committees', 'Failed to fetch mailing list count, defaulting to false', {
-            committee_uid: uid,
-            err: mlCountRes.reason,
-          });
-        }
-        const membership = membershipMap.get(uid)!;
-        return {
-          ...committee,
-          category: committee.category || membership.committee_category || '',
-          total_members: memberCountRes.status === 'fulfilled' ? memberCountRes.value : 0,
-          has_mailing_list: mlCountRes.status === 'fulfilled' ? mlCountRes.value > 0 : false,
-          my_role: membership.role,
-          my_member_uid: membership.member_uid,
-        } as MyCommittee;
-      })
-    );
+    // Batch check mailing-list presence for all committee UIDs in one query instead of N
+    // per-committee count calls. total_members is already indexed by the committee-service.
+    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+
+    // Enrich each committee with membership metadata; counts come from the indexed resource
+    const enriched = committeeUids.map((uid) => {
+      const committee = committees.get(uid);
+      if (!committee) {
+        logger.warning(req, 'get_my_committees', 'Committee not found in query service, skipping', {
+          committee_uid: uid,
+        });
+        return null;
+      }
+      const membership = membershipMap.get(uid)!;
+      return {
+        ...committee,
+        category: committee.category || membership.committee_category || '',
+        total_members: committee.total_members ?? 0,
+        has_mailing_list: committeesWithMailingList.has(uid),
+        my_role: membership.role,
+        my_member_uid: membership.member_uid,
+      } as MyCommittee;
+    });
 
     let result = enriched.filter((c): c is MyCommittee => c !== null);
 
@@ -1668,6 +1654,46 @@ export class CommitteeService {
    * Fetches count of mailing lists associated with a specific committee.
    * Used to determine the has_mailing_list flag for committee list views.
    */
+  /**
+   * Returns the subset of the provided committee UIDs that have at least one associated
+   * `groupsio_mailing_list` resource. Uses a single batched query with OR-tag semantics
+   * (the query service `tags` parameter is ArrayOf(String) with OR logic) instead of one
+   * count call per committee — cost is O(1) upstream requests regardless of list size,
+   * chunked at 100 UIDs per request for URL-length safety.
+   */
+  private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Set<string>> {
+    const unique = [...new Set(committeeUids)].filter(Boolean);
+    if (unique.length === 0) return new Set();
+
+    const BATCH_SIZE = 100;
+    const found = new Set<string>();
+
+    try {
+      for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+        const batch = unique.slice(i, i + BATCH_SIZE);
+        const mailingLists = await fetchAllQueryResources<{ committee_uid?: string }>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<{ committee_uid?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: batch.map((uid) => `committee_uid:${uid}`),
+            ...(pageToken && { page_token: pageToken }),
+          })
+        );
+        for (const ml of mailingLists) {
+          if (ml.committee_uid) {
+            found.add(ml.committee_uid);
+          }
+        }
+      }
+    } catch (error) {
+      logger.debug(req, 'get_committees_with_mailing_list', 'Batch mailing-list fetch failed, defaulting all to false', {
+        committee_count: unique.length,
+        err: error,
+      });
+    }
+
+    return found;
+  }
+
   private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
     try {
       const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
