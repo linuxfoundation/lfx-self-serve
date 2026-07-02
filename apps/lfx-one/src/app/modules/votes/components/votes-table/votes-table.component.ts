@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -14,7 +14,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -101,7 +102,7 @@ export class VotesTableComponent {
 
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
-  protected readonly displayedVotes: Signal<Vote[]> = this.initDisplayedVotes();
+  protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return false;
     const f = this.filterState();
@@ -146,7 +147,7 @@ export class VotesTableComponent {
     this.pageChange.emit({ first: event.first, rows: event.rows });
   }
 
-  protected onRowSelect(event: { data: Vote }): void {
+  protected onRowSelect(event: { data: VoteTableRow }): void {
     const vote = event.data;
     if (vote.status === PollStatus.ENDED) {
       this.viewResults.emit(vote.uid);
@@ -236,12 +237,14 @@ export class VotesTableComponent {
       });
   }
 
-  private initDisplayedVotes(): Signal<Vote[]> {
+  private initDisplayedVotes(): Signal<VoteTableRow[]> {
     return computed(() => {
       const allVotes = this.votes();
 
       // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
-      if (this.lazy()) return allVotes;
+      if (this.lazy()) {
+        return allVotes.map((vote) => this.toVoteTableRow(vote));
+      }
 
       // For client-side mode (Me lens), apply all filters locally
       const filters = this.filterState();
@@ -261,7 +264,21 @@ export class VotesTableComponent {
         filtered = filtered.filter((v) => v.committee_name === filters.group);
       }
 
-      return filtered;
+      return filtered.map((vote) => this.toVoteTableRow(vote));
     });
+  }
+
+  private toVoteTableRow(vote: Vote): VoteTableRow {
+    let endedEarlyTooltip: string | null = null;
+
+    if (isVoteEndedEarly(vote) && vote.early_end_time) {
+      const formattedEarlyClose = formatDate(vote.early_end_time, 'MMM d, y', 'en-US');
+      endedEarlyTooltip = getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
+    }
+
+    return {
+      ...vote,
+      endedEarlyTooltip,
+    };
   }
 }
