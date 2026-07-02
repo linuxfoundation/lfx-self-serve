@@ -796,8 +796,8 @@ function buildCardDetails(seed: ProjectDetailSeed): Record<string, OrgLensCardDe
  * the viewing-org leaderboard row.
  */
 export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlug: string): OrgLensProjectDetailResponse | null {
+  if (!Object.hasOwn(SEEDS, projectSlug)) return null;
   const seed = SEEDS[projectSlug];
-  if (!seed) return null;
 
   return {
     accountId: orgUid,
