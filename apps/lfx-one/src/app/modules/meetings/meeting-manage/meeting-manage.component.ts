@@ -18,6 +18,7 @@ import {
   MIN_EARLY_JOIN_TIME,
   STEPPER_SCROLL_OFFSET,
   TOTAL_STEPS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
@@ -86,6 +87,7 @@ export class MeetingManageComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
 
@@ -181,6 +183,25 @@ export class MeetingManageComponent {
       // Update validation when step changes
       this.updateCanProceed();
     });
+
+    // Watch youtube_upload_enabled and enforce title length limit when enabled.
+    // This fires correctly on patchValue during edit-mode hydration because the form initialises
+    // youtube_upload_enabled as false and patchValue flips it to true, triggering valueChanges.
+    this.form()
+      .get('youtube_upload_enabled')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((youtubeEnabled: boolean) => {
+        const titleControl = this.form().get('title');
+        if (!titleControl) return;
+
+        if (youtubeEnabled) {
+          titleControl.addValidators(this.youtubeMaxLengthValidator);
+        } else {
+          titleControl.removeValidators(this.youtubeMaxLengthValidator);
+        }
+        titleControl.updateValueAndValidity();
+        this.updateCanProceed();
+      });
 
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
@@ -857,7 +878,8 @@ export class MeetingManageComponent {
   }
 
   private updateCanProceed(): void {
-    const isValid = this.isStepValid(this.currentStep());
+    const next = this.currentStep() + 1;
+    const isValid = next <= this.totalSteps ? this.canNavigateToStep(next) : this.isStepValid(this.currentStep());
     this.canProceed.set(isValid);
   }
 
