@@ -62,6 +62,16 @@ function throwCfNetworkError(operation: string, error: unknown): never {
 async function cfFetch<T>(req: Request, operation: string, path: string, options: { method?: string; body?: unknown; noBody?: boolean } = {}): Promise<T> {
   const token = req.crowdfundingToken;
   if (!token) {
+    // During impersonation, a CF-audience CTE is attempted at session start but may
+    // fail (e.g. Auth0 not configured for cross-audience exchange, or target user has
+    // no CF account). Use 503 so the client falls through to the empty-state fallback
+    // rather than triggering the CF auth-code redirect loop.
+    if (req.appSession?.['impersonationToken']) {
+      throw new MicroserviceError('Crowdfunding is unavailable during impersonation', 503, 'CF_UNAVAILABLE_DURING_IMPERSONATION', {
+        operation,
+        service: 'crowdfunding',
+      });
+    }
     throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 
@@ -128,6 +138,12 @@ async function cfFetchAllPages<T>(req: Request, operation: string, basePath: str
 async function cfFetchNullable<T>(req: Request, operation: string, path: string): Promise<T | null> {
   const token = req.crowdfundingToken;
   if (!token) {
+    if (req.appSession?.['impersonationToken']) {
+      throw new MicroserviceError('Crowdfunding is unavailable during impersonation', 503, 'CF_UNAVAILABLE_DURING_IMPERSONATION', {
+        operation,
+        service: 'crowdfunding',
+      });
+    }
     throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 

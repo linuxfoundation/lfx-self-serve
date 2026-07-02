@@ -256,8 +256,32 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
  * If the session token is valid, uses it directly. If it is expired or absent but a
  * refresh token is stored, attempts a silent refresh before falling through — avoiding
  * the auth-code redirect round-trip on token expiry.
+ *
+ * During impersonation the normal (admin's) CF token is never used — it would return
+ * the admin's data under the target user's session. Instead, a CF-audience CTE token
+ * for the target user is stored at impersonation start and loaded here. If no such
+ * token exists (CTE failed or Auth0 cross-audience not configured), req.crowdfundingToken
+ * is left undefined and cfFetch() falls back to an empty-state 503 response.
  */
 async function extractCrowdfundingToken(req: Request): Promise<void> {
+  // During impersonation: use the target user's CF token obtained via audience-scoped CTE.
+  // If we don't have one (CF CTE failed or CROWDFUNDING_API_AUDIENCE is not set), leave
+  // req.crowdfundingToken undefined — cfFetch() handles the 503 fallback to empty state.
+  // Always return early here to prevent the admin's own CF token from being loaded.
+  if (req.appSession?.['impersonationToken']) {
+    const impersonationCfToken = req.appSession['impersonationCrowdfundingToken'];
+    const impersonationCfExpiresAt = req.appSession['impersonationCrowdfundingExpiresAt'];
+    const nowSecs = Math.floor(Date.now() / 1000);
+
+    if (impersonationCfToken && impersonationCfExpiresAt && nowSecs < impersonationCfExpiresAt) {
+      req.crowdfundingToken = impersonationCfToken;
+      logger.debug(req, 'crowdfunding_token', 'Using impersonation CF token for target user');
+    } else {
+      logger.debug(req, 'crowdfunding_token', 'No valid CF token for impersonated user — CF will show empty state');
+    }
+    return;
+  }
+
   const now = Math.floor(Date.now() / 1000);
   if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
     req.crowdfundingToken = req.appSession.crowdfundingToken;

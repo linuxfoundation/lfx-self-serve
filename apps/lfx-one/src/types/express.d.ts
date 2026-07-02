@@ -24,6 +24,8 @@ declare global {
         crowdfundingRefreshToken?: string;
         crowdfundingAuthState?: string;
         crowdfundingAuthReturnTo?: string;
+        impersonationCrowdfundingToken?: string;
+        impersonationCrowdfundingExpiresAt?: number;
         [key: string]: any;
       };
     }

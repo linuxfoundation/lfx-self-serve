@@ -301,8 +301,14 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
+  // CF auth redirect is skipped during impersonation — the target user's CF token is
+  // obtained via CTE at session start (see impersonation.controller.ts). Allowing the
+  // auth-code redirect here would kick off a new CF auth flow for the admin before
+  // Angular boots, producing a redirect loop and discarding the impersonation session.
+  const isImpersonating = !!(req.appSession?.['impersonationToken'] && req.appSession?.['impersonationUser']);
   if (
     auth.authenticated &&
+    !isImpersonating &&
     req.originalUrl.startsWith('/crowdfunding') &&
     !req.query['error'] &&
     crowdfundingAuthService.isConfigured() &&
@@ -459,7 +465,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
   if (!httpServer) {
     logger.success(undefined, 'graceful_shutdown', startTime, { reason: 'no_http_server' });
     process.exit(0);
-    return;
   }
 
   // Stop accepting new connections and drain in-flight requests (25s window).

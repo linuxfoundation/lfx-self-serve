@@ -137,4 +137,6 @@ export function clearImpersonationSession(req: Request): void {
   delete req.appSession['impersonationUser'];
   delete req.appSession['impersonator'];
   delete req.appSession['impersonationPersonaContext'];
+  delete req.appSession['impersonationCrowdfundingToken'];
+  delete req.appSession['impersonationCrowdfundingExpiresAt'];
 }
