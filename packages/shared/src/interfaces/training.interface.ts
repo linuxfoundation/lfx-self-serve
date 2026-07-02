@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CERTIFICATION_PRODUCT_TYPE, TRAINING_PRODUCT_TYPE } from '../constants/training.constants';
+
 import type { OffsetPaginatedResponse } from './api.interface';
 
 /** Active tab on the org training & certifications page */
@@ -306,3 +308,8 @@ export interface TrainingEnrollment {
   /** Whether the enrollment is currently active */
   isActiveEnrollment: boolean;
 }
+
+/**
+ * Type for training/certification product types
+ */
+export type ProductType = typeof TRAINING_PRODUCT_TYPE | typeof CERTIFICATION_PRODUCT_TYPE;

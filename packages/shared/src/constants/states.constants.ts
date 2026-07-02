@@ -57,8 +57,3 @@ export const US_STATES = [
   { label: 'Wyoming', value: 'WY' },
   { label: 'District of Columbia', value: 'DC' },
 ] as const;
-
-/**
- * Type for US state values
- */
-export type USState = (typeof US_STATES)[number]['value'];

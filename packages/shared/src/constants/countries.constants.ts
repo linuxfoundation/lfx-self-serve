@@ -97,11 +97,6 @@ export const COUNTRIES = [
 ] as const;
 
 /**
- * Type for country codes
- */
-export type CountryCode = (typeof COUNTRIES)[number]['value'];
-
-/**
  * Helper function to get country name by code
  */
 export function getCountryByCode(code: string): string {

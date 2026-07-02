@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BOARD_SCOPED_PERSONAS, DevPersonaPreset, PersonaOption, PersonaType, PROJECT_SCOPED_PERSONAS } from '../interfaces';
+import type { DevPersonaPreset, PersonaOption, PersonaType } from '../interfaces';
+
+export const VALID_PERSONAS: ReadonlySet<string> = new Set<string>(['contributor', 'maintainer', 'board-member', 'executive-director']);
+
+export const BOARD_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['board-member', 'executive-director']);
+
+export const PROJECT_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['maintainer', 'contributor']);
 
 export const PERSONA_COOKIE_KEY = 'lfx-active-persona-preset';
 
