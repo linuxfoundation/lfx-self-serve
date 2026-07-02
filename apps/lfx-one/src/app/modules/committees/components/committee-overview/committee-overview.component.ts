@@ -183,7 +183,7 @@ export class CommitteeOverviewComponent {
 
   public inviteOnlyDescription: Signal<string> = computed(() => {
     const name = this.committee().name;
-    return `${name} is invite only. A group admin must send you an invitation before you can join.`;
+    return `${name} is invite-only. A group admin must send you an invitation before you can join.`;
   });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
