@@ -48,6 +48,19 @@ export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption<OrgMeetingType | null>[] = 
   { label: 'Other', value: 'other' },
 ];
 
+/**
+ * Builds a demo meeting's start/end ISO timestamps relative to the current time, so the
+ * Upcoming/Past demo data (and the e2e assertions that depend on it) stay valid indefinitely
+ * instead of drifting into the wrong tab as hardcoded absolute dates elapse.
+ */
+function demoMeetingTimes(offsetDays: number, hour: number, minute: number, durationMinutes: number): { startTime: string; endTime: string } {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() + offsetDays);
+  start.setUTCHours(hour, minute, 0, 0);
+  const end = new Date(start.getTime() + durationMinutes * 60_000);
+  return { startTime: start.toISOString(), endTime: end.toISOString() };
+}
+
 /** Demo upcoming meetings (3 records). */
 export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
   {
@@ -56,8 +69,7 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     privacy: 'private',
     type: 'board',
     recurrenceLabel: 'Every week on Thu',
-    startTime: '2026-06-30T01:54:00.000Z',
-    endTime: '2026-06-30T02:54:00.000Z',
+    ...demoMeetingTimes(2, 1, 54, 60),
     foundation: 'Cloud Native Computing Foundation',
     orgName: 'CoreOS',
     project: 'CNCF',
@@ -79,8 +91,7 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     privacy: 'public',
     type: 'working-group',
     recurrenceLabel: 'Every month on the 3rd Wed',
-    startTime: '2026-07-15T17:00:00.000Z',
-    endTime: '2026-07-15T18:00:00.000Z',
+    ...demoMeetingTimes(17, 17, 0, 60),
     foundation: 'Cloud Native Computing Foundation',
     orgName: 'CoreOS',
     project: 'Security TAG',
@@ -101,8 +112,7 @@ export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
     privacy: 'public',
     type: 'other',
     recurrenceLabel: null,
-    startTime: '2026-08-01T15:00:00.000Z',
-    endTime: '2026-08-01T16:30:00.000Z',
+    ...demoMeetingTimes(34, 15, 0, 90),
     foundation: 'LF AI & Data',
     orgName: 'CoreOS',
     project: 'LF AI & Data Foundation',
@@ -124,8 +134,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     privacy: 'private',
     type: 'board',
     recurrenceLabel: 'Every week on Thu',
-    startTime: '2026-06-26T17:00:00.000Z',
-    endTime: '2026-06-26T18:00:00.000Z',
+    ...demoMeetingTimes(-6, 17, 0, 60),
     foundation: 'Cloud Native Computing Foundation',
     orgName: 'CoreOS',
     project: 'CNCF',
@@ -150,8 +159,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     privacy: 'public',
     type: 'working-group',
     recurrenceLabel: 'Every 2 weeks on Tue',
-    startTime: '2026-06-10T16:00:00.000Z',
-    endTime: '2026-06-10T17:00:00.000Z',
+    ...demoMeetingTimes(-22, 16, 0, 60),
     foundation: 'Cloud Native Computing Foundation',
     orgName: 'CoreOS',
     project: 'Kubernetes',
@@ -172,8 +180,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     privacy: 'private',
     type: 'board',
     recurrenceLabel: 'Every month on the 1st Fri',
-    startTime: '2026-05-30T15:00:00.000Z',
-    endTime: '2026-05-30T16:30:00.000Z',
+    ...demoMeetingTimes(-33, 15, 0, 90),
     foundation: 'Open Source Security Foundation',
     orgName: 'CoreOS',
     project: 'OpenSSF',

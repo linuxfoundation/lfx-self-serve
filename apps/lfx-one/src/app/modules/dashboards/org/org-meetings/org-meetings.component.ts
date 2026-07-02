@@ -7,9 +7,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
 
-import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import {
   DEFAULT_ORG_MEETINGS_TAB_ID,
   DEMO_PAST_MEETINGS,
@@ -31,7 +31,7 @@ import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-pas
 
 @Component({
   selector: 'lfx-org-meetings',
-  imports: [ReactiveFormsModule, CardComponent, InputTextComponent, SelectComponent, OrgUpcomingMeetingsComponent, OrgPastMeetingsComponent],
+  imports: [ReactiveFormsModule, StatCardGridComponent, InputTextComponent, SelectComponent, OrgUpcomingMeetingsComponent, OrgPastMeetingsComponent],
   templateUrl: './org-meetings.component.html',
 })
 export class OrgMeetingsComponent {

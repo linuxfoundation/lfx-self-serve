@@ -6,6 +6,7 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import type { OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingRsvpTally } from '@lfx-one/shared/interfaces';
+import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 
 const RSVP_BADGES: Record<Exclude<OrgMeetingRsvpStatus, null>, { label: string; badgeClass: string }> = {
   yes: { label: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-600' },
@@ -41,12 +42,7 @@ export class OrgUpcomingMeetingsComponent {
   }
 
   protected meetingLinkUrl(meetingId: string): string {
-    const path = `/meetings/${meetingId}`;
-    // SSR fallback: `window` is undefined during server rendering, so this must return the
-    // relative path regardless of whether the calling template evaluates it eagerly or behind
-    // a `@defer` block — the guard keeps this method safe in either context.
-    if (!isPlatformBrowser(this.platformId)) return path;
-    return `${window.location.origin}${path}`;
+    return toAbsoluteUrl(`/meetings/${meetingId}`, isPlatformBrowser(this.platformId));
   }
 
   protected totalInvited(tally: OrgMeetingRsvpTally): number {

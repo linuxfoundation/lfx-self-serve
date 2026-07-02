@@ -5,6 +5,7 @@ import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, inject, input, PLATFORM_ID } from '@angular/core';
 import type { OrgPastMeeting } from '@lfx-one/shared/interfaces';
+import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-org-past-meetings',
@@ -18,11 +19,6 @@ export class OrgPastMeetingsComponent {
   public readonly loading = input<boolean>(false);
 
   protected meetingLinkUrl(meetingId: string): string {
-    const path = `/meetings/${meetingId}`;
-    // SSR fallback: `window` is undefined during server rendering, so this must return the
-    // relative path regardless of whether the calling template evaluates it eagerly or behind
-    // a `@defer` block — the guard keeps this method safe in either context.
-    if (!isPlatformBrowser(this.platformId)) return path;
-    return `${window.location.origin}${path}`;
+    return toAbsoluteUrl(`/meetings/${meetingId}`, isPlatformBrowser(this.platformId));
   }
 }

@@ -8,28 +8,7 @@
   </header>
 
   <!-- KPI strip -->
-  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-meetings-kpi-strip">
-    <div class="grid w-full grid-cols-1 divide-y divide-gray-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-      @for (card of kpiCards(); track card.label) {
-        <div class="flex items-center gap-3 p-4">
-          <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
-            <i [class]="card.icon + ' text-xl'" aria-hidden="true"></i>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            @if (loading()) {
-              <p class="text-xl font-medium text-gray-400">&mdash;</p>
-            } @else {
-              <p class="text-xl font-medium text-gray-900">{{ card.value }}</p>
-            }
-            <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
-            @if (card.subLine) {
-              <p class="text-xs text-gray-400">{{ card.subLine }}</p>
-            }
-          </div>
-        </div>
-      }
-    </div>
-  </lfx-card>
+  <lfx-stat-card-grid [cards]="kpiCards()" [loading]="loading()" [columns]="2" data-testid="org-meetings-kpi-strip" />
 
   <!-- Filter bar — matches app.lfx.dev/meetings top-bar structure -->
   <div class="bg-white rounded-lg border border-gray-200 p-4 mb-8" data-testid="org-meetings-filter-bar">
