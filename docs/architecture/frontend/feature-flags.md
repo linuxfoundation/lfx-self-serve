@@ -1451,7 +1451,7 @@ See [Runtime Configuration Troubleshooting](../../runtime-configuration.md#troub
 
    ```typescript
    // targetingKey is required — LFID username, not Auth0 sub
-   targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'];
+   targetingKey: user.preferred_username || user.username || user['https://sso.linuxfoundation.org/claims/username'],
    ```
 
 2. **Incorrect Attribute Names:**

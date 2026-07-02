@@ -132,7 +132,7 @@ Object.assign(auth.user, {
 
 ### Server-side helpers (impersonation-aware)
 
-Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.ts`, never directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise.
+Prefer the impersonation-aware helpers in `apps/lfx-one/src/server/utils/auth-helper.ts` when resolving effective caller identity (author/owner, cache keys, upstream params) instead of reading directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise. Session-scoped enrichment that does not need impersonation swap (e.g. survey `creator_id` from the OIDC session) may still read `req.oidc.user` directly.
 
 | Helper                      | Returns                                                            | Status                                                                                                                                              |
 | --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
