@@ -91,7 +91,7 @@
             each <i> on first render, reused nodes kept a stale icon. The same track key is applied to
             all four @for loops below.
           -->
-          @for (item of itemsWithTestIds(); track (item.routerLink ?? item.url ?? item.label)) {
+          @for (item of itemsWithTestIds(); track item.routerLink ?? item.url ?? item.label) {
             @if (item.isGroup) {
               <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
             } @else if (item.isSection) {
@@ -103,7 +103,7 @@
 
                 @if (item.items?.length) {
                   <div class="flex flex-col gap-1 mt-2">
-                    @for (childItem of item.items; track (childItem.routerLink ?? childItem.url ?? childItem.label)) {
+                    @for (childItem of item.items; track childItem.routerLink ?? childItem.url ?? childItem.label) {
                       @if (childItem.isGroup) {
                         <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: childItem }"></ng-container>
                       } @else {
@@ -172,7 +172,7 @@
 
     <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
-        @for (item of footerItemsWithTestIds(); track (item.routerLink ?? item.url ?? item.label)) {
+        @for (item of footerItemsWithTestIds(); track item.routerLink ?? item.url ?? item.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
         }
       }
@@ -198,7 +198,7 @@
     </button>
     @if (expandedGroupStates()[item.label] && item.items?.length) {
       <div class="flex flex-col gap-1 mt-1 pl-6">
-        @for (childItem of item.items; track (childItem.routerLink ?? childItem.url ?? childItem.label)) {
+        @for (childItem of item.items; track childItem.routerLink ?? childItem.url ?? childItem.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
         }
       </div>
