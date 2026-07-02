@@ -96,6 +96,7 @@
                               [class.cursor-pointer]="project.isLfProject"
                               [attr.role]="project.isLfProject ? 'button' : null"
                               [attr.tabindex]="project.isLfProject ? 0 : null"
+                              [attr.aria-label]="project.isLfProject ? 'View project details for ' + project.projectName : null"
                               (click)="onProjectRowClick(project)"
                               (keydown)="onProjectRowKeydown($event, project)"
                               [attr.data-testid]="
