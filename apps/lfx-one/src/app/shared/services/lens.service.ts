@@ -66,24 +66,26 @@ export class LensService {
    */
   public switchLens(lens: Lens): void {
     const target = this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
-    this.setLens(target);
-    this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
+    if (this.setLens(target)) {
+      this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
+    }
   }
 
-  public setLens(lens: Lens): void {
+  /** Applies the lens if the current persona is allowed it. Returns whether the lens was allowed (callers gate navigation on this). */
+  public setLens(lens: Lens): boolean {
     const allowed = this.getAllowedLensIds();
     if (!allowed.includes(lens)) {
-      return;
+      return false;
     }
     if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
       this.navLensSelection.set(lens);
       this.persistNavLensToCookie(lens);
     }
-    if (lens === this.selectedLens()) {
-      return;
+    if (lens !== this.selectedLens()) {
+      this.selectedLens.set(lens);
+      this.persistToCookie(lens);
     }
-    this.selectedLens.set(lens);
-    this.persistToCookie(lens);
+    return true;
   }
 
   private initActiveLens(): Signal<Lens> {
