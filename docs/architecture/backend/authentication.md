@@ -134,11 +134,11 @@ Object.assign(auth.user, {
 
 Read identity through the helpers in `apps/lfx-one/src/server/utils/auth-helper.ts`, never directly off `req.oidc.user`. They transparently return the **target** user's identity during impersonation and the session user's otherwise.
 
-| Helper                      | Returns                                                            | Status                                                                                                                 |
-| --------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                                                          |
+| Helper                      | Returns                                                            | Status                                                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for all new identity references                                                                                                       |
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** — two remaining callers (badges email lookup, mktg-agents session owner binding) pass `sub` incidentally; no upstream requires it |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                                                                |
+| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                                                                                             |
 
 ### Migration: `sub` → `username`
 
