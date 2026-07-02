@@ -69,7 +69,7 @@
       <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
     </button>
 
-    <!-- Lens Buttons — hidden in the main layout (lenses live in the sidebar tabs); shown in the docs shell, which has no sidebar. -->
+    <!-- Lens Buttons — hidden by every current caller (lenses live in the sidebar tabs); the `showLensButtons` default is only a standalone-reuse fallback. -->
     @if (showLensButtons()) {
       <!-- Divider — only meaningful when it separates the logo from the lens buttons below. -->
       <hr class="w-6 border-white/35 mb-3" />

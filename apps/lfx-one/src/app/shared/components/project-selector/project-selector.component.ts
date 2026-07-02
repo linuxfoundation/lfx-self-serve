@@ -10,7 +10,6 @@ import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, Select
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
-import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
@@ -24,7 +23,6 @@ import { TooltipModule } from 'primeng/tooltip';
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
-  private readonly userService = inject(UserService);
   private readonly navigationService = inject(NavigationService);
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
@@ -46,7 +44,7 @@ export class ProjectSelectorComponent {
   protected readonly selectorTabs: readonly SelectorTab[] = ['all', 'foundations', 'projects'];
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
-  protected readonly panelStyleClass: Signal<string> = this.initPanelStyleClass();
+  protected readonly panelStyleClass = 'project-selector-panel';
   protected readonly lensTypeLabel: Signal<string> = this.initLensTypeLabel();
   protected readonly displayName: Signal<string> = this.initDisplayName();
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedProject()?.logoUrl || '');
@@ -141,10 +139,6 @@ export class ProjectSelectorComponent {
     if (trigger && container) {
       container.style.top = `${Math.round(trigger.getBoundingClientRect().top)}px`;
     }
-  }
-
-  private initPanelStyleClass(): Signal<string> {
-    return computed(() => (this.userService.impersonating() ? 'project-selector-panel project-selector-panel--with-banner' : 'project-selector-panel'));
   }
 
   private initLensTypeLabel(): Signal<string> {

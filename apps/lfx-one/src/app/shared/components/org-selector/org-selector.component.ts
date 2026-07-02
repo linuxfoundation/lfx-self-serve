@@ -9,7 +9,6 @@ import { Account, DisplayOrgItem, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
-import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
@@ -27,7 +26,6 @@ export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly userService = inject(UserService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -42,9 +40,7 @@ export class OrgSelectorComponent {
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
-  protected readonly panelStyleClass = computed(() =>
-    this.userService.impersonating() ? 'org-selector-panel org-selector-panel--with-banner' : 'org-selector-panel'
-  );
+  protected readonly panelStyleClass = 'org-selector-panel';
 
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
