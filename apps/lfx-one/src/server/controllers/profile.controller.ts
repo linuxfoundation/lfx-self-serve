@@ -160,7 +160,9 @@ export class ProfileController {
       const impersonating = isImpersonating(req);
       const userProfile: UserProfile = impersonating
         ? {
-            id: (getEffectiveSub(req) || oidcUser['sub']) as string,
+            // Never fall back to the impersonator's OIDC claims here — the effective helpers resolve
+            // the target's identity from the impersonation session.
+            id: (getEffectiveSub(req) || '') as string,
             email: (getEffectiveEmail(req) || '') as string,
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
@@ -762,6 +764,7 @@ export class ProfileController {
             operation: 'get_developer_token_info',
             service: 'profile_controller',
             path: req.path,
+            code: 'IMPERSONATION_READ_ONLY',
           })
         );
       }

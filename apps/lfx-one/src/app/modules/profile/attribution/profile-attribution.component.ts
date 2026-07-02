@@ -19,7 +19,7 @@ export class ProfileAttributionComponent {
   private readonly workExperience = viewChild(ProfileWorkExperienceComponent);
   private readonly affiliations = viewChild(ProfileAffiliationsComponent);
 
-  // Read-only when impersonating — hide the add affordance (the underlying writes are blocked server-side).
+  // Read-only when impersonating — the add affordance is visible but disabled (writes are blocked server-side).
   public readonly impersonating = this.userService.impersonating;
 
   public readonly isWorkExperienceEmpty = computed(() => this.workExperience()?.isEmpty() ?? true);

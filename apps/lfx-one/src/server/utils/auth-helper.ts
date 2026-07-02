@@ -110,19 +110,6 @@ export function getEffectiveName(req: Request): string | null {
 }
 
 /**
- * Gets the effective profile picture for the current request context.
- * During impersonation, returns the target user's picture from the impersonation session
- * (may be undefined if the target has no picture). Otherwise returns the OIDC session
- * user's picture.
- */
-export function getEffectivePicture(req: Request): string | null {
-  if (req.appSession?.['impersonationUser']) {
-    return (req.appSession['impersonationUser'].picture as string) || null;
-  }
-  return (req.oidc?.user?.['picture'] as string) || null;
-}
-
-/**
  * Returns true when the current request is running under an active impersonation session.
  *
  * The auth middleware validates and clears expired/malformed impersonation tokens before
