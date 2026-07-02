@@ -1,9 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { PERSONA_COOKIE_KEY, VALID_PERSONAS } from '@lfx-one/shared/constants';
 import type { PersistedPersonaState, PersonaType, SsrPersonaResult } from '@lfx-one/shared/interfaces';
-import { VALID_PERSONAS } from '@lfx-one/shared/interfaces';
 import { Request, Response } from 'express';
 
 import { logger } from '../services/logger.service';
