@@ -30,6 +30,7 @@
           <button
             (click)="openEditDialog()"
             [disabled]="impersonating()"
+            [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
             class="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors enabled:hover:bg-blue-50 enabled:hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
             data-testid="profile-edit-button">
             <i class="fa-light fa-pencil text-sm"></i>

@@ -15,6 +15,7 @@
             [text]="true"
             size="small"
             [disabled]="impersonating()"
+            [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
             (onClick)="onAddWorkExperience()"
             data-testid="add-work-experience-header-btn" />
         }

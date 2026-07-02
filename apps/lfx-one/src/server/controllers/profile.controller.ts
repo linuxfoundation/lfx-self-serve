@@ -1106,8 +1106,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
       const { provider, auth0UserId } = req.body || {};
@@ -1197,8 +1196,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       await this.cdpService.confirmWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1253,8 +1251,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       await this.cdpService.patchProjectAffiliationForUser(req, lfid, projectId, req.body);
 
@@ -1297,8 +1294,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       await this.cdpService.deleteWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1353,8 +1349,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1407,8 +1402,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1535,8 +1529,7 @@ export class ProfileController {
 
               if (linkResponse.success) {
                 // Fire-and-forget CDP verification
-                const subUsername = currentUserSub?.includes('|') ? currentUserSub.split('|')[1] : currentUserSub;
-                const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+                const lfid = this.resolveEffectiveLfid(req, currentUserSub);
 
                 this.cdpService
                   .getIdentitiesForUser(req, lfid)
@@ -1738,8 +1731,7 @@ export class ProfileController {
 
       // Fire-and-forget CDP identity verification
       const currentUserSub = req.oidc?.user?.['sub'] as string;
-      const subUsername = currentUserSub?.includes('|') ? currentUserSub.split('|')[1] : currentUserSub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, currentUserSub);
 
       if (lfid) {
         this.cdpService
@@ -1980,8 +1972,7 @@ export class ProfileController {
       }
 
       // Step 4: Fire-and-forget CDP identity verification
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       // Find the newly linked email identity in CDP and verify it
       this.cdpService

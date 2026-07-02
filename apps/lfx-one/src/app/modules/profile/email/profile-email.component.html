@@ -70,6 +70,7 @@
                         severity="secondary"
                         variant="outlined"
                         [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         (onClick)="setPrimary(emailItem)"
                         [attr.data-testid]="'set-primary-' + emailItem.email">
                       </lfx-button>
@@ -81,6 +82,7 @@
                         severity="danger"
                         variant="outlined"
                         [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         (onClick)="deleteEmail(emailItem)"
                         [attr.data-testid]="'delete-button-' + emailItem.email">
                       </lfx-button>
@@ -120,6 +122,7 @@
                   icon="fa-light fa-envelope"
                   severity="info"
                   [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   [loading]="sendingCode()"
                   data-testid="send-code-button">
                 </lfx-button>
@@ -154,6 +157,7 @@
                     icon="fa-light fa-check"
                     severity="info"
                     [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                     [loading]="verifyingOtp()"
                     data-testid="verify-otp-button">
                   </lfx-button>
@@ -171,6 +175,7 @@
                   type="button"
                   class="text-xs text-blue-500 hover:underline self-start"
                   [disabled]="sendingCode() || impersonating()"
+                  [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                   (click)="sendVerificationCode()"
                   data-testid="resend-code-link">
                   {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}

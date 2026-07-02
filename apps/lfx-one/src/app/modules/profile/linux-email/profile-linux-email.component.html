@@ -52,6 +52,7 @@
               severity="info"
               size="small"
               [disabled]="impersonating()"
+              [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
               (onClick)="purchase()"
               data-testid="linux-email-purchase-button"></lfx-button>
           </div>
@@ -128,6 +129,7 @@
                 severity="info"
                 size="small"
                 [disabled]="claimForm.invalid || claiming() || impersonating()"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                 [loading]="claiming()"
                 data-testid="linux-email-claim-button"></lfx-button>
             </form>
@@ -182,6 +184,7 @@
                   severity="info"
                   size="small"
                   [disabled]="editForm.invalid || savingForward() || impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   [loading]="savingForward()"
                   data-testid="linux-email-forward-save-button"></lfx-button>
               }
