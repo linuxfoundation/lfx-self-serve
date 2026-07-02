@@ -29,14 +29,13 @@ export class ImpersonationService {
     this.natsService = new NatsService();
   }
 
-  public async exchangeToken(req: Request, targetUser: string, audience?: string): Promise<M2MTokenResponse> {
-    logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser, ...(audience ? { audience } : {}) });
+  public async exchangeToken(req: Request, targetUser: string, subjectToken?: string): Promise<M2MTokenResponse> {
+    logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser, subject_token_type: subjectToken ? 'cf' : 'oidc' });
 
     const codec = this.natsService.getCodec();
     const payload = JSON.stringify({
-      subject_token: req.bearerToken || '',
+      subject_token: subjectToken || req.bearerToken || '',
       target_user: targetUser,
-      ...(audience ? { audience } : {}),
     });
 
     try {
@@ -163,8 +162,9 @@ export class ImpersonationService {
     req.appSession['impersonationUser'] = targetUser;
     req.appSession['impersonator'] = impersonator;
 
-    // Store target user's CF token when we obtained one via audience-scoped CTE.
-    // Stored in Unix seconds to match the pattern of crowdfundingTokenExpiresAt.
+    // Store the CF-scoped CTE token so extractCrowdfundingToken can load it for
+    // crowdfunding requests under impersonation. Stored in Unix seconds to match
+    // the crowdfundingTokenExpiresAt pattern.
     if (cfTokenResponse) {
       const cfSafetyBuffer = cfTokenResponse.expires_in > TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS ? TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS : 0;
       req.appSession['impersonationCrowdfundingToken'] = cfTokenResponse.access_token;

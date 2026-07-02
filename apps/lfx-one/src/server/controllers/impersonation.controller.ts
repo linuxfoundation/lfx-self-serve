@@ -65,15 +65,15 @@ export class ImpersonationController {
         throw new Error('Failed to decode target user claims from CTE response');
       }
 
-      // Attempt a CF-audience CTE so the impersonated session can access the target user's
-      // Crowdfunding data. This is best-effort: if the exchange fails (e.g. the target user
-      // has no CF account or Auth0 denies the audience), impersonation still starts and CF
-      // sections fall back to empty state (Phase 1 behaviour).
-      const cfAudience = process.env['CROWDFUNDING_API_AUDIENCE'];
+      // Attempt a CF-scoped CTE so the impersonated session can access the target user's
+      // Crowdfunding data. The admin's CF token is used as the subject_token so the auth
+      // service can extract the CF audience from it. Best-effort: if the exchange fails
+      // (e.g. admin has no CF token, or auth service rejects it), impersonation still
+      // starts and CF sections fall back to empty state.
       let cfTokenResponse: M2MTokenResponse | undefined;
-      if (cfAudience) {
+      if (req.crowdfundingToken) {
         try {
-          cfTokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), cfAudience);
+          cfTokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), req.crowdfundingToken);
           logger.debug(req, 'start_impersonation', 'CF CTE exchange succeeded for target user');
         } catch (cfErr) {
           logger.warning(req, 'start_impersonation', 'CF CTE exchange failed — CF will show empty state during impersonation', {

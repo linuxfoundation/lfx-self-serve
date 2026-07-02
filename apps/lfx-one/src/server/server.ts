@@ -301,10 +301,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  // CF auth redirect is skipped during impersonation — the target user's CF token is
-  // obtained via CTE at session start (see impersonation.controller.ts). Allowing the
-  // auth-code redirect here would kick off a new CF auth flow for the admin before
-  // Angular boots, producing a redirect loop and discarding the impersonation session.
+  // CF auth redirect is skipped during impersonation — allowing it would kick off a new
+  // CF auth flow for the admin before Angular boots, producing a redirect loop and
+  // discarding the impersonation session. CF falls back to empty state during impersonation.
   const isImpersonating = !!(req.appSession?.['impersonationToken'] && req.appSession?.['impersonationUser']);
   if (
     auth.authenticated &&
