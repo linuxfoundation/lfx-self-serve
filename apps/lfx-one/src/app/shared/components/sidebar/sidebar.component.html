@@ -83,7 +83,7 @@
       <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
       @if (lensLoaded()) {
         <div class="flex flex-col gap-2 items-start px-4 w-full">
-          @for (item of itemsWithTestIds(); track item.label) {
+          @for (item of itemsWithTestIds(); track trackNavItem(item)) {
             @if (item.isGroup) {
               <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
             } @else if (item.isSection) {
@@ -95,7 +95,7 @@
 
                 @if (item.items?.length) {
                   <div class="flex flex-col gap-1 mt-2">
-                    @for (childItem of item.items; track childItem.label) {
+                    @for (childItem of item.items; track trackNavItem(childItem)) {
                       @if (childItem.isGroup) {
                         <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: childItem }"></ng-container>
                       } @else {
@@ -164,7 +164,7 @@
 
     <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
-        @for (item of footerItemsWithTestIds(); track item.label) {
+        @for (item of footerItemsWithTestIds(); track trackNavItem(item)) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
         }
       }
@@ -190,7 +190,7 @@
     </button>
     @if (expandedGroupStates()[item.label] && item.items?.length) {
       <div class="flex flex-col gap-1 mt-1 pl-6">
-        @for (childItem of item.items; track childItem.label) {
+        @for (childItem of item.items; track trackNavItem(childItem)) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
         }
       </div>
