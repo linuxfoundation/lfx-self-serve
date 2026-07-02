@@ -182,7 +182,7 @@ These check `req.appSession['impersonationUser']` first, falling back to `req.oi
 Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
 
 - Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.
-- `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `readOnly` flag, so viewing a target's identities never mutates their CDP records.
+- `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `skipCdpMutations` flag (derived from `isImpersonating(req)` inside `reconcileIdentities`), so viewing a target's identities never mutates their CDP records.
 - The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings.
 
 ### 6. SSR Handler
