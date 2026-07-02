@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility } from '../enums';
-import { TagSeverity } from '../interfaces';
+import type { MeetingTypeConfig } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -94,41 +94,6 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Meeting Guests', value: ArtifactVisibility.MEETING_PARTICIPANTS },
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
 ];
-
-/**
- * Meeting type color configuration
- * @description Defines colors, icons, and styling for meeting type badges and borders
- */
-export interface MeetingTypeConfig {
-  /** Display label for the meeting type */
-  label: string;
-  /** Background color class (e.g., bg-violet-100) */
-  bgColor: string;
-  /** Text color class - 600 shade (e.g., text-violet-600) */
-  textColor: string;
-  /** Text color class - 500 shade (e.g., text-violet-500) for alternate styling */
-  textColorAlt: string;
-  /** Border color class - 500 shade (e.g., border-violet-500) */
-  borderColor: string;
-  /** Border color class - 300 shade (e.g., border-violet-300) for lighter borders */
-  borderColorLight: string;
-  /** Font Awesome icon class */
-  icon: string;
-  /** CSS class for tag badge color override (e.g., tag-meeting-board) */
-  tagStyleClass: string;
-}
-
-/**
- * Meeting type badge interface
- * @description Structure for meeting type badge display
- */
-export interface MeetingTypeBadge {
-  label: string;
-  className: string;
-  severity?: TagSeverity;
-  styleClass?: string;
-  icon?: string;
-}
 
 /**
  * Meeting type color mappings
@@ -230,6 +195,12 @@ export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform
 export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
 
 /**
+ * PrimeNG stepper panel value for the Meeting Details step (1-based)
+ * @description Used when navigating back to Meeting Details from a later step
+ */
+export const MEETING_DETAILS_STEP = 2;
+
+/**
  * Default meeting duration in minutes
  * @description Standard meeting length when no custom duration is specified
  */
@@ -246,6 +217,25 @@ export const MIN_EARLY_JOIN_TIME = 10;
  * @description Latest time guests can join before the scheduled start
  */
 export const MAX_EARLY_JOIN_TIME = 60;
+
+/**
+ * YouTube API maximum video title length
+ * @description The YouTube Data API rejects titles longer than 100 characters
+ */
+export const YOUTUBE_MAX_TITLE_LENGTH = 100;
+
+/**
+ * Characters consumed by the date suffix appended to the YouTube video title
+ * @description The upload handler appends " - DD/MM/YYYY" (13 chars) to the meeting title
+ */
+export const YOUTUBE_TITLE_DATE_SUFFIX_LENGTH = 13;
+
+/**
+ * Maximum meeting title length when YouTube uploads are enabled
+ * @description Derived from the YouTube API limit minus the auto-appended date suffix.
+ * A title exceeding this limit will cause an invalidTitle error on upload.
+ */
+export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTUBE_TITLE_DATE_SUFFIX_LENGTH;
 
 /**
  * Default early join time in minutes

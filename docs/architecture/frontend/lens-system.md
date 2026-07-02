@@ -148,6 +148,7 @@ Sequence for a typical page load:
 
 ## Related
 
+- [Persona Detection Pipeline](persona-detection.md) — where personas come from: the upstream persona-service NATS contract and the detection→persona mapping that feeds the signals above.
 - [Impersonation](../backend/impersonation.md) — how the server-side effective identity interacts with persona detection.
 - [Component Architecture](component-architecture.md) — layout components (`MainLayoutComponent`, `ProfileLayoutComponent`) that host lens-aware pages.
 - [Drawer Pattern](drawer-pattern.md) — several drawers use `buildLensAwareInsightsUrl` to deep-link into Insights with the right scope.

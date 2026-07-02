@@ -3,19 +3,17 @@
 
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, makeStateKey, Signal, signal, TransferState, WritableSignal } from '@angular/core';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { PERSONA_COOKIE_KEY, VALID_PERSONAS } from '@lfx-one/shared/constants';
 import {
   Account,
   AuthContext,
   EnrichedPersonaProject,
-  isBoardScopedPersona,
-  isProjectScopedPersona,
   PersistedPersonaState,
   PersonaApiResponse,
   PersonaProject,
   PersonaType,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/interfaces';
+import { isBoardScopedPersona, isProjectScopedPersona } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, Observable, of, take, tap } from 'rxjs';
 
