@@ -126,6 +126,19 @@ export function isValidDomain(domain: string): boolean {
 }
 
 /**
+ * Prefixes a relative path with `window.location.origin` when running in the browser.
+ * SSR fallback: `window` is undefined during server rendering, so this must return the
+ * relative path when `isBrowser` is false regardless of when the caller evaluates it.
+ * @param path - The relative path (e.g. `/meetings/123`)
+ * @param isBrowser - Result of `isPlatformBrowser(platformId)` from the calling component
+ * @returns The absolute URL when in the browser, otherwise the relative path unchanged
+ */
+export function toAbsoluteUrl(path: string, isBrowser: boolean): string {
+  if (!isBrowser) return path;
+  return `${window.location.origin}${path}`;
+}
+
+/**
  * Converts a domain to a full URL or validates an existing URL
  * @param input - The domain or URL string to process
  * @returns A valid URL string or null if invalid
