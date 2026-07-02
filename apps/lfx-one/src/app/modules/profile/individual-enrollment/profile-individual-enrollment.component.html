@@ -110,7 +110,7 @@
                     label="Disable auto-renew"
                     severity="secondary"
                     size="small"
-                    [disabled]="item.pending"
+                    [disabled]="item.pending || impersonating()"
                     (onClick)="onToggleAutoRenew(item, false)"
                     data-testid="individual-enrollment-auto-renew-toggle" />
                 } @else {
@@ -120,7 +120,7 @@
                     icon="fa-light fa-arrow-rotate-right"
                     severity="secondary"
                     size="small"
-                    [disabled]="item.pending"
+                    [disabled]="item.pending || impersonating()"
                     (onClick)="onToggleAutoRenew(item, true)"
                     data-testid="individual-enrollment-auto-renew-toggle" />
                 }
@@ -147,12 +147,26 @@
           <!-- CTA (not enrolled / expiring / expired) -->
           @if (!item.membership || item.displayStatus === 'Expiring Soon' || item.displayStatus === 'Expired') {
             <div class="flex" data-testid="individual-enrollment-cta">
+              <!-- CTAs link out to the enrollment flow; while impersonating they render disabled (a link
+                   cannot carry the `disabled` state, so a non-link button variant is used instead). -->
               @if (!item.membership) {
-                <lfx-button [label]="item.enrollButton || 'Enroll'" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
+                @if (impersonating()) {
+                  <lfx-button [label]="item.enrollButton || 'Enroll'" severity="primary" [disabled]="true" data-testid="individual-enrollment-enroll-button" />
+                } @else {
+                  <lfx-button [label]="item.enrollButton || 'Enroll'" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
+                }
               } @else if (item.displayStatus === 'Expiring Soon') {
-                <lfx-button label="Renew My Enrollment" severity="primary" [href]="item.renewHref" target="_blank" rel="noopener noreferrer" />
+                @if (impersonating()) {
+                  <lfx-button label="Renew My Enrollment" severity="primary" [disabled]="true" />
+                } @else {
+                  <lfx-button label="Renew My Enrollment" severity="primary" [href]="item.renewHref" target="_blank" rel="noopener noreferrer" />
+                }
               } @else if (item.displayStatus === 'Expired') {
-                <lfx-button label="Repurchase" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
+                @if (impersonating()) {
+                  <lfx-button label="Repurchase" severity="primary" [disabled]="true" />
+                } @else {
+                  <lfx-button label="Repurchase" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
+                }
               }
             </div>
           }

@@ -72,26 +72,25 @@
             <p class="max-w-sm text-sm text-slate-500">Connect your identities and add work experience to see your project affiliations.</p>
           }
         </div>
-        @if (!impersonating()) {
-          <div class="flex items-center gap-3">
-            <lfx-button
-              label="Verify identities"
-              icon="fa-light fa-fingerprint"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              (onClick)="navigateToIdentities()"
-              data-testid="verify-identities-btn" />
-            <lfx-button
-              label="Add work experience"
-              icon="fa-light fa-briefcase"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              (onClick)="addWorkExperience.emit()"
-              data-testid="add-work-exp-from-affiliations-btn" />
-          </div>
-        }
+        <div class="flex items-center gap-3">
+          <lfx-button
+            label="Verify identities"
+            icon="fa-light fa-fingerprint"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="navigateToIdentities()"
+            data-testid="verify-identities-btn" />
+          <lfx-button
+            label="Add work experience"
+            icon="fa-light fa-briefcase"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [disabled]="impersonating()"
+            (onClick)="addWorkExperience.emit()"
+            data-testid="add-work-exp-from-affiliations-btn" />
+        </div>
       </div>
     </lfx-card>
   } @else if (compact()) {
@@ -158,35 +157,33 @@
                 }
               </div>
             </div>
-            <!-- 3-dot menu (hidden while impersonating — actions mutate the real account) -->
-            @if (!impersonating()) {
-              <div class="relative">
-                <lfx-button
-                  icon="fa-solid fa-ellipsis-vertical"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                  (onClick)="projectMenu.toggle($event)"
-                  [attr.data-testid]="'project-menu-' + group.id" />
-                <lfx-menu #projectMenu [model]="projectMenuItemsMap().get(group.id) ?? []" [popup]="true" appendTo="body" />
-              </div>
-            }
+            <!-- 3-dot menu (visible but disabled while impersonating — actions mutate the real account) -->
+            <div class="relative">
+              <lfx-button
+                icon="fa-solid fa-ellipsis-vertical"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                [disabled]="impersonating()"
+                styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                (onClick)="projectMenu.toggle($event)"
+                [attr.data-testid]="'project-menu-' + group.id" />
+              <lfx-menu #projectMenu [model]="projectMenuItemsMap().get(group.id) ?? []" [popup]="true" appendTo="body" />
+            </div>
           </div>
 
           <!-- Company rows -->
           @if (group.segments.length === 0) {
-            @if (!impersonating()) {
-              <div class="flex items-center pt-3" [attr.data-testid]="'compact-empty-' + group.id">
-                <button
-                  class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
-                  (click)="openSingleProjectTimeline(group)"
-                  [attr.data-testid]="'compact-add-affiliation-' + group.id">
-                  <i class="fa-light fa-plus-circle text-base"></i>
-                  <span>No project specific affiliation set — add one</span>
-                </button>
-              </div>
-            }
+            <div class="flex items-center pt-3" [attr.data-testid]="'compact-empty-' + group.id">
+              <button
+                class="flex items-center gap-2 text-sm text-slate-400 transition-colors enabled:cursor-pointer enabled:hover:text-blue-600 disabled:opacity-50"
+                [disabled]="impersonating()"
+                (click)="openSingleProjectTimeline(group)"
+                [attr.data-testid]="'compact-add-affiliation-' + group.id">
+                <i class="fa-light fa-plus-circle text-base"></i>
+                <span>No project specific affiliation set — add one</span>
+              </button>
+            </div>
           } @else {
             <!-- Separator -->
             <div class="mt-3 border-t border-slate-200"></div>
@@ -359,15 +356,14 @@
           <td class="px-5 py-3.5">
             <div class="flex items-center justify-between">
               @if (row.isPlaceholder) {
-                @if (!impersonating()) {
-                  <button
-                    class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
-                    (click)="openSingleProjectTimeline(row.group)"
-                    [attr.data-testid]="'add-affiliation-' + row.group.id">
-                    <i class="fa-light fa-plus-circle text-base"></i>
-                    <span>No project specific affiliation set — add one</span>
-                  </button>
-                }
+                <button
+                  class="flex items-center gap-2 text-sm text-slate-400 transition-colors enabled:cursor-pointer enabled:hover:text-blue-600 disabled:opacity-50"
+                  [disabled]="impersonating()"
+                  (click)="openSingleProjectTimeline(row.group)"
+                  [attr.data-testid]="'add-affiliation-' + row.group.id">
+                  <i class="fa-light fa-plus-circle text-base"></i>
+                  <span>No project specific affiliation set — add one</span>
+                </button>
               } @else {
                 <div class="flex items-center gap-2.5">
                   <!-- Org Logo -->
@@ -389,20 +385,19 @@
                 </div>
               }
 
-              <!-- 3-dot menu (hidden while impersonating — actions mutate the real account) -->
-              @if (!impersonating()) {
-                <div class="relative">
-                  <lfx-button
-                    icon="fa-solid fa-ellipsis-vertical"
-                    [text]="true"
-                    [rounded]="true"
-                    size="small"
-                    styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                    (onClick)="affiliationMenu.toggle($event)"
-                    [attr.data-testid]="'affiliation-menu-' + row.segment.id" />
-                  <lfx-menu #affiliationMenu [model]="affiliationMenuItemsMap().get(row.segment.id) ?? []" [popup]="true" appendTo="body" />
-                </div>
-              }
+              <!-- 3-dot menu (visible but disabled while impersonating — actions mutate the real account) -->
+              <div class="relative">
+                <lfx-button
+                  icon="fa-solid fa-ellipsis-vertical"
+                  [text]="true"
+                  [rounded]="true"
+                  size="small"
+                  [disabled]="impersonating()"
+                  styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                  (onClick)="affiliationMenu.toggle($event)"
+                  [attr.data-testid]="'affiliation-menu-' + row.segment.id" />
+                <lfx-menu #affiliationMenu [model]="affiliationMenuItemsMap().get(row.segment.id) ?? []" [popup]="true" appendTo="body" />
+              </div>
             </div>
           </td>
         </tr>

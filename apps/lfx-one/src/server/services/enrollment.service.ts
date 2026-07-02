@@ -10,6 +10,7 @@ import { MicroserviceError } from '../errors';
 
 import { getApiGatewayBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 const ENROLLMENT_SERVICE = 'enrollment_service';
@@ -22,12 +23,30 @@ export class EnrollmentService {
 
     logger.debug(req, 'get_individual_enrollments', 'Fetching individual memberships from member-service');
 
-    const data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
-      operation: 'get_individual_enrollments',
-      service: ENROLLMENT_SERVICE,
-      errorMessage: 'Individual memberships fetch failed',
-      errorCode: 'INDIVIDUAL_MEMBERSHIPS_FETCH_FAILED',
-    });
+    // During impersonation, req.apiGatewayToken is the impersonator's — resolve `/me` as the target
+    // by passing the target's LFX v2 bearer token instead (same override updateAutoRenew uses).
+    const impersonating = isImpersonating(req);
+
+    let data: { Data?: RawMembership[]; data?: RawMembership[] } | null;
+    try {
+      data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
+        operation: 'get_individual_enrollments',
+        service: ENROLLMENT_SERVICE,
+        errorMessage: 'Individual memberships fetch failed',
+        errorCode: 'INDIVIDUAL_MEMBERSHIPS_FETCH_FAILED',
+        bearerToken: impersonating ? req.bearerToken : undefined,
+      });
+    } catch (error) {
+      // While impersonating, degrade to the standard (unenrolled) product card rather than surfacing
+      // an error — the target's membership isn't reachable if the member-service rejects the token.
+      if (impersonating) {
+        logger.warning(req, 'get_individual_enrollments', 'Target enrollment fetch failed during impersonation; showing standard card', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return [{ ...TLF_INDIVIDUAL_SUPPORTER, membership: null }];
+      }
+      throw error;
+    }
 
     const rawMemberships: RawMembership[] = data?.Data ?? data?.data ?? [];
 
@@ -76,11 +95,13 @@ export class EnrollmentService {
 
     logger.debug(req, 'get_linux_addon_membership', 'Checking Linux.com add-on purchase from member-service');
 
+    // Impersonation-aware: resolve `/me` as the target via their bearer token (see getIndividualEnrollments).
     const data = await gatewayFetch<{ Data?: RawMembership[]; data?: RawMembership[] }>(req, url, {
       operation: 'get_linux_addon_membership',
       service: ENROLLMENT_SERVICE,
       errorMessage: 'Linux.com add-on membership fetch failed',
       errorCode: 'LINUX_ADDON_MEMBERSHIP_FETCH_FAILED',
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
     });
 
     const rawMemberships: RawMembership[] = data?.Data ?? data?.data ?? [];

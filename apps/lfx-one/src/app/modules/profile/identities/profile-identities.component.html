@@ -33,12 +33,10 @@
           <h2>Identities</h2>
           <p class="text-sm text-slate-500">Manage the accounts used to identify you and attribute contributions.</p>
         </div>
-        @if (!impersonating()) {
-          <lfx-button severity="primary" [text]="true" size="small" (onClick)="onAdd()" data-testid="add-identity-btn">
-            <i class="fa-light fa-plus mr-1.5"></i>
-            Add identity
-          </lfx-button>
-        }
+        <lfx-button severity="primary" [text]="true" size="small" [disabled]="impersonating()" (onClick)="onAdd()" data-testid="add-identity-btn">
+          <i class="fa-light fa-plus mr-1.5"></i>
+          Add identity
+        </lfx-button>
       </div>
 
       @if (loading()) {
@@ -92,21 +90,26 @@
                     </div>
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                   </div>
-                  @if (!impersonating()) {
-                    <div class="flex items-center gap-3">
-                      <lfx-button
-                        severity="primary"
-                        [outlined]="true"
-                        size="small"
-                        (onClick)="onVerify(identity)"
-                        [attr.data-testid]="'verify-btn-' + identity.id">
-                        Verify
-                      </lfx-button>
-                      <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onRemove(identity)" data-testid="reject-identity-btn">
-                        This is not me
-                      </lfx-button>
-                    </div>
-                  }
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      severity="primary"
+                      [outlined]="true"
+                      size="small"
+                      [disabled]="impersonating()"
+                      (onClick)="onVerify(identity)"
+                      [attr.data-testid]="'verify-btn-' + identity.id">
+                      Verify
+                    </lfx-button>
+                    <lfx-button
+                      severity="secondary"
+                      [outlined]="true"
+                      size="small"
+                      [disabled]="impersonating()"
+                      (onClick)="onRemove(identity)"
+                      data-testid="reject-identity-btn">
+                      This is not me
+                    </lfx-button>
+                  </div>
                 </div>
               }
             </div>
@@ -137,13 +140,14 @@
                       <span class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">Primary</span>
                     }
                   </div>
-                  @if (!identity.isPrimary && !impersonating()) {
+                  @if (!identity.isPrimary) {
                     <div class="relative inline-block">
                       <lfx-button
                         icon="fa-solid fa-ellipsis-vertical"
                         [text]="true"
                         [rounded]="true"
                         size="small"
+                        [disabled]="impersonating()"
                         styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                         (onClick)="actionMenu.toggle($event)"
                         [attr.data-testid]="'identity-menu-' + identity.id" />

@@ -26,15 +26,14 @@
             <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400"></i>
           </div>
         } @else {
-          <!-- Edit Button (hidden while impersonating — profile edits act on the real account) -->
-          @if (!impersonating()) {
-            <button
-              (click)="openEditDialog()"
-              class="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-500"
-              data-testid="profile-edit-button">
-              <i class="fa-light fa-pencil text-sm"></i>
-            </button>
-          }
+          <!-- Edit Button (visible but disabled while impersonating — profile edits act on the real account) -->
+          <button
+            (click)="openEditDialog()"
+            [disabled]="impersonating()"
+            class="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors enabled:hover:bg-blue-50 enabled:hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            data-testid="profile-edit-button">
+            <i class="fa-light fa-pencil text-sm"></i>
+          </button>
 
           <div class="flex items-start gap-[18px]">
             <!-- Avatar -->

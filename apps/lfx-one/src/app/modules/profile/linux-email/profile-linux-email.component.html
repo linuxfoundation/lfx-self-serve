@@ -46,15 +46,14 @@
               A personal &#64;{{ domain() }} address forwards email to any inbox you choose. The Lifetime Linux.com Email Alias is a one-time add-on for
               Individual Supporters.
             </p>
-            @if (!impersonating()) {
-              <lfx-button
-                label="Purchase Email"
-                icon="fa-light fa-cart-shopping"
-                severity="info"
-                size="small"
-                (onClick)="purchase()"
-                data-testid="linux-email-purchase-button"></lfx-button>
-            }
+            <lfx-button
+              label="Purchase Email"
+              icon="fa-light fa-cart-shopping"
+              severity="info"
+              size="small"
+              [disabled]="impersonating()"
+              (onClick)="purchase()"
+              data-testid="linux-email-purchase-button"></lfx-button>
           </div>
         </lfx-card>
       }
@@ -122,17 +121,15 @@
                 }
               </div>
 
-              @if (!impersonating()) {
-                <lfx-button
-                  type="submit"
-                  label="Claim alias"
-                  icon="fa-light fa-check"
-                  severity="info"
-                  size="small"
-                  [disabled]="claimForm.invalid || claiming()"
-                  [loading]="claiming()"
-                  data-testid="linux-email-claim-button"></lfx-button>
-              }
+              <lfx-button
+                type="submit"
+                label="Claim alias"
+                icon="fa-light fa-check"
+                severity="info"
+                size="small"
+                [disabled]="claimForm.invalid || claiming() || impersonating()"
+                [loading]="claiming()"
+                data-testid="linux-email-claim-button"></lfx-button>
             </form>
           </div>
         </lfx-card>
@@ -177,14 +174,14 @@
               @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
                 <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
               }
-              @if (forwardDirty() && !impersonating()) {
+              @if (forwardDirty()) {
                 <lfx-button
                   type="submit"
                   label="Save"
                   icon="fa-light fa-check"
                   severity="info"
                   size="small"
-                  [disabled]="editForm.invalid || savingForward()"
+                  [disabled]="editForm.invalid || savingForward() || impersonating()"
                   [loading]="savingForward()"
                   data-testid="linux-email-forward-save-button"></lfx-button>
               }

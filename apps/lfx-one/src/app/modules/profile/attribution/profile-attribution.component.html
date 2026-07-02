@@ -7,13 +7,14 @@
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between">
         <h2>Work history</h2>
-        @if (!isWorkExperienceEmpty() && !impersonating()) {
+        @if (!isWorkExperienceEmpty()) {
           <lfx-button
             label="Add work experience"
             icon="fa-light fa-plus"
             severity="primary"
             [text]="true"
             size="small"
+            [disabled]="impersonating()"
             (onClick)="onAddWorkExperience()"
             data-testid="add-work-experience-header-btn" />
         }

@@ -985,7 +985,7 @@ export class ProfileController {
       // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
-      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid, isImpersonating(req));
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
       const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
 
       logger.success(req, 'get_identities', startTime, {
@@ -2036,11 +2036,14 @@ export class ProfileController {
     req: Request,
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
-    lfid: string,
-    // When true (impersonation), produce the read-only enriched list without any CDP mutation:
-    // no auto-verify, no synthetic-identity creation. The returned identities are unchanged.
-    readOnly: boolean = false
+    lfid: string
   ): { enriched: EnrichedIdentity[]; cdpPostsQueued: number } {
+    // Under impersonation, produce the read-only enriched list without any CDP mutation: no
+    // auto-verify, no synthetic-identity creation. Derived here (not a caller-supplied flag) so a
+    // future call site can't accidentally re-enable CDP writes against the target's records. The
+    // returned identities are unchanged either way.
+    const skipCdpMutations = isImpersonating(req);
+
     // Build a map of "platform:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
@@ -2077,7 +2080,7 @@ export class ProfileController {
       // Rule: The logged-in user's own LFID is always verified
       if (cdp.platform === 'lfid' && cdp.value === lfid) {
         // Auto-verify LFID in CDP if not already verified with their LFID (skipped when read-only)
-        if (!readOnly && !(cdp.verified && cdp.verifiedBy === lfid)) {
+        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
           this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
             logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
               identity_id: cdp.id,
@@ -2090,7 +2093,7 @@ export class ProfileController {
 
       if (inAuthService) {
         // In both auth-service and CDP — auto-verify if needed (skipped when read-only)
-        if (!readOnly && !(cdp.verified && cdp.verifiedBy === lfid)) {
+        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
           this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
             logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
               identity_id: cdp.id,
@@ -2170,7 +2173,7 @@ export class ProfileController {
 
       // Skip the CDP create entirely when read-only (impersonation) — the synthetic display entry
       // below is still produced, so the impersonator sees the identity without any CDP mutation.
-      if (!readOnly && !wouldDuplicateCustomEmail) {
+      if (!skipCdpMutations && !wouldDuplicateCustomEmail) {
         cdpPostsQueued++;
         if (cdpPostPlatform === 'custom') {
           postedCustomEmails.add(value);

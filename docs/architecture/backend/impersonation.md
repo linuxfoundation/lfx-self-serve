@@ -175,13 +175,15 @@ These check `req.appSession['impersonationUser']` first, falling back to `req.oi
 
 - `GET /api/profile`, `GET /api/profile/emails`, `GET /api/profile/linux-email` use `getEffectiveSub` / `getEffectiveEmail` / `getEffectiveUsername`.
 - `GET /api/profile/identities`, `/work-experiences`, `/project-affiliations` resolve the target's `lfid` (via `resolveEffectiveLfid`). CDP **reads are preserved** — work history and CDP-listed / non-verified identities still display.
+- **Individual enrollment & Linux.com add-on** (`EnrollmentService.getIndividualEnrollments` / `hasLinuxComAddon`) call the member-service `/me/memberships` through the API gateway. `req.apiGatewayToken` is the impersonator's (no CTE for the API-gateway audience), so during impersonation these reads pass `bearerToken: req.bearerToken` (the target's CTE token) to `gatewayFetch` — the same override `updateAutoRenew` uses — and `/me` resolves to the target. If that fetch fails, `getIndividualEnrollments` degrades to the standard (unenrolled) product card. The auto-renew write stays blocked; the enroll/renew CTAs and toggle render disabled.
 - `GET /api/profile/developer` is **suppressed** (403) while impersonating — `req.bearerToken` is the target's live token and must never be surfaced to the impersonator.
+- The Linux.com **forward target** still can't be read during impersonation (needs the impersonator's Flow-C management token); the claimed alias itself is shown from the target's `user_emails.read`.
 
 Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
 
 - Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.
 - `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `readOnly` flag, so viewing a target's identities never mutates their CDP records.
-- The frontend hides the corresponding edit affordances (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings.
+- The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings.
 
 ### 6. SSR Handler
 
@@ -262,7 +264,7 @@ impersonation_stopped: Impersonation session ended
 
 ## Limitations
 
-1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history and identities), but all profile writes are blocked (`403 IMPERSONATION_READ_ONLY`) and the developer API token is suppressed. CDP reads are preserved; CDP writes (including the `getIdentities` reconciliation create) are suppressed. Editing acts on the real user's account, so it is disabled rather than allowed.
+1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed. The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token).
 
 2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name).
 
