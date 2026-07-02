@@ -15,6 +15,9 @@
             <p class="text-xl font-medium text-gray-900">{{ card.value }}</p>
           }
           <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
+          @if (card.subLine) {
+            <p class="text-xs text-gray-400">{{ card.subLine }}</p>
+          }
         </div>
       </div>
     }

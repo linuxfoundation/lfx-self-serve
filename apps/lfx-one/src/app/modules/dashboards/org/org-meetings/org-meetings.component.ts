@@ -135,7 +135,10 @@ export class OrgMeetingsComponent {
 
   private initNextUpcomingMeetingDate(): Signal<string> {
     return computed(() => {
-      const sorted = [...this.upcomingMeetings()].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      const now = Date.now();
+      const sorted = [...this.upcomingMeetings()]
+        .filter((m) => new Date(m.startTime).getTime() >= now)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
       const first = sorted[0];
       if (!first) return '';
       return new Date(first.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

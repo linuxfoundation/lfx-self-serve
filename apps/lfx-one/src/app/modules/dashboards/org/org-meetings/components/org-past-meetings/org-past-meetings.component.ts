@@ -19,9 +19,8 @@ export class OrgPastMeetingsComponent {
 
   protected meetingLinkUrl(meetingId: string): string {
     const path = `/meetings/${meetingId}`;
-    // SSR fallback: `window` is undefined during server rendering, so we return the relative
-    // path. The copy button sits behind a `@defer` block, so in practice the clipboard write
-    // only runs in the browser where `window.location.origin` resolves.
+    // SSR fallback: `window` is undefined during server rendering, so this must return the
+    // relative path — the copy button renders unconditionally, so this runs on every SSR pass.
     if (!isPlatformBrowser(this.platformId)) return path;
     return `${window.location.origin}${path}`;
   }
