@@ -6,9 +6,11 @@ Standards for the shared package (`@lfx-one/shared`) and Snowflake SQL queries.
 
 ## Shared Package
 
-### 1. Interfaces in shared (SHOULD FIX)
+### 1. Interfaces and type aliases in shared (SHOULD FIX)
 
-Prefer defining reusable interfaces in `packages/shared/src/interfaces/<name>.interface.ts`. Truly local UI-only types with no reuse potential may remain local in a component, but shared or reusable interfaces should not be defined there.
+Prefer defining reusable interfaces **and type aliases** in `packages/shared/src/interfaces/<name>.interface.ts`. Truly local UI-only types with no reuse potential may remain local in a component, but shared or reusable types should not be defined there.
+
+This includes **derived type aliases** such as `type Foo = (typeof BAR)[keyof typeof BAR]`: the alias lives in the interface file even when the `BAR` constant it derives from lives in a constants file. Import the constant into the interface file to derive the alias.
 
 **Violation:**
 
@@ -35,11 +37,37 @@ export interface MeetingDetails {
 import { MeetingDetails } from '@lfx-one/shared/interfaces';
 ```
 
+**Violation (derived alias in a constants file):**
+
+```typescript
+// packages/shared/src/constants/events.constants.ts
+export const MY_EVENT_STATUS = { ATTENDED: 'Attended', REGISTERED: 'Registered' } as const;
+export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS]; // ❌ type in constants file
+```
+
+**Fix (constant stays; alias moves to the interface file):**
+
+```typescript
+// packages/shared/src/constants/events.constants.ts — value only
+export const MY_EVENT_STATUS = { ATTENDED: 'Attended', REGISTERED: 'Registered' } as const;
+
+// packages/shared/src/interfaces/events.interface.ts — derived alias
+import { MY_EVENT_STATUS } from '../constants/events.constants';
+
+export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
+
+// Consumers import the value and the type from their respective barrels
+import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
+import { MyEventStatus } from '@lfx-one/shared/interfaces';
+```
+
 ---
 
 ### 2. Constants in shared (SHOULD FIX)
 
 All constants belong in `packages/shared/src/constants/<name>.constants.ts`. Use `as const` for constant objects.
+
+Constants files export **runtime values only** (`const`, `as const` objects, `Set`, arrays) — no `export type` or `export interface`. Types and derived aliases belong in the matching `.interface.ts` (see item 1).
 
 **Violation:**
 

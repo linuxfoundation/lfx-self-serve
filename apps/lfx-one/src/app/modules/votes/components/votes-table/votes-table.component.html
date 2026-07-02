@@ -132,7 +132,22 @@
 
               <td>
                 @if (vote.status === PollStatus.ENDED) {
-                  <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
+                  <span class="inline-flex items-center gap-1 text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
+                    <span>{{ vote.end_time | date: 'MMM d, y' }}</span>
+                    @if (vote.endedEarlyTooltip; as earlyCloseTooltip) {
+                      <button
+                        type="button"
+                        (click)="$event.stopPropagation()"
+                        class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                        [pTooltip]="earlyCloseTooltip"
+                        tooltipEvent="both"
+                        tooltipPosition="top"
+                        [attr.aria-label]="earlyCloseTooltip"
+                        [attr.data-testid]="'votes-ended-early-info-' + vote.uid">
+                        <i class="fa-light fa-circle-info text-sm pointer-events-none"></i>
+                      </button>
+                    }
+                  </span>
                 } @else if (vote.status === PollStatus.DISABLED) {
                   <span class="text-sm text-gray-700">Draft</span>
                 } @else if (vote.end_time) {

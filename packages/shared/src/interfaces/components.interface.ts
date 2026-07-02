@@ -690,4 +690,6 @@ export interface TabOption<T = string> {
   label: string;
   /** Value associated with the tab */
   value: T;
+  /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
+  savesInline?: boolean;
 }

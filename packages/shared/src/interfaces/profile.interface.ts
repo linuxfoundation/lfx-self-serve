@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 /**
+ * Developer settings token info returned by GET /api/profile/developer.
+ *
+ * `token` is the user's v2 OIDC session token (audience PCC_AUTH0_AUDIENCE).
+ * `v1Token` is the user-scoped v1 API Gateway token (audience api-gw.*), minted via
+ * refresh-token exchange in the auth middleware and surfaced for users still calling v1 APIs.
+ * It is omitted when unavailable (no refresh token / exchange failed) so the UI can hide the row.
+ */
+export interface DeveloperTokenInfo {
+  token: string;
+  type: string;
+  v1Token?: string;
+}
+
+/**
  * Profile tab configuration for the profile layout navigation
  */
 export interface ProfileTab {

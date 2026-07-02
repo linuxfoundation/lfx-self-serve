@@ -70,7 +70,7 @@ export class AddAccountDialogComponent {
           this.form.controls.email.disable();
           this.resendCooldownUtil.start();
         } else {
-          this.verificationError.set(response.error || response.message || 'Failed to send verification code');
+          this.verificationError.set(response.message || response.error || 'Failed to send verification code');
         }
         this.isConnecting.set(false);
       },
@@ -101,7 +101,7 @@ export class AddAccountDialogComponent {
           };
           this.ref.close(result);
         } else {
-          this.verificationError.set(response.error || response.message || 'Verification failed');
+          this.verificationError.set(response.message || response.error || 'Verification failed');
           this.isVerifying.set(false);
         }
       },
@@ -130,7 +130,7 @@ export class AddAccountDialogComponent {
     this.userService.sendEmailVerificationCode(email).subscribe({
       next: (response) => {
         if (!response.success) {
-          this.verificationError.set(response.error || response.message || 'Failed to resend code');
+          this.verificationError.set(response.message || response.error || 'Failed to resend code');
         }
         this.isConnecting.set(false);
         this.resendCooldownUtil.start();

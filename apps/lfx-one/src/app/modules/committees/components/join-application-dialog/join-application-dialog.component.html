@@ -3,15 +3,9 @@
 
 <div class="flex flex-col gap-4" data-testid="join-application-dialog">
   <p class="text-sm text-gray-500">
-    @if (mode === 'invite_only') {
-      Provide a brief message to help admins understand why you need access to
-      <strong>{{ committeeName }}</strong
-      >.
-    } @else {
-      Optionally include a message to introduce yourself or explain why you'd like to join
-      <strong>{{ committeeName }}</strong
-      >.
-    }
+    Optionally include a message to introduce yourself or explain why you'd like to join
+    <strong>{{ committeeName }}</strong
+    >.
   </p>
   <lfx-textarea
     [form]="applicationForm"
@@ -25,10 +19,5 @@
 </div>
 <div class="flex justify-end gap-2 mt-4">
   <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="join-application-cancel-btn"></lfx-button>
-  <lfx-button
-    [label]="mode === 'invite_only' ? 'Submit Request' : 'Submit Application'"
-    severity="info"
-    size="small"
-    (onClick)="submit()"
-    data-testid="join-application-submit-btn"></lfx-button>
+  <lfx-button label="Submit Application" severity="info" size="small" (onClick)="submit()" data-testid="join-application-submit-btn"></lfx-button>
 </div>

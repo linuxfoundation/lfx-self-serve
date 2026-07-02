@@ -1,14 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, model, output, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, input, model, output, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ButtonComponent } from '@components/button/button.component';
+import { ANNOUNCEMENT_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { SettingsAnnouncementsTabComponent } from './components/settings-announcements-tab/settings-announcements-tab.component';
 import { SettingsBeneficiariesTabComponent } from './components/settings-beneficiaries-tab/settings-beneficiaries-tab.component';
 import { SettingsBrandingTabComponent } from './components/settings-branding-tab/settings-branding-tab.component';
 import { SettingsDetailsTabComponent } from './components/settings-details-tab/settings-details-tab.component';
@@ -19,6 +22,7 @@ import { SettingsFundingTabComponent } from './components/settings-funding-tab/s
   imports: [
     DrawerModule,
     ButtonComponent,
+    SettingsAnnouncementsTabComponent,
     SettingsDetailsTabComponent,
     SettingsBrandingTabComponent,
     SettingsBeneficiariesTabComponent,
@@ -30,6 +34,7 @@ import { SettingsFundingTabComponent } from './components/settings-funding-tab/s
 export class InitiativeSettingsDrawerComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly messageService = inject(MessageService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   public readonly initiative = input.required<InitiativeDetail>();
   public readonly visible = model(false);
@@ -38,12 +43,19 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly activeSettingsTab = signal<string>('details');
   protected readonly saving = signal(false);
 
-  protected readonly settingsTabs: TabOption<string>[] = [
+  protected readonly announcementsEnabled = this.featureFlagService.getBooleanFlag(ANNOUNCEMENT_ENABLED_FLAG, false);
+
+  protected readonly settingsTabs: Signal<TabOption<string>[]> = computed(() => [
     { value: 'details', label: 'Initiative details' },
     { value: 'branding', label: 'Branding' },
     { value: 'beneficiaries', label: 'Beneficiaries' },
     { value: 'funding', label: 'Funding' },
-  ];
+    ...(this.announcementsEnabled() ? [{ value: 'announcements', label: 'Announcements', savesInline: true }] : []),
+  ]);
+
+  protected readonly activeTab: Signal<TabOption<string> | undefined> = computed(() =>
+    this.settingsTabs().find((tab) => tab.value === this.activeSettingsTab())
+  );
 
   private readonly detailsTab = viewChild.required(SettingsDetailsTabComponent);
   private readonly brandingTab = viewChild.required(SettingsBrandingTabComponent);
