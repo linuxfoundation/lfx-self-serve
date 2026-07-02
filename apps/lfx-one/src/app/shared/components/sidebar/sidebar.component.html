@@ -83,7 +83,15 @@
       <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
       @if (lensLoaded()) {
         <div class="flex flex-col gap-2 items-start px-4 w-full">
-          @for (item of itemsWithTestIds(); track trackNavItem(item)) {
+          <!--
+            Track by stable per-destination key (routerLink/url, falling back to the unique label for
+            sections and command-only items). Labels are not unique across the lens/flag reshape that
+            runs after first paint, so tracking by label made Angular reuse/mis-map DOM nodes — items
+            rendered under the wrong section and, because Font Awesome's kit JS bakes an <svg> into
+            each <i> on first render, reused nodes kept a stale icon. The same track key is applied to
+            all four @for loops below.
+          -->
+          @for (item of itemsWithTestIds(); track (item.routerLink ?? item.url ?? item.label)) {
             @if (item.isGroup) {
               <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
             } @else if (item.isSection) {
@@ -95,7 +103,7 @@
 
                 @if (item.items?.length) {
                   <div class="flex flex-col gap-1 mt-2">
-                    @for (childItem of item.items; track trackNavItem(childItem)) {
+                    @for (childItem of item.items; track (childItem.routerLink ?? childItem.url ?? childItem.label)) {
                       @if (childItem.isGroup) {
                         <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: childItem }"></ng-container>
                       } @else {
@@ -164,7 +172,7 @@
 
     <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
-        @for (item of footerItemsWithTestIds(); track trackNavItem(item)) {
+        @for (item of footerItemsWithTestIds(); track (item.routerLink ?? item.url ?? item.label)) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
         }
       }
@@ -190,7 +198,7 @@
     </button>
     @if (expandedGroupStates()[item.label] && item.items?.length) {
       <div class="flex flex-col gap-1 mt-1 pl-6">
-        @for (childItem of item.items; track trackNavItem(childItem)) {
+        @for (childItem of item.items; track (childItem.routerLink ?? childItem.url ?? childItem.label)) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
         }
       </div>
