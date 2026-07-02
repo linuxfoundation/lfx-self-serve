@@ -131,13 +131,17 @@ export class CommitteeOverviewComponent {
     return 'member';
   });
 
-  public canJoin: Signal<boolean> = computed(() => this.isVisitor() && this.committee().join_mode !== 'closed' && !this.hasPendingInvite());
+  public canJoin: Signal<boolean> = computed(() => {
+    const mode = this.committee().join_mode;
+    return this.isVisitor() && (mode === 'open' || mode === 'application') && !this.hasPendingInvite();
+  });
+
+  public showInviteOnlyNotice: Signal<boolean> = computed(() => this.isVisitor() && this.committee().join_mode === 'invite_only' && !this.hasPendingInvite());
 
   public joinButtonLabel: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
     if (mode === 'open') return 'Join Group';
     if (mode === 'application') return 'Request to Join';
-    if (mode === 'invite_only') return 'Request Access';
     return 'Contact Admin';
   });
 
@@ -145,14 +149,14 @@ export class CommitteeOverviewComponent {
   public joinButtonIcon: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
     if (mode === 'open') return 'fa-light fa-user-plus';
-    if (mode === 'invite_only' || mode === 'application') return 'fa-light fa-paper-plane';
+    if (mode === 'application') return 'fa-light fa-paper-plane';
     return 'fa-light fa-envelope';
   });
 
   /** Large illustrative icon above the CTA card title */
   public joinCtaIcon: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
-    if (mode === 'application' || mode === 'invite_only') return 'fa-light fa-paper-plane';
+    if (mode === 'application') return 'fa-light fa-paper-plane';
     return 'fa-light fa-users';
   });
 
@@ -161,7 +165,6 @@ export class CommitteeOverviewComponent {
     const name = this.committee().name;
     if (mode === 'open') return `Interested in ${name}? Click Join Group above to become a member.`;
     if (mode === 'application') return `Interested in ${name}? Click Request to Join above to submit your application for admin review.`;
-    if (mode === 'invite_only') return `Interested in ${name}? Click Request Access above to submit a membership request for admin review.`;
     return `${name} is closed to new members. Contact a group admin for access.`;
   });
 
@@ -170,8 +173,14 @@ export class CommitteeOverviewComponent {
   public joinCtaDescription: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
     if (mode === 'application') return 'Submit a request and a group admin will review your application.';
-    if (mode === 'invite_only') return 'Submit a request and a group admin will review and send you an invitation if approved.';
     return 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
+  });
+
+  public inviteOnlyTitle: Signal<string> = computed(() => 'Membership is by invitation only');
+
+  public inviteOnlyDescription: Signal<string> = computed(() => {
+    const name = this.committee().name;
+    return `${name} is invite only. A group admin or member must send you an invitation before you can join.`;
   });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));

@@ -152,8 +152,8 @@
               <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
             }
             <!-- Join / Request to Join / Contact Admin / Leave actions.
-                 Suppressed for an invited visitor — the Accept/Decline banner above is the action,
-                 so a "Request Access" CTA here would be redundant and contradictory. -->
+                 Suppressed for an invited visitor — the Accept/Decline banner above is the action.
+                 Suppressed for invite-only groups — visitors must wait for an invitation. -->
             <div class="ml-auto flex items-center gap-2">
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
@@ -175,17 +175,7 @@
                     [loading]="joiningOrLeaving()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-request-to-join-btn" />
-                } @else if (committee()?.join_mode === 'invite_only') {
-                  <lfx-button
-                    label="Request Access"
-                    icon="fa-light fa-paper-plane"
-                    severity="secondary"
-                    [outlined]="true"
-                    size="small"
-                    [loading]="joiningOrLeaving()"
-                    (onClick)="handleJoinRequest()"
-                    data-testid="committee-view-request-access-btn" />
-                } @else {
+                } @else if (committee()?.join_mode !== 'invite_only') {
                   <lfx-button
                     label="Contact Admin"
                     icon="fa-light fa-envelope"
