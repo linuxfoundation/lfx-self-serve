@@ -151,19 +151,28 @@
                    cannot carry the `disabled` state, so a non-link button variant is used instead). -->
               @if (!item.membership) {
                 @if (impersonating()) {
-                  <lfx-button [label]="item.enrollButton || 'Enroll'" severity="primary" [disabled]="true" data-testid="individual-enrollment-enroll-button" />
+                  <lfx-button
+                    [label]="item.enrollButton || 'Enroll'"
+                    severity="primary"
+                    [disabled]="true"
+                    ariaLabel="Enrollment is unavailable while impersonating another user"
+                    data-testid="individual-enrollment-enroll-button" />
                 } @else {
                   <lfx-button [label]="item.enrollButton || 'Enroll'" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
                 }
               } @else if (item.displayStatus === 'Expiring Soon') {
                 @if (impersonating()) {
-                  <lfx-button label="Renew My Enrollment" severity="primary" [disabled]="true" />
+                  <lfx-button
+                    label="Renew My Enrollment"
+                    severity="primary"
+                    [disabled]="true"
+                    ariaLabel="Enrollment is unavailable while impersonating another user" />
                 } @else {
                   <lfx-button label="Renew My Enrollment" severity="primary" [href]="item.renewHref" target="_blank" rel="noopener noreferrer" />
                 }
               } @else if (item.displayStatus === 'Expired') {
                 @if (impersonating()) {
-                  <lfx-button label="Repurchase" severity="primary" [disabled]="true" />
+                  <lfx-button label="Repurchase" severity="primary" [disabled]="true" ariaLabel="Enrollment is unavailable while impersonating another user" />
                 } @else {
                   <lfx-button label="Repurchase" severity="primary" [href]="item.enrollHref" target="_blank" rel="noopener noreferrer" />
                 }
