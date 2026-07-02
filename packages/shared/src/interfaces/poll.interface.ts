@@ -179,6 +179,8 @@ export interface Vote {
   last_modified_time?: string;
   /** Poll end/deadline timestamp */
   end_time: string;
+  /** Actual close time when the poll auto-ended early because all eligible voters responded before end_time. Absent when the poll closed on schedule or is still active. RFC3339. Read-only (set upstream by ITX, proxied by lfx-v2-voting-service). */
+  early_end_time?: string;
   /** Current poll status */
   status: PollStatus;
   /** V2 project UID */
@@ -217,6 +219,11 @@ export interface Vote {
   num_response_received?: number;
   /** Server-decorated by getMyVotes (Me-lens only) — RESPONDED iff the indexed vote_response row has IndexedVoteResponseStatus.RESPONDED. Absent on raw upstream Vote responses. */
   response_status?: VoteResponseStatus;
+}
+
+/** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
+export interface VoteTableRow extends Vote {
+  endedEarlyTooltip: string | null;
 }
 
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */
