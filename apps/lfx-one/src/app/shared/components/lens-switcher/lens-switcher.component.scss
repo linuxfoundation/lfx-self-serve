@@ -56,15 +56,19 @@
   // required to override. Fixed keeps the menu put while the page scrolls.
   // stylelint-disable-next-line declaration-no-important
   position: fixed !important;
+
   // Just to the right of the rail: 56px = 48px rail + 8px gap.
   // stylelint-disable-next-line declaration-no-important
   left: 56px !important;
+
   // Align the menu's bottom edge with the LFX Apps button's bottom edge:
   // rail padding (18) + avatar (28) + gap (≈11) + divider (≈1) + gap (≈11).
   // stylelint-disable-next-line declaration-no-important
   bottom: 68px !important;
+
   // stylelint-disable-next-line declaration-no-important
   top: auto !important;
+
   // stylelint-disable-next-line declaration-no-important
   margin-bottom: 0 !important;
 }

@@ -127,9 +127,13 @@ export class ProjectSelectorComponent {
     }
   }
 
-  /** Align the panel's top edge with the selector trigger (position:fixed panel, viewport-relative). */
+  /**
+   * Align the panel's top edge with the selector trigger. Only applies at lg+, where the SCSS sets
+   * `position: fixed` (viewport-relative). Below that PrimeNG uses absolute (document-relative)
+   * positioning, so a viewport-relative top would mis-place the panel on scroll.
+   */
   private alignPanelTop(): void {
-    if (!isPlatformBrowser(this.platformId)) {
+    if (!isPlatformBrowser(this.platformId) || !window.matchMedia('(min-width: 1024px)').matches) {
       return;
     }
     const trigger = this.triggerRef()?.nativeElement;

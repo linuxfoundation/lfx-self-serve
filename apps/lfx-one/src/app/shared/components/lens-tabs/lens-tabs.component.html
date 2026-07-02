@@ -3,13 +3,14 @@
 
 @if (showTabs()) {
   <div class="px-[12px] mb-[16px] w-full">
-    <div class="flex w-full items-center gap-1 p-1 rounded-full bg-gray-100" role="tablist" aria-label="Lens" data-testid="lens-tabs">
+    <!-- Segmented lens switcher — these navigate to a lens (no tabpanel), so we use role="group" +
+         aria-pressed rather than the ARIA tabs pattern, matching the project-selector filter buttons. -->
+    <div class="flex w-full items-center gap-1 p-1 rounded-full bg-gray-100" role="group" aria-label="Switch lens" data-testid="lens-tabs">
       @for (lens of lenses(); track lens.id) {
         @let isActive = activeLensId() === lens.id;
         <button
           type="button"
-          role="tab"
-          [attr.aria-selected]="isActive"
+          [attr.aria-pressed]="isActive"
           [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
           [attr.data-testid]="lens.testId + '-tab'"
           (click)="switchLens(lens.id)"

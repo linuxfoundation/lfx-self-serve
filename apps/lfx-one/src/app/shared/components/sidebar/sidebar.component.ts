@@ -132,6 +132,16 @@ export class SidebarComponent {
     return states;
   });
 
+  // Stable identity for @for tracking. Labels are not unique across the full lens/flag reshape, so
+  // tracking by label made Angular reuse/mis-map DOM nodes when the menu recomputed (once feature
+  // flags and persona data resolve after first paint) — items rendered under the wrong section and,
+  // because Font Awesome's kit JS bakes an <svg> into each <i> on first render, reused nodes kept a
+  // stale icon. routerLink/url is unique per destination; sections and command-only items fall back
+  // to their (unique) label.
+  protected trackNavItem(item: SidebarMenuItem): string {
+    return item.routerLink ?? item.url ?? item.label;
+  }
+
   protected toggleGroup(label: string): void {
     const items = this.items();
     const current = this.expandedGroupStates()[label] ?? true;
