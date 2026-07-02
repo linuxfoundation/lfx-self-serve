@@ -2001,19 +2001,6 @@ export class ProfileController {
   }
 
   /**
-   * Reconciles CDP identities with auth-service identities to determine display state
-   * and trigger auto-verification where needed.
-   *
-   * Truth table:
-   * 1. In auth-service AND CDP, verified=true & verifiedBy=lfid → VERIFIED (already reconciled)
-   * 2. In auth-service AND CDP, verified=false OR verifiedBy≠lfid → VERIFIED (auto-verify via PATCH)
-   * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry + fire-and-forget POST to CDP,
-   *    skipping the POST when a `custom` row for the same email value has already been written
-   *    in this loop or already exists as a CDP custom-email row owned by this user (verifiedBy=lfid))
-   * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
-   * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
-   */
-  /**
    * Resolves the effective LFID for CDP/auth-service reads. During impersonation this is the target
    * user's username (from the impersonation session); otherwise it mirrors the pre-existing
    * derivation (OIDC username/preferred_username, falling back to the prefix-stripped sub).
@@ -2026,6 +2013,19 @@ export class ProfileController {
     return (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
   }
 
+  /**
+   * Reconciles CDP identities with auth-service identities to determine display state
+   * and trigger auto-verification where needed.
+   *
+   * Truth table:
+   * 1. In auth-service AND CDP, verified=true & verifiedBy=lfid → VERIFIED (already reconciled)
+   * 2. In auth-service AND CDP, verified=false OR verifiedBy≠lfid → VERIFIED (auto-verify via PATCH)
+   * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry + fire-and-forget POST to CDP,
+   *    skipping the POST when a `custom` row for the same email value has already been written
+   *    in this loop or already exists as a CDP custom-email row owned by this user (verifiedBy=lfid))
+   * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
+   * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
+   */
   private reconcileIdentities(
     req: Request,
     cdpIdentities: CdpIdentity[],
