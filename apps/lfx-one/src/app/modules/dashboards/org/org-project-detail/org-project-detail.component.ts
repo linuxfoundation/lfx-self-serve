@@ -18,19 +18,19 @@ import {
   BAND_SIGNAL_FILL,
   BAND_SIGNAL_FILL_LIGHT,
   BAND_SIGNAL_RANK,
-  BAND_TAG,
-  DEFAULT_METRIC,
+  PD_BAND_TAG,
+  PD_DEFAULT_METRIC,
   PD_DEFAULT_TAB,
   PD_VALID_TABS,
-  DEFAULT_TIME_RANGE,
-  HEALTH_TAG,
+  PD_DEFAULT_TIME_RANGE,
+  PD_HEALTH_TAG,
   lfxColors,
-  METRIC_OPTIONS,
-  STACKED_PALETTE,
-  TIME_RANGE_MONTHS,
-  TIME_RANGE_OPTIONS,
-  VALID_METRICS,
-  VALID_TIME_RANGES,
+  PD_METRIC_OPTIONS,
+  PD_STACKED_PALETTE,
+  PD_TIME_RANGE_MONTHS,
+  PD_TIME_RANGE_OPTIONS,
+  PD_VALID_METRICS,
+  PD_VALID_TIME_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
   InfluenceCardVm,
@@ -62,9 +62,11 @@ function bandForScore(score: number): OrgLensProjectBand {
 }
 
 /**
- * Org Lens · Project Detail sub-page (LFXV2-1885). Opened from the Projects table /
- * Influence Summary cards via `/org/projects/:projectSlug`. Owns the fetch keyed on the
- * selected org + slug, the page-state machine, and the URL-persisted tab strip.
+ * Org Lens · Project Detail sub-page (LFXV2-1885), routed at `/org/projects/:projectSlug`.
+ * Currently opened only from the Org Overview Foundations & Projects table; the standalone
+ * Projects table and Influence Summary cards are wired to this route in a later story. Owns
+ * the fetch keyed on the selected org + slug, the page-state machine, and the URL-persisted
+ * tab strip.
  */
 @Component({
   selector: 'lfx-org-project-detail',
@@ -126,7 +128,7 @@ export class OrgProjectDetailComponent {
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
   protected readonly healthMeta = computed(() => {
     const health = this.hero()?.health;
-    return health ? HEALTH_TAG[health] : null;
+    return health ? PD_HEALTH_TAG[health] : null;
   });
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
@@ -145,36 +147,36 @@ export class OrgProjectDetailComponent {
   protected readonly technicalBandMeta = computed(() => {
     const band = this.technicalBand();
     if (!band) return null;
-    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: BAND_TAG[band].label };
+    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: PD_BAND_TAG[band].label };
   });
   protected readonly ecosystemBandMeta = computed(() => {
     const band = this.ecosystemBand();
     if (!band) return null;
-    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: BAND_TAG[band].label };
+    return { chipClass: BAND_CHIP_CLASS[band], bars: this.buildBandBars(band), label: PD_BAND_TAG[band].label };
   });
 
   // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => {
-    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     return (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
   });
   protected readonly ecosystemCards = computed(() => {
-    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
   });
 
   // Leaderboards tab — URL-persisted metric toggle + time range + two side-by-side boards + stacked trend.
-  protected readonly metricOptions = METRIC_OPTIONS;
-  protected readonly timeRangeOptions = TIME_RANGE_OPTIONS;
+  protected readonly metricOptions = PD_METRIC_OPTIONS;
+  protected readonly timeRangeOptions = PD_TIME_RANGE_OPTIONS;
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly scoreColumnLabel = computed(() => {
     if (!this.isActivityMode()) return 'Influence Score';
-    return `Activity (${TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
+    return `Activity (${PD_TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
   });
-  protected readonly drawerTimeRangeLabel = computed(() => `Last ${TIME_RANGE_MONTHS[this.timeRange()]} months`);
+  protected readonly drawerTimeRangeLabel = computed(() => `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`);
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
   protected readonly techSearchHasQuery = computed(() => this.techSearch().trim().length > 0);
@@ -228,7 +230,7 @@ export class OrgProjectDetailComponent {
     if (this.metric() === metric) return;
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { metric: metric === DEFAULT_METRIC ? null : metric },
+      queryParams: { metric: metric === PD_DEFAULT_METRIC ? null : metric },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -238,7 +240,7 @@ export class OrgProjectDetailComponent {
     if (this.timeRange() === range) return;
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { range: range === DEFAULT_TIME_RANGE ? null : range },
+      queryParams: { range: range === PD_DEFAULT_TIME_RANGE ? null : range },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -270,12 +272,12 @@ export class OrgProjectDetailComponent {
 
   private initMetric(): OrgLensLeaderboardMetric {
     const raw = this.queryParamMap().get('metric');
-    return raw && VALID_METRICS.has(raw) ? (raw as OrgLensLeaderboardMetric) : DEFAULT_METRIC;
+    return raw && PD_VALID_METRICS.has(raw) ? (raw as OrgLensLeaderboardMetric) : PD_DEFAULT_METRIC;
   }
 
   private initTimeRange(): OrgLensLeaderboardTimeRange {
     const raw = this.queryParamMap().get('range');
-    return raw && VALID_TIME_RANGES.has(raw) ? (raw as OrgLensLeaderboardTimeRange) : DEFAULT_TIME_RANGE;
+    return raw && PD_VALID_TIME_RANGES.has(raw) ? (raw as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE;
   }
 
   /**
@@ -291,7 +293,7 @@ export class OrgProjectDetailComponent {
     }));
     valued.sort((a, b) => b.sortKey - a.sortKey || a.row.orgName.localeCompare(b.row.orgName));
     const ranked = valued.map((entry, i) => {
-      const bandMeta = isActivity ? null : BAND_TAG[bandForScore(entry.score)];
+      const bandMeta = isActivity ? null : PD_BAND_TAG[bandForScore(entry.score)];
       return {
         rank: i + 1,
         orgName: entry.row.orgName,
@@ -558,7 +560,7 @@ export class OrgProjectDetailComponent {
     const board = this.detail()?.leaderboard ?? [];
     if (board.length === 0) return { labels: [], datasets: [] };
 
-    const months = TIME_RANGE_MONTHS[this.timeRange()];
+    const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     const labels = this.monthLabels.slice(-months);
 
     const sorted = [...board].sort((a, b) => b.scores.combined - a.scores.combined);
@@ -589,7 +591,7 @@ export class OrgProjectDetailComponent {
     // datasets[N] = least influential (top of stack, last/right in legend).
     // This matches the standard 100% stacked area convention used in the reference design.
     const datasets = ranked.map((item, rankIdx) => {
-      const color = STACKED_PALETTE[rankIdx] ?? lfxColors.gray[300];
+      const color = PD_STACKED_PALETTE[rankIdx] ?? lfxColors.gray[300];
       return {
         label: item.entry.name,
         data: item.pct,

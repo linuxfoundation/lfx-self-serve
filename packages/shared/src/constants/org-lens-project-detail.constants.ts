@@ -14,21 +14,21 @@ import { lfxColors } from './colors.constants';
 export const PD_DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 export const PD_VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
 
-export const DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
-export const VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
+export const PD_DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
+export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
 
-export const DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
-export const VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
+export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
+export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
 /** Hero health badge → lfx-tag severity (green Excellent / amber Healthy / red At Risk). */
-export const HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
+export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
   excellent: { label: 'Excellent', severity: 'success' },
   healthy: { label: 'Healthy', severity: 'warn' },
   'at-risk': { label: 'At Risk', severity: 'danger' },
 };
 
 /** Leaderboard band chip → lfx-tag severity. */
-export const BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: TagSeverity }> = {
+export const PD_BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: TagSeverity }> = {
   leading: { label: 'Leading', severity: 'success' },
   contributing: { label: 'Contributing', severity: 'info' },
   participating: { label: 'Participating', severity: 'warn' },
@@ -63,21 +63,21 @@ export const BAND_CHIP_CLASS: Record<OrgLensProjectBand, string> = {
   'non-lf': 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
 };
 
-export const METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: string }[] = [
+export const PD_METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: string }[] = [
   { id: 'influence', label: 'Calculated Influence', icon: 'fa-light fa-chart-bar' },
   { id: 'activity', label: 'Activity Count', icon: 'fa-light fa-list-ol' },
 ];
 
-export const TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] = [
+export const PD_TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: string }[] = [
   { id: '1y', label: '1 year' },
   { id: '2y', label: '2 years' },
   { id: 'all', label: 'All time' },
 ];
 
-export const TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
+export const PD_TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
 
 /** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
-export const STACKED_PALETTE: string[] = [
+export const PD_STACKED_PALETTE: string[] = [
   lfxColors.blue[600],
   lfxColors.blue[400],
   lfxColors.emerald[500],

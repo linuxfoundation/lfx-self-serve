@@ -54,10 +54,6 @@ export interface OrgLensProjectHero {
   description: string;
   /** Project logo URL; empty string falls back to initials. */
   logoUrl: string;
-  /** External source link target (e.g. the project's GitHub / homepage). */
-  sourceUrl: string | null;
-  /** Human label for the source link (e.g. "Kubernetes - Production-grade container orchestration"). */
-  sourceLabel: string | null;
   lfxInsightsUrl: string | null;
   /** Project's earliest commit ever (any author), ISO date. */
   firstCommit: string | null;
@@ -65,8 +61,6 @@ export interface OrgLensProjectHero {
   softwareValueUsd: number | null;
   health: OrgLensProjectHealth;
   foundationLabel: string;
-  /** Last-updated timestamp, ISO. */
-  lastUpdated: string;
 }
 
 /**
@@ -116,15 +110,6 @@ export interface OrgLensCardDetailSection {
   rows: OrgLensCardDetailRow[];
 }
 
-/** One monthly point on the Influence Trend chart. */
-export interface OrgLensProjectTrendPoint {
-  /** Year-month bin, e.g. "2025-07". */
-  month: string;
-  combined: number;
-  technical: number;
-  ecosystem: number;
-}
-
 /**
  * One organization row on the project leaderboard. Rank and band are derived client-side
  * from the active score-type / metric, so they are not carried on the wire.
@@ -152,7 +137,6 @@ export interface OrgLensProjectDetailResponse {
   hero: OrgLensProjectHero;
   technical: OrgLensProjectInfluenceCard[];
   ecosystem: OrgLensProjectInfluenceCard[];
-  trend: OrgLensProjectTrendPoint[];
   /** All organizations contributing to the project; the viewing-org row is always included. */
   leaderboard: OrgLensProjectLeaderboardRow[];
   /** Keyed by card key — drawer definition + card-specific data table for each influence card. */

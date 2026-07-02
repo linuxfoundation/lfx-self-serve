@@ -11,7 +11,6 @@ import type {
   OrgLensProjectHealth,
   OrgLensProjectInfluenceCard,
   OrgLensProjectLeaderboardRow,
-  OrgLensProjectTrendPoint,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -28,7 +27,6 @@ interface ProjectDetailSeed {
   description: string;
   foundationLabel: string;
   health: OrgLensProjectHealth;
-  sourceUrl: string;
   firstCommit: string;
   softwareValueUsd: number;
   /** The org's own counts (rolling 365d). */
@@ -46,7 +44,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Kubernetes (K8s) is an open-source system for automating deployment, scaling, and management of containerized applications.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'excellent',
-    sourceUrl: 'https://github.com/kubernetes/kubernetes',
     firstCommit: '2013-07-01',
     softwareValueUsd: 6000000000,
     org: { maintainers: 5, contributors: 6, commits: 1840, prs: 624 },
@@ -59,7 +56,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'The monitoring system and time-series database.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'excellent',
-    sourceUrl: 'https://github.com/prometheus/prometheus',
     firstCommit: '2012-11-24',
     softwareValueUsd: 214000000,
     org: { maintainers: 2, contributors: 3, commits: 612, prs: 208 },
@@ -72,7 +68,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Cloud-native high-performance edge/middle/service proxy.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'healthy',
-    sourceUrl: 'https://github.com/envoyproxy/envoy',
     firstCommit: '2016-08-30',
     softwareValueUsd: 178000000,
     org: { maintainers: 3, contributors: 2, commits: 503, prs: 171 },
@@ -85,7 +80,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'High-quality, ubiquitous, portable telemetry.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'excellent',
-    sourceUrl: 'https://github.com/open-telemetry',
     firstCommit: '2019-05-07',
     softwareValueUsd: 142000000,
     org: { maintainers: 2, contributors: 4, commits: 588, prs: 196 },
@@ -98,7 +92,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Kubernetes-native workflows, events, CD and rollouts.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'healthy',
-    sourceUrl: 'https://github.com/argoproj',
     firstCommit: '2017-08-21',
     softwareValueUsd: 96400000,
     org: { maintainers: 1, contributors: 2, commits: 412, prs: 138 },
@@ -111,7 +104,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Tensors and dynamic neural networks with strong GPU acceleration.',
     foundationLabel: 'LF AI & Data',
     health: 'excellent',
-    sourceUrl: 'https://github.com/pytorch/pytorch',
     firstCommit: '2016-08-13',
     softwareValueUsd: 642000000,
     org: { maintainers: 3, contributors: 4, commits: 980, prs: 332 },
@@ -124,7 +116,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Open standard for machine-learning interoperability.',
     foundationLabel: 'LF AI & Data',
     health: 'healthy',
-    sourceUrl: 'https://github.com/onnx/onnx',
     firstCommit: '2017-09-07',
     softwareValueUsd: 58200000,
     org: { maintainers: 1, contributors: 2, commits: 214, prs: 72 },
@@ -137,7 +128,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Open Network Automation Platform.',
     foundationLabel: 'LF Networking',
     health: 'at-risk',
-    sourceUrl: 'https://github.com/onap',
     firstCommit: '2017-02-15',
     softwareValueUsd: 39400000,
     org: { maintainers: 1, contributors: 1, commits: 118, prs: 40 },
@@ -150,7 +140,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Fast data-plane I/O for the network stack.',
     foundationLabel: 'LF Networking',
     health: 'at-risk',
-    sourceUrl: 'https://github.com/FDio',
     firstCommit: '2016-02-11',
     softwareValueUsd: 21800000,
     org: { maintainers: 0, contributors: 1, commits: 62, prs: 21 },
@@ -163,7 +152,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'A new standard for signing, verifying and protecting software.',
     foundationLabel: 'OpenSSF',
     health: 'healthy',
-    sourceUrl: 'https://github.com/sigstore',
     firstCommit: '2020-12-08',
     softwareValueUsd: 47600000,
     org: { maintainers: 2, contributors: 2, commits: 318, prs: 106 },
@@ -176,7 +164,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'A framework to secure the integrity of software supply chains.',
     foundationLabel: 'OpenSSF',
     health: 'healthy',
-    sourceUrl: 'https://github.com/in-toto',
     firstCommit: '2017-06-12',
     softwareValueUsd: 18900000,
     org: { maintainers: 1, contributors: 1, commits: 142, prs: 48 },
@@ -189,7 +176,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'Cloud-native CI/CD building blocks.',
     foundationLabel: 'CD Foundation',
     health: 'healthy',
-    sourceUrl: 'https://github.com/tektoncd',
     firstCommit: '2018-08-10',
     softwareValueUsd: 34200000,
     org: { maintainers: 1, contributors: 2, commits: 256, prs: 86 },
@@ -202,7 +188,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'The leading open-source automation server.',
     foundationLabel: 'CD Foundation',
     health: 'at-risk',
-    sourceUrl: 'https://github.com/jenkinsci',
     firstCommit: '2011-02-02',
     softwareValueUsd: 12400000,
     // Archived in our workspace — the org has no current maintainers/contributors here (empty-card demo).
@@ -216,7 +201,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     description: 'A universal identity control plane for distributed systems.',
     foundationLabel: 'Cloud Native Computing Foundation',
     health: 'healthy',
-    sourceUrl: 'https://github.com/spiffe',
     firstCommit: '2018-01-26',
     softwareValueUsd: 41100000,
     org: { maintainers: 2, contributors: 3, commits: 372, prs: 124 },
@@ -225,17 +209,6 @@ const SEEDS: Record<string, ProjectDetailSeed> = {
     influence: { combined: 60.0, technical: 62.3, ecosystem: 54.8 },
   },
 };
-
-/** Twelve year-month bins ending at the current month (oldest → newest), e.g. "2025-07". */
-function trailing12Months(): string[] {
-  const out: string[] = [];
-  const now = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  }
-  return out;
-}
 
 /** Deterministic 12-point ramp ending at `end` (starts ~`startFactor` of it). No RNG → SSR-stable. */
 function ramp(end: number, startFactor: number, round = 0): number[] {
@@ -412,14 +385,6 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       suffix: ' of all certified individuals.',
     }),
   ];
-}
-
-function trendSeries(seed: ProjectDetailSeed): OrgLensProjectTrendPoint[] {
-  const months = trailing12Months();
-  const combined = ramp(seed.influence.combined, 0.83, 1);
-  const technical = ramp(seed.influence.technical, 0.85, 1);
-  const ecosystem = ramp(seed.influence.ecosystem, 0.8, 1);
-  return months.map((month, i) => ({ month, combined: combined[i] ?? 0, technical: technical[i] ?? 0, ecosystem: ecosystem[i] ?? 0 }));
 }
 
 /**
@@ -806,19 +771,14 @@ export function getDemoProjectDetail(orgUid: string, orgName: string, projectSlu
       projectName: seed.name,
       description: seed.description,
       logoUrl: PROJECT_LOGO_URLS[projectSlug] ?? '',
-      sourceUrl: seed.sourceUrl,
-      sourceLabel: `${seed.name} - ${seed.description.replace(/\.$/, '')}`,
       lfxInsightsUrl: `https://insights.linuxfoundation.org/project/${projectSlug}`,
       firstCommit: seed.firstCommit,
       softwareValueUsd: seed.softwareValueUsd,
       health: seed.health,
       foundationLabel: seed.foundationLabel,
-      // Computed per-request as ~1h ago so the freshness label renders a stable relative value in demo.
-      lastUpdated: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     },
     technical: technicalCards(seed),
     ecosystem: ecosystemCards(seed, seed.name, seed.foundationLabel),
-    trend: trendSeries(seed),
     leaderboard: leaderboard(seed, orgName),
     cardDetails: buildCardDetails(seed),
   };
